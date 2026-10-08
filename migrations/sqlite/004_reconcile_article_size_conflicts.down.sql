@@ -1,0 +1,1 @@
+-- Conflict reconciliation is intentionally retained; source rows and diagnostics remain intact.

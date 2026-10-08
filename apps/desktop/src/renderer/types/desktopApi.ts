@@ -1,0 +1,2235 @@
+export type SortOrder = "ASC" | "DESC";
+
+export interface DashboardSnapshot {
+  todaysProduction: number;
+  todaysDispatched: number;
+  currentStockTotal: number;
+  inventoryValue: number;
+  syncQueuePending: number;
+  productionCounter: number;
+  recentScans: Array<{
+    qrId: string;
+    article: string;
+    color: string;
+    size: string;
+    serial: string;
+    occurredAt: string;
+  }>;
+  byHour: Array<{ key: string; quantity: number }>;
+  byProduct: Array<{ key: string; quantity: number }>;
+  byColor: Array<{ key: string; quantity: number }>;
+  bySize: Array<{ key: string; quantity: number }>;
+}
+
+export interface InventoryRow {
+  productId: string;
+  articleSizeId?: string | null;
+  article: string;
+  color: string;
+  size: string;
+  /** Current Stock: cartons In Store right now — Store Move In adds one, Store Move Out removes one. */
+  quantity: number;
+  /** Units still at the factory (production stock). */
+  productionQuantity?: number;
+  /** Units received into the store by Store Scanning. */
+  storeQuantity?: number;
+  /** Units moved out of the store to the gate by Store Move Out, ready to dispatch. */
+  gateQuantity?: number;
+  costPrice: number;
+  sellingPrice: number;
+  stockValue: number;
+  potentialRevenue: number;
+  profitPotential: number;
+}
+
+export interface SaleableVariant {
+  id: string;
+  articleSizeId: string | null;
+  article: string;
+  size: string;
+  color: string;
+  sellingPrice: number | null;
+  /** Current Stock: cartons In Store right now (Store Move In / Store Move Out). */
+  stockQuantity: number;
+  articleSeriesId: string | null;
+  productGroupId: string | null;
+}
+
+export interface ProductRow {
+  id: string;
+  articleSizeId?: string | null;
+  productCode?: string | null;
+  article: string;
+  color: string;
+  size: string;
+  colors?: string[];
+  description: string | null;
+  costPrice: number | null;
+  sellingPrice: number | null;
+  mainGroupId: string | null;
+  groupId: string | null;
+  articleSeriesId?: string | null;
+  articleSeriesName?: string | null;
+  mainGroupName?: string | null;
+  groupName?: string | null;
+  status: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface QrBatchRow {
+  id: string;
+  articleSizeId: string | null;
+  article: string;
+  color: string;
+  size: string;
+  startSequence: number;
+  endSequence: number;
+  quantity: number;
+  createdAt: string;
+  /** The logged-in operator who ran the generator. */
+  createdBy: string | null;
+  /** Whoever asked for the run, as typed by the operator (optional). */
+  requestedBy: string | null;
+}
+
+export interface RawMaterialQrBatchRow {
+  id: string;
+  partyId: string;
+  partyCode: string;
+  partyName: string;
+  itemId: string;
+  itemCode: string;
+  itemDisplayName: string;
+  startSequence: number;
+  endSequence: number;
+  quantity: number;
+  /** How much one packet in this run holds — printed on every label. Null when no packing was set. */
+  packingQuantity: number | null;
+  createdAt: string;
+  /** The logged-in operator who ran the generator. */
+  createdBy: string | null;
+  /** Whoever asked for the run, as typed by the operator (optional). */
+  requestedBy: string | null;
+}
+
+export interface RawMaterialQrRow {
+  id: string;
+  batchId: string;
+  partyId: string;
+  itemId: string;
+  sequence: number;
+  status: string;
+  createdAt: string;
+}
+
+/** One already-generated raw material packet label, for reprinting it exactly as printed. */
+export interface RawMaterialQrLabel {
+  qrId: string;
+  displayName: string;
+  partyName: string;
+  categoryLine: string;
+  subCategoryLine: string;
+  packingQuantity: number | null;
+  values: Array<Record<string, unknown>>;
+}
+
+export interface RawMaterialQrSequenceState {
+  lastSequence: number;
+  nextSequence: number;
+}
+
+export type QrStage =
+  | "REGISTERED"
+  | "VOID"
+  | "PRODUCED"
+  | "WAREHOUSE"
+  /** Raw material only: the packet has been issued out of the store to a section. */
+  | "ISSUED"
+  | "TO_GATE"
+  | "DISPATCHED"
+  /** Returned by the customer and standing at the gate, waiting for Store Move In. */
+  | "ON_GATE"
+  | "SOLD"
+  /** Legacy: written by the pre-ON_GATE return flow, which credited stock on the scan. */
+  | "RETURNED"
+  | "DAMAGED"
+  | "SCRAPPED";
+
+export interface QrSearchRow {
+  qrId: string;
+  article: string;
+  color: string;
+  size: string;
+  sequence: number;
+  batchId: string;
+  registeredAt: string;
+  stage: QrStage;
+  lastActivityAt: string;
+}
+
+export interface QrEventRow {
+  id: string;
+  eventType: string;
+  /** Business sub-kind carried in event metadata (e.g. "STORE_ENTRY" on a MOVED event). */
+  subType?: string | null;
+  occurredAt: string;
+  factory: string | null;
+  workstation: string | null;
+  operator: string | null;
+  deviceId: string;
+  note: string | null;
+  syncStatus: string;
+}
+
+export interface QrDetail {
+  qrId: string;
+  /** Which registry this code belongs to. Raw material codes have no variant or article. */
+  kind?: "CARTON" | "RAW_MATERIAL";
+  /** Raw material only: the supplier the packet came from, and where it is now. */
+  supplierName?: string | null;
+  sectionName?: string | null;
+  /** The stage in words when it names a place the status does not, e.g. "Issued to PACKING". */
+  stageLabel?: string | null;
+
+  article: string;
+  color: string;
+  size: string;
+  serial: string;
+  stage: QrStage;
+  productVariantId: string | null;
+  sellingPrice: number | null;
+  stockOnHand: number | null;
+  registry: {
+    status: string;
+    registeredAt: string;
+    voidReason: string | null;
+    voidedAt: string | null;
+    voidedBy: string | null;
+  } | null;
+  batch: {
+    id: string;
+    startSequence: number;
+    endSequence: number;
+    quantity: number;
+    createdAt: string;
+    createdBy: string | null;
+    requestedBy: string | null;
+    producedCount: number;
+    voidCount: number;
+  } | null;
+  lifecycle: {
+    currentStatus: string;
+    locationType: string;
+    locationId: string | null;
+    firstScannedAt: string;
+    updatedAt: string;
+  } | null;
+  events: QrEventRow[];
+}
+
+/** Per-stage tallies; a stage with no codes is simply absent. */
+export type QrStageCounts = Partial<Record<QrStage, number>>;
+
+// ─── QR Journey ──────────────────────────────────────────────────────────────
+
+export type QrJourneyStepKind =
+  | "REGISTERED"
+  | "VOID"
+  | "PRODUCED"
+  | "STORE_ENTRY"
+  | "STORE_EXIT"
+  | "DISPATCHED"
+  | "RETURNED"
+  | "DAMAGED"
+  | "SOLD"
+  | "MOVED"
+  | "PACKED"
+  | "ADJUSTMENT";
+
+export type QrPlace = "FACTORY" | "WAREHOUSE" | "GATE" | "CUSTOMER";
+
+/** One hop on a code's path — from → to status and place, who, where, and how long after the previous hop. */
+export interface QrJourneyStep {
+  index: number;
+  id: string;
+  kind: QrJourneyStepKind;
+  eventType: string | null;
+  occurredAt: string;
+  fromStatus: string | null;
+  toStatus: string;
+  fromPlace: QrPlace | null;
+  toPlace: QrPlace | null;
+  /**
+   * The destination in words when the status alone does not say enough — a packet is not
+   * just "Issued", it is issued to PACKING. Null for a carton, whose statuses are complete
+   * on their own.
+   */
+  toStatusLabel?: string | null;
+
+  actor: string | null;
+  deviceId: string | null;
+  workstation: string | null;
+  factory: string | null;
+  note: string | null;
+  syncStatus: string | null;
+  sinceMs: number | null;
+}
+
+export interface QrJourney {
+  qrId: string;
+  kind?: "CARTON" | "RAW_MATERIAL";
+  /** The stage in words when it names a place the status does not, e.g. "Issued to PACKING". */
+  stageLabel?: string | null;
+
+  supplierName?: string | null;
+  article: string;
+  color: string;
+  size: string;
+  serial: string;
+  stage: QrStage;
+  currentStatus: string | null;
+  currentPlace: QrPlace | null;
+  registeredAt: string | null;
+  batchId: string | null;
+  firstScannedAt: string | null;
+  lastActivityAt: string | null;
+  steps: QrJourneyStep[];
+  counts: Partial<Record<QrJourneyStepKind, number>>;
+  /** Total time spent in each status (ms); the current status is counted up to `asOf`. */
+  dwellMs: Record<string, number>;
+  asOf: string;
+}
+
+// ─── Store Scanning ──────────────────────────────────────────────────────────
+
+export type StoreEntryOutcome =
+  | "RECEIVED"
+  | "ALREADY_IN_STORE"
+  | "UNKNOWN_QR"
+  | "NOT_PRODUCED"
+  | "NOT_ELIGIBLE"
+  | "INVALID_FORMAT"
+  /** A well-formed raw material QR: recognised, but this screen cannot move it yet. */
+  | "RAW_MATERIAL_NOT_SUPPORTED"
+  /** The material has no packing (or no destination) set, so nothing can move safely. */
+  | "NOT_CONFIGURED"
+  | "STATUS_CHANGED"
+  /** Main-process only: session missing or lacks the store-scanning permission. */
+  | "NOT_AUTHORIZED"
+  /** Main-process only: infrastructure failure; nothing was written. */
+  | "ERROR";
+
+export interface StoreEntryScanResult {
+  accepted: boolean;
+  outcome: StoreEntryOutcome;
+  qrId?: string;
+  parserVersion?: string;
+  reason?: string;
+  article?: string;
+  color?: string;
+  size?: string;
+  serial?: string;
+  previousStatus?: string | null;
+  currentStatus?: string | null;
+  registryStatus?: string | null;
+  receivedAt?: string;
+  eventId?: string;
+  sessionId?: string;
+  /** Which kind of thing was scanned, so the screen knows what to render. */
+  kind?: "CARTON" | "RAW_MATERIAL";
+  /** Raw material only: the material, its supplier, and what one packet holds. */
+  itemDisplayName?: string;
+  partyName?: string;
+  packingQuantity?: number;
+  packingUnitCode?: string | null;
+  sectionName?: string | null;
+}
+
+// ─── Carton returns ──────────────────────────────────────────────────────────
+// Recording a return is a COMMERCIAL event: the customer is credited and the carton is left
+// standing ON GATE. The carton re-enters stock only when an ordinary Store Move In receives
+// it. These two are never the same scan.
+
+export type ReturnOutcome =
+  /** Accepted: party credited, carton is now ON GATE. */
+  | "RETURN_RECORDED"
+  /** Already recorded; the carton is still waiting for Store Move In. */
+  | "ALREADY_RETURNED"
+  /** No produced carton exists for this code. */
+  | "UNKNOWN_QR"
+  /** The carton is not currently out with a customer, so there is nothing to return. */
+  | "NOT_DISPATCHED"
+  /** Dispatched with no bill selected, so there is no customer to credit. */
+  | "NO_ATTRIBUTION"
+  /** The scanned text is not a QR identity at all. */
+  | "INVALID_FORMAT";
+
+/** Who a carton is currently out with, resolved from its own latest dispatch event. */
+export interface DispatchAttribution {
+  dispatchEventId: string;
+  dispatchedAt: string;
+  dispatchSessionId: string | null;
+  partyId: string;
+  partyName: string;
+  saleVoucherId: string | null;
+  saleVoucherNumber: string | null;
+  saleVoucherLineItemId: string | null;
+  /** Rate and discount per pair the carton was billed at, in rupees. */
+  unitPrice: number;
+  discountPerPair: number;
+  /** What the customer is credited for this one carton, in rupees. */
+  creditAmount: number;
+}
+
+/** A return already recorded for this carton, shown when it is scanned a second time. */
+export interface ExistingReturn {
+  saleReturnId: string;
+  returnNumber: string;
+  returnedAt: string;
+  partyId: string;
+  partyName: string;
+  saleVoucherNumber: string | null;
+  creditAmount: number;
+}
+
+export interface ReturnScanResult {
+  accepted: boolean;
+  outcome: ReturnOutcome;
+  qrId?: string;
+  parserVersion?: string;
+  reason?: string;
+  article?: string;
+  color?: string;
+  size?: string;
+  serial?: string;
+  currentStatus?: string | null;
+  attribution?: DispatchAttribution | null;
+  existingReturn?: ExistingReturn | null;
+  recordedAt?: string;
+  saleReturnId?: string;
+  returnNumber?: string;
+  eventId?: string;
+}
+
+/** One recorded return, as the Return screen's feed and Return History list it. */
+export interface SaleReturnRow {
+  id: string;
+  returnNumber: string;
+  returnDate: string;
+  recordedAt: string;
+  recordedBy: string | null;
+  qrId: string;
+  article: string;
+  color: string;
+  size: string;
+  partyId: string;
+  partyName: string;
+  saleVoucherId: string | null;
+  saleVoucherNumber: string | null;
+  unitPrice: number;
+  discountPerPair: number;
+  creditAmount: number;
+  currentStatus: string | null;
+  /** True while the carton is still ON GATE — recorded, but not yet received by the store. */
+  awaitingStoreIn: boolean;
+}
+
+export interface StoreReceivingSession {
+  id: string;
+  /** Display code, e.g. SR-000184. */
+  code: string;
+  sessionNumber: number;
+  deviceId: string;
+  startedBy: string | null;
+  status: "OPEN" | "CLOSED";
+  startedAt: string;
+  closedAt: string | null;
+}
+
+export interface StoreReceivedRow {
+  eventId: string;
+  qrId: string;
+  article: string;
+  color: string;
+  size: string;
+  serial: string;
+  receivedAt: string;
+  actor: string | null;
+}
+
+export interface StoreReceivingSessionSummary {
+  session: StoreReceivingSession;
+  receivedCount: number;
+  byProduct: Array<{ article: string; color: string; size: string; count: number }>;
+  recent: StoreReceivedRow[];
+  lastReceived: StoreReceivedRow | null;
+}
+
+// ─── Store Move Out ──────────────────────────────────────────────────────────
+
+export type StoreExitOutcome =
+  | "MOVED_OUT"
+  | "ALREADY_AT_GATE"
+  | "NOT_IN_STORE"
+  | "UNKNOWN_QR"
+  | "NOT_PRODUCED"
+  | "NOT_ELIGIBLE"
+  | "INVALID_FORMAT"
+  /** A well-formed raw material QR: recognised, but this screen cannot move it yet. */
+  | "RAW_MATERIAL_NOT_SUPPORTED"
+  /** The material has no packing (or no destination) set, so nothing can move safely. */
+  | "NOT_CONFIGURED"
+  | "STATUS_CHANGED"
+  /** Main-process only: session missing or lacks the store-scanning permission. */
+  | "NOT_AUTHORIZED"
+  /** Main-process only: infrastructure failure; nothing was written. */
+  | "ERROR";
+
+/**
+ * The gatepass line a move-out was automatically counted against (oldest open line owing
+ * the scanned variant), after that scan. Informational: the station never asks for it.
+ */
+export interface StoreExitGatepassProgress {
+  gatepassId: string;
+  code: string;
+  partyName: string;
+  article: string;
+  color: string;
+  size: string;
+  requested: number;
+  dispatchedFromStore: number;
+  outstanding: number;
+}
+
+export interface StoreExitScanResult {
+  accepted: boolean;
+  outcome: StoreExitOutcome;
+  qrId?: string;
+  parserVersion?: string;
+  reason?: string;
+  article?: string;
+  color?: string;
+  size?: string;
+  serial?: string;
+  previousStatus?: string | null;
+  currentStatus?: string | null;
+  registryStatus?: string | null;
+  movedOutAt?: string;
+  eventId?: string;
+  sessionId?: string;
+  /** Set when the move-out was counted against a gatepass reservation: that line's progress after this scan. */
+  gatepass?: StoreExitGatepassProgress;
+  /** Which kind of thing was scanned, so the screen knows what to render. */
+  kind?: "CARTON" | "RAW_MATERIAL";
+  /** Raw material only: the material, its supplier, and what one packet holds. */
+  itemDisplayName?: string;
+  partyName?: string;
+  packingQuantity?: number;
+  packingUnitCode?: string | null;
+  sectionName?: string | null;
+}
+
+/** Same shape as a receiving session; the code reads SO-000042. */
+export type StoreMoveOutSession = StoreReceivingSession;
+
+export interface StoreMovedOutRow {
+  eventId: string;
+  qrId: string;
+  article: string;
+  color: string;
+  size: string;
+  serial: string;
+  movedOutAt: string;
+  actor: string | null;
+}
+
+export interface StoreMoveOutSessionSummary {
+  session: StoreMoveOutSession;
+  movedOutCount: number;
+  byProduct: Array<{ article: string; color: string; size: string; count: number }>;
+  recent: StoreMovedOutRow[];
+  lastMovedOut: StoreMovedOutRow | null;
+}
+
+// ─── Gatepass ────────────────────────────────────────────────────────────────
+// A reservation document: party + article/colour/size quantities reserved from store stock.
+// Nothing here moves a QR or a stock figure — that stays with the scanners. A plain Store
+// Move Out scan of a reserved variant is what consumes the reservation (oldest open line
+// first); the store operator never names a gatepass.
+//
+//   Current Stock    physical cartons In Store
+//   Reserved         still owed to outstanding gatepasses
+//   Reflected Stock  Current Stock − Reserved: what a NEW gatepass may take
+
+export type GatepassStatus = "CREATED" | "BILLED" | "AT_GATE" | "DISPATCHED" | "DELIVERED" | "CANCELLED";
+
+/** The delivery/builty proof standing for a Gatepass, with the photo itself to show. */
+export interface GatepassDeliveryProof {
+  id: string;
+  gatepassId: string;
+  fileName: string;
+  mimeType: string;
+  byteSize: number;
+  originalName: string | null;
+  uploadedBy: string | null;
+  uploadedAt: string;
+  /** The photo as a data URL, or null when the file is missing from the store. */
+  dataUrl: string | null;
+}
+
+/** One line of a Gatepass as both scanning desks see it. Counts are cartons, the stored unit. */
+export interface GatepassScanLine {
+  productVariantId: string;
+  article: string;
+  color: string;
+  size: string;
+  requiredCartons: number;
+  storeScannedCartons: number;
+  storeRemainingCartons: number;
+  dispatchedCartons: number;
+  dispatchRemainingCartons: number;
+}
+
+/** What a Gatepass still needs at the store and at the gate. Cartons; screens show dozens. */
+export interface GatepassScanProgress {
+  gatepassId: string;
+  code: string;
+  status: GatepassStatus;
+  partyName: string;
+  voucherNumber: string | null;
+  dispatchSessionId: string | null;
+  lines: GatepassScanLine[];
+  requiredCartons: number;
+  storeScannedCartons: number;
+  storeRemainingCartons: number;
+  dispatchedCartons: number;
+  dispatchRemainingCartons: number;
+}
+
+/** One step of the Gatepass journey, with the moment it was actually reached (never guessed). */
+export interface GatepassJourneyStep {
+  status: GatepassStatus;
+  label: string;
+  state: "DONE" | "CURRENT" | "PENDING";
+  at: string | null;
+  actor: string | null;
+}
+
+/** One colour + size of an article with its live store figures (cartons). */
+export interface GatepassStockRow {
+  productVariantId: string;
+  article: string;
+  color: string;
+  size: string;
+  /** Product group of the article + size; null when the article has none set. */
+  groupName: string | null;
+  /** Current Stock — physically In Store. */
+  storeQuantity: number;
+  /** Reserved — still owed to outstanding gatepasses. */
+  reservedQuantity: number;
+  /** Reflected Stock — storeQuantity − reservedQuantity. */
+  reflectedQuantity: number;
+}
+
+export interface GatepassLineInput {
+  productVariantId: string;
+  /** Cartons, whole numbers only. */
+  quantity: number;
+  /** The Reflected Stock figure the operator saw, so a rejection can say "stock changed". */
+  reflectedStockSeen?: number;
+}
+
+export type CreateGatepassOutcome =
+  | "CREATED"
+  | "NO_PARTY"
+  | "PARTY_NOT_FOUND"
+  | "PARTY_INACTIVE"
+  | "NO_LINES"
+  | "INVALID_QUANTITY"
+  | "DUPLICATE_LINE"
+  | "VARIANT_NOT_FOUND"
+  | "INSUFFICIENT_STOCK"
+  | "STOCK_CHANGED"
+  /** Main-process only: session missing or lacks the gatepass permission. */
+  | "NOT_AUTHORIZED"
+  /** Main-process only: infrastructure failure; nothing was written. */
+  | "ERROR";
+
+export interface GatepassShortage {
+  productVariantId: string;
+  article: string;
+  color: string;
+  size: string;
+  requested: number;
+  currentStock: number;
+  reserved: number;
+  reflected: number;
+  seen: number | null;
+}
+
+export interface CreateGatepassResult {
+  accepted: boolean;
+  outcome: CreateGatepassOutcome;
+  reason?: string;
+  gatepassId?: string;
+  gatepassNumber?: number;
+  code?: string;
+  totalQuantity?: number;
+  createdAt?: string;
+  shortages?: GatepassShortage[];
+  productVariantId?: string;
+}
+
+export interface GatepassLine {
+  id: string;
+  lineNo: number;
+  productVariantId: string;
+  article: string;
+  color: string;
+  size: string;
+  /** Product group of the article + size; null when the article has none set. */
+  groupName: string | null;
+  quantity: number;
+  storeQuantityAtCreation: number;
+  /** Cartons Store Move Out has actually taken for this line. */
+  dispatchedFromStoreQuantity: number;
+  /** quantity − dispatchedFromStoreQuantity: still reserved. */
+  outstandingQuantity: number;
+}
+
+export interface Gatepass {
+  id: string;
+  /** Display code, e.g. GP-000123. */
+  code: string;
+  gatepassNumber: number;
+  partyId: string;
+  partyName: string;
+  partyCode: string;
+  partyCity: string | null;
+  gatepassDate: string;
+  status: GatepassStatus;
+  /** Transporter's receipt number (بلٹی نمبر), when known at creation. */
+  biltyNumber: string | null;
+  /** Carrier / vehicle (بزریعہ), when known at creation. */
+  transportVia: string | null;
+  remarks: string | null;
+  totalQuantity: number;
+  dispatchedFromStoreQuantity: number;
+  outstandingQuantity: number;
+  lineCount: number;
+  createdBy: string | null;
+  createdAt: string;
+  updatedAt: string;
+  cancelledAt: string | null;
+  cancelledBy: string | null;
+  cancelReason: string | null;
+  lines: GatepassLine[];
+}
+
+export interface GatepassListRow {
+  id: string;
+  code: string;
+  gatepassNumber: number;
+  partyId: string;
+  partyName: string;
+  gatepassDate: string;
+  status: GatepassStatus;
+  totalQuantity: number;
+  dispatchedFromStoreQuantity: number;
+  outstandingQuantity: number;
+  lineCount: number;
+  articles: string[];
+  createdBy: string | null;
+  createdAt: string;
+}
+
+
+export interface GatepassListQuery {
+  search?: string;
+  partyId?: string;
+  article?: string;
+  fromDate?: string;
+  toDate?: string;
+  status?: GatepassStatus | "ALL";
+  page?: number;
+  pageSize?: number;
+}
+
+export type CancelGatepassOutcome = "CANCELLED" | "NOT_FOUND" | "ALREADY_CANCELLED" | "REASON_REQUIRED" | "NOT_AUTHORIZED" | "ERROR";
+
+export interface CancelGatepassResult {
+  accepted: boolean;
+  outcome: CancelGatepassOutcome;
+  reason?: string;
+  gatepassId?: string;
+  code?: string;
+  cancelledAt?: string;
+  /** Cartons whose reservation the cancellation released (were still outstanding). */
+  releasedQuantity?: number;
+  /** Cartons already moved out of the store for it — unchanged by cancelling. */
+  dispatchedFromStoreQuantity?: number;
+}
+
+/**
+ * `fromDate`/`toDate` are local calendar days (YYYY-MM-DD, inclusive) compared against the
+ * generation timestamp only. Article/colour/size are ANDed with each other and the dates.
+ */
+export interface QrGenerationFilter {
+  fromDate?: string;
+  toDate?: string;
+  article?: string;
+  color?: string;
+  size?: string;
+  page?: number;
+  pageSize?: number;
+  /** Compute the headline tallies (default true). Pass false when only the page changed. */
+  includeSummary?: boolean;
+}
+
+/** One generation run: a contiguous serial range for one article + colour + size. */
+export interface QrGenerationGroup {
+  batchId: string;
+  article: string;
+  color: string;
+  size: string;
+  startSequence: number;
+  endSequence: number;
+  quantity: number;
+  firstQrId: string;
+  lastQrId: string;
+  generatedAt: string;
+  generatedBy: string | null;
+  requestedBy: string | null;
+  stageCounts: QrStageCounts;
+}
+
+export interface QrGenerationOverview {
+  groups: QrGenerationGroup[];
+  total: number;
+  page: number;
+  pageSize: number;
+  /** null when the summary was not requested. */
+  totalQrCount: number | null;
+  stageCounts: QrStageCounts | null;
+}
+
+export interface QrGenerationFilterOptions {
+  articles: string[];
+  colors: string[];
+  sizes: string[];
+}
+
+export interface QrBatchMemberRow {
+  qrId: string;
+  sequence: number;
+  stage: QrStage;
+  lastActivityAt: string;
+}
+
+/** The dropdown lists offered on the Add / Edit Product page. */
+export type ProductListKind = "article" | "size" | "main-group" | "product-group" | "article-series";
+
+export interface ProductListEntry {
+  kind: ProductListKind;
+  /** Group / series id; for articles and sizes, the value itself. */
+  id: string;
+  name: string;
+  productCount: number;
+  disabledProductCount: number;
+  qrCount: number;
+  discountRuleCount: number;
+  renameBlockedReason: string | null;
+  deleteBlockedReason: string | null;
+}
+
+export interface QrSequenceState {
+  article: string;
+  size: string;
+  color: string;
+  lastSequence: number;
+  nextSequence: number;
+}
+
+export interface QrCodeRow {
+  id: string;
+  batchId: string;
+  article: string;
+  color: string;
+  size: string;
+  sequence: number;
+  status: string;
+  createdAt: string;
+  productVariantId?: string | null;
+}
+
+export interface HistoryRow {
+  qrId: string;
+  article: string;
+  color: string;
+  size: string;
+  timestamp: string;
+  operator: string | null;
+  device: string;
+  factory: string;
+  status: string;
+}
+
+export interface PagedResult<T> {
+  rows: T[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+export interface ReportSummary {
+  totalProduction: number;
+  inventoryValue: number;
+  byArticle: Array<{ key: string; quantity: number }>;
+  byColor: Array<{ key: string; quantity: number }>;
+  bySize: Array<{ key: string; quantity: number }>;
+  byHour: Array<{ key: string; quantity: number }>;
+  topProducts: Array<{ key: string; quantity: number }>;
+}
+
+export interface BackupRecord {
+  id: string;
+  backupType: string;
+  backupPath: string;
+  checksumSha256: string;
+  sizeBytes: number;
+  verified: boolean;
+  verificationAt: string | null;
+  status: string;
+  createdAt: string;
+}
+
+export interface MoneyDriftViolation {
+  table: string;
+  column: string;
+  id: string;
+  realValue: number | null;
+  paisaValue: number | null;
+  expectedPaisa: number | null;
+}
+
+export interface MoneyDriftSummary {
+  healthy: boolean;
+  pairsChecked: number;
+  violationCount: number;
+  violations: MoneyDriftViolation[];
+}
+
+export interface HealthSnapshot {
+  sqliteStatus: string;
+  databaseSizeBytes: number;
+  pendingSyncQueue: number;
+  failedSyncQueue: number;
+  scannerConnected: boolean;
+  diskFreeBytes: number;
+  memoryUsageBytes: number;
+  cpuLoadAverage: number;
+  backupStatus: string;
+  appVersion: string;
+  deviceId: string;
+  moneyDrift: MoneyDriftSummary;
+}
+
+export interface PartyGroup {
+  id: string;
+  groupName: string;
+  description?: string;
+  isActive: boolean;
+}
+
+export interface ProductGroup {
+  id: string;
+  groupName: string;
+  description?: string;
+  isActive: boolean;
+}
+
+export interface MainGroup {
+  id: string;
+  groupName: string;
+  description?: string;
+  isActive: boolean;
+}
+
+export interface SaleVoucher {
+  id: string;
+  voucherNumber: string;
+  partyId: string;
+  partyName: string;
+  partyNameUrdu?: string | null;
+  partyMobile?: string;
+  partyEmail?: string;
+  voucherDate: string;
+  bookNo: string;
+  subPartyName?: string | null;
+  subPartyNameUrdu?: string | null;
+  subPartyNumber?: string | null;
+  remarks?: string | null;
+  totalQuantity: number;
+  totalAmount: number;
+  status: string;
+  /** The gatepass this bill was made from, when it was; CANCELLED means the bill must go. */
+  gatepassId?: string | null;
+  gatepassCode?: string | null;
+  gatepassStatus?: GatepassStatus | null;
+  lineItems: Array<{
+    id: string;
+    productVariantId: string;
+    quantity: number;
+    /** The rate the line was billed at: NORMAL, or the B-TYPE derived from it (never discounted). */
+    priceType: "NORMAL" | "B_TYPE";
+    unitPrice: number;
+    /** Total discount for the line. */
+    discount: number;
+    /** Per pair, what the party's discount rule gave when the line was saved (0 for NONE or B-TYPE). */
+    discountPerPair: number;
+    /** The rule that set the line's discount ceiling when it was saved. */
+    discountSource: "ARTICLE" | "ARTICLE_SERIES" | "PRICE_RANGE" | "PRODUCT_GROUP" | "NONE";
+    totalPrice: number;
+    article: string;
+    color: string;
+    size: string;
+    groupName?: string | null;
+  }>;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SaleVoucherListRow {
+  id: string;
+  voucherNumber: string;
+  partyName: string;
+  voucherDate: string;
+  bookNo: string;
+  subPartyName?: string | null;
+  totalQuantity: number;
+  totalAmount: number;
+  status: string;
+  createdAt: string;
+}
+
+export interface PurchaseVoucherLineItem {
+  id: string;
+  itemId: string;
+  itemCode: string;
+  displayName: string;
+  unitCode?: string | null;
+  costPrice?: number | null;
+  quantity: number;
+  unitPrice: number;
+  totalPrice: number;
+}
+
+export interface PurchaseVoucher {
+  id: string;
+  voucherNumber: string;
+  partyId: string;
+  partyName: string;
+  voucherDate: string;
+  bookNo?: string | null;
+  referenceNo?: string | null;
+  remarks?: string | null;
+  totalQuantity: number;
+  totalAmount: number;
+  status: string;
+  lineItems: PurchaseVoucherLineItem[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PurchaseVoucherListRow {
+  id: string;
+  voucherNumber: string;
+  partyName: string;
+  voucherDate: string;
+  referenceNo?: string | null;
+  totalQuantity: number;
+  totalAmount: number;
+  status: string;
+  createdAt: string;
+}
+
+export interface CashVoucher {
+  id: string;
+  voucherNumber: number;
+  partyId: string;
+  partyName: string;
+  voucherDate: string;
+  modeOfTransfer?: string;
+  description: string;
+  receiptAmount: number;
+  paymentAmount: number;
+  lines?: Array<{
+    partyId: string;
+    partyName: string;
+    description: string;
+    modeOfTransfer: string;
+    bankAccountTitle: string;
+    chequeNumber: string;
+    chequeDate: string;
+    onlineFrom: string;
+    onlineTo: string;
+    referenceNo: string;
+    receiptAmount: number;
+    paymentAmount: number;
+  }>;
+  status: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface Party {
+  id: string;
+  partyCode: string;
+  partyName: string;
+  partyNameUrdu?: string;
+  partyType: string;
+  contactPerson?: string;
+  mobileNumber?: string;
+  whatsAppNumber?: string;
+  phoneNumber?: string;
+  email?: string;
+  address?: string;
+  city?: string | null;
+  partyGroupId?: string | null;
+  groupName?: string | null;
+  remarks?: string;
+  status: string;
+  balanceLimit?: number | null;
+  createdAt: string;
+  updatedAt?: string;
+}
+
+export interface AuthUser {
+  id: string;
+  username: string;
+  role: "USER" | "ADMIN";
+  accessStatus: "PENDING" | "APPROVED" | "REJECTED";
+  permissions: string[];
+  lastLoginAt: string | null;
+  roleNotification?: string | null;
+}
+
+/**
+ * One voucher line as the dispatch scanner sees it. Cartons are the enforced unit — one
+ * scan is one carton, a dozen is two cartons (@erp/domain units.ts); pairs are derived.
+ */
+export interface DispatchLineProgress {
+  lineItemId: string;
+  productVariantId: string;
+  article: string;
+  color: string;
+  size: string;
+  requiredDzn: number;
+  requiredCartons: number;
+  dispatchedCartons: number;
+  requiredPairs: number;
+  dispatchedPairs: number;
+}
+
+export interface DispatchSessionDetail {
+  sessionId: string;
+  voucherId: string;
+  voucherNumber: string;
+  partyName: string;
+  voucherDate: string;
+  status: string;
+  allowedItems: DispatchLineProgress[];
+}
+
+export interface DispatchSessionSummary {
+  sessionId: string;
+  voucherId: string;
+  voucherNumber: string;
+  partyName: string;
+  voucherDate: string;
+  totalQuantity: number;
+  totalAmount: number;
+  status: string;
+  startedAt: string | null;
+  remainingCartons: number;
+  remainingPairs: number;
+}
+
+export interface StoredSessionProfile {
+  id: string;
+  username: string;
+  token: string;
+  role: "USER" | "ADMIN";
+  lastUsedAt?: string;
+}
+
+export interface StoredSessionState {
+  activeToken: string | null;
+  profiles: StoredSessionProfile[];
+}
+
+/** Encrypted, main-process persistence of the active session and saved profiles. */
+export interface SessionStoreApi {
+  load(): Promise<StoredSessionState>;
+  save(profile: StoredSessionProfile): Promise<StoredSessionState>;
+  remove(token: string): Promise<StoredSessionState>;
+  clear(): Promise<StoredSessionState>;
+}
+
+export interface DesktopApi {
+  getRuntime(): Promise<{
+    dbPath: string;
+    /** Persistent data folder (database, images, logs, backups). */
+    dataRoot?: string;
+    /** Outcome of the one-time move from the legacy temp location. */
+    dataMigration?: "ALREADY_PRESENT" | "FRESH_INSTALL" | "MIGRATED" | "FAILED";
+    appVersion: string;
+  }>;
+  getSession(token?: string): Promise<AuthUser | null>;
+  /** Optional so older preloads and unit-test doubles keep working (the app then starts signed out). */
+  sessionStore?: SessionStoreApi;
+  /** True once any ADMIN account exists. False routes the renderer to first-run setup instead of sign-in. */
+  hasAnyAdmin(): Promise<{ hasAdmin: boolean }>;
+  /** One-time creation of the first ADMIN. The backend rejects every call once an ADMIN already exists. */
+  bootstrapAdmin(username: string, password: string, confirmPassword: string): Promise<{ accepted: boolean; user?: AuthUser; token?: string; reason?: string }>;
+  signIn(username: string, password: string): Promise<{ accepted: boolean; user?: AuthUser; token?: string; reason?: string }>;
+  signUp(username: string, password: string, confirmPassword: string): Promise<{ accepted: boolean; user?: AuthUser; token?: string; reason?: string }>;
+  changePassword(currentPassword: string, newPassword: string, confirmNewPassword: string, token?: string): Promise<{ accepted: boolean; reason?: string }>;
+  logout(token?: string): Promise<{ accepted: boolean; reason?: string }>;
+  requestAccess(token?: string): Promise<{ accepted: boolean; status?: "PENDING" | "APPROVED" | "REJECTED"; reason?: string }>;
+  getAccessRequests(token?: string): Promise<{ accepted: boolean; requests: Array<{ id: string; username: string; status: "PENDING" | "APPROVED" | "REJECTED"; requestedAt: string; reviewedAt: string | null }>; reason?: string }>;
+  getMyAccessRequest?(token?: string): Promise<{ accepted: boolean; request?: { status: "PENDING" | "APPROVED" | "REJECTED" } | null; reason?: string }>;
+  reviewAccessRequest(token: string, requestId: string, decision: "APPROVED" | "REJECTED", permissions?: string[], roleCode?: string): Promise<{ accepted: boolean; reason?: string }>;
+  listMembers?(token?: string): Promise<{ accepted: boolean; members: Array<{ id: string; username: string; role: "USER" | "ADMIN"; jobRole: string; authorityLevel: number; accessStatus: "PENDING" | "APPROVED" | "REJECTED"; permissions: string[]; lastLoginAt: string | null; accessRequestId: string | null; roleCode: string | null; roleName: string | null; additionalPermissions: string[] }>; reason?: string }>;
+  createPermissionRequest?(token: string, permissionCode: string, reason?: string): Promise<{ accepted: boolean; id?: string; permissionCode?: string; status?: "PENDING" | "APPROVED" | "REJECTED"; reason?: string }>;
+  getPermissionRequests?(token?: string): Promise<{ accepted: boolean; requests: Array<{ id: string; userId: string; username: string; permissionCode: string; reason: string | null; status: "PENDING" | "APPROVED" | "REJECTED"; createdAt: string; requestedAt: string; reviewedAt: string | null; reviewedBy: string | null; reviewNotes: string | null }>; reason?: string }>;
+  getMyPermissionRequests?(token?: string): Promise<{ accepted: boolean; requests: Array<{ id: string; permissionCode: string; reason: string | null; status: "PENDING" | "APPROVED" | "REJECTED"; createdAt: string; requestedAt: string; reviewedAt: string | null; reviewNotes: string | null }>; reason?: string }>;
+  reviewPermissionRequest?(token: string, requestId: string, decision: "APPROVED" | "REJECTED", reviewNotes?: string): Promise<{ accepted: boolean; permissionCode?: string; userId?: string; status?: "APPROVED" | "REJECTED"; reason?: string }>;
+  setUserAdditionalPermissions?(token: string, userId: string, permissions: string[]): Promise<{ accepted: boolean; reason?: string }>;
+  getUserAdditionalPermissions?(token: string, userId: string): Promise<{ accepted: boolean; permissions: string[]; reason?: string }>;
+  updateUserPermissions?(token: string, userId: string, permissions: string[]): Promise<{ accepted: boolean; reason?: string }>;
+  updateMemberJobRole?(token: string, userId: string, jobRole: string): Promise<{ accepted: boolean; reason?: string }>;
+  updateMemberAuthority?(token: string, userId: string, authorityLevel: number): Promise<{ accepted: boolean; reason?: string }>;
+  getJobRoleOptions?(token?: string): Promise<{ accepted: boolean; roles: string[]; reason?: string }>;
+  listRoles?(token?: string): Promise<{ accepted: boolean; roles: Array<{ code: string; name: string; description: string | null; permissions: string[]; memberCount: number; loginPolicy?: "ALWAYS_LOGGED_IN" | "DAILY_LOGIN" }>; reason?: string }>;
+  createRole?(token: string, input: { name: string; description?: string; permissions: string[]; loginPolicy?: "ALWAYS_LOGGED_IN" | "DAILY_LOGIN" }): Promise<{ accepted: boolean; role?: { code: string; name: string; description: string | null; permissions: string[]; loginPolicy?: "ALWAYS_LOGGED_IN" | "DAILY_LOGIN" }; reason?: string }>;
+  updateRole?(token: string, roleCode: string, input: { name?: string; description?: string; permissions?: string[]; loginPolicy?: "ALWAYS_LOGGED_IN" | "DAILY_LOGIN" }): Promise<{ accepted: boolean; role?: { code: string; name: string; description: string | null; permissions: string[]; loginPolicy?: "ALWAYS_LOGGED_IN" | "DAILY_LOGIN" }; reason?: string }>;
+  deleteRole?(token: string, roleCode: string): Promise<{ accepted: boolean; reason?: string }>;
+  assignUserRole?(token: string, userId: string, roleCode: string): Promise<{ accepted: boolean; reason?: string }>;
+  getUserNotifications?(token?: string): Promise<{ accepted: boolean; notifications: Array<{ id: string; title: string; message: string; createdAt: string; readAt: string | null; kind?: string | null; entityId?: string | null; severity?: "INFO" | "WARNING" | "CRITICAL" }>; reason?: string }>;
+  markNotificationRead?: (
+  token: string,
+  notificationId: string
+) => Promise<{
+  accepted: boolean;
+  reason?: string;
+}>;
+  workspaceUsers?(token?: string): Promise<{ accepted: boolean; users: Array<{ id: string; username: string; jobRole: string; authorityLevel: number; isAdmin: boolean }>; reason?: string }>;
+  workspaceTaskAssignees?(token?: string): Promise<{ accepted: boolean; users: Array<{ id: string; username: string; jobRole: string }>; reason?: string }>;
+  workspaceAdmin?(token?: string): Promise<{ accepted: boolean; userId?: string; reason?: string }>;
+  workspaceMessages?(token?: string): Promise<{ accepted: boolean; messages: Array<{ id: string; message: string; created_at: string; sender_name: string }>; reason?: string }>;
+  workspaceSendMessage?(token: string, recipientId: string, message: string): Promise<{ accepted: boolean; id?: string; reason?: string }>;
+  workspaceTasks?(token: string, assignedByMe?: boolean): Promise<{ accepted: boolean; tasks: unknown[]; reason?: string }>;
+  workspaceCreateTask?(token: string, input: Record<string, unknown>): Promise<{ accepted: boolean; id?: string; reason?: string }>;
+  workspaceRequests?(token: string): Promise<{ accepted: boolean; requests: unknown[]; reason?: string }>;
+  workspaceCreateRequest?(token: string, input: Record<string, unknown>): Promise<{ accepted: boolean; id?: string; reason?: string }>;
+  workspaceUpdateStatus?(token: string, kind: "TASK" | "REQUEST", id: string, status: string): Promise<{ accepted: boolean; reason?: string }>;
+  workspaceActivity?(token: string): Promise<{ accepted: boolean; activity: unknown[]; reason?: string }>;
+  revokeUserAccess?(token: string, userId: string): Promise<{ accepted: boolean; reason?: string }>;
+  getDashboard(): Promise<DashboardSnapshot>;
+  listInventory(search: string): Promise<InventoryRow[]>;
+  listInventoryUnits(): Promise<Array<Record<string, unknown>>>;
+  listWorkSections(): Promise<WorkSection[]>;
+  startRawMaterialReceivingSession(
+    partyId: string,
+    opts?: { token?: string }
+  ): Promise<{ accepted: boolean; session?: RawMaterialReceivingSession; reason?: string }>;
+  getOpenRawMaterialReceivingSession(): Promise<RawMaterialReceivingSession | null>;
+  closeRawMaterialReceivingSession(sessionId: string): Promise<RawMaterialReceivingSession | null>;
+  getRawMaterialReceivingSessionSummary(sessionId: string): Promise<RawMaterialReceivingSessionSummary | null>;
+  listRawMaterialReceivingSessions(filters?: {
+    status?: "OPEN" | "CLOSED";
+    partyId?: string;
+    dateFrom?: string;
+    dateTo?: string;
+    limit?: number;
+  }): Promise<RawMaterialReceivingSession[]>;
+  rawMaterialReceiptScan(
+    rawScan: string,
+    opts?: { token?: string; sessionId?: string }
+  ): Promise<RawMaterialReceiptResult>;
+  startRawMaterialIssueSession(
+    opts?: { token?: string; startNew?: boolean }
+  ): Promise<{ accepted: boolean; session?: RawMaterialIssueSession; reason?: string }>;
+  closeRawMaterialIssueSession(sessionId: string): Promise<RawMaterialIssueSession | null>;
+  getRawMaterialIssueSessionSummary(sessionId: string): Promise<RawMaterialIssueSessionSummary | null>;
+  rawMaterialIssueScan(
+    rawScan: string,
+    opts?: { token?: string; sessionId?: string }
+  ): Promise<RawMaterialIssueResult>;
+  createWorkSection(name: string): Promise<{ accepted: boolean; section?: WorkSection; reason?: string }>;
+
+  // ─── Machine Program ────────────────────────────────────────────────────────
+  // What each machine's two injectors make on a date, and the uppers that reserves. Every read
+  // comes from the data layer and every write goes through a use case, which re-checks it inside
+  // the write lock — the screen's figures are never trusted.
+  listMachines(includeInactive?: boolean): Promise<MachineRecord[]>;
+  createMachine(input: { name: string; sectionId: string }): Promise<{ accepted: boolean; machine?: MachineRecord; reason?: string }>;
+  setMachineStatus(machineId: string, status: "ACTIVE" | "INACTIVE"): Promise<{ accepted: boolean; reason?: string }>;
+  assignMachineContractor(input: { machineId: string; contractorPartyId: string }): Promise<MachineProgramWriteResult>;
+  listMachineProgramBoard(programDate: string): Promise<{ accepted: boolean; rows: MachineProgramBoardRow[]; reason?: string }>;
+  getMachineProgramForDate(
+    machineId: string,
+    programDate: string
+  ): Promise<{ accepted: boolean; program: MachineProgramRecord | null; reason?: string }>;
+  listSoleColourOptions(): Promise<{ accepted: boolean; rows: SoleColourOption[]; reason?: string }>;
+  listMachineProgramDana(colour: string): Promise<{ accepted: boolean; rows: MachineProgramMaterial[]; reason?: string }>;
+  listMachineProgramArticles(): Promise<{ accepted: boolean; rows: MachineProgramArticle[]; reason?: string }>;
+  listMachineProgramUppers(
+    machineId: string,
+    articleSizeId: string
+  ): Promise<{ accepted: boolean; rows: MachineProgramMaterial[]; reason?: string }>;
+  saveMachineProgramLine(input: SaveMachineProgramLineInput): Promise<MachineProgramWriteResult>;
+  saveMachineProgramRun(input: MachineProgramRunHeader & { runId: string }): Promise<MachineProgramWriteResult>;
+  removeMachineProgramLine(input: { lineId: string }): Promise<MachineProgramWriteResult>;
+  removeMachineProgramRun(input: { runId: string }): Promise<MachineProgramWriteResult>;
+  deleteMachineProgram(input: { programId: string; reason?: string | null }): Promise<MachineProgramWriteResult>;
+  setMachineProgramShift(input: { programId: string; shift: MachineShift }): Promise<MachineProgramWriteResult>;
+  listRawMaterialMovementConfig(search?: string): Promise<RawMaterialMovementConfigRow[]>;
+  setRawMaterialMovementConfig(
+    itemId: string,
+    input: {
+      packingQuantity: number | null;
+      packingUnitId: string | null;
+      defaultSectionId: string | null;
+      /** Left out keeps the saved name; an empty string clears it back to the default. */
+      packName?: string | null;
+    }
+  ): Promise<{ accepted: boolean; reason?: string }>;
+  getRawMaterialSetupTemplate(categoryId: string): Promise<RawMaterialSetupTemplate | null>;
+  applyRawMaterialSetupToCategory(
+    categoryId: string,
+    setup: { packName?: string | null; packingQuantity?: number | null; packingUnitId?: string | null; hopSectionIds: string[] }
+  ): Promise<{ accepted: boolean; updated?: number; reason?: string }>;
+  createInventoryUnit(input: Record<string, unknown>): Promise<{ accepted: boolean; id?: string; reason?: string }>;
+  listInventoryUnitConversions(): Promise<Array<Record<string, unknown>>>;
+  createInventoryUnitConversion(input: Record<string, unknown>): Promise<{ accepted: boolean; id?: string; reason?: string }>;
+  listInventoryCategories(): Promise<Array<Record<string, unknown>>>;
+  createInventoryCategory(input: Record<string, unknown>): Promise<{ accepted: boolean; id?: string; reason?: string }>;
+  updateInventoryCategory(categoryId: string, input: Record<string, unknown>): Promise<{ accepted: boolean; reason?: string }>;
+  addInventoryCategoryField(input: Record<string, unknown>): Promise<{ accepted: boolean; id?: string; reason?: string }>;
+  updateInventoryCategoryField(fieldId: string, input: Record<string, unknown>): Promise<{ accepted: boolean; reason?: string }>;
+  removeInventoryCategoryField(fieldId: string): Promise<{ accepted: boolean; reason?: string }>;
+  addInventoryFieldOption(input: Record<string, unknown>): Promise<{ accepted: boolean; id?: string; reason?: string }>;
+  /** Materials still carrying a dropdown choice — what removing it would leave describing itself with a value the category no longer offers. */
+  inventoryFieldOptionUsage(optionId: string): Promise<{ accepted: boolean; items?: Array<{ itemCode: string; displayName: string }>; reason?: string }>;
+  deleteInventoryFieldOption(optionId: string): Promise<{ accepted: boolean; optionValue?: string; reason?: string }>;
+  /** Why a material cannot be deleted, in the operator's words; empty means it is safe to delete. */
+  inventoryItemDeleteBlockers(itemId: string): Promise<{ accepted: boolean; blockers?: string[]; reason?: string }>;
+  deleteInventoryItem(itemId: string): Promise<{ accepted: boolean; itemCode?: string; displayName?: string; reason?: string }>;
+  setInventoryItemStatus(itemId: string, status: "ACTIVE" | "INACTIVE"): Promise<{ accepted: boolean; status?: string; reason?: string }>;
+  /** Why a generated run of labels cannot be erased; empty means not one of them has been scanned. */
+  rawMaterialQrBatchDeleteBlockers(batchId: string): Promise<{ accepted: boolean; blockers?: string[]; reason?: string }>;
+  deleteRawMaterialQrBatch(batchId: string): Promise<{ accepted: boolean; quantity?: number; nextSequence?: number; reason?: string }>;
+  listInventoryItems(query?: Record<string, unknown>): Promise<Array<Record<string, unknown>>>;
+  createInventoryItem(input: Record<string, unknown>): Promise<{ accepted: boolean; id?: string; code?: string; displayName?: string; duplicate?: boolean; reason?: string }>;
+  adjustInventoryStock(input: Record<string, unknown>): Promise<{ accepted: boolean; reason?: string }>;
+  queryInventoryStock(filters?: Record<string, unknown>): Promise<{ itemCount: number; totalsByUnit: Array<{ unitId: string; unitCode: string; quantity: number }>; equivalent?: { unitId: string; unitCode: string; quantity: number } }>;
+  listInventoryStockEvents(itemId: string, limit?: number): Promise<InventoryStockEventRow[]>;
+  createStockCorrectionRequest(input: Record<string, unknown>): Promise<{ accepted: boolean; request?: StockCorrectionRequest; reason?: string }>;
+  listStockCorrectionRequests(filters?: Record<string, unknown>): Promise<StockCorrectionRequest[]>;
+  listStockCorrectionRequestsForItem(itemId: string, limit?: number): Promise<StockCorrectionRequest[]>;
+  reviewStockCorrectionRequest(
+    requestId: string,
+    decision: "APPROVED" | "REJECTED",
+    reviewNotes?: string
+  ): Promise<{ accepted: boolean; request?: StockCorrectionRequest; reason?: string }>;
+
+  // Removing a category, with an administrator's approval.
+  categoryRemovalBlockers(categoryId: string): Promise<{ accepted: boolean; blockers?: string[]; reason?: string }>;
+  createCategoryRemovalRequest(input: {
+    categoryId: string;
+    reason?: string;
+  }): Promise<{ accepted: boolean; request?: RemovalRequest; reason?: string }>;
+  listRemovalRequestsForTarget(targetId: string, limit?: number): Promise<RemovalRequest[]>;
+  reviewRemovalRequest(
+    requestId: string,
+    decision: "APPROVED" | "REJECTED",
+    reviewNotes?: string,
+  ): Promise<{ accepted: boolean; request?: RemovalRequest; reason?: string }>;
+  removeInventoryCategory(
+    categoryId: string,
+    reason?: string,
+  ): Promise<{ accepted: boolean; request?: RemovalRequest; reason?: string }>;
+
+  // Erasing a raw material for good, with an administrator's approval. `cost` is what would
+  // be erased with it — its own stock and movements.
+  itemRemovalBlockers(
+    itemId: string,
+  ): Promise<{ accepted: boolean; blockers?: string[]; cost?: string[]; reason?: string }>;
+  createItemRemovalRequest(input: {
+    itemId: string;
+    reason?: string;
+  }): Promise<{ accepted: boolean; request?: RemovalRequest; reason?: string }>;
+  removeInventoryItemForGood(
+    itemId: string,
+    reason?: string,
+  ): Promise<{ accepted: boolean; request?: RemovalRequest; reason?: string }>;
+
+  // Re-filing: a category under another parent, a material under another category.
+  previewCategoryMove(
+    categoryId: string,
+    newParentId: string | null,
+  ): Promise<{ accepted: boolean; preview?: CategoryMovePreview; reason?: string }>;
+  moveInventoryCategory(categoryId: string, newParentId: string | null): Promise<{ accepted: boolean; reason?: string }>;
+  previewInventoryItemMove(
+    itemId: string,
+    targetCategoryId: string,
+  ): Promise<{ accepted: boolean; preview?: InventoryItemMovePreview; reason?: string }>;
+  moveInventoryItem(itemId: string, targetCategoryId: string): Promise<{ accepted: boolean; reason?: string }>;
+
+  // A material's own ladder of units: 1 ROLL = 975 METRE, 1 METRE = 40 INCH.
+  getInventoryItemUnitLadder(itemId: string): Promise<{ accepted: boolean; ladder?: ItemUnitLadder; reason?: string }>;
+  setInventoryItemUnitLadder(input: {
+    itemId: string;
+    steps: Array<{ fromUnitId: string; toUnitId: string; factor: number }>;
+  }): Promise<{ accepted: boolean; ladder?: ItemUnitLadder; reason?: string }>;
+  listInventoryItemUnitLadders(): Promise<Record<string, ItemUnitLadderStep[]>>;
+  /** Re-states a material in another unit WITHOUT converting the figure. Carries a reason. */
+  correctInventoryItemUnit(input: {
+    itemId: string;
+    unitId: string;
+    reason: string;
+    /** Change every colour of this material too. */
+    alsoColours?: boolean;
+  }): Promise<{
+    accepted: boolean;
+    result?: { fromUnitCode: string | null; toUnitCode: string; movementsRestamped: number };
+    colours?: { applied: number; skipped: Array<{ displayName: string; reason: string }> };
+    reason?: string;
+  }>;
+  inventoryItemColourSiblings(itemId: string): Promise<Array<{ id: string; displayName: string }>>;
+  applyUnitLadderToColours(
+    itemId: string,
+  ): Promise<{ accepted: boolean; applied?: number; skipped?: Array<{ displayName: string; reason: string }>; reason?: string }>;
+  listUnitLadderPresets(): Promise<UnitLadderPreset[]>;
+  saveUnitLadderPreset(input: {
+    name: string;
+    steps: Array<{ fromUnitId: string; toUnitId: string; factor: number }>;
+  }): Promise<{ accepted: boolean; preset?: UnitLadderPreset; reason?: string }>;
+  deleteUnitLadderPreset(presetId: string): Promise<{ accepted: boolean; reason?: string }>;
+  getInventoryImportColumns(categoryId: string): Promise<{ accepted: boolean; columns?: InventoryImportColumn[]; reason?: string }>;
+  importInventoryItems(input: Record<string, unknown>): Promise<{ accepted: boolean; result?: InventoryImportResult; reason?: string }>;
+  updateInventoryItemPrice(itemId: string, costPrice: number | null): Promise<{ accepted: boolean; reason?: string }>;
+  /** Only while the material has no stock, movement or label yet — see setInventoryItemUnit. */
+  setInventoryItemUnit(itemId: string, unitId: string): Promise<{ accepted: boolean; reason?: string }>;
+  listProducts(query: Record<string, unknown>): Promise<PagedResult<ProductRow>>;
+  getProduct(id: string): Promise<ProductRow | null>;
+  getSaleableVariant(id: string): Promise<SaleableVariant | null>;
+  generateQrBatch(input: {
+    articleSizeId: string;
+    color: string;
+    quantity: number;
+    createdBy?: string;
+    requestedBy?: string;
+  }): Promise<{ accepted: boolean; batch?: QrBatchRow; qrCodes?: QrCodeRow[]; reason?: string }>;
+  listQrBatches(
+    input?: number | { limit?: number; sinceIso?: string },
+  ): Promise<QrBatchRow[]>;
+  listQrCodesForBatch(batchId: string): Promise<QrCodeRow[]>;
+  listQrColors(): Promise<string[]>;
+  getQrSequenceState(input: { articleSizeId: string; color: string }): Promise<QrSequenceState | null>;
+  searchQrCodes(query: string, limit?: number): Promise<QrSearchRow[]>;
+  getQrDetail(qrId: string): Promise<QrDetail | null>;
+  getQrJourney(qrId: string): Promise<QrJourney | null>;
+  getQrGenerationOverview(filter?: QrGenerationFilter): Promise<QrGenerationOverview>;
+  listQrGenerationFilterOptions(): Promise<QrGenerationFilterOptions>;
+  listProductListEntries(kind: ProductListKind): Promise<ProductListEntry[]>;
+  renameProductListEntry(input: { kind: ProductListKind; id: string; newName: string }): Promise<{ accepted: boolean; reason?: string; affected?: number; name?: string }>;
+  deleteProductListEntry(input: { kind: ProductListKind; id: string; actor?: string | null; reason?: string }): Promise<{ accepted: boolean; reason?: string; affected?: number }>;
+  listQrBatchMembers(batchId: string, opts?: { page?: number; pageSize?: number }): Promise<PagedResult<QrBatchMemberRow>>;
+  voidQrCode(input: { qrId: string; reason: string; actor?: string | null }): Promise<{ accepted: boolean; reason?: string }>;
+  restoreQrCode(input: { qrId: string }): Promise<{ accepted: boolean; reason?: string }>;
+  markQrCodeDamaged(input: { qrId: string; reason: string; actor?: string | null }): Promise<{ accepted: boolean; reason?: string; eventId?: string }>;
+  generateRawMaterialQrBatch(input: {
+    partyId: string;
+    itemId: string;
+    quantity: number;
+    /** What one packet in this run holds, in the material's stock unit. Required. */
+    packingQuantity: number;
+    createdBy?: string;
+    requestedBy?: string;
+  }): Promise<{ accepted: boolean; batch?: RawMaterialQrBatchRow; qrCodes?: RawMaterialQrRow[]; reason?: string }>;
+  listRawMaterialQrBatches(input?: { limit?: number; sinceIso?: string }): Promise<RawMaterialQrBatchRow[]>;
+  listRawMaterialQrsForBatch(batchId: string): Promise<RawMaterialQrRow[]>;
+  /** One already-generated packet label, for reprinting it exactly as it was printed. */
+  getRawMaterialQrLabel(qrId: string): Promise<RawMaterialQrLabel | null>;
+  getRawMaterialQrSequenceState(input: { partyId: string; itemId: string }): Promise<RawMaterialQrSequenceState | null>;
+  createProduct(input: Record<string, unknown>): Promise<string>;
+  updateProduct(id: string, input: Record<string, unknown>): Promise<void>;
+  disableProduct(id: string): Promise<void>;
+  enableProduct(id: string): Promise<{ accepted: boolean; reason?: string }>;
+  getProductImage(article: string): Promise<string | null>;
+  saveProductImage(article: string, dataUrl: string): Promise<{ accepted: boolean; fileName?: string; reason?: string }>;
+  saveRateList(payload: { html: string; fileName: string }): Promise<{ accepted: boolean; canceled?: boolean; filePath?: string; reason?: string }>;
+  /** Prints a ready-made document on the default printer, with no dialog. Page size in inches. */
+  printDocument(payload: { html: string; pageSize?: { widthIn: number; heightIn: number } }): Promise<{ accepted: boolean; reason?: string }>;
+  listHistory(query: Record<string, unknown>): Promise<PagedResult<HistoryRow>>;
+  listDispatchHistory(query: Record<string, unknown>): Promise<PagedResult<HistoryRow>>;
+  listDispatchSessions(filter?: Record<string, unknown>): Promise<DispatchSessionSummary[]>;
+  getDispatchSession(sessionId: string): Promise<DispatchSessionDetail | null>;
+  getReport(query: Record<string, unknown>): Promise<ReportSummary>;
+  processScan(rawScan: string): Promise<{ accepted: boolean; qrId?: string; parserVersion?: string; reason?: string }>;
+  dispatchScan(
+    rawScan: string,
+    sessionId?: string,
+    /** Gatepass-locked: the document is the allow-list, and it holds the carton to its colour. */
+    gatepassId?: string
+  ): Promise<{ accepted: boolean; qrId?: string; parserVersion?: string; reason?: string; gatepassDispatched?: boolean }>;
+  // Carton returns. `returnLookup` is the read-only preview the screen shows before the
+  // operator confirms; `returnScan` is the confirmation that credits the party and moves the
+  // carton to ON GATE. Neither touches stock — Store Move In does that when it arrives.
+  returnLookup(rawScan: string): Promise<ReturnScanResult>;
+  returnScan(rawScan: string): Promise<ReturnScanResult>;
+  listSaleReturns(query?: Record<string, unknown>): Promise<SaleReturnRow[]>;
+  // Store Scanning — every call carries the session token; the main process authorises it.
+  storeEntryScan(rawScan: string, opts?: { token?: string; sessionId?: string }): Promise<StoreEntryScanResult>;
+  getStoreReceivingSession(opts?: { token?: string; startNew?: boolean }): Promise<{ accepted: boolean; session?: StoreReceivingSession; reason?: string }>;
+  getStoreReceivingSessionSummary(sessionId: string, opts?: { token?: string; recentLimit?: number }): Promise<StoreReceivingSessionSummary | null>;
+  // Store Move Out
+  storeExitScan(rawScan: string, opts?: { token?: string; sessionId?: string; gatepassId?: string }): Promise<StoreExitScanResult>;
+  getStoreMoveOutSession(opts?: { token?: string; startNew?: boolean }): Promise<{ accepted: boolean; session?: StoreMoveOutSession; reason?: string }>;
+  getStoreMoveOutSessionSummary(sessionId: string, opts?: { token?: string; recentLimit?: number }): Promise<StoreMoveOutSessionSummary | null>;
+  // Gatepass — every call carries the session token; the main process authorises it.
+  listGatepassStock(article: string, opts?: { token?: string }): Promise<{ accepted: boolean; rows: GatepassStockRow[]; reason?: string }>;
+  /** Every colour + size In Store, across all articles — the whole grid in one read. */
+  listGatepassStoreStock(opts?: { token?: string }): Promise<{ accepted: boolean; rows: GatepassStockRow[]; reason?: string }>;
+  createGatepass(
+    input: { partyId: string; lines: GatepassLineInput[]; biltyNumber?: string | null; transportVia?: string | null; remarks?: string | null },
+    opts?: { token?: string }
+  ): Promise<CreateGatepassResult>;
+  getGatepass(gatepassId: string, opts?: { token?: string }): Promise<Gatepass | null>;
+  /** By display number (GP-000123 → 123); null when no such document. */
+  getGatepassByNumber(gatepassNumber: number, opts?: { token?: string }): Promise<Gatepass | null>;
+  listGatepasses(query?: GatepassListQuery, opts?: { token?: string }): Promise<PagedResult<GatepassListRow>>;
+  /** How many gatepasses sit at each stage, keyed by status. One grouped count, not one query per stage. */
+  countGatepassesByStage(opts?: { token?: string }): Promise<Record<string, number>>;
+  /** What a Gatepass still needs at the store and at the gate, per line and in total (cartons). */
+  getGatepassScanProgress(gatepassId: string, opts?: { token?: string }): Promise<GatepassScanProgress | null>;
+  /** Records the builty photo. The first one delivers the Gatepass; a later one replaces it. */
+  saveGatepassDeliveryProof(
+    input: { gatepassId: string; dataUrl: string; originalName?: string },
+    opts?: { token?: string }
+  ): Promise<{ accepted: boolean; delivered?: boolean; proofId?: string; reason?: string }>;
+  getGatepassDeliveryProof(gatepassId: string, opts?: { token?: string }): Promise<GatepassDeliveryProof | null>;
+  getGatepassJourney(gatepassId: string, opts?: { token?: string }): Promise<GatepassJourneyStep[] | null>;
+  cancelGatepass(input: { gatepassId: string; reason: string }, opts?: { token?: string }): Promise<CancelGatepassResult>;
+  getItemStatus(qrId: string): Promise<{ qrId: string; wasDispatched: boolean; wasReturned: boolean }>;
+  getSettings(): Promise<Record<string, string>>;
+  saveSettings(entries: Record<string, string>): Promise<void>;
+  resetDatabase(): Promise<{ accepted: boolean }>;
+  createBackup(): Promise<BackupRecord>;
+  listBackups(): Promise<BackupRecord[]>;
+  getHealth(): Promise<HealthSnapshot>;
+  getScannerStatus(): Promise<boolean>;
+  getLogs(query: Record<string, unknown>): Promise<Array<Record<string, unknown>>>;
+  // Party Management
+  listPartyGroups(): Promise<PartyGroup[]>;
+  createPartyGroup(input: { groupName: string; description?: string }): Promise<{ accepted: boolean; groupId?: string; reason?: string }>;
+  listParties(query: Record<string, unknown>): Promise<PagedResult<Party>>;
+  getParty(id: string): Promise<Party | null>;
+  getNextPartyCode(): Promise<string>;
+  getNextProductCode(): Promise<string>;
+  getCurrentPartyBalance(partyId: string): Promise<number>;
+  createParty(input: Record<string, unknown>): Promise<{ accepted: boolean; partyId?: string; partyCode?: string; reason?: string }>;
+  updateParty(input: Record<string, unknown>): Promise<{ accepted: boolean; reason?: string }>;
+  deleteParty(partyId: string): Promise<{ accepted: boolean; reason?: string }>;
+  getCustomerLedger(partyId: string, query?: Record<string, unknown>): Promise<{
+    partyId: string;
+    partyName: string;
+    entries: Array<{
+      voucherId: string;
+      voucherNumber: string;
+      voucherDate: string;
+      bookNo: string;
+      subPartyName: string | null;
+      remarks: string | null;
+      totalQuantity: number;
+      amount: number;
+      balance: number;
+      lineItems: Array<{
+        id: string;
+        article: string;
+        color: string;
+        size: string;
+        groupName: string | null;
+        quantity: number;
+        unitPrice: number;
+        discount: number;
+        totalPrice: number;
+      }>;
+    }>;
+  }>;
+  listCustomerBalances(query?: Record<string, unknown>): Promise<{ rows: Array<{ partyId: string; partyName: string; city: string | null; groupName: string | null; balance: number; lastVoucherDate: string | null; totalSales: number; totalReceipts: number; totalPayments: number; }>; total: number }>;
+  listCities(): Promise<string[]>;
+  getPartyDiscountReport(partyId: string): Promise<Array<{ partyId: string; partyName: string; type: "ARTICLE" | "ARTICLE_SERIES" | "PRICE_RANGE" | "PRODUCT_GROUP"; label: string; discountPerPair: number }>>;
+
+  // Cash voucher methods
+  getNextCashVoucherNumber(): Promise<number>;
+  createCashVoucher(input: Record<string, unknown>): Promise<{ accepted: boolean; voucherId?: string; reason?: string }>;
+  updateCashVoucher(voucherId: string, input: Record<string, unknown>): Promise<{ accepted: boolean; reason?: string }>;
+  getCashVoucher(id: string): Promise<CashVoucher | null>;
+  getCashVoucherByNumber(voucherNumber: number): Promise<CashVoucher | null>;
+  listCashVouchers(query?: Record<string, unknown>): Promise<PagedResult<CashVoucher>>;
+  deleteCashVoucher(id: string): Promise<{ accepted: boolean; reason?: string }>;
+  getCustomerLedgerWithCash(partyId: string, query?: Record<string, unknown>): Promise<{
+    partyId: string;
+    partyName: string;
+    balanceLimit: number | null;
+    openingBalance: number;
+    closingBalance: number;
+    entries: Array<{
+      voucherId: string;
+      voucherNumber: string;
+      voucherDate: string;
+      voucherType: "SALE" | "CASH_RECEIPT" | "CASH_PAYMENT";
+      description: string;
+      modeOfTransfer?: string;
+      onlineFrom?: string;
+      onlineTo?: string;
+      bankAccountTitle?: string;
+      chequeNumber?: string;
+      chequeDate?: string;
+      referenceNo?: string;
+      debitAmount: number;
+      creditAmount: number;
+      balance: number;
+      lineItems?: Array<{
+        id: string;
+        article: string;
+        color: string;
+        size: string;
+        groupName: string | null;
+        quantity: number;
+        unitPrice: number;
+        discount: number;
+        totalPrice: number;
+      }>;
+    }>;
+  }>;
+  resolveProductDiscount(partyId: string, productVariantId: string): Promise<{ discountPerPair: number; source: "ARTICLE" | "ARTICLE_SERIES" | "PRICE_RANGE" | "PRODUCT_GROUP" | "NONE"; ruleId?: string }>;
+  resolveProductDiscountWithPrice(partyId: string, productVariantId: string, actualPrice: number): Promise<{ discountPerPair: number; source: "ARTICLE" | "ARTICLE_SERIES" | "PRICE_RANGE" | "PRODUCT_GROUP" | "NONE"; ruleId?: string }>;
+  // Product Group Management
+  listProductGroups(): Promise<ProductGroup[]>;
+  createProductGroup(input: { groupName: string; description?: string }): Promise<{ accepted: boolean; groupId?: string; reason?: string }>;
+  listArticleSeries(): Promise<Array<{ id: string; name: string; description?: string | null; isActive: boolean }>>;
+  createArticleSeries(input: { name: string; description?: string }): Promise<{ accepted: boolean; id?: string; reason?: string }>;
+  createPartyProductGroupDiscount(input: { partyId: string; productGroupId: string; discountPerPair: number }): Promise<{ accepted: boolean; id?: string; reason?: string }>;
+  createPartyArticleSeriesDiscount(input: { partyId: string; articleSeriesId: string; discountPerPair: number }): Promise<{ accepted: boolean; id?: string; reason?: string }>;
+  /** `article` is the article name (a rule covers every colour of it). */
+  createPartyArticleDiscount(input: { partyId: string; article: string; sizeScope?: "ALL_SIZES" | "SEPARATE_SIZES"; size?: string | null; discountPerPair: number }): Promise<{ accepted: boolean; id?: string; reason?: string }>;
+  createPartyPriceRangeDiscount(input: { partyId: string; startPrice: number; endPrice: number; discountPerPair: number }): Promise<{ accepted: boolean; id?: string; reason?: string }>;
+  // Main Group Management
+  listMainGroups(): Promise<MainGroup[]>;
+  createMainGroup(input: { groupName: string; description?: string }): Promise<{ accepted: boolean; groupId?: string; reason?: string }>;
+  // Unique Product Data
+  listUniqueArticles(): Promise<string[]>;
+  listUniqueSizesByArticle(article: string): Promise<string[]>;
+  listUniqueColorsByArticle(article: string): Promise<string[]>;
+  // Sale Voucher Management
+  createSaleVoucher(input: Record<string, unknown>): Promise<{ accepted: boolean; id?: string; voucherNumber?: string; reason?: string; errorCode?: string; currentBalance?: number; voucherAmount?: number; projectedBalance?: number; limit?: number; available?: number; exceeded?: number; existingVoucherId?: string | null; existingVoucherNumber?: string | null }>;
+  getSaleVoucher(voucherId: string): Promise<SaleVoucher | null>;
+  /** The live sale voucher made from a gatepass, if any (one at most). */
+  findSaleVoucherByGatepass(gatepassId: string): Promise<{ id: string; voucherNumber: string } | null>;
+  listSaleVouchers(query: Record<string, unknown>): Promise<PagedResult<SaleVoucherListRow>>;
+  updateSaleVoucher(voucherId: string, input: Record<string, unknown>): Promise<{ accepted: boolean; reason?: string }>;
+  addVoucherLineItem(voucherId: string, input: Record<string, unknown>): Promise<{ accepted: boolean; id?: string; reason?: string; errorCode?: string; requestedDiscount?: number; allowedMaximum?: number; exceededBy?: number }>;
+  updateVoucherLineItem(itemId: string, input: Record<string, unknown>): Promise<{ accepted: boolean; reason?: string; errorCode?: string; requestedDiscount?: number; allowedMaximum?: number; exceededBy?: number }>;
+  deleteVoucherLineItem(itemId: string): Promise<{ accepted: boolean; reason?: string }>;
+  deleteSaleVoucher(voucherId: string): Promise<{ accepted: boolean; reason?: string; cancelled?: boolean; reversedEventCount?: number; ambiguousDispatchEventIds?: string[] }>;
+  // Purchase Voucher Management (supplier bills)
+  getNextPurchaseVoucherNumber(): Promise<string>;
+  createPurchaseVoucher(input: Record<string, unknown>): Promise<{ accepted: boolean; id?: string; voucherNumber?: string; reason?: string }>;
+  getPurchaseVoucher(voucherId: string): Promise<PurchaseVoucher | null>;
+  listPurchaseVouchers(query?: Record<string, unknown>): Promise<PagedResult<PurchaseVoucherListRow>>;
+  updatePurchaseVoucher(voucherId: string, input: Record<string, unknown>): Promise<{ accepted: boolean; reason?: string }>;
+  deletePurchaseVoucher(voucherId: string): Promise<{ accepted: boolean; reason?: string }>;
+  getSupplierLedger(partyId: string, query?: Record<string, unknown>): Promise<{
+    partyId: string;
+    partyName: string;
+    openingBalance: number;
+    closingBalance: number;
+    entries: Array<{
+      voucherId: string;
+      voucherNumber: string;
+      voucherDate: string;
+      voucherType: "PURCHASE" | "CASH_PAYMENT" | "CASH_RECEIPT";
+      description: string;
+      modeOfTransfer?: string;
+      debitAmount: number;
+      creditAmount: number;
+      balance: number;
+    }>;
+  }>;
+  listSupplierBalances(query?: Record<string, unknown>): Promise<{ rows: Array<{ partyId: string; partyName: string; city: string | null; balance: number; lastVoucherDate: string | null; totalPurchases: number; totalPayments: number }>; total: number }>;
+}
+
+// ─── Raw material Store movement configuration ───────────────────────────────────
+// One printed raw-material label is one PACKET. How much a packet holds, and where it goes
+// when it leaves the store, are set per material so the scanner never has to ask.
+
+/** A destination a packet is issued to: PACKING, UPPER MAKER, … */
+export interface WorkSection {
+  id: string;
+  sectionCode: string;
+  name: string;
+  status: string;
+}
+
+export interface RawMaterialMovementConfigRow {
+  itemId: string;
+  itemCode: string;
+  displayName: string;
+  /** The store's own word for the container a label goes on: BAG, PACKET, ROLL. */
+  packName: string | null;
+  /** null means this material cannot be moved through the store yet. */
+  packingQuantity: number | null;
+  /** Labelled packets standing in the store — counted, since each label carries its own contents. */
+  packetsInStore: number;
+  packingUnitId: string | null;
+  packingUnitCode: string | null;
+  /** The unit this material's stock is counted in — what a pack has to become. */
+  stockUnitId: string | null;
+  stockUnitCode: string | null;
+  /** False when a pack could never reach the balance, so every scan of it would be refused. */
+  packingConvertsToStock: boolean;
+  /**
+   * One pack, expressed in the unit stock is COUNTED in — the divisor that turns a balance
+   * into a number of packs. Not always `packingQuantity`: a pack of 2 DOZEN on a material
+   * stocked in PIECE is 24. Null when there is no packing, or it could never reach stock.
+   */
+  packSizeInStockUnit: number | null;
+  defaultSectionId: string | null;
+  defaultSectionName: string | null;
+  /** The route, in order. Empty means the material cannot be issued yet. */
+  hops: RawMaterialHop[];
+}
+
+/**
+ * The setup a new material in a sub-category should start from.
+ *
+ * DANA — EVA — BLACK, RED and BLUE are one material in three colours: the same unit, the same
+ * bag, the same machine. Rather than a second place to configure that, a sub-category remembers
+ * the material in it that was set up most recently, and the next one follows it.
+ *
+ * Null when nothing in the category is set up yet — the first material is configured by hand.
+ */
+export interface RawMaterialSetupTemplate {
+  /** The material this was read from, so the screen can say where the answer came from. */
+  sourceItemId: string;
+  sourceDisplayName: string;
+  unitId: string | null;
+  unitCode: string | null;
+  packName: string | null;
+  packingQuantity: number | null;
+  packingUnitId: string | null;
+  packingUnitCode: string | null;
+  hops: RawMaterialHop[];
+  /** How many materials the category holds — what "apply to all" would touch. */
+  materialCount: number;
+}
+
+/** One stop on a raw material's route out of the store. */
+export interface RawMaterialHop {
+  /** 1-based position along the route. */
+  hopIndex: number;
+  sectionId: string;
+  sectionName: string;
+}
+
+/** A column the import expects, as the downloadable template describes it. */
+export interface InventoryImportColumn {
+  header: string;
+  required: boolean;
+  hint: string;
+}
+
+/** What the import decided about one spreadsheet row. */
+export interface InventoryImportRowResult {
+  rowNumber: number;
+  outcome: "CREATE" | "DUPLICATE" | "REJECTED";
+  displayName: string;
+  itemCode?: string;
+  problems: string[];
+}
+
+export interface InventoryImportResult {
+  categoryName: string;
+  totalRows: number;
+  created: number;
+  duplicates: number;
+  rejected: number;
+  /** Required columns the file did not have. Non-empty means nothing was even looked at. */
+  missingColumns: string[];
+  /** False for a preview, true once the rows were actually written. */
+  applied: boolean;
+  rows: InventoryImportRowResult[];
+}
+
+/**
+ * A request to correct a raw material's count.
+ *
+ * Stock moves by itself through the two scanners, so a manual correction is a claim that the
+ * shelf disagrees with the system. It carries a reason and waits for an administrator;
+ * approving it is what applies it.
+ */
+/**
+ * A request to remove a piece of master data, awaiting an administrator's decision.
+ * `targetName` is a snapshot, so the request still reads sensibly after the thing is gone.
+ */
+/** One rung of a material's unit ladder: 1 `fromUnit` is `factor` of `toUnit`. */
+export interface ItemUnitLadderStep {
+  id: string;
+  /** 0 is the biggest unit. */
+  stepOrder: number;
+  fromUnitId: string;
+  fromUnit: string;
+  toUnitId: string;
+  toUnit: string;
+  factor: number;
+}
+
+/** A saved set of conversions, reusable on any material. */
+export interface UnitLadderPreset {
+  id: string;
+  name: string;
+  /** Biggest unit first, exactly as a material's own ladder is held. */
+  steps: ItemUnitLadderStep[];
+}
+
+/** A material's ladder, with the unit its stock is actually held in. */
+export interface ItemUnitLadder {
+  itemId: string;
+  /** Biggest unit first. Empty when the material has no ladder. */
+  steps: ItemUnitLadderStep[];
+  /** The bottom of the chain — which must be `stockUnit`. */
+  baseUnit: string | null;
+  stockUnit: string | null;
+  stockUnitId: string | null;
+}
+
+/** What would happen if a category were filed somewhere else, and what would stop it. */
+export interface CategoryMovePreview {
+  /** Empty means the move can go ahead. */
+  blockers: string[];
+  from: string;
+  to: string;
+  /** How many materials would be renamed, because a name starts with its category path. */
+  renames: number;
+}
+
+/** What would happen if a material were filed under another category, and what would stop it. */
+export interface InventoryItemMovePreview {
+  blockers: string[];
+  /** Values the target also asks for, so they travel with the material. */
+  carried: Array<{ label: string; value: string }>;
+  /** Values the target does not ask for. They are let go. */
+  dropped: Array<{ label: string; value: string }>;
+  /** Required target attributes this material has no answer to. Any entry blocks the move. */
+  missingRequired: string[];
+  from: string;
+  to: string;
+  newDisplayName: string;
+}
+
+export interface RemovalRequest {
+  id: string;
+  /** DEL-000001 */
+  requestCode: string;
+  targetType: "CATEGORY" | "ITEM";
+  targetId: string;
+  targetName: string;
+  reason: string | null;
+  status: "PENDING" | "APPROVED" | "REJECTED";
+  requestedBy: string;
+  requestedByName: string | null;
+  requestedAt: string;
+  reviewedBy: string | null;
+  reviewedByName: string | null;
+  reviewedAt: string | null;
+  reviewNotes: string | null;
+}
+
+export interface StockCorrectionRequest {
+  id: string;
+  /** SCR-000001 */
+  requestCode: string;
+  itemId: string;
+  itemDisplayName: string;
+  itemCode: string;
+  /** Signed: positive adds to stock, negative takes away. */
+  quantity: number;
+  unitId: string | null;
+  unitCode: string | null;
+  reason: string;
+  status: "PENDING" | "APPROVED" | "REJECTED";
+  requestedBy: string;
+  requestedByName: string | null;
+  requestedAt: string;
+  reviewedBy: string | null;
+  reviewedByName: string | null;
+  reviewedAt: string | null;
+  reviewNotes: string | null;
+}
+
+/**
+ * One movement of a raw material's stock — the ledger behind the balance on the Stock tab.
+ * Every Raw Material Input scan, Raw Material Output scan and manual adjustment writes one.
+ */
+export interface InventoryStockEventRow {
+  id: string;
+  itemId: string;
+  eventType: string;
+  /** Signed: positive added to stock, negative took it out. */
+  quantity: number;
+  unitId: string;
+  unitCode: string | null;
+  note: string | null;
+  createdBy: string | null;
+  createdAt: string;
+}
+
+// ─── Raw Material Input ──────────────────────────────────────────────────────────
+// Receiving one supplier's delivery, one packet at a time. Its own screen and its own
+// identity: a carton and a raw material packet never share a scanner.
+
+export interface RawMaterialReceivingSession {
+  id: string;
+  /** RMI-000042 */
+  code: string;
+  sessionNumber: number;
+  partyId: string;
+  partyName: string;
+  deviceId: string;
+  startedBy: string | null;
+  status: "OPEN" | "CLOSED";
+  startedAt: string;
+  closedAt: string | null;
+}
+
+export interface RawMaterialReceivingSessionSummary {
+  session: RawMaterialReceivingSession;
+  totalPackets: number;
+  byMaterial: Array<{ itemDisplayName: string; packets: number; quantity: number; unitCode: string }>;
+  scans: Array<{
+    qrId: string;
+    itemDisplayName: string;
+    quantity: number;
+    unitCode: string;
+    receivedAt: string;
+    actor: string | null;
+  }>;
+}
+
+export type RawMaterialReceiptOutcome =
+  | "RECEIVED"
+  | "ALREADY_IN_STORE"
+  | "WRONG_PARTY"
+  | "UNKNOWN_QR"
+  | "NOT_ELIGIBLE"
+  | "NOT_CONFIGURED"
+  | "INVALID_FORMAT"
+  | "STATUS_CHANGED"
+  /** Main-process only: session missing or lacks the store-scanning permission. */
+  | "NOT_AUTHORIZED"
+  /** Main-process only: infrastructure failure; nothing was written. */
+  | "ERROR";
+
+export interface RawMaterialReceiptResult {
+  accepted: boolean;
+  outcome: RawMaterialReceiptOutcome;
+  qrId?: string;
+  reason?: string;
+  itemDisplayName?: string;
+  /** The supplier the label was generated for — not necessarily the session's. */
+  partyName?: string;
+  packingQuantity?: number;
+  packingUnitCode?: string | null;
+  /** The store's own word for the container: BAG, PACKET, ROLL. */
+  packName?: string | null;
+  previousStatus?: string | null;
+  currentStatus?: string | null;
+  receivedAt?: string;
+  eventId?: string;
+  sessionId?: string;
+}
+
+// ─── Raw Material Output ─────────────────────────────────────────────────────────
+// Packets leaving the store for the section that consumes them. Where a packet goes is a
+// property of its material, so the operator only scans.
+
+export interface RawMaterialIssueSession {
+  id: string;
+  /** RMO-000042 */
+  code: string;
+  sessionNumber: number;
+  deviceId: string;
+  startedBy: string | null;
+  status: "OPEN" | "CLOSED";
+  startedAt: string;
+  closedAt: string | null;
+}
+
+export interface RawMaterialIssueSessionSummary {
+  session: RawMaterialIssueSession;
+  totalPackets: number;
+  bySection: Array<{
+    sectionName: string;
+    packets: number;
+    materials: Array<{ itemDisplayName: string; packets: number; quantity: number; unitCode: string }>;
+  }>;
+  scans: Array<{
+    qrId: string;
+    itemDisplayName: string;
+    quantity: number;
+    unitCode: string;
+    sectionName: string | null;
+    issuedAt: string;
+    actor: string | null;
+  }>;
+}
+
+export type RawMaterialIssueOutcome =
+  | "ISSUED"
+  | "NOT_IN_STORE"
+  | "UNKNOWN_QR"
+  | "NOT_ELIGIBLE"
+  | "NOT_CONFIGURED"
+  | "INVALID_FORMAT"
+  | "STATUS_CHANGED"
+  /** Main-process only: session missing or lacks the store-scanning permission. */
+  | "NOT_AUTHORIZED"
+  /** Main-process only: infrastructure failure; nothing was written. */
+  | "ERROR";
+
+export interface RawMaterialIssueResult {
+  accepted: boolean;
+  outcome: RawMaterialIssueOutcome;
+  qrId?: string;
+  reason?: string;
+  itemDisplayName?: string;
+  partyName?: string;
+  packingQuantity?: number;
+  packingUnitCode?: string | null;
+  /** The store's own word for the container: BAG, PACKET, ROLL. */
+  packName?: string | null;
+  /** Where it went — read from the material, never chosen by the operator. */
+  sectionName?: string | null;
+  previousStatus?: string | null;
+  currentStatus?: string | null;
+  issuedAt?: string;
+  eventId?: string;
+  sessionId?: string;
+  /**
+   * The machine program this bag was counted against, when one was waiting for it.
+   *
+   * The storekeeper chose none of this: the packet's own material and supplier found the
+   * oldest program still owing it. Absent means the issue was an ordinary one and no program
+   * changed.
+   */
+  machineProgram?: MachineProgramConsumption;
+}
+
+/** What a Raw Material Output scan did to a machine program. */
+export interface MachineProgramConsumption {
+  programId: string;
+  code: string;
+  machineName: string;
+  contractorName: string;
+  /** What the line asked for, and how much has now been taken for it including this packet. */
+  lineQuantity: number;
+  lineConsumed: number;
+  lineOutstanding: number;
+  unitCode: string | null;
+  /** True when this scan took the program's last outstanding quantity and closed it. */
+  programCompleted: boolean;
+}
+
+// ─── Machine Program ──────────────────────────────────────────────────────────
+// machine + date → injector → sole run (sole, sole colour, article + size) → upper lines.
+// Every figure is computed by the data layer; the screens only show it.
+
+/** One machine, standing inside the work section the store issues to, with its contractor. */
+export interface MachineRecord {
+  id: string;
+  machineCode: string;
+  name: string;
+  sectionId: string;
+  sectionName: string;
+  sortOrder: number;
+  status: string;
+  /** Who works on this machine — set once, kept until somebody changes it. */
+  contractorPartyId: string | null;
+  contractorName: string | null;
+}
+
+/** A colour a sole can be moulded in, with how much Dana the store holds in that colour. */
+export interface SoleColourOption {
+  colour: string;
+  hasDana: boolean;
+  danaQuantity: number | null;
+  danaUnitCode: string | null;
+}
+
+/** An article from the Product Master with the sizes it is made in. */
+export interface MachineProgramArticle {
+  article: string;
+  sizes: Array<{ articleSizeId: string; size: string }>;
+}
+
+/** One source of a material: a supplier, or stock with no supplier recorded (supplierPartyId null). */
+export interface MachineProgramStockSource {
+  supplierPartyId: string | null;
+  supplierName: string | null;
+  packets: number | null;
+  physical: number;
+  reserved: number;
+  available: number;
+}
+
+/** A raw material as a program shows it: Dana for a sole colour, or an upper for an article + size. */
+export interface MachineProgramMaterial {
+  itemId: string;
+  itemCode: string;
+  displayName: string;
+  categoryPath: string;
+  subCategoryName: string;
+  colour: string;
+  type: string | null;
+  unitCode: string | null;
+  packName: string;
+  physical: number;
+  reserved: number;
+  available: number;
+  sources: MachineProgramStockSource[];
+  allocatable: boolean;
+  notAllocatableReason: string | null;
+}
+
+/** One upper colour on a sole run, with what Raw Material Output has taken for it. */
+export interface MachineProgramUpperLineRecord {
+  id: string;
+  runId: string;
+  lineNo: number;
+  itemId: string;
+  itemDisplayName: string;
+  upperColour: string;
+  upperType: string | null;
+  subCategoryName: string;
+  quantity: number;
+  unitCode: string | null;
+  consumed: number;
+  outstanding: number;
+  availableAtSave: number;
+}
+
+/** One sole run on one injector. */
+export interface MachineProgramRunRecord {
+  id: string;
+  programId: string;
+  injectorNo: number;
+  runNo: number;
+  soleColour: string;
+  articleSizeId: string;
+  article: string;
+  size: string;
+  totalQuantity: number;
+  consumedQuantity: number;
+  unitCode: string | null;
+  lines: MachineProgramUpperLineRecord[];
+}
+
+export interface MachineProgramRecord {
+  id: string;
+  programNumber: number;
+  code: string;
+  machineId: string;
+  machineName: string;
+  contractorPartyId: string;
+  /** The contractor as they were when the program was made. */
+  contractorName: string;
+  programDate: string;
+  /** Minutes from midnight of programDate that the shift starts, 0 to 1439. */
+  shiftStartMinute: number;
+  /** Minutes from the same midnight that it ends. Above 1440 when it ends the next morning. */
+  shiftEndMinute: number;
+  status: string;
+  /** PROGRAMMED / PARTIALLY_USED / COMPLETED / CANCELLED — derived, never stored. */
+  displayStatus: string;
+  totalQuantity: number;
+  consumedQuantity: number;
+  outstandingQuantity: number;
+  unitCode: string | null;
+  createdBy: string | null;
+  createdAt: string;
+  updatedAt: string;
+  completedAt: string | null;
+  cancelledAt: string | null;
+  cancelledBy: string | null;
+  cancelReason: string | null;
+  runs: MachineProgramRunRecord[];
+}
+
+/** A machine as the board shows it for one date. */
+export interface MachineProgramBoardRow {
+  machine: MachineRecord;
+  program: MachineProgramRecord | null;
+}
+
+/** What every machine program write answers. */
+export interface MachineProgramWriteResult {
+  accepted: boolean;
+  outcome: string;
+  reason?: string;
+  programId?: string;
+  runId?: string;
+  lineId?: string;
+  /** On NOT_ENOUGH_STOCK: the most this line may hold right now. */
+  available?: number;
+  unitCode?: string | null;
+  removedLines?: number;
+  releasedQuantity?: number;
+  consumedQuantity?: number;
+}
+
+/**
+ * The stretch of clock a program runs, in minutes from midnight of its own date.
+ * Mirrors MachineShift in @erp/domain, declared here because this file states the shapes that
+ * cross the preload bridge and imports nothing.
+ */
+export interface MachineShift {
+  startMinute: number;
+  endMinute: number;
+}
+
+/** The sole colour and the article + size of a run. */
+export interface MachineProgramRunHeader {
+  soleColour: string;
+  articleSizeId: string;
+}
+
+export interface SaveMachineProgramLineInput {
+  machineId: string;
+  programDate: string;
+  /** The shift to give the date's program when this is the first thing saved on it. */
+  shift?: MachineShift | null;
+  injectorNo: number;
+  /** The run the line goes on — or `run` for the first line of a new one. */
+  runId?: string | null;
+  run?: MachineProgramRunHeader | null;
+  /** Present when changing the quantity of a line already on the run. */
+  lineId?: string | null;
+  itemId: string;
+  quantity: number;
+}

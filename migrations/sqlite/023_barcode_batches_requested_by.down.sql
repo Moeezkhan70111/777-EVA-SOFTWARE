@@ -1,0 +1,1 @@
+-- The column is left in place (SQLite column drops require a table rebuild and the value is audit history).

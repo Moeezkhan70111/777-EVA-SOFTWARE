@@ -1,0 +1,17 @@
+-- What one printed label actually goes on, in the store's own word for it.
+--
+-- Packing already recorded HOW MUCH is on a label (packing_quantity + packing_unit_id), but
+-- not WHAT the thing is called. So every screen had to say "packet", and a row read:
+--
+--   DANA — EVA — BLACK      0 DOZEN     25 KILOGRAM
+--
+-- which the store reads as "one dozen is twenty-five kilogram". It is not: DANA comes in a
+-- BAG, and one BAG is 25 KG. Rubber topping comes in a PACKET of 2 dozen. Ragzine comes in a
+-- ROLL. The container is a property of the material, exactly as its packing quantity is, and
+-- without it the two figures on a row have nothing to bind them together.
+--
+-- Not snapshotted onto the QR, unlike packing_quantity: the quantity is snapshotted so that
+-- correcting a material's packing never changes what labels already on the shelf are worth,
+-- but the NAME is only what the store calls the thing. Correcting BAG to SACK should read as
+-- SACK everywhere at once, including on labels already printed.
+ALTER TABLE inventory_items ADD COLUMN pack_name TEXT;

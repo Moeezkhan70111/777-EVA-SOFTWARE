@@ -1,0 +1,23 @@
+-- Gatepass reservations: which Gatepass a Store Move Out scan belongs to.
+--
+-- A Gatepass reserves store stock (Reflected Stock = Current Store Stock - outstanding
+-- Gatepass quantity). The reservation is consumed only by an actual Store Move Out scan, so
+-- that scan must say exactly which Gatepass it was for - the same exact-ownership rule the
+-- DISPATCHED event already follows with dispatch_session_id (migration 028), never a guess
+-- from article + size + time.
+--
+--   STORE_EXIT  (MOVED, WAREHOUSE -> GATE)  gatepass_id = the Gatepass the operator selected
+--   STORE_ENTRY (MOVED, GATE -> WAREHOUSE)  gatepass_id = the Gatepass of the STORE_EXIT that
+--                                           put this exact carton at the gate (a bring-back
+--                                           is the compensating record, so the line becomes
+--                                           outstanding again - nothing is ever deleted)
+--
+-- Per Gatepass line: dispatched from store = COUNT(STORE_EXIT) - COUNT(STORE_ENTRY) with its
+-- gatepass_id and product_variant_id. Nothing is cached: gatepass_lines keeps only the
+-- requested quantity, and Reflected Stock is derived from this column every time.
+--
+-- Nullable: every event written before this migration has no attribution and is never
+-- assigned one retroactively. Additive only. (No semicolons in comments: the migration
+-- runner splits statements on them.)
+ALTER TABLE production_events ADD COLUMN gatepass_id TEXT REFERENCES gatepasses(id);
+CREATE INDEX IF NOT EXISTS idx_production_events_gatepass ON production_events(gatepass_id, product_variant_id) WHERE gatepass_id IS NOT NULL;

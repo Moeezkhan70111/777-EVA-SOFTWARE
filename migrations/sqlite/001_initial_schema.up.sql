@@ -1,0 +1,2 @@
+-- Baseline placeholder.
+-- Populate from packages/data/src/local-schema.sql when migration runner is implemented.

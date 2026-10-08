@@ -1,0 +1,3 @@
+-- SQLite before 3.35 cannot drop a column, and the table is rebuilt by the schema file
+-- instead. Leaving text_value_urdu in place is harmless: nothing reads it once the code that
+-- writes and reads it is rolled back.

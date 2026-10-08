@@ -1,0 +1,2 @@
+-- ArticleSize data and the additive relationship column are retained on rollback
+-- because dropping them would risk existing IDs and migrated relationships.

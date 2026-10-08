@@ -1,0 +1,14 @@
+DROP INDEX IF EXISTS idx_inventory_stock_events_item;
+DROP INDEX IF EXISTS idx_inventory_item_values_field;
+DROP INDEX IF EXISTS idx_inventory_item_values_text;
+DROP INDEX IF EXISTS idx_inventory_items_search;
+DROP TABLE IF EXISTS inventory_item_audit;
+DROP TABLE IF EXISTS inventory_stock_balances;
+DROP TABLE IF EXISTS inventory_stock_events;
+DROP TABLE IF EXISTS inventory_item_values;
+DROP TABLE IF EXISTS inventory_items;
+DROP TABLE IF EXISTS inventory_category_field_options;
+DROP TABLE IF EXISTS inventory_category_fields;
+DROP TABLE IF EXISTS inventory_categories;
+DROP TABLE IF EXISTS inventory_unit_conversions;
+DROP TABLE IF EXISTS inventory_units;

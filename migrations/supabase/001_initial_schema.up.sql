@@ -1,0 +1,2 @@
+-- Baseline placeholder.
+-- Populate from supabase/schema.sql when migration tooling is wired.

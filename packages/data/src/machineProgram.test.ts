@@ -1,0 +1,666 @@
+// Machine Program against a real database, driven by real scans.
+//
+//   machine + date → injector → sole run (sole colour, article + size) → upper lines
+//
+//   Physical    the upper's authoritative balance (inventory_stock_balances), in DOZEN
+//   Reserved    Σ over live programs' upper lines of (quantity − scanned out for that line)
+//   Available   Physical − Reserved
+//
+// Stock is built the only way it can be — Raw Material QR Generator → Raw Material Input — and
+// consumed the only way it can be — a plain Raw Material Output scan, which the business layer
+// counts against the oldest program still owing that upper. A program names no supplier
+// (2026-10-07), so any packet of the upper satisfies it. Every figure is read back through the
+// same repository the screens use.
+
+import test from "node:test";
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import {
+  AssignMachineContractorUseCase,
+  DeleteMachineProgramUseCase,
+  InMemoryEventBus,
+  IssueRawMaterialScanUseCase,
+  ReceiveRawMaterialScanUseCase,
+  RemoveMachineProgramLineUseCase,
+  RemoveMachineProgramRunUseCase,
+  SaveMachineProgramLineUseCase,
+  SaveMachineProgramRunUseCase,
+} from "@erp/application";
+import { MACHINE_PROGRAM_DISPLAY_STATUS, MACHINE_PROGRAM_STATUS } from "@erp/domain";
+import { SqliteDatabase } from "./sqliteDatabase.js";
+import { UuidGenerator } from "./idGenerator.js";
+
+const CONTEXT = { factoryId: "factory-1", workstationId: "workstation-1", deviceId: "device-1" };
+const ACTOR = "aslam";
+const TODAY = "2026-10-04";
+const TOMORROW = "2026-10-05";
+
+function createFixture(options: { withDana?: boolean } = {}) {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "erp-machine-program-"));
+  const db = new SqliteDatabase({ dbPath: path.join(tempDir, "erp.db"), schemaPath: path.resolve(process.cwd(), "src/local-schema.sql") });
+  db.ensureOperationalContext({
+    factoryId: "factory-1", factoryCode: "F001", factoryName: "Factory",
+    workstationId: "workstation-1", workstationCode: "WS001", workstationName: "WS",
+    deviceId: "device-1", deviceName: "Device", appVersion: "1.0.0",
+  });
+
+  const deps = { txManager: db, repo: db, eventPublisher: new InMemoryEventBus(), idGenerator: new UuidGenerator() };
+  const useCases = {
+    assign: new AssignMachineContractorUseCase(deps),
+    saveLine: new SaveMachineProgramLineUseCase(deps),
+    saveRun: new SaveMachineProgramRunUseCase(deps),
+    removeLine: new RemoveMachineProgramLineUseCase(deps),
+    removeRun: new RemoveMachineProgramRunUseCase(deps),
+    remove: new DeleteMachineProgramUseCase(deps),
+    receive: new ReceiveRawMaterialScanUseCase(deps),
+    issue: new IssueRawMaterialScanUseCase(deps),
+  };
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- direct schema access for assertions
+  const raw = (db as any).db;
+
+  const unitId = db.createInventoryUnit({ code: "DOZEN", name: "Dozen", unitFamily: "COUNT" });
+  // The machines stand in PACKING and the store sends uppers to PACKING — as in the live store.
+  const packing = db.createWorkSection({ name: "Packing" });
+  const upperMaker = db.createWorkSection({ name: "Upper Maker" });
+  const machine1 = db.createMachine({ name: "Machine 1", sectionId: packing.id });
+  const machine2 = db.createMachine({ name: "Machine 2", sectionId: packing.id });
+
+  const party = (partyName: string, partyType: string, mobile: string) =>
+    db.createParty({ partyName, partyType, city: "Lahore", mobileNumber: mobile, status: "ACTIVE" });
+  const contractorA = party("CONTRACTOR A", "CONTRACTOR", "0300-1111111");
+  const contractorB = party("CONTRACTOR B", "CONTRACTOR", "0300-2222222");
+  const supplierA = party("ABC UPPER", "SUPPLIER", "0300-3333333");
+  const supplierB = party("XYZ UPPER", "SUPPLIER", "0300-4444444");
+
+  // Product Master.
+  const articleSize = (article: string, size: string): string => {
+    db.createProduct({ article, size, sellingPrice: 550, status: "ACTIVE" });
+    return (raw.prepare("SELECT id FROM article_sizes WHERE article = ? AND size = ?").get(article, size) as { id: string }).id;
+  };
+  const sk6_710 = articleSize("SK6", "7/10");
+  const sk6_46 = articleSize("SK6", "4/6");
+
+  // UPPER — RAGZINE UPPER: article, colour, size, type. Packed in PACKETs, routed to PACKING.
+  const upper = db.createInventoryCategory({ name: "UPPER" });
+  const ragzine = db.createInventoryCategory({ name: "RAGZINE UPPER", parentId: upper });
+  ["article", "color", "size", "type"].forEach((fieldKey, index) =>
+    db.addInventoryCategoryField({ categoryId: ragzine, fieldKey, label: fieldKey.toUpperCase(), fieldType: "TEXT", required: fieldKey !== "type", sortOrder: index + 1 })
+  );
+  const makeUpper = (article: string, color: string, size: string, sectionId = packing.id) => {
+    const { id } = db.createInventoryItem({ categoryId: ragzine, values: { article, color, size, type: "SILAI" }, unitId });
+    db.setRawMaterialMovementConfig(id, { packName: "PACKET", packingQuantity: 5, packingUnitId: unitId});
+    return id;
+  };
+  const black = makeUpper("SK6", "BLACK", "7/10");
+  const green = makeUpper("SK6", "GREEN", "7/10");
+  const black46 = makeUpper("SK6", "BLACK", "4/6");
+  const blueElsewhere = makeUpper("SK6", "BLUE", "7/10", upperMaker.id);
+
+  // DANA — EVA: colour only.
+  let danaBlack: string | null = null;
+  if (options.withDana !== false) {
+    const dana = db.createInventoryCategory({ name: "DANA" });
+    const eva = db.createInventoryCategory({ name: "EVA", parentId: dana });
+    db.addInventoryCategoryField({ categoryId: eva, fieldKey: "color", label: "COLOR", fieldType: "TEXT", required: true, sortOrder: 1 });
+    const makeDana = (color: string) => {
+      const { id } = db.createInventoryItem({ categoryId: eva, values: { color }, unitId });
+      db.setRawMaterialMovementConfig(id, { packName: "BAG", packingQuantity: 25, packingUnitId: unitId});
+      return id;
+    };
+    danaBlack = makeDana("BLACK");
+    makeDana("RED");
+  }
+
+  /** Prints `count` labels of `perPacket` DOZEN from a supplier and receives every one into the store. */
+  const stockIn = async (itemId: string, count: number, partyId: string, perPacket = 5): Promise<string[]> => {
+    const session = db.startRawMaterialReceivingSession({ partyId, deviceId: "device-1", startedBy: ACTOR });
+    const qrIds = db.generateRawMaterialQrBatch({ partyId, itemId, quantity: count, packingQuantity: perPacket }).qrCodes.map((qr) => qr.id);
+    for (const qrId of qrIds) {
+      const result = await useCases.receive.execute({ rawScan: qrId, partyId, sessionId: session.id, context: CONTEXT, actor: ACTOR });
+      assert.equal(result.outcome, "RECEIVED", `${qrId} should have been received`);
+    }
+    db.closeRawMaterialReceivingSession(session.id);
+    return qrIds;
+  };
+
+  /** A plain Raw Material Output scan — the storekeeper names no program. */
+  const issueOut = async (qrId: string) => {
+    const session = db.startOrResumeRawMaterialIssueSession({ deviceId: "device-1", startedBy: ACTOR });
+    return useCases.issue.execute({ rawScan: qrId, sessionId: session.id, context: CONTEXT, actor: ACTOR });
+  };
+
+  const bringBack = async (qrId: string, partyId: string) => {
+    const session = db.startRawMaterialReceivingSession({ partyId, deviceId: "device-1", startedBy: ACTOR });
+    return useCases.receive.execute({ rawScan: qrId, partyId, sessionId: session.id, context: CONTEXT, actor: ACTOR });
+  };
+
+  /** One upper as the program screen shows it for an article + size. */
+  const upperFor = (machineId: string, itemId: string, articleSizeId = sk6_710) => {
+    const row = db.listMachineProgramUppers(machineId, articleSizeId).find((candidate) => candidate.itemId === itemId);
+    assert.ok(row, "the upper should be offered for this article and size");
+    return row;
+  };
+
+  const assignContractor = (machineId: string, contractorPartyId: string) =>
+    useCases.assign.execute({ machineId, contractorPartyId, actor: ACTOR });
+
+  /** Adds an upper to a NEW sole run on a machine's injector for a date. */
+  const addToNewRun = (input: { machineId: string; date?: string; injectorNo?: number; articleSizeId?: string; soleColour?: string; itemId: string; quantity: number }) =>
+    useCases.saveLine.execute({
+      machineId: input.machineId,
+      programDate: input.date ?? TODAY,
+      injectorNo: input.injectorNo ?? 1,
+      run: { soleColour: input.soleColour ?? "BLACK", articleSizeId: input.articleSizeId ?? sk6_710 },
+      itemId: input.itemId,
+      quantity: input.quantity,
+      actor: ACTOR,
+    });
+
+  /** Adds or changes an upper on a run that already exists. */
+  const saveOnRun = (input: { machineId: string; runId: string; lineId?: string; itemId: string; quantity: number; injectorNo?: number }) =>
+    useCases.saveLine.execute({
+      machineId: input.machineId,
+      programDate: TODAY,
+      injectorNo: input.injectorNo ?? 1,
+      runId: input.runId,
+      lineId: input.lineId ?? null,
+      itemId: input.itemId,
+      quantity: input.quantity,
+      actor: ACTOR,
+    });
+
+  const balanceOf = (itemId: string): number =>
+    Number((raw.prepare("SELECT quantity_on_hand AS q FROM inventory_stock_balances WHERE item_id = ?").get(itemId) as { q: number } | undefined)?.q ?? 0);
+
+  return {
+    db, raw, unitId, ...useCases, machine1, machine2, contractorA, contractorB, supplierA, supplierB,
+    sk6_710, sk6_46, black, green, black46, blueElsewhere, danaBlack,
+    stockIn, issueOut, bringBack, upperFor, assignContractor, addToNewRun, saveOnRun, balanceOf,
+    cleanup: () => {
+      db.close();
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    },
+  };
+}
+
+type Fixture = ReturnType<typeof createFixture>;
+
+const withFixture = async (body: (f: Fixture) => Promise<void>, options: { withDana?: boolean } = {}) => {
+  const f = createFixture(options);
+  try {
+    await body(f);
+  } finally {
+    f.cleanup();
+  }
+};
+
+/** Both machines get a contractor and the store gets 10 packets of 5 DOZEN of BLACK from ABC. */
+const readyToProgram = async (f: Fixture) => {
+  await f.assignContractor(f.machine1.id, f.contractorA);
+  await f.assignContractor(f.machine2.id, f.contractorB);
+  return f.stockIn(f.black, 10, f.supplierA);
+};
+
+// ─── The machine's contractor ─────────────────────────────────────────────────
+
+test("a machine's contractor is set once and stays until it is changed", async () => {
+  await withFixture(async (f) => {
+    const assigned = await f.assignContractor(f.machine1.id, f.contractorA);
+    assert.equal(assigned.outcome, "ASSIGNED");
+
+    const machine = f.db.listMachines().find((row) => row.id === f.machine1.id);
+    assert.equal(machine?.contractorName, "CONTRACTOR A");
+    assert.equal(f.db.listMachineProgramBoard(TODAY).find((row) => row.machine.id === f.machine1.id)?.machine.contractorName, "CONTRACTOR A");
+    assert.equal(f.db.listMachineProgramBoard(TOMORROW).find((row) => row.machine.id === f.machine1.id)?.machine.contractorName, "CONTRACTOR A", "every date shows the same contractor");
+  });
+});
+
+test("only an active party of type Contractor can be put on a machine", async () => {
+  await withFixture(async (f) => {
+    const supplier = await f.assignContractor(f.machine1.id, f.supplierA);
+    assert.equal(supplier.outcome, "NOT_A_CONTRACTOR");
+    assert.equal(f.db.listMachines().find((row) => row.id === f.machine1.id)?.contractorPartyId, null);
+  });
+});
+
+test("a machine with no contractor cannot be programmed", async () => {
+  await withFixture(async (f) => {
+    await f.stockIn(f.black, 2, f.supplierA);
+    const result = await f.addToNewRun({ machineId: f.machine1.id, itemId: f.black, quantity: 5 });
+    assert.equal(result.outcome, "NO_CONTRACTOR");
+    assert.equal(f.db.getMachineProgramForDate(f.machine1.id, TODAY), null, "nothing half-made is left behind");
+  });
+});
+
+test("changing the contractor changes future programs and never a saved one", async () => {
+  await withFixture(async (f) => {
+    await readyToProgram(f);
+    await f.addToNewRun({ machineId: f.machine1.id, itemId: f.black, quantity: 5 });
+
+    await f.assignContractor(f.machine1.id, f.contractorB);
+    await f.addToNewRun({ machineId: f.machine1.id, date: TOMORROW, itemId: f.black, quantity: 5 });
+
+    assert.equal(f.db.getMachineProgramForDate(f.machine1.id, TODAY)?.contractorName, "CONTRACTOR A", "the saved program keeps its contractor");
+    assert.equal(f.db.getMachineProgramForDate(f.machine1.id, TOMORROW)?.contractorName, "CONTRACTOR B");
+  });
+});
+
+// ─── Dates and injectors ─────────────────────────────────────────────────────
+
+test("programs are per date: a second date is a second program, the same date adds to the first", async () => {
+  await withFixture(async (f) => {
+    await readyToProgram(f);
+    const first = await f.addToNewRun({ machineId: f.machine1.id, itemId: f.black, quantity: 5 });
+    const sameDay = await f.addToNewRun({ machineId: f.machine1.id, injectorNo: 2, itemId: f.black, quantity: 5 });
+    const nextDay = await f.addToNewRun({ machineId: f.machine1.id, date: TOMORROW, itemId: f.black, quantity: 5 });
+
+    assert.equal(sameDay.programId, first.programId, "the same date opens the program already there");
+    assert.notEqual(nextDay.programId, first.programId);
+    assert.equal(f.db.getMachineProgramForDate(f.machine1.id, TODAY)?.runs.length, 2);
+    assert.equal(f.db.getMachineProgramForDate(f.machine1.id, TOMORROW)?.runs.length, 1);
+    assert.equal(f.raw.prepare("SELECT COUNT(1) AS n FROM machine_programs").get().n, 2);
+  });
+});
+
+test("the database itself refuses a second live program for one machine and date", async () => {
+  await withFixture(async (f) => {
+    await readyToProgram(f);
+    await f.addToNewRun({ machineId: f.machine1.id, itemId: f.black, quantity: 5 });
+    assert.throws(() =>
+      f.raw
+        .prepare(
+          `INSERT INTO machine_programs (id, program_number, machine_id, contractor_party_id, machine_name_snapshot, contractor_name_snapshot,
+             program_date, status, layout, created_at, updated_at) VALUES ('dup', 99, ?, ?, 'M', 'C', ?, 'PROGRAMMED', 'INJECTORS', 'x', 'x')`
+        )
+        .run(f.machine1.id, f.contractorA, TODAY)
+    );
+  });
+});
+
+test("injector 1 and injector 2 are programmed independently, each with several soles", async () => {
+  await withFixture(async (f) => {
+    await readyToProgram(f);
+    await f.stockIn(f.black46, 4, f.supplierA);
+    await f.addToNewRun({ machineId: f.machine1.id, injectorNo: 1, itemId: f.black, quantity: 10 });
+    await f.addToNewRun({ machineId: f.machine1.id, injectorNo: 1, articleSizeId: f.sk6_46, soleColour: "RED", itemId: f.black46, quantity: 5 });
+    await f.addToNewRun({ machineId: f.machine1.id, injectorNo: 2, itemId: f.black, quantity: 15 });
+
+    const program = f.db.getMachineProgramForDate(f.machine1.id, TODAY);
+    const injector1 = program?.runs.filter((run) => run.injectorNo === 1) ?? [];
+    const injector2 = program?.runs.filter((run) => run.injectorNo === 2) ?? [];
+    assert.deepEqual(injector1.map((run) => [run.runNo, run.soleColour, run.size]), [[1, "BLACK", "7/10"], [2, "RED", "4/6"]]);
+    assert.deepEqual(injector2.map((run) => run.totalQuantity), [15]);
+    assert.equal(program?.totalQuantity, 30);
+
+    const bad = await f.addToNewRun({ machineId: f.machine1.id, injectorNo: 3, itemId: f.black, quantity: 1 });
+    assert.equal(bad.outcome, "INVALID_INJECTOR", "a machine has exactly two injectors");
+  });
+});
+
+// ─── Sole colour, Dana ────────────────────────────────────────────────────────
+
+test("the sole colour and the article are checked against the masters", async () => {
+  await withFixture(async (f) => {
+    await readyToProgram(f);
+    const base = { machineId: f.machine1.id, programDate: TODAY, injectorNo: 1, itemId: f.black, quantity: 5, actor: ACTOR };
+    const noColour = await f.saveLine.execute({ ...base, run: { soleColour: "PURPLE", articleSizeId: f.sk6_710 } });
+    assert.equal(noColour.outcome, "UNKNOWN_COLOUR");
+    const noArticle = await f.saveLine.execute({ ...base, run: { soleColour: "BLACK", articleSizeId: "nope" } });
+    assert.equal(noArticle.outcome, "ARTICLE_NOT_FOUND");
+    const saved = await f.saveLine.execute({ ...base, run: { soleColour: "BLACK", articleSizeId: f.sk6_710 } });
+    assert.equal(saved.outcome, "SAVED", "a run is the sole colour, the article and the size — nothing else is asked for");
+  });
+});
+
+test("a saved run names no sole type at all", async () => {
+  await withFixture(async (f) => {
+    await readyToProgram(f);
+    const line = await f.addToNewRun({ machineId: f.machine1.id, itemId: f.black, quantity: 5 });
+    const stored = f.raw.prepare("SELECT sole_type_id, sole_colour FROM machine_program_runs WHERE id = ?").get(line.runId!);
+    assert.equal(stored.sole_type_id, null, "the column is kept for the runs made before 2026-10-07, and never written again");
+    assert.equal(stored.sole_colour, "BLACK");
+  });
+});
+
+test("sole colours come from the Dana in the store, with how much of it there is", async () => {
+  await withFixture(async (f) => {
+    const bags = await f.stockIn(f.danaBlack!, 4, f.supplierA, 25);
+    assert.equal(bags.length, 4);
+    const options = f.db.listSoleColourOptions();
+    assert.deepEqual(options.map((option) => option.colour), ["BLACK", "RED"]);
+    assert.equal(options[0].danaQuantity, 100);
+    assert.equal(options[0].danaUnitCode, "DOZEN");
+
+    const dana = f.db.listMachineProgramDana("black");
+    assert.equal(dana.length, 1);
+    assert.deepEqual(dana[0].sources.map((source) => [source.supplierName, source.packets, source.physical]), [["ABC UPPER", 4, 100]]);
+    assert.equal(f.db.listMachineProgramDana("RED").length, 0, "a colour with no Dana in the store has none to show");
+  });
+});
+
+test("with no Dana set up, every colour the store knows is offered", async () => {
+  await withFixture(
+    async (f) => {
+      const options = f.db.listSoleColourOptions();
+      assert.deepEqual(options.map((option) => option.colour), ["BLACK", "BLUE", "GREEN"]);
+      assert.ok(options.every((option) => !option.hasDana));
+    },
+    { withDana: false }
+  );
+});
+
+// ─── Articles and uppers ─────────────────────────────────────────────────────
+
+test("articles and sizes come from the Product Master", async () => {
+  await withFixture(async (f) => {
+    const articles = f.db.listMachineProgramArticles();
+    assert.deepEqual(articles.map((article) => [article.article, article.sizes.map((size) => size.size)]), [["SK6", ["4/6", "7/10"]]]);
+  });
+});
+
+test("every colour of an upper for the article and size is offered, whoever supplied it", async () => {
+  await withFixture(async (f) => {
+    await f.stockIn(f.black, 10, f.supplierA);
+    await f.stockIn(f.black, 6, f.supplierB);
+    await f.stockIn(f.green, 4, f.supplierA);
+    await f.stockIn(f.black46, 4, f.supplierA);
+    f.db.adjustInventoryStock({ itemId: f.green, quantity: 7, unitId: f.unitId, note: "Opening stock" });
+
+    const uppers = f.db.listMachineProgramUppers(f.machine1.id, f.sk6_710);
+    assert.deepEqual(uppers.map((row) => row.colour), ["BLACK", "GREEN"], "4/6 is a different size and BLUE has nothing in the store");
+
+    // One figure per upper: two suppliers' BLACK is one pile of BLACK as far as a program cares.
+    const black = f.upperFor(f.machine1.id, f.black);
+    assert.deepEqual([black.physical, black.reserved, black.available], [80, 0, 80], "50 from ABC and 30 from XYZ");
+
+    // Opening stock has no label and so no supplier, and counts towards the upper all the same.
+    const green = f.upperFor(f.machine1.id, f.green);
+    assert.deepEqual([green.physical, green.available], [27, 27], "20 labelled plus 7 counted in the store");
+  });
+});
+
+// ─── Reservation, not movement ────────────────────────────────────────────────
+
+test("a program reserves uppers and moves no stock at all", async () => {
+  await withFixture(async (f) => {
+    await readyToProgram(f);
+    const eventsBefore = f.raw.prepare("SELECT COUNT(1) AS n FROM inventory_stock_events").get().n;
+    const inStoreBefore = f.raw.prepare("SELECT COUNT(1) AS n FROM raw_material_qrs WHERE current_status = 'IN_STORE'").get().n;
+
+    const result = await f.addToNewRun({ machineId: f.machine1.id, itemId: f.black, quantity: 30 });
+    assert.equal(result.outcome, "SAVED");
+
+    assert.equal(f.balanceOf(f.black), 50, "physical stock is untouched by a program");
+    assert.equal(f.raw.prepare("SELECT COUNT(1) AS n FROM inventory_stock_events").get().n, eventsBefore);
+    assert.equal(f.raw.prepare("SELECT COUNT(1) AS n FROM raw_material_qrs WHERE current_status = 'IN_STORE'").get().n, inStoreBefore);
+
+    const upper = f.upperFor(f.machine2.id, f.black);
+    assert.deepEqual([upper.physical, upper.reserved, upper.available], [50, 30, 20], "machine 2 sees 20, not 50");
+  });
+});
+
+test("the same uppers cannot be promised twice, and the refusal says what is free", async () => {
+  await withFixture(async (f) => {
+    await readyToProgram(f);
+    await f.addToNewRun({ machineId: f.machine1.id, itemId: f.black, quantity: 30 });
+
+    const tooMany = await f.addToNewRun({ machineId: f.machine2.id, itemId: f.black, quantity: 21 });
+    assert.equal(tooMany.outcome, "NOT_ENOUGH_STOCK");
+    assert.equal(tooMany.available, 20);
+    assert.equal(f.db.getMachineProgramForDate(f.machine2.id, TODAY), null, "the refused program was rolled back whole");
+
+    const exactly = await f.addToNewRun({ machineId: f.machine2.id, itemId: f.black, quantity: 20 });
+    assert.equal(exactly.outcome, "SAVED");
+    assert.equal(f.upperFor(f.machine1.id, f.black).available, 0);
+  });
+});
+
+test("zero, negative, over-precise and missing quantities are refused", async () => {
+  await withFixture(async (f) => {
+    await readyToProgram(f);
+    for (const quantity of [0, -5, 1.234, Number.NaN]) {
+      const result = await f.addToNewRun({ machineId: f.machine1.id, itemId: f.black, quantity });
+      assert.equal(result.outcome, "INVALID_QUANTITY", `${quantity} should be refused`);
+    }
+    const half = await f.addToNewRun({ machineId: f.machine1.id, itemId: f.black, quantity: 0.5 });
+    assert.equal(half.outcome, "SAVED", "half a dozen is a real quantity");
+  });
+});
+
+test("several upper colours go on one sole, and the same upper twice is refused", async () => {
+  await withFixture(async (f) => {
+    await readyToProgram(f);
+    await f.stockIn(f.green, 12, f.supplierA);
+    const first = await f.addToNewRun({ machineId: f.machine1.id, itemId: f.black, quantity: 30 });
+    const second = await f.saveOnRun({ machineId: f.machine1.id, runId: first.runId!, itemId: f.green, quantity: 10 });
+    assert.equal(second.runId, first.runId);
+
+    const run = f.db.getMachineProgramForDate(f.machine1.id, TODAY)?.runs[0];
+    assert.deepEqual(run?.lines.map((line) => [line.upperColour, line.quantity]), [["BLACK", 30], ["GREEN", 10]]);
+    assert.equal(run?.totalQuantity, 40);
+    assert.equal(run?.soleColour, "BLACK", "the sole colour is its own thing — the uppers are BLACK and GREEN");
+
+    const twice = await f.saveOnRun({ machineId: f.machine1.id, runId: first.runId!, itemId: f.green, quantity: 5 });
+    assert.equal(twice.outcome, "ALREADY_ON_PROGRAM");
+    assert.equal(twice.lineId, second.lineId);
+  });
+});
+
+test("an upper for another article, or a non-upper, is refused", async () => {
+  await withFixture(async (f) => {
+    await readyToProgram(f);
+    await f.stockIn(f.black46, 2, f.supplierA);
+    await f.stockIn(f.blueElsewhere, 2, f.supplierA);
+    await f.stockIn(f.danaBlack!, 2, f.supplierA, 25);
+
+    const wrongSize = await f.addToNewRun({ machineId: f.machine1.id, itemId: f.black46, quantity: 5 });
+    assert.equal(wrongSize.outcome, "WRONG_ARTICLE");
+    const dana = await f.addToNewRun({ machineId: f.machine1.id, itemId: f.danaBlack!, quantity: 5 });
+    assert.equal(dana.outcome, "NOT_AN_UPPER", "Dana is shown, never reserved");
+    // Where the store sends a material used to decide which machine could be given it. Raw
+    // material routes were removed on 2026-10-07, so anything in stock can be programmed.
+    const elsewhere = await f.addToNewRun({ machineId: f.machine1.id, itemId: f.blueElsewhere, quantity: 5 });
+    assert.equal(elsewhere.outcome, "SAVED");
+    assert.equal(f.upperFor(f.machine1.id, f.blueElsewhere).allocatable, true, "every material in stock is allocatable now");
+  });
+});
+
+test("a line may take everything the store holds of the upper, whichever supplier it came from", async () => {
+  await withFixture(async (f) => {
+    await readyToProgram(f);
+    await f.stockIn(f.black, 2, f.supplierB);
+
+    const all = await f.addToNewRun({ machineId: f.machine1.id, itemId: f.black, quantity: 60 });
+    assert.equal(all.outcome, "SAVED", "50 DOZEN from ABC and 10 from XYZ are 60 DOZEN of BLACK");
+    assert.equal(f.upperFor(f.machine2.id, f.black).available, 0);
+
+    const more = await f.addToNewRun({ machineId: f.machine2.id, itemId: f.black, quantity: 1 });
+    assert.equal(more.outcome, "NOT_ENOUGH_STOCK");
+    assert.equal(more.available, 0);
+  });
+});
+
+// ─── Editing ─────────────────────────────────────────────────────────────────
+
+test("raising a line is measured against what is free plus what it already holds", async () => {
+  await withFixture(async (f) => {
+    await readyToProgram(f);
+    const line = await f.addToNewRun({ machineId: f.machine1.id, itemId: f.black, quantity: 30 });
+    await f.addToNewRun({ machineId: f.machine2.id, itemId: f.black, quantity: 10 });
+
+    const tooHigh = await f.saveOnRun({ machineId: f.machine1.id, runId: line.runId!, lineId: line.lineId!, itemId: f.black, quantity: 41 });
+    assert.equal(tooHigh.outcome, "NOT_ENOUGH_STOCK");
+    assert.equal(tooHigh.available, 40);
+
+    const raised = await f.saveOnRun({ machineId: f.machine1.id, runId: line.runId!, lineId: line.lineId!, itemId: f.black, quantity: 40 });
+    assert.equal(raised.outcome, "SAVED");
+    assert.equal(f.upperFor(f.machine2.id, f.black).available, 0);
+
+    await f.saveOnRun({ machineId: f.machine1.id, runId: line.runId!, lineId: line.lineId!, itemId: f.black, quantity: 25 });
+    assert.equal(f.upperFor(f.machine2.id, f.black).available, 15, "lowering a line releases the difference");
+  });
+});
+
+test("changing the sole colour keeps the uppers, changing the article takes them off", async () => {
+  await withFixture(async (f) => {
+    await readyToProgram(f);
+    const line = await f.addToNewRun({ machineId: f.machine1.id, itemId: f.black, quantity: 30 });
+
+    const recoloured = await f.saveRun.execute({ runId: line.runId!, soleColour: "RED", articleSizeId: f.sk6_710, actor: ACTOR });
+    assert.equal(recoloured.removedLines, 0);
+    const run = f.db.getMachineProgramForDate(f.machine1.id, TODAY)?.runs[0];
+    assert.deepEqual([run?.soleColour, run?.lines.length], ["RED", 1]);
+
+    const resized = await f.saveRun.execute({ runId: line.runId!, soleColour: "RED", articleSizeId: f.sk6_46, actor: ACTOR });
+    assert.equal(resized.removedLines, 1);
+    assert.equal(f.upperFor(f.machine2.id, f.black).available, 50, "the uppers for 7/10 went back to the store");
+  });
+});
+
+test("an upper or a sole with nothing scanned can be taken off, releasing its reservation", async () => {
+  await withFixture(async (f) => {
+    await readyToProgram(f);
+    await f.stockIn(f.green, 4, f.supplierA);
+    const first = await f.addToNewRun({ machineId: f.machine1.id, itemId: f.black, quantity: 30 });
+    const second = await f.saveOnRun({ machineId: f.machine1.id, runId: first.runId!, itemId: f.green, quantity: 10 });
+
+    const removed = await f.removeLine.execute({ lineId: second.lineId!, actor: ACTOR });
+    assert.equal(removed.outcome, "REMOVED");
+    assert.equal(removed.runId, first.runId, "the sole is still there with its other upper");
+    assert.equal(f.upperFor(f.machine2.id, f.green).available, 20);
+
+    await f.removeLine.execute({ lineId: first.lineId!, actor: ACTOR });
+    assert.equal(f.db.getMachineProgramForDate(f.machine1.id, TODAY)?.runs.length, 0, "a sole with no uppers left goes too");
+
+    const again = await f.addToNewRun({ machineId: f.machine1.id, itemId: f.black, quantity: 5 });
+    const runRemoved = await f.removeRun.execute({ runId: again.runId!, actor: ACTOR });
+    assert.equal(runRemoved.outcome, "REMOVED");
+    assert.equal(f.upperFor(f.machine2.id, f.black).available, 50);
+  });
+});
+
+// ─── Raw Material Output consumes, Raw Material Input gives back ─────────────
+
+test("a plain Output scan consumes the packet's contents from the oldest matching line", async () => {
+  await withFixture(async (f) => {
+    const packets = await readyToProgram(f);
+    await f.addToNewRun({ machineId: f.machine1.id, date: TOMORROW, itemId: f.black, quantity: 10 });
+    const today = await f.addToNewRun({ machineId: f.machine2.id, itemId: f.black, quantity: 20 });
+
+    const issued = await f.issueOut(packets[0]);
+    assert.equal(issued.outcome, "ISSUED");
+    assert.equal(issued.machineProgram?.programId, today.programId, "the earliest date is served first");
+    assert.deepEqual([issued.machineProgram?.lineQuantity, issued.machineProgram?.lineConsumed, issued.machineProgram?.lineOutstanding], [20, 5, 15]);
+    assert.equal(issued.machineProgram?.unitCode, "DOZEN");
+
+    assert.equal(f.balanceOf(f.black), 45, "Store Move OUT is what lowers physical stock");
+    const upper = f.upperFor(f.machine1.id, f.black);
+    assert.deepEqual([upper.physical, upper.reserved, upper.available], [45, 25, 20], "available does not move: the packet was already promised");
+
+    const program = f.db.getMachineProgramForDate(f.machine2.id, TODAY);
+    assert.equal(program?.consumedQuantity, 5);
+    assert.equal(program?.displayStatus, MACHINE_PROGRAM_DISPLAY_STATUS.PARTIALLY_USED);
+  });
+});
+
+test("a packet serves the oldest line for its upper, whoever supplied the packet", async () => {
+  await withFixture(async (f) => {
+    await readyToProgram(f);
+    const fromXyz = await f.stockIn(f.black, 2, f.supplierB);
+    const first = await f.addToNewRun({ machineId: f.machine1.id, itemId: f.black, quantity: 10 });
+    const second = await f.addToNewRun({ machineId: f.machine2.id, itemId: f.black, quantity: 10 });
+
+    // The oldest program asked for BLACK, not for ABC's BLACK — so XYZ's packet satisfies it.
+    const issued = await f.issueOut(fromXyz[0]);
+    assert.equal(issued.machineProgram?.programId, first.programId);
+    assert.notEqual(issued.machineProgram?.programId, second.programId);
+    assert.equal(issued.machineProgram?.lineConsumed, 5);
+  });
+});
+
+test("the last packet completes the program, and bringing it back re-opens it", async () => {
+  await withFixture(async (f) => {
+    const packets = await readyToProgram(f);
+    const line = await f.addToNewRun({ machineId: f.machine1.id, itemId: f.black, quantity: 10 });
+    await f.issueOut(packets[0]);
+    const last = await f.issueOut(packets[1]);
+    assert.equal(last.machineProgram?.programCompleted, true);
+    assert.equal(f.db.getMachineProgramForDate(f.machine1.id, TODAY)?.status, MACHINE_PROGRAM_STATUS.COMPLETED);
+
+    const back = await f.bringBack(packets[1], f.supplierA);
+    assert.equal(back.outcome, "RECEIVED");
+    const program = f.db.getMachineProgramForDate(f.machine1.id, TODAY);
+    assert.equal(program?.id, line.programId);
+    assert.equal(program?.status, MACHINE_PROGRAM_STATUS.PROGRAMMED);
+    assert.equal(program?.outstandingQuantity, 5, "the packet is back on the shelf, so the program is owed it again");
+    assert.equal(f.balanceOf(f.black), 45);
+  });
+});
+
+test("a scanned line cannot go below what was taken, nor be taken off", async () => {
+  await withFixture(async (f) => {
+    const packets = await readyToProgram(f);
+    const line = await f.addToNewRun({ machineId: f.machine1.id, itemId: f.black, quantity: 20 });
+    await f.issueOut(packets[0]);
+    await f.issueOut(packets[1]);
+
+    const below = await f.saveOnRun({ machineId: f.machine1.id, runId: line.runId!, lineId: line.lineId!, itemId: f.black, quantity: 9 });
+    assert.equal(below.outcome, "BELOW_CONSUMED");
+    const down = await f.saveOnRun({ machineId: f.machine1.id, runId: line.runId!, lineId: line.lineId!, itemId: f.black, quantity: 10 });
+    assert.equal(down.outcome, "SAVED", "lowering to exactly what was taken is allowed");
+    assert.equal(f.db.getMachineProgramForDate(f.machine1.id, TODAY)?.status, MACHINE_PROGRAM_STATUS.COMPLETED, "and that finishes it");
+
+    const off = await f.removeLine.execute({ lineId: line.lineId!, actor: ACTOR });
+    assert.equal(off.outcome, "IN_USE", "a scanned line is a record");
+    const runOff = await f.removeRun.execute({ runId: line.runId!, actor: ACTOR });
+    assert.equal(runOff.outcome, "IN_USE");
+    const resize = await f.saveRun.execute({ runId: line.runId!, soleColour: "BLACK", articleSizeId: f.sk6_46, actor: ACTOR });
+    assert.equal(resize.outcome, "IN_USE");
+  });
+});
+
+// ─── Deleting ────────────────────────────────────────────────────────────────
+
+test("deleting releases only what is outstanding, restores no stock, and frees the date", async () => {
+  await withFixture(async (f) => {
+    const packets = await readyToProgram(f);
+    const line = await f.addToNewRun({ machineId: f.machine1.id, itemId: f.black, quantity: 30 });
+    await f.issueOut(packets[0]);
+    assert.equal(f.balanceOf(f.black), 45);
+
+    const deleted = await f.remove.execute({ programId: line.programId!, reason: "Shift cancelled", actor: ACTOR });
+    assert.equal(deleted.outcome, "CANCELLED");
+    assert.equal(deleted.releasedQuantity, 25);
+    assert.equal(deleted.consumedQuantity, 5);
+
+    assert.equal(f.balanceOf(f.black), 45, "deleting a plan never puts issued stock back");
+    assert.equal(f.upperFor(f.machine2.id, f.black).available, 45, "everything still in the store is free again");
+    assert.equal(f.db.getMachineProgramForDate(f.machine1.id, TODAY), null, "the date is free for a new program");
+    assert.equal(f.db.getMachineProgram(line.programId!)?.status, MACHINE_PROGRAM_STATUS.CANCELLED, "the deleted program is kept as history");
+
+    const again = await f.remove.execute({ programId: line.programId!, actor: ACTOR });
+    assert.equal(again.outcome, "PROGRAM_CLOSED");
+    const next = await f.issueOut(packets[1]);
+    assert.equal(next.machineProgram, undefined, "a deleted program owes nothing");
+  });
+});
+
+test("every change is audited", async () => {
+  await withFixture(async (f) => {
+    await readyToProgram(f);
+    const line = await f.addToNewRun({ machineId: f.machine1.id, itemId: f.black, quantity: 30 });
+    await f.saveOnRun({ machineId: f.machine1.id, runId: line.runId!, lineId: line.lineId!, itemId: f.black, quantity: 20 });
+    await f.remove.execute({ programId: line.programId!, actor: ACTOR });
+    const events = (f.raw.prepare("SELECT event_type FROM audit_log WHERE entity_type = 'MACHINE_PROGRAM' ORDER BY occurred_at, rowid").all() as Array<{ event_type: string }>).map((row) => row.event_type);
+    assert.deepEqual(events, [
+      "MACHINE_CONTRACTOR_ASSIGNED",
+      "MACHINE_CONTRACTOR_ASSIGNED",
+      "MACHINE_PROGRAM_CREATED",
+      "MACHINE_PROGRAM_LINE_ADDED",
+      "MACHINE_PROGRAM_LINE_CHANGED",
+      "MACHINE_PROGRAM_DELETED",
+    ]);
+  });
+});

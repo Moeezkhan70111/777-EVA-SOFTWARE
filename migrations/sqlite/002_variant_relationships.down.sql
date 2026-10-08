@@ -1,0 +1,2 @@
+-- SQLite does not safely support dropping columns across the supported runtime versions.
+-- The relationship columns are retained during rollback to preserve existing data.

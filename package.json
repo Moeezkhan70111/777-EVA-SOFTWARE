@@ -1,0 +1,23 @@
+{
+  "name": "manufacturing-erp-foundation",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Offline-first Manufacturing ERP foundation (Production Scanner first module)",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "npm run --workspace @erp/domain build && npm run --workspace @erp/application build && npm run --workspace @erp/scanner build && npm run --workspace @erp/data build && npm run --workspace @erp/sync build && npm run --workspace @erp/desktop build",
+    "test": "npm run --workspace @erp/domain test && npm run --workspace @erp/application test && npm run --workspace @erp/scanner test && npm run --workspace @erp/data test && npm run --workspace @erp/sync test && npm run --workspace @erp/desktop test",
+    "lint": "npm run --workspace @erp/domain lint && npm run --workspace @erp/application lint && npm run --workspace @erp/scanner lint && npm run --workspace @erp/data lint && npm run --workspace @erp/sync lint",
+    "start": "npm run build && npm run --workspace @erp/desktop dev"
+  },
+"devDependencies": {
+  "@types/node": "^22.15.24",
+  "typescript": "^5.9.2"
+},
+"allowScripts": {
+  "electron@43.3.0": true
+}
+}

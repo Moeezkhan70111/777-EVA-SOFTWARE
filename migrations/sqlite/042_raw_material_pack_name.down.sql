@@ -1,0 +1,2 @@
+-- SQLite before 3.35 cannot drop a column; the table is rebuilt by the schema file instead.
+-- Leaving pack_name in place is harmless: nothing reads it once the code is rolled back.

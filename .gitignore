@@ -1,0 +1,17 @@
+node_modules/
+dist/
+out/
+coverage/
+*.log
+.DS_Store
+.vscode/settings.json
+
+# Local runtime data (the app keeps its database in the per-user app-data folder;
+# this repo-local folder is a legacy location that is only read, never written)
+apps/desktop/.runtime/
+
+# Debug / scratch files must never be committed at the root
+tmp-*.sqlite*
+*.sqlite-shm
+*.sqlite-wal
+.tmp-*

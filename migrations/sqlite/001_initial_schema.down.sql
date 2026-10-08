@@ -1,0 +1,2 @@
+-- Baseline rollback placeholder.
+-- Initial schema rollback should be handled only in non-production environments.

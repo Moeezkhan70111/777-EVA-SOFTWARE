@@ -1,0 +1,217 @@
+{
+  "pbtResults": {
+    "1. Write bug condition exploration test": {
+      "status": "passed",
+      "failingExample": "All 10 partyId counterexamples confirmed the bug:\n\nFor every non-empty partyId tested (abc-123, a, party-id-with-dashes, 12345, abc123xyz, ffffffff-ffff-ffff-ffff-ffffffffffff, UPPER_CASE_ID, \"id with spaces\", very-long-party-identifier-string-that-goes-on-and-on-0001, special!@#chars):\n\nAssertionError: expected \"spy\" to be called with arguments: [ 'party-form', '<partyId>' ]\nReceived: Number of calls: 0\n\nRoot cause confirmed: handleEdit() calls `window.location.hash = '#party-form?id=<partyId>'` — onNavigate is NEVER called. The React route stays on 'party-list' for every Edit button click.",
+      "lastRunTimestamp": 1788439721176
+    },
+    "2. Write preservation property tests (BEFORE implementing fix)": {
+      "status": "passed",
+      "lastRunTimestamp": 1788440038500
+    },
+    "3.7 Verify bug condition exploration test now passes": {
+      "status": "passed",
+      "lastRunTimestamp": 1788440517148
+    },
+    "3.8 Verify preservation tests still pass": {
+      "status": "passed",
+      "lastRunTimestamp": 1788440582386
+    }
+  },
+  "executionHistory": {
+    "1. Write bug condition exploration test": [
+      {
+        "executionId": "8a9977a9-9430-4018-a23c-df483d95b307",
+        "chatSessionId": "sess_8d5a6bdb-6139-4882-90be-16f5ad16c598",
+        "timestamp": 1788439498065
+      },
+      {
+        "executionId": "8a9977a9-9430-4018-a23c-df483d95b307",
+        "chatSessionId": "sess_8d5a6bdb-6139-4882-90be-16f5ad16c598",
+        "timestamp": 1788439510240
+      },
+      {
+        "executionId": "8a9977a9-9430-4018-a23c-df483d95b307",
+        "chatSessionId": "sess_8d5a6bdb-6139-4882-90be-16f5ad16c598",
+        "timestamp": 1788439748517
+      }
+    ],
+    "2. Write preservation property tests (BEFORE implementing fix)": [
+      {
+        "executionId": "8a9977a9-9430-4018-a23c-df483d95b307",
+        "chatSessionId": "sess_8d5a6bdb-6139-4882-90be-16f5ad16c598",
+        "timestamp": 1788439498163
+      },
+      {
+        "executionId": "8a9977a9-9430-4018-a23c-df483d95b307",
+        "chatSessionId": "sess_8d5a6bdb-6139-4882-90be-16f5ad16c598",
+        "timestamp": 1788439752304
+      },
+      {
+        "executionId": "8a9977a9-9430-4018-a23c-df483d95b307",
+        "chatSessionId": "sess_8d5a6bdb-6139-4882-90be-16f5ad16c598",
+        "timestamp": 1788440064917
+      }
+    ],
+    "3.1 Update `onNavigate` prop type in `PartyListPage.tsx`": [
+      {
+        "executionId": "8a9977a9-9430-4018-a23c-df483d95b307",
+        "chatSessionId": "sess_8d5a6bdb-6139-4882-90be-16f5ad16c598",
+        "timestamp": 1788439498260
+      },
+      {
+        "executionId": "8a9977a9-9430-4018-a23c-df483d95b307",
+        "chatSessionId": "sess_8d5a6bdb-6139-4882-90be-16f5ad16c598",
+        "timestamp": 1788440076910
+      },
+      {
+        "executionId": "8a9977a9-9430-4018-a23c-df483d95b307",
+        "chatSessionId": "sess_8d5a6bdb-6139-4882-90be-16f5ad16c598",
+        "timestamp": 1788440111332
+      }
+    ],
+    "3.2 Fix `handleEdit` in `PartyListPage.tsx`": [
+      {
+        "executionId": "8a9977a9-9430-4018-a23c-df483d95b307",
+        "chatSessionId": "sess_8d5a6bdb-6139-4882-90be-16f5ad16c598",
+        "timestamp": 1788439498361
+      },
+      {
+        "executionId": "8a9977a9-9430-4018-a23c-df483d95b307",
+        "chatSessionId": "sess_8d5a6bdb-6139-4882-90be-16f5ad16c598",
+        "timestamp": 1788440115688
+      },
+      {
+        "executionId": "8a9977a9-9430-4018-a23c-df483d95b307",
+        "chatSessionId": "sess_8d5a6bdb-6139-4882-90be-16f5ad16c598",
+        "timestamp": 1788440165544
+      }
+    ],
+    "3.3 Add `selectedPartyId` state in `App.tsx`": [
+      {
+        "executionId": "8a9977a9-9430-4018-a23c-df483d95b307",
+        "chatSessionId": "sess_8d5a6bdb-6139-4882-90be-16f5ad16c598",
+        "timestamp": 1788439498481
+      },
+      {
+        "executionId": "8a9977a9-9430-4018-a23c-df483d95b307",
+        "chatSessionId": "sess_8d5a6bdb-6139-4882-90be-16f5ad16c598",
+        "timestamp": 1788440181563
+      },
+      {
+        "executionId": "8a9977a9-9430-4018-a23c-df483d95b307",
+        "chatSessionId": "sess_8d5a6bdb-6139-4882-90be-16f5ad16c598",
+        "timestamp": 1788440226498
+      }
+    ],
+    "3.4 Update `party-list` case in `App.tsx` to capture `partyId`": [
+      {
+        "executionId": "8a9977a9-9430-4018-a23c-df483d95b307",
+        "chatSessionId": "sess_8d5a6bdb-6139-4882-90be-16f5ad16c598",
+        "timestamp": 1788439498597
+      },
+      {
+        "executionId": "8a9977a9-9430-4018-a23c-df483d95b307",
+        "chatSessionId": "sess_8d5a6bdb-6139-4882-90be-16f5ad16c598",
+        "timestamp": 1788440230517
+      },
+      {
+        "executionId": "8a9977a9-9430-4018-a23c-df483d95b307",
+        "chatSessionId": "sess_8d5a6bdb-6139-4882-90be-16f5ad16c598",
+        "timestamp": 1788440283890
+      }
+    ],
+    "3.5 Update `party-form` case in `App.tsx` to pass `partyId` and clear on navigate away": [
+      {
+        "executionId": "8a9977a9-9430-4018-a23c-df483d95b307",
+        "chatSessionId": "sess_8d5a6bdb-6139-4882-90be-16f5ad16c598",
+        "timestamp": 1788439498682
+      },
+      {
+        "executionId": "8a9977a9-9430-4018-a23c-df483d95b307",
+        "chatSessionId": "sess_8d5a6bdb-6139-4882-90be-16f5ad16c598",
+        "timestamp": 1788440313128
+      },
+      {
+        "executionId": "8a9977a9-9430-4018-a23c-df483d95b307",
+        "chatSessionId": "sess_8d5a6bdb-6139-4882-90be-16f5ad16c598",
+        "timestamp": 1788440380580
+      }
+    ],
+    "3.6 Add `selectedPartyId` to `useMemo` dependency array in `App.tsx`": [
+      {
+        "executionId": "8a9977a9-9430-4018-a23c-df483d95b307",
+        "chatSessionId": "sess_8d5a6bdb-6139-4882-90be-16f5ad16c598",
+        "timestamp": 1788439498779
+      },
+      {
+        "executionId": "8a9977a9-9430-4018-a23c-df483d95b307",
+        "chatSessionId": "sess_8d5a6bdb-6139-4882-90be-16f5ad16c598",
+        "timestamp": 1788440385438
+      },
+      {
+        "executionId": "8a9977a9-9430-4018-a23c-df483d95b307",
+        "chatSessionId": "sess_8d5a6bdb-6139-4882-90be-16f5ad16c598",
+        "timestamp": 1788440445461
+      }
+    ],
+    "3.7 Verify bug condition exploration test now passes": [
+      {
+        "executionId": "8a9977a9-9430-4018-a23c-df483d95b307",
+        "chatSessionId": "sess_8d5a6bdb-6139-4882-90be-16f5ad16c598",
+        "timestamp": 1788439498877
+      },
+      {
+        "executionId": "8a9977a9-9430-4018-a23c-df483d95b307",
+        "chatSessionId": "sess_8d5a6bdb-6139-4882-90be-16f5ad16c598",
+        "timestamp": 1788440456597
+      },
+      {
+        "executionId": "8a9977a9-9430-4018-a23c-df483d95b307",
+        "chatSessionId": "sess_8d5a6bdb-6139-4882-90be-16f5ad16c598",
+        "timestamp": 1788440534767
+      }
+    ],
+    "3.8 Verify preservation tests still pass": [
+      {
+        "executionId": "8a9977a9-9430-4018-a23c-df483d95b307",
+        "chatSessionId": "sess_8d5a6bdb-6139-4882-90be-16f5ad16c598",
+        "timestamp": 1788439498978
+      },
+      {
+        "executionId": "8a9977a9-9430-4018-a23c-df483d95b307",
+        "chatSessionId": "sess_8d5a6bdb-6139-4882-90be-16f5ad16c598",
+        "timestamp": 1788440539594
+      },
+      {
+        "executionId": "8a9977a9-9430-4018-a23c-df483d95b307",
+        "chatSessionId": "sess_8d5a6bdb-6139-4882-90be-16f5ad16c598",
+        "timestamp": 1788440599345
+      }
+    ],
+    "4. Checkpoint — Ensure all tests pass": [
+      {
+        "executionId": "8a9977a9-9430-4018-a23c-df483d95b307",
+        "chatSessionId": "sess_8d5a6bdb-6139-4882-90be-16f5ad16c598",
+        "timestamp": 1788439499070
+      },
+      {
+        "executionId": "8a9977a9-9430-4018-a23c-df483d95b307",
+        "chatSessionId": "sess_8d5a6bdb-6139-4882-90be-16f5ad16c598",
+        "timestamp": 1788440604702
+      },
+      {
+        "executionId": "8a9977a9-9430-4018-a23c-df483d95b307",
+        "chatSessionId": "sess_8d5a6bdb-6139-4882-90be-16f5ad16c598",
+        "timestamp": 1788440707427
+      }
+    ],
+    "3. Fix: Party edit button navigation end-to-end": [
+      {
+        "executionId": "8a9977a9-9430-4018-a23c-df483d95b307",
+        "chatSessionId": "sess_8d5a6bdb-6139-4882-90be-16f5ad16c598",
+        "timestamp": 1788440599550
+      }
+    ]
+  }
+}
