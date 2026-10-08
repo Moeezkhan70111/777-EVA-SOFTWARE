@@ -293,8 +293,8 @@ export const RolesSection = ({
                       alignItems: "center",
                       gap: 6,
                       fontSize: 12,
-                      fontWeight: id === "navbar" ? 700 : 500,
-                      color: id === "navbar" ? "var(--accent-deep)" : "var(--neutral-700)",
+                      fontWeight: 500,
+                      color: "var(--neutral-700)",
                     }}
                   >
                     <input

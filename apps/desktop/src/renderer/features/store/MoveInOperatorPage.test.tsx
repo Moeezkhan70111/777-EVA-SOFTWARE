@@ -33,11 +33,11 @@ describe("MoveInOperatorPage", () => {
     expect(setup).toHaveTextContent("Ask an admin for Raw Material Setup access");
   });
 
-  it("shows the logo and the Add New Material card, which opens the new-material page", () => {
+  it("shows the Add New Material card, which opens the new-material page — and no logo", () => {
     const onNavigate = vi.fn();
     render(<MoveInOperatorPage onNavigate={onNavigate} access={ALL} />);
 
-    expect(screen.getByRole("img", { name: "777 SEVEN" })).toBeInTheDocument();
+    expect(screen.queryByRole("img", { name: "777 SEVEN" })).not.toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Move In" })).toBeInTheDocument();
 
     const card = screen.getByTestId("store-action-new-material");

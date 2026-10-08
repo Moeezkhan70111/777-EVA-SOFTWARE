@@ -1,6 +1,6 @@
 import React from "react";
 import "@testing-library/jest-dom/vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeAll, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
@@ -190,7 +190,40 @@ describe("App", () => {
     await userEvent.type(screen.getByLabelText(/password/i), "Password123");
     await userEvent.click(screen.getByRole("button", { name: /login/i }));
 
-    expect(await screen.findByText("Today's Production")).toBeInTheDocument();
+    // Every role lands on its Dashboard, titled with the role — an admin with none is "Administrator".
+    expect(await screen.findByRole("heading", { name: "Administrator" })).toBeInTheDocument();
+    expect(screen.getByRole("navigation", { name: /main navigation/i })).toBeInTheDocument();
+  });
+
+  it("starts a store operator on Store Station — pick the job — not on the Dashboard", async () => {
+    const api = makeApi();
+    api.getSession.mockResolvedValue(null);
+    renderApp(api);
+    api.signIn.mockResolvedValueOnce({
+      accepted: true,
+      user: { id: "u-3", username: "store-op", role: "USER", accessStatus: "APPROVED", permissions: ["store-scanning"] },
+    });
+    await userEvent.type(screen.getByLabelText(/username/i), "store-op");
+    await userEvent.type(screen.getByLabelText(/password/i), "Password123");
+    await userEvent.click(screen.getByRole("button", { name: /login/i }));
+
+    expect(await screen.findByRole("heading", { name: "What is your job today?" })).toBeInTheDocument();
+
+    // No job yet: the sidebar holds Select Job and nothing else.
+    const rail = screen.getByRole("navigation", { name: /main navigation/i });
+    expect(within(rail).getAllByRole("button").map((button) => button.textContent)).toEqual(["Select Job"]);
+
+    // Picking Move In opens the job, and its pages join the sidebar.
+    await userEvent.click(screen.getByRole("button", { name: /Move In/ }));
+    await waitFor(() =>
+      expect(within(screen.getByRole("navigation", { name: /main navigation/i })).getByRole("button", { name: "Raw Material Move In" })).toBeInTheDocument()
+    );
+
+    // Select Job takes them back, and the sidebar empties again.
+    await userEvent.click(within(screen.getByRole("navigation", { name: /main navigation/i })).getByRole("button", { name: "Select Job" }));
+    await waitFor(() =>
+      expect(within(screen.getByRole("navigation", { name: /main navigation/i })).getAllByRole("button")).toHaveLength(1)
+    );
   });
 
   it("creates an access request from the Rookie screen", async () => {
@@ -215,8 +248,10 @@ describe("App", () => {
 
   it("renders dashboard", async () => {
     renderApp();
+    // Home first; the KPI overview is one of its tiles.
+    await userEvent.click(await screen.findByTestId("nav-tile-dashboard"));
     expect(await screen.findByText("Today's Production")).toBeInTheDocument();
-    expect(await screen.findByText("Current Stock")).toBeInTheDocument();
+    expect(await screen.findAllByText("Current Stock")).not.toHaveLength(0);
   });
 
   it("renders production page via keyboard shortcut", async () => {

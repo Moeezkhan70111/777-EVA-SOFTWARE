@@ -581,3 +581,111 @@ describe("MachineProgramPage", () => {
     expect(api.removeMachineProgramRun).toHaveBeenCalledWith({ runId: "run-1" });
   });
 });
+
+describe("+ Add Machine", () => {
+  /** Adds the save the field makes. A name is all it sends. */
+  const withMachineCreation = (api: ReturnType<typeof installApi>) => {
+    const extra = {
+      ...api,
+      createMachine: vi.fn(
+        async (input: { name: string; sectionId?: string }): Promise<{ accepted: boolean; machine?: MachineRecord; reason?: string }> => ({
+          accepted: true,
+          machine: machine("m-4", input.name.toUpperCase(), null),
+        })
+      ),
+    };
+    Object.defineProperty(window, "desktop", { value: { versions: { node: "22", chrome: "128", electron: "43" }, api: extra }, configurable: true });
+    return extra;
+  };
+
+  const renderWithAdd = () =>
+    render(
+      <NotificationsProvider>
+        <MachineProgramPage username="aslam" canAddMachine />
+      </NotificationsProvider>
+    );
+
+  /** Presses + Add Machine and types a name into the field it turns into. */
+  const typeMachineName = async (name: string) => {
+    const nav = await rail();
+    await userEvent.click(within(nav).getByRole("button", { name: "+ Add Machine" }));
+    const field = within(nav).getByLabelText("Machine name");
+    if (name) await userEvent.type(field, name);
+    return nav;
+  };
+
+  it("is not offered to someone who may not add machines", async () => {
+    installApi();
+    renderPage();
+    await within(await rail()).findByRole("button", { name: /MACHINE 1/ });
+    expect(screen.queryByRole("button", { name: "+ Add Machine" })).not.toBeInTheDocument();
+  });
+
+  it("adds a machine from just its name, puts it on the strip and asks who works on it", async () => {
+    const api = withMachineCreation(installApi());
+    renderWithAdd();
+
+    const nav = await typeMachineName("Machine 4");
+    // Nothing else is asked: no section, no dialog.
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(within(nav).queryByRole("combobox")).not.toBeInTheDocument();
+    await userEvent.click(within(nav).getByRole("button", { name: "Add" }));
+
+    expect(api.createMachine).toHaveBeenCalledWith({ name: "Machine 4" });
+    await waitFor(() => expect(api.listMachineProgramBoard.mock.calls.length).toBeGreaterThan(1));
+    expect(await screen.findByText("Who works on MACHINE 4?")).toBeInTheDocument();
+  });
+
+  it("adds on Enter too", async () => {
+    const api = withMachineCreation(installApi());
+    renderWithAdd();
+
+    await typeMachineName("Machine 5{Enter}");
+    expect(api.createMachine).toHaveBeenCalledWith({ name: "Machine 5" });
+  });
+
+  it("does not save without a name, and says why", async () => {
+    const api = withMachineCreation(installApi());
+    renderWithAdd();
+
+    const nav = await typeMachineName("");
+    await userEvent.click(within(nav).getByRole("button", { name: "Add" }));
+
+    expect(api.createMachine).not.toHaveBeenCalled();
+    expect(within(nav).getByRole("alert")).toHaveTextContent("Type the machine's name.");
+  });
+
+  it("keeps the field open and shows the reason when the save is refused", async () => {
+    const api = withMachineCreation(installApi());
+    api.createMachine.mockResolvedValueOnce({ accepted: false, reason: "Your account does not have Stock access." });
+    renderWithAdd();
+
+    const nav = await typeMachineName("Machine 4");
+    await userEvent.click(within(nav).getByRole("button", { name: "Add" }));
+
+    expect(await within(nav).findByRole("alert")).toHaveTextContent("Your account does not have Stock access.");
+    expect(within(nav).getByLabelText("Machine name")).toHaveValue("Machine 4");
+  });
+
+  it("says so when the name belongs to a retired machine, instead of silently doing nothing", async () => {
+    const api = withMachineCreation(installApi());
+    api.createMachine.mockResolvedValueOnce({ accepted: true, machine: { ...machine("m-9", "MACHINE 9", null), status: "INACTIVE" } });
+    renderWithAdd();
+
+    const nav = await typeMachineName("Machine 9");
+    await userEvent.click(within(nav).getByRole("button", { name: "Add" }));
+
+    expect(await within(nav).findByRole("alert")).toHaveTextContent("MACHINE 9 already exists but is retired");
+  });
+
+  it("Cancel puts the button back without saving", async () => {
+    const api = withMachineCreation(installApi());
+    renderWithAdd();
+
+    const nav = await typeMachineName("Machine 4");
+    await userEvent.click(within(nav).getByRole("button", { name: "Cancel" }));
+
+    expect(api.createMachine).not.toHaveBeenCalled();
+    expect(within(nav).getByRole("button", { name: "+ Add Machine" })).toBeInTheDocument();
+  });
+});

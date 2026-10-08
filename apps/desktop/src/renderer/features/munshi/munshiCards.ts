@@ -4,8 +4,8 @@ import { copy } from "../../config/copy";
 // The three jobs on the Munshi's station, in the order they appear on the screen.
 //
 // Each card opens a screen that already exists and keeps that screen's own permission: the
-// Munshi permission decides that this person works from a station instead of the navbar, not
-// what they are allowed to do. A card the Munshi may not use stays visible but disabled and
+// Munshi permission opens the station screen, not
+// what the Munshi is allowed to do there. A card the Munshi may not use stays visible but disabled and
 // says why in words, so nobody wonders where a button went (R18).
 
 /** What this Munshi's permissions allow, as the cards need to know it. */
@@ -52,6 +52,3 @@ export const MUNSHI_CARDS: readonly MunshiCard[] = [
     lockedNote: copy.munshi.needsGatepassAccess,
   },
 ];
-
-/** The screens a Munshi reaches from a card that bring no station chrome of their own. */
-export const MUNSHI_FRAMED_ROUTES: ReadonlySet<AppRoute> = new Set<AppRoute>(["gatepass", "gatepass-list"]);

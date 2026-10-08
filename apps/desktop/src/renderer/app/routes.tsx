@@ -1,6 +1,8 @@
 export type AppRoute =
+  // Every role's front door: tile cards for the pages assigned to it (features/navigation).
+  | "home"
+  // The KPI overview. A page like any other, behind the "dashboard" permission.
   | "dashboard"
-  | "nav-page"
   | "stock"
   // The Raw Material workspace. One destination with four tabs; the two routes after it are
   // deep links onto a tab, kept so the permissions that used to gate a page still gate it.
@@ -74,7 +76,7 @@ export type AppRoute =
   | "dispatch";
 
 export const shortcutRouteMap: Record<string, AppRoute> = {
-  F1: "dashboard",
+  F1: "home",
   F2: "live-production",
   F3: "stock",
   F4: "production-history",

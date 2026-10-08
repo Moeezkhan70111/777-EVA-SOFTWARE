@@ -3,6 +3,7 @@ import { useDesktopApi } from "../../hooks/useDesktopApi";
 import { useNotifications } from "../../state/NotificationsContext";
 import type { MachineRecord, WorkSection } from "../../types/desktopApi";
 import { copy } from "../../config/copy";
+import { useAddMachine } from "../machineProgram/useAddMachine";
 
 // The machines on the floor, and the destination each one stands in.
 //
@@ -22,9 +23,8 @@ export const MachinesPanel: React.FC<MachinesPanelProps> = ({ sections }) => {
   const api = useDesktopApi();
   const { push } = useNotifications();
   const [machines, setMachines] = useState<MachineRecord[]>([]);
-  const [name, setName] = useState("");
-  const [sectionId, setSectionId] = useState("");
-  const [saving, setSaving] = useState(false);
+  // The same save the Machine Program's + Add Machine uses (one implementation, R1).
+  const { name, setName, sectionId, setSectionId, saving, problem, add: addMachine } = useAddMachine(sections);
 
   const reload = useCallback(async () => {
     try {
@@ -38,27 +38,11 @@ export const MachinesPanel: React.FC<MachinesPanelProps> = ({ sections }) => {
     void reload();
   }, [reload]);
 
-  // Most floors have one section their machines stand in, so it is chosen for them.
-  useEffect(() => {
-    if (!sectionId && sections.length > 0) setSectionId(sections[0].id);
-  }, [sections, sectionId]);
-
   const add = async () => {
-    const trimmed = name.trim();
-    if (!trimmed || !sectionId) return;
-    setSaving(true);
-    try {
-      const result = await api.createMachine({ name: trimmed, sectionId });
-      if (!result.accepted) {
-        push("error", "Machine not added", result.reason ?? "The machine could not be saved.");
-        return;
-      }
-      push("success", "Machine added", trimmed);
-      setName("");
-      await reload();
-    } finally {
-      setSaving(false);
-    }
+    const machine = await addMachine();
+    if (!machine) return;
+    push("success", copy.machineProgram.machineAddedTitle, machine.name);
+    await reload();
   };
 
   const setStatus = async (machine: MachineRecord, status: "ACTIVE" | "INACTIVE") => {
@@ -98,46 +82,52 @@ export const MachinesPanel: React.FC<MachinesPanelProps> = ({ sections }) => {
         </ul>
       )}
 
-      {sections.length === 0 ? (
-        <span className="rm-muted">Add a destination above before adding machines — a machine has to stand somewhere.</span>
-      ) : (
-        <div className="rm-inline-add">
-          <label htmlFor="rm-new-machine" className="input-label">
-            {copy.machineProgram.machineName}
-          </label>
-          <input
-            id="rm-new-machine"
-            className="form-input"
-            value={name}
-            placeholder="e.g. Machine 1"
-            onChange={(event) => setName(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") {
-                event.preventDefault();
-                void add();
-              }
-            }}
-          />
-          <label htmlFor="rm-new-machine-section" className="input-label">
-            {copy.machineProgram.machineSection}
-          </label>
-          <select
-            id="rm-new-machine-section"
-            className="form-input"
-            value={sectionId}
-            onChange={(event) => setSectionId(event.target.value)}
-          >
-            {sections.map((section) => (
-              <option key={section.id} value={section.id}>
-                {section.name}
-              </option>
-            ))}
-          </select>
-          <button type="button" className="btn btn-primary btn-sm" disabled={saving || !name.trim()} onClick={() => void add()}>
-            {saving ? "Adding…" : copy.machineProgram.addMachine}
-          </button>
-        </div>
-      )}
+      {/* A name is all a machine needs; the section is offered only when there is one to pick. */}
+      <div className="rm-inline-add">
+        <label htmlFor="rm-new-machine" className="input-label">
+          {copy.machineProgram.machineName}
+        </label>
+        <input
+          id="rm-new-machine"
+          className="form-input"
+          value={name}
+          placeholder="e.g. Machine 1"
+          onChange={(event) => setName(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              event.preventDefault();
+              void add();
+            }
+          }}
+        />
+        {sections.length > 0 ? (
+          <>
+            <label htmlFor="rm-new-machine-section" className="input-label">
+              {copy.machineProgram.machineSection}
+            </label>
+            <select
+              id="rm-new-machine-section"
+              className="form-input"
+              value={sectionId}
+              onChange={(event) => setSectionId(event.target.value)}
+            >
+              {sections.map((section) => (
+                <option key={section.id} value={section.id}>
+                  {section.name}
+                </option>
+              ))}
+            </select>
+          </>
+        ) : null}
+        <button type="button" className="btn btn-primary btn-sm" disabled={saving || !name.trim()} onClick={() => void add()}>
+          {saving ? copy.machineProgram.addingMachine : copy.machineProgram.addMachine}
+        </button>
+      </div>
+      {problem ? (
+        <span className="rm-muted" role="alert">
+          ⚠ {problem}
+        </span>
+      ) : null}
     </div>
   );
 };

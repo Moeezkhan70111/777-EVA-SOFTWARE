@@ -9,8 +9,8 @@ import { StockIcon } from "../store/StoreIcons";
 import { GatepassIcon, GatepassListIcon } from "./MunshiIcons";
 import { MUNSHI_CARDS, type MunshiAccess } from "./munshiCards";
 
-// The Munshi's front door. No navbar: three big cards, one per job, the same way the store
-// operator's screen works.
+// The Munshi's station: three big cards, one per job, the same way the store operator's
+// screen works.
 
 interface MunshiHomePageProps {
   onNavigate: (route: AppRoute) => void;
@@ -25,7 +25,7 @@ const CARD_ICON: Record<string, React.ReactNode> = {
 
 export const MunshiHomePage: React.FC<MunshiHomePageProps> = ({ onNavigate, access }) => (
   <div className="so-page so-screen so-screen--in">
-    {/* Who is signed in is already on the app's floating profile menu, top right. */}
+    {/* Who is signed in is already shown at the foot of the sidebar. */}
     <StoreTopBar title={copy.munshi.title} subtitle={copy.munshi.role} />
 
     <main className="so-screen-body">

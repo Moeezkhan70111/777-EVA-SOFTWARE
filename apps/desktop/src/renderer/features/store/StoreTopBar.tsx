@@ -1,17 +1,15 @@
 import React from "react";
-import { copy } from "../../config/copy";
-import { BRAND_LOGO_URL } from "../../config/branding";
 import { ArrowLeftIcon } from "./StoreIcons";
 
-// The top of every store screen, in two rows:
+// The top of every store screen:
 //
-//   [777 SEVEN logo]                                                   (profile menu)
 //   [← Change job]              MOVE IN
 //                               OPERATOR
 //
-// The logo row is the same everywhere. The page head sits on the same width as the cards
-// below it: the way back on the left, the page's name centred and large, in the job's colour.
-// Store Station passes no title — its own big "Store" heading is the head there.
+// No logo: the sidebar beside every screen already carries it. The page head sits on the same
+// width as the cards below it: the way back on the left, the page's name centred and large, in
+// the job's colour. Store Station passes no title — its own big "Store" heading is the head
+// there. A screen with controls of its own (the split desk) gets them in a toolbar row above.
 
 export type StoreTone = "in" | "out";
 
@@ -22,16 +20,13 @@ interface StoreTopBarProps {
   /** Colours the title: blue for Move In, amber for Move Out. */
   tone?: StoreTone;
   back?: { label: string; onClick: () => void };
-  /** Controls placed in the logo row itself — used by the split desk, which has no room for a big title. */
+  /** Controls in a row above the head — used by the split desk, which has no room for a big title. */
   toolbar?: React.ReactNode;
 }
 
 export const StoreTopBar: React.FC<StoreTopBarProps> = ({ title, subtitle, tone = "in", back, toolbar }) => (
   <>
-    <header className="so-top">
-      <img src={BRAND_LOGO_URL} alt={copy.app.brandLine} className="so-logo-img" />
-      {toolbar}
-    </header>
+    {toolbar ? <header className="so-top">{toolbar}</header> : null}
 
     {title ? (
       <div className={`so-head so-head--${tone}`}>

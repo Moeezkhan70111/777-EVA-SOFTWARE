@@ -664,3 +664,43 @@ test("every change is audited", async () => {
     ]);
   });
 });
+
+// ─── Adding a machine by name alone ───────────────────────────────────────────
+
+function bareDatabase() {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "erp-machine-add-"));
+  return new SqliteDatabase({ dbPath: path.join(tempDir, "erp.db"), schemaPath: path.resolve(process.cwd(), "src/local-schema.sql") });
+}
+
+test("a machine added by name alone goes in the floor's existing section", () => {
+  const db = bareDatabase();
+  const packing = db.createWorkSection({ name: "Packing" });
+  db.createWorkSection({ name: "Upper Maker" });
+
+  const machine = db.createMachine({ name: "Machine 4" });
+  assert.equal(machine.name, "MACHINE 4");
+  assert.equal(machine.sectionId, packing.id);
+  assert.equal(machine.status, "ACTIVE");
+  assert.equal(db.listWorkSections().length, 2, "no extra section is made when one exists");
+});
+
+test("on a floor with no section yet, adding a machine makes one MACHINES section for it", () => {
+  const db = bareDatabase();
+  const first = db.createMachine({ name: "Machine 1" });
+  const second = db.createMachine({ name: "Machine 2" });
+
+  const sections = db.listWorkSections();
+  assert.deepEqual(sections.map((section) => section.name), ["MACHINES"]);
+  assert.equal(first.sectionId, sections[0].id);
+  assert.equal(second.sectionId, sections[0].id);
+  assert.deepEqual(db.listMachines().map((machine) => machine.name), ["MACHINE 1", "MACHINE 2"]);
+});
+
+test("adding a machine name twice returns the first machine, and a chosen section must exist", () => {
+  const db = bareDatabase();
+  const first = db.createMachine({ name: "Machine 1" });
+  assert.equal(db.createMachine({ name: "machine 1" }).id, first.id);
+  assert.equal(db.listMachines().length, 1);
+  assert.throws(() => db.createMachine({ name: "Machine 2", sectionId: "no-such-section" }), /no longer exists/);
+  assert.throws(() => db.createMachine({ name: "   " }), /name is required/);
+});

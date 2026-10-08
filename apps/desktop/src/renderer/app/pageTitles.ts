@@ -1,8 +1,8 @@
 import type { AppRoute } from "./routes";
 
 export const PAGE_TITLES: Record<AppRoute, string> = {
-  dashboard: "Dashboard",
-  "nav-page": "Navigation",
+  home: "Dashboard",
+  dashboard: "Business Overview",
   stock: "Current Stock",
   "raw-material": "Raw Material",
   "raw-material-setup": "Raw Material Setup",

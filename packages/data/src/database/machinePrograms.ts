@@ -28,6 +28,14 @@ import type {
 
 const MACHINE_CODE_PREFIX = "M-";
 
+/**
+ * The section a machine is filed under when it is added by name alone. machines.section_id is
+ * required by the schema, but since raw material routes were removed (migration 056) which
+ * section a machine stands in no longer decides anything it can be programmed with — only that
+ * it has one — so an operator adding "Machine 4" is not asked for it.
+ */
+const DEFAULT_MACHINE_SECTION_NAME = "MACHINES";
+
 /** Programs of the injector shape. The first shape (time slots and bags) is history only. */
 export const INJECTOR_LAYOUT = "INJECTORS";
 
@@ -138,17 +146,45 @@ export const machineProgramsMethods = {
     return rows.map(mapMachine);
   },
 
-  /** Idempotent on name, the same way createWorkSection is: an existing machine is returned. */
-  createMachine(this: SqliteDatabase, input: { name: string; sectionId: string }): MachineRecord {
+  /**
+   * Idempotent on name, the same way createWorkSection is: an existing machine is returned.
+   *
+   * The section is optional. Given, it must exist. Left out, the machine goes in the floor's
+   * first active section, or — on a floor with none yet — in a MACHINES section made for it,
+   * in the same transaction as the machine.
+   */
+  createMachine(this: SqliteDatabase, input: { name: string; sectionId?: string | null }): MachineRecord {
     const name = text(input.name).trim().toUpperCase();
     if (!name) throw new Error("Machine name is required.");
-    const sectionId = text(input.sectionId).trim();
-    const section = this.db.prepare("SELECT id FROM work_sections WHERE id = ? LIMIT 1").get(sectionId);
-    if (!section) throw new Error("Choose the section this machine stands in.");
+    const chosenSectionId = text(input.sectionId).trim();
+    if (chosenSectionId && !this.db.prepare("SELECT id FROM work_sections WHERE id = ? LIMIT 1").get(chosenSectionId)) {
+      throw new Error("The section chosen for this machine no longer exists.");
+    }
 
     const existing = this.db.prepare(`${MACHINE_SELECT} WHERE m.name = ? LIMIT 1`).get(name) as Record<string, unknown> | undefined;
     if (existing) return mapMachine(existing);
 
+    this.db.exec("BEGIN IMMEDIATE TRANSACTION");
+    try {
+      const machine = this.insertMachine(name, chosenSectionId || this.defaultMachineSectionId());
+      this.db.exec("COMMIT");
+      return machine;
+    } catch (error) {
+      this.db.exec("ROLLBACK");
+      throw error;
+    }
+  },
+
+  /** @internal The section a machine added without one goes in. Call inside a transaction. */
+  defaultMachineSectionId(this: SqliteDatabase): string {
+    const first = this.db
+      .prepare("SELECT id FROM work_sections WHERE status = 'ACTIVE' ORDER BY created_at, name LIMIT 1")
+      .get() as { id: string } | undefined;
+    return first ? first.id : this.createWorkSection({ name: DEFAULT_MACHINE_SECTION_NAME }).id;
+  },
+
+  /** @internal Writes one new machine row. Call inside a transaction. */
+  insertMachine(this: SqliteDatabase, name: string, sectionId: string): MachineRecord {
     const next = this.db
       .prepare(
         `SELECT COALESCE(MAX(CAST(SUBSTR(machine_code, 3) AS INTEGER)), 0) + 1 AS n

@@ -88,15 +88,13 @@ export const normalizeAuthUser = (user: AuthUser): AuthUser => ({
   permissions: user.permissions ?? LEGACY_DEFAULT_PERMISSIONS,
   lastLoginAt: user.lastLoginAt ?? null,
   roleNotification: user.roleNotification ?? null,
+  roleName: typeof user.roleName === "string" && user.roleName.trim() ? user.roleName.trim() : null,
 });
 
 export const isAdmin = (user: AuthUser | null | undefined): boolean => user?.role === USER_ROLE.ADMIN;
 
 export const hasPermission = (user: AuthUser | null | undefined, permission: string): boolean =>
   !!user && (isAdmin(user) || user.permissions.includes(permission));
-
-/** Whether the full navigation chrome is shown (admins and users holding "navbar"). */
-export const canSeeNavbar = (user: AuthUser | null | undefined): boolean => hasPermission(user, PERMISSION.NAVBAR);
 
 /** Route → permission required to open it (undefined = open to any signed-in user). */
 export const routePermission: Partial<Record<AppRoute, PermissionCode>> = {
@@ -196,34 +194,40 @@ export const routeAnyPermission: Partial<Record<AppRoute, PermissionCode[]>> = {
   // Raw material setup: the whole of Settings, or just this part of it.
   "raw-material-setup": [PERMISSION.SETTINGS, PERMISSION.RAW_MATERIAL_SETUP],
   "store-in-setup": [PERMISSION.SETTINGS, PERMISSION.RAW_MATERIAL_SETUP],
+  // The raw material scanners belong to the store station, so a store operator always has
+  // them; the page's own permission offers them to someone who is not a store operator.
+  "raw-material-input": [PERMISSION.STORE_SCANNING, PERMISSION.RAW_MATERIAL_INPUT],
+  "raw-material-output": [PERMISSION.STORE_SCANNING, PERMISSION.RAW_MATERIAL_OUTPUT],
 };
 
-/** Where a user lands after sign-in, in priority order of their permissions. */
-const LANDING_ORDER: Array<[PermissionCode, AppRoute]> = [
-  // A Munshi works from their station and nowhere else, so it comes first.
-  [PERMISSION.MUNSHI, "munshi-home"],
-  [PERMISSION.LIVE_PRODUCTION, "live-production"],
-  [PERMISSION.LIVE_DISPATCH, "live-dispatch"],
-  [PERMISSION.LIVE_RETURN, "live-return"],
-  // A store operator lands on the Move In / Move Out chooser, not straight on a scanner.
-  [PERMISSION.STORE_SCANNING, "store-home"],
-  [PERMISSION.GATEPASS, "gatepass"],
-  [PERMISSION.STOCK, "stock"],
-  [PERMISSION.SALE_VOUCHER_FORM, "sale-voucher-form"],
-  [PERMISSION.DAILY_PRODUCTION, "daily-production"],
-  [PERMISSION.DAILY_DISPATCH, "daily-dispatch"],
-  [PERMISSION.CASH_VOUCHER_FORM, "cash-voucher-form"],
-  [PERMISSION.PARTY_LIST, "party-list"],
-  [PERMISSION.PRODUCT_LIST, "product-list"],
-  [PERMISSION.WORKSPACE, "workspace"],
-  [PERMISSION.DASHBOARD, "dashboard"],
-];
-
-export const getDefaultLandingRoute = (permissions: string[], role?: UserRole): AppRoute => {
-  if (role === USER_ROLE.ADMIN) return "dashboard";
-  if (permissions.includes(PERMISSION.NAVBAR) && permissions.includes(PERMISSION.DASHBOARD)) return "dashboard";
-  for (const [permission, route] of LANDING_ORDER) {
-    if (permissions.includes(permission)) return route;
-  }
-  return "live-production";
+/**
+ * Whether this user may open a route. The one check behind the route guard in App, the Home
+ * tiles and the sidebar, so a card is shown exactly when its page would open.
+ *
+ * This decides what the interface offers. Every operation is still authorised again by the
+ * main process (main/authorize.ts) — hiding a card is not a security boundary.
+ */
+export const canOpenRoute = (user: AuthUser | null | undefined, route: AppRoute): boolean => {
+  if (!user) return false;
+  const required = routePermission[route];
+  if (required && !hasPermission(user, required)) return false;
+  const anyOf = routeAnyPermission[route];
+  if (anyOf && !anyOf.some((permission) => hasPermission(user, permission))) return false;
+  return true;
 };
+
+/**
+ * Every role starts on Home: the tile dashboard of the pages assigned to it. Escape returns
+ * there too, and a route the user may not open falls back to it.
+ */
+export const HOME_ROUTE: AppRoute = "home";
+
+/**
+ * Where a user starts after signing in, and where Escape takes them.
+ *
+ * A store operator (anyone but an administrator who holds Store Scanning) starts on Store
+ * Station — "What is your job today?" — and the job they pick opens its own screen. Everyone
+ * else starts on their Dashboard. The Dashboard stays one click away in the sidebar for all.
+ */
+export const landingRoute = (user: AuthUser | null | undefined): AppRoute =>
+  user && !isAdmin(user) && hasPermission(user, PERMISSION.STORE_SCANNING) ? "store-home" : HOME_ROUTE;

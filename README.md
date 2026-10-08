@@ -538,10 +538,10 @@ Gatepass-locked dispatch exists because **a bill has no colour** (price lives on
 size), so the ordinary allowance would call every colour "ALL COLORS". The gatepass knows the
 colour, so it supplies the allow-list while attribution stays bill-keyed.
 
-### Stations instead of a navbar
+### Stations
 
-Two roles work from **tile-card stations**, not the navigation bar, because their users should
-see three big buttons and nothing else:
+Two jobs have their own **tile-card station** screen, opened from Home or the sidebar like any
+other page (since 2026-10-08 every role has the sidebar — see §8):
 
 - **Store Station** (`store-home`) — `features/store/`
 - **Munshi Station** (`munshi-home`) — `features/munshi/`. Babar's station; the role holds
@@ -615,22 +615,33 @@ Daily production / daily dispatch reports group by the **06:00 operational day**
 
 ## 8. Navigation
 
-Routes are a string union in `renderer/app/routes.tsx` (≈70 routes). The navbar structure
-lives in `components/layout/Navbar.tsx`:
+Routes are a string union in `renderer/app/routes.tsx` (≈70 routes).
+
+**Every approved role gets the same layout:** a sidebar on the left and **Home** (`home`), a
+tile-card dashboard of the pages the role has been given. Both are drawn from one catalogue,
+`features/navigation/navCatalogue.ts`:
 
 ```
-Dashboard · Scanning · Store · Munshi · Gatepass · Inventory · Setup · Billing
-          · Settings · Health · Logs · Workspace
+Overview · Scanning · Store · Munshi · Gatepass · Inventory · Setup · Billing · System
 ```
 
-Each navbar entry id **is** a permission code. `features/users/permissions.ts` derives the
-human label for a permission from this same catalogue, so the admin screen and the navbar can
-never drift apart.
+A card appears exactly when `canOpenRoute()` (`features/auth/session.ts`) says its page
+would open — the same check the route guard in `App.tsx` uses — so an administrator controls
+what a user sees by assigning a role / permissions in Profile & Roles. A role with nothing
+assigned sees an empty Home that says so. Everyone lands on Home at sign-in, Escape returns
+there, and a route the user may not open falls back to it. The KPI page (`dashboard`) is now
+the **Business Overview** tile. The old `navbar` permission is retired (no longer offered;
+existing rows are harmless).
+
+The permissions an administrator can assign are listed in `NAV_PERMISSION_MODULES`
+(`components/layout/Navbar.tsx`); `features/users/permissions.ts` derives each permission's
+human label from it. `navCatalogue.test.ts` fails if a card has no permission behind it or
+cannot be assigned in the role editor.
 
 `visibleSections.ts` is a switchboard kept (now returning `true` for everything) so a section
 can be pulled back out of the app later without touching every call site.
 
-Keyboard shortcuts (`shortcutRouteMap`): `F1` dashboard, `F2` live production, `F3` stock,
+Keyboard shortcuts (`shortcutRouteMap`): `F1` Home, `F2` live production, `F3` stock,
 `F4` production history, `F5` daily production, `F6` live dispatch, `F7` live return,
 `F8` settings, `F9` store scanning.
 

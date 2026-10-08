@@ -121,6 +121,10 @@
   --action-strong:      var(--accent-deep);
   --action-tint:        var(--accent-tint);
   --action-line:        var(--accent-edge);
+  /* The green dashboard cards (Create Gatepass): accent, deep ink for the title, soft tint. */
+  --feature-green:      #2f9a44;
+  --feature-green-ink:  #0f3b24;
+  --feature-green-tint: #e4f2e5;
   --background:         var(--bg);
   --surface:            var(--surface-1);
   --surface-muted:      var(--surface-2);
@@ -275,22 +279,16 @@ html, body { margin: 0; height: 100%; overflow-x: hidden; background: var(--bg);
 .navbar-brand {
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 8px;
-  padding: 14px 12px;
+  padding: 16px 12px;
   flex-shrink: 0;
   border-bottom: 1px solid var(--sidebar-line);
 }
-/* The logo was drawn for a white bar, so on the navy it sits on its own white tile rather than
-   being inverted — a filter would cost this machine a first-draw stall. */
-.navbar-logo-img { height: 30px; width: auto; max-width: 120px; object-fit: contain; padding: 4px 8px; background: var(--white); border-radius: var(--radius-md); }
+/* The white logo (logo-white.png, transparent) sits straight on the navy, centred in the rail. */
+.navbar-logo-img { display: block; height: 58px; width: 10rem; max-width: 100%;  }
 
-/* Grid / Home nav button in navbar brand */
-.navbar-grid-btn { display: grid; place-items: center; width: 30px; height: 30px; margin-left: auto; padding: 0; border: 0; border-radius: var(--radius-md); background: transparent; color: var(--sidebar-ink-dim); cursor: pointer; transition: background 0.15s, color 0.15s; flex-shrink: 0; }
-.navbar-grid-btn svg { width: 16px; height: 16px; }
-.navbar-grid-btn:hover { background: var(--sidebar-hover); color: var(--sidebar-ink); }
-.navbar-grid-btn.active { background: var(--sidebar-hover); color: var(--sidebar-ink); }
-
-/* ── The sections ──────────────────────────────────────────────────────── */
+/* ── The sections: Home, then each section's pages as rows under its heading ── */
 
 .navbar-nav {
   display: flex;
@@ -307,9 +305,8 @@ html, body { margin: 0; height: 100%; overflow-x: hidden; background: var(--bg);
 .navbar-nav::-webkit-scrollbar { width: 6px; }
 .navbar-nav::-webkit-scrollbar-thumb { background: var(--sidebar-hover); border-radius: 3px; }
 
-.nav-top-item { position: relative; display: flex; align-items: stretch; width: 100%; }
-
-.nav-top-btn {
+.nav-top-btn,
+.nav-group-head {
   position: relative;
   display: flex;
   align-items: center;
@@ -334,9 +331,11 @@ html, body { margin: 0; height: 100%; overflow-x: hidden; background: var(--bg);
 .nav-top-icon svg { width: 100%; height: 100%; }
 .nav-top-label { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 
-.nav-top-btn:hover { background: var(--sidebar-hover); color: var(--sidebar-ink); }
-.nav-top-item.open .nav-top-btn { background: var(--sidebar-hover); color: var(--sidebar-ink); }
-.nav-top-btn:focus-visible {
+.nav-top-btn:hover,
+.nav-group-head:hover { background: var(--sidebar-hover); color: var(--sidebar-ink); }
+.nav-top-btn:focus-visible,
+.nav-group-head:focus-visible,
+.nav-item:focus-visible {
   outline: none;
   border-color: var(--sidebar-ink);
   box-shadow: none;
@@ -344,8 +343,10 @@ html, body { margin: 0; height: 100%; overflow-x: hidden; background: var(--bg);
 
 /* Current section: a tint plus a bar down its left edge. A positioned element,
    never a border-left — see the note at the top. */
-.nav-top-btn.active { background: var(--sidebar-active); color: var(--sidebar-ink); font-weight: 700; }
-.nav-top-btn.active::after {
+.nav-top-btn.active,
+.nav-item.active { background: var(--sidebar-active); color: var(--sidebar-ink); font-weight: 700; }
+.nav-top-btn.active::after,
+.nav-item.active::after {
   content: "";
   position: absolute;
   left: 0;
@@ -356,19 +357,46 @@ html, body { margin: 0; height: 100%; overflow-x: hidden; background: var(--bg);
   background: var(--sidebar-mark);
 }
 
-.nav-top-btn .chevron {
+/* A section heading folds its rows open and shut; the chevron points right while shut. */
+.nav-group { display: flex; flex-direction: column; }
+.nav-group-head { margin-top: 6px; }
+/* A page that stands on its own (Machine Program) sits between the sections with the same gap. */
+.nav-group + .nav-top-btn, .nav-top-btn + .nav-top-btn { margin-top: 6px; }
+.nav-group-head .chevron {
   width: 13px;
   height: 13px;
   flex: 0 0 auto;
   opacity: .5;
   transition: transform .15s var(--ease-out-expo);
 }
-.nav-top-btn.active .chevron { opacity: .8; }
-.nav-top-item.open .chevron { transform: rotate(-90deg); }
+.nav-group-head:not(.open) .chevron { transform: rotate(-90deg); }
 
-/* ── Popovers: section flyout, profile menu, notifications ─────────────── */
+/* One row per page — the same pages as the Home tiles. Indented under the heading's label. */
+.nav-group-items { display: flex; flex-direction: column; gap: 1px; margin: 0 0 2px; padding: 0 0 0 28px; list-style: none; }
+.nav-item {
+  position: relative;
+  display: block;
+  width: 100%;
+  min-height: 34px;
+  padding: 0 10px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--sidebar-ink-dim);
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 500;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+  transition: background-color .12s ease, color .12s ease;
+}
+.nav-item:hover { background: var(--sidebar-hover); color: var(--sidebar-ink); }
 
-.nav-dropdown,
+/* ── Popovers: profile menu, notifications ─────────────────────────────── */
+
 .profile-menu,
 .notification-panel {
   position: absolute;
@@ -383,25 +411,6 @@ html, body { margin: 0; height: 100%; overflow-x: hidden; background: var(--bg);
 @keyframes navbar-pop-in {
   from { opacity: 0; transform: translateX(-4px); }
   to   { opacity: 1; transform: translateX(0); }
-}
-
-/* A section's rows fly out beside it, not under it. The panel is portalled to <body> (the rail
-   scrolls, and a scroll container clips its children on both axes), so it is placed with fixed
-   coordinates the component works out from the section's own rect. */
-.nav-dropdown {
-  position: fixed;
-  min-width: 210px;
-  max-height: calc(100vh - 16px);
-  overflow-y: auto;
-}
-
-/* Bridges the gap between a rail row and its flyout so the pointer stays over a hoverable
-   element the whole way across. Portalled beside the panel, since .nav-dropdown scrolls and
-   would clip a pseudo-element hanging off its left edge. */
-.nav-flyout-bridge {
-  position: fixed;
-  z-index: 1099;
-  width: 8px;
 }
 
 .nav-dd-item {
@@ -428,19 +437,6 @@ html, body { margin: 0; height: 100%; overflow-x: hidden; background: var(--bg);
 .nav-dd-item svg { width: 15px; height: 15px; flex-shrink: 0; opacity: .55; }
 .nav-dd-item:hover svg { opacity: .85; }
 .nav-dd-item.active svg { opacity: 1; color: var(--action); }
-
-/* Grouped dropdown: a muted caption per group, hairline between groups. */
-.nav-submenu { display: flex; flex-direction: column; gap: 1px; }
-.nav-submenu-group { padding: 3px 0; }
-.nav-submenu-group:not(:last-child) { border-bottom: 1px solid var(--border-soft); margin-bottom: 3px; padding-bottom: 5px; }
-.nav-submenu-header {
-  padding: 5px 9px 4px;
-  color: var(--text-3);
-  font-size: 0.68rem;
-  font-weight: 650;
-  letter-spacing: .05em;
-  text-transform: uppercase;
-}
 
 /* ── The foot of the rail: version, notifications, the signed-in user ──── */
 
@@ -2785,7 +2781,10 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 @media (max-width: 760px) {
   .navbar { height: auto; min-height: 58px; flex-wrap: wrap; }
   .navbar-brand { height: 58px; padding: 0 14px; }
+  .navbar-logo-img { height: 40px; }
   .navbar-nav { order: 3; flex-basis: 100%; height: auto; min-height: 44px; padding: 0 10px 8px; overflow: visible; flex-wrap: wrap; }
+  /* On a phone the Home tiles are the navigation; the bar keeps only Home. */
+  .nav-group { display: none; }
   .navbar-right { padding: 0 12px 0 0; }
   .page-content { padding: 20px 14px; }
   .card, .form-card, .party-form { padding: 16px; }
@@ -6625,6 +6624,13 @@ tr.has-error .gp-qty-stepper input { color: var(--err); }
 }
 .mpx-machines { list-style: none; margin: 0; padding: 2px; display: flex; gap: 8px; min-width: 0; overflow-x: auto; }
 .mpx-machines > li { flex: 0 0 auto; }
+/* + Add Machine closes the row, on the right, and never scrolls away with the machines. */
+.mpx-add-machine { flex: 0 0 auto; margin-left: auto; min-height: 44px; white-space: nowrap; }
+/* Pressed, + Add Machine becomes a name field with Add / Cancel, in the same place. */
+.mpx-add-machine-form { flex: 0 0 auto; margin-left: auto; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.mpx-add-machine-form .form-input { width: 180px; min-height: 44px; }
+.mpx-add-machine-form .btn { min-height: 44px; }
+.mpx-add-machine-problem { flex-basis: 100%; margin: 0; }
 .mpx-machine {
   position: relative; display: flex; align-items: center; gap: 9px; min-height: 48px; padding: 7px 14px 7px 11px;
   text-align: left; cursor: pointer;
@@ -6874,24 +6880,105 @@ tr.has-error .gp-qty-stepper input { color: var(--err); }
   .mpx-control-value { max-width: 180px; }
 }
 
-/* ── Navigation Page (tile grid) ───────────────────────────────────────── */
-.nav-page { max-width: 960px; margin: 0 auto; padding: 28px 24px 48px; }
-.nav-page-header { margin-bottom: 28px; }
-.nav-page-header h1 { margin: 0 0 4px; font-size: 22px; font-weight: 800; color: var(--chrome-ink); }
-.nav-page-header p { margin: 0; font-size: 13px; color: var(--text-3); }
+/* ── Home: the tile dashboard every role starts on ─────────────────────── */
+.nav-page { max-width: 1240px; margin: 0 auto; padding: 28px 0 48px; }
+.nav-page-header { margin-bottom: 28px; text-align: center; }
+.nav-page-header h1 { margin: 0; font-size: 3cap; font-weight: 800; letter-spacing: -0.02em; color: var(--accent-navy); }
 .nav-page-section { margin-bottom: 28px; }
 .nav-page-section-label { margin: 0 0 12px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.07em; color: var(--text-3); }
 .nav-page-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; }
-.nav-tile { display: flex; align-items: center; gap: 14px; padding: 16px 14px; border: 1px solid rgba(203,213,225,0.6); border-radius: var(--radius-xl); background: white; box-shadow: var(--shadow-sm); cursor: pointer; text-align: left; transition: box-shadow 0.15s, transform 0.12s, border-color 0.15s; }
-.nav-tile:hover { box-shadow: var(--shadow-md); transform: translateY(-2px); border-color: var(--tile-color, var(--primary-blue)); }
+.nav-tile { --tile-color: var(--action); display: flex; align-items: center; gap: 14px; width: 100%; min-height: 74px; padding: 16px 14px; border: 1px solid var(--border); border-radius: var(--radius-xl); background: var(--surface-1); font: inherit; box-shadow: var(--shadow-sm); cursor: pointer; text-align: left; transition: box-shadow 0.15s, transform 0.12s, border-color 0.15s; }
+.nav-tile:hover { box-shadow: var(--shadow-md); transform: translateY(-2px); border-color: var(--tile-color); }
 .nav-tile:active { transform: translateY(0); }
-.nav-tile-icon { display: grid; place-items: center; width: 42px; height: 42px; flex-shrink: 0; border-radius: var(--radius-lg); background: color-mix(in srgb, var(--tile-color, #3b82f6) 12%, transparent); color: var(--tile-color, #3b82f6); }
+.nav-tile-icon { display: grid; place-items: center; width: 42px; height: 42px; flex-shrink: 0; border-radius: var(--radius-lg); background: color-mix(in srgb, var(--tile-color) 12%, transparent); color: var(--tile-color); }
 .nav-tile-icon svg { width: 22px; height: 22px; }
 .nav-tile-body { flex: 1; min-width: 0; }
 .nav-tile-body strong { display: block; font-size: 13px; font-weight: 700; color: var(--chrome-ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .nav-tile-body span { display: block; margin-top: 2px; font-size: 11px; color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.nav-tile-arrow { font-size: 18px; color: #cbd5e1; flex-shrink: 0; transition: color 0.15s; }
-.nav-tile:hover .nav-tile-arrow { color: var(--tile-color, var(--primary-blue)); }
+.nav-tile-arrow { font-size: 18px; color: var(--border-dark); flex-shrink: 0; transition: color 0.15s; }
+.nav-tile:hover .nav-tile-arrow { color: var(--tile-color); }
+/* A section's colour family. Decorative only — every tile is named by its label. */
+.nav-tile--action  { --tile-color: var(--action); }
+.nav-tile--ok      { --tile-color: var(--ok); }
+.nav-tile--warn    { --tile-color: var(--warn); }
+.nav-tile--info    { --tile-color: var(--info); }
+.nav-tile--neutral { --tile-color: var(--text-3); }
+
+/* ── Home: the dashboard card (FeatureCard.tsx) ─────────────────────────────
+ * The owner's card design: artwork on a soft cloud, a short accent bar, the page's name, and a
+ * round arrow. Every Home card moves to this as its artwork is made. Each colour theme only sets
+ * the --fc-* variables below. Paint-safe like the rail: flat fills, ordinary --shadow-*,
+ * transform — the cloud is a tinted shape, not a gradient, and the artwork has no filter.
+ */
+/* auto-fit drops the empty tracks, so the cards sit centred under the centred title. The 300px
+   cap fits three cards side by side from a 1280px screen up, beside the sidebar. */
+.nav-page-grid--feature { grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 300px)); justify-content: center; gap: 18px; }
+.feature-card {
+  --fc-accent: var(--action);
+  --fc-ink: var(--chrome-ink);
+  --fc-title-accent: var(--action);
+  --fc-tint: var(--action-tint);
+  --fc-cloud: color-mix(in srgb, var(--action) 9%, var(--surface-1));
+  --fc-bg: color-mix(in srgb, var(--action) 2%, var(--surface-1));
+  --fc-line: var(--action-line);
+  position: relative; display: flex; flex-direction: column; width: 100%; padding: 14px 18px 18px;
+  border: 1px solid var(--border-soft); border-radius: var(--radius-2xl);
+  background: var(--fc-bg);
+  box-shadow: var(--shadow-lg); font: inherit; text-align: left; cursor: pointer; overflow: hidden;
+  transition: box-shadow .18s ease, transform .14s ease, border-color .18s ease;
+}
+/* Blue (Machine Program) is the default above: the name dark, its last word blue. */
+/* Green (Gatepass): white card, the name deep green with its last word green. Every theme
+   lays the card out identically — only these colours change. */
+.feature-card--green {
+  --fc-accent: var(--feature-green);
+  --fc-ink: var(--feature-green-ink);
+  --fc-title-accent: var(--feature-green);
+  --fc-tint: var(--feature-green-tint);
+  --fc-cloud: var(--feature-green-tint);
+  --fc-bg: var(--surface-1);
+  --fc-line: color-mix(in srgb, var(--feature-green) 35%, var(--surface-1));
+}
+
+.feature-card:hover { box-shadow: var(--shadow-xl); transform: translateY(-3px); border-color: var(--fc-line); }
+.feature-card:active { transform: translateY(0); }
+.feature-card:focus-visible { outline: 3px solid var(--fc-accent); outline-offset: 3px; }
+
+/* The artwork stage: a cloud behind, three sparks top-right, the artwork in front. Artwork that
+   brings its own cloud and sparks (--scene) fills the stage instead. */
+.feature-card-art { position: relative; display: block; aspect-ratio: 3 / 2; margin: 0 -4px 10px; }
+.feature-card-cloud {
+  position: absolute; inset: 4% -3% 4% 4%;
+  background: var(--fc-cloud);
+  border-radius: 38% 62% 46% 54% / 56% 44% 56% 44%;
+}
+.feature-card-img {
+  position: absolute; inset: 10% 2% 8%; width: 96%; height: 82%; object-fit: contain;
+  transition: transform .2s var(--ease-out-expo);
+}
+.feature-card-art--scene .feature-card-img { inset: 0; width: 100%; height: 100%; }
+.feature-card:hover .feature-card-img { transform: scale(1.03); }
+.feature-card-sparks { position: absolute; top: 4%; right: 4%; width: 15%; height: 24%; }
+.feature-card-sparks > span { position: absolute; height: 3px; border-radius: 999px; background: var(--fc-accent); }
+.feature-card-sparks > span:nth-child(1) { top: 8%;  left: 18%; width: 34%; transform: rotate(-62deg); }
+.feature-card-sparks > span:nth-child(2) { top: 44%; left: 36%; width: 40%; transform: rotate(-38deg); }
+.feature-card-sparks > span:nth-child(3) { top: 78%; left: 48%; width: 44%; transform: rotate(-16deg); }
+
+/* Name and arrow along the foot. */
+/* margin-top: auto keeps every foot on the card's bottom edge, so a row of cards stays level
+   even when one name wraps. */
+.feature-card-foot { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; margin-top: auto; }
+.feature-card-text { display: flex; flex-direction: column; gap: 9px; min-width: 0; }
+.feature-card-bar { display: block; width: 32px; height: 5px; border-radius: 999px; background: var(--fc-accent); }
+.feature-card-title { font-size: 1.35rem; font-weight: 800; line-height: 1.15; letter-spacing: -0.015em; color: var(--fc-ink); }
+.feature-card-title-accent { color: var(--fc-title-accent); }
+.feature-card-go {
+  display: grid; place-items: center; flex: 0 0 auto; width: 44px; height: 44px; border-radius: 50%;
+  background: var(--fc-tint); color: var(--fc-accent);
+  transition: background-color .18s ease, color .18s ease, transform .18s var(--ease-out-expo);
+}
+.feature-card-go svg { width: 18px; height: 18px; }
+.feature-card:hover .feature-card-go { background: var(--fc-accent); color: var(--white); transform: translateX(2px); }
 
 /* ── Store Station: pick your job (Move In / Move Out) ─────────────────────
    Two big cards in the Machine Program style. Move In wears the primary blue,
@@ -6973,8 +7060,6 @@ tr.has-error .gp-qty-stepper input { color: var(--err); }
 .so-back svg { width: 18px; height: 18px; }
 .so-back:hover { background: var(--primary-dark); }
 .so-back:focus-visible { outline: 3px solid var(--sc-ring); outline-offset: 2px; }
-/* The logo leads every store screen. It is a transparent PNG, so it needs no backing box. */
-.so-logo-img { height: 48px; width: auto; display: block; object-fit: contain; flex-shrink: 0; }
 /* The page head: back on the left, the page's name centred, on the same width as the cards. */
 .so-head {
   display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 16px;

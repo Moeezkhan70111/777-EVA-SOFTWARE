@@ -389,11 +389,16 @@ export const usersMethods = {
     return token;
   },
 
-  getUserBySessionToken(this: SqliteDatabase, token: string): { id: string; username: string; role: "USER" | "ADMIN"; accessStatus: "PENDING" | "APPROVED" | "REJECTED"; permissions: string[]; lastLoginAt: string | null; roleNotification: string | null } | null {
+  /**
+   * The signed-in user behind a session token. `roleName` is the name of the role assigned to
+   * them (e.g. "Munshi"), falling back to their free-text job role; the Dashboard is titled
+   * with it. Null when they have neither.
+   */
+  getUserBySessionToken(this: SqliteDatabase, token: string): { id: string; username: string; role: "USER" | "ADMIN"; accessStatus: "PENDING" | "APPROVED" | "REJECTED"; permissions: string[]; lastLoginAt: string | null; roleNotification: string | null; roleName: string | null } | null {
     const row = this.db
       .prepare(
         `SELECT u.id, u.username, u.role, u.access_status, u.permissions_json, u.last_login_at, u.role_notification,
-                r.login_policy, s.login_date
+                u.job_role, r.role_name, r.login_policy, s.login_date
          FROM user_sessions s
          JOIN app_users u ON u.id = s.user_id
          LEFT JOIN user_role_assignments ura ON ura.user_id = u.id
@@ -408,6 +413,8 @@ export const usersMethods = {
         permissions_json: string;
         last_login_at: string | null;
         role_notification: string | null;
+        job_role?: string | null;
+        role_name?: string | null;
         login_policy?: string | null;
         login_date?: string | null;
       } | undefined;
@@ -427,7 +434,8 @@ export const usersMethods = {
     this.persistEffectivePermissions(row.id);
     const permissions = this.recalculateEffectivePermissions(row.id);
     this.db.prepare("UPDATE app_users SET role_notification = NULL WHERE id = ?").run(row.id);
-    return { id: row.id, username: row.username, role: row.role, accessStatus: row.access_status, permissions, lastLoginAt: row.last_login_at, roleNotification: row.role_notification };
+    const roleName = row.role_name?.trim() || row.job_role?.trim() || null;
+    return { id: row.id, username: row.username, role: row.role, accessStatus: row.access_status, permissions, lastLoginAt: row.last_login_at, roleNotification: row.role_notification, roleName };
   },
 
   createAccessRequest(this: SqliteDatabase, userId: string): { status: "PENDING" | "APPROVED" | "REJECTED" } {

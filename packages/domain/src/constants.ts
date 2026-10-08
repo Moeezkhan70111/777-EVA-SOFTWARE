@@ -22,6 +22,10 @@ export type LoginPolicy = (typeof LOGIN_POLICY)[keyof typeof LOGIN_POLICY];
  * authorisation required by the corresponding write operations in the main process.
  */
 export const PERMISSION = {
+  /**
+   * Retired: every approved role now has the sidebar, so this no longer gates anything and
+   * is no longer offered in the role editor. Kept because existing role/user rows hold it.
+   */
   NAVBAR: "navbar",
   DASHBOARD: "dashboard",
   WORKSPACE: "workspace",
@@ -35,8 +39,8 @@ export const PERMISSION = {
   RETURN_HISTORY: "return-history",
   STORE_SCANNING: "store-scanning",
   /**
-   * The Munshi's own station screen: tile cards instead of the navbar, the same way
-   * STORE_SCANNING opens the store operator's station. It grants no business operation of
+   * The Munshi's own station screen (tile cards), the same way STORE_SCANNING opens the
+   * store operator's station. It grants no business operation of
    * its own — each card is still gated by the permission that action has always needed.
    */
   MUNSHI: "munshi",
@@ -53,6 +57,13 @@ export const PERMISSION = {
   RAW_MATERIAL_QR_GENERATOR: "raw-material-qr-generator",
   /** Raw material categories, attributes, units and conversions — without the rest of Settings. */
   RAW_MATERIAL_SETUP: "raw-material-setup",
+  /**
+   * Opening the Raw Material Input / Output scanner pages. The scans themselves are still
+   * authorised by STORE_SCANNING in the main process; these only decide whether the page is
+   * offered to a user who is not a store operator.
+   */
+  RAW_MATERIAL_INPUT: "raw-material-input",
+  RAW_MATERIAL_OUTPUT: "raw-material-output",
   MACHINE_PROGRAM: "machine-program",
   DISCOUNT_POLICY: "discount-policy",
   CUSTOMER_LEDGER: "customer-ledger",

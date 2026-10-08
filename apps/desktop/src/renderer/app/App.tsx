@@ -35,7 +35,6 @@ import { CustomerBalancePage } from "../pages/CustomerBalancePage";
 import { ProductListPage } from "../pages/ProductListPage";
 import { ProductFormPage } from "../pages/ProductFormPage";
 import { QrGeneratorPage } from "../pages/QrGeneratorPage";
-import { NavPage } from "../pages/NavPage";
 import { QrManagementPage } from "../pages/QrManagementPage";
 import { ProductListsPage } from "../pages/ProductListsPage";
 import { DiscountPolicyPage } from "../pages/DiscountPolicyPage";
@@ -54,7 +53,6 @@ import { WorkspacePage } from "../pages/WorkspacePage";
 import type { AppRoute } from "./routes";
 import { useDesktopApi } from "../hooks/useDesktopApi";
 import { useNotifications } from "../state/NotificationsContext";
-import type { AuthUser } from "../types/desktopApi";
 import { isRouteActive, NAV_ACTIVE } from "./visibleSections";
 import { HiddenSection } from "./HiddenSection";
 import { useRouteKeyboard } from "./useRouteKeyboard";
@@ -67,11 +65,11 @@ import { ChangePasswordPage } from "../features/auth/ChangePasswordPage";
 import { FloatingProfileMenu } from "../features/auth/FloatingProfileMenu";
 import { SessionProvider } from "../features/auth/SessionContext";
 import { useAuthSession } from "../features/auth/useAuthSession";
-import { canSeeNavbar, getDefaultLandingRoute, hasPermission, routeAnyPermission, routePermission } from "../features/auth/session";
+import { canOpenRoute, hasPermission, HOME_ROUTE, landingRoute } from "../features/auth/session";
+import type { AuthUser } from "../types/desktopApi";
 import { MunshiHomePage } from "../features/munshi/MunshiHomePage";
-import { MunshiFrame } from "../features/munshi/MunshiFrame";
-import { MUNSHI_FRAMED_ROUTES } from "../features/munshi/munshiCards";
-import { PAGE_TITLES } from "./pageTitles";
+import { HomePage } from "../features/navigation/HomePage";
+import { useStoreJob } from "../features/store/useStoreJob";
 import { useAdminData } from "../features/users/useAdminData";
 import { notificationTarget } from "../features/users/notificationTarget";
 import type { UserNotification } from "../features/users/types";
@@ -110,7 +108,7 @@ type WorkspaceTab = "messages" | "tasks" | "requests" | "notifications" | "activ
 export const App = () => {
   const api = useDesktopApi();
   const { push } = useNotifications();
-  const [route, setRoute] = useState<AppRoute>("dashboard");
+  const [route, setRoute] = useState<AppRoute>(HOME_ROUTE);
   const [workspaceTab] = useState<WorkspaceTab>("tasks");
   const [selectedProductId, setSelectedProductId] = useState<string | undefined>(undefined);
   const [selectedPartyId, setSelectedPartyId] = useState<string | undefined>(undefined);
@@ -121,6 +119,8 @@ export const App = () => {
   const [appVersion, setAppVersion] = useState("");
 
   const auth = useAuthSession({ api, push, route, setRoute });
+  // A store operator's picked job, which decides what their sidebar lists.
+  const storeJob = useStoreJob(route);
   const { session, sessionToken, savedProfiles, isAddingAccount, authView, authError, authSuccess, requestStatus, needsBootstrap } = auth;
   const admin = useAdminData({ api, push, session, sessionToken, setAuthError: auth.setAuthError });
 
@@ -152,10 +152,8 @@ export const App = () => {
     // Don't navigate if a child component has mounted a suppress-esc sentinel
     // (e.g. ProductFormPage add-group modals, PartyFormPage city dropdown open)
     if (document.querySelector("[data-suppress-esc]")) return;
-    // Escape means "home" — Dashboard for anyone who has it, otherwise the same
-    // landing page the user was given at sign-in (a store operator's Store Station).
-    const current = sessionRef.current;
-    setRoute(current ? getDefaultLandingRoute(current.permissions, current.role) : "dashboard");
+    // Escape means "start again": Store Station for a store operator, the Dashboard for others.
+    setRoute(landingRoute(sessionRef.current));
   }, []);
 
   useRouteKeyboard(setRoute, onBackup, onEscape);
@@ -206,7 +204,9 @@ export const App = () => {
     setRoute(next);
   }, []);
 
-  const showNavbar = !!session && NAV_ACTIVE && canSeeNavbar(session);
+  // Every approved role gets the sidebar; what it lists comes from the role's permissions.
+  // A user still waiting for access sees only the Rookie screen and the floating profile menu.
+  const showNavbar = !!session && NAV_ACTIVE && session.accessStatus === ACCESS_STATUS.APPROVED;
 
   const content = useMemo(() => {
     if (needsBootstrap) {
@@ -229,20 +229,12 @@ export const App = () => {
       return <RookieScreen requestStatus={requestStatus} onRequest={auth.handleRequestAccess} error={authError} />;
     }
 
-    const requiredPermission = routePermission[route];
-    if (requiredPermission && !hasPermission(session, requiredPermission)) {
-      return isRouteActive("dashboard") ? <DashboardPage /> : <HiddenSection />;
-    }
+    // A page this role has not been given (a keyboard shortcut, a stale route after the
+    // role changed) falls back to Home rather than to any one page.
+    const home = <HomePage user={session} onNavigate={setRoute} />;
+    if (!canOpenRoute(session, route)) return home;
 
-    const canOpenRawMaterial = (routeAnyPermission["raw-material"] ?? []).some((permission) =>
-      hasPermission(session, permission)
-    );
-
-    // A route that opens for any one of several permissions (the Raw Material workspace).
-    const anyOf = routeAnyPermission[route];
-    if (anyOf && !anyOf.some((permission) => hasPermission(session, permission))) {
-      return isRouteActive("dashboard") ? <DashboardPage /> : <HiddenSection />;
-    }
+    const canOpenRawMaterial = canOpenRoute(session, "raw-material");
 
     if (!isRouteActive(route)) {
       return <HiddenSection />;
@@ -279,8 +271,8 @@ export const App = () => {
             success={authSuccess}
           />
         );
-      case "nav-page":
-        return <NavPage onNavigate={setRoute} permissions={session.permissions ?? []} isAdmin={session.role === "ADMIN"} />;
+      case "home":
+        return home;
       case "dashboard":
         return <DashboardPage />;
       case "stock":
@@ -325,7 +317,12 @@ export const App = () => {
       // Planning a machine's shift against raw material in the store. It reserves bags; the
       // bags themselves leave through the Raw Material Output scanner.
       case "machine-program":
-        return <MachineProgramPage username={session.username} />;
+        return (
+          <MachineProgramPage
+            username={session.username}
+            canAddMachine={hasPermission(session, PERMISSION.STOCK)}
+          />
+        );
       case "history":
       case "stock-history":
         return <HistoryPage />;
@@ -582,7 +579,7 @@ export const App = () => {
           />
         );
       default:
-        return <DashboardPage />;
+        return home;
     }
   }, [
     admin.members,
@@ -608,23 +605,6 @@ export const App = () => {
     workspaceTab,
   ]);
 
-  // A Munshi has no navbar, so the Gatepass screens they open from their station get the
-  // station's own chrome around them: the page's name and a way back. Their station screen and
-  // the Stock section bring their own, so only these two are framed.
-  //
-  // The navbar check is what makes this the Munshi's station rather than anyone who holds the
-  // permission: an administrator holds every permission, and an administrator opening Create
-  // Gatepass from the navbar must get the ordinary page, not a second set of chrome.
-  const isMunshiStation = !showNavbar && hasPermission(session, PERMISSION.MUNSHI);
-  const framedContent =
-    session && isMunshiStation && MUNSHI_FRAMED_ROUTES.has(route) ? (
-      <MunshiFrame title={PAGE_TITLES[route]} onHome={() => setRoute("munshi-home")}>
-        {content}
-      </MunshiFrame>
-    ) : (
-      content
-    );
-
   return (
     <SessionProvider user={session} token={sessionToken}>
       <div className="app-shell">
@@ -635,8 +615,7 @@ export const App = () => {
             appVersion={appVersion}
             onBackup={onBackup}
             user={session}
-            permissions={session.permissions}
-            limited={session.accessStatus !== ACCESS_STATUS.APPROVED}
+            storeJob={storeJob}
             onProfile={() => setRoute("profile")}
             onChangePassword={() => setRoute("change-password")}
             onLogout={auth.handleLogout}
@@ -666,7 +645,7 @@ export const App = () => {
         )}
 
         <main className={`page-content${!showNavbar || FULLSCREEN_ROUTES.has(route) ? " page-content--fullscreen" : ""}`}>
-          {framedContent}
+          {content}
         </main>
 
         <NotificationCenter />

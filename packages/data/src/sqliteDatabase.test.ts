@@ -376,6 +376,21 @@ test("role assignment resolves effective permissions and additional overrides", 
   }
 });
 
+test("a session carries the name of the user's role, for titling their Dashboard", () => {
+  const fixture = createDbFixture();
+  try {
+    const munshi = fixture.db.createRole({ name: "Munshi", description: "Gatepass desk", permissions: ["munshi", "gatepass"] });
+    const babar = fixture.db.createUserAccount("babar", "Password123");
+    fixture.db.assignUserRole(babar.id, munshi.code);
+    assert.equal(fixture.db.getUserBySessionToken(fixture.db.createUserSession(babar.id))?.roleName, "Munshi");
+
+    const noRole = fixture.db.createUserAccount("no-role-user", "Password123");
+    assert.equal(fixture.db.getUserBySessionToken(fixture.db.createUserSession(noRole.id))?.roleName, null);
+  } finally {
+    fixture.cleanup();
+  }
+});
+
 test("scan inserts production event, stock projection, and outbox", async () => {
   const fixture = createDbFixture();
   try {

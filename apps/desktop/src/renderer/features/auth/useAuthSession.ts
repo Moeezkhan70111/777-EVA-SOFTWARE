@@ -7,10 +7,10 @@ import type { AuthUser, DesktopApi } from "../../types/desktopApi";
 import type { AuthView } from "./AuthScreen";
 import type { RequestStatus } from "./RookieScreen";
 import {
-  canSeeNavbar,
+  canOpenRoute,
   clearActiveSession,
   forgetProfile,
-  getDefaultLandingRoute,
+  landingRoute,
   loadPersistedSession,
   normalizeAuthUser,
   persistActiveProfile,
@@ -72,11 +72,14 @@ export const useAuthSession = ({ api, push, route, setRoute }: UseAuthSessionArg
   // flips to true if the boot check below finds no ADMIN at all, which is the fresh-install case.
   const [needsBootstrap, setNeedsBootstrap] = useState(false);
 
-  /** Lands the user on a screen they are allowed to see. */
+  /**
+   * Lands the user on their starting screen (landingRoute: Store Station for a store operator,
+   * the Dashboard for everyone else) unless they are resuming on a screen their role still allows.
+   */
   const landOn = useCallback(
     (user: AuthUser, keepCurrentRoute: boolean) => {
-      if (!canSeeNavbar(user) || (!keepCurrentRoute && !user.permissions.includes(route))) {
-        setRoute(getDefaultLandingRoute(user.permissions, user.role));
+      if (!keepCurrentRoute || !canOpenRoute(user, route)) {
+        setRoute(landingRoute(user));
       }
     },
     [route, setRoute]
@@ -122,7 +125,8 @@ export const useAuthSession = ({ api, push, route, setRoute }: UseAuthSessionArg
       }
       const user = normalizeAuthUser(result);
       await activate(user, persisted.activeToken);
-      landOn(user, true);
+      // Opening the app is a fresh start: the user lands on their starting screen.
+      landOn(user, false);
     })();
     // Boot only once; `activate`/`landOn` are stable for the initial render.
     // eslint-disable-next-line react-hooks/exhaustive-deps

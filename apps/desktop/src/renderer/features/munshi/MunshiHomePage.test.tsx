@@ -3,10 +3,9 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { PERMISSION } from "@erp/domain";
 import { MunshiHomePage } from "./MunshiHomePage";
-import { MUNSHI_FRAMED_ROUTES } from "./munshiCards";
 import { routePermission } from "../auth/session";
 
-// The Munshi's station: three cards, no navbar. A card the Munshi may not use stays visible
+// The Munshi's station: three cards. A card the Munshi may not use stays visible
 // but disabled and says why, so nobody wonders where a button went.
 
 const ALL = { gatepass: true, stock: true };
@@ -30,10 +29,10 @@ describe("MunshiHomePage", () => {
     expect(onNavigate).toHaveBeenCalledTimes(3);
   });
 
-  it("names the station and shows the logo", () => {
+  it("names the station, without a logo of its own (the sidebar carries it)", () => {
     render(<MunshiHomePage onNavigate={vi.fn()} access={ALL} />);
     expect(screen.getByRole("heading", { name: "Munshi" })).toBeInTheDocument();
-    expect(screen.getByRole("img", { name: "777 SEVEN" })).toBeInTheDocument();
+    expect(screen.queryByRole("img", { name: "777 SEVEN" })).not.toBeInTheDocument();
   });
 
   it("locks both Gatepass cards, with the reason, without Gatepass access", () => {
@@ -76,11 +75,5 @@ describe("the Munshi station's permissions", () => {
   it("gates the station screen on the Munshi permission and Stock on Stock", () => {
     expect(routePermission["munshi-home"]).toBe(PERMISSION.MUNSHI);
     expect(routePermission["munshi-stock"]).toBe(PERMISSION.STOCK);
-  });
-
-  it("frames only the two Gatepass screens, which bring no station chrome of their own", () => {
-    expect([...MUNSHI_FRAMED_ROUTES].sort()).toEqual(["gatepass", "gatepass-list"]);
-    expect(MUNSHI_FRAMED_ROUTES.has("munshi-home")).toBe(false);
-    expect(MUNSHI_FRAMED_ROUTES.has("munshi-stock")).toBe(false);
   });
 });

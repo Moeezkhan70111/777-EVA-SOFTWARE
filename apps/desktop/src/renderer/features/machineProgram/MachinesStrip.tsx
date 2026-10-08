@@ -1,7 +1,8 @@
 import React from "react";
-import type { MachineProgramBoardRow } from "../../types/desktopApi";
+import type { MachineProgramBoardRow, MachineRecord } from "../../types/desktopApi";
 import { StateView } from "../../components/shared/StateView";
 import { copy } from "../../config/copy";
+import { AddMachineField } from "./AddMachineField";
 import { MachineIcon } from "./MachineProgramIcons";
 import { hasContent, statusLabel, statusTone } from "./machineProgram";
 import type { Loaded } from "./useMachineProgramData";
@@ -17,11 +18,16 @@ import type { Loaded } from "./useMachineProgramData";
 //
 // What a machine's state is, is always said in words; the dot only echoes it (R18). A machine
 // nobody has been assigned to says so, and choosing it asks who works on it before anything else.
+//
+// + Add Machine sits at the end of the row for whoever may add one (machines are master data,
+// gated on Stock like the rest of raw material setup); everyone else simply does not get it.
 
 interface MachinesStripProps {
   board: Loaded<MachineProgramBoardRow[]>;
   selectedId: string | null;
   onSelect: (row: MachineProgramBoardRow) => void;
+  /** Called with a machine just added from the row. Left out for a user who may not add machines. */
+  onMachineAdded?: (machine: MachineRecord) => void;
 }
 
 /** What one machine says about its day, and the tone the dot takes. */
@@ -34,7 +40,7 @@ const machineState = (row: MachineProgramBoardRow): { tone: string; words: strin
   return { tone: statusTone(program.displayStatus), words: statusLabel(program.displayStatus) };
 };
 
-export const MachinesStrip: React.FC<MachinesStripProps> = ({ board, selectedId, onSelect }) => (
+export const MachinesStrip: React.FC<MachinesStripProps> = ({ board, selectedId, onSelect, onMachineAdded }) => (
   <nav className="mpx-machines-bar" aria-label={copy.machineProgram.machines}>
     <h2 className="mpx-machines-bar-title">{copy.machineProgram.machines}</h2>
 
@@ -43,7 +49,12 @@ export const MachinesStrip: React.FC<MachinesStripProps> = ({ board, selectedId,
     ) : board.error ? (
       <StateView kind="error" compact message={board.error} onRetry={() => void board.reload()} />
     ) : board.value.length === 0 ? (
-      <StateView kind="empty" compact title={copy.machineProgram.noMachinesTitle} hint={copy.machineProgram.noMachinesHint} />
+      <StateView
+        kind="empty"
+        compact
+        title={copy.machineProgram.noMachinesTitle}
+        hint={onMachineAdded ? copy.machineProgram.noMachinesHintCanAdd : copy.machineProgram.noMachinesHint}
+      />
     ) : (
       <ul className="mpx-machines">
         {board.value.map((row) => {
@@ -73,5 +84,7 @@ export const MachinesStrip: React.FC<MachinesStripProps> = ({ board, selectedId,
         })}
       </ul>
     )}
+
+    {onMachineAdded ? <AddMachineField onAdded={onMachineAdded} /> : null}
   </nav>
 );

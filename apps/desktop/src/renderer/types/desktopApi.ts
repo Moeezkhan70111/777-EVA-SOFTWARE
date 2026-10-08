@@ -1113,6 +1113,8 @@ export interface AuthUser {
   permissions: string[];
   lastLoginAt: string | null;
   roleNotification?: string | null;
+  /** The name of the role assigned to the user (e.g. "Munshi"); titles their Dashboard. */
+  roleName?: string | null;
 }
 
 /**
@@ -1275,7 +1277,7 @@ export interface DesktopApi {
   // comes from the data layer and every write goes through a use case, which re-checks it inside
   // the write lock — the screen's figures are never trusted.
   listMachines(includeInactive?: boolean): Promise<MachineRecord[]>;
-  createMachine(input: { name: string; sectionId: string }): Promise<{ accepted: boolean; machine?: MachineRecord; reason?: string }>;
+  createMachine(input: { name: string; sectionId?: string }): Promise<{ accepted: boolean; machine?: MachineRecord; reason?: string }>;
   setMachineStatus(machineId: string, status: "ACTIVE" | "INACTIVE"): Promise<{ accepted: boolean; reason?: string }>;
   assignMachineContractor(input: { machineId: string; contractorPartyId: string }): Promise<MachineProgramWriteResult>;
   listMachineProgramBoard(programDate: string): Promise<{ accepted: boolean; rows: MachineProgramBoardRow[]; reason?: string }>;

@@ -29,7 +29,7 @@ export const StoreHomePage: React.FC<StoreHomePageProps> = ({ onNavigate }) => {
 
   // Move In is focused on arrival, so Enter alone opens the usual job.
   useEffect(() => {
-    // preventScroll: on a short window, focusing must not scroll the logo and heading away.
+    // preventScroll: on a short window, focusing must not scroll the heading away.
     cardRefs.current[0]?.focus({ preventScroll: true });
   }, []);
 
@@ -56,7 +56,7 @@ export const StoreHomePage: React.FC<StoreHomePageProps> = ({ onNavigate }) => {
 
   return (
     <div className="so-page">
-      {/* Who is signed in is already on the app's floating profile menu, top right. */}
+      {/* Who is signed in is already shown at the foot of the sidebar. */}
       <StoreTopBar />
 
       <main className="so-stage">

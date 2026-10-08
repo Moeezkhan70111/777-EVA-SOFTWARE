@@ -38,9 +38,11 @@ import { useProgramWrites } from "./useProgramWrites";
 interface MachineProgramPageProps {
   /** The signed-in operator, printed on the program sheet. */
   username?: string;
+  /** Whether this user may add machines (master data, gated on Stock). Shows + Add Machine. */
+  canAddMachine?: boolean;
 }
 
-export const MachineProgramPage: React.FC<MachineProgramPageProps> = ({ username }) => {
+export const MachineProgramPage: React.FC<MachineProgramPageProps> = ({ username, canAddMachine = false }) => {
   const today = toIsoDate();
   const [date, setDate] = useState(today);
   const [machineId, setMachineId] = useState<string | null>(null);
@@ -67,6 +69,16 @@ export const MachineProgramPage: React.FC<MachineProgramPageProps> = ({ username
   const openMachine = (row: MachineProgramBoardRow) => {
     if (row.machine.contractorPartyId) setMachineId(row.machine.id);
     else setAskingContractorFor(row.machine);
+  };
+
+  /**
+   * A machine just added joins the strip and opens the way any machine does — a new one has
+   * nobody on it yet, so it goes straight to "who works here?".
+   */
+  const machineAdded = async (added: MachineRecord) => {
+    await board.reload();
+    if (added.contractorPartyId) setMachineId(added.id);
+    else setAskingContractorFor(added);
   };
 
   /** The board is the one source of the machine record, so it is re-read before the machine opens. */
@@ -97,7 +109,12 @@ export const MachineProgramPage: React.FC<MachineProgramPageProps> = ({ username
         onPrint={() => saved && printMachineProgram(saved, username)}
       />
 
-      <MachinesStrip board={board} selectedId={machineId} onSelect={openMachine} />
+      <MachinesStrip
+        board={board}
+        selectedId={machineId}
+        onSelect={openMachine}
+        onMachineAdded={canAddMachine ? (added) => void machineAdded(added) : undefined}
+      />
 
       <div className="mpx-grid">
         <main className="mpx-main" aria-label={copy.machineProgram.title}>
