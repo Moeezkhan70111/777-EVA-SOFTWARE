@@ -15,3 +15,21 @@ tmp-*.sqlite*
 *.sqlite-shm
 *.sqlite-wal
 .tmp-*
+
+# --- ERP business data must NEVER be committed -------------------------------
+# The live database and everything derived from it belongs in the per-user
+# app-data folder (%LOCALAPPDATA%/777-erp), never in source control. Git cannot
+# merge a binary SQLite file, and committing one while the app is running would
+# capture a torn snapshot because the database runs in WAL mode. These patterns
+# are a second line of defence in case a database, backup or export is ever
+# created inside the repository by mistake.
+*.sqlite
+*.sqlite3
+*.db
+*-journal
+backups/
+logs/
+product-images/
+delivery-proofs/
+session.bin
+data-migration.json
