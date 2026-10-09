@@ -111,6 +111,10 @@ contextBridge.exposeInMainWorld("desktop", {
     removeMachineProgramRun: (input: Record<string, unknown>) => ipcRenderer.invoke(IPC.removeMachineProgramRun, input),
     deleteMachineProgram: (input: Record<string, unknown>) => ipcRenderer.invoke(IPC.deleteMachineProgram, input),
     setMachineProgramShift: (input: Record<string, unknown>) => ipcRenderer.invoke(IPC.setMachineProgramShift, input),
+    getRawMaterialHandMoveOptions: (itemId: string, direction: string, opts?: { token?: string }) =>
+      ipcRenderer.invoke(IPC.getRawMaterialHandMoveOptions, itemId, direction, opts),
+    moveRawMaterialByHand: (input: Record<string, unknown>, opts?: { token?: string }) =>
+      ipcRenderer.invoke(IPC.moveRawMaterialByHand, input, opts),
     listRawMaterialMovementConfig: (search?: string) => ipcRenderer.invoke(IPC.listRawMaterialMovementConfig, search),
     setRawMaterialMovementConfig: (itemId: string, input: Record<string, unknown>) =>
       ipcRenderer.invoke(IPC.setRawMaterialMovementConfig, itemId, input),

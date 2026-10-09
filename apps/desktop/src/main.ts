@@ -1,7 +1,17 @@
 import { app, BrowserWindow } from "electron";
 import path from "node:path";
 import type { SqliteDatabase, StructuredLogger } from "@erp/data";
-import { DATA_DIR_ENV, effectivePaths, ensureRuntimeDirectories, migrateLegacyData, resolveRuntimePaths } from "./main/runtimePaths";
+import {
+  DATA_DIR_ENV,
+  effectivePaths,
+  ensureRuntimeDirectories,
+  migrateLegacyData,
+  missingRuntimeResources,
+  resolveRuntimePaths,
+  type MigrationReport,
+  type RuntimePaths,
+} from "./main/runtimePaths";
+import { reportFatalStartupError, type StartupFailure } from "./main/startupFailure";
 import { createIpcContext, registerIpcHandlers } from "./main/ipc";
 import type { UseCases } from "./main/ipc/context";
 
@@ -11,27 +21,52 @@ import type { UseCases } from "./main/ipc/context";
 
 // ─── Filesystem locations ─────────────────────────────────────────────────────
 // All paths come from main/runtimePaths.ts (persistent data in the per-user app-data folder,
-// disposable caches in temp). A previous installation's data in the old temp/repo location
-// is copied and verified once, and never deleted, before the database is opened.
-const resolvedPaths = resolveRuntimePaths({
-  platform: process.platform,
-  appDataDir: app.getPath("appData"),
-  localAppDataDir: process.env.LOCALAPPDATA,
-  tempDir: app.getPath("temp"),
-  appPath: app.getAppPath(),
-  overrideDataDir: process.env[DATA_DIR_ENV],
-});
-ensureRuntimeDirectories(resolvedPaths);
-const dataMigration = migrateLegacyData(resolvedPaths);
-const paths = effectivePaths(resolvedPaths, dataMigration);
-ensureRuntimeDirectories(paths);
+// disposable caches in temp, read-only schema/migrations from the application's own resources).
+// A previous installation's data in the old temp/repo location is copied and verified once, and
+// never deleted, before the database is opened.
+//
+// This runs at import time because Electron requires the cache switches and
+// disableHardwareAcceleration() before the app is ready. Anything that goes wrong is kept in
+// `startupFailure` and reported from whenReady(), where a dialog can actually be shown.
 
-app.setPath("userData", paths.dataRoot);
-app.setPath("sessionData", paths.sessionDataDir);
-app.commandLine.appendSwitch("disk-cache-dir", paths.cacheDir);
-app.commandLine.appendSwitch("disable-gpu-shader-disk-cache");
-app.commandLine.appendSwitch("disable-http-cache");
-app.disableHardwareAcceleration();
+interface Bootstrap {
+  paths: RuntimePaths;
+  dataMigration: MigrationReport;
+}
+
+function bootstrapFilesystem(): Bootstrap {
+  const resolvedPaths = resolveRuntimePaths({
+    platform: process.platform,
+    appDataDir: app.getPath("appData"),
+    localAppDataDir: process.env.LOCALAPPDATA,
+    tempDir: app.getPath("temp"),
+    appPath: app.getAppPath(),
+    overrideDataDir: process.env[DATA_DIR_ENV],
+    isPackaged: app.isPackaged,
+    resourcesPath: process.resourcesPath,
+  });
+  ensureRuntimeDirectories(resolvedPaths);
+  const dataMigration = migrateLegacyData(resolvedPaths);
+  const paths = effectivePaths(resolvedPaths, dataMigration);
+  ensureRuntimeDirectories(paths);
+
+  app.setPath("userData", paths.dataRoot);
+  app.setPath("sessionData", paths.sessionDataDir);
+  app.commandLine.appendSwitch("disk-cache-dir", paths.cacheDir);
+  app.commandLine.appendSwitch("disable-gpu-shader-disk-cache");
+  app.commandLine.appendSwitch("disable-http-cache");
+  app.disableHardwareAcceleration();
+
+  return { paths, dataMigration };
+}
+
+let bootstrap: Bootstrap | null = null;
+let startupFailure: StartupFailure | null = null;
+try {
+  bootstrap = bootstrapFilesystem();
+} catch (error) {
+  startupFailure = { stage: "filesystem-locations", error };
+}
 
 // One running instance per data folder: two processes on the same WAL database is how
 // local ERP data gets corrupted. A second launch just focuses the existing window.
@@ -58,13 +93,35 @@ interface DesktopServices {
   useCases: UseCases;
 }
 
-const servicesPromise = initializeServices();
+const servicesPromise = bootstrap
+  ? initializeServices(bootstrap)
+  : Promise.reject<DesktopServices>(startupFailure?.error ?? new Error("The application could not determine where to store its data."));
+// whenReady() awaits the same promise and reports the failure there; this only stops an early
+// rejection from being treated as an unhandled one first.
+servicesPromise.catch(() => undefined);
 
-async function initializeServices(): Promise<DesktopServices> {
+/**
+ * The schema and the migrations ship with the application. If either is missing the installation
+ * is incomplete, and the ERP must say so rather than open a window over a half-built database.
+ */
+function assertResourcesPresent(paths: RuntimePaths): void {
+  const missing = missingRuntimeResources(paths);
+  if (missing.length === 0) return;
+  const described = missing.map((resource) => `${resource.label} (${resource.path})`).join(", ");
+  throw new Error(`The installation is incomplete — missing ${described}.`);
+}
+
+async function initializeServices({ paths, dataMigration }: Bootstrap): Promise<DesktopServices> {
+  assertResourcesPresent(paths);
+
   const dataModule = await import("@erp/data");
   const applicationModule = await import("@erp/application");
 
-  const db = new dataModule.SqliteDatabase({ dbPath: paths.databaseFile, schemaPath: paths.schemaFile });
+  const db = new dataModule.SqliteDatabase({
+    dbPath: paths.databaseFile,
+    schemaPath: paths.schemaFile,
+    migrationsDir: paths.migrationsDir,
+  });
   const logger = new dataModule.StructuredLogger(paths.logsDir);
   logger.log({
     module: "runtime",
@@ -232,11 +289,20 @@ app.on("second-instance", () => {
   existing.focus();
 });
 
-app.whenReady().then(() => {
+// The window opens only once every service is up, so the renderer can never call an IPC channel
+// that has no handler registered behind it. A failure here is fatal and reported, never logged
+// and walked past.
+app.whenReady().then(async () => {
   if (!hasInstanceLock) return;
-  void servicesPromise.catch((error) => {
-    console.error("Failed to initialize desktop services", error);
-  });
+
+  try {
+    if (startupFailure) throw startupFailure.error;
+    await servicesPromise;
+  } catch (error) {
+    reportFatalStartupError({ stage: startupFailure?.stage ?? "database", error }, bootstrap?.paths.logsDir);
+    return;
+  }
+
   createWindow();
 
   app.on("activate", () => {
@@ -253,6 +319,7 @@ app.on("window-all-closed", () => {
 });
 
 app.on("before-quit", async () => {
-  const services = await servicesPromise;
-  services.db.close();
+  // A startup failure already exited; there is no database handle to close in that case.
+  const services = await servicesPromise.catch(() => null);
+  services?.db.close();
 });

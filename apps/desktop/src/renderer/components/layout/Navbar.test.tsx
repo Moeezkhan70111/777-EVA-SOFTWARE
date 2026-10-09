@@ -85,7 +85,8 @@ describe("Navbar sidebar", () => {
     it("lists the picked job and the pages of it their role may open", () => {
       const { onSelect, rail } = renderNavbar(storeOp, "store-in-operator", "in");
       // Raw Material QR needs the label permission and Setup the setup one; this operator has neither.
-      expect(rowNames(rail)).toEqual(["Select Job", "Move In", "Add New Material", "Raw Material Move In", "Stock", "Receipts"]);
+      // The Store In page's own tabs, in tab order, then the full-screen scan station.
+      expect(rowNames(rail)).toEqual(["Select Job", "Move In", "Add New Material", "Stock", "Receipts", "Raw Material Move In"]);
       expect(within(rail).getByRole("button", { name: "Move In" })).toHaveAttribute("aria-current", "page");
 
       fireEvent.click(within(rail).getByRole("button", { name: "Raw Material Move In" }));

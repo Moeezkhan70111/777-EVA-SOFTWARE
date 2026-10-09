@@ -11,7 +11,9 @@
     "build": "npm run --workspace @erp/domain build && npm run --workspace @erp/application build && npm run --workspace @erp/scanner build && npm run --workspace @erp/data build && npm run --workspace @erp/sync build && npm run --workspace @erp/desktop build",
     "test": "npm run --workspace @erp/domain test && npm run --workspace @erp/application test && npm run --workspace @erp/scanner test && npm run --workspace @erp/data test && npm run --workspace @erp/sync test && npm run --workspace @erp/desktop test",
     "lint": "npm run --workspace @erp/domain lint && npm run --workspace @erp/application lint && npm run --workspace @erp/scanner lint && npm run --workspace @erp/data lint && npm run --workspace @erp/sync lint",
-    "start": "npm run build && npm run --workspace @erp/desktop dev"
+    "start": "npm run build && npm run --workspace @erp/desktop dev",
+    "package:win": "npm run build && npm run --workspace @erp/desktop package",
+    "package:dir": "npm run build && npm run --workspace @erp/desktop package:dir"
   },
 "devDependencies": {
   "@types/node": "^22.15.24",

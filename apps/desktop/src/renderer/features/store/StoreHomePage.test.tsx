@@ -2,7 +2,6 @@ import React from "react";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { StoreHomePage } from "./StoreHomePage";
-import { StoreOperatorScreen } from "./StoreOperatorScreen";
 
 // Store Station asks one question and offers two jobs. It must never touch stock — the only
 // observable effect is navigation.
@@ -60,12 +59,3 @@ describe("StoreHomePage", () => {
   });
 });
 
-describe("StoreOperatorScreen", () => {
-  it("names the job and leads back to Store Station", () => {
-    const onBack = vi.fn();
-    render(<StoreOperatorScreen direction="out" onBack={onBack} />);
-    expect(screen.getByRole("heading", { name: "Move Out" })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: /Change job/ }));
-    expect(onBack).toHaveBeenCalledTimes(1);
-  });
-});

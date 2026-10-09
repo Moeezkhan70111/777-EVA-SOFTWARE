@@ -663,8 +663,9 @@ export const RecentScansCard: React.FC<{
 
 /** The toolbar every station wears: back, brand, scanner pill, actions. */
 export const StationToolbar: React.FC<{
-  eyebrow: string;
-  title: string;
+  /** Both are left out where the screen around the station already names it. */
+  eyebrow?: string;
+  title?: string;
   onBack?: () => void;
   backLabel?: string;
   scannerPill?: { text: string; color: string };
@@ -687,10 +688,12 @@ export const StationToolbar: React.FC<{
       <div className="ssn-brand-icon">
         <BrandIcon />
       </div>
-      <div className="ssn-brand-text">
-        <span className="ssn-eyebrow">{eyebrow}</span>
-        <h1 className="ssn-title">{title}</h1>
-      </div>
+      {eyebrow || title ? (
+        <div className="ssn-brand-text">
+          {eyebrow ? <span className="ssn-eyebrow">{eyebrow}</span> : null}
+          {title ? <h1 className="ssn-title">{title}</h1> : null}
+        </div>
+      ) : null}
     </div>
     <div className="ssn-toolbar-actions">
       {scannerPill && (

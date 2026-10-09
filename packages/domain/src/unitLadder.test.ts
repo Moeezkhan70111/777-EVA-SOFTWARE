@@ -1,17 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {
-  baseToCompound,
-  quantityInBaseUnit,
-  compoundToBase,
-  describeCompound,
-  describeLadderStep,
-  ladderBaseUnit,
-  ladderMultipliers,
-  ladderProblems,
-  ladderUnits,
-  type UnitLadderStep,
-} from "./unitLadder.js";
+import { baseToCompound, compoundToBase, convertOnLadder, describeCompound, describeLadderStep, ladderBaseUnit, ladderMultipliers, ladderProblems, ladderUnits, quantityInBaseUnit, type UnitLadderStep, unitsForCount } from "./unitLadder.js";
 
 // The real case this was built for: NAWAAR — 5 SOOTAR — BLACK — NAAKI SOOTI.
 // A roll is 975 metres, and the shop floor measures a metre as 40 inches.
@@ -134,4 +123,47 @@ test("a ladder cannot loop back on itself", () => {
     { fromUnit: "METRE", toUnit: "ROLL", factor: 40 },
   ]);
   assert.equal(looped.some((problem) => /appears twice/.test(problem)), true);
+});
+
+
+// The owner's own example: this nawaar is bought in RULES and the balance is kept in INCHES.
+const RULE_INCH: UnitLadderStep[] = [{ fromUnit: "RULE", toUnit: "INCH", factor: 975 }];
+
+test("a count typed in inches comes off the balance in inches, and one rule IS 975 of them", () => {
+  assert.equal(convertOnLadder(RULE_INCH, 975, "INCH", "INCH"), 975);
+  assert.equal(convertOnLadder(RULE_INCH, 1, "RULE", "INCH"), 975);
+  // The same move said either way lands on the same figure.
+  assert.equal(convertOnLadder(RULE_INCH, 975, "INCH", "RULE"), 1);
+});
+
+test("a part of a rule converts both ways without rounding the shelf away", () => {
+  assert.equal(convertOnLadder(RULE_INCH, 700, "INCH", "RULE"), 700 / 975);
+  assert.equal(convertOnLadder(RULE_INCH, 600, "INCH", "RULE"), 600 / 975);
+  assert.equal(convertOnLadder(RULE_INCH, 2, "RULE", "INCH"), 1950);
+  // 1950 INCH is exactly 2 RULE, so a round trip must not drift.
+  assert.equal(convertOnLadder(RULE_INCH, convertOnLadder(RULE_INCH, 2, "RULE", "INCH")!, "INCH", "RULE"), 2);
+});
+
+test("a count converts between any two rungs of a longer chain", () => {
+  const steps: UnitLadderStep[] = [
+    { fromUnit: "ROLL", toUnit: "METRE", factor: 975 },
+    { fromUnit: "METRE", toUnit: "INCH", factor: 40 },
+  ];
+  assert.equal(convertOnLadder(steps, 1, "ROLL", "INCH"), 39000);
+  assert.equal(convertOnLadder(steps, 1, "ROLL", "METRE"), 975);
+  assert.equal(convertOnLadder(steps, 80, "INCH", "METRE"), 2);
+  assert.equal(convertOnLadder(steps, 39000, "INCH", "ROLL"), 1);
+});
+
+test("a unit that is not on this material's ladder is refused, never guessed at", () => {
+  assert.equal(convertOnLadder(RULE_INCH, 5, "METRE", "INCH"), null);
+  assert.equal(convertOnLadder(RULE_INCH, 5, "INCH", "YARD"), null);
+  assert.equal(convertOnLadder([], 5, "INCH", "RULE"), null);
+  assert.equal(convertOnLadder(RULE_INCH, Number.NaN, "RULE", "INCH"), null);
+});
+
+test("the units a count may be typed in are the ladder's, or just the stock unit without one", () => {
+  assert.deepEqual(unitsForCount(RULE_INCH, "INCH"), ["RULE", "INCH"]);
+  assert.deepEqual(unitsForCount([], "DOZEN"), ["DOZEN"]);
+  assert.deepEqual(unitsForCount([], null), []);
 });

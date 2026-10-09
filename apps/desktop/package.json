@@ -2,30 +2,35 @@
   "name": "@erp/desktop",
   "version": "0.1.0",
   "private": true,
+  "description": "777 ERP — offline-first manufacturing ERP desktop application",
+  "author": "T&T Traders",
   "main": "dist/main.js",
   "scripts": {
     "build": "node -e \"require('node:fs').rmSync('dist',{ recursive: true, force: true })\" && tsc -p tsconfig.json && tsc -p tsconfig.renderer.json --noEmit && node ./scripts/build-renderer.mjs",
     "start": "npm run build && electron .",
     "dev": "node ./scripts/dev.mjs",
     "test": "vitest run",
-    "lint": "echo 'no lint configured yet'"
+    "lint": "echo 'no lint configured yet'",
+    "package": "electron-builder --win --config electron-builder.yml",
+    "package:dir": "electron-builder --dir --config electron-builder.yml"
   },
   "dependencies": {
     "@erp/application": "0.1.0",
     "@erp/data": "0.1.0",
     "@erp/domain": "0.1.0",
     "@fontsource-variable/inter": "^5.3.0",
-    "electron": "43.3.0",
     "qrcode-generator": "^2.0.4",
     "react": "^19.1.0",
     "react-dom": "^19.1.0"
   },
   "devDependencies": {
+    "electron": "43.3.0",
     "@testing-library/jest-dom": "^6.7.0",
     "@testing-library/react": "^16.3.0",
     "@testing-library/user-event": "^14.6.1",
     "@types/react": "^19.1.10",
     "@types/react-dom": "^19.1.7",
+    "electron-builder": "^26.15.3",
     "esbuild": "^0.25.9",
     "jsdom": "^26.1.0",
     "typescript": "^5.9.2",

@@ -1279,7 +1279,12 @@ export interface DesktopApi {
   listMachines(includeInactive?: boolean): Promise<MachineRecord[]>;
   createMachine(input: { name: string; sectionId?: string }): Promise<{ accepted: boolean; machine?: MachineRecord; reason?: string }>;
   setMachineStatus(machineId: string, status: "ACTIVE" | "INACTIVE"): Promise<{ accepted: boolean; reason?: string }>;
-  assignMachineContractor(input: { machineId: string; contractorPartyId: string }): Promise<MachineProgramWriteResult>;
+  assignMachineContractor(input: {
+    machineId: string;
+    /** Which of the machine's two contractors is being set. Defaults to the machine contractor. */
+    role?: MachineContractorRole;
+    contractorPartyId: string;
+  }): Promise<MachineProgramWriteResult>;
   listMachineProgramBoard(programDate: string): Promise<{ accepted: boolean; rows: MachineProgramBoardRow[]; reason?: string }>;
   getMachineProgramForDate(
     machineId: string,
@@ -1298,6 +1303,25 @@ export interface DesktopApi {
   removeMachineProgramRun(input: { runId: string }): Promise<MachineProgramWriteResult>;
   deleteMachineProgram(input: { programId: string; reason?: string | null }): Promise<MachineProgramWriteResult>;
   setMachineProgramShift(input: { programId: string; shift: MachineShift }): Promise<MachineProgramWriteResult>;
+  /** What a material may be moved by hand in this direction. Null when it is not in the master. */
+  getRawMaterialHandMoveOptions(
+    itemId: string,
+    direction: HandMoveDirection,
+    opts?: { token?: string }
+  ): Promise<RawMaterialHandMoveOptions | null>;
+  /** Moves a typed quantity on or off a material's balance and records that it came in or left. */
+  moveRawMaterialByHand(
+    input: {
+      itemId: string;
+      direction: HandMoveDirection;
+      quantity: number;
+      unitCode: string;
+      /** Who delivered it. Required moving IN. */
+      partyId?: string | null;
+      note?: string | null;
+    },
+    opts?: { token?: string }
+  ): Promise<RawMaterialHandMoveResult>;
   listRawMaterialMovementConfig(search?: string): Promise<RawMaterialMovementConfigRow[]>;
   setRawMaterialMovementConfig(
     itemId: string,
@@ -1821,6 +1845,52 @@ export interface ItemUnitLadder {
   stockUnitId: string | null;
 }
 
+/** Which way material is being moved by hand: INto the store, or OUT of it. */
+export type HandMoveDirection = "IN" | "OUT";
+
+/**
+ * What the Store In / Move Out screens need to offer one material by hand: the units it may be
+ * counted in, what is on the shelf, and whether it may move that way at all.
+ */
+export interface RawMaterialHandMoveOptions {
+  itemId: string;
+  itemCode: string;
+  displayName: string;
+  stockUnitCode: string | null;
+  stockUnitId: string | null;
+  quantityOnHand: number;
+  /** Every rung of its ladder, biggest first — or just the stock unit when it has no ladder. */
+  units: string[];
+  steps: ItemUnitLadderStep[];
+  /** Labelled packets of it currently in the store. Any at all block a move OUT by hand. */
+  labelledPacketsInStore: number;
+  /** Why it cannot move this way by hand, or null when it can. */
+  blockedReason: string | null;
+}
+
+export interface RawMaterialHandMoveResult {
+  accepted: boolean;
+  outcome:
+    | "MOVED"
+    | "NOT_FOUND"
+    | "NOT_ELIGIBLE"
+    | "HAS_LABELLED_PACKETS"
+    | "NO_SUPPLIER"
+    | "UNKNOWN_UNIT"
+    | "INVALID_QUANTITY"
+    | "NOT_ENOUGH_STOCK"
+    | "NOT_AUTHORIZED";
+  reason?: string;
+  direction?: HandMoveDirection;
+  /** What moved, in the unit stock is kept in. */
+  quantity?: number;
+  unitCode?: string;
+  /** What the operator typed, so the result reads back the way it was entered. */
+  typedQuantity?: number;
+  typedUnitCode?: string;
+  quantityOnHand?: number;
+}
+
 /** What would happen if a category were filed somewhere else, and what would stop it. */
 export interface CategoryMovePreview {
   /** Empty means the move can go ahead. */
@@ -2071,9 +2141,12 @@ export interface MachineRecord {
   sectionName: string;
   sortOrder: number;
   status: string;
-  /** Who works on this machine — set once, kept until somebody changes it. */
+  /** Who RUNS this machine — set once, kept until somebody changes it. */
   contractorPartyId: string | null;
   contractorName: string | null;
+  /** Who PACKS what it makes. A separate assignment, from the same contractor parties. */
+  packingContractorPartyId: string | null;
+  packingContractorName: string | null;
 }
 
 /** A colour a sole can be moulded in, with how much Dana the store holds in that colour. */
@@ -2159,8 +2232,14 @@ export interface MachineProgramRecord {
   machineId: string;
   machineName: string;
   contractorPartyId: string;
-  /** The contractor as they were when the program was made. */
+  /** The machine contractor as they were when the program was made. */
   contractorName: string;
+  /**
+   * Who packs this program's output, snapshotted the same way. Null only on programs saved
+   * before a machine had two contractors — nothing made since can be missing it.
+   */
+  packingContractorPartyId: string | null;
+  packingContractorName: string | null;
   programDate: string;
   /** Minutes from midnight of programDate that the shift starts, 0 to 1439. */
   shiftStartMinute: number;
@@ -2214,6 +2293,12 @@ export interface MachineShift {
   startMinute: number;
   endMinute: number;
 }
+
+/**
+ * Which of a machine's two contractors is meant: the one who RUNS it, or the one who PACKS what
+ * it makes. Mirrors MachineContractorRole in @erp/domain, for the same reason as MachineShift.
+ */
+export type MachineContractorRole = "MACHINE" | "PACKING";
 
 /** The sole colour and the article + size of a run. */
 export interface MachineProgramRunHeader {

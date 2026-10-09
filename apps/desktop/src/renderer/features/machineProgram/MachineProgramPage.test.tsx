@@ -35,7 +35,10 @@ const TODAY = toIsoDate();
 const DAY_SHIFT: MachineShift = { startMinute: 360, endMinute: 1080 };
 const NIGHT_SHIFT: MachineShift = { startMinute: 1080, endMinute: 1800 };
 
-const machine = (id: string, name: string, contractor: string | null): MachineRecord => ({
+const partyId = (contractor: string | null): string | null => (contractor ? `c-${contractor.slice(-1)}` : null);
+
+/** A machine is worked by two contractors: `packer` defaults to the same party as the runner. */
+const machine = (id: string, name: string, contractor: string | null, packer: string | null = contractor): MachineRecord => ({
   id,
   machineCode: `M-00${id.slice(-1)}`,
   name,
@@ -43,8 +46,10 @@ const machine = (id: string, name: string, contractor: string | null): MachineRe
   sectionName: "PACKING",
   sortOrder: Number(id.slice(-1)),
   status: "ACTIVE",
-  contractorPartyId: contractor ? `c-${contractor.slice(-1)}` : null,
+  contractorPartyId: partyId(contractor),
   contractorName: contractor,
+  packingContractorPartyId: partyId(packer),
+  packingContractorName: packer,
 });
 
 /**
@@ -91,7 +96,8 @@ const programWith = (
   const consumed = records.reduce((sum, line) => sum + line.consumed, 0);
   return {
     id: "prog-1", programNumber: 1, code: "MP-000001", machineId: "m-1", machineName: "MACHINE 1", contractorPartyId: "c-A",
-    contractorName: "CONTRACTOR A", programDate: TODAY,
+    contractorName: "CONTRACTOR A", packingContractorPartyId: "c-B", packingContractorName: "CONTRACTOR B",
+    programDate: TODAY,
     shiftStartMinute: shift.startMinute, shiftEndMinute: shift.endMinute,
     status: "PROGRAMMED", displayStatus: consumed > 0 ? "PARTIALLY_USED" : "PROGRAMMED",
     totalQuantity: total, consumedQuantity: consumed, outstandingQuantity: total - consumed, unitCode: "DOZEN", createdBy: "aslam",
@@ -106,7 +112,7 @@ const programWith = (
 };
 
 function installApi(options: { program?: MachineProgramRecord | null } = {}) {
-  const state = { program: options.program ?? null, machines: [machine("m-1", "MACHINE 1", "CONTRACTOR A"), machine("m-2", "MACHINE 2", "CONTRACTOR B"), machine("m-3", "MACHINE 3", null)] };
+  const state = { program: options.program ?? null, machines: [machine("m-1", "MACHINE 1", "CONTRACTOR A", "CONTRACTOR B"), machine("m-2", "MACHINE 2", "CONTRACTOR B"), machine("m-3", "MACHINE 3", null)] };
   const api = {
     listMachines: vi.fn(async () => state.machines),
     listMachineProgramBoard: vi.fn(async (date: string) => ({
@@ -192,10 +198,17 @@ const addSoleColour = async (injectorNo: number) => {
   return screen.findByRole("dialog");
 };
 
-/** Article → size, the two questions asked after the sole colour. */
-const describeArticle = async () => {
-  await click("SK6");
-  await click("7/10");
+/** Article (a searchable dropdown) → size (tiles), the two questions beside the sole colour. */
+const describeArticle = async (article = "SK6", size = "7/10") => {
+  await userEvent.click(screen.getByRole("combobox", { name: "Article" }));
+  await userEvent.click(await screen.findByRole("option", { name: article }));
+  await click(size);
+};
+
+/** + Add on an upper row of the Upper Stock panel, then how many of it in the selection below. */
+const chooseUpper = async (colour: string, quantity: string) => {
+  await click(`Add ${colour} upper`);
+  await userEvent.type(await screen.findByRole("textbox", { name: new RegExp(`How many ${colour} upper`) }), quantity);
 };
 
 afterEach(() => {
@@ -231,39 +244,80 @@ describe("MachineProgramPage", () => {
     expect(within(nav).getByRole("button", { name: /MACHINE 1/ })).toHaveAttribute("aria-pressed", "false");
   });
 
-  it("asks who works on a machine that has nobody, saves it once, and opens the machine", async () => {
+  it("asks for BOTH contractors on a machine that has nobody, saves one assignment each, and opens it", async () => {
     const api = installApi();
     renderPage();
 
     await clickMachine(/MACHINE 3/);
     const dialog = await screen.findByRole("dialog");
     expect(within(dialog).getByText("Who works on MACHINE 3?")).toBeInTheDocument();
-    await userEvent.click(await within(dialog).findByRole("button", { name: /CONTRACTOR B/ }));
-    await userEvent.click(within(dialog).getByRole("button", { name: "Confirm" }));
 
-    expect(api.assignMachineContractor).toHaveBeenCalledWith({ machineId: "m-3", contractorPartyId: "c-B" });
+    // Neither role is optional — one answer is not enough to leave.
+    const runs = within(dialog).getByRole("region", { name: "Machine contractor" });
+    const packs = within(dialog).getByRole("region", { name: "Packing contractor" });
+    await userEvent.click(await within(runs).findByRole("button", { name: /CONTRACTOR A/ }));
+    expect(within(dialog).getByRole("button", { name: "Save contractors" })).toBeDisabled();
+
+    await userEvent.click(within(packs).getByRole("button", { name: /CONTRACTOR B/ }));
+    await userEvent.click(within(dialog).getByRole("button", { name: "Save contractors" }));
+
+    // One saved assignment per role, each its own transaction.
+    expect(api.assignMachineContractor).toHaveBeenCalledTimes(2);
+    expect(api.assignMachineContractor).toHaveBeenNthCalledWith(1, { machineId: "m-3", role: "MACHINE", contractorPartyId: "c-A" });
+    expect(api.assignMachineContractor).toHaveBeenNthCalledWith(2, { machineId: "m-3", role: "PACKING", contractorPartyId: "c-B" });
+
     const nav = await rail();
     await waitFor(() => expect(within(nav).getByRole("button", { name: /MACHINE 3/ })).toHaveAttribute("aria-pressed", "true"));
     expect(screen.getByRole("tab", { name: /Injector 1/ })).toBeInTheDocument();
   });
 
-  it("changing the contractor from the quick view shows the current and the new one and asks first", async () => {
+  it("a machine with only its machine contractor set is not ready, and asks for the packing one", async () => {
+    const api = installApi();
+    // MACHINE 2 runs under CONTRACTOR B but nobody packs for it yet.
+    const halfAssigned = machine("m-2", "MACHINE 2", "CONTRACTOR B", null);
+    api.listMachineProgramBoard.mockResolvedValue({ accepted: true, rows: [{ machine: halfAssigned, program: null }] });
+    renderPage();
+
+    const nav = await rail();
+    expect(await within(nav).findByRole("button", { name: /MACHINE 2/ })).toHaveTextContent("No contractor yet");
+
+    await clickMachine(/MACHINE 2/);
+    const dialog = await screen.findByRole("dialog");
+    // The machine contractor it already has is stated, and only the packing one is still open.
+    const runs = within(dialog).getByRole("region", { name: "Machine contractor" });
+    expect(within(runs).getByText("Now").parentElement).toHaveTextContent("CONTRACTOR B");
+    // Half set up is still SETTING UP, not changing — the dialog says so.
+    expect(within(dialog).getByText("Who works on MACHINE 2?")).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: "Save contractors" })).toBeDisabled();
+    // Answering the open one is all it takes.
+    const packs = within(dialog).getByRole("region", { name: "Packing contractor" });
+    await userEvent.click(await within(packs).findByRole("button", { name: /CONTRACTOR A/ }));
+    expect(within(dialog).getByRole("button", { name: "Save contractors" })).toBeEnabled();
+  });
+
+  it("changing one contractor from the quick view saves only that role, and says what it will not touch", async () => {
     const api = installApi();
     renderPage();
     await openMachine1();
-    await click(/^Change contractor/);
-    const picker = await screen.findByRole("dialog");
-    await userEvent.click(await within(picker).findByRole("button", { name: /CONTRACTOR B/ }));
 
+    // Both are on the quick view, said apart.
+    const summary = screen.getByRole("complementary", { name: "Program Summary" });
+    expect(within(summary).getByText("Machine contractor").parentElement).toHaveTextContent("CONTRACTOR A");
+    expect(within(summary).getByText("Packing contractor").parentElement).toHaveTextContent("CONTRACTOR B");
+
+    await click(/^Change contractors/);
     const dialog = await screen.findByRole("dialog");
-    expect(within(dialog).getByText("Change contractor?")).toBeInTheDocument();
-    expect(within(dialog).getByText("CONTRACTOR A")).toBeInTheDocument();
-    expect(within(dialog).getByText("CONTRACTOR B")).toBeInTheDocument();
-    expect(within(dialog).getByText(/Future programs will use the new contractor/)).toBeInTheDocument();
+    expect(within(dialog).getByText("Change contractors?")).toBeInTheDocument();
+    expect(within(dialog).getByText(/Programs already made keep the pair/)).toBeInTheDocument();
     expect(api.assignMachineContractor).not.toHaveBeenCalled();
 
-    await userEvent.click(within(dialog).getByRole("button", { name: "Change contractor" }));
-    expect(api.assignMachineContractor).toHaveBeenCalledWith({ machineId: "m-1", contractorPartyId: "c-B" });
+    const packs = within(dialog).getByRole("region", { name: "Packing contractor" });
+    await userEvent.click(await within(packs).findByRole("button", { name: /CONTRACTOR A/ }));
+    await userEvent.click(within(dialog).getByRole("button", { name: "Change contractors" }));
+
+    // Only the role that changed is sent — the machine contractor is left exactly as it was.
+    expect(api.assignMachineContractor).toHaveBeenCalledTimes(1);
+    expect(api.assignMachineContractor).toHaveBeenCalledWith({ machineId: "m-1", role: "PACKING", contractorPartyId: "c-A" });
   });
 
   it("changes the date from the header with one tap and reads that date's programs", async () => {
@@ -277,41 +331,45 @@ describe("MachineProgramPage", () => {
     expect(screen.getByRole("button", { name: new RegExp(`Program date.*${formatLongDate(tomorrow)}`) })).toBeInTheDocument();
   });
 
-  it("walks sole colour → Dana → article → size → upper → quantity, and saves exactly that with the shift", async () => {
+  it("asks sole colour, article, size and the uppers on one screen, and saves exactly that with the shift", async () => {
     const api = installApi();
     const { container } = renderPage();
     await openMachine1();
 
     const dialog = await addSoleColour(1);
-    // The first question is the sole COLOUR — no sole type is asked for at all.
-    expect(within(dialog).getByText("Choose sole colour")).toBeInTheDocument();
+    // The first panel is the sole COLOUR — no sole type is asked for at all.
+    expect(within(dialog).getByRole("region", { name: "Sole Color" })).toBeInTheDocument();
     expect(screen.queryByText("What sole are you making?")).toBeNull();
-    await click(/^BLACK/);
-    expect(await screen.findByText("Dana for a BLACK sole")).toBeInTheDocument();
-    expect(screen.getByText("ABC RUBBER")).toBeInTheDocument();
-    expect(screen.getByText("XYZ MATERIALS")).toBeInTheDocument();
+    // Nothing can be chosen from the store until the sole is described.
+    expect(within(dialog).getByText(/Choose the article and the size/)).toBeInTheDocument();
 
+    // The Dana a colour can be moulded from is on the colour itself, never a panel of its own.
+    const colourPanel = within(dialog).getByRole("region", { name: "Sole Color" });
+    expect(within(colourPanel).getByRole("button", { name: /^BLACK/ })).toHaveTextContent("DANA 100 DOZEN");
+    expect(within(dialog).queryByText(/Dana for a/)).toBeNull();
+
+    await click(/^BLACK/);
     await describeArticle();
 
-    // Every colour of SK6 7/10 in the store, one card each, named by colour and never by supplier.
-    const cards = await screen.findByText(/Available upper/);
-    const picker = cards.closest("section") as HTMLElement;
-    expect(within(picker).getAllByRole("button").map((card) => card.textContent)).toEqual([
-      "BLACKSK6 7/10 · RAGZINE UPPER · SILAIAvailable80 DOZEN",
-      "GREENSK6 7/10 · RAGZINE UPPER · SILAIAvailable60 DOZEN",
-      "BROWNSK6 7/10 · RAGZINE UPPER · SILAIAvailable24 DOZEN",
+    // Every colour of SK6 7/10 in the store, one row each, named by colour and never by supplier.
+    const stock = await screen.findByRole("region", { name: "Upper Stock" });
+    expect(within(stock).getAllByRole("row").slice(1).map((row) => row.textContent)).toEqual([
+      "BLACK80 DOZENAdd",
+      "GREEN60 DOZENAdd",
+      "BROWN24 DOZENAdd",
     ]);
-    expect(within(picker).queryByText(/ABC UPPER|XYZ UPPER/)).toBeNull();
-    await userEvent.click(within(picker).getByRole("button", { name: /GREEN/ }));
+    expect(within(stock).queryByText(/ABC UPPER|XYZ UPPER/)).toBeNull();
 
-    const amount = await screen.findByRole("textbox");
-    await userEvent.type(amount, "70");
+    // Choosing an upper saves nothing — it joins the selection, where its quantity is typed.
+    await chooseUpper("GREEN", "70");
+    expect(api.saveMachineProgramLine).not.toHaveBeenCalled();
     expect(screen.getByRole("alert")).toHaveTextContent("At most 60 DOZEN");
-    expect(screen.getByRole("button", { name: "Add" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Add to Program" })).toBeDisabled();
+
+    const amount = screen.getByRole("textbox", { name: /How many GREEN upper/ });
     await userEvent.clear(amount);
     await userEvent.type(amount, "30");
-    expect(screen.getByText("Remaining").parentElement).toHaveTextContent("30 DOZEN");
-    await click("Add");
+    await click("Add to Program");
 
     expect(api.saveMachineProgramLine).toHaveBeenCalledWith({
       machineId: "m-1",
@@ -332,31 +390,65 @@ describe("MachineProgramPage", () => {
     expect(container.querySelector("select")).toBeNull();
   });
 
-  it("adding an article cannot change the sole colour it was opened under, and ← Back keeps the article", async () => {
+  it("puts several uppers of one article on the program in one go, all on the same sole run", async () => {
+    const api = installApi();
+    renderPage();
+    await openMachine1();
+
+    await addSoleColour(1);
+    await click(/^BLACK/);
+    await describeArticle();
+    await chooseUpper("GREEN", "30");
+    await chooseUpper("BROWN", "12");
+
+    // An upper already in the selection cannot be chosen twice.
+    expect(screen.queryByRole("button", { name: "Add GREEN upper" })).toBeNull();
+
+    await click("Add to Program");
+
+    // The first line makes the run; the second joins the id it came back with, never a rival run.
+    expect(api.saveMachineProgramLine).toHaveBeenCalledTimes(2);
+    expect(api.saveMachineProgramLine).toHaveBeenNthCalledWith(1, expect.objectContaining({
+      runId: null,
+      run: { soleColour: "BLACK", articleSizeId: "as-sk6-710" },
+      itemId: "u-green",
+      quantity: 30,
+    }));
+    expect(api.saveMachineProgramLine).toHaveBeenNthCalledWith(2, expect.objectContaining({
+      runId: "run-1",
+      run: null,
+      itemId: "u-brown",
+      quantity: 12,
+    }));
+  });
+
+  it("adding an article cannot change the sole colour it was opened under, and keeps the selection while the article changes", async () => {
     installApi({ program: programWith([{ colour: "BLACK", quantity: 30 }]) });
     renderPage();
     await openMachine1();
 
     const sole = await screen.findByRole("article", { name: "BLACK sole" });
     await userEvent.click(within(sole).getByRole("button", { name: "Add Article" }));
+    const dialog = await screen.findByRole("dialog");
+
+    // The colour belongs to the card, so it is settled here: it is stated, never offered.
+    const colourPanel = within(dialog).getByRole("region", { name: "Sole Color" });
+    // Settled, and still carrying the Dana figure the colour list would have shown for it.
+    expect(within(colourPanel).getByText("BLACK sole")).toBeInTheDocument();
+    expect(await within(colourPanel).findByText("DANA 100 DOZEN")).toBeInTheDocument();
+    expect(within(colourPanel).queryByRole("button", { name: /^BLACK/ })).toBeNull();
+    expect(within(colourPanel).getByText(/cannot be changed here/)).toBeInTheDocument();
+
     await describeArticle();
-    expect(await screen.findByText(/Available upper/)).toBeInTheDocument();
+    // BLACK is already on this sole run, so it is named as such rather than offered again.
+    const stock = within(dialog).getByRole("region", { name: "Upper Stock" });
+    expect(within(stock).getByText("Already on this sole")).toBeInTheDocument();
+    await chooseUpper("GREEN", "10");
 
-    // The colour belongs to the card, so it is settled here: no Change, and no walking back into it.
-    expect(screen.getByText("✓ BLACK")).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Change Sole colour" })).toBeNull();
-
-    await click("← Back");
-    expect(await screen.findByText("Which size?")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "7/10" })).toHaveAttribute("aria-pressed", "true");
-    await click("← Back");
-    expect(screen.getByRole("button", { name: "SK6" })).toHaveAttribute("aria-pressed", "true");
-    expect(screen.getByText("✓ BLACK")).toBeInTheDocument();
-
-    await click("SK10");
-    expect(await screen.findByText("Which size?")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "8/11" })).toHaveAttribute("aria-pressed", "false");
-    expect(screen.getByText("✓ BLACK")).toBeInTheDocument();
+    // Moving to another article leaves what has already been chosen in the selection.
+    await describeArticle("SK10", "8/11");
+    expect(screen.getByRole("textbox", { name: /How many GREEN upper/ })).toHaveValue("10");
+    expect(within(dialog).getByRole("button", { name: "8/11" })).toHaveAttribute("aria-pressed", "true");
   });
 
   it("opens a date's existing program, with both injectors, the colour totals and the machine total", async () => {
@@ -494,13 +586,11 @@ describe("MachineProgramPage", () => {
     const sole = await screen.findByRole("article", { name: "BLACK sole" });
     await userEvent.click(within(sole).getByRole("button", { name: /Add Article/ }));
     await describeArticle();
-    const picker = (await screen.findByText(/Available upper/)).closest("section") as HTMLElement;
-    // Nothing of GREEN is on the program yet, so the card offers the whole 60.
-    expect(within(picker).getByRole("button", { name: /GREEN/ })).toHaveTextContent("60 DOZEN");
-    await userEvent.click(within(picker).getByRole("button", { name: /GREEN/ }));
-    // Scoped to the dialog's own box: the saved rows behind it each have a quantity box too.
-    await userEvent.type(await screen.findByRole("textbox", { name: /How many/i }), "10");
-    await click("Add");
+    const stock = await screen.findByRole("region", { name: "Upper Stock" });
+    // Nothing of GREEN is on the program yet, so the row offers the whole 60.
+    expect(within(stock).getByRole("button", { name: "Add GREEN upper" }).closest("tr")).toHaveTextContent("60 DOZEN");
+    await chooseUpper("GREEN", "10");
+    await click("Add to Program");
 
     // The GREEN row of the sole's table, found by its own quantity box — "GREEN" is also the
     // upper named in the Program Summary.

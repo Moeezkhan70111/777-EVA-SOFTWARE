@@ -179,9 +179,11 @@ interface RawMaterialOutputPageProps {
   /** Returns to the Store Station chooser. Hidden when not provided. */
   onBack?: () => void;
   onNavigate?: (route: AppRoute) => void;
+  /** Set when the station is a pane of the Store Out page rather than the whole screen. */
+  embedded?: boolean;
 }
 
-export const RawMaterialOutputPage: React.FC<RawMaterialOutputPageProps> = ({ token, onBack, onNavigate }) => {
+export const RawMaterialOutputPage: React.FC<RawMaterialOutputPageProps> = ({ token, onBack, onNavigate, embedded = false }) => {
   const api = useDesktopApi();
   const { push } = useNotifications();
 
@@ -350,7 +352,7 @@ export const RawMaterialOutputPage: React.FC<RawMaterialOutputPageProps> = ({ to
 
   return (
     <div
-      className="ssn"
+      className={`ssn${embedded ? " ssn--embedded" : ""}`}
       onClick={(e) => {
         // Clicking empty space is never an action; it just hands focus back to the scanner.
         const target = e.target as HTMLElement | null;
@@ -361,9 +363,10 @@ export const RawMaterialOutputPage: React.FC<RawMaterialOutputPageProps> = ({ to
     >
       <style>{SCAN_STATION_CSS}</style>
 
+      {/* Embedded on the Store Out page the pane above already names the station. */}
       <StationToolbar
-        eyebrow="Store Station · Raw Material"
-        title="Raw Material Output"
+        eyebrow={embedded ? undefined : "Store Station · Raw Material"}
+        title={embedded ? undefined : "Raw Material Output"}
         onBack={onBack}
         scannerPill={scannerConnected ? { text: "Scanner ready", color: "#16a34a" } : { text: "Keyboard input", color: "#94a3b8" }}
       >

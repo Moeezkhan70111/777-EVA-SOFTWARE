@@ -2293,6 +2293,72 @@ select:focus, textarea:focus, .form-input:focus { border-color: var(--primary-bl
   color: var(--white);
 }
 
+/* ── The QR generator's three steps when a run covers SEVERAL materials ─────
+   Three columns is right for three pickers; it is not right for a table of every material in
+   the store. The run form stacks instead, so step 2 and step 3 each get the full width.    */
+.qr-steps--runs { grid-template-columns: minmax(0, 1fr); gap: 4px; }
+.qr-steps--runs .qr-step { padding: 14px 0; border-left: none; border-top: 1px solid var(--border-soft); }
+.qr-steps--runs .qr-step:first-child { border-top: none; padding-top: 4px; }
+.qr-step-note { display: block; margin: -8px 0 10px 33px; font-size: .76rem; color: var(--text-3); }
+
+/* Step 2's filters: search wide, the two narrowers beside it. */
+.qrp-filters { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; margin-bottom: 10px; }
+.qrp-filter { display: flex; flex-direction: column; gap: 4px; min-width: 150px; }
+.qrp-filter--search { flex: 1 1 220px; }
+.qrp-filter .input-label { font-size: .68rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--text-3); }
+
+/* Both tables: every material, and the ones chosen from it. */
+.qrp-table-wrap { max-height: min(268px, 34vh); overflow: auto; border: 1px solid var(--border); border-radius: var(--radius-lg); }
+.qrp-table { width: 100%; border-collapse: collapse; font-size: .8rem; }
+.qrp-table th {
+  position: sticky; top: 0; z-index: 1; padding: 8px 10px; text-align: left;
+  background: var(--surface-faint); border-bottom: 1px solid var(--border);
+  font-size: .66rem; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--text-3);
+}
+.qrp-table td { padding: 8px 10px; vertical-align: middle; border-bottom: 1px solid var(--border-soft); color: var(--text); }
+.qrp-table tbody tr:last-child td { border-bottom: 0; }
+.qrp-table tbody tr.is-chosen { background: var(--primary-soft); }
+.qrp-table input[type="checkbox"] { width: 17px; height: 17px; cursor: pointer; }
+.qrp-code { font-weight: 700; white-space: nowrap; }
+.qrp-name { font-weight: 700; }
+.qrp-sub { display: block; margin-top: 2px; font-size: .68rem; font-weight: 500; color: var(--text-3); }
+.qrp-num { font-variant-numeric: tabular-nums; font-weight: 700; white-space: nowrap; }
+.qrp-add, .qrp-clear {
+  display: inline-flex; align-items: center; gap: 5px; min-height: 30px; padding: 0 11px; cursor: pointer;
+  background: var(--surface); border: 1px solid var(--primary); border-radius: var(--radius-md);
+  font: inherit; font-size: .76rem; font-weight: 700; color: var(--primary);
+}
+.qrp-add:hover, .qrp-clear:hover { background: var(--primary-soft); }
+.qrp-add:focus-visible, .qrp-clear:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+.qrp-clear { border-color: var(--border-dark); color: var(--text-2); }
+.qrp-selected-head { display: flex; justify-content: flex-end; margin-bottom: 8px; }
+
+/* The two typed figures in a selected row. */
+.qrp-qty {
+  width: 74px; min-height: 32px; padding: 0 8px;
+  background: var(--surface); border: 1px solid var(--border-dark); border-radius: var(--radius-md);
+  font: inherit; font-size: .84rem; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums;
+}
+.qrp-qty:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; border-color: var(--primary); }
+.qrp-qty[aria-invalid="true"] { border-color: var(--danger); }
+.qrp-per-packet { display: inline-flex; align-items: center; gap: 7px; }
+.qrp-unit { font-size: .72rem; font-weight: 700; letter-spacing: .03em; color: var(--text-3); }
+.qrp-remove {
+  width: 28px; height: 28px; cursor: pointer; background: transparent;
+  border: 1px solid transparent; border-radius: var(--radius-md); color: var(--text-3); font-size: .9rem;
+}
+.qrp-remove:hover { background: var(--danger-soft); color: var(--danger-strong); }
+.qrp-problem-row td { padding-top: 0; border-bottom: 1px solid var(--border-soft); color: var(--danger-strong); font-size: .72rem; font-weight: 600; }
+
+/* What the whole selection comes to. */
+.qrp-totals { display: flex; gap: 10px; flex-wrap: wrap; margin: 10px 0 0; }
+.qrp-totals > div {
+  display: flex; flex-direction: column; gap: 2px; flex: 1 1 120px;
+  padding: 9px 13px; background: var(--surface-faint); border: 1px solid var(--border); border-radius: var(--radius-lg);
+}
+.qrp-totals dt { font-size: .64rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--text-3); }
+.qrp-totals dd { margin: 0; font-size: 1.15rem; font-weight: 900; color: var(--text); font-variant-numeric: tabular-nums; }
+
 /* Commit bar — the exact range, then the action */
 .qr-commit {
   display: flex;
@@ -6399,6 +6465,123 @@ tr.has-error .gp-qty-stepper input { color: var(--err); }
   background: var(--action); color: var(--white); font-size: .72rem; font-weight: 900;
 }
 
+/* Narrow tiles for the sizes of an article, in a one-third-width panel. */
+.mp-choice-grid--small { grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); }
+.mp-choice-grid--small .mp-choice { min-height: 52px; padding: 10px 6px; }
+.mp-choice-grid--small .mp-choice-title { font-size: .88rem; }
+
+/* Stacked rows: the choice on the left, its figure on the right — sole colours and their Dana.
+   The tick moves inline at the end, so it never lands on top of the figure. */
+.mp-choice-grid--rows { grid-template-columns: 1fr; gap: 8px; }
+.mp-choice-grid--rows .mp-choice {
+  flex-direction: row; align-items: center; gap: 10px;
+  min-height: 52px; padding: 10px 13px; text-align: left;
+}
+.mp-choice-grid--rows .mp-choice-title { order: 1; }
+.mp-choice-grid--rows .mp-choice-sub {
+  order: 2; margin-left: auto; white-space: nowrap;
+  font-size: .74rem; font-weight: 700; color: var(--text-2); font-variant-numeric: tabular-nums;
+}
+.mp-choice-grid--rows .mp-choice-mark { order: 3; position: static; width: 18px; height: 18px; font-size: .64rem; }
+
+/* ── + Add Sole Color / + Add Article: three panels and the selection ─────
+   Every question on screen at once — which sole, which article and size, and what the store
+   has for it — with the uppers chosen so far listed underneath. Sized so the whole dialog
+   fits the 1280×620 machine on the floor: each panel scrolls inside itself rather than
+   pushing Add to Program off the bottom.                                    */
+/* Header and footer stay put while the panels scroll: on the 620px floor machine the whole
+   dialog is taller than the window, and Add to Program must never be below the fold. */
+.rm-modal--xl { width: min(100%, 1180px); display: flex; flex-direction: column; overflow: hidden; }
+.rm-modal--xl > .member-modal-header, .rm-modal--xl > .member-modal-actions { flex: 0 0 auto; }
+.rm-modal--xl > .rm-modal-body { flex: 1 1 auto; min-height: 0; padding: 14px 2px 4px; overflow-y: auto; }
+.mpa-intro { margin: 0; color: var(--text-3); font-size: .78rem; line-height: 1.5; }
+.mpa-panels { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-top: 12px; }
+/* The contractor dialog asks two questions, not three. */
+.mpa-panels--two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.mpa-panel {
+  display: flex; flex-direction: column; min-width: 0; padding: 13px 14px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-xl);
+}
+.mpa-panel .qr-step-head { margin-bottom: 10px; }
+.mpa-panel-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+/* Capped so the selection underneath keeps room on a short screen; vh-relative so a tall
+   one is not wasted. */
+.mpa-panel-body { flex: 1; min-width: 0; min-height: 0; max-height: min(204px, 28vh); padding-right: 6px; overflow-y: auto; }
+.mpa-for {
+  flex: 0 0 auto; margin-bottom: 10px; padding: 4px 10px; border-radius: 999px;
+  background: var(--action-tint); color: var(--action-strong);
+  font-size: .7rem; font-weight: 800; white-space: nowrap;
+}
+.mpa-field-label {
+  margin: 0 0 6px; font-size: .66rem; font-weight: 800; letter-spacing: .08em;
+  text-transform: uppercase; color: var(--text-3);
+}
+.mpa-field-label + * { margin-bottom: 4px; }
+.mpa-panel-body > .mpa-field-label ~ .mpa-field-label { margin-top: 14px; }
+/* The sole colour a card's + Add Article was opened under: settled, never a choice. */
+.mpa-fixed {
+  display: flex; align-items: center; gap: 9px; margin: 0; padding: 12px 14px;
+  background: var(--action-tint); border: 1px solid var(--action-line); border-radius: var(--radius-lg);
+  font-size: .95rem; font-weight: 800; color: var(--action-strong);
+}
+.mpa-swatch { flex: 0 0 auto; width: 15px; height: 15px; }
+
+/* One of a machine's two contractors: what it does, and who is on it now. */
+.mpa-role-hint { margin: -4px 0 8px; font-size: .76rem; color: var(--text-3); }
+.mpa-role-now {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 0 0 10px; padding: 8px 11px;
+  background: var(--surface-faint); border: 1px solid var(--border); border-radius: var(--radius-md);
+  font-size: .86rem; font-weight: 800; color: var(--chrome-ink);
+}
+.mpa-role-now-label { font-size: .62rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: var(--text-3); }
+.mpa-role-changed {
+  margin-left: auto; padding: 3px 9px; border-radius: 999px;
+  background: var(--action-tint); color: var(--action-strong);
+  font-size: .64rem; font-weight: 800; letter-spacing: .04em; text-transform: uppercase;
+}
+/* The Dana the store holds for that colour, on the right — as the colour list prints it. */
+.mpa-fixed-dana { margin-left: auto; font-size: .74rem; font-weight: 700; color: var(--text-2); font-variant-numeric: tabular-nums; }
+
+/* The two lists: what the store holds, and what has been chosen from it. */
+.mpa-table-wrap { overflow-x: auto; }
+.mpa-table-wrap--chosen { max-height: 148px; overflow-y: auto; }
+.mpa-table { width: 100%; border-collapse: collapse; font-size: .78rem; }
+.mpa-table th {
+  position: sticky; top: 0; z-index: 1; padding: 7px 8px; text-align: left;
+  background: var(--surface-faint); border-bottom: 1px solid var(--border);
+  font-size: .64rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--text-3);
+}
+.mpa-table td { padding: 8px; vertical-align: middle; border-bottom: 1px solid var(--border-soft); color: var(--chrome-ink); }
+.mpa-table tbody tr:last-child td { border-bottom: 0; }
+.mpa-table .mpa-num { text-align: left; font-variant-numeric: tabular-nums; font-weight: 700; }
+.mpa-colour { display: inline-flex; align-items: center; gap: 8px; font-weight: 800; }
+.mpa-article { font-weight: 800; }
+.mpa-sub { display: block; margin-top: 2px; font-size: .66rem; color: var(--text-3); }
+.mpa-why { font-size: .7rem; font-weight: 700; color: var(--text-3); }
+.mpa-add {
+  display: inline-flex; align-items: center; justify-content: center; gap: 5px;
+  min-height: 32px; padding: 0 12px; cursor: pointer;
+  background: var(--surface); border: 1px solid var(--action); border-radius: var(--radius-md);
+  font: inherit; font-size: .76rem; font-weight: 800; color: var(--action);
+}
+.mpa-add:hover { background: var(--action-tint); }
+.mpa-add:focus-visible { outline: 2px solid var(--action); outline-offset: 2px; }
+.mpa-add .mpx-btn-icon { width: 13px; height: 13px; }
+
+.mpa-chosen {
+  margin-top: 12px; padding: 13px 14px;
+  background: var(--surface-faint); border: 1px solid var(--border); border-radius: var(--radius-xl);
+}
+.mpa-chosen-title { margin: 0 0 8px; font-size: .95rem; font-weight: 800; color: var(--chrome-ink); }
+.mpa-chosen .mpa-table { background: var(--surface); }
+.mpa-chosen .mpx-qty-input { width: 72px; }
+
+@media (max-width: 980px) {
+  .mpa-panels { grid-template-columns: 1fr; }
+  .mpa-panel-body { max-height: none; }
+  .mpa-table-wrap--chosen { max-height: none; }
+}
+
 /* ── The date: a block in a dialog, a control in the workspace header ───── */
 .mp-date {
   display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap;
@@ -7116,42 +7299,153 @@ tr.has-error .gp-qty-stepper input { color: var(--err); }
 .so-screen-empty { margin: 0; font-size: .95rem; font-weight: 600; color: var(--foreground-subtle); }
 
 /* ── The Move In desk: work on the left, the scanner always open on the right ─ */
-.so-desk { overflow: hidden; gap: 12px; padding-bottom: 16px; }
-.so-desk .so-top { gap: 14px; }
-.so-desk-switch { display: inline-flex; gap: 4px; padding: 4px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-xl); box-shadow: var(--shadow-sm); }
-.so-desk-switch-btn {
-  display: inline-flex; align-items: center; gap: 8px; min-height: 40px; padding: 0 16px;
-  border: 0; border-radius: var(--radius-lg); background: transparent; cursor: pointer;
-  font: inherit; font-size: .88rem; font-weight: 700; color: var(--foreground-muted);
+/* ── STORE IN: one page, one tab per section, the scan station down the right ──
+   Store In
+   [Add New Material] [QR Generator] [Stock] [Receipts] [Setup]
+   ┌─ the chosen section ───────────┬─ Scan Material ─┐
+   The page itself never scrolls: the head and the tabs stay put and each pane scrolls inside
+   itself, so the scan box is always on screen however long the section under it runs. */
+.si-page {
+  display: flex; flex-direction: column; height: 100%; min-height: 0;
+  padding: 18px 24px 16px; gap: 13px; overflow: hidden;
+  background: var(--background); color: var(--foreground);
 }
-.so-desk-switch-btn:hover:not(:disabled) { background: var(--primary-soft); color: var(--primary-dark); }
-.so-desk-switch-btn:focus-visible { outline: 3px solid var(--primary-light); outline-offset: 2px; }
-.so-desk-switch-btn.is-active, .so-desk-switch-btn.is-active:disabled { background: var(--primary); color: var(--sc-primary-foreground); cursor: default; opacity: 1; }
-.so-desk-switch-btn:disabled:not(.is-active) { opacity: .45; cursor: not-allowed; }
-.so-desk-switch-icon { display: inline-flex; width: 20px; height: 20px; }
-.so-desk-switch-icon svg { width: 20px; height: 20px; }
+/* Right padding keeps the head clear of the app's floating profile menu. */
+.si-head { display: flex; align-items: center; gap: 13px; flex-shrink: 0; padding-right: 180px; }
+.si-head-mark {
+  display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto;
+  width: 42px; height: 42px; border-radius: var(--radius-xl);
+  background: var(--primary); color: var(--sc-primary-foreground);
+}
+.si-head-mark svg { width: 22px; height: 22px; }
+.si-title { margin: 0; font-size: 1.6rem; font-weight: 900; letter-spacing: -.02em; line-height: 1.1; }
+.si-sub { margin: 3px 0 0; font-size: .84rem; color: var(--foreground-muted); }
+.si-page .tab-strip { flex-shrink: 0; }
 
-.so-desk-split { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(440px, 1fr); gap: 16px; }
-.so-desk-pane { min-height: 0; overflow-y: auto; border-radius: var(--radius-2xl); }
-.so-desk-left { padding-right: 4px; }
-.so-desk-left .rm-new-page { max-width: none; }
+.si-body { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(330px, 400px); gap: 14px; }
+.si-main { min-width: 0; min-height: 0; overflow-y: auto; padding-right: 4px; }
+/* A form that normally centres itself in a page takes the whole pane here. */
+.si-main .rm-new-page { max-width: none; }
 /* The station scrolls itself, so the pane only clips it to the rounded card. */
-.so-desk-right { overflow: hidden; background: var(--surface); border: 1px solid var(--line-soft); box-shadow: var(--shadow-md); }
+.si-scan {
+  display: flex; flex-direction: column; min-height: 0; overflow: hidden;
+  background: var(--surface); border: 1px solid var(--line-soft);
+  border-radius: var(--radius-2xl); box-shadow: var(--shadow-md);
+}
+.si-scan-head { display: flex; align-items: center; gap: 11px; flex-shrink: 0; padding: 14px 16px; border-bottom: 1px solid var(--line-soft); }
+.si-scan-mark {
+  display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto;
+  width: 34px; height: 34px; border-radius: var(--radius-lg);
+  background: var(--primary-soft); color: var(--primary-dark);
+}
+.si-scan-mark svg { width: 19px; height: 19px; }
+.si-scan-title { margin: 0; font-size: .98rem; font-weight: 800; }
+.si-scan-line { margin: 2px 0 0; font-size: .76rem; color: var(--foreground-muted); }
+.si-scan .ssn { min-height: 0; flex: 1; }
+
+/* "OR — Manual Entry" under the scanner: the other way material gets in, for a delivery
+   that carries no labels. The station above it stays mounted when this opens. */
+.si-manual { flex: 0 0 auto; padding: 0 16px 16px; }
+.si-manual-or { display: flex; align-items: center; gap: 12px; margin: 4px 0 12px; }
+.si-manual-or::before, .si-manual-or::after { content: ""; flex: 1; height: 1px; background: var(--line-soft); }
+.si-manual-or span { font-size: .68rem; font-weight: 800; letter-spacing: .1em; color: var(--text-3); }
+.si-manual-btn {
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  width: 100%; min-height: 46px; cursor: pointer;
+  background: var(--surface); border: 1px solid var(--primary); border-radius: var(--radius-lg);
+  font: inherit; font-size: .92rem; font-weight: 800; color: var(--primary);
+}
+.si-manual-btn:hover { background: var(--primary-soft); }
+.si-manual-btn:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+.si-manual-open { border: 1px solid var(--line); border-radius: var(--radius-xl); }
+.si-manual-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 11px 14px 0; }
+.si-manual-title { margin: 0; font-size: .92rem; font-weight: 800; color: var(--foreground); }
+.si-manual-close {
+  min-height: 30px; padding: 0 11px; cursor: pointer;
+  background: transparent; border: 1px solid var(--line); border-radius: var(--radius-md);
+  font: inherit; font-size: .78rem; font-weight: 700; color: var(--foreground-muted);
+}
+.si-manual-close:hover { border-color: var(--primary); color: var(--primary-dark); }
+.si-manual-open .mo-manual { padding: 0 14px 14px; }
+
 @media (max-width: 1100px) {
-  .so-desk { overflow-y: auto; }
-  .so-desk-split { grid-template-columns: minmax(0, 1fr); }
-  .so-desk-pane { overflow: visible; }
+  .si-page { overflow-y: auto; }
+  .si-body { grid-template-columns: minmax(0, 1fr); }
+  .si-main { overflow: visible; }
+}
+
+/* ── STORE OUT: by hand on the left, the scan station on the right ────────
+   Two ways out, side by side, because the store uses both in the same breath. Both panes are
+   the same width here — neither is a step of the other.                     */
+.mo-page .si-body { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+.si-head-mark--out { background: var(--warning-deep, #b45309); }
+.mo-back {
+  margin-left: auto; min-height: 36px; padding: 0 14px; cursor: pointer;
+  background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-lg);
+  font: inherit; font-size: .82rem; font-weight: 700; color: var(--foreground-muted);
+}
+.mo-back:hover { border-color: var(--primary); color: var(--primary-dark); }
+.mo-main {
+  display: flex; flex-direction: column;
+  background: var(--surface); border: 1px solid var(--line-soft);
+  border-radius: var(--radius-2xl); box-shadow: var(--shadow-md);
+}
+.mo-pane-head { display: flex; align-items: center; gap: 11px; flex-shrink: 0; padding: 14px 16px; border-bottom: 1px solid var(--line-soft); }
+.mo-manual { padding: 4px 16px 16px; }
+.mo-manual .qr-step { padding: 14px 0; border-left: none; border-top: 1px solid var(--border-soft); }
+.mo-manual .qr-step:first-child { border-top: none; }
+
+.mo-in-store { display: flex; align-items: baseline; gap: 8px; margin: 9px 0 0; font-size: .92rem; }
+.mo-in-store-label { font-size: .64rem; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; color: var(--text-3); }
+.mo-in-store b { font-size: 1.05rem; font-variant-numeric: tabular-nums; }
+
+.mo-field-label { display: block; margin: 14px 0 6px; font-size: .66rem; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; color: var(--text-3); }
+.mo-manual .qr-step-body > .mo-field-label:first-child { margin-top: 0; }
+
+/* Every rung of this material's ladder, as buttons — the operator taps the unit they measured in. */
+.mo-units { display: flex; gap: 8px; flex-wrap: wrap; }
+.mo-unit {
+  display: inline-flex; flex-direction: column; align-items: center; gap: 1px;
+  min-height: 44px; padding: 7px 16px; cursor: pointer;
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg);
+  font: inherit; font-size: .92rem; font-weight: 800; color: var(--chrome-ink);
+}
+.mo-unit:hover { background: var(--bg-soft); border-color: var(--border-dark); }
+.mo-unit:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+.mo-unit.is-active { border-color: var(--primary); background: var(--primary-soft); color: var(--primary-dark); }
+.mo-unit-note { font-size: .58rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--text-3); }
+
+.mo-amount { display: flex; align-items: center; gap: 12px; }
+.mo-manual .mo-quantity {
+  width: 170px; height: 54px; padding: 0 12px;
+  font-size: 1.5rem; font-weight: 900; text-align: center; font-variant-numeric: tabular-nums;
+}
+.mo-amount-unit { font-size: .95rem; font-weight: 800; letter-spacing: .04em; color: var(--text-2); }
+
+/* "700 INCH = 0.718 RULE" — the typed figure said on every other rung. */
+.mo-equals {
+  display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin: 12px 0 0; padding: 10px 13px;
+  background: var(--surface-faint); border: 1px solid var(--border); border-radius: var(--radius-lg);
+  font-size: .86rem; color: var(--text-2); font-variant-numeric: tabular-nums;
+}
+.mo-equals b { font-size: .95rem; color: var(--chrome-ink); }
+
+.mo-commit { display: flex; justify-content: flex-end; margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--border); }
+.mo-commit .btn { min-height: 46px; }
+
+@media (max-width: 1100px) {
+  .mo-page .si-body { grid-template-columns: minmax(0, 1fr); }
 }
 
 /* Searchable picker options: the main line, then an optional smaller detail line. */
 .city-option-label { display: block; font-weight: 700; color: inherit; white-space: normal; overflow-wrap: anywhere; line-height: 1.3; }
 .city-option-detail { display: block; margin-top: 2px; font-size: .76rem; font-weight: 500; color: var(--text-3); white-space: normal; overflow-wrap: anywhere; }
 
-/* In the Move In desk the label generator has half the screen, so its three steps stack:
-   each picker gets the full width and a picked material's name is never cut off. */
-.so-desk-left .qr-steps { grid-template-columns: minmax(0, 1fr); gap: 4px; }
-.so-desk-left .qr-step { padding: 14px 0; border-left: none; border-top: 1px solid var(--border-soft); }
-.so-desk-left .qr-step:first-child { border-top: none; padding-top: 4px; }
+/* On the Store In page the label generator has part of the screen, so its steps stack: each
+   picker gets the full width and a picked material's name is never cut off. */
+.si-main .qr-steps { grid-template-columns: minmax(0, 1fr); gap: 4px; }
+.si-main .qr-step { padding: 14px 0; border-left: none; border-top: 1px solid var(--border-soft); }
+.si-main .qr-step:first-child { border-top: none; padding-top: 4px; }
 /* Field labels inside a label-generator step sit above their box, never beside it. */
 .qr-step-body > label.input-label { display: block; margin: 0 0 6px; }
 

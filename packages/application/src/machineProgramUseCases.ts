@@ -8,6 +8,7 @@ import {
   isInjectorNo,
   roundQuantity,
   sameAttributeValue,
+  type MachineContractorRole,
   type MachineShift,
 } from "@erp/domain";
 import type { EventPublisher, IdGenerator, TransactionContext, TransactionManager } from "./ports.js";
@@ -47,6 +48,7 @@ export type MachineProgramOutcome =
   | "MACHINE_NOT_FOUND"
   | "MACHINE_INACTIVE"
   | "NO_CONTRACTOR"
+  | "NO_PACKING_CONTRACTOR"
   | "CONTRACTOR_NOT_FOUND"
   | "CONTRACTOR_INACTIVE"
   | "NOT_A_CONTRACTOR"
@@ -136,12 +138,18 @@ export interface MachineProgramRepository {
   getMachineForProgram(
     machineId: string,
     tx: TransactionContext
-  ): Promise<{ id: string; name: string; sectionId: string; status: string; contractorPartyId: string | null } | null>;
+  ): Promise<{
+    id: string; name: string; sectionId: string; status: string;
+    contractorPartyId: string | null; packingContractorPartyId: string | null;
+  } | null>;
   getContractorForProgram(
     partyId: string,
     tx: TransactionContext
   ): Promise<{ id: string; partyName: string; partyType: string; status: string } | null>;
-  setMachineContractor(input: { machineId: string; contractorPartyId: string; nowIso: string }, tx: TransactionContext): Promise<void>;
+  setMachineContractor(
+    input: { machineId: string; role: MachineContractorRole; contractorPartyId: string; nowIso: string },
+    tx: TransactionContext
+  ): Promise<void>;
   getMachineProgramByDateForWrite(
     machineId: string,
     programDate: string,
@@ -151,7 +159,8 @@ export interface MachineProgramRepository {
   insertMachineProgram(
     payload: {
       id: string; programNumber: number; machineId: string; machineName: string; contractorPartyId: string;
-      contractorName: string; programDate: string; shiftStartMinute: number; shiftEndMinute: number;
+      contractorName: string; packingContractorPartyId: string; packingContractorName: string;
+      programDate: string; shiftStartMinute: number; shiftEndMinute: number;
       createdBy: string; createdAt: string;
     },
     tx: TransactionContext
@@ -414,12 +423,21 @@ export class SaveMachineProgramLineUseCase {
     // to it never rewrites it.
     const shift: MachineShift = input.shift ?? DEFAULT_MACHINE_SHIFT;
 
+    // A machine is worked by two contractors and the day's output is paid against both, so a
+    // program cannot be made until both are set and both are still active.
     if (!machine.contractorPartyId) {
-      throw new MachineProgramRejectedError("NO_CONTRACTOR", `Choose who works on ${machine.name} before making its program.`);
+      throw new MachineProgramRejectedError("NO_CONTRACTOR", `Choose the machine contractor for ${machine.name} before making its program.`);
+    }
+    if (!machine.packingContractorPartyId) {
+      throw new MachineProgramRejectedError("NO_PACKING_CONTRACTOR", `Choose the packing contractor for ${machine.name} before making its program.`);
     }
     const contractor = await this.deps.repo.getContractorForProgram(machine.contractorPartyId, tx);
     if (!contractor || contractor.status !== "ACTIVE") {
-      throw new MachineProgramRejectedError("CONTRACTOR_INACTIVE", `The contractor on ${machine.name} is no longer active. Change the contractor first.`);
+      throw new MachineProgramRejectedError("CONTRACTOR_INACTIVE", `The machine contractor on ${machine.name} is no longer active. Change the contractor first.`);
+    }
+    const packer = await this.deps.repo.getContractorForProgram(machine.packingContractorPartyId, tx);
+    if (!packer || packer.status !== "ACTIVE") {
+      throw new MachineProgramRejectedError("CONTRACTOR_INACTIVE", `The packing contractor on ${machine.name} is no longer active. Change the contractor first.`);
     }
 
     const id = this.deps.idGenerator.nextId();
@@ -427,7 +445,8 @@ export class SaveMachineProgramLineUseCase {
     await this.deps.repo.insertMachineProgram(
       {
         id, programNumber, machineId: machine.id, machineName: machine.name, contractorPartyId: contractor.id,
-        contractorName: contractor.partyName, programDate: input.programDate,
+        contractorName: contractor.partyName, packingContractorPartyId: packer.id, packingContractorName: packer.partyName,
+        programDate: input.programDate,
         shiftStartMinute: shift.startMinute, shiftEndMinute: shift.endMinute,
         createdBy: actor, createdAt: tx.nowIso,
       },
@@ -435,7 +454,7 @@ export class SaveMachineProgramLineUseCase {
     );
     await auditProgramChange(
       this.deps,
-      { ...input, actor, eventType: "MACHINE_PROGRAM_CREATED", entityId: id, payload: { code: formatMachineProgramCode(programNumber), machineName: machine.name, contractorName: contractor.partyName, programDate: input.programDate, shift } },
+      { ...input, actor, eventType: "MACHINE_PROGRAM_CREATED", entityId: id, payload: { code: formatMachineProgramCode(programNumber), machineName: machine.name, contractorName: contractor.partyName, packingContractorName: packer.partyName, programDate: input.programDate, shift } },
       tx
     );
     return { id, status: MACHINE_PROGRAM_STATUS.PROGRAMMED, shiftStartMinute: shift.startMinute, shiftEndMinute: shift.endMinute };

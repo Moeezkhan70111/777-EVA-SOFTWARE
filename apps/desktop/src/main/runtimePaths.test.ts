@@ -10,9 +10,11 @@ const { DatabaseSync } = createRequire(import.meta.url)("node:sqlite") as typeof
 import {
   APP_DATA_FOLDER,
   DATABASE_FILE_NAME,
+  PACKAGED_RESOURCES_FOLDER,
   SESSION_FILE_NAME,
   effectivePaths,
   migrateLegacyData,
+  missingRuntimeResources,
   resetLocalData,
   resolveRuntimePaths,
   type RuntimeEnvironment,
@@ -70,6 +72,56 @@ describe("resolveRuntimePaths", () => {
     const paths = resolveRuntimePaths(makeEnv("C:\\u"));
     expect(paths.legacyRoots[0]).toBe(path.join("C:\\u\\Temp", "erp-desktop-runtime"));
     expect(paths.legacyRoots[1]).toBe(path.join("C:\\u\\app\\apps\\desktop", ".runtime", "electron"));
+  });
+});
+
+describe("read-only application resources", () => {
+  it("reads the schema and migrations out of the repository in development", () => {
+    const paths = resolveRuntimePaths(makeEnv("C:\\u"));
+    expect(paths.schemaFile).toBe(path.join("C:\\u\\app", "packages", "data", "src", "local-schema.sql"));
+    expect(paths.migrationsDir).toBe(path.join("C:\\u\\app", "migrations", "sqlite"));
+  });
+
+  it("reads them from the installed resources folder when packaged", () => {
+    const paths = resolveRuntimePaths(
+      makeEnv("C:\\u", {
+        isPackaged: true,
+        appPath: "C:\\Program Files\\777 ERP\\resources\\app.asar",
+        resourcesPath: "C:\\Program Files\\777 ERP\\resources",
+      })
+    );
+    const resources = path.join("C:\\Program Files\\777 ERP\\resources", PACKAGED_RESOURCES_FOLDER);
+    expect(paths.schemaFile).toBe(path.join(resources, "local-schema.sql"));
+    expect(paths.migrationsDir).toBe(path.join(resources, "migrations", "sqlite"));
+  });
+
+  it("falls back to the asar's parent folder when resourcesPath is not supplied", () => {
+    const paths = resolveRuntimePaths(
+      makeEnv("C:\\u", { isPackaged: true, appPath: "C:\\app\\resources\\app.asar", resourcesPath: undefined })
+    );
+    expect(paths.schemaFile).toBe(path.join("C:\\app\\resources", PACKAGED_RESOURCES_FOLDER, "local-schema.sql"));
+  });
+
+  it("keeps the database out of the resources folder — it stays under the data root", () => {
+    const paths = resolveRuntimePaths(
+      makeEnv("C:\\u", { isPackaged: true, resourcesPath: "C:\\Program Files\\777 ERP\\resources" })
+    );
+    expect(paths.databaseFile).toBe(path.join("C:\\u\\Local", APP_DATA_FOLDER, DATABASE_FILE_NAME));
+    expect(paths.databaseFile.includes(PACKAGED_RESOURCES_FOLDER)).toBe(false);
+  });
+
+  it("reports both resources as missing when nothing is installed, and none when both are there", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "erp-resources-"));
+    try {
+      const paths = resolveRuntimePaths(makeEnv("C:\\u", { isPackaged: true, resourcesPath: root }));
+      expect(missingRuntimeResources(paths).map((item) => item.label)).toEqual(["database schema", "migrations folder"]);
+
+      fs.mkdirSync(paths.migrationsDir, { recursive: true });
+      fs.writeFileSync(paths.schemaFile, "-- schema");
+      expect(missingRuntimeResources(paths)).toEqual([]);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
   });
 });
 

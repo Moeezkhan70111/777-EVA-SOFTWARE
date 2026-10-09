@@ -4,7 +4,7 @@ import { StateView } from "../../components/shared/StateView";
 import { copy } from "../../config/copy";
 import { AddMachineField } from "./AddMachineField";
 import { MachineIcon } from "./MachineProgramIcons";
-import { hasContent, statusLabel, statusTone } from "./machineProgram";
+import { hasContent, needsContractors, statusLabel, statusTone } from "./machineProgram";
 import type { Loaded } from "./useMachineProgramData";
 
 // The machines, across the top of the workspace, for the date the header is showing.
@@ -33,8 +33,9 @@ interface MachinesStripProps {
 /** What one machine says about its day, and the tone the dot takes. */
 const machineState = (row: MachineProgramBoardRow): { tone: string; words: string } => {
   const program = hasContent(row.program) ? row.program : null;
-  // With nobody on the machine the state line says what to do about it rather than the day.
-  if (!row.machine.contractorPartyId) return { tone: "none", words: copy.machineProgram.noContractorYet };
+  // Until BOTH contractors are set the machine cannot be programmed, so the state line says
+  // what to do about it rather than what the day holds.
+  if (needsContractors(row.machine)) return { tone: "none", words: copy.machineProgram.noContractorYet };
   if (!program) return { tone: "none", words: copy.machineProgram.machineIdle };
   if (program.displayStatus === "PROGRAMMED") return { tone: "ok", words: copy.machineProgram.machineReady };
   return { tone: statusTone(program.displayStatus), words: statusLabel(program.displayStatus) };

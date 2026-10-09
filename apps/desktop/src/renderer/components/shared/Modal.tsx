@@ -17,13 +17,14 @@ interface ModalProps {
   onClose: () => void;
   /** Rendered on the right of the footer, after Cancel. */
   footer?: React.ReactNode;
-  /** Wider shell for content that is a table or a multi-column form. */
-  wide?: boolean;
+  /** Wider shell for content that is a table or a multi-column form; "xl" for side-by-side panels. */
+  wide?: boolean | "xl";
   children: React.ReactNode;
 }
 
 export const Modal: React.FC<ModalProps> = ({ title, subtitle, onClose, footer, wide = false, children }) => {
   const titleId = useId();
+  const widthClass = wide === "xl" ? " rm-modal--xl" : wide ? " rm-modal--wide" : "";
 
   useEffect(() => {
     const handle = (event: KeyboardEvent) => {
@@ -45,7 +46,7 @@ export const Modal: React.FC<ModalProps> = ({ title, subtitle, onClose, footer, 
       }}
     >
       <section
-        className={`member-modal rm-modal${wide ? " rm-modal--wide" : ""}`}
+        className={`member-modal rm-modal${widthClass}`}
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}

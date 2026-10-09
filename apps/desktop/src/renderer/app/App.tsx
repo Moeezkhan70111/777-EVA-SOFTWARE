@@ -18,9 +18,9 @@ import { DispatchHistoryPage } from "../pages/DispatchHistoryPage";
 import { LiveReturnPage } from "../pages/LiveReturnPage";
 import { ReturnHistoryPage } from "../pages/ReturnHistoryPage";
 import { StoreHomePage } from "../features/store/StoreHomePage";
-import { StoreOperatorScreen } from "../features/store/StoreOperatorScreen";
-import { MoveInOperatorPage } from "../features/store/MoveInOperatorPage";
-import { MoveInDeskPage } from "../features/store/MoveInDeskPage";
+import { StoreInPage } from "../features/store/StoreInPage";
+import { StoreOutPage } from "../features/store/StoreOutPage";
+import { storeInTabOfRoute } from "../features/store/storeOperators";
 import { StoreWorkspacePage } from "../features/store/StoreWorkspacePage";
 import { StoreScanningPage } from "../pages/StoreScanningPage";
 import { StoreMoveOutPage } from "../pages/StoreMoveOutPage";
@@ -95,13 +95,6 @@ const FULLSCREEN_ROUTES: ReadonlySet<AppRoute> = new Set<AppRoute>([
   "store-scanning",
   "store-move-out",
 ]);
-
-/** Which Raw Material workspace section each Move In card opens. */
-const STORE_WORKSPACE_TAB = {
-  "store-in-stock": "stock",
-  "store-in-receipts": "receipts",
-  "store-in-setup": "setup",
-} as const;
 
 type WorkspaceTab = "messages" | "tasks" | "requests" | "notifications" | "activity";
 
@@ -344,32 +337,26 @@ export const App = () => {
         return <ReturnHistoryPage />;
       case "store-home":
         return <StoreHomePage onNavigate={setRoute} />;
-      // The two store jobs. Each is built step by step; for now it names the job and leads back.
+      // STORE IN — one page, one tab per section, the scan station down the right. Every one of
+      // these routes renders the SAME element type here, unkeyed, so moving between tabs keeps
+      // the component — and with it the scanner's open session — mounted.
       case "store-in-operator":
+      case "store-in-new-material":
+      case "store-in-qr-generator":
+      case "store-in-stock":
+      case "store-in-receipts":
+      case "store-in-setup":
         return (
-          <MoveInOperatorPage
-            onNavigate={setRoute}
+          <StoreInPage
+            tab={storeInTabOfRoute(route)}
+            token={sessionToken ?? ""}
+            username={session.username}
+            isAdmin={session.role === USER_ROLE.ADMIN}
             access={{
               stock: hasPermission(session, PERMISSION.STOCK),
               labels: hasPermission(session, PERMISSION.RAW_MATERIAL_QR_GENERATOR),
               settings:
                 hasPermission(session, PERMISSION.SETTINGS) || hasPermission(session, PERMISSION.RAW_MATERIAL_SETUP),
-            }}
-          />
-        );
-      // The Move In desk: form or labels on the left, the scanner on the right. Both routes
-      // render the SAME element type here, unkeyed, so switching between them keeps the
-      // component — and the scanner's open session — mounted.
-      case "store-in-new-material":
-      case "store-in-qr-generator":
-        return (
-          <MoveInDeskPage
-            pane={route === "store-in-qr-generator" ? "labels" : "material"}
-            token={sessionToken ?? ""}
-            username={session.username}
-            access={{
-              stock: hasPermission(session, PERMISSION.STOCK),
-              labels: hasPermission(session, PERMISSION.RAW_MATERIAL_QR_GENERATOR),
             }}
             onNavigate={setRoute}
           />
@@ -382,23 +369,8 @@ export const App = () => {
             onBack={() => setRoute("store-in-operator")}
           />
         );
-      // Raw Material workspace sections, full-screen inside the Move In flow.
-      case "store-in-stock":
-      case "store-in-receipts":
-      case "store-in-setup":
-        return (
-          <StoreWorkspacePage
-            key={route}
-            tab={STORE_WORKSPACE_TAB[route]}
-            username={session.username}
-            isAdmin={session.role === USER_ROLE.ADMIN}
-            canPrintLabels={hasPermission(session, PERMISSION.RAW_MATERIAL_QR_GENERATOR)}
-            onDone={() => setRoute("store-in-operator")}
-            onNavigate={setRoute}
-          />
-        );
       case "store-out-operator":
-        return <StoreOperatorScreen direction="out" onBack={() => setRoute("store-home")} />;
+        return <StoreOutPage token={sessionToken ?? ""} username={session.username} onBack={() => setRoute("store-home")} />;
       // The Munshi's station, and the raw material Stock section opened from it. Stock is the
       // store's own workspace section — the same component, the same data, the same checks —
       // with the Munshi's way back instead of the Move In operator's.

@@ -1,12 +1,14 @@
 import React, { useEffect, useRef, useState } from "react";
 import { copy } from "../../config/copy";
-import { DanaPanel } from "./DanaPanel";
 import { ArticleStep, ColourStep, SizeStep } from "./RunSteps";
 import { RUN_STEPS, firstOpenStep, type RunDraft, type RunStep } from "./machineProgram";
 
 // One sole run, asked one question at a time:
 //
-//   SOLE COLOUR (and the Dana for it) → ARTICLE → SIZE → (what the caller asks next)
+//   SOLE COLOUR → ARTICLE → SIZE → (what the caller asks next)
+//
+// The Dana a colour can be moulded from is printed on the colour itself (RunSteps → danaLabel),
+// so there is no separate panel for it.
 //
 // What has been answered stays on screen as a trail above the question, each answer with its own
 // Change, and ← Back steps to the previous question. Nothing answered is ever lost by going back;
@@ -89,10 +91,6 @@ export const RunBuilder: React.FC<RunBuilderProps> = ({ initialDraft, asks = RUN
       ) : (
         complete(draft, back)
       )}
-
-      {/* The Dana is shown as soon as the sole colour is known, and stays in view — except where
-          the colour is settled elsewhere, which is where the Dana is already on screen. */}
-      {draft.soleColour && step !== "colour" && asks.includes("colour") ? <DanaPanel colour={draft.soleColour} /> : null}
     </div>
   );
 };

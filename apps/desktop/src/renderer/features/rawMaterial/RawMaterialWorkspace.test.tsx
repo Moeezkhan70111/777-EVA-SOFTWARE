@@ -171,7 +171,7 @@ describe("RawMaterialWorkspace", () => {
     installApi();
     renderWorkspace(["raw-material-qr-generator"]);
 
-    await waitFor(() => expect(screen.getByText("Print labels")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText("Select Supplier")).toBeInTheDocument());
     // A single allowed tab needs no tab strip.
     expect(screen.queryByRole("tablist")).not.toBeInTheDocument();
     expect(screen.queryByRole("tab", { name: "Stock" })).not.toBeInTheDocument();

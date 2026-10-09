@@ -93,11 +93,6 @@ export const useArticles = (): Loaded<MachineProgramArticle[]> => {
   return useLoaded("articles", () => api.listMachineProgramArticles(), (answer) => answer.rows, []);
 };
 
-export const useDana = (colour: string | null): Loaded<MachineProgramMaterial[]> => {
-  const api = useDesktopApi();
-  return useLoaded(`dana:${colour ?? ""}`, colour ? () => api.listMachineProgramDana(colour) : null, (answer) => answer.rows, []);
-};
-
 /**
  * Every upper the store holds for one article + size, in every colour it holds it in.
  *

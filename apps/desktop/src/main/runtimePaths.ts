@@ -17,6 +17,13 @@ const loadSqlite = (): typeof import("node:sqlite") => require("node:sqlite");
 
 export const APP_DATA_FOLDER = "777-erp";
 export const DATABASE_FILE_NAME = "erp.local.sqlite";
+const SCHEMA_FILE_NAME = "local-schema.sql";
+/**
+ * Folder under the installed application's `resources` directory that carries the read-only
+ * application resources (base schema + migrations). Written by electron-builder's
+ * `extraResources` — see apps/desktop/electron-builder.yml.
+ */
+export const PACKAGED_RESOURCES_FOLDER = "erp-resources";
 const LEGACY_TEMP_FOLDER = "erp-desktop-runtime";
 const MIGRATION_MARKER = "data-migration.json";
 /** Encrypted sign-in state, kept beside the database (see sessionStore.ts). */
@@ -37,6 +44,10 @@ export interface RuntimeEnvironment {
   appPath: string;
   /** process.env[DATA_DIR_ENV]. */
   overrideDataDir?: string;
+  /** app.isPackaged — decides where the schema and migrations are read from. */
+  isPackaged?: boolean;
+  /** process.resourcesPath — the installed application's `resources` folder (packaged only). */
+  resourcesPath?: string;
 }
 
 export interface RuntimePaths {
@@ -54,9 +65,34 @@ export interface RuntimePaths {
   cacheDir: string;
   /** Disposable scratch files (print-to-PDF HTML). */
   scratchDir: string;
+  /** Read-only application resource: the base schema. */
   schemaFile: string;
+  /** Read-only application resource: the folder of versioned `*.up.sql` migrations. */
+  migrationsDir: string;
   /** Previous data roots, newest first, that a fresh install may inherit from. */
   legacyRoots: string[];
+}
+
+/**
+ * Where the two read-only application resources live. These are part of the *application*,
+ * never of the user's data: packaged they come out of `resources/erp-resources`, which
+ * electron-builder fills from the repository; in development they are read straight out of
+ * the working tree. The database itself is never here — it stays under `dataRoot`.
+ */
+function resolveAppResources(env: RuntimeEnvironment): { schemaFile: string; migrationsDir: string } {
+  if (env.isPackaged) {
+    // Packaged, appPath is `<install>/resources/app.asar`, so its parent is the resources folder.
+    const resources = env.resourcesPath?.trim() || path.join(env.appPath, "..");
+    const root = path.join(resources, PACKAGED_RESOURCES_FOLDER);
+    return { schemaFile: path.join(root, SCHEMA_FILE_NAME), migrationsDir: path.join(root, "migrations", "sqlite") };
+  }
+
+  // Development: appPath is `<repo>/apps/desktop`.
+  const repoRoot = path.resolve(env.appPath, "..", "..");
+  return {
+    schemaFile: path.join(repoRoot, "packages", "data", "src", SCHEMA_FILE_NAME),
+    migrationsDir: path.join(repoRoot, "migrations", "sqlite"),
+  };
 }
 
 export function resolveRuntimePaths(env: RuntimeEnvironment): RuntimePaths {
@@ -65,6 +101,7 @@ export function resolveRuntimePaths(env: RuntimeEnvironment): RuntimePaths {
     path.join(env.platform === "win32" && env.localAppDataDir ? env.localAppDataDir : env.appDataDir, APP_DATA_FOLDER);
   const dataRoot = path.resolve(base);
   const disposableRoot = path.join(env.tempDir, `${APP_DATA_FOLDER}-cache`);
+  const resources = resolveAppResources(env);
 
   return {
     dataRoot,
@@ -76,12 +113,33 @@ export function resolveRuntimePaths(env: RuntimeEnvironment): RuntimePaths {
     sessionDataDir: path.join(dataRoot, "session"),
     cacheDir: path.join(disposableRoot, "chromium-cache"),
     scratchDir: path.join(disposableRoot, "scratch"),
-    schemaFile: path.resolve(env.appPath, "..", "..", "packages", "data", "src", "local-schema.sql"),
+    schemaFile: resources.schemaFile,
+    migrationsDir: resources.migrationsDir,
     legacyRoots: [
       path.join(env.tempDir, LEGACY_TEMP_FOLDER),
       path.join(env.appPath, ".runtime", "electron"),
     ],
   };
+}
+
+/** One read-only application resource that should be present but is not. */
+export interface MissingResource {
+  /** Operator-facing name, e.g. "database schema". */
+  label: string;
+  path: string;
+}
+
+/**
+ * Checks the read-only application resources before the database is opened. A missing file
+ * here means the installation is incomplete — the application must say so and stop (see
+ * main.ts), never open a window on a half-built database. Returns an empty array when both
+ * resources are present.
+ */
+export function missingRuntimeResources(paths: RuntimePaths): MissingResource[] {
+  const missing: MissingResource[] = [];
+  if (!fs.existsSync(paths.schemaFile)) missing.push({ label: "database schema", path: paths.schemaFile });
+  if (!fs.existsSync(paths.migrationsDir)) missing.push({ label: "migrations folder", path: paths.migrationsDir });
+  return missing;
 }
 
 export function ensureRuntimeDirectories(paths: RuntimePaths): void {

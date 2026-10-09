@@ -139,6 +139,44 @@ export const quantityInBaseUnit = (
   return { quantity: quantity * worth, unit: base };
 };
 
+/**
+ * A count typed on one rung of the ladder, said on another — the one piece of arithmetic the
+ * store does every time somebody moves material in or out in a unit that is not the one the
+ * balance is kept in.
+ *
+ *   1 RULE = 975 INCH, stock kept in INCH
+ *   975 INCH typed  →    975 INCH off the balance  (and that IS one rule)
+ *   1 RULE typed    →    975 INCH off the balance
+ *   700 INCH typed  →    700 INCH off the balance  (0.718 of a rule)
+ *
+ * Works in either direction and between any two rungs, because every rung is worth a known
+ * number of base units. Null when either unit is not on this material's ladder: a unit that
+ * means nothing for this material must never be guessed at.
+ */
+export const convertOnLadder = (
+  steps: readonly UnitLadderStep[],
+  quantity: number,
+  fromUnit: string,
+  toUnit: string,
+): number | null => {
+  if (!Number.isFinite(quantity)) return null;
+  if (fromUnit === toUnit) return quantity;
+  const multipliers = ladderMultipliers(steps);
+  const from = multipliers.get(fromUnit);
+  const to = multipliers.get(toUnit);
+  if (from == null || to == null || to === 0) return null;
+  return (quantity * from) / to;
+};
+
+/**
+ * The units a quantity of this material may be typed in: every rung of its ladder, or just the
+ * unit its stock is kept in when it has no ladder. A material is not obliged to have a ladder.
+ */
+export const unitsForCount = (steps: readonly UnitLadderStep[], stockUnit: string | null): string[] => {
+  if (steps.length > 0) return ladderUnits(steps);
+  return stockUnit ? [stockUnit] : [];
+};
+
 /** "2 ROLL 37 INCH" — the rungs that are not zero, biggest first. */
 export const describeCompound = (parts: readonly UnitAmount[]): string => {
   const spoken = parts.filter((part) => part.quantity !== 0);

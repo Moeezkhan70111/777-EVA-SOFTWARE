@@ -1,4 +1,11 @@
-import { MACHINE_PROGRAM_STATUS, checkMachineShift, formatShiftRange, type MachineShift } from "@erp/domain";
+import {
+  MACHINE_PROGRAM_STATUS,
+  checkMachineShift,
+  formatShiftRange,
+  isMachineContractorRole,
+  type MachineContractorRole,
+  type MachineShift,
+} from "@erp/domain";
 import type { TransactionContext } from "./ports.js";
 import {
   MachineProgramRejectedError,
@@ -28,12 +35,18 @@ const CONTRACTOR_PARTY_TYPE = "CONTRACTOR";
 
 export interface AssignMachineContractorInput extends MachineProgramActor {
   machineId: string;
+  /** Which of the machine's two contractors this is — the one who runs it, or the one who packs. */
+  role?: MachineContractorRole | null;
   contractorPartyId: string;
 }
 
 /**
- * Sets who works on a machine. Permanent until somebody changes it, and it affects only programs
- * made from now on — every saved program keeps the contractor it was made with.
+ * Sets one of the two contractors a machine is worked by. Permanent until somebody changes it,
+ * and it affects only programs made from now on — every saved program keeps the pair it was
+ * made with.
+ *
+ * The role defaults to MACHINE so a caller written before packing existed still means what it
+ * always meant.
  */
 export class AssignMachineContractorUseCase {
   constructor(private readonly deps: MachineProgramDeps) {}
@@ -44,6 +57,7 @@ export class AssignMachineContractorUseCase {
       const machine = await this.deps.repo.getMachineForProgram(String(input.machineId ?? "").trim(), tx);
       if (!machine) throw new MachineProgramRejectedError("MACHINE_NOT_FOUND", "This machine is no longer set up.");
 
+      const role: MachineContractorRole = isMachineContractorRole(input.role) ? input.role : "MACHINE";
       const contractor = await this.deps.repo.getContractorForProgram(String(input.contractorPartyId ?? "").trim(), tx);
       if (!contractor) throw new MachineProgramRejectedError("CONTRACTOR_NOT_FOUND", "This contractor is not in the Party Master.");
       if (contractor.partyType !== CONTRACTOR_PARTY_TYPE) {
@@ -53,14 +67,20 @@ export class AssignMachineContractorUseCase {
         throw new MachineProgramRejectedError("CONTRACTOR_INACTIVE", `${contractor.partyName} is inactive. Choose an active contractor.`);
       }
 
-      await this.deps.repo.setMachineContractor({ machineId: machine.id, contractorPartyId: contractor.id, nowIso: tx.nowIso }, tx);
+      await this.deps.repo.setMachineContractor({ machineId: machine.id, role, contractorPartyId: contractor.id, nowIso: tx.nowIso }, tx);
       await auditProgramChange(
         this.deps,
         {
           ...input,
           eventType: "MACHINE_CONTRACTOR_ASSIGNED",
           entityId: machine.id,
-          payload: { machineName: machine.name, previousContractorPartyId: machine.contractorPartyId, contractorPartyId: contractor.id, contractorName: contractor.partyName },
+          payload: {
+            machineName: machine.name,
+            role,
+            previousContractorPartyId: role === "PACKING" ? machine.packingContractorPartyId : machine.contractorPartyId,
+            contractorPartyId: contractor.id,
+            contractorName: contractor.partyName,
+          },
         },
         tx
       );

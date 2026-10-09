@@ -2,11 +2,18 @@ import {
   MACHINE_PROGRAM_DISPLAY_STATUS,
   MACHINE_SHIFTS,
   checkMachineShift,
+  checkProgramQuantity,
   roundQuantity,
   sameMachineShift,
   type MachineShift,
 } from "@erp/domain";
-import type { MachineProgramMaterial, MachineProgramRecord, MachineProgramRunRecord } from "../../types/desktopApi";
+import type {
+  MachineProgramMaterial,
+  MachineProgramRecord,
+  MachineProgramRunRecord,
+  MachineRecord,
+  SoleColourOption,
+} from "../../types/desktopApi";
 import { copy } from "../../config/copy";
 import { shiftIsoDate } from "../../utils/dates";
 
@@ -60,6 +67,39 @@ export const formatAmount = (value: number, unitCode: string | null | undefined)
   `${formatNumber(value)}${unitCode ? ` ${unitCode}` : ""}`;
 
 /**
+ * What the store holds to mould a sole in one colour, said beside the colour itself: `DANA 120
+ * BAGS`, or `No DANA` for a colour it has none of.
+ *
+ * Information only — a program reserves uppers, never Dana. Null where the colour's Dana is
+ * counted in more than one unit and the data layer could not total it, which is the one case
+ * where there is no honest single figure to print.
+ */
+export const danaLabel = (option: SoleColourOption): string | undefined => {
+  if (!option.hasDana) return copy.machineProgram.danaNoneShort;
+  if (option.danaQuantity == null) return undefined;
+  return copy.machineProgram.danaOf(formatAmount(option.danaQuantity, option.danaUnitCode));
+};
+
+/**
+ * Why a typed quantity cannot be saved, in the operator's words — or null when it can.
+ *
+ * The rule itself is the backend's (@erp/domain checkProgramQuantity); this only says it out
+ * loud, in one wording, wherever a quantity is typed: the big box in a dialog, the box in a
+ * saved row, the box in the selection being added. It is a courtesy — every save is checked
+ * again inside the write lock.
+ *
+ * `limit` is the whole ceiling the line may hold, `consumed` what has already been scanned out
+ * of it and can never be given back.
+ */
+export const quantityProblem = (quantity: number, limit: number, consumed: number, unitCode: string | null): string | null => {
+  const problem = checkProgramQuantity(quantity, { available: limit - consumed, consumed });
+  if (problem === "INVALID_QUANTITY") return copy.machineProgram.quantityInvalid;
+  if (problem === "BELOW_CONSUMED") return copy.machineProgram.quantityBelowTaken(formatAmount(consumed, unitCode));
+  if (problem === "NOT_ENOUGH_STOCK") return copy.machineProgram.quantityTooMany(formatAmount(limit, unitCode));
+  return null;
+};
+
+/**
  * "ABC UPPER", or the plain words for stock that carries no supplier.
  *
  * Only the Dana panel names a supplier now: it is showing what is physically on the shelf. A
@@ -99,6 +139,16 @@ export const statusTone = (displayStatus: string): "ok" | "warn" | "muted" => {
 /** The mark beside a status word. */
 export const statusMark = (displayStatus: string): string =>
   displayStatus === MACHINE_PROGRAM_DISPLAY_STATUS.PARTIALLY_USED ? "◐" : "✓";
+
+/**
+ * Whether a machine still needs somebody assigned before it can be programmed.
+ *
+ * A machine is worked by TWO contractors — the one who runs it and the one who packs what it
+ * makes — and the backend refuses to create a program without both, so the screens ask for both
+ * rather than letting the operator walk into that refusal.
+ */
+export const needsContractors = (machine: MachineRecord): boolean =>
+  !machine.contractorPartyId || !machine.packingContractorPartyId;
 
 /** A program with nothing on it is, to the operator, no program at all. */
 export const hasContent = (program: MachineProgramRecord | null | undefined): program is MachineProgramRecord =>

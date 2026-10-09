@@ -27,8 +27,12 @@ interface ChoiceCardsProps {
   choices: Choice[];
   selectedKey: string | null;
   onSelect: (key: string) => void;
-  /** Large tiles for few short names (sizes, soles), wider ones for longer text. */
-  size?: "large" | "wide";
+  /**
+   * How the cards are laid out: `large` tiles for short names, `wide` for longer text, `small`
+   * for a narrow column of sizes, and `rows` for a stacked list with the sub on the right —
+   * the sole colours beside their Dana.
+   */
+  size?: "large" | "wide" | "small" | "rows";
   /** Shown above the cards once there are more than `searchFrom` of them. */
   searchLabel?: string;
   searchFrom?: number;

@@ -101,6 +101,7 @@ export const copy = {
     reference: "Reference",
     operator: "Operator",
     items: "Items",
+    category: "Category",
   },
 
   filters: {
@@ -571,7 +572,57 @@ export const copy = {
   // Raw material label printing: one Print button, one confirmation, straight to the printer.
   labelPrint: {
     cardTitle: "Print labels",
-    flowHint: "Supplier → Raw Material → How many → Print",
+    flowHint: "Supplier → Materials → How many → Print",
+
+    // Step 2: picking the materials this run covers
+    stepSupplier: "Select Supplier",
+    stepMaterials: "Select Material",
+    stepSelected: "Selected Items",
+    stepSelectedHint: "(You can add the same material more than once)",
+    searchMaterial: "Search material…",
+    subCategory: "Sub-category",
+    allFilter: "All",
+    add: "Add",
+    addMaterial: (name: string) => `Add ${name} to the selection`,
+    toggleMaterial: (name: string) => `${name} in the selection`,
+    inSelection: "In the selection",
+    colCode: "Code",
+    colAction: "Action",
+    noMaterialsTitle: "No raw materials yet",
+    noMaterialsHint: "Add one on the Add New Material tab, then come back.",
+    noMaterialMatch: "No material matches that.",
+    tooManyMaterials: (shown: number, total: number) =>
+      `Showing the first ${shown.toLocaleString()} of ${total.toLocaleString()}. Narrow the search to see the rest.`,
+
+    // Step 3: the runs waiting to be printed
+    nothingSelectedTitle: "No material selected yet",
+    nothingSelectedHint: "Tick a material above, or press Add, and it appears here.",
+    clearAll: "Clear all",
+    colPackets: "Packets",
+    colPerPacket: "Qty per packet",
+    colTotalQty: "Total qty",
+    colLabels: "Labels",
+    packetsOf: (name: string) => `How many packets of ${name}`,
+    perPacketOf: (pack: string, name: string) => `What one ${pack} of ${name} holds`,
+    removeRun: (name: string) => `Take ${name} off the selection`,
+    totalArticles: "Total materials",
+    totalPackets: "Total packets",
+    totalLabels: "Total labels",
+    printRuns: "Print QR Codes & Labels",
+    chooseSupplierFirst: "Choose a supplier first — a label's identity is built from it.",
+    unitMissing: (count: number) =>
+      count === 1
+        ? "This material has no stock unit yet. Set it to print its labels."
+        : `${count} of these materials have no stock unit yet. Set them to print their labels.`,
+    confirmRunsTitle: (labels: number, materials: number) =>
+      `Print ${labels.toLocaleString()} ${labels === 1 ? "label" : "labels"} for ${materials.toLocaleString()} ${materials === 1 ? "material" : "materials"}?`,
+    factMaterials: "Materials",
+    registerFailedFor: (name: string, reason: string) => `${name}: ${reason}`,
+    registeredSoFar: (count: number) =>
+      count === 0
+        ? "Nothing was registered."
+        : `${count.toLocaleString()} ${count === 1 ? "run was" : "runs were"} registered before this and ${count === 1 ? "its labels are" : "their labels are"} printing. Fix the rest and print them again.`,
+
     printButton: (count: number | null) => (count == null ? "🖨 Print labels" : `🖨 Print ${count.toLocaleString()} ${count === 1 ? "label" : "labels"}`),
     printing: "Printing…",
     confirmButton: "🖨 Print",
@@ -665,16 +716,28 @@ export const copy = {
     nextMonth: "Next month",
     closeDatePicker: "Done",
 
-    // The contractor
+    // The two contractors a machine is worked by
     contractor: "Contractor",
+    machineContractor: "Machine contractor",
+    packingContractor: "Packing contractor",
+    machineContractorHint: "Runs the machine.",
+    packingContractorHint: "Packs what it makes.",
     whoWorksHere: (machine: string) => `Who works on ${machine}?`,
-    changeContractor: "Change contractor",
+    bothContractorsNeeded:
+      "A machine is worked by two contractors. Both are needed before its program can be made.",
+    changeContractor: "Change contractors",
     confirmContractor: "Confirm",
-    changeContractorTitle: "Change contractor?",
-    currentContractor: "Current contractor",
+    saveContractors: "Save contractors",
+    changeContractorTitle: "Change contractors?",
+    currentContractor: "Now",
     newContractor: "New contractor",
+    noPackingContractorYet: "No packing contractor yet",
+    chooseContractorFor: (role: string) => `Choose the ${role.toLowerCase()}`,
+    contractorUnchanged: "Unchanged",
     changeContractorExplain: (machine: string) =>
-      `This changes the contractor assigned to ${machine}. Future programs will use the new contractor. Programs already made keep their contractor.`,
+      `This changes who is assigned to ${machine}. Future programs will use the new contractors. Programs already made keep the pair they were made with.`,
+    contractorSaveFailed: (role: string, reason: string) => `${role}: ${reason}`,
+    contractorSavedSoFar: "What was saved before this stays saved.",
     contractorSearch: "Search contractors",
     contractorNoMatch: "No contractor matches that name.",
     noContractorsTitle: "No contractors yet",
@@ -692,12 +755,39 @@ export const copy = {
     programInjector: (n: number) => `Program Injector ${n} →`,
     seeSummary: "See the whole program ↓",
 
+    // Adding articles: one screen, three panels, and the uppers chosen so far underneath
+    addArticleIntro: (where: string) => `${where} — select sole color, article and size. Then choose upper color and quantity.`,
+    panelSoleColour: "Sole Color",
+    panelArticleSize: "Article & Size",
+    panelUpperStock: "Upper Stock",
+    soleColourFixed: "The card’s own colour — it cannot be changed here.",
+    chooseColourFirst: "Choose a sole colour on the left.",
+    chooseArticleFirst: "Choose an article to see the sizes it is made in.",
+    chooseArticleSizeFirst: "Choose the article and the size to see the uppers in the store.",
+    selectedArticles: "Selected Articles",
+    nothingChosenTitle: "No upper color selected yet",
+    nothingChosenHint: "Choose an upper color from the list above.",
+    colArticleSize: "Article / Size",
+    /** Inside the Add Article dialog the whole panel is uppers, so the column need not say so. */
+    colAvailableStock: "Available Stock",
+    colQuantityPlain: "Quantity",
+    colAction: "Action",
+    addUpperTo: (colour: string) => `Add ${colour} upper`,
+    removeFromSelection: (colour: string) => `Take ${colour} upper off the selection`,
+    alreadyChosen: "Chosen",
+    addToProgram: "Add to Program",
+    addingToProgram: "Adding…",
+    typeQuantity: "Type how many",
+    quantityOf: (colour: string, article: string, size: string) => `How many ${colour} upper — ${article} ${size}`,
+    addRefused: (colour: string, article: string, size: string, reason: string) =>
+      `${colour} upper (${article} ${size}): ${reason}`,
+    addRefusedPartly: "What was added before it stays on the program. Fix the rest and add it again.",
+
     // Building a sole run
     back: "← Back",
     stepSoleColour: "Choose sole colour",
     stepArticle: "Which article?",
     stepSize: "Which size?",
-    stepUpper: "Choose upper colour",
     stepQuantity: "How many?",
     sole: "Sole",
     soleColour: "Sole colour",
@@ -708,15 +798,13 @@ export const copy = {
     noColoursTitle: "No colours yet",
     noColoursHint: "Add Dana in the Raw Material Master and its colours appear here.",
     coloursWithoutDana: "No DANA is set up in the store yet, so every colour the store knows is shown.",
-    danaFor: (colour: string) => `Dana for a ${colour} sole`,
-    danaNone: (colour: string) => `No ${colour} Dana in the store.`,
-    danaNoneHint: "You can still make the program. The Dana has to come in before the machine can run.",
-    danaInfoOnly: "For your information — the program does not hold Dana.",
-    articleSearch: "Search article",
+    /** The Dana figure beside a sole colour — the store’s whole stock of it, in its own unit. */
+    danaOf: (amount: string) => `DANA ${amount}`,
+    danaNoneShort: "No DANA",
+    chooseArticle: "Choose an article",
     noArticlesTitle: "No articles in the Product Master",
     noArticlesHint: "Add the article in Products first.",
     articleNoMatch: "No article matches that.",
-    availableUpper: "Available upper",
     upperNoneTitle: (article: string, size: string) => `No upper for ${article} ${size} in the store`,
     upperNoneHint: "Receive the upper on Raw Material Input and it appears here, in every colour the store holds.",
     supplierUnknown: "Supplier not recorded",
@@ -815,10 +903,22 @@ export const copy = {
     keyHint: "Press 1 or 2",
     changeJob: "Change job",
     comingNext: "This screen is being built.",
+    // The one Store In page
+    storeInTitle: "Store In",
+    storeInLine: "Add new materials, generate QR codes and manage stock.",
+    storeInSections: "Store In sections",
+    scanMaterialTitle: "Scan Material",
+    scanMaterialLine: "Scan a QR code to receive material into stock.",
+    or: "OR",
+    manualEntry: "Manual Entry",
+    noAccessTitle: "Nothing here for your account",
+    noAccessHint: "Ask an administrator for stock, label or setup access.",
     addMaterialTitle: "Add New Material",
     addMaterialLine: "Make a new raw material",
     needsStockAccess: "Ask an admin for Stock access to use this",
     qrTitle: "Raw Material QR",
+    /** What the Store In tab strip calls it — shorter, because the page is already Store In. */
+    qrTabTitle: "QR Generator",
     qrLine: "Print QR labels for packets",
     needsQrAccess: "Ask an admin for QR Generator access to use this",
     scannerTitle: "Raw Material Move In",
@@ -831,6 +931,65 @@ export const copy = {
     setupTitle: "Setup",
     setupLine: "Categories, units and destinations",
     needsSettingsAccess: "Ask an admin for Raw Material Setup access to use this",
+  },
+
+  // STORE OUT — the two ways material leaves the store, side by side.
+  moveOut: {
+    title: "Move Out",
+    line: "Scan labelled packets out, or type out loose stock that carries no label.",
+    scanTitle: "Scan Out",
+    scanLine: "Scan a packet's QR to issue it out of the store.",
+    manualInTitle: "Move In by Hand",
+    manualTitle: "Move Out by Hand",
+    manualLine: "For loose stock with no label — nawaar cut off a roll, and the like.",
+
+    stepMaterial: "Select Material",
+    chooseMaterial: "Choose a raw material — or type to filter",
+    noMaterials: "No raw materials yet",
+    noMaterialMatch: "No raw material matches that.",
+    materialHelp: "Type any part of the name, in any order — e.g. nawaar black.",
+    chooseMaterialFirst: "Choose a raw material first.",
+    inStore: "In store",
+
+    // Moving IN asks who delivered it; moving OUT does not.
+    stepSupplier: "Select Supplier",
+    chooseSupplier: "Choose supplier…",
+    noSuppliers: "No suppliers yet",
+    noSupplierMatch: "No supplier found",
+    supplierHelp: "From Party Management — a delivery always names who it came from.",
+
+    unitLabel: "Count it in",
+    /** Marks the rung the balance itself is kept in, so the operator knows which is which. */
+    stockUnitNote: "stock",
+    quantityLabel: "How much",
+    amountHelp: "Type the amount on whichever unit you measured it in.",
+    offTheBalance: "off the balance",
+    optional: "(optional)",
+
+    /** The words that change with the direction. Everything else reads the same either way. */
+    outWords: {
+      stepAmount: "How much is going out",
+      noteLabel: "What for",
+      notePlaceholder: "Where it went — e.g. cutting table",
+      action: "Move Out",
+      moving: "Moving out…",
+      movedTitle: "Moved out",
+      movedBody: (quantity: string, unit: string, material: string) => `${quantity} ${unit} of ${material} has left the store.`,
+      quantityInvalid: "Type how much is going out — a number above 0.",
+    },
+    inWords: {
+      stepAmount: "How much came in",
+      noteLabel: "Reference",
+      notePlaceholder: "Bilty or bill number, if there is one",
+      action: "Move In",
+      moving: "Moving in…",
+      movedTitle: "Moved in",
+      movedBody: (quantity: string, unit: string, material: string) => `${quantity} ${unit} of ${material} is now in the store.`,
+      quantityInvalid: "Type how much came in — a number above 0.",
+    },
+    cannotConvert: "That unit cannot be turned into the unit this material is stocked in. Check its unit ladder.",
+    notEnough: (onHand: string, unit: string, asked: string) =>
+      `Only ${onHand} ${unit} is in the store, and that comes to ${asked} ${unit}.`,
   },
 
   // The Munshi's station: the three jobs on the Munshi's own screen.

@@ -79,6 +79,17 @@ export const holdsReservation = (status: string): boolean => status === MACHINE_
 
 // ─── The machine and what it is made of ──────────────────────────────────────
 
+/**
+ * The two contractors a machine is worked by: the one who RUNS it, and the one who PACKS what it
+ * makes. Both are parties of type CONTRACTOR, assigned per machine, and a program cannot be made
+ * until the machine has both — the day's output is paid against both of them.
+ */
+export const MACHINE_CONTRACTOR_ROLES = ["MACHINE", "PACKING"] as const;
+export type MachineContractorRole = (typeof MACHINE_CONTRACTOR_ROLES)[number];
+
+export const isMachineContractorRole = (value: unknown): value is MachineContractorRole =>
+  typeof value === "string" && (MACHINE_CONTRACTOR_ROLES as readonly string[]).includes(value);
+
 /** Every machine on the floor has exactly two injectors, programmed independently. */
 export const MACHINE_INJECTORS = [1, 2] as const;
 export type InjectorNo = (typeof MACHINE_INJECTORS)[number];

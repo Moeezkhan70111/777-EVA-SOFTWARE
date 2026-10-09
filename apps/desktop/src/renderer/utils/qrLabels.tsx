@@ -443,6 +443,59 @@ export interface RawMaterialLabelSheet {
   ids: string[];
 }
 
+/** One material's labels inside a print job that covers several. */
+export interface RawMaterialLabelRun {
+  header: RawMaterialLabelHeader;
+  ids: string[];
+}
+
+/**
+ * The print-ready HTML for several materials' labels in ONE document.
+ *
+ * One press of Print in the generator may register a run per material, and the operator wants
+ * one stack of stickers out of the printer, not one print job per material. Each label keeps
+ * its OWN header — a sticker names the material it goes on — while the code font is sized
+ * once across the whole job, so every sticker in the stack reads at the same size.
+ */
+export const renderRawMaterialLabelRunsHtml = (opts: {
+  title: string;
+  heading: string;
+  subheading: string;
+  runs: RawMaterialLabelRun[];
+}): string => {
+  const everyId = opts.runs.flatMap((run) => run.ids);
+  const longestId = everyId.reduce((longest, id) => (id.length > longest.length ? id : longest), "");
+  const codeFontSizeIn = fitFontSizeIn(longestId, RM_FULL_WIDTH_IN, ...RM_CODE_RANGE);
+  const labels = opts.runs
+    .map((run) => run.ids.map((id) => renderRawMaterialLabel(run.header, id, codeFontSizeIn)).join(""))
+    .join("");
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>${escapeHtml(opts.title)}</title>
+  <style>${PRINT_STYLES}${RAW_MATERIAL_LABEL_STYLES}</style>
+</head>
+<body>
+  <div class="print-actions"><button onclick="window.print()">${copy.reports.printOrSave}</button></div>
+  <div class="print-heading">
+    <h1>${escapeHtml(opts.heading)}</h1>
+    <p>${escapeHtml(opts.subheading)}</p>
+  </div>
+  <div class="label-grid">${labels}</div>
+</body>
+</html>`;
+};
+
+/** Sends several materials' labels to the default printer as one job. */
+export const printRawMaterialLabelRuns = (opts: {
+  title: string;
+  heading: string;
+  subheading: string;
+  runs: RawMaterialLabelRun[];
+}): Promise<PrintDirectResult> =>
+  printDocumentDirect(renderRawMaterialLabelRunsHtml(opts), { widthIn: LABEL_WIDTH_IN, heightIn: LABEL_HEIGHT_IN });
+
 /**
  * Prints raw material labels straight on the default printer, one sticker per page — no
  * preview window. The caller confirms with the operator first.

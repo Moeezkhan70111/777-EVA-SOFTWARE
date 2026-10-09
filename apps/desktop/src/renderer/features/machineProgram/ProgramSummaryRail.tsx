@@ -64,9 +64,14 @@ export const ProgramSummaryRail: React.FC<ProgramSummaryRailProps> = ({
         <QuickFact icon={<ClockIcon />} label={copy.machineProgram.shiftTime} value={formatShiftRange(shift)} hint={formatLongDate(date)} />
         <QuickFact
           icon={<PersonIcon />}
-          label={copy.machineProgram.contractor}
+          label={copy.machineProgram.machineContractor}
           value={machine?.contractorName ?? copy.machineProgram.noContractorYet}
           action={machine ? { label: copy.machineProgram.changeContractor, onClick: onChangeContractor } : undefined}
+        />
+        <QuickFact
+          icon={<PersonIcon />}
+          label={copy.machineProgram.packingContractor}
+          value={machine?.packingContractorName ?? copy.machineProgram.noPackingContractorYet}
         />
         <QuickFact
           icon={<ProductionIcon />}

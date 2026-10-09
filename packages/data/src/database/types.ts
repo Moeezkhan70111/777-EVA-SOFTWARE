@@ -7,6 +7,12 @@ import type { DiscountSource, PriceType } from "@erp/domain";
 export interface SqliteDatabaseOptions {
   dbPath: string;
   schemaPath?: string;
+  /**
+   * Folder holding the versioned `*.up.sql` migrations. Defaults to the repository layout
+   * (beside the schema), which is what the tests use; the desktop app passes it explicitly so
+   * a packaged installation reads both resources from its own `resources` folder.
+   */
+  migrationsDir?: string;
 }
 
 export interface PartyBalanceLimitFigures {
@@ -1386,6 +1392,65 @@ export interface ItemUnitLadder {
   stockUnitId: string | null;
 }
 
+/** Which way material is being moved by hand: INto the store, or OUT of it. */
+export type HandMoveDirection = "IN" | "OUT";
+
+/**
+ * What the Store In / Move Out screens need to offer one material by hand: the units it may be
+ * counted in, what is on the shelf, and whether it may move that way at all.
+ */
+export interface RawMaterialHandMoveOptions {
+  itemId: string;
+  itemCode: string;
+  displayName: string;
+  /** The unit the balance is kept in. Null when the material has none yet. */
+  stockUnitCode: string | null;
+  stockUnitId: string | null;
+  quantityOnHand: number;
+  /** Every rung of its ladder, biggest first — or just the stock unit when it has no ladder. */
+  units: string[];
+  steps: ItemUnitLadderStepRow[];
+  /** Labelled packets of it currently IN_STORE. Any at all block a move OUT by hand. */
+  labelledPacketsInStore: number;
+  /** Why it cannot move this way by hand, or null when it can. */
+  blockedReason: string | null;
+}
+
+export interface RawMaterialHandMoveInput {
+  itemId: string;
+  direction: HandMoveDirection;
+  /** As typed, in `unitCode` — which may be any rung of the material's ladder. */
+  quantity: number;
+  unitCode: string;
+  /** Who delivered it. Required moving IN, ignored moving OUT. */
+  partyId?: string | null;
+  /** Why it moved, kept on the stock event beside what was typed. */
+  note?: string | null;
+  actor?: string | null;
+}
+
+export interface RawMaterialHandMoveResult {
+  accepted: boolean;
+  outcome:
+    | "MOVED"
+    | "NOT_FOUND"
+    | "NOT_ELIGIBLE"
+    | "HAS_LABELLED_PACKETS"
+    | "NO_SUPPLIER"
+    | "UNKNOWN_UNIT"
+    | "INVALID_QUANTITY"
+    | "NOT_ENOUGH_STOCK";
+  reason?: string;
+  direction?: HandMoveDirection;
+  /** What moved, in the unit stock is kept in. */
+  quantity?: number;
+  unitCode?: string;
+  /** What the operator typed, so the result reads back the way it was entered. */
+  typedQuantity?: number;
+  typedUnitCode?: string;
+  quantityOnHand?: number;
+}
+
 /** What would happen if a category were filed somewhere else, and what would stop it. */
 export interface CategoryMovePreview {
   /** Empty means the move can go ahead. The first one is what a refusal reports. */
@@ -1504,9 +1569,12 @@ export interface MachineRecord {
   sectionName: string;
   sortOrder: number;
   status: string;
-  /** Who works on this machine — set once, kept until somebody changes it. */
+  /** Who RUNS this machine — set once, kept until somebody changes it. */
   contractorPartyId: string | null;
   contractorName: string | null;
+  /** Who PACKS what it makes. A separate assignment, from the same contractor parties. */
+  packingContractorPartyId: string | null;
+  packingContractorName: string | null;
 }
 
 /** A colour a sole can be moulded in, with how much Dana the store holds in that colour. */
@@ -1616,8 +1684,14 @@ export interface MachineProgramRecord {
   machineId: string;
   machineName: string;
   contractorPartyId: string;
-  /** The contractor as they were when the program was made — never rewritten later. */
+  /** The machine contractor as they were when the program was made — never rewritten later. */
   contractorName: string;
+  /**
+   * Who packs this program's output, snapshotted the same way. Null only on programs saved
+   * before a machine had two contractors — nothing made since can be missing it.
+   */
+  packingContractorPartyId: string | null;
+  packingContractorName: string | null;
   programDate: string;
   /** Minutes from midnight of programDate that the shift starts, 0 to 1439. */
   shiftStartMinute: number;

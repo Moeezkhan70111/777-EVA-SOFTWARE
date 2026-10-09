@@ -188,6 +188,50 @@ export function registerStoreHandlers(ctx: IpcContext): void {
     }
   });
 
+  // ─── Moving raw material out BY HAND ──────────────────────────────────────────
+  // Loose stock — nawaar off a roll — carries no label, so the only way out is to say what
+  // went. The quantity may be typed on any rung of the material's own ladder; the data layer
+  // converts it, refuses a material that still has labelled packets, and refuses a figure the
+  // shelf cannot cover. The screen checks the same things, but this is what enforces them.
+
+  ipcMain.handle(IPC.getRawMaterialHandMoveOptions, (_event, itemId?: string, direction?: string, opts?: { token?: string }) => {
+    const auth = resolveStoreOperator(opts?.token);
+    if (!auth.ok) return null;
+    return db.getRawMaterialHandMoveOptions(String(itemId ?? ""), direction === "IN" ? "IN" : "OUT");
+  });
+
+  ipcMain.handle(IPC.moveRawMaterialByHand, (_event, input?: Record<string, unknown>, opts?: { token?: string }) => {
+    const auth = resolveStoreOperator(opts?.token);
+    if (!auth.ok) return { accepted: false, outcome: "NOT_AUTHORIZED", reason: auth.reason };
+    if (!isRecord(input)) return { accepted: false, outcome: "INVALID_QUANTITY", reason: "Nothing to move." };
+
+    try {
+      const result = db.moveRawMaterialByHand({
+        itemId: asOptionalString(input.itemId) ?? "",
+        direction: asOptionalString(input.direction) === "IN" ? "IN" : "OUT",
+        quantity: Number(input.quantity),
+        unitCode: asOptionalString(input.unitCode) ?? "",
+        partyId: asOptionalString(input.partyId) ?? null,
+        note: asOptionalString(input.note) ?? null,
+        actor: auth.username,
+      });
+      logger.log({
+        module: "raw-material-output",
+        severity: result.accepted ? "INFO" : "WARNING",
+        operation: "hand-move",
+        deviceId,
+        message: JSON.stringify({ outcome: result.outcome, itemId: asOptionalString(input.itemId) ?? "", quantity: result.quantity }),
+      });
+      return result;
+    } catch (error) {
+      logger.log({
+        module: "raw-material-output", severity: "ERROR", operation: "hand-move-error", deviceId,
+        message: error instanceof Error ? error.message : String(error),
+      });
+      return { accepted: false, outcome: "NOT_ENOUGH_STOCK", reason: "The move could not be saved. Nothing was changed." };
+    }
+  });
+
   ipcMain.handle(IPC.storeEntryScan, async (_event, rawScan?: string, opts?: { token?: string; sessionId?: string }) => {
     const auth = resolveStoreOperator(opts?.token);
     if (!auth.ok) {

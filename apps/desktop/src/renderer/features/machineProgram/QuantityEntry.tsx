@@ -1,7 +1,7 @@
 import React, { useState } from "react";
-import { checkProgramQuantity, roundQuantity } from "@erp/domain";
+import { roundQuantity } from "@erp/domain";
 import { copy } from "../../config/copy";
-import { formatAmount } from "./machineProgram";
+import { formatAmount, quantityProblem } from "./machineProgram";
 
 // HOW MANY? — one big box, the unit beside it, and the two figures that matter under it:
 //
@@ -33,7 +33,7 @@ export const QuantityEntry: React.FC<QuantityEntryProps> = ({ title, unitCode, l
   const [refused, setRefused] = useState<string | null>(null);
 
   const quantity = text.trim() === "" ? Number.NaN : Number(text);
-  const problem = text.trim() === "" ? null : describe(checkProgramQuantity(quantity, { available: limit - consumed, consumed }), limit, consumed, unitCode);
+  const problem = text.trim() === "" ? null : quantityProblem(quantity, limit, consumed, unitCode);
   const remaining = Number.isFinite(quantity) && !problem ? roundQuantity(limit - quantity) : null;
 
   const submit = async (event: React.FormEvent) => {
@@ -93,11 +93,4 @@ export const QuantityEntry: React.FC<QuantityEntryProps> = ({ title, unitCode, l
       </div>
     </form>
   );
-};
-
-const describe = (problem: ReturnType<typeof checkProgramQuantity>, limit: number, consumed: number, unitCode: string | null): string | null => {
-  if (problem === "INVALID_QUANTITY") return copy.machineProgram.quantityInvalid;
-  if (problem === "BELOW_CONSUMED") return copy.machineProgram.quantityBelowTaken(formatAmount(consumed, unitCode));
-  if (problem === "NOT_ENOUGH_STOCK") return copy.machineProgram.quantityTooMany(formatAmount(limit, unitCode));
-  return null;
 };

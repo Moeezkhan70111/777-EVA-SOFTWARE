@@ -44,16 +44,40 @@ export interface StoreJobPage {
 }
 
 /**
- * The Move In job's pages, in the order the job screen shows them. Who may open each one is
- * the route's own permission (canOpenRoute), the same check the main process enforces.
+ * The sections of the one Store In page, in the order its tab strip shows them.
+ *
+ * Each is also a route, so the sidebar can point straight at a tab and a tab can be come back
+ * to. The scan station is not among them: it is the pane down the right of every tab.
  */
-export const MOVE_IN_PAGES: readonly StoreJobPage[] = [
-  { id: "new-material", route: "store-in-new-material", title: copy.store.addMaterialTitle, line: copy.store.addMaterialLine },
-  { id: "qr-generator", route: "store-in-qr-generator", title: copy.store.qrTitle, line: copy.store.qrLine },
-  { id: "scanner", route: "store-in-scanner", title: copy.store.scannerTitle, line: copy.store.scannerLine },
+export type StoreInTab = "material" | "labels" | "stock" | "receipts" | "setup";
+
+export interface StoreInSection extends StoreJobPage {
+  id: StoreInTab;
+}
+
+export const STORE_IN_TABS: readonly StoreInSection[] = [
+  { id: "material", route: "store-in-new-material", title: copy.store.addMaterialTitle, line: copy.store.addMaterialLine },
+  { id: "labels", route: "store-in-qr-generator", title: copy.store.qrTabTitle, line: copy.store.qrLine },
   { id: "stock", route: "store-in-stock", title: copy.store.stockTitle, line: copy.store.stockLine },
   { id: "receipts", route: "store-in-receipts", title: copy.store.receiptsTitle, line: copy.store.receiptsLine },
   { id: "setup", route: "store-in-setup", title: copy.store.setupTitle, line: copy.store.setupLine },
+];
+
+/** The route that opens one tab of the Store In page. */
+export const storeInTabRoute = (tab: StoreInTab): AppRoute =>
+  STORE_IN_TABS.find((entry) => entry.id === tab)?.route ?? "store-in-new-material";
+
+/** The tab a route opens on. Store In's own home opens on the first thing receiving needs. */
+export const storeInTabOfRoute = (route: AppRoute): StoreInTab =>
+  STORE_IN_TABS.find((entry) => entry.route === route)?.id ?? "material";
+
+/**
+ * The Move In job's rows in the sidebar: the page's own tabs, plus the full-screen scan
+ * station, which is still its own page for a terminal that does nothing but scan.
+ */
+export const MOVE_IN_PAGES: readonly StoreJobPage[] = [
+  ...STORE_IN_TABS,
+  { id: "scanner", route: "store-in-scanner", title: copy.store.scannerTitle, line: copy.store.scannerLine },
 ];
 
 /** Each job's pages. Move Out's steps are not built yet, so it has none. */

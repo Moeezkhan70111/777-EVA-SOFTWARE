@@ -1,8 +1,8 @@
 import React, { useState } from "react";
-import { checkProgramQuantity, roundQuantity } from "@erp/domain";
+import { roundQuantity } from "@erp/domain";
 import type { MachineProgramRunRecord, MachineProgramUpperLineRecord } from "../../types/desktopApi";
 import { copy } from "../../config/copy";
-import { formatAmount } from "./machineProgram";
+import { formatAmount, quantityProblem } from "./machineProgram";
 import type { ProgramWrites } from "./useProgramWrites";
 
 // QTY TO RUN — the one figure on the program that is typed rather than chosen.
@@ -50,12 +50,8 @@ export const QuantityCell: React.FC<QuantityCellProps> = ({ machineId, programDa
   // the ceiling with what has already been scanned out taken off it. `limit` is the whole
   // ceiling — the store's free stock with this line's own reservation added back — and that is
   // the figure the Available Stock column shows, so the two can never disagree.
-  const problem = describe(
-    text.trim() === "" || loadingLimit ? null : checkProgramQuantity(quantity, { available: limit - line.consumed, consumed: line.consumed }),
-    limit,
-    line.consumed,
-    line.unitCode
-  );
+  const problem =
+    text.trim() === "" || loadingLimit ? null : quantityProblem(quantity, limit, line.consumed, line.unitCode);
 
   const commit = async () => {
     if (text === saved || saving) return;
@@ -114,16 +110,4 @@ export const QuantityCell: React.FC<QuantityCellProps> = ({ machineId, programDa
       ) : null}
     </span>
   );
-};
-
-const describe = (
-  problem: ReturnType<typeof checkProgramQuantity> | null,
-  limit: number,
-  consumed: number,
-  unitCode: string | null
-): string | null => {
-  if (problem === "INVALID_QUANTITY") return copy.machineProgram.quantityInvalid;
-  if (problem === "BELOW_CONSUMED") return copy.machineProgram.quantityBelowTaken(formatAmount(consumed, unitCode));
-  if (problem === "NOT_ENOUGH_STOCK") return copy.machineProgram.quantityTooMany(formatAmount(limit, unitCode));
-  return null;
 };

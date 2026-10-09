@@ -1,0 +1,79 @@
+# Windows packaging for 777 ERP.
+#
+# Run from the repository root with `npm run package:win`, which builds every workspace first —
+# electron-builder packages what is already in dist/, it does not compile anything.
+#
+# Two things here matter more than the rest:
+#
+#   extraResources  ships local-schema.sql and the migrations OUTSIDE the asar, under
+#                   resources/erp-resources. They are read-only application resources, and
+#                   apps/desktop/src/main/runtimePaths.ts resolves them from process.resourcesPath
+#                   when app.isPackaged is true. The DATABASE is never here — it stays in
+#                   %LOCALAPPDATA%\777-erp so it survives install, upgrade and uninstall.
+#
+#   npmRebuild      off, because there is nothing native to rebuild: SQLite comes from Electron's
+#                   built-in node:sqlite module, not from a compiled npm package.
+
+appId: com.tttraders.erp777
+productName: 777 ERP
+copyright: Copyright © T&T Traders
+
+directories:
+  output: release
+  buildResources: build
+
+# No native modules anywhere in the tree (SQLite is Electron's built-in node:sqlite).
+npmRebuild: false
+
+# The app's own files inside app.asar. `dist` holds the compiled main process, the bundled
+# preload and the bundled renderer; index.html is the page the main process loads and is the one
+# file still read out of src/. Workspace dependencies (@erp/*) are added automatically.
+files:
+  - dist/**/*
+  - src/renderer/index.html
+  # The branding/machine/gatepass artwork and the scan sounds. The renderer refers to these as
+  # "./assets/<folder>/<file>", which the browser resolves against the DOCUMENT — that is
+  # src/renderer/index.html, in development and when packaged alike — not against the bundled
+  # script. So this folder, not dist/renderer/assets, is the one the running app reads from.
+  - src/renderer/assets/**
+  - package.json
+  # Development-only artifacts that would otherwise travel inside the workspace packages.
+  - "!**/*.map"
+  - "!**/node_modules/@erp/*/dist/**/*.test.js"
+  - "!**/node_modules/@erp/*/dist/**/*.test.d.ts"
+  # The packages' TypeScript sources, including a second copy of local-schema.sql. The packaged
+  # app reads the schema from extraResources below, never from here.
+  - "!**/node_modules/@erp/*/src/**"
+  # A dependency's own test/experiment folder, outside its published entry points.
+  - "!**/node_modules/qrcode-generator/experiment/**"
+  # Video files: the assets folder is for branding stills and the two scan sounds. Anything
+  # this large belongs behind a deliberate decision, not an accidental drag-and-drop into the
+  # folder the installer mirrors.
+  - "!**/assets/**/*.mp4"
+
+extraResources:
+  - from: ../../packages/data/src/local-schema.sql
+    to: erp-resources/local-schema.sql
+  - from: ../../migrations/sqlite
+    to: erp-resources/migrations/sqlite
+    # Only the forward migrations: the runner reads *.up.sql and nothing executes the .down.sql
+    # files, so shipping them would imply a rollback path the application does not have.
+    filter:
+      - "*.up.sql"
+
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+
+nsis:
+  # An assisted installer: the operator sees a wizard and can choose the folder. Per-user, so
+  # installing needs no administrator rights on a factory workstation.
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: 777 ERP
+  artifactName: ${productName} Setup ${version}.${ext}

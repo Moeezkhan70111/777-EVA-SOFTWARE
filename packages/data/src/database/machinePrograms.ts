@@ -40,10 +40,12 @@ const DEFAULT_MACHINE_SECTION_NAME = "MACHINES";
 export const INJECTOR_LAYOUT = "INJECTORS";
 
 const MACHINE_SELECT = `SELECT m.id, m.machine_code, m.name, m.section_id, ws.name AS section_name, m.sort_order, m.status,
-         m.contractor_party_id, cp.party_name AS contractor_name
+         m.contractor_party_id, cp.party_name AS contractor_name,
+         m.packing_contractor_party_id, pp.party_name AS packing_contractor_name
   FROM machines m
   JOIN work_sections ws ON ws.id = m.section_id
-  LEFT JOIN parties cp ON cp.id = m.contractor_party_id`;
+  LEFT JOIN parties cp ON cp.id = m.contractor_party_id
+  LEFT JOIN parties pp ON pp.id = m.packing_contractor_party_id`;
 
 const text = (value: unknown): string => (value == null ? "" : String(value));
 
@@ -57,6 +59,8 @@ const mapMachine = (row: Record<string, unknown>): MachineRecord => ({
   status: text(row.status) || "ACTIVE",
   contractorPartyId: row.contractor_party_id ? text(row.contractor_party_id) : null,
   contractorName: row.contractor_name ? text(row.contractor_name) : null,
+  packingContractorPartyId: row.packing_contractor_party_id ? text(row.packing_contractor_party_id) : null,
+  packingContractorName: row.packing_contractor_name ? text(row.packing_contractor_name) : null,
 });
 
 const mapLine = (row: Record<string, unknown>): MachineProgramUpperLineRecord => {
@@ -116,6 +120,8 @@ const mapProgram = (row: Record<string, unknown>, runs: MachineProgramRunRecord[
     machineName: text(row.machine_name_snapshot),
     contractorPartyId: text(row.contractor_party_id),
     contractorName: text(row.contractor_name_snapshot),
+    packingContractorPartyId: row.packing_contractor_party_id ? text(row.packing_contractor_party_id) : null,
+    packingContractorName: row.packing_contractor_name_snapshot ? text(row.packing_contractor_name_snapshot) : null,
     programDate: text(row.program_date),
     shiftStartMinute: Number(row.shift_start_minute ?? DEFAULT_MACHINE_SHIFT.startMinute),
     shiftEndMinute: Number(row.shift_end_minute ?? DEFAULT_MACHINE_SHIFT.endMinute),

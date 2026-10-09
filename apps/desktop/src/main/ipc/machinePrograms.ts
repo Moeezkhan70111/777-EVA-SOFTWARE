@@ -11,7 +11,7 @@
 import { ipcMain, type IpcMainInvokeEvent } from "electron";
 import { IPC } from "../../shared/ipcChannels";
 import type { IpcContext } from "./context";
-import { PERMISSION, asOptionalString, asRecord, asString, type MachineShift } from "@erp/domain";
+import { PERMISSION, asOptionalString, asRecord, asString, isMachineContractorRole, type MachineShift } from "@erp/domain";
 import { rejection } from "../authorize";
 
 /** What every program write returns when it never reached the use case. */
@@ -116,8 +116,15 @@ export function registerMachineProgramHandlers(ctx: IpcContext): void {
 
   // ─── Writes ─────────────────────────────────────────────────────────────────
 
+  // The role is validated here rather than trusted: anything that is not a known role is sent
+  // as null, and the use case treats that as the MACHINE contractor it always meant.
   write(IPC.assignMachineContractor, (input, actor) =>
-    programs.assignContractor.execute({ machineId: asString(input.machineId), contractorPartyId: asString(input.contractorPartyId), ...actor })
+    programs.assignContractor.execute({
+      machineId: asString(input.machineId),
+      role: isMachineContractorRole(input.role) ? input.role : null,
+      contractorPartyId: asString(input.contractorPartyId),
+      ...actor,
+    })
   );
 
   write(IPC.saveMachineProgramLine, (input, actor) => {

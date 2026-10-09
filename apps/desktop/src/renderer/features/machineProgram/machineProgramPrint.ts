@@ -42,7 +42,10 @@ export const printMachineProgram = (program: MachineProgramRecord, preparedBy?: 
     filters: [
       { label: "Program", value: program.code },
       { label: "Machine", value: program.machineName },
-      { label: copy.machineProgram.contractor, value: program.contractorName },
+      { label: copy.machineProgram.machineContractor, value: program.contractorName },
+      // Programs made before a machine had two contractors have no packer to name, and the
+      // sheet says so rather than printing a blank.
+      { label: copy.machineProgram.packingContractor, value: program.packingContractorName ?? copy.machineProgram.noPackingContractorYet },
       { label: copy.machineProgram.programDate, value: formatLongDate(program.programDate) },
       {
         label: copy.machineProgram.shiftTime,

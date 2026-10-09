@@ -9,7 +9,7 @@ import { InjectorWorkspace } from "./InjectorWorkspace";
 import { MachinesStrip } from "./MachinesStrip";
 import { ProgramSummaryRail } from "./ProgramSummaryRail";
 import { WorkspaceHeader } from "./WorkspaceHeader";
-import { hasContent, shiftOf } from "./machineProgram";
+import { hasContent, needsContractors, shiftOf } from "./machineProgram";
 import { printMachineProgram } from "./machineProgramPrint";
 import { useMachineBoard, useMachineProgram } from "./useMachineProgramData";
 import { useProgramWrites } from "./useProgramWrites";
@@ -65,10 +65,10 @@ export const MachineProgramPage: React.FC<MachineProgramPageProps> = ({ username
   // still the one the next line will be made under, so it is read and written from the row.
   const shift = shiftOf(machineId ? program.value : null, chosenShift);
 
-  /** A machine nobody has been assigned to is asked about before it can be programmed. */
+  /** A machine missing either of its two contractors is asked about before it can be programmed. */
   const openMachine = (row: MachineProgramBoardRow) => {
-    if (row.machine.contractorPartyId) setMachineId(row.machine.id);
-    else setAskingContractorFor(row.machine);
+    if (needsContractors(row.machine)) setAskingContractorFor(row.machine);
+    else setMachineId(row.machine.id);
   };
 
   /**
@@ -77,8 +77,8 @@ export const MachineProgramPage: React.FC<MachineProgramPageProps> = ({ username
    */
   const machineAdded = async (added: MachineRecord) => {
     await board.reload();
-    if (added.contractorPartyId) setMachineId(added.id);
-    else setAskingContractorFor(added);
+    if (needsContractors(added)) setAskingContractorFor(added);
+    else setMachineId(added.id);
   };
 
   /** The board is the one source of the machine record, so it is re-read before the machine opens. */

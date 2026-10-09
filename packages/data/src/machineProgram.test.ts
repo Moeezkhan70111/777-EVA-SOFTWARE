@@ -143,8 +143,14 @@ function createFixture(options: { withDana?: boolean } = {}) {
     return row;
   };
 
-  const assignContractor = (machineId: string, contractorPartyId: string) =>
-    useCases.assign.execute({ machineId, contractorPartyId, actor: ACTOR });
+  const assignContractor = (machineId: string, contractorPartyId: string, role: "MACHINE" | "PACKING" = "MACHINE") =>
+    useCases.assign.execute({ machineId, role, contractorPartyId, actor: ACTOR });
+
+  /** Both of a machine's contractors at once — what a machine needs before it can be programmed. */
+  const assignBothContractors = async (machineId: string, contractorPartyId: string, packerPartyId: string) => {
+    await assignContractor(machineId, contractorPartyId, "MACHINE");
+    return assignContractor(machineId, packerPartyId, "PACKING");
+  };
 
   /** Adds an upper to a NEW sole run on a machine's injector for a date. */
   const addToNewRun = (input: { machineId: string; date?: string; injectorNo?: number; articleSizeId?: string; soleColour?: string; itemId: string; quantity: number }) =>
@@ -175,7 +181,7 @@ function createFixture(options: { withDana?: boolean } = {}) {
     Number((raw.prepare("SELECT quantity_on_hand AS q FROM inventory_stock_balances WHERE item_id = ?").get(itemId) as { q: number } | undefined)?.q ?? 0);
 
   return {
-    db, raw, unitId, ...useCases, machine1, machine2, contractorA, contractorB, supplierA, supplierB,
+    db, raw, unitId, ...useCases, machine1, machine2, contractorA, contractorB, supplierA, supplierB, assignBothContractors,
     sk6_710, sk6_46, black, green, black46, blueElsewhere, danaBlack,
     stockIn, issueOut, bringBack, upperFor, assignContractor, addToNewRun, saveOnRun, balanceOf,
     cleanup: () => {
@@ -196,22 +202,26 @@ const withFixture = async (body: (f: Fixture) => Promise<void>, options: { withD
   }
 };
 
-/** Both machines get a contractor and the store gets 10 packets of 5 DOZEN of BLACK from ABC. */
+/**
+ * Both machines get BOTH their contractors, and the store gets 10 packets of 5 DOZEN of BLACK
+ * from ABC. A machine cannot be programmed until it has a machine contractor AND a packing one.
+ */
 const readyToProgram = async (f: Fixture) => {
-  await f.assignContractor(f.machine1.id, f.contractorA);
-  await f.assignContractor(f.machine2.id, f.contractorB);
+  await f.assignBothContractors(f.machine1.id, f.contractorA, f.contractorB);
+  await f.assignBothContractors(f.machine2.id, f.contractorB, f.contractorA);
   return f.stockIn(f.black, 10, f.supplierA);
 };
 
 // ─── The machine's contractor ─────────────────────────────────────────────────
 
-test("a machine's contractor is set once and stays until it is changed", async () => {
+test("a machine's two contractors are set once and stay until they are changed", async () => {
   await withFixture(async (f) => {
-    const assigned = await f.assignContractor(f.machine1.id, f.contractorA);
+    const assigned = await f.assignBothContractors(f.machine1.id, f.contractorA, f.contractorB);
     assert.equal(assigned.outcome, "ASSIGNED");
 
     const machine = f.db.listMachines().find((row) => row.id === f.machine1.id);
     assert.equal(machine?.contractorName, "CONTRACTOR A");
+    assert.equal(machine?.packingContractorName, "CONTRACTOR B", "the packing contractor is its own assignment");
     assert.equal(f.db.listMachineProgramBoard(TODAY).find((row) => row.machine.id === f.machine1.id)?.machine.contractorName, "CONTRACTOR A");
     assert.equal(f.db.listMachineProgramBoard(TOMORROW).find((row) => row.machine.id === f.machine1.id)?.machine.contractorName, "CONTRACTOR A", "every date shows the same contractor");
   });
@@ -231,6 +241,40 @@ test("a machine with no contractor cannot be programmed", async () => {
     const result = await f.addToNewRun({ machineId: f.machine1.id, itemId: f.black, quantity: 5 });
     assert.equal(result.outcome, "NO_CONTRACTOR");
     assert.equal(f.db.getMachineProgramForDate(f.machine1.id, TODAY), null, "nothing half-made is left behind");
+  });
+});
+
+test("a machine with nobody to PACK for it cannot be programmed either", async () => {
+  await withFixture(async (f) => {
+    await f.stockIn(f.black, 2, f.supplierA);
+    await f.assignContractor(f.machine1.id, f.contractorA, "MACHINE");
+
+    const result = await f.addToNewRun({ machineId: f.machine1.id, itemId: f.black, quantity: 5 });
+    assert.equal(result.outcome, "NO_PACKING_CONTRACTOR");
+    assert.equal(f.db.getMachineProgramForDate(f.machine1.id, TODAY), null, "nothing half-made is left behind");
+
+    await f.assignContractor(f.machine1.id, f.contractorB, "PACKING");
+    const second = await f.addToNewRun({ machineId: f.machine1.id, itemId: f.black, quantity: 5 });
+    assert.equal(second.outcome, "SAVED");
+  });
+});
+
+test("a program snapshots BOTH contractors, and changing either never rewrites a saved one", async () => {
+  await withFixture(async (f) => {
+    await readyToProgram(f);
+    await f.addToNewRun({ machineId: f.machine1.id, itemId: f.black, quantity: 5 });
+
+    const saved = f.db.getMachineProgramForDate(f.machine1.id, TODAY);
+    assert.equal(saved?.contractorName, "CONTRACTOR A");
+    assert.equal(saved?.packingContractorName, "CONTRACTOR B");
+
+    // Swap only who packs, and program tomorrow.
+    await f.assignContractor(f.machine1.id, f.contractorA, "PACKING");
+    await f.addToNewRun({ machineId: f.machine1.id, date: TOMORROW, itemId: f.black, quantity: 5 });
+
+    assert.equal(f.db.getMachineProgramForDate(f.machine1.id, TODAY)?.packingContractorName, "CONTRACTOR B", "today keeps the pair it was made with");
+    assert.equal(f.db.getMachineProgramForDate(f.machine1.id, TOMORROW)?.packingContractorName, "CONTRACTOR A");
+    assert.equal(f.db.getMachineProgramForDate(f.machine1.id, TOMORROW)?.contractorName, "CONTRACTOR A", "the machine contractor was not touched");
   });
 });
 
@@ -654,7 +698,11 @@ test("every change is audited", async () => {
     await f.saveOnRun({ machineId: f.machine1.id, runId: line.runId!, lineId: line.lineId!, itemId: f.black, quantity: 20 });
     await f.remove.execute({ programId: line.programId!, actor: ACTOR });
     const events = (f.raw.prepare("SELECT event_type FROM audit_log WHERE entity_type = 'MACHINE_PROGRAM' ORDER BY occurred_at, rowid").all() as Array<{ event_type: string }>).map((row) => row.event_type);
+    // Four assignments: each machine gets its machine contractor and its packing contractor,
+    // and each role is its own audited transaction.
     assert.deepEqual(events, [
+      "MACHINE_CONTRACTOR_ASSIGNED",
+      "MACHINE_CONTRACTOR_ASSIGNED",
       "MACHINE_CONTRACTOR_ASSIGNED",
       "MACHINE_CONTRACTOR_ASSIGNED",
       "MACHINE_PROGRAM_CREATED",

@@ -97,6 +97,9 @@ export const IPC = {
   removeMachineProgramRun: "erp:remove-machine-program-run",
   deleteMachineProgram: "erp:delete-machine-program",
   setMachineProgramShift: "erp:set-machine-program-shift",
+  // Moving raw material in or out by hand, for loose stock that carries no label.
+  getRawMaterialHandMoveOptions: "erp:get-raw-material-hand-move-options",
+  moveRawMaterialByHand: "erp:move-raw-material-by-hand",
   listRawMaterialMovementConfig: "erp:list-raw-material-movement-config",
   setRawMaterialMovementConfig: "erp:set-raw-material-movement-config",
   // The pack and route a new material in a sub-category should start from, and the bulk

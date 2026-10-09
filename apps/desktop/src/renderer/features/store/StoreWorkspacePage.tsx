@@ -1,18 +1,14 @@
 import React, { useState } from "react";
 import type { AppRoute } from "../../app/routes";
 import { copy } from "../../config/copy";
-import { StateView } from "../../components/shared/StateView";
+import { RawMaterialSection } from "../rawMaterial/RawMaterialSection";
 import { useRawMaterialLookups } from "../rawMaterial/useRawMaterialLookups";
-import { StockTab } from "../rawMaterial/StockTab";
-import { LabelsTab } from "../rawMaterial/LabelsTab";
-import { ReceiptsTab } from "../rawMaterial/ReceiptsTab";
-import { SetupTab } from "../rawMaterial/SetupTab";
 import type { WorkspaceTab } from "../rawMaterial/rawMaterial";
 import { StoreTopBar } from "./StoreTopBar";
 
-// One section of the Raw Material workspace — Stock, Labels, Receipts or Setup — shown
-// full-screen inside the Move In flow. These are the workspace's own tab components with the
-// same data and the same checks, so the store and the office use one implementation of each.
+// One section of the Raw Material workspace shown full-screen with a way back — the Munshi's
+// Stock station. The section itself is RawMaterialSection, the same component the Store In page
+// and the office workspace render, so all three show one implementation of each tab.
 
 const TAB_TITLE: Record<WorkspaceTab, string> = {
   stock: copy.store.stockTitle,
@@ -27,10 +23,9 @@ interface StoreWorkspacePageProps {
   isAdmin: boolean;
   /** Whether this operator may print labels — the Stock tab offers a shortcut into them. */
   canPrintLabels: boolean;
-  /** Back to the screen this section was opened from — the Move In operator's cards by default. */
+  /** Back to the screen this section was opened from. */
   onDone: () => void;
-  /** What the way back is called, and what the small line under the title says. The Munshi's
-   *  station opens the same Stock section from its own screen, so both are adjustable. */
+  /** What the way back is called, and what the small line under the title says. */
   backLabel?: string;
   stationLabel?: string;
   onNavigate: (route: AppRoute) => void;
@@ -57,80 +52,17 @@ export const StoreWorkspacePage: React.FC<StoreWorkspacePageProps> = (props) => 
       />
 
       <main className="so-wide-body">
-        {lookups.error && tab !== "receipts" && tab !== "labels" ? (
-          <StateView kind="error" message={lookups.error} onRetry={() => void lookups.reload()} />
-        ) : (
-          <WorkspaceSection
-            {...props}
-            tab={tab}
-            lookups={lookups}
-            labelsItemId={labelsItemId}
-            onLabelsItemConsumed={() => setLabelsItemId(undefined)}
-            onGenerateLabels={openLabelsFor}
-          />
-        )}
+        <RawMaterialSection
+          tab={tab}
+          lookups={lookups}
+          username={props.username}
+          isAdmin={props.isAdmin}
+          onGenerateLabels={props.canPrintLabels ? openLabelsFor : () => props.onNavigate("store-in-qr-generator")}
+          labelsItemId={labelsItemId}
+          onLabelsItemConsumed={() => setLabelsItemId(undefined)}
+          onNavigate={props.onNavigate}
+        />
       </main>
     </div>
-  );
-};
-
-interface WorkspaceSectionProps extends StoreWorkspacePageProps {
-  lookups: ReturnType<typeof useRawMaterialLookups>;
-  labelsItemId?: string;
-  onLabelsItemConsumed: () => void;
-  onGenerateLabels: (itemId: string) => void;
-}
-
-/** The chosen tab, wired exactly as RawMaterialWorkspace wires it. */
-const WorkspaceSection: React.FC<WorkspaceSectionProps> = ({
-  tab,
-  lookups,
-  username,
-  isAdmin,
-  canPrintLabels,
-  onNavigate,
-  labelsItemId,
-  onLabelsItemConsumed,
-  onGenerateLabels,
-}) => {
-  if (tab === "stock") {
-    return (
-      <StockTab
-        categories={lookups.categories}
-        units={lookups.units}
-        configByItem={lookups.configByItem}
-        sections={lookups.sections}
-        lookupsLoading={lookups.loading}
-        onLookupsChanged={lookups.reload}
-        onGenerateLabels={canPrintLabels ? onGenerateLabels : () => onNavigate("store-in-qr-generator")}
-        isAdmin={isAdmin}
-        onInitialItemConsumed={() => {}}
-      />
-    );
-  }
-  if (tab === "labels") {
-    if (lookups.loading) return <StateView kind="loading" message={copy.common.loading} />;
-    return (
-      <LabelsTab
-        username={username}
-        configByItem={lookups.configByItem}
-        preselectItemId={labelsItemId}
-        onPreselectConsumed={onLabelsItemConsumed}
-        units={lookups.units}
-        onLookupsChanged={lookups.reload}
-      />
-    );
-  }
-  if (tab === "receipts") return <ReceiptsTab username={username} onNavigate={onNavigate} />;
-  return (
-    <SetupTab
-      isAdmin={isAdmin}
-      categories={lookups.categories}
-      units={lookups.units}
-      sections={lookups.sections}
-      loading={lookups.loading}
-      error={lookups.error}
-      onChanged={lookups.reload}
-    />
   );
 };

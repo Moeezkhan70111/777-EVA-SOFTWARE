@@ -2,6 +2,8 @@ node_modules/
 dist/
 out/
 coverage/
+# Packaged installers (electron-builder output) — build artifacts, never source
+release/
 *.log
 .DS_Store
 .vscode/settings.json

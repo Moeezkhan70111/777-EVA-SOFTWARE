@@ -1,0 +1,200 @@
+import React, { useEffect, useRef, useState } from "react";
+import type { MachineShift } from "@erp/domain";
+import type { MachineProgramRunRecord } from "../../types/desktopApi";
+import { ColorSwatch } from "../../components/shared/ColorSwatch";
+import { Modal } from "../../components/shared/Modal";
+import { StateView } from "../../components/shared/StateView";
+import { StepHeading } from "../../components/shared/StepHeading";
+import { copy } from "../../config/copy";
+import { ChosenUppersTable } from "./ChosenUppersTable";
+import { ArticleStep, ColourStep, SizeStep } from "./RunSteps";
+import { UpperPicker } from "./UpperPicker";
+import { danaLabel, runForArticleSize, type RunDraft } from "./machineProgram";
+import { useChosenUppers } from "./useChosenUppers";
+import { useSoleColours } from "./useMachineProgramData";
+import type { ProgramWrites } from "./useProgramWrites";
+
+// + ADD SOLE COLOR / + ADD ARTICLE — one screen, three panels, and what has been chosen under
+// them:
+//
+//   ① Sole Color      ② Article & Size       ③ Upper Stock          SK6 / 7/10
+//   ● Black  120 Dzn   Article [ SK6    ▾ ]   ● Brown  10 Dzn  [+ Add]
+//   ● Brown   80 Dzn   Size    [7/10][8/11]   ● Black  15 Dzn  [+ Add]
+//   ┌ Selected Articles ─────────────────────────────────────────────────┐
+//   │ SK6 · 7/10   ● Brown   10 DOZEN   [ 10 ]                        🗑 │
+//   └────────────────────────────────── Cancel │ Add to Program ─────────┘
+//
+// Every question is on screen at once rather than one at a time, because the operator reads them
+// together: which sole, and then what the store actually has for it. Choosing an upper does not
+// save anything — it joins the selection, so several uppers (and several articles) go on in one
+// go and the figures above stay where they were while that is being decided.
+//
+// `fixedColour` is the sole colour the dialog was opened under. Adding an article inside a sole
+// colour's card cannot change it: otherwise an article added under BLACK could quietly save
+// itself under RED.
+
+interface AddArticleDialogProps {
+  machineId: string;
+  programDate: string;
+  shift: MachineShift;
+  injectorNo: number;
+  /** The runs already in scope — a repeated article + size joins its run, never rivals it. */
+  runs: MachineProgramRunRecord[];
+  writes: ProgramWrites;
+  onClose: () => void;
+  /** Set when the card's own sole colour is the answer to the first panel. */
+  fixedColour?: string;
+  title: string;
+  /** Where the uppers are going — the injector, or the sole card this was opened from. */
+  where: string;
+}
+
+export const AddArticleDialog: React.FC<AddArticleDialogProps> = ({ fixedColour, title, where, onClose, ...target }) => {
+  const [draft, setDraft] = useState<RunDraft>({
+    soleColour: fixedColour ?? null,
+    article: null,
+    articleSizeId: null,
+    size: null,
+  });
+  const chosen = useChosenUppers(target);
+
+  const describedRun =
+    draft.soleColour && draft.article && draft.size && draft.articleSizeId
+      ? { soleColour: draft.soleColour, article: draft.article, size: draft.size, articleSizeId: draft.articleSizeId }
+      : null;
+
+  // Uppers already on the run this article + size describes: adding one again would be the same
+  // line, so the picker says so instead of offering it.
+  const existing = describedRun ? runForArticleSize(target.runs, describedRun.soleColour, describedRun.articleSizeId) : null;
+  const takenItemIds = new Set((existing?.lines ?? []).map((line) => line.itemId));
+
+  const save = async () => {
+    if (await chosen.addToProgram()) onClose();
+  };
+
+  // On a short screen the selection sits below the panels. Choosing an upper brings it into
+  // view, so the box its quantity goes in is never off the bottom of the dialog.
+  const selection = useRef<HTMLElement>(null);
+  const count = chosen.rows.length;
+  useEffect(() => {
+    if (count > 0) selection.current?.scrollIntoView?.({ block: "nearest", behavior: "smooth" });
+  }, [count]);
+
+  return (
+    <Modal
+      title={title}
+      subtitle={copy.machineProgram.addArticleIntro(where)}
+      wide="xl"
+      onClose={onClose}
+      footer={
+        <button type="button" className="btn btn-primary btn-lg" disabled={!chosen.ready || chosen.saving} onClick={() => void save()}>
+          {chosen.saving ? copy.machineProgram.addingToProgram : copy.machineProgram.addToProgram}
+        </button>
+      }
+    >
+      <div className="mpa-panels">
+        <section className="mpa-panel" aria-label={copy.machineProgram.panelSoleColour}>
+          <StepHeading index={1} done={Boolean(draft.soleColour)} title={copy.machineProgram.panelSoleColour} />
+          <div className="mpa-panel-body">
+            {fixedColour ? (
+              <FixedColour colour={fixedColour} />
+            ) : (
+              <ColourStep
+                layout="rows"
+                selected={draft.soleColour}
+                onChoose={(soleColour) => setDraft((previous) => ({ ...previous, soleColour }))}
+              />
+            )}
+          </div>
+        </section>
+
+        <section className="mpa-panel" aria-label={copy.machineProgram.panelArticleSize}>
+          <StepHeading index={2} done={Boolean(draft.articleSizeId)} title={copy.machineProgram.panelArticleSize} />
+          <div className="mpa-panel-body">
+            {draft.soleColour ? (
+              <>
+                <p className="mpa-field-label">{copy.machineProgram.article}</p>
+                <ArticleStep
+                  selected={draft.article}
+                  onChoose={(article) =>
+                    setDraft((previous) =>
+                      article === previous.article ? previous : { ...previous, article, articleSizeId: null, size: null }
+                    )
+                  }
+                />
+                <p className="mpa-field-label">{copy.machineProgram.size}</p>
+                {draft.article ? (
+                  <SizeStep
+                    layout="small"
+                    article={draft.article}
+                    selectedId={draft.articleSizeId}
+                    onChoose={(size) => setDraft((previous) => ({ ...previous, ...size }))}
+                  />
+                ) : (
+                  <StateView kind="empty" compact title={copy.machineProgram.chooseArticleFirst} />
+                )}
+              </>
+            ) : (
+              <StateView kind="empty" compact title={copy.machineProgram.chooseColourFirst} />
+            )}
+          </div>
+        </section>
+
+        <section className="mpa-panel mpa-panel--stock" aria-label={copy.machineProgram.panelUpperStock}>
+          <div className="mpa-panel-head">
+            <StepHeading index={3} done={chosen.rows.length > 0} title={copy.machineProgram.panelUpperStock} />
+            {describedRun ? (
+              <span className="mpa-for">
+                {describedRun.article} / {describedRun.size}
+              </span>
+            ) : null}
+          </div>
+          <div className="mpa-panel-body">
+            <UpperPicker
+              machineId={target.machineId}
+              articleSizeId={draft.articleSizeId}
+              article={draft.article}
+              size={draft.size}
+              takenItemIds={takenItemIds}
+              chosenItemIds={new Set(chosen.rows.map((row) => row.itemId))}
+              stockVersion={target.writes.stockVersion}
+              onAdd={(material) => {
+                if (describedRun) chosen.add(describedRun, material);
+              }}
+            />
+          </div>
+        </section>
+      </div>
+
+      <section ref={selection} className="mpa-chosen" aria-label={copy.machineProgram.selectedArticles}>
+        <h3 className="mpa-chosen-title">{copy.machineProgram.selectedArticles}</h3>
+        <ChosenUppersTable rows={chosen.rows} onSetQuantity={chosen.setQuantity} onRemove={chosen.remove} />
+      </section>
+
+      {chosen.problem ? (
+        <p className="mp-problem" role="alert">
+          ⚠ {chosen.problem} {copy.machineProgram.addRefusedPartly}
+        </p>
+      ) : null}
+    </Modal>
+  );
+};
+
+/**
+ * The sole colour a card's + Add Article was opened under: shown as settled, never a choice,
+ * with the Dana the store holds for it beside the name — the same line the colour list prints.
+ */
+const FixedColour: React.FC<{ colour: string }> = ({ colour }) => {
+  const colours = useSoleColours();
+  const dana = colours.value.find((option) => option.colour === colour);
+  return (
+    <>
+      <p className="mpa-fixed">
+        <ColorSwatch color={colour} className="mpa-swatch" />
+        {copy.machineProgram.soleLine(colour)}
+        {dana ? <span className="mpa-fixed-dana">{danaLabel(dana)}</span> : null}
+      </p>
+      <p className="mp-note">{copy.machineProgram.soleColourFixed}</p>
+    </>
+  );
+};

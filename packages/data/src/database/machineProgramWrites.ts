@@ -12,7 +12,7 @@ import type {
   MachineProgramRunForWrite,
   TransactionContext,
 } from "@erp/application";
-import { MACHINE_PROGRAM_STATUS, QUANTITY_EPSILON, roundQuantity } from "@erp/domain";
+import { MACHINE_PROGRAM_STATUS, QUANTITY_EPSILON, roundQuantity, type MachineContractorRole } from "@erp/domain";
 import type { MutableTransactionContext } from "./shared.js";
 import { LINE_CONSUMED_SQL } from "./machineProgramSql.js";
 import { INJECTOR_LAYOUT } from "./machinePrograms.js";
@@ -30,9 +30,12 @@ export const machineProgramWritesMethods = {
     this: SqliteDatabase,
     machineId: string,
     tx: TransactionContext
-  ): Promise<{ id: string; name: string; sectionId: string; status: string; contractorPartyId: string | null } | null> {
+  ): Promise<{
+    id: string; name: string; sectionId: string; status: string;
+    contractorPartyId: string | null; packingContractorPartyId: string | null;
+  } | null> {
     const row = dbOf(tx)
-      .prepare("SELECT id, name, section_id, status, contractor_party_id FROM machines WHERE id = ? LIMIT 1")
+      .prepare("SELECT id, name, section_id, status, contractor_party_id, packing_contractor_party_id FROM machines WHERE id = ? LIMIT 1")
       .get(text(machineId).trim()) as Record<string, unknown> | undefined;
     if (!row) return null;
     return {
@@ -41,6 +44,7 @@ export const machineProgramWritesMethods = {
       sectionId: text(row.section_id),
       status: text(row.status),
       contractorPartyId: row.contractor_party_id ? text(row.contractor_party_id) : null,
+      packingContractorPartyId: row.packing_contractor_party_id ? text(row.packing_contractor_party_id) : null,
     };
   },
 
@@ -57,14 +61,20 @@ export const machineProgramWritesMethods = {
       : null;
   },
 
+  /**
+   * Assigns one of the machine's two contractors. The role picks the pair of columns, so the
+   * machine contractor and the packing contractor can never overwrite one another.
+   */
   async setMachineContractor(
     this: SqliteDatabase,
-    input: { machineId: string; contractorPartyId: string; nowIso: string },
+    input: { machineId: string; role: MachineContractorRole; contractorPartyId: string; nowIso: string },
     tx: TransactionContext
   ): Promise<void> {
-    dbOf(tx)
-      .prepare("UPDATE machines SET contractor_party_id = ?, contractor_assigned_at = ?, updated_at = ? WHERE id = ?")
-      .run(input.contractorPartyId, input.nowIso, input.nowIso, input.machineId);
+    const sql =
+      input.role === "PACKING"
+        ? "UPDATE machines SET packing_contractor_party_id = ?, packing_contractor_assigned_at = ?, updated_at = ? WHERE id = ?"
+        : "UPDATE machines SET contractor_party_id = ?, contractor_assigned_at = ?, updated_at = ? WHERE id = ?";
+    dbOf(tx).prepare(sql).run(input.contractorPartyId, input.nowIso, input.nowIso, input.machineId);
   },
 
   // ─── The program for a date ─────────────────────────────────────────────────
@@ -99,7 +109,8 @@ export const machineProgramWritesMethods = {
     this: SqliteDatabase,
     payload: {
       id: string; programNumber: number; machineId: string; machineName: string; contractorPartyId: string;
-      contractorName: string; programDate: string; shiftStartMinute: number; shiftEndMinute: number;
+      contractorName: string; packingContractorPartyId: string; packingContractorName: string;
+      programDate: string; shiftStartMinute: number; shiftEndMinute: number;
       createdBy: string; createdAt: string;
     },
     tx: TransactionContext
@@ -110,12 +121,14 @@ export const machineProgramWritesMethods = {
       .prepare(
         `INSERT INTO machine_programs (
            id, program_number, machine_id, contractor_party_id, machine_name_snapshot, contractor_name_snapshot,
+           packing_contractor_party_id, packing_contractor_name_snapshot,
            program_date, shift_start_minute, shift_end_minute, status, layout, created_by, created_at, updated_at
-         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
       .run(
         payload.id, payload.programNumber, payload.machineId, payload.contractorPartyId, payload.machineName,
-        payload.contractorName, payload.programDate, payload.shiftStartMinute, payload.shiftEndMinute,
+        payload.contractorName, payload.packingContractorPartyId, payload.packingContractorName,
+        payload.programDate, payload.shiftStartMinute, payload.shiftEndMinute,
         MACHINE_PROGRAM_STATUS.PROGRAMMED, INJECTOR_LAYOUT, payload.createdBy, payload.createdAt, payload.createdAt
       );
   },

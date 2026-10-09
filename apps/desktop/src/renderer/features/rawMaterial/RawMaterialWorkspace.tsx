@@ -3,10 +3,7 @@ import type { AppRoute } from "../../app/routes";
 import { TabStrip, type TabStripItem } from "../../components/shared/TabStrip";
 import { StateView } from "../../components/shared/StateView";
 import { useRawMaterialLookups } from "./useRawMaterialLookups";
-import { StockTab } from "./StockTab";
-import { LabelsTab } from "./LabelsTab";
-import { ReceiptsTab } from "./ReceiptsTab";
-import { SetupTab } from "./SetupTab";
+import { RawMaterialSection } from "./RawMaterialSection";
 import type { WorkspaceTab } from "./rawMaterial";
 
 // The Raw Material workspace: one destination for everything the office does with raw
@@ -115,50 +112,19 @@ export const RawMaterialWorkspace: React.FC<RawMaterialWorkspaceProps> = ({
           title="Nothing here for your account"
           hint="Ask an administrator for stock, label or settings access."
         />
-      ) : lookups.error && tab !== "receipts" && tab !== "labels" ? (
-        <StateView kind="error" message={lookups.error} onRetry={() => void lookups.reload()} />
       ) : (
-        <>
-          {tab === "stock" ? (
-            <StockTab
-              categories={lookups.categories}
-              units={lookups.units}
-              configByItem={lookups.configByItem}
-              sections={lookups.sections}
-              lookupsLoading={lookups.loading}
-              onLookupsChanged={lookups.reload}
-              onGenerateLabels={allowed.includes("labels") ? openLabelsFor : () => onNavigate("raw-material")}
-              isAdmin={allowAll}
-              initialItemId={initialItemId}
-              onInitialItemConsumed={onInitialItemConsumed ?? (() => {})}
-            />
-          ) : null}
-
-          {tab === "labels" ? (
-            <LabelsTab
-              username={username}
-              configByItem={lookups.configByItem}
-              preselectItemId={labelsItemId}
-              onPreselectConsumed={() => setLabelsItemId(undefined)}
-              units={lookups.units}
-              onLookupsChanged={lookups.reload}
-            />
-          ) : null}
-
-          {tab === "receipts" ? <ReceiptsTab username={username} onNavigate={onNavigate} /> : null}
-
-          {tab === "setup" ? (
-            <SetupTab
-              isAdmin={allowAll}
-              categories={lookups.categories}
-              units={lookups.units}
-              sections={lookups.sections}
-              loading={lookups.loading}
-              error={lookups.error}
-              onChanged={lookups.reload}
-            />
-          ) : null}
-        </>
+        <RawMaterialSection
+          tab={tab}
+          lookups={lookups}
+          username={username}
+          isAdmin={allowAll}
+          onGenerateLabels={allowed.includes("labels") ? openLabelsFor : () => onNavigate("raw-material")}
+          labelsItemId={labelsItemId}
+          onLabelsItemConsumed={() => setLabelsItemId(undefined)}
+          initialItemId={initialItemId}
+          onInitialItemConsumed={onInitialItemConsumed}
+          onNavigate={onNavigate}
+        />
       )}
     </div>
   );

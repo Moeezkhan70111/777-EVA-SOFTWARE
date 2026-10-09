@@ -30,6 +30,7 @@ import { stockCorrectionsMethods, type StockCorrectionsMethods } from "./databas
 import { removalRequestsMethods, type RemovalRequestsMethods } from "./database/removalRequests.js";
 import { inventoryMovesMethods, type InventoryMovesMethods } from "./database/inventoryMoves.js";
 import { itemUnitLadderMethods, type ItemUnitLadderMethods } from "./database/itemUnitLadder.js";
+import { rawMaterialHandMoveMethods, type RawMaterialHandMoveMethods } from "./database/rawMaterialHandMove.js";
 import { inventoryImportMethods, type InventoryImportMethods } from "./database/inventoryImport.js";
 import { partiesMethods, type PartiesMethods } from "./database/parties.js";
 import { salesMethods, type SalesMethods } from "./database/sales.js";
@@ -95,22 +96,48 @@ export class SqliteDatabase
   db: DatabaseSync;
   private readonly dbPath: string;
   private readonly schemaPath: string;
+  private readonly migrationsDir: string;
   private readonly transactionRetries = 4;
 
   constructor(private readonly options: SqliteDatabaseOptions) {
     this.dbPath = options.dbPath;
     this.schemaPath = options.schemaPath ?? path.resolve(process.cwd(), "packages/data/src/local-schema.sql");
+    // Repository layout by default (migrations/ sits three levels above the schema); the desktop
+    // app overrides both so a packaged installation reads them from its resources folder.
+    this.migrationsDir = options.migrationsDir ?? path.resolve(path.dirname(this.schemaPath), "../../..", "migrations", "sqlite");
     this.db = new DatabaseSync(this.dbPath);
-    this.bootConnection();
+    try {
+      this.bootConnection();
+    } catch (error) {
+      // Leave no open handle behind on a failed boot. The caller is about to report a fatal
+      // startup error, and on Windows an open handle also keeps the file locked afterwards.
+      try {
+        this.db.close();
+      } catch {
+        // Already closed.
+      }
+      throw error;
+    }
   }
 
   private bootConnection(): void {
     this.db.exec("PRAGMA journal_mode = WAL;");
     this.db.exec("PRAGMA foreign_keys = ON;");
-    this.db.exec(fs.readFileSync(this.schemaPath, "utf-8"));
+    this.db.exec(this.readSchema());
     this.runMigrations();
     this.ensureSchemaCompatibility();
     this.ensureDefaultRoles();
+  }
+
+  /**
+   * The base schema. A missing file means a broken or incomplete installation — far better to
+   * refuse to start than to run the ERP on whatever tables happen to exist already.
+   */
+  private readSchema(): string {
+    if (!fs.existsSync(this.schemaPath)) {
+      throw new Error(`Database schema not found at ${this.schemaPath}. The installation is incomplete.`);
+    }
+    return fs.readFileSync(this.schemaPath, "utf-8");
   }
 
   private ensureSchemaCompatibility(): void {
@@ -248,15 +275,22 @@ export class SqliteDatabase
   }
 
   private runMigrations(): void {
+    const migrationsDir = this.migrationsDir;
+    // Checked before anything is written. A missing folder used to be ignored, which let the app
+    // boot happily on an older schema — the worst possible outcome, because it is invisible until
+    // the data is already wrong. An incomplete installation must stop the application instead.
+    if (!fs.existsSync(migrationsDir)) {
+      throw new Error(
+        `Migration folder not found at ${migrationsDir}. Refusing to start: the database would be left on an outdated schema.`
+      );
+    }
+
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS schema_migrations (
         version TEXT PRIMARY KEY,
         applied_at TEXT NOT NULL
       )
     `);
-
-    const migrationsDir = path.resolve(path.dirname(this.schemaPath), "../../..", "migrations", "sqlite");
-    if (!fs.existsSync(migrationsDir)) return;
 
     const applied = new Set(
       (this.db.prepare("SELECT version FROM schema_migrations").all() as Array<{ version: string }>).map((row) => row.version)
@@ -718,6 +752,7 @@ export interface SqliteDatabase
     RemovalRequestsMethods,
     InventoryMovesMethods,
     ItemUnitLadderMethods,
+    RawMaterialHandMoveMethods,
     InventoryImportMethods,
     PartiesMethods,
     SalesMethods,
@@ -743,6 +778,7 @@ Object.assign(
   removalRequestsMethods,
   inventoryMovesMethods,
   itemUnitLadderMethods,
+  rawMaterialHandMoveMethods,
   inventoryImportMethods,
   partiesMethods,
   salesMethods,
