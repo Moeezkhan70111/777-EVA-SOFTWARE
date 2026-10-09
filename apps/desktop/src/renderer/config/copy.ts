@@ -849,6 +849,9 @@ export const copy = {
     machineTotal: "Machine total",
     injectorTotal: "Injector total",
     printProgram: "Print Program",
+    /** Short labels for the printed sheet's summary box, where a column is 16mm wide. */
+    printProgramNo: "Program",
+    printPacking: "Packing",
     deleteProgram: "Delete program",
     deleteTitle: "Delete machine program?",
     deleteExplain: "This will release any unused stock reservations. Physical Store stock will NOT be changed.",

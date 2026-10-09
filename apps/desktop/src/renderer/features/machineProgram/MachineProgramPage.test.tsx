@@ -13,10 +13,15 @@ import type {
   SaveMachineProgramLineInput,
 } from "../../types/desktopApi";
 
-const report = vi.hoisted(() => ({ last: null as null | { rows: string[][]; totals?: Array<{ label: string; value: string }> } }));
-vi.mock("../../utils/reportDocument", () => ({
-  openReport: (document: { rows: string[][]; totals?: Array<{ label: string; value: string }> }) => {
-    report.last = document;
+// The program prints as its own A5 sheet through platform/print, so the test reads the HTML
+// that was handed to the print window rather than a table of rows.
+const sheet = vi.hoisted(() => ({ html: null as string | null }));
+vi.mock("../../platform/print", () => ({
+  loadLogoDataUrl: () => Promise.resolve(""),
+  openPrintDocumentAsync: (html: Promise<string>) => {
+    void html.then((content) => {
+      sheet.html = content;
+    });
     return true;
   },
 }));
@@ -213,8 +218,17 @@ const chooseUpper = async (colour: string, quantity: string) => {
 
 afterEach(() => {
   vi.restoreAllMocks();
-  report.last = null;
+  sheet.html = null;
 });
+
+/** The printed sheet, once the logo has resolved and the HTML has been written. */
+const printedSheet = async (): Promise<string> => {
+  await waitFor(() => expect(sheet.html).not.toBeNull());
+  return sheet.html ?? "";
+};
+
+/** The sheet with its tags stripped, for reading what it actually says. */
+const sheetText = async (): Promise<string> => (await printedSheet()).replace(/<[^>]*>/g, " ").replace(/\s+/g, " ");
 
 describe("MachineProgramPage", () => {
   it("lists every machine in the rail with how its day stands, for today, and never a dropdown", async () => {
@@ -619,23 +633,36 @@ describe("MachineProgramPage", () => {
 
     await waitFor(() => expect(screen.getByRole("button", { name: /^Shift Time/ })).toHaveTextContent("06:00 PM"));
     await click("Print Program");
-    expect(report.last?.rows).toHaveLength(1);
+    expect(await sheetText()).toMatch(/06:00 PM/);
   });
 
-  it("prints the saved program, one row per upper colour, with totals and no supplier", async () => {
+  it("prints an A5 sheet grouped by injector and article, one line per colour pair, no supplier", async () => {
     installApi({ program: programWith([{ colour: "BLACK", quantity: 30 }, { colour: "GREEN", quantity: 10 }]) });
     renderPage();
     await openMachine1();
     await click("Print Program");
 
-    expect(report.last?.rows).toEqual([
-      ["Injector 1", "BLACK", "SK6", "7/10", "BLACK", "RAGZINE UPPER", "30", "DOZEN"],
-      ["Injector 1", "BLACK", "SK6", "7/10", "GREEN", "RAGZINE UPPER", "10", "DOZEN"],
-    ]);
-    expect(report.last?.totals).toEqual([
-      { label: "Injector 1", value: "40 DOZEN" },
-      { label: "Machine total", value: "40 DOZEN" },
-    ]);
+    const html = await printedSheet();
+    expect(html).toContain("size: A5 landscape");
+
+    const text = await sheetText();
+    // What this program IS, at the top.
+    expect(text).toMatch(/MP-000001/);
+    expect(text).toMatch(/MACHINE 1/);
+    // Short labels: the summary box has a 16mm column, so nothing in it wraps.
+    expect(text).toMatch(/Contractor CONTRACTOR A/);
+    expect(text).toMatch(/Packing CONTRACTOR B/);
+    // Grouped the way the floor works: injector, then the article and size being made.
+    expect(text).toMatch(/Injector 1/);
+    expect(text).toMatch(/SK6 7\/10/);
+    // One line per colour pair — the sole, then the upper going on it.
+    expect(text).toMatch(/BLACK · BLACK 30/);
+    expect(text).toMatch(/BLACK · GREEN 10/);
+    // What the machine comes to.
+    expect(text).toMatch(/Total injectors 1/);
+    expect(text).toMatch(/Total DOZEN 40/);
+    // A program promises an upper, not a particular supplier's pile of it.
+    expect(text).not.toMatch(/ABC UPPER|XYZ UPPER/);
   });
 
   it("removing an upper asks first, and deleting the program says stock does not change", async () => {
