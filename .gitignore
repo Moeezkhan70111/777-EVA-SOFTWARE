@@ -2,8 +2,12 @@ node_modules/
 dist/
 out/
 coverage/
-# Packaged installers (electron-builder output) — build artifacts, never source
+# Packaged installers (electron-builder output) — build artifacts, never source.
+# release-archive/ holds superseded installers kept for rollback; they are the same
+# ~100 MB binaries and must stay out of git just as firmly (GitHub refuses files
+# over 100 MB, and a committed one cannot be removed from history cheaply).
 release/
+release-archive/
 *.log
 .DS_Store
 .vscode/settings.json
