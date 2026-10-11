@@ -1343,6 +1343,21 @@ export interface DesktopApi {
     programId: string,
     opts?: { token?: string }
   ): Promise<{ accepted: boolean; rows: MachineProgramIssueBatchRow[] }>;
+  /** Every packet of uppers out for a program, with the cartons it is owed and whether they are printed. */
+  listMachineProgramCartonPackets(
+    programId: string,
+    opts?: { token?: string }
+  ): Promise<{ accepted: boolean; reason?: string; rows: MachineProgramCartonPacket[] }>;
+  /** Generates the carton QR labels for these packets and records them as labelled, exactly once. */
+  printMachineProgramCartons(
+    input: { programId: string; eventIds: string[] },
+    opts?: { token?: string }
+  ): Promise<{ accepted: boolean; reason?: string; batch?: QrBatchRow; qrCodes?: QrCodeRow[] }>;
+  /** Store In: one of the program's carton labels scanned back — produced and stored in, or refused. */
+  machineProgramCartonIn(
+    input: { programId: string; rawScan: string },
+    opts?: { token?: string }
+  ): Promise<MachineProgramCartonInResult>;
   /** Every Dana the store holds in a sole colour this program runs. */
   listMachineProgramDanaOptions(
     programId: string,
@@ -2487,6 +2502,49 @@ export interface MachineProgramDanaIssueRow {
   note: string | null;
   actor: string | null;
   issuedAt: string;
+}
+
+/** The carton QR run one issued packet was labelled in. */
+export interface MachineProgramCartonLabel {
+  qrBatchId: string;
+  firstQrId: string;
+  lastQrId: string;
+  /** How many of the run's cartons this packet accounts for. */
+  cartonCount: number;
+  /** How many of the WHOLE run's cartons have come back and been stored in so far. */
+  receivedInRun: number;
+  printedBy: string | null;
+  printedAt: string;
+}
+
+/** What Store In's Carton In scan answers. `outcome` is the main process's verdict, named. */
+export interface MachineProgramCartonInResult {
+  accepted: boolean;
+  outcome: string;
+  reason?: string;
+  qrId?: string;
+  article?: string;
+  color?: string;
+  size?: string;
+  /** True when this scan was also the carton's production scan. */
+  producedNow?: boolean;
+  receivedAt?: string;
+}
+
+/** One packet of uppers out for a program, and the cartons it is owed back (1 DOZEN = 2 cartons). */
+export interface MachineProgramCartonPacket {
+  /** The issuance (STORE_EXIT event) a carton label is owed to. */
+  eventId: string;
+  qrId: string;
+  itemDisplayName: string;
+  quantity: number;
+  unitCode: string | null;
+  issuedAt: string;
+  cartons: IssuedCartonPlan | null;
+  /** Why the cartons cannot be labelled here. Set only when `cartons` is null. */
+  cartonNote: string | null;
+  /** Null while the cartons are still owed. */
+  label: MachineProgramCartonLabel | null;
 }
 
 /** One saved batch and the packets it took, for the audit trail under the program. */

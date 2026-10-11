@@ -121,6 +121,12 @@ contextBridge.exposeInMainWorld("desktop", {
       ipcRenderer.invoke(IPC.machineProgramStoreOutSaveBatch, input, opts),
     listMachineProgramIssueBatches: (programId: string, opts?: Record<string, unknown>) =>
       ipcRenderer.invoke(IPC.listMachineProgramIssueBatches, programId, opts),
+    listMachineProgramCartonPackets: (programId: string, opts?: Record<string, unknown>) =>
+      ipcRenderer.invoke(IPC.listMachineProgramCartonPackets, programId, opts),
+    printMachineProgramCartons: (input: Record<string, unknown>, opts?: Record<string, unknown>) =>
+      ipcRenderer.invoke(IPC.printMachineProgramCartons, input, opts),
+    machineProgramCartonIn: (input: Record<string, unknown>, opts?: Record<string, unknown>) =>
+      ipcRenderer.invoke(IPC.machineProgramCartonIn, input, opts),
     listMachineProgramDanaOptions: (programId: string, opts?: Record<string, unknown>) =>
       ipcRenderer.invoke(IPC.listMachineProgramDanaOptions, programId, opts),
     issueMachineProgramDana: (input: Record<string, unknown>, opts?: Record<string, unknown>) =>

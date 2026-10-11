@@ -6,6 +6,7 @@ import { playScanSound } from "../../../utils/playScanSound";
 import { openCartonLabelPrintWindow } from "../../../utils/qrLabels";
 import type {
   IssuedProgramPacket,
+  MachineProgramCartonPacket,
   MachineProgramIssueBatchRow,
   MachineProgramRecord,
   SaveMachineProgramBatchResult,
@@ -13,10 +14,12 @@ import type {
 import type { ScanStationFeedback } from "../../scanStation/scanStation";
 import {
   IDLE_FEEDBACK,
+  blockedCartonPackets,
   cartonRunLabel,
   feedbackForIssue,
   formatQuantity,
   pendingCartonRuns,
+  printedCartonRuns,
   type CartonRun,
   type PrintedCartonRun,
 } from "./programOut";
@@ -44,15 +47,19 @@ export interface ProgramOutState {
   loading: boolean;
   /** Why the last lookup or scan failed, for the error state. Cleared by the next action. */
   error: string | null;
+  /** Why the open program cannot be issued against (fully issued, deleted, not planned), or null. */
+  issueBlockedReason: string | null;
   /** True while a scan is being committed. */
   issuing: boolean;
   feedback: ScanStationFeedback;
   /** What this sitting has taken out, newest first. */
   issued: IssuedProgramPacket[];
-  /** Cartons from those packets that still have no labels. */
+  /** Cartons owed for every packet the program has taken out, still without labels. */
   cartonRuns: CartonRun[];
-  /** Carton runs already generated, for the record on screen. */
+  /** Carton runs already generated for the program, for the record on screen. */
   printedRuns: PrintedCartonRun[];
+  /** Unlabelled packets whose cartons cannot be worked out, with the reason. */
+  blockedCartons: MachineProgramCartonPacket[];
   /** The run being generated right now, by key. */
   printingKey: string | null;
   /** Every packet ever issued against this program, read back from the event log. */
@@ -70,22 +77,20 @@ interface UseProgramOutInput {
   token: string;
   /** The terminal's open Raw Material Output session, so the packets print on its issue slip. */
   sessionId: string | null;
-  /** The logged-in operator, recorded as who generated a carton QR run. */
-  username?: string;
 }
 
-export const useProgramOut = ({ token, sessionId, username }: UseProgramOutInput): ProgramOutState => {
+export const useProgramOut = ({ token, sessionId }: UseProgramOutInput): ProgramOutState => {
   const api = useDesktopApi();
   const { push } = useNotifications();
 
   const [program, setProgram] = useState<MachineProgramRecord | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [issueBlockedReason, setIssueBlockedReason] = useState<string | null>(null);
   const [issuing, setIssuing] = useState(false);
   const [feedback, setFeedback] = useState<ScanStationFeedback>(IDLE_FEEDBACK);
   const [issued, setIssued] = useState<IssuedProgramPacket[]>([]);
-  const [printedQrIds, setPrintedQrIds] = useState<ReadonlySet<string>>(new Set());
-  const [printedRuns, setPrintedRuns] = useState<PrintedCartonRun[]>([]);
+  const [cartonPackets, setCartonPackets] = useState<MachineProgramCartonPacket[]>([]);
   const [printingKey, setPrintingKey] = useState<string | null>(null);
   const [history, setHistory] = useState<MachineProgramIssueBatchRow[]>([]);
 
@@ -94,10 +99,17 @@ export const useProgramOut = ({ token, sessionId, username }: UseProgramOutInput
   // being committed" is read through a ref rather than from state.
   const inFlight = useRef(false);
 
+  // The issued history and the cartons owed for it are both read back from the events, so they
+  // are the same whoever opens the program, whenever — not just what this sitting scanned.
   const loadHistory = useCallback(
     async (programId: string) => {
-      const result = await api.listMachineProgramIssueBatches(programId, { token });
-      setHistory(result.accepted ? result.rows : []);
+      const [batches, cartons] = await Promise.all([
+        api.listMachineProgramIssueBatches(programId, { token }),
+        api.listMachineProgramCartonPackets(programId, { token }),
+      ]);
+      setHistory(batches.accepted ? batches.rows : []);
+      setCartonPackets(cartons.accepted ? cartons.rows : []);
+      if (!cartons.accepted) setError(cartons.reason ?? copy.states.loadFailedBody);
     },
     [api, token]
   );
@@ -110,14 +122,17 @@ export const useProgramOut = ({ token, sessionId, username }: UseProgramOutInput
       setError(null);
       try {
         const result = await api.openMachineProgramStoreOut(text, { token });
-        if (!result.accepted || !result.program) {
+        // A program that exists is always opened, issuable or not: a fully issued one is still
+        // read, and still owed its carton labels. The screen shows its status in place of the
+        // scanner, so a refusal to ISSUE is not an error here.
+        if (!result.program) {
           setError(result.reason ?? copy.states.loadFailedBody);
           return false;
         }
         setProgram(result.program);
+        setIssueBlockedReason(result.accepted ? null : (result.reason ?? null));
         setIssued([]);
-        setPrintedQrIds(new Set());
-        setPrintedRuns([]);
+        setCartonPackets([]);
         setFeedback(IDLE_FEEDBACK);
         await loadHistory(result.program.id);
         return true;
@@ -136,16 +151,18 @@ export const useProgramOut = ({ token, sessionId, username }: UseProgramOutInput
     const result = await api.openMachineProgramStoreOut(program.id, { token });
     // A program that has become ineligible while it was open — finished by another terminal,
     // deleted by production — still has to be SHOWN, with the reason, rather than vanishing.
-    if (result.program) setProgram(result.program);
-    if (!result.accepted) setError(result.reason ?? null);
+    if (result.program) {
+      setProgram(result.program);
+      setIssueBlockedReason(result.accepted ? null : (result.reason ?? null));
+    } else if (!result.accepted) setError(result.reason ?? null);
     await loadHistory(program.id);
   }, [api, loadHistory, program, token]);
 
   const close = useCallback(() => {
     setProgram(null);
+    setIssueBlockedReason(null);
     setIssued([]);
-    setPrintedQrIds(new Set());
-    setPrintedRuns([]);
+    setCartonPackets([]);
     setError(null);
     setFeedback(IDLE_FEEDBACK);
     setHistory([]);
@@ -204,24 +221,18 @@ export const useProgramOut = ({ token, sessionId, username }: UseProgramOutInput
   /**
    * Generates and prints the carton QR labels for one run of what has gone out.
    *
-   * The identities are reserved by the QR Generator's own call — the one place carton codes are
-   * created — so these labels are ordinary carton QRs and behave like any other from the moment
-   * they are printed. A blocked print window does not undo them: they are already registered and
-   * can be reprinted from QR Management, which is what the operator is told.
+   * The main process works out the count from the packets themselves (1 DOZEN = 2 cartons),
+   * reserves the identities and records the packets as labelled in one transaction — so the same
+   * uppers can never be labelled twice, from this terminal or another. A blocked print window
+   * does not undo them: they are registered and can be reprinted from QR Management.
    */
   const printCartons = useCallback(
     async (run: CartonRun) => {
-      if (printingKey) return;
+      if (printingKey || !program) return;
       setPrintingKey(run.key);
       const what = cartonRunLabel(run);
       try {
-        const result = await api.generateQrBatch({
-          articleSizeId: run.articleSizeId,
-          color: run.colour,
-          quantity: run.cartons,
-          createdBy: username?.trim() || undefined,
-          requestedBy: program ? program.code : undefined,
-        });
+        const result = await api.printMachineProgramCartons({ programId: program.id, eventIds: run.eventIds }, { token });
         if (!result.accepted || !result.batch || !result.qrCodes || result.qrCodes.length === 0) {
           push("error", copy.programOut.cartonFailedTitle, result.reason ?? copy.states.loadFailedBody);
           return;
@@ -229,35 +240,29 @@ export const useProgramOut = ({ token, sessionId, username }: UseProgramOutInput
 
         const ids = result.qrCodes.map((code) => code.id);
         const range = ids.length === 1 ? ids[0] : `${ids[0]} → ${ids[ids.length - 1]}`;
-        setPrintedQrIds((previous) => new Set([...previous, ...run.qrIds]));
-        setPrintedRuns((previous) => [
-          { key: `${run.key}:${result.batch!.id}`, label: what, cartons: ids.length, range, at: new Date().toISOString() },
-          ...previous,
-        ]);
-
         const opened = openCartonLabelPrintWindow({
           title: `Carton QR — ${what}`,
           heading: what,
-          subheading: `${range} · ${copy.programOut.cartonCount(ids.length)} · ${program?.code ?? ""}`.trim(),
+          subheading: `${range} · ${copy.programOut.cartonCount(ids.length)} · ${program.code}`,
           identity: { article: result.batch.article, color: result.batch.color, size: result.batch.size },
           ids,
         });
         if (!opened) push("error", copy.toast.popupBlocked, copy.programOut.cartonBlocked);
         else push("success", copy.programOut.cartonPrintedTitle, copy.programOut.cartonPrintedBody(ids.length, what));
       } catch (caught) {
-        push(
-          "error",
-          copy.programOut.cartonFailedTitle,
-          caught instanceof Error ? caught.message : copy.states.loadFailedBody
-        );
+        push("error", copy.programOut.cartonFailedTitle, caught instanceof Error ? caught.message : copy.states.loadFailedBody);
       } finally {
         setPrintingKey(null);
+        // Re-read either way: a refusal may mean another terminal printed these first.
+        await loadHistory(program.id);
       }
     },
-    [api, printingKey, program, push, username]
+    [api, loadHistory, printingKey, program, push, token]
   );
 
-  const cartonRuns = useMemo(() => pendingCartonRuns(issued, printedQrIds), [issued, printedQrIds]);
+  const cartonRuns = useMemo(() => pendingCartonRuns(cartonPackets), [cartonPackets]);
+  const printedRuns = useMemo(() => printedCartonRuns(cartonPackets), [cartonPackets]);
+  const blockedCartons = useMemo(() => blockedCartonPackets(cartonPackets), [cartonPackets]);
 
   // A packet that left is worth announcing once, in words, for an operator watching the toast
   // area rather than the scan card.
@@ -282,11 +287,13 @@ export const useProgramOut = ({ token, sessionId, username }: UseProgramOutInput
     program,
     loading,
     error,
+    issueBlockedReason,
     issuing,
     feedback,
     issued,
     cartonRuns,
     printedRuns,
+    blockedCartons,
     printingKey,
     history,
     open,

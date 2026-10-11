@@ -20,6 +20,20 @@ import { buildQrId, formatQrSerial, fromPaisaOrNull, isValidRawMaterialQrId, nor
 const QR_STAGE_SQL =
   "CASE WHEN b.status = 'VOID' THEN 'VOID' WHEN qm.qr_id IS NULL THEN 'REGISTERED' ELSE qm.current_status END";
 
+/** What one carton QR generation asks for. */
+export interface QrBatchRequest {
+  articleSizeId: string;
+  color: string;
+  quantity: number;
+  createdBy?: string;
+  requestedBy?: string;
+}
+
+export interface GeneratedQrBatch {
+  batch: QrBatchRecord;
+  qrCodes: QrCodeRecord[];
+}
+
 export const qrCodesMethods = {
   /**
    * Reserves the next N serials for an article+color+size combination and permanently records
@@ -31,16 +45,26 @@ export const qrCodesMethods = {
    * qr_codes table), and `qr_codes.id` — the QR value itself — is the PRIMARY KEY, so a duplicate
    * identity is impossible at the database level even if every layer above were wrong.
    */
-  generateQrBatch(this: SqliteDatabase, input: {
-    articleSizeId: string;
-    color: string;
-    quantity: number;
-    createdBy?: string;
-    requestedBy?: string;
-  }): {
-    batch: QrBatchRecord;
-    qrCodes: QrCodeRecord[];
-  } {
+  generateQrBatch(this: SqliteDatabase, input: QrBatchRequest): GeneratedQrBatch {
+    this.db.exec("BEGIN IMMEDIATE TRANSACTION");
+    try {
+      const generated = this.reserveQrBatchInTransaction(input);
+      this.db.exec("COMMIT");
+      return generated;
+    } catch (error) {
+      try { this.db.exec("ROLLBACK"); } catch { /* ignore missing transaction state */ }
+      throw error;
+    }
+  },
+
+  /**
+   * The body of generateQrBatch, for a caller that already holds the write lock and has to record
+   * something else in the SAME transaction as the identities — Machine Move Out's carton labels,
+   * which must never exist without the packets they were printed for, or the other way round.
+   *
+   * Never call this outside BEGIN IMMEDIATE: the sequence read below relies on the lock.
+   */
+  reserveQrBatchInTransaction(this: SqliteDatabase, input: QrBatchRequest): GeneratedQrBatch {
     const rawQuantity = Number(input.quantity);
     if (!Number.isFinite(rawQuantity) || !Number.isInteger(rawQuantity)) {
       throw new Error("Quantity must be a whole number.");
@@ -76,81 +100,73 @@ export const qrCodesMethods = {
     const createdBy = String(input.createdBy ?? "").trim() || null;
     const requestedBy = String(input.requestedBy ?? "").trim().slice(0, 120) || null;
 
-    this.db.exec("BEGIN IMMEDIATE TRANSACTION");
-    try {
-      const productVariantId = this.resolveVariantForColor(product, color, now);
+    const productVariantId = this.resolveVariantForColor(product, color, now);
 
-      // Atomic counter advance: the new last_sequence is computed by the database, not read
-      // into application code and written back.
-      this.db
-        .prepare(
-          `INSERT INTO qr_sequences (id, article, color, size, last_sequence, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?)
-           ON CONFLICT(article, color, size) DO UPDATE SET
-             last_sequence = qr_sequences.last_sequence + excluded.last_sequence,
-             updated_at = excluded.updated_at`
-        )
-        .run(crypto.randomUUID(), article, color, size, quantity, now);
+    // Atomic counter advance: the new last_sequence is computed by the database, not read
+    // into application code and written back.
+    this.db
+      .prepare(
+        `INSERT INTO qr_sequences (id, article, color, size, last_sequence, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?)
+         ON CONFLICT(article, color, size) DO UPDATE SET
+           last_sequence = qr_sequences.last_sequence + excluded.last_sequence,
+           updated_at = excluded.updated_at`
+      )
+      .run(crypto.randomUUID(), article, color, size, quantity, now);
 
-      const reserved = this.db
-        .prepare("SELECT last_sequence FROM qr_sequences WHERE article = ? AND color = ? AND size = ?")
-        .get(article, color, size) as { last_sequence: number } | undefined;
-      if (!reserved) {
-        throw new Error("Could not reserve a QR sequence.");
-      }
-
-      const endSequence = Number(reserved.last_sequence);
-      const startSequence = endSequence - quantity + 1;
-
-      const batchId = crypto.randomUUID();
-      this.db.prepare(
-        `INSERT INTO qr_batches (id, article_size_id, article, color, size, start_sequence, end_sequence, quantity, created_at, created_by, requested_by)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-      ).run(batchId, product.id, article, color, size, startSequence, endSequence, quantity, now, createdBy, requestedBy);
-
-      const insertQrCode = this.db.prepare(
-        `INSERT INTO qr_codes (id, batch_id, article, color, size, sequence, status, created_at, updated_at, product_variant_id)
-         VALUES (?, ?, ?, ?, ?, ?, 'GENERATED', ?, ?, ?)`
-      );
-      const qrCodes: QrCodeRecord[] = [];
-      for (let sequence = startSequence; sequence <= endSequence; sequence += 1) {
-        const id = buildQrId({ article, color, size, sequence });
-        insertQrCode.run(id, batchId, article, color, size, sequence, now, now, productVariantId);
-        qrCodes.push({
-          id,
-          batchId,
-          article,
-          color,
-          size,
-          sequence,
-          status: "GENERATED",
-          createdAt: now,
-          productVariantId,
-        });
-      }
-
-      this.db.exec("COMMIT");
-
-      return {
-        batch: {
-          id: batchId,
-          articleSizeId: product.id,
-          article,
-          color,
-          size,
-          startSequence,
-          endSequence,
-          quantity,
-          createdAt: now,
-          createdBy,
-          requestedBy,
-        },
-        qrCodes,
-      };
-    } catch (error) {
-      try { this.db.exec("ROLLBACK"); } catch { /* ignore missing transaction state */ }
-      throw error;
+    const reserved = this.db
+      .prepare("SELECT last_sequence FROM qr_sequences WHERE article = ? AND color = ? AND size = ?")
+      .get(article, color, size) as { last_sequence: number } | undefined;
+    if (!reserved) {
+      throw new Error("Could not reserve a QR sequence.");
     }
+
+    const endSequence = Number(reserved.last_sequence);
+    const startSequence = endSequence - quantity + 1;
+
+    const batchId = crypto.randomUUID();
+    this.db.prepare(
+      `INSERT INTO qr_batches (id, article_size_id, article, color, size, start_sequence, end_sequence, quantity, created_at, created_by, requested_by)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(batchId, product.id, article, color, size, startSequence, endSequence, quantity, now, createdBy, requestedBy);
+
+    const insertQrCode = this.db.prepare(
+      `INSERT INTO qr_codes (id, batch_id, article, color, size, sequence, status, created_at, updated_at, product_variant_id)
+       VALUES (?, ?, ?, ?, ?, ?, 'GENERATED', ?, ?, ?)`
+    );
+    const qrCodes: QrCodeRecord[] = [];
+    for (let sequence = startSequence; sequence <= endSequence; sequence += 1) {
+      const id = buildQrId({ article, color, size, sequence });
+      insertQrCode.run(id, batchId, article, color, size, sequence, now, now, productVariantId);
+      qrCodes.push({
+        id,
+        batchId,
+        article,
+        color,
+        size,
+        sequence,
+        status: "GENERATED",
+        createdAt: now,
+        productVariantId,
+      });
+    }
+
+    return {
+      batch: {
+        id: batchId,
+        articleSizeId: product.id,
+        article,
+        color,
+        size,
+        startSequence,
+        endSequence,
+        quantity,
+        createdAt: now,
+        createdBy,
+        requestedBy,
+      },
+      qrCodes,
+    };
   },
 
   /**

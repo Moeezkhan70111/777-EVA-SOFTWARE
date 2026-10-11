@@ -6,7 +6,7 @@ import { NOTIFICATION_KIND } from "@erp/domain";
 import { StoreOutPage } from "../StoreOutPage";
 import { NotificationsProvider } from "../../../state/NotificationsContext";
 import { notificationTarget } from "../../users/notificationTarget";
-import type { MachineProgramRecord } from "../../../types/desktopApi";
+import type { MachineProgramCartonPacket, MachineProgramRecord } from "../../../types/desktopApi";
 
 // MACHINE MOVE OUT, from the operator's side.
 //
@@ -128,11 +128,49 @@ const PACKETS: Record<string, { itemId: string; colour: string }> = {
   RM_6_44_1: { itemId: "u-green", colour: "GREEN" },
 };
 
-function installApi(options: { openRefusal?: { outcome: string; reason: string } } = {}) {
-  const state = { program: program(), black: 0, red: 0, sequence: 0 };
+/** A packet out for the program as the carton list reads it back from the events. */
+const cartonPacket = (qrId: string, colour: string, eventId = `ev-${qrId}`): MachineProgramCartonPacket => ({
+  eventId,
+  qrId,
+  itemDisplayName: `UPPER — SK6 — ${colour || "—"} — 7/10`,
+  quantity: 2,
+  unitCode: "DOZEN",
+  issuedAt: `${TODAY}T07:00:00.000Z`,
+  cartons: colour
+    ? { articleSizeId: "as-sk6-710", article: "SK6", size: "7/10", soleColour: "BLACK", colour, count: 4 }
+    : null,
+  cartonNote: colour ? null : "UPPER — SK6 — — — 7/10 has no colour on it, and a carton QR needs one.",
+  label: null,
+});
+
+function installApi(
+  options: {
+    openRefusal?: { outcome: string; reason: string };
+    /** The program exists but may not be issued against: the backend refuses AND returns it. */
+    fullyIssued?: boolean;
+    earlierPackets?: MachineProgramCartonPacket[];
+  } = {}
+) {
+  const state = {
+    program: program(),
+    black: 0,
+    red: 0,
+    sequence: 0,
+    cartonPackets: [...(options.earlierPackets ?? [])],
+  };
   const api = {
     openMachineProgramStoreOut: vi.fn(async (lookup: string) => {
       if (options.openRefusal) return { accepted: false, ...options.openRefusal, program: null };
+      if (options.fullyIssued) {
+        return {
+          accepted: false,
+          outcome: "PROGRAM_COMPLETED",
+          reason: "MP-000001 is fully issued. Everything on it has already left the store.",
+          programId: "prog-1",
+          programCode: "MP-000001",
+          program: { ...program({ black: 100, red: 50 }), status: "COMPLETED", displayStatus: "COMPLETED" },
+        };
+      }
       if (!["MP-000001", "1", "prog-1"].includes(lookup)) {
         return { accepted: false, outcome: "PROGRAM_NOT_FOUND", reason: `${lookup} does not exist.`, program: null };
       }
@@ -165,6 +203,7 @@ function installApi(options: { openRefusal?: { outcome: string; reason: string }
 
       if (packet.itemId === "u-black") state.black += 2;
       else state.red += 2;
+      state.cartonPackets.push(cartonPacket(qrId, packet.colour));
       state.program = program({ black: state.black, red: state.red });
       return {
         accepted: true,
@@ -201,6 +240,7 @@ function installApi(options: { openRefusal?: { outcome: string; reason: string }
       };
     }),
     listMachineProgramIssueBatches: vi.fn(async () => ({ accepted: true, rows: [] })),
+    listMachineProgramCartonPackets: vi.fn(async () => ({ accepted: true, rows: state.cartonPackets.map((packet) => ({ ...packet })) })),
     // Dana Issue: the store holds two BLACK Danas, which is exactly the case a colour
     // alone cannot describe — the operator has to pick the material.
     listMachineProgramDanaOptions: vi.fn(async () => ({
@@ -220,28 +260,31 @@ function installApi(options: { openRefusal?: { outcome: string; reason: string }
     })),
     issueMachineProgramDana: vi.fn(async (): Promise<{ accepted: boolean; outcome: string; reason?: string; quantity?: number; unitCode?: string }> => ({ accepted: true, outcome: "MOVED", quantity: 50, unitCode: "KILOGRAM" })),
     listMachineProgramDanaIssues: vi.fn(async () => ({ accepted: true, rows: [] })),
-    generateQrBatch: vi.fn(async (input: { articleSizeId: string; color: string; quantity: number }) => {
-      const ids = Array.from({ length: input.quantity }, (_, index) => {
+    // The backend's print: the count comes from the packets, and each packet is labelled once.
+    printMachineProgramCartons: vi.fn(async (input: { programId: string; eventIds: string[] }) => {
+      const chosen = state.cartonPackets.filter((packet) => input.eventIds.includes(packet.eventId));
+      if (chosen.some((packet) => packet.label)) return { accepted: false, reason: "The cartons for this upper were already printed." };
+      const color = chosen[0].cartons!.colour;
+      const quantity = chosen.reduce((total, packet) => total + packet.cartons!.count, 0);
+      const ids = Array.from({ length: quantity }, () => {
         state.sequence += 1;
-        void index;
-        return `SK6_${input.color}_7/10_${String(state.sequence).padStart(6, "0")}`;
+        return `SK6_${color}_7/10_${String(state.sequence).padStart(6, "0")}`;
       });
+      const batchId = `qrb-${state.sequence}`;
+      for (const packet of chosen) {
+        packet.label = {
+          qrBatchId: batchId, firstQrId: ids[0], lastQrId: ids[ids.length - 1],
+          cartonCount: packet.cartons!.count, receivedInRun: 0, printedBy: "aslam", printedAt: `${TODAY}T08:00:00.000Z`,
+        };
+      }
       return {
         accepted: true,
         batch: {
-          id: `qrb-${state.sequence}`,
-          articleSizeId: input.articleSizeId,
-          article: "SK6",
-          color: input.color,
-          size: "7/10",
-          startSequence: state.sequence - input.quantity + 1,
-          endSequence: state.sequence,
-          quantity: input.quantity,
-          createdAt: `${TODAY}T08:00:00.000Z`,
-          createdBy: "aslam",
-          requestedBy: "MP-000001",
+          id: batchId, articleSizeId: "as-sk6-710", article: "SK6", color, size: "7/10",
+          startSequence: state.sequence - quantity + 1, endSequence: state.sequence, quantity,
+          createdAt: `${TODAY}T08:00:00.000Z`, createdBy: "aslam", requestedBy: "MP-000001",
         },
-        qrCodes: ids.map((id) => ({ id, batchId: `qrb-${state.sequence}`, article: "SK6", color: input.color, size: "7/10", sequence: 1, status: "GENERATED" })),
+        qrCodes: ids.map((id) => ({ id, batchId, article: "SK6", color, size: "7/10", sequence: 1, status: "GENERATED" })),
       };
     }),
   };
@@ -255,7 +298,7 @@ function installApi(options: { openRefusal?: { outcome: string; reason: string }
 const renderPage = (props: { initialProgramId?: string } = {}) =>
   render(
     <NotificationsProvider>
-      <StoreOutPage token="t-1" username="aslam" onBack={() => undefined} {...props} />
+      <StoreOutPage token="t-1" onBack={() => undefined} {...props} />
     </NotificationsProvider>
   );
 
@@ -379,6 +422,25 @@ describe("Machine Move Out — opening a program", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent("has been deleted");
     expect(screen.queryByLabelText("Scanner input")).not.toBeInTheDocument();
   });
+
+  it("still opens a fully issued program to read it and print its cartons, but never to scan", async () => {
+    const api = installApi({ fullyIssued: true, earlierPackets: [cartonPacket("RM_6_42_1", "BLACK")] });
+    renderPage();
+
+    await userEvent.type(lookupBox(), "MP-000001");
+    await userEvent.keyboard("{Enter}");
+
+    // Opened, with its status in words — not an error banner.
+    expect(await openedProgram()).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.getByText("MP-000001 is fully issued. Everything on it has already left the store.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Start Scan|Resume Scan/ })).toBeDisabled();
+
+    // The cartons it is owed can still be printed.
+    await userEvent.click(within(cartonSection()).getByRole("button", { name: "Print 4 carton QR labels for SK6 / 7/10 / BLACK" }));
+    await waitFor(() => expect(api.printMachineProgramCartons).toHaveBeenCalledTimes(1));
+    expect(api.machineProgramStoreOutSaveBatch).not.toHaveBeenCalled();
+  });
 });
 
 describe("Machine Move Out — one scan, one movement", () => {
@@ -447,14 +509,12 @@ describe("Machine Move Out — one scan, one movement", () => {
 
     await userEvent.click(within(cartonSection()).getByRole("button", { name: "Print 8 carton QR labels for SK6 / 7/10 / BLACK" }));
 
+    // The screen names the packets; the count is the backend's to work out from them.
     await waitFor(() =>
-      expect(api.generateQrBatch).toHaveBeenCalledWith({
-        articleSizeId: "as-sk6-710",
-        color: "BLACK",
-        quantity: 8,
-        createdBy: "aslam",
-        requestedBy: "MP-000001",
-      })
+      expect(api.printMachineProgramCartons).toHaveBeenCalledWith(
+        { programId: "prog-1", eventIds: ["ev-RM_6_42_1", "ev-RM_6_42_2"] },
+        { token: "t-1" }
+      )
     );
     expect(printWindow).toHaveBeenCalledTimes(1);
     expect(printWindow.mock.calls[0][0].ids).toHaveLength(8);
@@ -476,7 +536,36 @@ describe("Machine Move Out — one scan, one movement", () => {
     expect(await screen.findByTestId("scan-status")).toHaveTextContent("MOVED OUT OF STORE");
     expect(await within(cartonSection()).findByText(/has no colour on it/)).toBeInTheDocument();
     expect(within(cartonSection()).queryByRole("button", { name: /Print/ })).not.toBeInTheDocument();
-    expect(api.generateQrBatch).not.toHaveBeenCalled();
+    expect(api.printMachineProgramCartons).not.toHaveBeenCalled();
+  });
+
+  it("offers cartons owed from an earlier sitting without opening the scanner, and never twice", async () => {
+    // 2 DOZEN went out yesterday and its labels were never printed; another packet was.
+    const printed = cartonPacket("RM_6_43_1", "RED");
+    printed.label = {
+      qrBatchId: "qrb-old", firstQrId: "SK6_RED_7/10_000001", lastQrId: "SK6_RED_7/10_000004",
+      cartonCount: 4, receivedInRun: 0, printedBy: "aslam", printedAt: `${TODAY}T06:30:00.000Z`,
+    };
+    const api = installApi({ earlierPackets: [cartonPacket("RM_6_42_1", "BLACK"), printed] });
+    renderPage();
+    await open();
+
+    // No Start Scan: the list is on the program itself. 2 DOZEN is 4 carton labels.
+    expect(await within(cartonSection()).findByText("4 cartons")).toBeInTheDocument();
+    expect(within(cartonSection()).getByText(/SK6_RED_7\/10_000001 → SK6_RED_7\/10_000004/)).toBeInTheDocument();
+    expect(within(cartonSection()).queryByRole("button", { name: /RED/ })).not.toBeInTheDocument();
+
+    await userEvent.click(within(cartonSection()).getByRole("button", { name: "Print 4 carton QR labels for SK6 / 7/10 / BLACK" }));
+    await waitFor(() => expect(printWindow).toHaveBeenCalledTimes(1));
+    expect(printWindow.mock.calls[0][0].ids).toHaveLength(4);
+    expect(api.printMachineProgramCartons).toHaveBeenCalledWith(
+      { programId: "prog-1", eventIds: ["ev-RM_6_42_1"] },
+      { token: "t-1" }
+    );
+
+    // Printed, recorded, and gone from the owed list.
+    await waitFor(() => expect(within(cartonSection()).queryByRole("button", { name: /Print 4/ })).not.toBeInTheDocument());
+    expect(within(cartonSection()).getByText(/SK6_BLACK_7\/10_000001 → SK6_BLACK_7\/10_000004/)).toBeInTheDocument();
   });
 });
 // ─── Dana Issue ───────────────────────────────────────────────────────────────

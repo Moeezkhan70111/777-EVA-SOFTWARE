@@ -11,6 +11,7 @@ import type {
   OpenMachineProgramForStoreOutUseCase,
   CheckMachineProgramScanUseCase,
   SaveMachineProgramBatchUseCase,
+  ReceiveMachineProgramCartonUseCase,
   ReceiveRawMaterialScanUseCase,
   RemoveMachineProgramLineUseCase,
   RemoveMachineProgramRunUseCase,
@@ -62,6 +63,8 @@ export interface UseCases {
     checkScan: CheckMachineProgramScanUseCase;
     saveBatch: SaveMachineProgramBatchUseCase;
   };
+  /** Store In receiving one machine program's carton labels: produced + stored in, one scan. */
+  machineProgramCartonIn: ReceiveMachineProgramCartonUseCase;
 }
 
 export interface IpcContext {

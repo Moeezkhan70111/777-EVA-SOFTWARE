@@ -267,135 +267,11 @@ export class StoreEntryScanUseCase {
     }
 
     const { qrId, article, color, size, serial } = parsed.payload;
-    const toLocationId = input.context.factoryId;
 
     try {
-      const committed = await this.deps.txManager.runInTransaction(async (tx) => {
-        const qr = await this.deps.qrLookupRepo.getQrForStoreEntry(qrId, tx);
-
-        if (!qr) {
-          // No live unit. Either the QR Generator never issued it, or it was issued and is
-          // still waiting for its production scan. Either way nothing is created here.
-          const registered = await this.deps.qrRegistry.findRegisteredQrCode(qrId, tx);
-          if (!registered) {
-            throw new StoreEntryRejectedError("UNKNOWN_QR", "This QR is not registered.", {
-              previousStatus: null,
-              currentStatus: null,
-            });
-          }
-          throw new StoreEntryRejectedError(
-            "NOT_PRODUCED",
-            registered.status === "VOID"
-              ? "This QR was voided in QR Management and has no unit to receive."
-              : "This QR has not completed the required production process.",
-            {
-              article: registered.article,
-              color: registered.color,
-              size: registered.size,
-              registryStatus: registered.status,
-              previousStatus: null,
-              currentStatus: null,
-            }
-          );
-        }
-
-        const identity = {
-          article: qr.article,
-          color: qr.color,
-          size: qr.size,
-          previousStatus: qr.currentStatus,
-          currentStatus: qr.currentStatus,
-        };
-
-        if (qr.currentStatus === IN_STORE_STATUS) {
-          throw new StoreEntryRejectedError("ALREADY_IN_STORE", "This carton has already been received.", identity);
-        }
-
-        if (!STORE_ENTRY_ELIGIBLE_STATUSES.has(qr.currentStatus)) {
-          throw new StoreEntryRejectedError("NOT_ELIGIBLE", describeStatus(qr.currentStatus), identity);
-        }
-
-        const eventId = this.deps.idGenerator.nextId();
-        const outboxId = this.deps.idGenerator.nextId();
-
-        // A carton coming back from the gate undoes its Store Move Out for whichever
-        // Gatepass that move-out named — read from this carton's own exit event, never guessed.
-        const gatepassId =
-          qr.currentStatus === "TO_GATE" && this.deps.gatepassRepo ? await this.deps.gatepassRepo.findGatepassOfLastStoreExit(qrId, tx) : null;
-
-        // Guarded status move first: if it does not apply (another terminal got there
-        // first) the repository throws and nothing below runs.
-        await this.deps.qrMasterRepo.markInStore({ qrId, locationId: toLocationId, updatedAt: tx.nowIso }, tx);
-
-        await this.deps.storeEntryEventsRepo.appendStoreEntryEvent(
-          {
-            eventId,
-            qrId,
-            productVariantId: qr.productVariantId,
-            article: qr.article,
-            color: qr.color,
-            size: qr.size,
-            serial,
-            occurredAt: tx.nowIso,
-            parserVersion: parsed.parserVersion,
-            previousStatus: qr.currentStatus,
-            fromLocationType: qr.currentLocationType,
-            fromLocationId: qr.currentLocationId,
-            toLocationType: IN_STORE_LOCATION_TYPE,
-            toLocationId,
-            factoryId: input.context.factoryId,
-            workstationId: input.context.workstationId,
-            deviceId: input.context.deviceId,
-            operatorId: input.context.operatorId,
-            actor: input.actor ?? null,
-            sessionId: input.sessionId,
-            gatepassId,
-          },
-          tx
-        );
-
-        // A carton arriving back from a customer is not moving between our own locations —
-        // it is re-entering the company, so the variant total grows by the one unit dispatch
-        // took out. Every other eligible status is already counted somewhere and only moves.
-        // This is the ONLY point at which a returned carton re-enters physical stock; the
-        // return that was recorded on the gate deliberately moved nothing.
-        if (STORE_ENTRY_FROM_OUTSIDE_STATUSES.has(qr.currentStatus)) {
-          await this.deps.stockProjectionRepo.receiveReturnedStockIntoStore(
-            { productVariantId: qr.productVariantId, toLocationId, occurredAt: tx.nowIso },
-            input.context,
-            tx
-          );
-        } else {
-          await this.deps.stockProjectionRepo.moveStockToStore(
-            {
-              productVariantId: qr.productVariantId,
-              fromLocationType: qr.currentLocationType,
-              fromLocationId: qr.currentLocationId,
-              toLocationId,
-              occurredAt: tx.nowIso,
-            },
-            input.context,
-            tx
-          );
-        }
-
-        await this.deps.outboxRepo.enqueueStoreEntry(
-          {
-            outboxId,
-            eventId,
-            qrId,
-            createdAt: tx.nowIso,
-            parserVersion: parsed.parserVersion,
-            factoryId: input.context.factoryId,
-            workstationId: input.context.workstationId,
-            deviceId: input.context.deviceId,
-            sessionId: input.sessionId,
-          },
-          tx
-        );
-
-        return { eventId, receivedAt: tx.nowIso, previousStatus: qr.currentStatus, identity: qr };
-      });
+      const committed = await this.deps.txManager.runInTransaction((tx) =>
+        receiveIntoStoreInTransaction(this.deps, { parsed, context: input.context, sessionId: input.sessionId, actor: input.actor }, tx)
+      );
 
       await this.deps.eventPublisher.publish("StoreEntryCompleted.v1", {
         qrId,
@@ -440,4 +316,149 @@ export class StoreEntryScanUseCase {
       throw error;
     }
   }
+}
+
+/** What the store-in step needs inside a transaction someone else opened. */
+export type ReceiveIntoStoreDeps = Omit<StoreEntryScanDeps, "txManager" | "eventPublisher">;
+
+/**
+ * Store Move In itself — the ONE place a live carton is moved into the store: the guarded status
+ * move, the STORE_ENTRY event, the stock movement and the outbox.
+ *
+ * Runs inside the caller's transaction, so another step can commit with it or not at all (Store
+ * In receiving a machine program's carton produces it first, in the same transaction). Throws
+ * StoreEntryRejectedError to refuse.
+ */
+export async function receiveIntoStoreInTransaction(
+  deps: ReceiveIntoStoreDeps,
+  input: { parsed: ReturnType<typeof parseQrCode>; context: ScanOperationalContext; sessionId?: string; actor?: string | null },
+  tx: TransactionContext
+): Promise<{ eventId: string; receivedAt: string; previousStatus: string; identity: StoreEntryQrRecord }> {
+  const { parsed } = input;
+  const { qrId, serial } = parsed.payload;
+  const toLocationId = input.context.factoryId;
+  const qr = await deps.qrLookupRepo.getQrForStoreEntry(qrId, tx);
+
+  if (!qr) {
+    // No live unit. Either the QR Generator never issued it, or it was issued and is
+    // still waiting for its production scan. Either way nothing is created here.
+    const registered = await deps.qrRegistry.findRegisteredQrCode(qrId, tx);
+    if (!registered) {
+      throw new StoreEntryRejectedError("UNKNOWN_QR", "This QR is not registered.", {
+        previousStatus: null,
+        currentStatus: null,
+      });
+    }
+    throw new StoreEntryRejectedError(
+      "NOT_PRODUCED",
+      registered.status === "VOID"
+        ? "This QR was voided in QR Management and has no unit to receive."
+        : "This QR has not completed the required production process.",
+      {
+        article: registered.article,
+        color: registered.color,
+        size: registered.size,
+        registryStatus: registered.status,
+        previousStatus: null,
+        currentStatus: null,
+      }
+    );
+  }
+
+  const identity = {
+    article: qr.article,
+    color: qr.color,
+    size: qr.size,
+    previousStatus: qr.currentStatus,
+    currentStatus: qr.currentStatus,
+  };
+
+  if (qr.currentStatus === IN_STORE_STATUS) {
+    throw new StoreEntryRejectedError("ALREADY_IN_STORE", "This carton has already been received.", identity);
+  }
+
+  if (!STORE_ENTRY_ELIGIBLE_STATUSES.has(qr.currentStatus)) {
+    throw new StoreEntryRejectedError("NOT_ELIGIBLE", describeStatus(qr.currentStatus), identity);
+  }
+
+  const eventId = deps.idGenerator.nextId();
+  const outboxId = deps.idGenerator.nextId();
+
+  // A carton coming back from the gate undoes its Store Move Out for whichever
+  // Gatepass that move-out named — read from this carton's own exit event, never guessed.
+  const gatepassId =
+    qr.currentStatus === "TO_GATE" && deps.gatepassRepo ? await deps.gatepassRepo.findGatepassOfLastStoreExit(qrId, tx) : null;
+
+  // Guarded status move first: if it does not apply (another terminal got there
+  // first) the repository throws and nothing below runs.
+  await deps.qrMasterRepo.markInStore({ qrId, locationId: toLocationId, updatedAt: tx.nowIso }, tx);
+
+  await deps.storeEntryEventsRepo.appendStoreEntryEvent(
+    {
+      eventId,
+      qrId,
+      productVariantId: qr.productVariantId,
+      article: qr.article,
+      color: qr.color,
+      size: qr.size,
+      serial,
+      occurredAt: tx.nowIso,
+      parserVersion: parsed.parserVersion,
+      previousStatus: qr.currentStatus,
+      fromLocationType: qr.currentLocationType,
+      fromLocationId: qr.currentLocationId,
+      toLocationType: IN_STORE_LOCATION_TYPE,
+      toLocationId,
+      factoryId: input.context.factoryId,
+      workstationId: input.context.workstationId,
+      deviceId: input.context.deviceId,
+      operatorId: input.context.operatorId,
+      actor: input.actor ?? null,
+      sessionId: input.sessionId,
+      gatepassId,
+    },
+    tx
+  );
+
+  // A carton arriving back from a customer is not moving between our own locations —
+  // it is re-entering the company, so the variant total grows by the one unit dispatch
+  // took out. Every other eligible status is already counted somewhere and only moves.
+  // This is the ONLY point at which a returned carton re-enters physical stock; the
+  // return that was recorded on the gate deliberately moved nothing.
+  if (STORE_ENTRY_FROM_OUTSIDE_STATUSES.has(qr.currentStatus)) {
+    await deps.stockProjectionRepo.receiveReturnedStockIntoStore(
+      { productVariantId: qr.productVariantId, toLocationId, occurredAt: tx.nowIso },
+      input.context,
+      tx
+    );
+  } else {
+    await deps.stockProjectionRepo.moveStockToStore(
+      {
+        productVariantId: qr.productVariantId,
+        fromLocationType: qr.currentLocationType,
+        fromLocationId: qr.currentLocationId,
+        toLocationId,
+        occurredAt: tx.nowIso,
+      },
+      input.context,
+      tx
+    );
+  }
+
+  await deps.outboxRepo.enqueueStoreEntry(
+    {
+      outboxId,
+      eventId,
+      qrId,
+      createdAt: tx.nowIso,
+      parserVersion: parsed.parserVersion,
+      factoryId: input.context.factoryId,
+      workstationId: input.context.workstationId,
+      deviceId: input.context.deviceId,
+      sessionId: input.sessionId,
+    },
+    tx
+  );
+
+  return { eventId, receivedAt: tx.nowIso, previousStatus: qr.currentStatus, identity: qr };
 }

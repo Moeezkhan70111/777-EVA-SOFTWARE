@@ -270,6 +270,24 @@ function composeUseCases(db: SqliteDatabase, dataModule: DataModule, application
     // leave through issueRawMaterialPacket — the one function that debits raw material stock —
     // so this adds a way of choosing which allocation is kept, never a second deduction path.
     machineProgramStoreOut: machineProgramStoreOutUseCases(),
+    // Store In receiving the cartons a program sent back. It runs the production step and the
+    // Store Move In step above — the same functions, in one transaction — never a third path.
+    machineProgramCartonIn: new applicationModule.ReceiveMachineProgramCartonUseCase({
+      txManager: db,
+      duplicateChecker: db,
+      qrRegistry: db,
+      productCatalog: db,
+      qrMasterRepo: db,
+      productionEventsRepo: db,
+      stockProjectionRepo: db,
+      outboxRepo: db,
+      qrLookupRepo: db,
+      gatepassRepo: db,
+      storeEntryEventsRepo: db,
+      cartonOriginRepo: db,
+      eventPublisher: eventPublisher(),
+      idGenerator: idGenerator(),
+    }),
   };
 }
 

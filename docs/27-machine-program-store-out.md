@@ -235,11 +235,13 @@ The scan box is armed for as long as the program may be issued against, and stay
 scan commits so a scanner burst is never dropped; the scans are serialised in the panel, one
 transaction at a time. A refusal never ends the session.
 
-Two lists sit beside the scanner:
+Two lists sit under the program, whether the scanner is open or not:
 
-* **Cartons to label** — what has just gone out, as carton runs with one Print button each, plus
-  the runs already printed and any packet whose cartons could not be worked out. This list is the
-  screen's own: it is what this sitting issued, not a stored queue.
+* **Cartons to label** — every packet of uppers out for this program that has not had its cartons
+  printed, as carton runs (one product and colour each) with one Print button each, plus the runs
+  already printed and any packet whose cartons could not be worked out. Read from
+  `raw_material_qr_events` through `listMachineProgramCartonPackets`, so it covers earlier
+  sittings, other terminals and packets the plain store scanner issued against the program.
 * **Already issued** — every packet that has ever left for this program, read back from
   `raw_material_qr_events` through `listMachineProgramIssueBatches`, with its carton count. It is
   the same list whoever opens the program and whenever, so cartons missed in an earlier sitting
@@ -308,8 +310,29 @@ split. This is pre-existing behaviour of the generic scanner and is preserved de
 than refused — refusing it would leave the program unable to finish. A carton count follows the
 packet, so an overshooting packet offers the cartons its own quantity implies.
 
-The **cartons to label** list is the screen's own and is not stored. Closing the program before
-printing does not lose the packets — they are issued and recorded — but the carton labels then
-have to be generated from the QR Generator, or worked out from the carton counts on the Already
-issued list. Nothing is lost that the event log does not still hold; there is simply no stored
-queue of "cartons still to label".
+**Printing cartons is recorded, exactly once** (migration 066, `machine_program_carton_labels`).
+`printMachineProgramCartons` re-reads the chosen packets inside BEGIN IMMEDIATE, works the count
+out from them (1 DOZEN = 2 cartons — the screen never sends a number), reserves the carton QR run
+and writes one label row per packet in the same transaction. The row is keyed by the packet's
+STORE_EXIT event, so the same issuance can never be labelled twice from any terminal, and a packet
+returned and issued again is owed its own cartons. A packet that came back to the store before its
+cartons were printed is no longer offered. Printing needs QR Generator on top of Store Scanning.
+A lost print window loses nothing: the codes are registered and can be reprinted from QR
+Management.
+
+## Store In: the cartons coming back
+
+Store In has the same Machine program lookup. It opens any program read-only (no Dana Issue, no
+Upper Out) and adds **Carton In**: the storekeeper scans the program's printed carton labels as the
+machine sends them back.
+
+* `ReceiveMachineProgramCartonUseCase` first checks, through `machine_program_carton_labels`,
+  that the label was printed for the program that is open. A label printed for another program is
+  refused with that program's number. An ordinary QR Generator label is refused and sent to
+  Store Move In. Nothing is written for a refusal.
+* It then runs the production step and the Store Move In step in ONE transaction. These are
+  `recordProductionInTransaction` and `receiveIntoStoreInTransaction`, the same functions
+  Live Production and Store Move In run. The carton is produced and stored in together, or not at
+  all. A carton already scanned in Live Production is only stored in.
+* Each printed run shows how many of its cartons are back (`receivedInRun`, counted from the
+  STORE_ENTRY events), re-read after every scan.

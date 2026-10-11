@@ -6,10 +6,10 @@
 import { ipcMain } from "electron";
 import { IPC } from "../../shared/ipcChannels";
 import type { IpcContext } from "./context";
-import { ACCESS_STATUS, USER_ROLE, asOptionalNumber, asOptionalString, asString, asStringArray, isRecord, optionalOneOf } from "@erp/domain";
+import { ACCESS_STATUS, PERMISSION, USER_ROLE, asOptionalNumber, asOptionalString, asString, asStringArray, isRecord, optionalOneOf } from "@erp/domain";
 
 export function registerStoreHandlers(ctx: IpcContext): void {
-  const { db, logger, scanContext, deviceId, useCases } = ctx;
+  const { db, logger, authorizer, scanContext, deviceId, useCases } = ctx;
   const { storeEntryScanUseCase, storeExitScanUseCase, receiveRawMaterialScanUseCase, issueRawMaterialScanUseCase } = useCases;
 
   // Store entry is authorised at the process boundary, not just in the navbar: the
@@ -204,7 +204,10 @@ export function registerStoreHandlers(ctx: IpcContext): void {
       const result = await useCases.machineProgramStoreOut.open.execute({ lookup: String(lookup ?? "") });
       // The program itself is the existing read the Machine Program screens use, so Store Out
       // shows the same authorised quantities, issued and remaining, from one source of truth.
-      const program = result.accepted && result.programId ? db.getMachineProgram(result.programId) : null;
+      // It is returned for ANY program that exists — fully issued, deleted or not yet planned —
+      // so the store can always see it and print the cartons it is owed. `accepted` still says
+      // whether it may be issued against, and every scan and save re-checks that on its own.
+      const program = result.programId ? db.getMachineProgram(result.programId) : null;
       logger.log({
         module: "machine-program-store-out", severity: result.accepted ? "INFO" : "WARNING", operation: "open", deviceId,
         message: JSON.stringify({ outcome: result.outcome, programId: result.programId ?? null }),
@@ -290,6 +293,83 @@ export function registerStoreHandlers(ctx: IpcContext): void {
         message: error instanceof Error ? error.message : String(error),
       });
       return { accepted: false, rows: [] };
+    }
+  });
+
+  // ─── Carton QR labels for the uppers a program has taken out ──────────────────
+  // 1 DOZEN of uppers out is 2 cartons coming back. The list is read from the STORE_EXIT events,
+  // so it survives closing the program, and the print is recorded against each packet in the
+  // same transaction as the carton identities, so the same uppers can never be labelled twice.
+  //
+  // Printing creates permanent carton identities, so it needs QR Generator on top of Store
+  // Scanning — the same permission the QR Generator screen itself demands.
+
+  ipcMain.handle(IPC.listMachineProgramCartonPackets, (_event, programId?: string, opts?: { token?: string }) => {
+    const auth = resolveStoreOperator(opts?.token);
+    if (!auth.ok) return { accepted: false, reason: auth.reason, rows: [] };
+    try {
+      return { accepted: true, rows: db.listMachineProgramCartonPackets(String(programId ?? "")) };
+    } catch (error) {
+      logger.log({
+        module: "machine-program-store-out", severity: "WARNING", operation: "list-carton-packets", deviceId,
+        message: error instanceof Error ? error.message : String(error),
+      });
+      return { accepted: false, reason: "The cartons to label could not be loaded. Try again.", rows: [] };
+    }
+  });
+
+  ipcMain.handle(IPC.printMachineProgramCartons, (event, input?: unknown, opts?: { token?: string }) => {
+    const auth = resolveStoreOperator(opts?.token);
+    if (!auth.ok) return { accepted: false, reason: auth.reason };
+    const payload = isRecord(input) ? input : {};
+    try {
+      authorizer.requirePermission(event, PERMISSION.QR_GENERATOR, opts?.token);
+    } catch {
+      return { accepted: false, reason: "Your account does not have QR Generator access, so it cannot print carton QR labels." };
+    }
+    try {
+      const printed = db.printMachineProgramCartons({
+        programId: asString(payload.programId),
+        eventIds: asStringArray(payload.eventIds),
+        printedBy: auth.username,
+        deviceId,
+      });
+      logger.log({
+        module: "machine-program-store-out", severity: "INFO", operation: "print-cartons", deviceId,
+        message: JSON.stringify({ programId: asString(payload.programId), qrBatchId: printed.batch.id, cartons: printed.qrCodes.length }),
+      });
+      return { accepted: true, batch: printed.batch, qrCodes: printed.qrCodes };
+    } catch (error) {
+      // The refusals are written for the operator (already printed, no colour, mixed products).
+      return { accepted: false, reason: error instanceof Error ? error.message : "The carton QR labels could not be generated." };
+    }
+  });
+
+  // Store In: one carton label of the open program scanned back. The use case refuses a carton
+  // printed for another program (or none) and otherwise produces and stores it in, in one
+  // transaction — authorised as every other store scan is, from the session token.
+  ipcMain.handle(IPC.machineProgramCartonIn, async (_event, input?: unknown, opts?: { token?: string }) => {
+    const auth = resolveStoreOperator(opts?.token);
+    if (!auth.ok) return { accepted: false, outcome: "NOT_AUTHORIZED", reason: auth.reason };
+    const payload = isRecord(input) ? input : {};
+    try {
+      const result = await useCases.machineProgramCartonIn.execute({
+        programId: asString(payload.programId),
+        rawScan: asString(payload.rawScan),
+        context: scanContext,
+        actor: auth.username,
+      });
+      logger.log({
+        module: "machine-program-store-in", severity: result.accepted ? "INFO" : "WARNING", operation: "carton-in", deviceId,
+        message: JSON.stringify({ outcome: result.outcome, qrId: result.qrId ?? null, producedNow: result.producedNow ?? false }),
+      });
+      return result;
+    } catch (error) {
+      logger.log({
+        module: "machine-program-store-in", severity: "ERROR", operation: "carton-in-error", deviceId,
+        message: error instanceof Error ? error.message : String(error),
+      });
+      return { accepted: false, outcome: "ERROR", reason: "The carton could not be received. Nothing was changed — scan it again." };
     }
   });
 

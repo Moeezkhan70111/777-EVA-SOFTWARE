@@ -1052,6 +1052,8 @@ export const copy = {
   programOut: {
     // ── The Machine Program Issue screen ──────────────────────────────────
     issueTitle: "Machine Program Issue",
+    // The same program opened from Store In: read it, print its cartons, move nothing.
+    viewTitle: "Machine Program",
     upperOutTitle: "Upper Out",
     upperOutLine: "Scan and out uppers against this program.",
     startScan: "Start Scan",
@@ -1100,6 +1102,7 @@ export const copy = {
     lookupHelp: "Scan the program sheet's QR, or type its number — MP-000012 or 12.",
     opening: "Opening the program…",
     back: "Back to Store Out",
+    viewBack: "Back to Store In",
 
     title: (code: string) => `${code} — Machine Move Out`,
     machine: "Machine",
@@ -1149,6 +1152,31 @@ export const copy = {
     cartonPrintedBody: (cartons: number, what: string) => `${cartons} carton QR codes generated for ${what}.`,
     cartonFailedTitle: "Carton QR not generated",
     cartonBlocked: "Allow popups to print the carton labels. The codes are generated — reprint them from QR Management.",
+
+    // Back in store: Store In scanning the program's own carton labels as the machine sends them.
+    cartonBack: (received: number, total: number) => `${received} of ${total} back in store`,
+    cartonInTitle: "Carton In",
+    cartonInLine: "Scan each carton label printed for this program as it comes back. One scan produces it and stores it in.",
+    cartonInNoneTitle: "No carton labels printed yet",
+    cartonInNoneHint: "Print this program's cartons first. Only its own labels can be stored in here.",
+    cartonInIdleTitle: "READY FOR CARTONS",
+    cartonInIdleMessage: "Scan a carton label printed for this program",
+    cartonInBusy: "Storing the carton in…",
+    cartonInDisabled: "No carton labels printed for this program yet",
+    cartonInReceivedTitle: "✓ STORED IN",
+    cartonInProduced: "Produced and stored in.",
+    cartonInStoredOnly: "Already produced — now stored in.",
+    cartonInRefusedTitle: "✕ NOT STORED IN",
+    cartonInRefusals: {
+      INVALID_FORMAT: "✕ NOT A CARTON QR",
+      RAW_MATERIAL_NOT_SUPPORTED: "✕ RAW MATERIAL LABEL",
+      NOT_ON_PROGRAM: "✕ NOT A PROGRAM CARTON",
+      OTHER_PROGRAM: "✕ ANOTHER PROGRAM'S CARTON",
+      ALREADY_IN_STORE: "✕ ALREADY STORED IN",
+      NOT_ELIGIBLE: "✕ CANNOT STORE IN",
+      VOIDED: "✕ VOIDED LABEL",
+      STATUS_CHANGED: "✕ CHANGED ELSEWHERE",
+    } as Record<string, string>,
 
     historyTitle: "Already issued",
     historyNote: "Every packet that has left the store for this program.",

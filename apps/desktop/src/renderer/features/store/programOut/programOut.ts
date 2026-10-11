@@ -1,6 +1,6 @@
 import { MACHINE_PROGRAM_DISPLAY_STATUS, cartonsExpectedFromUppers, formatShiftRange, roundQuantity } from "@erp/domain";
 import type {
-  IssuedProgramPacket,
+  MachineProgramCartonPacket,
   MachineProgramRecord,
   MachineProgramScanVerdict,
   SaveMachineProgramBatchResult,
@@ -174,11 +174,11 @@ export const canIssueMore = (program: MachineProgramRecord): boolean =>
 // ─── Cartons waiting to be labelled ──────────────────────────────────────────
 
 /**
- * The cartons one product's worth of issued uppers needs labelled, accumulated across scans.
+ * The cartons one product's worth of issued uppers needs labelled.
  *
- * Grouped by product and colour because that is what one carton QR run is: the QR Generator
- * takes an article/size and one colour and hands back that many identities. Two packets of the
- * same upper issued one after the other are therefore one run of eight, not two of four.
+ * Grouped by product and colour because that is what one carton QR run is: one article/size and
+ * one colour, that many identities. Two packets of the same upper are therefore one run of eight,
+ * not two of four.
  */
 export interface CartonRun {
   key: string;
@@ -188,8 +188,8 @@ export interface CartonRun {
   soleColour: string;
   colour: string;
   cartons: number;
-  /** The packets whose output these cartons are, for the operator to recognise them by. */
-  qrIds: string[];
+  /** The issuances these cartons are owed to — what the print is recorded against. */
+  eventIds: string[];
 }
 
 /** `SK12 / 7/10 / BLACK RED` — one carton run in the words the labels will carry. */
@@ -197,38 +197,75 @@ export const cartonRunLabel = (run: Pick<CartonRun, "article" | "size" | "colour
   `${run.article} / ${run.size} / ${run.colour}`;
 
 /**
- * The carton runs still waiting to be labelled, from the packets issued on this screen.
+ * The carton runs still waiting to be labelled, from every packet the program has taken out.
  *
- * Packets whose cartons cannot be worked out (no colour on the upper, no product behind the
- * line) are left out: they are reported on their own, as the sentence the main process gave,
- * rather than being folded into a run that would print the wrong identity.
+ * The packets and their carton counts come from the main process, read from the events, so this
+ * list is the same whoever opens the program and whenever. Packets whose cartons cannot be worked
+ * out are left out here and reported by blockedCartonPackets instead.
  */
-export const pendingCartonRuns = (packets: readonly IssuedProgramPacket[], printedQrIds: ReadonlySet<string>): CartonRun[] => {
+export const pendingCartonRuns = (packets: readonly MachineProgramCartonPacket[]): CartonRun[] => {
   const runs = new Map<string, CartonRun>();
   for (const packet of packets) {
-    if (!packet.cartons || printedQrIds.has(packet.qrId)) continue;
+    if (!packet.cartons || packet.label) continue;
     const { articleSizeId, article, size, soleColour, colour, count } = packet.cartons;
     const key = `${articleSizeId}:${colour}`;
     const existing = runs.get(key);
     if (existing) {
       existing.cartons += count;
-      existing.qrIds.push(packet.qrId);
+      existing.eventIds.push(packet.eventId);
     } else {
-      runs.set(key, { key, articleSizeId, article, size, soleColour, colour, cartons: count, qrIds: [packet.qrId] });
+      runs.set(key, { key, articleSizeId, article, size, soleColour, colour, cartons: count, eventIds: [packet.eventId] });
     }
   }
   return [...runs.values()];
 };
 
-/** A carton run that has been generated and sent to the printer. */
+/** A carton run that has been generated, for the record on screen. */
 export interface PrintedCartonRun {
   key: string;
   label: string;
   cartons: number;
-  /** The identity range the generator reserved, e.g. `SK12_BLACKRED_7/10_000001 → …_000004`. */
+  /** The identity range the run holds, e.g. `SK12_BLACKRED_7/10_000001 → …_000004`. */
   range: string;
+  /** How many of the run's cartons have come back and been stored in. */
+  received: number;
   at: string;
 }
+
+/** Every carton run already printed for the program, newest first — one row per QR run. */
+export const printedCartonRuns = (packets: readonly MachineProgramCartonPacket[]): PrintedCartonRun[] => {
+  const runs = new Map<string, PrintedCartonRun>();
+  for (const packet of packets) {
+    const label = packet.label;
+    if (!label) continue;
+    const existing = runs.get(label.qrBatchId);
+    if (existing) {
+      existing.cartons += label.cartonCount;
+      continue;
+    }
+    runs.set(label.qrBatchId, {
+      key: label.qrBatchId,
+      label: packet.cartons ? cartonRunLabel(packet.cartons) : packet.itemDisplayName,
+      cartons: label.cartonCount,
+      range: label.firstQrId === label.lastQrId ? label.firstQrId : `${label.firstQrId} → ${label.lastQrId}`,
+      received: label.receivedInRun,
+      at: label.printedAt,
+    });
+  }
+  return [...runs.values()].sort((a, b) => b.at.localeCompare(a.at));
+};
+
+/**
+ * Unlabelled packets whose cartons cannot be worked out, one per upper: twenty packets of the
+ * same colourless upper are one thing to fix, not twenty warnings to read.
+ */
+export const blockedCartonPackets = (packets: readonly MachineProgramCartonPacket[]): MachineProgramCartonPacket[] => {
+  const byItem = new Map<string, MachineProgramCartonPacket>();
+  for (const packet of packets) {
+    if (!packet.cartons && !packet.label && !byItem.has(packet.itemDisplayName)) byItem.set(packet.itemDisplayName, packet);
+  }
+  return [...byItem.values()];
+};
 
 // ─── What the operator reads after a scan ────────────────────────────────────
 

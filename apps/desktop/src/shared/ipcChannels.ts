@@ -103,6 +103,11 @@ export const IPC = {
   machineProgramStoreOutCheckScan: "erp:machine-program-store-out-check-scan",
   machineProgramStoreOutSaveBatch: "erp:machine-program-store-out-save-batch",
   listMachineProgramIssueBatches: "erp:list-machine-program-issue-batches",
+  // The carton QR labels owed for the uppers a program has taken out, and printing them once.
+  listMachineProgramCartonPackets: "erp:list-machine-program-carton-packets",
+  printMachineProgramCartons: "erp:print-machine-program-cartons",
+  // Store In: one carton label of an open program scanned back in (produced + stored in).
+  machineProgramCartonIn: "erp:machine-program-carton-in",
   // Dana issued out of the store FOR a program (Machine Program Issue screen).
   listMachineProgramDanaOptions: "erp:list-machine-program-dana-options",
   issueMachineProgramDana: "erp:issue-machine-program-dana",

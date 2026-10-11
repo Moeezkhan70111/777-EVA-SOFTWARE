@@ -61,25 +61,32 @@ const MetaCell: React.FC<{ icon: React.ReactNode; label: string; value: string }
 
 interface ProgramIssueHeaderProps {
   program: MachineProgramRecord;
+  /** "Machine Program Issue" on Store Out, "Machine Program" where it is only read. */
+  title: string;
+  /** The ← button's accessible name: where it goes back to. */
+  backLabel: string;
   onBack: () => void;
-  onChangeJob: () => void;
+  /** Leaves the station for the job chooser. Omitted where there is no job to change. */
+  onChangeJob?: () => void;
 }
 
-export const ProgramIssueHeader: React.FC<ProgramIssueHeaderProps> = ({ program, onBack, onChangeJob }) => (
+export const ProgramIssueHeader: React.FC<ProgramIssueHeaderProps> = ({ program, title, backLabel, onBack, onChangeJob }) => (
   <header className="mpi-head">
     <div className="mpi-title-row">
-      <button type="button" className="mpi-back" onClick={onBack} aria-label={copy.programOut.back}>
+      <button type="button" className="mpi-back" onClick={onBack} aria-label={backLabel}>
         <span aria-hidden="true">←</span>
       </button>
-      <h1 className="mpi-title">{copy.programOut.issueTitle}</h1>
+      <h1 className="mpi-title">{title}</h1>
       {/* A dot AND the word: the state never depends on the colour alone. */}
       <span className={`mpi-pill mpi-pill--${programStatusTone(program.displayStatus)}`}>
         <span className="mpi-pill-dot" aria-hidden="true" />
         {programStatusLabel(program.displayStatus)}
       </span>
-      <button type="button" className="mpi-change-job" onClick={onChangeJob}>
-        {copy.store.changeJob}
-      </button>
+      {onChangeJob ? (
+        <button type="button" className="mpi-change-job" onClick={onChangeJob}>
+          {copy.store.changeJob}
+        </button>
+      ) : null}
     </div>
 
     <dl className="mpi-meta">

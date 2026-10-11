@@ -37,7 +37,6 @@ import { ScanInIcon, StockIcon } from "./StoreIcons";
 
 interface StoreOutPageProps {
   token: string;
-  username?: string;
   onBack: () => void;
   /**
    * A machine program to open on arrival, from a notification. The id is the program's stored
@@ -50,7 +49,6 @@ interface StoreOutPageProps {
 
 export const StoreOutPage: React.FC<StoreOutPageProps> = ({
   token,
-  username,
   onBack,
   initialProgramId,
   onInitialProgramConsumed,
@@ -59,7 +57,7 @@ export const StoreOutPage: React.FC<StoreOutPageProps> = ({
   // one, so they print on the same slip as everything else that left. It is deliberately NOT
   // required: a session that has been closed must never stop a committed movement.
   const [sessionId, setSessionId] = useState<string | null>(null);
-  const programOut = useProgramOut({ token, sessionId, username });
+  const programOut = useProgramOut({ token, sessionId });
   const openedFor = useRef<string | null>(null);
   const { open: openProgram } = programOut;
   // Read through a ref: App hands this down as an inline arrow, and depending on it would

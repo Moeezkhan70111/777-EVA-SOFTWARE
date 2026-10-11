@@ -8,6 +8,9 @@ import { RawMaterialSection } from "../rawMaterial/RawMaterialSection";
 import { useRawMaterialLookups } from "../rawMaterial/useRawMaterialLookups";
 import { RawMaterialInputPage } from "../../pages/RawMaterialInputPage";
 import { HandMovePanel } from "./HandMovePanel";
+import { ProgramLookupField } from "./programOut/ProgramLookupField";
+import { ProgramOutPanel } from "./programOut/ProgramOutPanel";
+import { useProgramOut } from "./programOut/useProgramOut";
 import { STORE_IN_TABS, storeInTabRoute, type StoreInTab } from "./storeOperators";
 import { StockIcon, ScanInIcon } from "./StoreIcons";
 
@@ -27,6 +30,11 @@ import { StockIcon, ScanInIcon } from "./StoreIcons";
 // The scan station on the right NEVER unmounts: every tab renders this one component in the
 // same place, unkeyed, so React keeps it — and with it the open receiving session, the scan box
 // and the recent scans — while the operator moves between tabs.
+//
+// THE MACHINE PROGRAM LOOKUP under the title is the same box as on Store Out. Here it opens the
+// program VIEW ONLY, in place of the section on the left — never over the scan station, which
+// keeps its receiving session. Nothing can be issued from Store In; the program is read, and
+// the cartons it is owed can be printed.
 
 export interface StoreInAccess {
   /** Creating a material, Stock and Receipts. */
@@ -59,6 +67,8 @@ export const StoreInPage: React.FC<StoreInPageProps> = ({ tab, token, username, 
   const [labelsItemId, setLabelsItemId] = useState<string | undefined>(undefined);
   // The owner's reference screen puts Manual Entry under the scanner, as the other way in.
   const [manualOpen, setManualOpen] = useState(false);
+  // No issue session: nothing leaves the store from here.
+  const programView = useProgramOut({ token, sessionId: null });
 
   const allowed = STORE_IN_TABS.filter((entry) => allows(entry.id, access));
   // A tab this operator may not open falls back to the first they may, so the page is never blank.
@@ -82,13 +92,24 @@ export const StoreInPage: React.FC<StoreInPageProps> = ({ tab, token, username, 
         </div>
       </header>
 
+      {/* Not focused on arrival: the receiving scanner on the right owns the keyboard. */}
+      <ProgramLookupField
+        onOpen={(lookup) => void programView.open(lookup)}
+        busy={programView.loading}
+        error={programView.program ? null : programView.error}
+        autoFocus={false}
+      />
+      {programView.loading ? <StateView kind="loading" compact message={copy.programOut.opening} /> : null}
+
       {active ? (
         <TabStrip items={items} active={active} onSelect={(id) => onNavigate(storeInTabRoute(id))} label={copy.store.storeInSections} />
       ) : null}
 
       <div className="si-body">
         <section className="si-main" aria-label={allowed.find((entry) => entry.id === active)?.title ?? copy.store.storeInTitle}>
-          {!active ? (
+          {programView.program ? (
+            <ProgramOutPanel state={programView} onClose={programView.close} viewOnly />
+          ) : !active ? (
             <StateView kind="empty" title={copy.store.noAccessTitle} hint={copy.store.noAccessHint} />
           ) : active === "material" ? (
             <NewMaterialForm lookups={lookups} formKey={formKey} onDone={() => setFormKey((key) => key + 1)} />

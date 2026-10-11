@@ -5,6 +5,7 @@ import {
   cartonsExpectedFromUppers,
   parseMachineProgramLookup,
   roundQuantity,
+  type MachineProgramCartonTarget,
   type MachineProgramLookup,
 } from "@erp/domain";
 import type { RawMaterialMovementRepository } from "./rawMaterialReceiptUseCase.js";
@@ -430,11 +431,15 @@ export interface IssuedProgramPacket {
  * belongs to, the colour it will be sold as, and a whole number of cartons. Anything missing is
  * reported as a sentence the operator can act on, never filled in with a guess.
  */
-const cartonPlanOf = (issued: IssuedPacket): Pick<IssuedProgramPacket, "cartons" | "cartonNote"> => {
-  const consumption = issued.machineProgram;
-  const target = consumption?.cartonTarget ?? null;
-  const name = issued.unit.displayName;
-  if (!consumption || !target) {
+export const cartonPlanFor = (input: {
+  /** The upper's name, for the sentence when the cartons cannot be worked out. */
+  name: string;
+  target: MachineProgramCartonTarget | null;
+  /** cartonsExpectedFromUppers for the packet's quantity, in the unit the line is counted in. */
+  cartonCount: number | null;
+}): Pick<IssuedProgramPacket, "cartons" | "cartonNote"> => {
+  const { name, target, cartonCount } = input;
+  if (!target) {
     return {
       cartons: null,
       cartonNote: `This program line has no product left in Product Master, so cartons for ${name} cannot be labelled here.`,
@@ -446,7 +451,7 @@ const cartonPlanOf = (issued: IssuedPacket): Pick<IssuedProgramPacket, "cartons"
       cartonNote: `${name} has no colour on it, and a carton QR needs one. Set the upper's colour in Raw Material Setup, or generate these cartons in QR Generator.`,
     };
   }
-  if (consumption.cartonCount == null) {
+  if (cartonCount == null) {
     return {
       cartons: null,
       cartonNote: `${name} is not counted in whole cartons of DOZEN, so its cartons have to be generated in QR Generator.`,
@@ -459,11 +464,18 @@ const cartonPlanOf = (issued: IssuedPacket): Pick<IssuedProgramPacket, "cartons"
       size: target.size,
       soleColour: target.soleColour,
       colour: target.upperColour,
-      count: consumption.cartonCount,
+      count: cartonCount,
     },
     cartonNote: null,
   };
 };
+
+const cartonPlanOf = (issued: IssuedPacket): Pick<IssuedProgramPacket, "cartons" | "cartonNote"> =>
+  cartonPlanFor({
+    name: issued.unit.displayName,
+    target: issued.machineProgram?.cartonTarget ?? null,
+    cartonCount: issued.machineProgram?.cartonCount ?? null,
+  });
 
 const issuedProgramPacket = (qrId: string, issued: IssuedPacket): IssuedProgramPacket => ({
   qrId,

@@ -385,7 +385,6 @@ export const App = () => {
         return (
           <StoreOutPage
             token={sessionToken ?? ""}
-            username={session.username}
             onBack={() => setRoute("store-home")}
             initialProgramId={storeOutProgramId}
             onInitialProgramConsumed={() => setStoreOutProgramId(undefined)}

@@ -7577,6 +7577,7 @@ tr.has-error .gp-qty-stepper input { color: var(--err); }
 .mpo-carton-printed { margin-top: 9px; }
 .mpo-carton-printed li { display: flex; flex-wrap: wrap; gap: 2px 10px; padding: 6px 0; font-size: .78rem; }
 .mpo-carton-range { font-family: Consolas, "Courier New", monospace; font-size: .74rem; color: var(--success-deep); }
+.mpo-carton-back { font-weight: 700; color: var(--text-2); }
 
 /* What has already left, one packet per row, newest first. */
 .mpo-history-row {

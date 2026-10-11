@@ -1,7 +1,7 @@
 import React from "react";
 import { copy } from "../../../config/copy";
 import { formatDateTime } from "../../../utils/dates";
-import type { IssuedProgramPacket, MachineProgramIssueBatchRow } from "../../../types/desktopApi";
+import type { MachineProgramCartonPacket, MachineProgramIssueBatchRow } from "../../../types/desktopApi";
 import { cartonRunLabel, cartonsFor, formatQuantity, type CartonRun, type PrintedCartonRun } from "./programOut";
 
 // The two lists beside the scanner: the cartons the machine owes back, and what has left.
@@ -14,7 +14,8 @@ import { cartonRunLabel, cartonsFor, formatQuantity, type CartonRun, type Printe
 //     RM_6_558_1   SK12 BLACK RED    2 DOZEN   4 cartons
 //
 // Uppers going out ARE cartons coming back, so the carton list is built from what was issued and
-// never typed. A packet whose cartons cannot be worked out — an upper with no colour on it — says
+// never typed. It is read back from the events, so it outlives the sitting: a packet issued
+// yesterday is still owed its cartons today, and one already printed is never offered again. A packet whose cartons cannot be worked out — an upper with no colour on it — says
 // so in its own words instead of being folded into a run that would print the wrong identity.
 
 interface CartonRunListProps {
@@ -24,7 +25,7 @@ interface CartonRunListProps {
   printingKey: string | null;
   onPrint: (run: CartonRun) => void;
   /** Packets whose cartons the main process could not work out, with its reason. */
-  blocked: IssuedProgramPacket[];
+  blocked: MachineProgramCartonPacket[];
 }
 
 export const CartonRunList: React.FC<CartonRunListProps> = ({ runs, printed, printingKey, onPrint, blocked }) => (
@@ -61,7 +62,7 @@ export const CartonRunList: React.FC<CartonRunListProps> = ({ runs, printed, pri
     {blocked.length > 0 ? (
       <ul className="mpo-carton-blocked">
         {blocked.map((packet) => (
-          <li key={packet.qrId} role="alert">
+          <li key={packet.eventId} role="alert">
             ⚠ {packet.cartonNote}
           </li>
         ))}
@@ -74,6 +75,7 @@ export const CartonRunList: React.FC<CartonRunListProps> = ({ runs, printed, pri
           <li key={run.key}>
             <span className="mpo-carton-what">{run.label}</span>
             <span className="mpo-carton-range">{copy.programOut.cartonPrinted(run.range)}</span>
+            <span className="mpo-carton-back">{copy.programOut.cartonBack(run.received, run.cartons)}</span>
           </li>
         ))}
       </ul>

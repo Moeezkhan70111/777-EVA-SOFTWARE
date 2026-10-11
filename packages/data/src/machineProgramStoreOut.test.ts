@@ -28,6 +28,8 @@ import {
   InMemoryEventBus,
   IssueRawMaterialScanUseCase,
   OpenMachineProgramForStoreOutUseCase,
+  ProcessScanUseCase,
+  ReceiveMachineProgramCartonUseCase,
   ReceiveRawMaterialScanUseCase,
   SaveMachineProgramBatchUseCase,
   SaveMachineProgramLineUseCase,
@@ -789,5 +791,167 @@ test("an upper with no colour still leaves the store, and says why its cartons c
     const packet = batch.packets![0];
     assert.equal(packet.cartons, null);
     assert.match(packet.cartonNote ?? "", /no colour on it/);
+  });
+});
+
+// ─── Printing the cartons, exactly once ───────────────────────────────────────
+// The carton list is read back from the events, so it outlives the screen, and a print is
+// recorded against each packet in the same transaction as the identities it reserves.
+
+test("printing labels the cartons a packet is owed — 1 DOZEN is 2 — and never offers them again", async () => {
+  await withFixture(async (f) => {
+    const { programId, blackQrs } = await readyProgram(f);
+    await f.saveBatch({ programId, qrIds: [blackQrs[0]] });
+    await f.saveBatch({ programId, qrIds: [blackQrs[1]] });
+
+    // Read fresh, as a program reopened tomorrow would be: two packets of 5 DOZEN, 10 cartons each.
+    const owed = f.db.listMachineProgramCartonPackets(programId);
+    assert.equal(owed.length, 2);
+    assert.deepEqual(owed.map((packet) => packet.cartons?.count), [10, 10]);
+    assert.ok(owed.every((packet) => packet.label === null));
+
+    const printed = f.db.printMachineProgramCartons({
+      programId, eventIds: owed.map((packet) => packet.eventId), printedBy: ACTOR, deviceId: "device-1",
+    });
+    // One run for one product and colour: 10 DOZEN of uppers out is 20 carton QR codes.
+    assert.equal(printed.qrCodes.length, 20);
+    assert.equal(printed.batch.color, "BLACK");
+    assert.equal(printed.batch.requestedBy, "MP-000001");
+
+    const after = f.db.listMachineProgramCartonPackets(programId);
+    assert.ok(after.every((packet) => packet.label?.qrBatchId === printed.batch.id));
+    assert.equal(after[0].label?.firstQrId, printed.qrCodes[0].id);
+
+    // A second print of the same packets — another terminal, a double click — is refused and
+    // reserves nothing.
+    const codesBefore = Number(f.raw.prepare("SELECT COUNT(*) AS n FROM qr_codes").get().n);
+    assert.throws(
+      () => f.db.printMachineProgramCartons({ programId, eventIds: [owed[0].eventId], printedBy: ACTOR, deviceId: "device-1" }),
+      /already printed/
+    );
+    assert.equal(Number(f.raw.prepare("SELECT COUNT(*) AS n FROM qr_codes").get().n), codesBefore);
+  });
+});
+
+test("a packet issued by the plain store scanner against a program is owed its cartons too", async () => {
+  await withFixture(async (f) => {
+    const { programId, redQrs } = await readyProgram(f);
+    const issued = await f.plainIssue(redQrs[0]);
+    assert.equal(issued.accepted, true, issued.reason);
+
+    const owed = f.db.listMachineProgramCartonPackets(programId);
+    assert.equal(owed.length, 1);
+    assert.equal(owed[0].cartons?.colour, "RED");
+    assert.equal(owed[0].cartons?.count, 10);
+  });
+});
+
+test("cartons that cannot be worked out, or two products at once, are refused without reserving anything", async () => {
+  await withFixture(async (f) => {
+    const { programId, blackQrs, redQrs } = await readyProgram(f);
+    await f.saveBatch({ programId, qrIds: [blackQrs[0], redQrs[0]] });
+    const owed = f.db.listMachineProgramCartonPackets(programId);
+
+    assert.throws(
+      () => f.db.printMachineProgramCartons({ programId, eventIds: owed.map((packet) => packet.eventId), printedBy: ACTOR, deviceId: "device-1" }),
+      /one product and colour at a time/
+    );
+    assert.throws(
+      () => f.db.printMachineProgramCartons({ programId, eventIds: ["not-an-issuance"], printedBy: ACTOR, deviceId: "device-1" }),
+      /no longer out for this program/
+    );
+    assert.equal(Number(f.raw.prepare("SELECT COUNT(*) AS n FROM machine_program_carton_labels").get().n), 0);
+    assert.equal(Number(f.raw.prepare("SELECT COUNT(*) AS n FROM qr_batches").get().n), 0);
+  });
+});
+
+// ─── Store In: the program's cartons coming back ──────────────────────────────
+// Each printed carton label is scanned in Store In against the program it was printed for: the
+// carton is produced AND stored in, in one transaction, through the same production and Store
+// Move In steps the other scanners use.
+
+const cartonIn = (f: Fixture) =>
+  new ReceiveMachineProgramCartonUseCase({
+    txManager: f.db, duplicateChecker: f.db, qrRegistry: f.db, productCatalog: f.db, qrMasterRepo: f.db,
+    productionEventsRepo: f.db, stockProjectionRepo: f.db, outboxRepo: f.db, qrLookupRepo: f.db, gatepassRepo: f.db,
+    storeEntryEventsRepo: f.db, cartonOriginRepo: f.db, eventPublisher: new InMemoryEventBus(), idGenerator: new UuidGenerator(),
+  });
+
+/** Issues one BLACK packet against the program and prints its 10 carton labels. */
+const printedCartons = async (f: Fixture, programId: string, packetQr: string): Promise<string[]> => {
+  await f.saveBatch({ programId, qrIds: [packetQr] });
+  const owed = f.db.listMachineProgramCartonPackets(programId).filter((packet) => !packet.label);
+  return f.db
+    .printMachineProgramCartons({ programId, eventIds: owed.map((packet) => packet.eventId), printedBy: ACTOR, deviceId: "device-1" })
+    .qrCodes.map((qr) => qr.id);
+};
+
+const cartonStatusOf = (f: Fixture, qrId: string): string | null =>
+  (f.raw.prepare("SELECT current_status AS s FROM qr_master WHERE qr_id = ?").get(qrId) as { s: string } | undefined)?.s ?? null;
+
+test("Store In scans a program's carton back: produced and stored in at once, and only once", async () => {
+  await withFixture(async (f) => {
+    const { programId, blackQrs } = await readyProgram(f);
+    const cartons = await printedCartons(f, programId, blackQrs[0]);
+    assert.equal(cartons.length, 10, "5 DOZEN out is 10 cartons");
+
+    const received = await cartonIn(f).execute({ programId, rawScan: cartons[0], context: CONTEXT, actor: ACTOR });
+    assert.equal(received.outcome, "RECEIVED", received.reason);
+    assert.equal(received.producedNow, true);
+    assert.equal(cartonStatusOf(f, cartons[0]), "WAREHOUSE");
+    // Both records exist — the production the reports count, and the store-in.
+    const events = f.raw.prepare("SELECT event_type FROM production_events WHERE qr_id = ? ORDER BY rowid").all(cartons[0]) as Array<{ event_type: string }>;
+    assert.deepEqual(events.map((event) => event.event_type), ["PRODUCED", "MOVED"]);
+    // The program shows how many of its cartons are back.
+    assert.equal(f.db.listMachineProgramCartonPackets(programId)[0].label?.receivedInRun, 1);
+
+    const again = await cartonIn(f).execute({ programId, rawScan: cartons[0], context: CONTEXT, actor: ACTOR });
+    assert.equal(again.outcome, "ALREADY_IN_STORE");
+    assert.equal((f.raw.prepare("SELECT COUNT(*) AS n FROM production_events WHERE qr_id = ?").get(cartons[0]) as { n: number }).n, 2);
+  });
+});
+
+test("a carton already scanned in Live Production is only stored in", async () => {
+  await withFixture(async (f) => {
+    const { programId, blackQrs } = await readyProgram(f);
+    const [carton] = await printedCartons(f, programId, blackQrs[0]);
+    const production = new ProcessScanUseCase({
+      txManager: f.db, duplicateChecker: f.db, qrRegistry: f.db, productCatalog: f.db, qrMasterRepo: f.db,
+      productionEventsRepo: f.db, stockProjectionRepo: f.db, outboxRepo: f.db,
+      eventPublisher: new InMemoryEventBus(), idGenerator: new UuidGenerator(),
+    });
+    assert.equal((await production.execute({ rawScan: carton, context: CONTEXT })).accepted, true);
+
+    const received = await cartonIn(f).execute({ programId, rawScan: carton, context: CONTEXT, actor: ACTOR });
+    assert.equal(received.outcome, "RECEIVED", received.reason);
+    assert.equal(received.producedNow, false);
+    assert.equal((f.raw.prepare("SELECT COUNT(*) AS n FROM production_events WHERE qr_id = ? AND event_type = 'PRODUCED'").get(carton) as { n: number }).n, 1);
+  });
+});
+
+test("a carton that is not this program's is refused by name and nothing is written", async () => {
+  await withFixture(async (f) => {
+    const { programId, blackQrs, redQrs } = await readyProgram(f);
+
+    // Another machine's program, with its own printed cartons.
+    await f.assignBoth(f.machine2.id, f.contractorA, f.contractorB);
+    const other = await f.program({ machineId: f.machine2.id, itemId: f.red, quantity: 10 });
+    assert.ok(other.programId);
+    const [otherCarton] = await printedCartons(f, other.programId, redQrs[0]);
+    await printedCartons(f, programId, blackQrs[0]);
+
+    const wrongProgram = await cartonIn(f).execute({ programId, rawScan: otherCarton, context: CONTEXT, actor: ACTOR });
+    assert.equal(wrongProgram.outcome, "OTHER_PROGRAM");
+    assert.match(wrongProgram.reason ?? "", /MP-000002/);
+    assert.equal(cartonStatusOf(f, otherCarton), null, "not produced, not stored");
+
+    // An ordinary QR Generator carton belongs to no program.
+    const [plain] = f.db.generateQrBatch({ articleSizeId: f.sk6_710, color: "BLACK", quantity: 1 }).qrCodes.map((qr) => qr.id);
+    const notOnProgram = await cartonIn(f).execute({ programId, rawScan: plain, context: CONTEXT, actor: ACTOR });
+    assert.equal(notOnProgram.outcome, "NOT_ON_PROGRAM");
+    assert.equal(cartonStatusOf(f, plain), null);
+
+    const rawMaterial = await cartonIn(f).execute({ programId, rawScan: blackQrs[1], context: CONTEXT, actor: ACTOR });
+    assert.equal(rawMaterial.outcome, "RAW_MATERIAL_NOT_SUPPORTED");
   });
 });
