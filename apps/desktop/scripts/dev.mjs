@@ -7,13 +7,12 @@ const root = process.cwd();
 const entry = path.join(root, "src", "renderer", "app", "main.tsx");
 const outdir = path.join(root, "dist", "renderer");
 
-const copyBrandingAssets = () => {
-  const sourceDir = path.join(root, "src", "renderer", "assets", "branding");
-  const targetDir = path.join(outdir, "assets", "branding");
-  fs.mkdirSync(targetDir, { recursive: true });
-  for (const file of ["correct.mp3", "error.mp3", "logo.png"]) {
-    const source = path.join(sourceDir, file);
-    if (fs.existsSync(source)) fs.copyFileSync(source, path.join(targetDir, file));
+// Same asset copy as build-renderer.mjs: the whole src/renderer/assets tree, so branding
+// sounds, the logo and machine artwork all resolve at "./assets/<folder>/<file>".
+const copyAssets = () => {
+  const assetsSrcDir = path.join(root, "src", "renderer", "assets");
+  if (fs.existsSync(assetsSrcDir)) {
+    fs.cpSync(assetsSrcDir, path.join(outdir, "assets"), { recursive: true });
   }
 };
 
@@ -43,11 +42,13 @@ const context = await esbuild.context({
     ".ts": "ts",
     ".tsx": "tsx",
     ".css": "css",
+    ".woff2": "dataurl",
+    ".woff": "dataurl",
   },
   plugins: [{
-    name: "copy-branding-assets",
+    name: "copy-assets",
     setup(build) {
-      build.onEnd(() => copyBrandingAssets());
+      build.onEnd(() => copyAssets());
     },
   }],
 });
@@ -58,7 +59,9 @@ console.log("Renderer watch active. Ctrl+R reloads the latest renderer build.");
 const electronCommand = process.platform === "win32"
   ? path.resolve(root, "..", "..", "node_modules", ".bin", "electron.cmd")
   : "electron";
-const electron = spawn(electronCommand, ["."], { stdio: "inherit", shell: true });
+// Quoted because shell: true runs the command through cmd.exe, which splits an unquoted
+// path on spaces (e.g. a Windows user folder such as "C:\Users\D E L L").
+const electron = spawn(`"${electronCommand}"`, ["."], { stdio: "inherit", shell: true });
 
 const shutdown = async () => {
   if (!electron.killed) electron.kill();
