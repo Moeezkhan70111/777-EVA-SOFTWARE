@@ -955,3 +955,187 @@ test("a carton that is not this program's is refused by name and nothing is writ
     assert.equal(rawMaterial.outcome, "RAW_MATERIAL_NOT_SUPPORTED");
   });
 });
+
+// ─── Dana Issue: a typed quantity, in the Dana's own unit ─────────────────────
+// Reported 2026-10-11: "Set how much one PACKET of DANA — BLUE holds before issuing it" — with no
+// screen to set it on. Dana is loose and never labelled, so it has no bag size to set: it goes out
+// as a quantity typed in its own unit (KG), or any unit on its ladder (BAG when 1 BAG = 25 KG).
+
+/** A DANA material in one colour, counted in `unitCode`, with `quantity` of it moved in by hand. */
+const danaWithStock = (f: Fixture, unitCode: string, quantity: number) => {
+  const unit = f.db.createInventoryUnit({ code: unitCode, name: unitCode, unitFamily: "COUNT" });
+  const dana = f.db.createInventoryCategory({ name: "DANA" });
+  f.db.addInventoryCategoryField({ categoryId: dana, fieldKey: "color", label: "COLOR", fieldType: "TEXT", required: true, sortOrder: 1 });
+  const { id } = f.db.createInventoryItem({ categoryId: dana, values: { color: "BLACK" }, unitId: unit });
+  const moved = f.db.moveRawMaterialByHand({ itemId: id, direction: "IN", quantity, unitCode, partyId: f.supplierA, actor: ACTOR });
+  assert.equal(moved.outcome, "MOVED", moved.reason);
+  return { id, unit };
+};
+
+const danaOnHand = (f: Fixture, itemId: string) => f.db.getRawMaterialHandMoveOptions(itemId, "OUT")!.quantityOnHand;
+
+test("Dana counted in KG is issued by typing KG — no bag size has to be set first", async () => {
+  await withFixture(async (f) => {
+    const { programId } = await readyProgram(f);
+    const { id } = danaWithStock(f, "KG", 20);
+
+    const option = f.db.listMachineProgramDanaOptions(programId).find((row) => row.itemId === id);
+    assert.ok(option, "BLACK Dana is offered to a program with a BLACK sole");
+    assert.deepEqual(option.units, ["KG"]);
+
+    const issued = f.db.issueMachineProgramDana({ programId, itemId: id, quantity: 7.5, unitCode: "KG", actor: ACTOR });
+    assert.equal(issued.outcome, "MOVED", issued.reason);
+    assert.equal(danaOnHand(f, id), 12.5);
+    // The program shows what has gone out for it so far.
+    assert.equal(f.db.listMachineProgramDanaOptions(programId).find((row) => row.itemId === id)?.issuedQuantity, 7.5);
+    // Stamped with the program it went out for.
+    assert.equal(f.db.listMachineProgramDanaIssues(programId)[0].quantity, 7.5);
+  });
+});
+
+test("with 1 BAG = 25 KG on its ladder, Dana can be issued in BAG or in KG", async () => {
+  await withFixture(async (f) => {
+    const { programId } = await readyProgram(f);
+    const { id, unit: kg } = danaWithStock(f, "KG", 100);
+    const bag = f.db.createInventoryUnit({ code: "BAG", name: "Bag", unitFamily: "COUNT" });
+    f.db.setInventoryItemUnitLadder({ itemId: id, steps: [{ fromUnitId: bag, toUnitId: kg, factor: 25 }] });
+
+    assert.deepEqual(f.db.listMachineProgramDanaOptions(programId).find((row) => row.itemId === id)?.units, ["BAG", "KG"]);
+    const bags = f.db.issueMachineProgramDana({ programId, itemId: id, quantity: 2, unitCode: "BAG", actor: ACTOR });
+    assert.equal(bags.outcome, "MOVED", bags.reason);
+    assert.equal(danaOnHand(f, id), 50, "2 BAG is 50 KG");
+    const kgToo = f.db.issueMachineProgramDana({ programId, itemId: id, quantity: 5, unitCode: "KG", actor: ACTOR });
+    assert.equal(kgToo.outcome, "MOVED", kgToo.reason);
+    // Issued so far adds BAG and KG issues up in the stock unit: 50 + 5 KG.
+    assert.equal(f.db.listMachineProgramDanaOptions(programId).find((row) => row.itemId === id)?.issuedQuantity, 55);
+  });
+});
+
+test("more Dana than the store holds is refused by name, and nothing moves", async () => {
+  await withFixture(async (f) => {
+    const { programId } = await readyProgram(f);
+    const { id } = danaWithStock(f, "KG", 20);
+
+    const refused = f.db.issueMachineProgramDana({ programId, itemId: id, quantity: 25, unitCode: "KG", actor: ACTOR });
+    assert.equal(refused.outcome, "NOT_ENOUGH_STOCK");
+    assert.match(refused.reason ?? "", /Only 20 KG/);
+    assert.equal(danaOnHand(f, id), 20);
+
+    const nothing = f.db.issueMachineProgramDana({ programId, itemId: id, quantity: 0, unitCode: "KG", actor: ACTOR });
+    assert.equal(nothing.outcome, "INVALID_QUANTITY");
+  });
+});
+
+test("Dana is never labelled: generating raw material QR codes for it is refused", async () => {
+  await withFixture(async (f) => {
+    const dana = f.db.createInventoryCategory({ name: "DANA" });
+    f.db.addInventoryCategoryField({ categoryId: dana, fieldKey: "color", label: "COLOR", fieldType: "TEXT", required: true, sortOrder: 1 });
+    const { id } = f.db.createInventoryItem({ categoryId: dana, values: { color: "BLACK" }, unitId: f.unitId });
+
+    assert.throws(
+      () => f.db.generateRawMaterialQrBatch({ partyId: f.supplierA, itemId: id, quantity: 4, packingQuantity: 25 }),
+      /is Dana, and Dana is not labelled/
+    );
+    const labels = f.raw.prepare("SELECT COUNT(*) AS n FROM raw_material_qrs WHERE item_id = ?").get(id) as { n: number };
+    assert.equal(labels.n, 0);
+  });
+});
+
+test("Store In counts each upper's cartons: due for what was issued, and how many are back", async () => {
+  await withFixture(async (f) => {
+    const { programId, blackQrs } = await readyProgram(f);
+    const cartons = await printedCartons(f, programId, blackQrs[0]);
+    for (const carton of cartons.slice(0, 3)) {
+      const received = await cartonIn(f).execute({ programId, rawScan: carton, context: CONTEXT, actor: ACTOR });
+      assert.equal(received.outcome, "RECEIVED", received.reason);
+    }
+
+    const progress = f.db.listMachineProgramCartonProgress(programId);
+    const black = progress.find((row) => row.lineId === f.lineFor(programId, f.black).id);
+    const red = progress.find((row) => row.lineId === f.lineFor(programId, f.red).id);
+    // 5 DOZEN of BLACK went out: 10 cartons are due, 3 of them are back.
+    assert.deepEqual({ due: black?.cartonsDue, back: black?.cartonsBack }, { due: 10, back: 3 });
+    // Nothing of RED has gone out, so nothing is due and nothing is back.
+    assert.deepEqual({ due: red?.cartonsDue, back: red?.cartonsBack }, { due: 0, back: 0 });
+  });
+});
+
+// ─── Completing a program: complete, or reconciled ────────────────────────────
+// 4 DOZEN out is 8 cartons due. All 8 back closes it COMPLETE; 7 back leaves 1 carton = 6 uppers
+// that must each be accounted for as cut size, wastage (claimed to the supplier) or lost (claimed
+// to the machine or packing contractor), every claim with a reason — and the admins are told.
+
+/** Issues one BLACK packet (5 DOZEN = 10 cartons), prints its labels and stores `back` of them in. */
+const programWithCartonsBack = async (f: Fixture, back: number) => {
+  const { programId, blackQrs } = await readyProgram(f);
+  const cartons = await printedCartons(f, programId, blackQrs[0]);
+  for (const carton of cartons.slice(0, back)) {
+    const received = await cartonIn(f).execute({ programId, rawScan: carton, context: CONTEXT, actor: ACTOR });
+    assert.equal(received.outcome, "RECEIVED", received.reason);
+  }
+  return { programId, cartons, blackLine: f.lineFor(programId, f.black).id };
+};
+
+const noClaim = { wastage: 0, wastagePartyId: null, wastageReason: "", lost: 0, lostParty: null, lostReason: "" };
+
+test("every carton back: the program closes COMPLETE, and what was never issued is released", async () => {
+  await withFixture(async (f) => {
+    f.db.bootstrapFirstAdmin("owner", "Password123");
+    const { programId } = await programWithCartonsBack(f, 10);
+
+    const view = f.db.getMachineProgramReconciliation(programId)!;
+    assert.deepEqual({ due: view.cartonsDue, back: view.cartonsBack }, { due: 10, back: 10 });
+    assert.ok(view.lines.every((line) => line.shortfallUppers === 0));
+
+    const reservedBlack = () => f.db.listMachineProgramUppers(f.machine1.id, f.sk6_710).find((upper) => upper.itemId === f.black)?.reserved;
+    assert.equal(reservedBlack(), 95, "100 DOZEN planned, 5 issued: 95 still held for the program");
+
+    const closed = f.db.completeMachineProgramProduction({ programId, entries: [], closedBy: ACTOR, deviceId: "device-1" });
+    assert.equal(closed.outcome, "COMPLETE");
+    assert.equal(f.db.getMachineProgram(programId)?.status, "COMPLETED");
+    // The 95 DOZEN planned and never issued are free stock again.
+    assert.equal(reservedBlack(), 0);
+    assert.equal(f.db.isMachineProgramClosed(programId), true);
+    // Nothing claimed, so nobody is notified.
+    assert.equal(f.raw.prepare("SELECT COUNT(*) AS n FROM user_notifications WHERE kind = 'MACHINE_PROGRAM_RECONCILED'").get().n, 0);
+    assert.throws(() => f.db.completeMachineProgramProduction({ programId, entries: [], closedBy: ACTOR, deviceId: "device-1" }), /already closed/);
+  });
+});
+
+test("cartons short: every missing upper is accounted for, claims carry reasons, and the admins are told", async () => {
+  await withFixture(async (f) => {
+    f.db.bootstrapFirstAdmin("owner", "Password123");
+    const { programId, blackLine, cartons } = await programWithCartonsBack(f, 9);
+    const line = f.db.getMachineProgramReconciliation(programId)!.lines.find((row) => row.lineId === blackLine)!;
+    assert.equal(line.shortfallUppers, 6, "1 carton short is 6 uppers");
+    assert.deepEqual(line.suppliers.map((supplier) => supplier.name), ["ABC UPPER"]);
+
+    const close = (entry: Record<string, unknown>) =>
+      f.db.completeMachineProgramProduction({ programId, entries: [{ lineId: blackLine, ...noClaim, cutSize: 0, ...entry }], closedBy: ACTOR, deviceId: "device-1" });
+    assert.throws(() => f.db.completeMachineProgramProduction({ programId, entries: [], closedBy: ACTOR, deviceId: "device-1" }), /Account for the 6 missing uppers/);
+    assert.throws(() => close({ cutSize: 4 }), /2 of the 6 missing uppers/);
+    assert.throws(() => close({ cutSize: 4, wastage: 2, wastagePartyId: f.supplierA }), /needs a reason/);
+    assert.throws(() => close({ cutSize: 4, wastage: 2, wastagePartyId: f.contractorA, wastageReason: "torn" }), /supplier whose uppers went out/);
+    assert.equal(f.db.isMachineProgramClosed(programId), false, "a refused close writes nothing");
+
+    const closed = close({
+      cutSize: 4,
+      wastage: 1, wastagePartyId: f.supplierA, wastageReason: "torn upper",
+      lost: 1, lostParty: "PACKING", lostReason: "not found at packing",
+    });
+    assert.equal(closed.outcome, "RECONCILED");
+    const saved = f.db.getMachineProgramReconciliation(programId)!.lines.find((row) => row.lineId === blackLine)!.saved!;
+    assert.deepEqual(
+      { cut: saved.cutSize, wastage: saved.wastage, supplier: saved.wastagePartyName, lost: saved.lost, to: saved.lostPartyName },
+      { cut: 4, wastage: 1, supplier: "ABC UPPER", lost: 1, to: "CONTRACTOR B" }
+    );
+    const notice = f.raw.prepare("SELECT title, message FROM user_notifications WHERE kind = 'MACHINE_PROGRAM_RECONCILED'").get() as { title: string; message: string };
+    assert.equal(notice.title, "Uppers claimed on MP-000001");
+    assert.match(notice.message, /claimed to ABC UPPER — "torn upper"/);
+    assert.match(notice.message, /claimed to CONTRACTOR B — "not found at packing"/);
+
+    // Closed means final: the last carton can no longer be stored in against it.
+    const late = await cartonIn(f).execute({ programId, rawScan: cartons[9], context: CONTEXT, actor: ACTOR });
+    assert.equal(late.outcome, "PROGRAM_CLOSED");
+  });
+});

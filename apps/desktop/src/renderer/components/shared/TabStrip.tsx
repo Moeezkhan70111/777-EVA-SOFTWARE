@@ -15,7 +15,8 @@ export interface TabStripItem<T extends string> {
 
 interface TabStripProps<T extends string> {
   items: TabStripItem<T>[];
-  active: T;
+  /** The selected tab, or null when none is — the page is showing something else in their place. */
+  active: T | null;
   onSelect: (id: T) => void;
   /** Names the strip for screen readers, e.g. "Raw material sections". */
   label: string;
@@ -39,7 +40,8 @@ export function TabStrip<T extends string>({ items, active, onSelect, label }: T
             type="button"
             role="tab"
             aria-selected={selected}
-            tabIndex={selected ? 0 : -1}
+            // With nothing selected the first tab takes the focus, so the strip is never unreachable.
+            tabIndex={selected || (active === null && index === 0) ? 0 : -1}
             className={`tab-strip-btn${selected ? " is-active" : ""}`}
             onClick={() => onSelect(item.id)}
             onKeyDown={(event) => {

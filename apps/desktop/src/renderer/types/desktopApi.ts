@@ -1396,7 +1396,7 @@ export interface DesktopApi {
   listMachineProgramCartonPackets(
     programId: string,
     opts?: { token?: string }
-  ): Promise<{ accepted: boolean; reason?: string; rows: MachineProgramCartonPacket[] }>;
+  ): Promise<{ accepted: boolean; reason?: string; rows: MachineProgramCartonPacket[]; progress: MachineProgramLineCartons[] }>;
   /** Generates the carton QR labels for these packets and records them as labelled, exactly once. */
   printMachineProgramCartons(
     input: { programId: string; eventIds: string[] },
@@ -1407,6 +1407,16 @@ export interface DesktopApi {
     input: { programId: string; rawScan: string },
     opts?: { token?: string }
   ): Promise<MachineProgramCartonInResult>;
+  /** How a program stands against the cartons back: due, back and missing uppers per line, and how it closed. */
+  getMachineProgramReconciliation(
+    programId: string,
+    opts?: { token?: string }
+  ): Promise<{ accepted: boolean; reason?: string; reconciliation?: MachineProgramReconciliation }>;
+  /** Complete Program: COMPLETE when every carton is back, otherwise RECONCILED with every missing upper accounted for. */
+  completeMachineProgramProduction(
+    input: { programId: string; entries: ReconciliationEntryInput[] },
+    opts?: { token?: string }
+  ): Promise<{ accepted: boolean; reason?: string; closure?: MachineProgramClosure }>;
   /** Every Dana the store holds in a sole colour this program runs. */
   listMachineProgramDanaOptions(
     programId: string,
@@ -1414,7 +1424,7 @@ export interface DesktopApi {
   ): Promise<{ accepted: boolean; rows: MachineProgramDanaOption[] }>;
   /** Issues whole bags of one Dana out of the store for a program. Moves stock. */
   issueMachineProgramDana(
-    input: { programId: string; itemId: string; bags: number },
+    input: { programId: string; itemId: string; quantity: number; unitCode: string },
     opts?: { token?: string }
   ): Promise<MachineProgramDanaIssueResult>;
   /** Every Dana issue already made for a program, newest first. */
@@ -2539,14 +2549,13 @@ export interface MachineProgramDanaOption {
   colour: string;
   /** EVA, PVC — what tells two Danas of one colour apart. */
   subCategoryName: string;
-  packName: string;
-  /** One bag in the unit stock is counted in, or null when the material has no packing set. */
-  packSize: number | null;
-  packingUnitCode: string | null;
+  /** The units a quantity of it can be typed in: its ladder (BAG, KG), or just its stock unit. */
+  units: string[];
+  /** The unit its stock is counted in, or null while it has none. */
   stockUnitCode: string | null;
-  quantityOnHand: number;
-  bagsOnHand: number;
-  /** Why it cannot be issued by typing a count (labelled packets), or null when it can. */
+  /** How much of it has gone out for THIS program so far, in its stock unit. */
+  issuedQuantity: number;
+  /** Why it cannot be issued by typing a quantity (labelled packets), or null when it can. */
   blockedReason: string | null;
 }
 
@@ -2585,6 +2594,72 @@ export interface MachineProgramCartonLabel {
 }
 
 /** What Store In's Carton In scan answers. `outcome` is the main process's verdict, named. */
+/** Who a LOST upper is claimed against: the machine contractor, or the packing contractor. */
+export type ReconciliationLossParty = "MACHINE" | "PACKING";
+
+/** What the store says became of one upper line's missing uppers — counted in UPPERS (pairs). */
+export interface ReconciliationEntryInput {
+  lineId: string;
+  /** Came back to the store. */
+  cutSize: number;
+  /** Damaged — claimed to the upper's supplier. */
+  wastage: number;
+  wastagePartyId: string | null;
+  wastageReason: string;
+  /** Lost on the floor — claimed to the machine or the packing contractor. */
+  lost: number;
+  lostParty: ReconciliationLossParty | null;
+  lostReason: string;
+}
+
+export interface ReconciliationParty {
+  partyId: string;
+  name: string;
+}
+
+/** One upper line of a program, as the reconciliation reads it. */
+export interface ReconciliationLine {
+  lineId: string;
+  itemId: string;
+  upperName: string;
+  article: string;
+  size: string;
+  soleColour: string;
+  upperColour: string;
+  /** Null when the upper is not counted in whole cartons of DOZEN. */
+  cartonsDue: number | null;
+  cartonsBack: number;
+  /** The missing cartons, as uppers: 1 carton = 6. */
+  shortfallUppers: number;
+  /** Suppliers whose packets of this upper went out for the program. */
+  suppliers: ReconciliationParty[];
+  /** What was recorded at closing, or null while open. */
+  saved:
+    | (Omit<ReconciliationEntryInput, "lineId"> & { wastagePartyName: string | null; lostPartyName: string | null })
+    | null;
+}
+
+export interface MachineProgramClosure {
+  outcome: "COMPLETE" | "RECONCILED";
+  cartonsDue: number;
+  cartonsBack: number;
+  closedBy: string;
+  closedAt: string;
+}
+
+export interface MachineProgramReconciliation {
+  programId: string;
+  code: string;
+  closure: MachineProgramClosure | null;
+  machineContractor: ReconciliationParty | null;
+  packingContractor: ReconciliationParty | null;
+  lines: ReconciliationLine[];
+  cartonsDue: number;
+  cartonsBack: number;
+  /** Why the program cannot be completed here at all, or null. */
+  blockedReason: string | null;
+}
+
 export interface MachineProgramCartonInResult {
   accepted: boolean;
   outcome: string;
@@ -2596,6 +2671,15 @@ export interface MachineProgramCartonInResult {
   /** True when this scan was also the carton's production scan. */
   producedNow?: boolean;
   receivedAt?: string;
+}
+
+/** One upper line's cartons, as Store In counts them coming back. */
+export interface MachineProgramLineCartons {
+  lineId: string;
+  /** Cartons owed for what has been issued of this upper (3 DOZEN out = 6), or null when not in whole cartons. */
+  cartonsDue: number | null;
+  /** Cartons of this line's printed labels that have been stored in. */
+  cartonsBack: number;
 }
 
 /** One packet of uppers out for a program, and the cartons it is owed back (1 DOZEN = 2 cartons). */

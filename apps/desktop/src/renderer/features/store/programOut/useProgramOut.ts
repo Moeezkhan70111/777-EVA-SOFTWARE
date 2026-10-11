@@ -8,7 +8,9 @@ import type {
   IssuedProgramPacket,
   MachineProgramCartonPacket,
   MachineProgramIssueBatchRow,
+  MachineProgramLineCartons,
   MachineProgramRecord,
+  QrCodeRow,
   SaveMachineProgramBatchResult,
 } from "../../../types/desktopApi";
 import type { ScanStationFeedback } from "../../scanStation/scanStation";
@@ -60,6 +62,8 @@ export interface ProgramOutState {
   printedRuns: PrintedCartonRun[];
   /** Unlabelled packets whose cartons cannot be worked out, with the reason. */
   blockedCartons: MachineProgramCartonPacket[];
+  /** Per upper line: cartons due back for what was issued, and how many are back (Store In). */
+  cartonProgress: MachineProgramLineCartons[];
   /** The run being generated right now, by key. */
   printingKey: string | null;
   /** Every packet ever issued against this program, read back from the event log. */
@@ -70,6 +74,8 @@ export interface ProgramOutState {
   close: () => void;
   scan: (rawScan: string) => Promise<void>;
   printCartons: (run: CartonRun) => Promise<void>;
+  /** Prints an already-printed run's labels again, with the same QR codes. */
+  reprintCartons: (run: PrintedCartonRun) => Promise<void>;
   reload: () => Promise<void>;
 }
 
@@ -78,6 +84,22 @@ interface UseProgramOutInput {
   /** The terminal's open Raw Material Output session, so the packets print on its issue slip. */
   sessionId: string | null;
 }
+
+/**
+ * Opens the print window for one carton run's labels — the first print and every reprint alike,
+ * so a reprinted label can never look different from the one it replaces.
+ */
+const openCartonRunLabels = (what: string, codes: Pick<QrCodeRow, "id" | "article" | "color" | "size">[], programCode: string): boolean => {
+  const ids = codes.map((code) => code.id);
+  const range = ids.length === 1 ? ids[0] : `${ids[0]} → ${ids[ids.length - 1]}`;
+  return openCartonLabelPrintWindow({
+    title: `Carton QR — ${what}`,
+    heading: what,
+    subheading: `${range} · ${copy.programOut.cartonCount(ids.length)} · ${programCode}`,
+    identity: { article: codes[0].article, color: codes[0].color, size: codes[0].size },
+    ids,
+  });
+};
 
 export const useProgramOut = ({ token, sessionId }: UseProgramOutInput): ProgramOutState => {
   const api = useDesktopApi();
@@ -91,6 +113,7 @@ export const useProgramOut = ({ token, sessionId }: UseProgramOutInput): Program
   const [feedback, setFeedback] = useState<ScanStationFeedback>(IDLE_FEEDBACK);
   const [issued, setIssued] = useState<IssuedProgramPacket[]>([]);
   const [cartonPackets, setCartonPackets] = useState<MachineProgramCartonPacket[]>([]);
+  const [cartonProgress, setCartonProgress] = useState<MachineProgramLineCartons[]>([]);
   const [printingKey, setPrintingKey] = useState<string | null>(null);
   const [history, setHistory] = useState<MachineProgramIssueBatchRow[]>([]);
 
@@ -109,6 +132,7 @@ export const useProgramOut = ({ token, sessionId }: UseProgramOutInput): Program
       ]);
       setHistory(batches.accepted ? batches.rows : []);
       setCartonPackets(cartons.accepted ? cartons.rows : []);
+      setCartonProgress(cartons.accepted ? (cartons.progress ?? []) : []);
       if (!cartons.accepted) setError(cartons.reason ?? copy.states.loadFailedBody);
     },
     [api, token]
@@ -133,6 +157,7 @@ export const useProgramOut = ({ token, sessionId }: UseProgramOutInput): Program
         setIssueBlockedReason(result.accepted ? null : (result.reason ?? null));
         setIssued([]);
         setCartonPackets([]);
+        setCartonProgress([]);
         setFeedback(IDLE_FEEDBACK);
         await loadHistory(result.program.id);
         return true;
@@ -163,6 +188,7 @@ export const useProgramOut = ({ token, sessionId }: UseProgramOutInput): Program
     setIssueBlockedReason(null);
     setIssued([]);
     setCartonPackets([]);
+    setCartonProgress([]);
     setError(null);
     setFeedback(IDLE_FEEDBACK);
     setHistory([]);
@@ -238,17 +264,9 @@ export const useProgramOut = ({ token, sessionId }: UseProgramOutInput): Program
           return;
         }
 
-        const ids = result.qrCodes.map((code) => code.id);
-        const range = ids.length === 1 ? ids[0] : `${ids[0]} → ${ids[ids.length - 1]}`;
-        const opened = openCartonLabelPrintWindow({
-          title: `Carton QR — ${what}`,
-          heading: what,
-          subheading: `${range} · ${copy.programOut.cartonCount(ids.length)} · ${program.code}`,
-          identity: { article: result.batch.article, color: result.batch.color, size: result.batch.size },
-          ids,
-        });
+        const opened = openCartonRunLabels(what, result.qrCodes, program.code);
         if (!opened) push("error", copy.toast.popupBlocked, copy.programOut.cartonBlocked);
-        else push("success", copy.programOut.cartonPrintedTitle, copy.programOut.cartonPrintedBody(ids.length, what));
+        else push("success", copy.programOut.cartonPrintedTitle, copy.programOut.cartonPrintedBody(result.qrCodes.length, what));
       } catch (caught) {
         push("error", copy.programOut.cartonFailedTitle, caught instanceof Error ? caught.message : copy.states.loadFailedBody);
       } finally {
@@ -258,6 +276,36 @@ export const useProgramOut = ({ token, sessionId }: UseProgramOutInput): Program
       }
     },
     [api, loadHistory, printingKey, program, push, token]
+  );
+
+  /**
+   * Prints a run's carton labels AGAIN — a label torn, smudged or lost before the carton came back.
+   *
+   * The same QR codes, read back from the run they were generated in: nothing is generated and
+   * nothing is recorded, so a reprinted label IS the carton it always was, and scanning the
+   * original and the reprint can only ever store that one carton in once. A code voided in QR
+   * Management is left out — it no longer names a carton.
+   */
+  const reprintCartons = useCallback(
+    async (run: PrintedCartonRun) => {
+      if (printingKey || !program) return;
+      setPrintingKey(run.key);
+      try {
+        const codes = (await api.listQrCodesForBatch(run.qrBatchId)).filter((code) => code.status !== "VOID");
+        if (codes.length === 0) {
+          push("error", copy.programOut.cartonFailedTitle, copy.programOut.cartonReprintNone);
+          return;
+        }
+        const opened = openCartonRunLabels(run.label, codes, program.code);
+        if (!opened) push("error", copy.toast.popupBlocked, copy.programOut.cartonBlocked);
+        else push("success", copy.programOut.cartonReprintedTitle, copy.programOut.cartonReprintedBody(codes.length, run.label));
+      } catch (caught) {
+        push("error", copy.programOut.cartonFailedTitle, caught instanceof Error ? caught.message : copy.states.loadFailedBody);
+      } finally {
+        setPrintingKey(null);
+      }
+    },
+    [api, printingKey, program, push]
   );
 
   const cartonRuns = useMemo(() => pendingCartonRuns(cartonPackets), [cartonPackets]);
@@ -294,12 +342,14 @@ export const useProgramOut = ({ token, sessionId }: UseProgramOutInput): Program
     cartonRuns,
     printedRuns,
     blockedCartons,
+    cartonProgress,
     printingKey,
     history,
     open,
     close,
     scan,
     printCartons,
+    reprintCartons,
     reload,
   };
 };

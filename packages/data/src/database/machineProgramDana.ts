@@ -1,39 +1,42 @@
 // Dana issued out of the store FOR a machine program.
 //
 //   MP-000008 runs a BLACK sole  ->  which BLACK Danas does the store hold?
-//                                ->  3 BAGS of EVA BLACK leave, stamped MP-000008
+//                                ->  50 KG of EVA BLACK leaves, stamped MP-000008
 //
 // Dana is what a sole is MOULDED FROM, and a program has never reserved it: there is no
 // allocation to consume and no outstanding quantity, only "this program runs these sole
-// colours, and today these bags went out for it". That is why nothing here looks at
+// colours, and today this much went out for it". That is why nothing here looks at
 // machine_program_upper_lines and nothing here computes a remaining figure.
+//
+// Dana is never labelled (owner, 2026-10-11): it comes in loose and goes out by a TYPED QUANTITY,
+// in its own unit — KG, or any unit on its ladder (BAG when "1 BAG = 25 KG" is set). There is no
+// bag size to configure first and no stock shown first: the operator types what is going out.
 //
 // These methods are merged onto SqliteDatabase (see sqliteDatabase.ts, "Feature modules").
 //
 // THE ISSUE ITSELF IS NOT WRITTEN HERE. It goes through moveRawMaterialByHand — the one path a
 // typed quantity leaves the raw material store by — so Dana Issue inherits every rule that
-// already guards it, including the one that matters most: a material with LABELLED PACKETS in
-// the store cannot go out by typing a count, because the balance and the packets would then
-// disagree with nothing to say which is right. Those bags are scanned out instead.
+// already guards it: the unit conversion along the material's ladder, the refusal of more than
+// the store holds, and the refusal of a material whose packets carry labels (which are scanned).
 
 import type { SqliteDatabase } from "../sqliteDatabase.js";
 import type { MachineProgramDanaOption, RawMaterialHandMoveResult } from "./types.js";
-import { RAW_MATERIAL_KIND, attributeKey, bagsFromBalance } from "@erp/domain";
-import { EFFECTIVE_PACK_NAME_SQL } from "./shared.js";
+import { RAW_MATERIAL_KIND, attributeKey, roundQuantity } from "@erp/domain";
 import { COLOUR_SQL, KIND_JOINS, KIND_SQL } from "./machineProgramSql.js";
 
 const text = (value: unknown): string => (value == null ? "" : String(value));
 
 export const machineProgramDanaMethods = {
   /**
-   * Every Dana the store holds in the SOLE COLOURS this program runs.
+   * Every Dana the store holds in the SOLE COLOURS this program runs, with the units it can be
+   * issued in.
    *
    * The colours come from the program's own runs, so a program that moulds only BLACK soles
    * offers only BLACK Dana — the upper colours on it are not Dana and are deliberately not
    * offered (owner, 2026-10-11).
    *
    * One row per MATERIAL, never per colour: the store can hold EVA BLACK and PVC BLACK at once,
-   * and "3 bags of BLACK" would not say which left. The operator picks the material.
+   * and "50 KG of BLACK" would not say which left. The operator picks the material.
    */
   listMachineProgramDanaOptions(this: SqliteDatabase, programId: string): MachineProgramDanaOption[] {
     const program = this.getMachineProgram(text(programId).trim());
@@ -45,64 +48,57 @@ export const machineProgramDanaMethods = {
     const placeholders = colours.map(() => "?").join(", ");
     const rows = this.db
       .prepare(
-        `SELECT ii.id, ii.display_name, ii.packing_quantity, ii.packing_unit_id,
-                ic.name AS sub_category_name, ${EFFECTIVE_PACK_NAME_SQL} AS pack_name,
-                ${COLOUR_SQL} AS colour,
-                pu.code AS packing_unit_code,
-                b.quantity_on_hand, b.unit_id AS stock_unit_id,
-                su.code AS stock_unit_code
+        `SELECT ii.id, ii.display_name, ic.name AS sub_category_name, ${COLOUR_SQL} AS colour
            FROM inventory_items ii
            ${KIND_JOINS}
            JOIN inventory_categories ic ON ic.id = ii.category_id
-           LEFT JOIN inventory_units pu ON pu.id = ii.packing_unit_id
-           LEFT JOIN inventory_stock_balances b ON b.item_id = ii.id
-           LEFT JOIN inventory_units su ON su.id = b.unit_id
           WHERE ii.status = 'ACTIVE' AND ${KIND_SQL} = ?
             AND UPPER(TRIM(${COLOUR_SQL})) IN (${placeholders})
           ORDER BY UPPER(TRIM(${COLOUR_SQL})), ii.display_name`
       )
       .all(RAW_MATERIAL_KIND.DANA, ...colours) as Array<Record<string, unknown>>;
 
+    // How much of each Dana has gone out for THIS program so far: its stock movements stamped with
+    // the program (migration 065). They are kept in the material's stock unit and are negative as
+    // they leave, so the sum turned round is what was issued — net of anything that came back.
+    const issued = new Map(
+      (this.db
+        .prepare(
+          `SELECT item_id, -SUM(quantity) AS issued FROM inventory_stock_events
+            WHERE machine_program_id = ? GROUP BY item_id`
+        )
+        .all(program.id) as Array<{ item_id: string; issued: number }>).map((row) => [text(row.item_id), Number(row.issued ?? 0)])
+    );
+
     return rows.map((row) => {
       const itemId = text(row.id);
-      const quantityOnHand = Number(row.quantity_on_hand ?? 0);
-      const packSize = this.packSizeInStockUnit(
-        row.packing_quantity == null ? null : Number(row.packing_quantity),
-        row.packing_unit_id ? text(row.packing_unit_id) : null,
-        row.stock_unit_id ? text(row.stock_unit_id) : null
-      );
-      // The same refusals the Move Out by Hand panel shows, read here so the screen can grey the
-      // row and say why BEFORE the operator types a number into it.
+      // The same units and refusals the Move Out by Hand panel works from, so the two can never
+      // disagree about what a quantity of this Dana means.
       const options = this.getRawMaterialHandMoveOptions(itemId, "OUT");
       return {
         itemId,
         displayName: text(row.display_name),
         colour: attributeKey(text(row.colour)),
         subCategoryName: text(row.sub_category_name),
-        packName: text(row.pack_name).trim().toUpperCase() || "BAG",
-        /** One bag expressed in the unit stock is counted in, or null when it has no packing. */
-        packSize,
-        packingUnitCode: row.packing_unit_code ? text(row.packing_unit_code) : null,
-        stockUnitCode: row.stock_unit_code ? text(row.stock_unit_code) : null,
-        quantityOnHand,
-        /** Whole bags on the shelf. A part bag is not a bag anybody can carry, so it is floored. */
-        bagsOnHand: bagsFromBalance(quantityOnHand, packSize),
+        units: options?.units ?? [],
+        stockUnitCode: options?.stockUnitCode ?? null,
+        issuedQuantity: roundQuantity(issued.get(itemId) ?? 0),
         blockedReason: options?.blockedReason ?? null,
       };
     });
   },
 
   /**
-   * Issues whole bags of one Dana out of the store for a program.
+   * Issues a typed quantity of one Dana out of the store for a program.
    *
-   * Bags are turned into the material's own quantity HERE, where the pack size lives, and the
-   * movement itself is handed to moveRawMaterialByHand so there is exactly one place a typed
-   * quantity leaves the raw material store. The program id rides along and is stamped on the
-   * stock event (migration 065), which is what makes the issue traceable to this document.
+   * The movement is handed to moveRawMaterialByHand so there is exactly one place a typed
+   * quantity leaves the raw material store — it converts the unit and refuses more than is
+   * there. The program id rides along and is stamped on the stock event (migration 065), which is
+   * what makes the issue traceable to this document.
    */
   issueMachineProgramDana(
     this: SqliteDatabase,
-    input: { programId: string; itemId: string; bags: number; actor?: string | null }
+    input: { programId: string; itemId: string; quantity: number; unitCode: string; actor?: string | null }
   ): RawMaterialHandMoveResult {
     const refuse = (outcome: RawMaterialHandMoveResult["outcome"], reason: string): RawMaterialHandMoveResult => ({
       accepted: false,
@@ -110,13 +106,16 @@ export const machineProgramDanaMethods = {
       reason,
     });
 
-    const bags = Number(input.bags);
-    if (!Number.isInteger(bags) || bags <= 0) {
-      return refuse("INVALID_QUANTITY", "Type how many bags are going out — a whole number above 0.");
+    const quantity = Number(input.quantity);
+    if (!Number.isFinite(quantity) || quantity <= 0) {
+      return refuse("INVALID_QUANTITY", "Type how much Dana is going out — a number above 0.");
     }
 
     const program = this.getMachineProgram(text(input.programId).trim());
     if (!program) return refuse("NOT_FOUND", "This machine program no longer exists.");
+    if (this.isMachineProgramClosed(program.id)) {
+      return refuse("NOT_ELIGIBLE", `${program.code} is closed — production is complete, so no more Dana goes out for it.`);
+    }
     if (program.status === "CANCELLED") {
       return refuse("NOT_ELIGIBLE", `${program.code} has been deleted. Nothing can be issued against it.`);
     }
@@ -128,19 +127,17 @@ export const machineProgramDanaMethods = {
       return refuse("NOT_ELIGIBLE", `That Dana is not one of the sole colours ${program.code} runs.`);
     }
     if (option.blockedReason) return refuse("HAS_LABELLED_PACKETS", option.blockedReason);
-    if (option.packSize == null || option.packSize <= 0) {
-      return refuse("NOT_ELIGIBLE", `Set how much one ${option.packName} of ${option.displayName} holds before issuing it.`);
-    }
     if (!option.stockUnitCode) {
-      return refuse("NOT_ELIGIBLE", `${option.displayName} has no stock in the store yet.`);
+      return refuse("NOT_ELIGIBLE", `${option.displayName} has no stock in the store yet. Move it in by hand on Store In first.`);
     }
+    const unitCode = text(input.unitCode).trim().toUpperCase() || option.stockUnitCode;
 
     return this.moveRawMaterialByHand({
       itemId: option.itemId,
       direction: "OUT",
-      quantity: bags * option.packSize,
-      unitCode: option.stockUnitCode,
-      note: `Dana for ${program.code} — ${bags} ${option.packName}${bags === 1 ? "" : "S"}`,
+      quantity,
+      unitCode,
+      note: `Dana for ${program.code} — ${quantity} ${unitCode}`,
       actor: input.actor ?? null,
       machineProgramId: program.id,
     });

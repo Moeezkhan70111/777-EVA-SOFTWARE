@@ -142,6 +142,36 @@ export const useChosenUppers = (target: AddToProgram) => {
   }, []);
 
   /**
+   * Saves what each article's work is paid at onto the program, once the article is on it.
+   *
+   * Answers with the sentence for the first refusal, or null. Used after the uppers are saved,
+   * and after a FIX run is saved — a fix article's work is paid for just the same.
+   */
+  const saveRates = useCallback(
+    async (programId: string, articleSizeIds: string[]): Promise<string | null> => {
+      for (const articleSizeId of [...new Set(articleSizeIds)]) {
+        const draft = rateFor(articleSizeId);
+        const stored = target.articleRates.find((row) => row.articleSizeId === articleSizeId);
+        // Nothing showing and nothing stored: the article stays unpriced, which is not an error.
+        // (A draft prefilled from the product is not empty, so the product's standard rates DO
+        // go onto the program — which is the point of them being a default.)
+        if (!stored && isEmptyRateDraft(draft)) continue;
+        // Unchanged from what the program already pays: no write, and no audit row saying so.
+        if (stored && sameRates(rateDraftToPaisa(draft), stored)) continue;
+
+        const answer = await target.writes.saveArticleRates({ programId, articleSizeId, ...rateDraftToRupees(draft) });
+        if (!answer.ok) {
+          const article = target.articles.find((entry) => entry.sizes.some((size) => size.articleSizeId === articleSizeId));
+          const size = article?.sizes.find((entry) => entry.articleSizeId === articleSizeId);
+          return copy.machineProgram.pricingSaveFailed(article?.article ?? "", size?.size ?? "", answer.reason);
+        }
+      }
+      return null;
+    },
+    [rateFor, target]
+  );
+
+  /**
    * Saves every chosen upper, one transaction each.
    *
    * A sole run IS the colour, the article and the size, so rows describing the same one must
@@ -188,35 +218,17 @@ export const useChosenUppers = (target: AddToProgram) => {
     // A refusal here is reported differently from a refused line: the uppers ARE on the program,
     // and only the pricing is missing, so the operator is told to set it from Program Summary
     // rather than left thinking nothing was saved.
-    if (programId) {
-      for (const articleSizeId of [...new Set(rows.map((row) => row.articleSizeId))]) {
-        const draft = rateFor(articleSizeId);
-        const stored = target.articleRates.find((row) => row.articleSizeId === articleSizeId);
-        // Nothing showing and nothing stored: the article stays unpriced, which is not an error.
-        // (A draft prefilled from the product is not empty, so the product's standard rates DO
-        // go onto the program — which is the point of them being a default.)
-        if (!stored && isEmptyRateDraft(draft)) continue;
-        // Unchanged from what the program already pays: no write, and no audit row saying so.
-        if (stored && sameRates(rateDraftToPaisa(draft), stored)) continue;
-
-        const answer = await target.writes.saveArticleRates({
-          programId,
-          articleSizeId,
-          ...rateDraftToRupees(draft),
-        });
-        if (!answer.ok) {
-          const row = rows.find((candidate) => candidate.articleSizeId === articleSizeId);
-          setProblem(copy.machineProgram.pricingSaveFailed(row?.article ?? "", row?.size ?? "", answer.reason));
-          setRows([]);
-          setSaving(false);
-          return false;
-        }
-      }
+    const pricingRefused = programId ? await saveRates(programId, rows.map((row) => row.articleSizeId)) : null;
+    if (pricingRefused) {
+      setProblem(pricingRefused);
+      setRows([]);
+      setSaving(false);
+      return false;
     }
 
     setSaving(false);
     return true;
-  }, [rateFor, rows, saving, target]);
+  }, [rows, saveRates, saving, target]);
 
   const problems = rows.map((row) => rowProblem(row));
   const rateProblem = (articleSizeId: string | null): string | null =>
@@ -227,7 +239,7 @@ export const useChosenUppers = (target: AddToProgram) => {
     problems.every((why) => why === null) &&
     articlesChosen.every((articleSizeId) => rateProblem(articleSizeId) === null);
 
-  return { rows, problems, ready, saving, problem, add, remove, setQuantity, addToProgram, rateFor, setRate, rateProblem };
+  return { rows, problems, ready, saving, problem, add, remove, setQuantity, addToProgram, saveRates, rateFor, setRate, rateProblem };
 };
 
 /** Why a chosen row cannot be saved yet, or null when it is ready. */

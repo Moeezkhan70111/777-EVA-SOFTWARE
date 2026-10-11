@@ -624,6 +624,24 @@ export const usersMethods = {
     return recipients.length;
   },
 
+  /**
+   * One notification per approved administrator — for what only an administrator acts on, such as
+   * a claim raised when a machine program is reconciled. Written on this connection, so inside a
+   * caller's open transaction it rolls back with it.
+   */
+  notifyAdministrators(
+    this: SqliteDatabase,
+    notice: { kind: string; severity: string; entityId: string; title: string; message: string }
+  ): number {
+    const now = new Date().toISOString();
+    const insert = this.db.prepare(
+      "INSERT INTO user_notifications (id, user_id, title, message, created_at, kind, entity_id, severity) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+    );
+    const admins = this.db.prepare("SELECT id FROM app_users WHERE role = 'ADMIN' AND access_status = 'APPROVED'").all() as Array<{ id: string }>;
+    for (const admin of admins) insert.run(crypto.randomUUID(), admin.id, notice.title, notice.message, now, notice.kind, notice.entityId, notice.severity);
+    return admins.length;
+  },
+
   markNotificationRead(this: SqliteDatabase, userId: string, notificationId: string): void {
     const result = this.db
       .prepare("UPDATE user_notifications SET read_at = ? WHERE id = ? AND user_id = ?")

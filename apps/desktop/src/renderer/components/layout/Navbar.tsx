@@ -1,9 +1,10 @@
 import { BRAND_LOGO_WHITE_URL } from "../../config/branding";
-import React, { useEffect, useRef, useState } from "react";
+import React, { useCallback, useRef, useState } from "react";
 import type { AppRoute } from "../../app/routes";
 import type { AuthUser } from "../../types/desktopApi";
 import { SidebarNav } from "../../features/navigation/SidebarNav";
 import type { StoreDirection } from "../../features/store/storeOperators";
+import { useDismissOnOutsideClick } from "../../hooks/useDismissOnOutsideClick";
 
 /* ── Icon helpers ─────────────────────────────────────── */
 const ChevronDown = () => (
@@ -255,21 +256,13 @@ export const Navbar = ({
     Record<string, boolean>
   >({});
   const profileRef = useRef<HTMLDivElement | null>(null);
+  const notificationsRef = useRef<HTMLDivElement | null>(null);
 
-  /* Close the profile menu when clicking outside it. */
-  useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      if (profileRef.current && !profileRef.current.contains(e.target as Node)) {
-        setOpenProfile(false);
-      }
-    };
-
-    document.addEventListener("mousedown", handleClickOutside);
-
-    return () => {
-      document.removeEventListener("mousedown", handleClickOutside);
-    };
-  }, []);
+  // Both pop-ups close on a click anywhere else on the screen, or on Escape.
+  const closeProfile = useCallback(() => setOpenProfile(false), []);
+  const closeNotifications = useCallback(() => setOpenNotifications(false), []);
+  useDismissOnOutsideClick(profileRef, openProfile, closeProfile);
+  useDismissOnOutsideClick(notificationsRef, openNotifications, closeNotifications);
 
   return (
     <nav className="navbar">
@@ -289,7 +282,7 @@ export const Navbar = ({
       <div className="navbar-right">
         <span className="navbar-version">{appVersion}</span>
         {user && (
-          <div className="notification-menu-wrap">
+          <div className="notification-menu-wrap" ref={notificationsRef}>
             <button
               type="button"
               className="notification-trigger"

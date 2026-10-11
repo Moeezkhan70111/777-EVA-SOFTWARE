@@ -49,6 +49,7 @@ const mapHead = (row: Record<string, unknown>): MachineProgramStoreOutHead => ({
   authorizedQuantity: roundQuantity(Number(row.authorized ?? 0)),
   issuedQuantity: roundQuantity(Math.max(0, Number(row.issued ?? 0))),
   outstandingQuantity: roundQuantity(Number(row.outstanding ?? 0)),
+  closed: Boolean(row.closed),
 });
 
 export const machineProgramStoreOutMethods = {
@@ -68,7 +69,11 @@ export const machineProgramStoreOutMethods = {
     const where = lookup.kind === "ID" ? "mp.id = ?" : "mp.program_number = ?";
     const key = lookup.kind === "ID" ? text(lookup.id).trim() : lookup.programNumber;
     const row = dbOf(tx)
-      .prepare(`SELECT mp.*, ${PROGRAM_TOTALS_SQL} FROM machine_programs mp WHERE ${where} AND mp.layout = ? LIMIT 1`)
+      .prepare(
+        `SELECT mp.*, ${PROGRAM_TOTALS_SQL},
+                EXISTS (SELECT 1 FROM machine_program_closures c WHERE c.program_id = mp.id) AS closed
+           FROM machine_programs mp WHERE ${where} AND mp.layout = ? LIMIT 1`
+      )
       .get(key, INJECTOR_LAYOUT) as Record<string, unknown> | undefined;
     return row ? mapHead(row) : null;
   },

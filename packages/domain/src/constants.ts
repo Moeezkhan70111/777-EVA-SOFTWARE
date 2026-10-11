@@ -303,6 +303,11 @@ export const NOTIFICATION_KIND = {
    * notice opens the program itself, which always shows what is outstanding right now.
    */
   MACHINE_PROGRAM_ISSUED: "MACHINE_PROGRAM_ISSUED",
+  /**
+   * A machine program was closed short of cartons and its missing uppers were claimed — against a
+   * supplier (wastage) or a contractor (lost). Sent to the administrators. entity = machine program id.
+   */
+  MACHINE_PROGRAM_RECONCILED: "MACHINE_PROGRAM_RECONCILED",
   /** Someone asked to remove a category or a material. entity = the thing's id. */
   REMOVAL_REQUESTED: "REMOVAL_REQUESTED",
   /** A removal was approved and has been carried out. entity = the thing's id. */

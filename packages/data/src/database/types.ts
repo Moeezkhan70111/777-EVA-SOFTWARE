@@ -1477,16 +1477,13 @@ export interface MachineProgramDanaOption {
   colour: string;
   /** EVA, PVC — what kind of Dana this is, which is what tells two of one colour apart. */
   subCategoryName: string;
-  /** The store own word for the container: BAG. */
-  packName: string;
-  /** One bag in the unit stock is counted in, or null when the material has no packing set. */
-  packSize: number | null;
-  packingUnitCode: string | null;
+  /** The units a quantity of it can be typed in: its ladder (BAG, KG), or just its stock unit. */
+  units: string[];
+  /** The unit its stock is counted in, or null while it has none. */
   stockUnitCode: string | null;
-  quantityOnHand: number;
-  /** Whole bags on the shelf — a part bag is not a bag anybody can carry. */
-  bagsOnHand: number;
-  /** Why this Dana cannot be issued by typing a count, or null when it can. */
+  /** How much of it has gone out for THIS program so far, in its stock unit. */
+  issuedQuantity: number;
+  /** Why this Dana cannot be issued by typing a quantity, or null when it can. */
   blockedReason: string | null;
 }
 

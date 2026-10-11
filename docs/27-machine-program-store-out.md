@@ -310,7 +310,7 @@ split. This is pre-existing behaviour of the generic scanner and is preserved de
 than refused — refusing it would leave the program unable to finish. A carton count follows the
 packet, so an overshooting packet offers the cartons its own quantity implies.
 
-**Printing cartons is recorded, exactly once** (migration 066, `machine_program_carton_labels`).
+**Printing cartons is recorded, exactly once** (migration 068, `machine_program_carton_labels`).
 `printMachineProgramCartons` re-reads the chosen packets inside BEGIN IMMEDIATE, works the count
 out from them (1 DOZEN = 2 cartons — the screen never sends a number), reserves the carton QR run
 and writes one label row per packet in the same transaction. The row is keyed by the packet's
@@ -336,3 +336,36 @@ machine sends them back.
   all. A carton already scanned in Live Production is only stored in.
 * Each printed run shows how many of its cartons are back (`receivedInRun`, counted from the
   STORE_ENTRY events), re-read after every scan.
+
+## Completing a program, and reconciliation
+
+Store In closes a program with **Complete Program**, once production is over.
+
+* **Due** is what was issued, in cartons (1 DOZEN = 2 cartons, so 4 DOZEN is 8 cartons). **Back** is
+  what Carton In stored in. Both come from `listMachineProgramCartonProgress`.
+* **All back:** a confirmation, and the program closes **COMPLETE**.
+* **Short:** the reconciliation opens. Each missing carton is 6 uppers, and every upper must be
+  accounted for in exactly one of three ways:
+  * **Cut size**: the upper came back to the store.
+  * **Wastage**: it was damaged, and is claimed to the upper's **supplier**. The suppliers offered
+    are those whose packets went out for that line.
+  * **Lost**: it was lost on the floor, and is claimed to the **machine** or the **packing**
+    contractor.
+
+  Every claim needs its party and a **reason**. The program then closes **RECONCILED**, and every
+  approved administrator gets a `MACHINE_PROGRAM_RECONCILED` notice that names each claim and its
+  reason.
+* Reconciliation is counted in **uppers (pairs)**, never dozens. 4 uppers is a third of a dozen,
+  which a two-decimal dozen can't hold exactly. The rule is `reconciliationEntryProblem` in
+  `@erp/domain`. The screen uses it to say what is still missing, and
+  `completeMachineProgramProduction` applies it again inside the write lock, against the shortfall
+  it works out itself. The table's CHECK constraints hold the same sums.
+* Closing writes `machine_program_closures` and `machine_program_reconciliation_lines` (migration
+  069) and sets the program **COMPLETED** in one transaction. COMPLETED holds no reservation, so
+  uppers planned but never issued are released. A program can be closed once only.
+* **Closed is final.** Carton In, new label printing, Dana Issue and Upper Out all refuse a closed
+  program by name. Reprinting an existing label is still allowed, because it creates nothing. Store
+  Out shows how the program was closed, which is where an administrator's notice opens it.
+* **Not yet done:** cut-size uppers are *recorded*, but not added back to the upper's stock. Uppers
+  are kept as labelled packets, counted in dozens, so loose returned pieces need a decision on how
+  they re-enter stock.

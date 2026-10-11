@@ -13,7 +13,8 @@
     "lint": "npm run --workspace @erp/domain lint && npm run --workspace @erp/application lint && npm run --workspace @erp/scanner lint && npm run --workspace @erp/data lint && npm run --workspace @erp/sync lint",
     "start": "npm run build && npm run --workspace @erp/desktop dev",
     "package:win": "npm run build && npm run --workspace @erp/desktop package",
-    "package:dir": "npm run build && npm run --workspace @erp/desktop package:dir"
+    "package:dir": "npm run build && npm run --workspace @erp/desktop package:dir",
+    "seed:demo": "node scripts/seed-demo.mjs"
   },
 "devDependencies": {
   "@types/node": "^22.15.24",

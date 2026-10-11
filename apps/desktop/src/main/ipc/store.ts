@@ -6,7 +6,7 @@
 import { ipcMain } from "electron";
 import { IPC } from "../../shared/ipcChannels";
 import type { IpcContext } from "./context";
-import { ACCESS_STATUS, PERMISSION, USER_ROLE, asOptionalNumber, asOptionalString, asString, asStringArray, isRecord, optionalOneOf } from "@erp/domain";
+import { ACCESS_STATUS, PERMISSION, RECONCILIATION_LOSS_PARTY, USER_ROLE, asOptionalNumber, asOptionalString, asString, asStringArray, isRecord, optionalOneOf } from "@erp/domain";
 
 export function registerStoreHandlers(ctx: IpcContext): void {
   const { db, logger, authorizer, scanContext, deviceId, useCases } = ctx;
@@ -306,15 +306,17 @@ export function registerStoreHandlers(ctx: IpcContext): void {
 
   ipcMain.handle(IPC.listMachineProgramCartonPackets, (_event, programId?: string, opts?: { token?: string }) => {
     const auth = resolveStoreOperator(opts?.token);
-    if (!auth.ok) return { accepted: false, reason: auth.reason, rows: [] };
+    if (!auth.ok) return { accepted: false, reason: auth.reason, rows: [], progress: [] };
     try {
-      return { accepted: true, rows: db.listMachineProgramCartonPackets(String(programId ?? "")) };
+      const id = String(programId ?? "");
+      // The packets owed labels, and per upper line the cartons due back and how many are back.
+      return { accepted: true, rows: db.listMachineProgramCartonPackets(id), progress: db.listMachineProgramCartonProgress(id) };
     } catch (error) {
       logger.log({
         module: "machine-program-store-out", severity: "WARNING", operation: "list-carton-packets", deviceId,
         message: error instanceof Error ? error.message : String(error),
       });
-      return { accepted: false, reason: "The cartons to label could not be loaded. Try again.", rows: [] };
+      return { accepted: false, reason: "The cartons to label could not be loaded. Try again.", rows: [], progress: [] };
     }
   });
 
@@ -373,6 +375,57 @@ export function registerStoreHandlers(ctx: IpcContext): void {
     }
   });
 
+  // ─── Completing a program: complete, or reconciled ───────────────────────────
+  // Store In closes a program against the cartons that came back. All back: COMPLETE. Short: every
+  // missing upper is accounted for as cut size, wastage (claimed to the supplier) or lost (claimed
+  // to a contractor), each claim with its reason. The shortfall is worked out in the data layer;
+  // the screen only says what became of it. Authorised as every store action is, from the token.
+
+  ipcMain.handle(IPC.getMachineProgramReconciliation, (_event, programId?: string, opts?: { token?: string }) => {
+    const auth = resolveStoreOperator(opts?.token);
+    if (!auth.ok) return { accepted: false, reason: auth.reason };
+    try {
+      const reconciliation = db.getMachineProgramReconciliation(String(programId ?? ""));
+      return reconciliation ? { accepted: true, reconciliation } : { accepted: false, reason: "This machine program no longer exists." };
+    } catch (error) {
+      logger.log({
+        module: "machine-program-store-in", severity: "WARNING", operation: "reconciliation", deviceId,
+        message: error instanceof Error ? error.message : String(error),
+      });
+      return { accepted: false, reason: "The program's cartons could not be counted. Try again." };
+    }
+  });
+
+  ipcMain.handle(IPC.completeMachineProgramProduction, (_event, input?: unknown, opts?: { token?: string }) => {
+    const auth = resolveStoreOperator(opts?.token);
+    if (!auth.ok) return { accepted: false, reason: auth.reason };
+    const payload = isRecord(input) ? input : {};
+    const entries = (Array.isArray(payload.entries) ? payload.entries : []).filter(isRecord).map((entry) => ({
+      lineId: asString(entry.lineId),
+      // Deliberately NOT coerced: an empty box must reach the rule as something it refuses.
+      cutSize: typeof entry.cutSize === "number" ? entry.cutSize : Number.NaN,
+      wastage: typeof entry.wastage === "number" ? entry.wastage : Number.NaN,
+      wastagePartyId: asOptionalString(entry.wastagePartyId) ?? null,
+      wastageReason: asString(entry.wastageReason),
+      lost: typeof entry.lost === "number" ? entry.lost : Number.NaN,
+      lostParty: optionalOneOf(entry.lostParty, Object.values(RECONCILIATION_LOSS_PARTY)) ?? null,
+      lostReason: asString(entry.lostReason),
+    }));
+    try {
+      const closure = db.completeMachineProgramProduction({
+        programId: asString(payload.programId), entries, closedBy: auth.username, deviceId,
+      });
+      logger.log({
+        module: "machine-program-store-in", severity: "INFO", operation: "complete-program", deviceId,
+        message: JSON.stringify({ programId: asString(payload.programId), outcome: closure.outcome, due: closure.cartonsDue, back: closure.cartonsBack }),
+      });
+      return { accepted: true, closure };
+    } catch (error) {
+      // The refusals are written for the operator: what is still unaccounted for, a missing reason.
+      return { accepted: false, reason: error instanceof Error ? error.message : "The program could not be completed." };
+    }
+  });
+
   // ─── Dana issued FOR a machine program ────────────────────────────────────────
   // The sole's own material. A program never reserved it, so there is no allocation to consume
   // here — only "this program runs these sole colours, and these bags went out for it today".
@@ -405,7 +458,8 @@ export function registerStoreHandlers(ctx: IpcContext): void {
         itemId: asString(payload.itemId),
         // Deliberately NOT coerced: an empty box must reach the rule as something it refuses,
         // never silently become 0.
-        bags: typeof payload.bags === "number" ? payload.bags : Number.NaN,
+        quantity: typeof payload.quantity === "number" ? payload.quantity : Number.NaN,
+        unitCode: asString(payload.unitCode),
         actor: auth.username,
       });
       logger.log({

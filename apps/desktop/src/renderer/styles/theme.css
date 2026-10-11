@@ -7575,7 +7575,8 @@ tr.has-error .gp-qty-stepper input { color: var(--err); }
 .mpo-carton-blocked { margin-top: 9px; }
 .mpo-carton-blocked li { padding: 7px 0; font-size: .8rem; font-weight: 700; color: var(--warning-deep); }
 .mpo-carton-printed { margin-top: 9px; }
-.mpo-carton-printed li { display: flex; flex-wrap: wrap; gap: 2px 10px; padding: 6px 0; font-size: .78rem; }
+.mpo-carton-printed li { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 10px; padding: 6px 0; font-size: .78rem; }
+.mpo-carton-reprint { margin-left: auto; min-height: 44px; min-width: 96px; }
 .mpo-carton-range { font-family: Consolas, "Courier New", monospace; font-size: .74rem; color: var(--success-deep); }
 .mpo-carton-back { font-weight: 700; color: var(--text-2); }
 
@@ -7715,6 +7716,7 @@ tr.has-error .gp-qty-stepper input { color: var(--err); }
 .mpi-dana-name { display: flex; align-items: center; gap: 8px; font-size: .88rem; font-weight: 800; color: var(--foreground); }
 .mpi-dana-dot { width: 13px; height: 13px; border-radius: 50%; border: 1px solid rgba(15,23,42,.2); flex: 0 0 13px; }
 .mpi-dana-stock { display: block; margin: 2px 0 7px; font-size: .7rem; font-weight: 600; color: var(--text-3); }
+.mpi-dana-issued { display: block; margin: 2px 0 7px; font-size: .74rem; font-weight: 700; color: var(--foreground-muted); font-variant-numeric: tabular-nums; }
 .mpi-dana-blocked { margin: 7px 0 0; font-size: .7rem; line-height: 1.35; color: var(--warning-deep); }
 .mpi-stepper { display: flex; align-items: center; gap: 6px; }
 .mpi-step {
@@ -7730,6 +7732,11 @@ tr.has-error .gp-qty-stepper input { color: var(--err); }
   font: inherit; font-size: 1rem; font-weight: 800; font-variant-numeric: tabular-nums; color: var(--foreground);
 }
 .mpi-step-value:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
+/* The unit a Dana quantity is typed in: said plainly when there is one, chosen when there is a ladder. */
+.mpi-dana-units { display: inline-flex; gap: 4px; }
+.mpi-dana-unit { width: auto; flex: 0 0 auto; min-width: 44px; padding: 0 9px; font-size: .78rem; }
+.mpi-dana-unit.is-chosen { background: var(--primary-soft); border-color: var(--primary); color: var(--primary-dark); }
+.mpi-dana-unit-label { font-size: .82rem; font-weight: 800; color: var(--foreground-muted); }
 .mpi-action--dana { margin-left: 0; }
 
 /* ── The scanner, opened by Start Scan ── */
@@ -7828,3 +7835,35 @@ tr.has-error .gp-qty-stepper input { color: var(--err); }
 .rm-unit-picker-row .form-input { flex: 1; min-width: 0; }
 .rm-unit-missing { display: flex; flex-direction: column; gap: 10px; }
 .form-section-note{display: none;}
+/* ── Complete Program & reconciliation (features/store/programClose) ─────────────── */
+.mpr-standing { margin-top: 10px; }
+.mpr-standing-figures { margin: 0; font-size: 1.05rem; font-weight: 800; color: var(--foreground); font-variant-numeric: tabular-nums; }
+.mpr-closed { margin-top: 10px; }
+.mpr-closed-head { margin: 0 0 2px; font-weight: 800; color: var(--success-deep); }
+.mpr-summary { margin: 10px 0 0; padding-left: 18px; font-size: .86rem; line-height: 1.5; }
+.mpr-summary ul { margin: 2px 0 6px; padding-left: 18px; color: var(--text-2); }
+.mpr-lines { display: flex; flex-direction: column; gap: 14px; }
+.mpr-line { padding: 12px 14px; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface); }
+.mpr-line-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 12px; }
+.mpr-line-title { margin: 0; font-size: .95rem; font-weight: 800; color: var(--foreground); }
+.mpr-line-short { font-size: .84rem; font-weight: 700; color: var(--warning-deep); }
+.mpr-ways { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-top: 10px; }
+.mpr-way { display: flex; flex-direction: column; gap: 4px; }
+.mpr-way-label, .mpr-field-label { font-size: .72rem; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; color: var(--text-3); }
+.mpr-way-input { min-height: 44px; font-size: 1.05rem; font-weight: 800; font-variant-numeric: tabular-nums; }
+.mpr-way-hint { font-size: .72rem; color: var(--text-3); }
+.mpr-claim { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px; margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--border-soft); }
+.mpr-choice { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.mpr-choice .mpr-field-label { flex-basis: 100%; }
+.mpr-choice-btn {
+  min-height: 44px; padding: 0 12px; cursor: pointer; font: inherit; font-size: .84rem; font-weight: 700;
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-md); color: var(--foreground-muted);
+}
+.mpr-choice-btn.is-chosen { background: var(--primary-soft); border-color: var(--primary); color: var(--primary-dark); }
+.mpr-choice-btn:disabled { cursor: default; opacity: .5; }
+.mpr-reason { display: flex; flex-direction: column; gap: 4px; }
+.mpr-line-status { margin: 10px 0 0; font-size: .82rem; font-weight: 700; color: var(--warning-deep); }
+.mpr-line-status.is-ok { color: var(--success-deep); }
+@media (max-width: 720px) {
+  .mpr-ways, .mpr-claim { grid-template-columns: 1fr; }
+}

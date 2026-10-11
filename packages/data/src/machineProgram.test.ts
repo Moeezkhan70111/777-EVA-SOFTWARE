@@ -132,6 +132,13 @@ function createFixture(options: { withDana?: boolean } = {}) {
     return qrIds;
   };
 
+  /** Dana is never labelled: it comes in loose and is moved in by hand, in its own stock unit. */
+  const danaIn = (itemId: string, quantity: number, partyId: string) => {
+    const unitCode = db.inventoryItemStockUnit(itemId)?.code ?? "DOZEN";
+    const moved = db.moveRawMaterialByHand({ itemId, direction: "IN", quantity, unitCode, partyId, actor: ACTOR });
+    assert.equal(moved.outcome, "MOVED", moved.reason);
+  };
+
   /** A plain Raw Material Output scan — the storekeeper names no program. */
   const issueOut = async (qrId: string) => {
     const session = db.startOrResumeRawMaterialIssueSession({ deviceId: "device-1", startedBy: ACTOR });
@@ -209,7 +216,7 @@ function createFixture(options: { withDana?: boolean } = {}) {
   return {
     db, raw, unitId, ...useCases, machine1, machine2, contractorA, contractorB, supplierA, supplierB, assignBothContractors,
     sk6_710, sk6_46, black, green, black46, blueElsewhere, danaBlack,
-    stockIn, issueOut, bringBack, upperFor, assignContractor, addToNewRun, saveOnRun, balanceOf, price, rateRows,
+    stockIn, danaIn, issueOut, bringBack, upperFor, assignContractor, addToNewRun, saveOnRun, balanceOf, price, rateRows,
     cleanup: () => {
       db.close();
       fs.rmSync(tempDir, { recursive: true, force: true });
@@ -396,8 +403,7 @@ test("a saved run names no sole type at all", async () => {
 
 test("sole colours come from the Dana in the store, with how much of it there is", async () => {
   await withFixture(async (f) => {
-    const bags = await f.stockIn(f.danaBlack!, 4, f.supplierA, 25);
-    assert.equal(bags.length, 4);
+    f.danaIn(f.danaBlack!, 100, f.supplierA);
     const options = f.db.listSoleColourOptions();
     assert.deepEqual(options.map((option) => option.colour), ["BLACK", "RED"]);
     assert.equal(options[0].danaQuantity, 100);
@@ -405,7 +411,8 @@ test("sole colours come from the Dana in the store, with how much of it there is
 
     const dana = f.db.listMachineProgramDana("black");
     assert.equal(dana.length, 1);
-    assert.deepEqual(dana[0].sources.map((source) => [source.supplierName, source.packets, source.physical]), [["ABC UPPER", 4, 100]]);
+    // Loose Dana carries no labels, so there are no packets to count — only what is on the shelf.
+    assert.deepEqual(dana[0].sources.map((source) => [source.packets, source.physical]), [[null, 100]]);
     assert.equal(f.db.listMachineProgramDana("RED").length, 0, "a colour with no Dana in the store has none to show");
   });
 });
@@ -523,7 +530,7 @@ test("an upper for another article, or a non-upper, is refused", async () => {
     await readyToProgram(f);
     await f.stockIn(f.black46, 2, f.supplierA);
     await f.stockIn(f.blueElsewhere, 2, f.supplierA);
-    await f.stockIn(f.danaBlack!, 2, f.supplierA, 25);
+    f.danaIn(f.danaBlack!, 50, f.supplierA);
 
     const wrongSize = await f.addToNewRun({ machineId: f.machine1.id, itemId: f.black46, quantity: 5 });
     assert.equal(wrongSize.outcome, "WRONG_ARTICLE");

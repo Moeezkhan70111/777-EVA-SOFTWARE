@@ -148,3 +148,34 @@ describe("Navbar sidebar", () => {
     expect(within(rail).getByRole("button", { name: "Move In" })).not.toHaveAttribute("aria-current");
   });
 });
+
+describe("Navbar notifications panel", () => {
+  const openPanel = () => {
+    renderNavbar(ADMIN);
+    fireEvent.click(screen.getByRole("button", { name: "Access requests" }));
+    expect(screen.getByText("Notifications")).toBeInTheDocument();
+  };
+
+  it("closes when the user clicks anywhere else on the screen", () => {
+    openPanel();
+    fireEvent.mouseDown(document.body);
+    expect(screen.queryByText("Notifications")).not.toBeInTheDocument();
+  });
+
+  it("closes on Escape", () => {
+    openPanel();
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(screen.queryByText("Notifications")).not.toBeInTheDocument();
+  });
+
+  it("stays open for a click inside it, and the bell still toggles it shut", () => {
+    openPanel();
+    fireEvent.mouseDown(screen.getByText("Notifications"));
+    expect(screen.getByText("Notifications")).toBeInTheDocument();
+
+    const bell = screen.getByRole("button", { name: "Access requests" });
+    fireEvent.mouseDown(bell);
+    fireEvent.click(bell);
+    expect(screen.queryByText("Notifications")).not.toBeInTheDocument();
+  });
+});

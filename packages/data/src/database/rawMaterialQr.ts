@@ -29,9 +29,11 @@ import type { MutableTransactionContext } from "./shared.js";
 import { EFFECTIVE_PACK_NAME_SQL } from "./shared.js";
 import type { TransactionContext } from "@erp/application";
 import {
+  RAW_MATERIAL_KIND,
   RAW_MATERIAL_QR_STATUS,
   buildRawMaterialQrId,
 } from "@erp/domain";
+import { KIND_JOINS, KIND_SQL } from "./machineProgramSql.js";
 
 export const rawMaterialQrMethods = {
   /**
@@ -78,16 +80,26 @@ export const rawMaterialQrMethods = {
     const item = this.db
       .prepare(
         `SELECT ii.id, ii.item_code, ii.display_name,
-                COALESCE(isb.unit_id, ii.default_unit_id) AS stock_unit_id
+                COALESCE(isb.unit_id, ii.default_unit_id) AS stock_unit_id,
+                ${KIND_SQL} AS kind
          FROM inventory_items ii
+         ${KIND_JOINS}
          LEFT JOIN inventory_stock_balances isb ON isb.item_id = ii.id
          WHERE ii.id = ? AND ii.status = 'ACTIVE' LIMIT 1`
       )
       .get(input.itemId) as
-      | { id: string; item_code: string; display_name: string; stock_unit_id: string | null }
+      | { id: string; item_code: string; display_name: string; stock_unit_id: string | null; kind: string | null }
       | undefined;
     if (!item) {
       throw new Error("Selected raw material was not found. Create it in Raw Material Master first.");
+    }
+    // Dana is never labelled (owner, 2026-10-11): it comes in loose, is moved in by hand, and goes
+    // out by a typed quantity from the machine program. A labelled Dana packet would lock that —
+    // a balance with packets in it can only be scanned out, never typed out.
+    if (item.kind === RAW_MATERIAL_KIND.DANA) {
+      throw new Error(
+        `${item.display_name} is Dana, and Dana is not labelled. Move it in by hand on Store In, and issue it from the machine program on Store Out.`
+      );
     }
 
     // Measured in the unit the material's stock is counted in, so every scan of these labels

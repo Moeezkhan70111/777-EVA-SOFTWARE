@@ -5,22 +5,25 @@ import { useNotifications } from "../../../state/NotificationsContext";
 import { StateView } from "../../../components/shared/StateView";
 import { getColorHex } from "../../../components/shared/ColorSwatch";
 import type { MachineProgramDanaOption } from "../../../types/desktopApi";
+import { formatQuantity } from "./programOut";
 
 // DANA ISSUE — the sole's own material, going out for this program.
 //
-//   Quantity (Bags)   ● BLACK · EVA  [− 0 +]   ● BLACK · PVC  [− 0 +]   [ Issue Dana ]
+//   Quantity   ● BLACK · EVA  [ 20 ] KG   ● BLUE · EVA  [ 2 ] (BAG) KG   [ Issue Dana ]
 //
 // Dana is NOT reserved by a program and never has been: a program says which SOLE COLOURS it
-// runs, and the operator says how many bags go out for it today. So there is no planned figure
-// here and no remaining one — only what the store holds and what is being taken.
+// runs, and the operator says how much goes out for it today. So there is no planned figure here
+// and no remaining one.
+//
+// Dana is never labelled and has no bag size to set (owner, 2026-10-11): the operator types a
+// QUANTITY in the Dana's own unit — KG, or any unit on its ladder (BAG when 1 BAG = 25 KG is
+// set) — and presses Issue. The store's stock is not shown first and does not cap the box:
+// whether the store holds that much is the main process's to say, and it refuses an issue larger
+// than the stock, by name, moving nothing.
 //
 // A row per MATERIAL, not per colour. The store can hold EVA BLACK and PVC BLACK at once, and
-// "3 bags of BLACK" would not say which left (owner, 2026-10-11). Only the sole colours this
+// "20 KG of BLACK" would not say which left (owner, 2026-10-11). Only the sole colours this
 // program runs are offered — the upper colours on it are not Dana.
-//
-// Nothing here decides whether the stock may move. The main process converts bags to the
-// material's own quantity and hands the movement to the one path a typed quantity leaves the
-// store by, which is also what refuses a Dana whose packets carry labels: those are scanned.
 
 interface DanaIssuePanelProps {
   programId: string;
@@ -31,12 +34,25 @@ interface DanaIssuePanelProps {
   enabled: boolean;
 }
 
-const Stepper: React.FC<{
+/** What has been typed for one Dana: the amount as text, and the unit it is in. */
+interface DanaDraft {
+  amount: string;
+  unitCode: string;
+}
+
+/** Digits and at most one decimal point — "7.5" KG is a real amount of Dana. */
+const cleanAmount = (typed: string): string => {
+  const kept = typed.replace(/[^0-9.]/g, "");
+  const dot = kept.indexOf(".");
+  return dot < 0 ? kept : kept.slice(0, dot + 1) + kept.slice(dot + 1).replace(/\./g, "");
+};
+
+const DanaRow: React.FC<{
   option: MachineProgramDanaOption;
-  bags: number;
+  draft: DanaDraft;
   disabled: boolean;
-  onChange: (bags: number) => void;
-}> = ({ option, bags, disabled, onChange }) => {
+  onChange: (draft: DanaDraft) => void;
+}> = ({ option, draft, disabled, onChange }) => {
   const blocked = Boolean(option.blockedReason);
   const label = option.subCategoryName ? `${option.colour} · ${option.subCategoryName}` : option.colour;
   return (
@@ -45,42 +61,41 @@ const Stepper: React.FC<{
         <span className="mpi-dana-dot" style={{ background: getColorHex(option.colour) }} aria-hidden="true" />
         {label}
       </span>
-      <span className="mpi-dana-stock">
-        {blocked
-          ? copy.programOut.danaScanInstead
-          : copy.programOut.danaOnHand(option.bagsOnHand, option.packName)}
+      {/* What has already gone out for this program — the database's figure, re-read after every issue. */}
+      <span className="mpi-dana-issued">
+        {copy.programOut.danaIssuedSoFar(formatQuantity(option.issuedQuantity, option.stockUnitCode))}
       </span>
+      {blocked ? <span className="mpi-dana-stock">{copy.programOut.danaScanInstead}</span> : null}
       <div className="mpi-stepper">
-        <button
-          type="button"
-          className="mpi-step"
-          onClick={() => onChange(Math.max(0, bags - 1))}
-          disabled={disabled || blocked || bags <= 0}
-          aria-label={copy.programOut.danaFewer(label)}
-        >
-          −
-        </button>
         <input
           className="mpi-step-value"
           type="text"
-          inputMode="numeric"
-          value={String(bags)}
+          inputMode="decimal"
+          value={draft.amount}
+          placeholder="0"
           disabled={disabled || blocked}
-          aria-label={copy.programOut.danaBagsFor(label)}
-          onChange={(event) => {
-            const digits = event.target.value.replace(/[^0-9]/g, "");
-            onChange(digits === "" ? 0 : Math.min(Number(digits), option.bagsOnHand));
-          }}
+          aria-label={copy.programOut.danaQuantityFor(label)}
+          onChange={(event) => onChange({ ...draft, amount: cleanAmount(event.target.value) })}
         />
-        <button
-          type="button"
-          className="mpi-step"
-          onClick={() => onChange(Math.min(option.bagsOnHand, bags + 1))}
-          disabled={disabled || blocked || bags >= option.bagsOnHand}
-          aria-label={copy.programOut.danaMore(label)}
-        >
-          +
-        </button>
+        {/* One unit is simply said; a ladder (BAG / KG) is chosen, in words, never by colour alone. */}
+        {option.units.length > 1 ? (
+          <span className="mpi-dana-units" role="group" aria-label={copy.programOut.danaUnitFor(label)}>
+            {option.units.map((unit) => (
+              <button
+                key={unit}
+                type="button"
+                className={`mpi-step mpi-dana-unit${draft.unitCode === unit ? " is-chosen" : ""}`}
+                aria-pressed={draft.unitCode === unit}
+                disabled={disabled || blocked}
+                onClick={() => onChange({ ...draft, unitCode: unit })}
+              >
+                {unit}
+              </button>
+            ))}
+          </span>
+        ) : (
+          <span className="mpi-dana-unit-label">{draft.unitCode}</span>
+        )}
       </div>
       {blocked ? (
         <p className="mpi-dana-blocked" role="note">
@@ -91,12 +106,15 @@ const Stepper: React.FC<{
   );
 };
 
+/** The unit a Dana's box starts in: what its stock is counted in, else the first on its ladder. */
+const defaultUnit = (option: MachineProgramDanaOption): string => option.stockUnitCode ?? option.units[0] ?? "";
+
 export const DanaIssuePanel: React.FC<DanaIssuePanelProps> = ({ programId, token, onIssued, enabled }) => {
   const api = useDesktopApi();
   const { push } = useNotifications();
   const [options, setOptions] = useState<MachineProgramDanaOption[] | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [bags, setBags] = useState<Record<string, number>>({});
+  const [drafts, setDrafts] = useState<Record<string, DanaDraft>>({});
   const [issuing, setIssuing] = useState(false);
 
   const load = useCallback(async () => {
@@ -115,7 +133,11 @@ export const DanaIssuePanel: React.FC<DanaIssuePanelProps> = ({ programId, token
     void load();
   }, [load]);
 
-  const asked = useMemo(() => Object.entries(bags).filter(([, count]) => count > 0), [bags]);
+  const draftFor = (option: MachineProgramDanaOption): DanaDraft => drafts[option.itemId] ?? { amount: "", unitCode: defaultUnit(option) };
+  const asked = useMemo(
+    () => Object.entries(drafts).filter(([, draft]) => Number(draft.amount) > 0),
+    [drafts]
+  );
 
   const issue = async () => {
     if (asked.length === 0) return;
@@ -123,18 +145,21 @@ export const DanaIssuePanel: React.FC<DanaIssuePanelProps> = ({ programId, token
     setError(null);
     try {
       // One material at a time, each its own movement: a refusal on the third must not undo the
-      // two bags that have already physically left the store.
+      // two that have already physically left the store.
       const failures: string[] = [];
       let moved = 0;
-      for (const [itemId, count] of asked) {
-        const result = await api.issueMachineProgramDana({ programId, itemId, bags: count }, { token });
+      for (const [itemId, draft] of asked) {
+        const result = await api.issueMachineProgramDana(
+          { programId, itemId, quantity: Number(draft.amount), unitCode: draft.unitCode },
+          { token }
+        );
         if (result.accepted) moved += 1;
         else failures.push(result.reason ?? copy.states.loadFailedBody);
       }
 
       if (moved > 0) {
         push("success", copy.programOut.danaIssuedTitle, copy.programOut.danaIssuedBody(moved));
-        setBags({});
+        setDrafts({});
         await load();
         onIssued();
       }
@@ -170,12 +195,12 @@ export const DanaIssuePanel: React.FC<DanaIssuePanelProps> = ({ programId, token
           <span className="mpi-dana-label">{copy.programOut.danaQuantityLabel}</span>
           <div className="mpi-dana-items">
             {options.map((option) => (
-              <Stepper
+              <DanaRow
                 key={option.itemId}
                 option={option}
-                bags={bags[option.itemId] ?? 0}
+                draft={draftFor(option)}
                 disabled={issuing || !enabled}
-                onChange={(next) => setBags((prev) => ({ ...prev, [option.itemId]: next }))}
+                onChange={(next) => setDrafts((previous) => ({ ...previous, [option.itemId]: next }))}
               />
             ))}
           </div>

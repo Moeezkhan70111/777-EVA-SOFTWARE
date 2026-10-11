@@ -47,7 +47,8 @@ export const notificationTarget = (notification: Pick<UserNotification, "kind" |
   // A machine program notice opens that program on STORE OUT, which is where its uppers are
   // fetched — not on the Machine Program screen, which is where Production plans them. The id
   // travels, never the printed number: the number is a label, the id is the record.
-  if (notification.kind === NOTIFICATION_KIND.MACHINE_PROGRAM_ISSUED) {
+  // A reconciliation notice opens the same program, where its reconciliation is shown line by line.
+  if (notification.kind === NOTIFICATION_KIND.MACHINE_PROGRAM_ISSUED || notification.kind === NOTIFICATION_KIND.MACHINE_PROGRAM_RECONCILED) {
     return { route: "store-out-operator", programId: entityId };
   }
   return null;

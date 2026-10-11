@@ -1,10 +1,9 @@
-import { MACHINE_INJECTORS, formatShiftRange, fromPaisa, isFixRun, programContractorPricing } from "@erp/domain";
+import { MACHINE_INJECTORS, formatShiftRange, isFixRun } from "@erp/domain";
 import type { MachineProgramRecord, MachineProgramRunRecord } from "../../types/desktopApi";
 import { renderQrSvgMarkup } from "../../utils/qrLabels";
 import { loadLogoDataUrl, openPrintDocumentAsync } from "../../platform/print";
 import { escapeHtml } from "../../utils/html";
 import { formatDate } from "../../utils/dates";
-import { formatMoney } from "../../app/format";
 import { copy } from "../../config/copy";
 import {
   colourRuns,
@@ -49,7 +48,10 @@ import {
 //                         it is a property of the run, not of the upper — it was being
 //                         repeated on every row of every card. Grouping this way also makes
 //                         the sheet agree with the workspace screen, which groups by sole.
-//   3. WHAT DOES IT COME TO?  the totals, then the rates, then who prepared it.
+//   3. WHAT DOES IT COME TO?  the totals, then who prepared it.
+//
+// CONTRACTOR PRICING IS NOT ON THE SHEET (owner, 2026-10-11). The sheet goes to the floor and
+// into the contractor's hand; what the work is paid at stays on the Program Summary screen.
 //
 // THE QR lives in the FOOTER, not the header. It is not a fact about the program — the number
 // beside it is already in the meta strip. It is an ACTION on the document: the storekeeper
@@ -243,25 +245,6 @@ const STYLES = `
   .total-words dt { margin: 0; font-size: 9pt; color: #475569; }
   .total-words dd { margin: 0; font-size: 16pt; font-weight: 800; color: #17365d; font-variant-numeric: tabular-nums; line-height: 1.15; }
 
-  /* ── What the work is paid at ── */
-  .pricing { margin-top: 8px; border: 1px solid #c7d7ee; border-radius: 5px; overflow: hidden; break-inside: avoid; page-break-inside: avoid; }
-  .pricing-name {
-    margin: 0; padding: 6px 11px; background: #17365d; color: #fff;
-    font-size: 11pt; font-weight: 800; break-after: avoid; page-break-after: avoid;
-  }
-  .pricing table { width: 100%; border-collapse: collapse; font-size: 9pt; }
-  .pricing th, .pricing td { padding: 3px 9px; border-top: 1px solid #e6edf7; }
-  .pricing thead th {
-    border-top: none; background: #eff4fb; text-align: right;
-    font-size: 6.5pt; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: #475569;
-  }
-  .pricing thead th:first-child, .pricing tbody th, .pricing tfoot th { text-align: left; }
-  .pricing td { text-align: right; font-variant-numeric: tabular-nums; }
-  .pricing tbody th { font-weight: 700; color: #0f172a; }
-  .pricing .qty { padding-left: 6px; font-size: 7.5pt; font-weight: 500; color: #64748b; }
-  .pricing tfoot th, .pricing tfoot td { background: #f6f9fd; font-weight: 800; color: #17365d; }
-  .pricing .unpriced { text-align: left; font-size: 8pt; font-style: italic; color: #64748b; }
-
   /* ── Who prepared it, and how to act on it ──────────────────────────────
      The QR sits here rather than in the head: it is what the STORE does with the
      sheet, not one of the facts the floor reads off it. */
@@ -279,62 +262,6 @@ const STYLES = `
 
   .empty { margin: 16px 0; text-align: center; font-size: 10pt; color: #64748b; }
 `;
-
-/**
- * CONTRACTOR PRICING on the sheet: what each article's work is paid at, and what the day comes
- * to at those rates.
- *
- * The same `programContractorPricing` the screen uses, so the sheet in the contractor's hand and
- * the screen the munshi is looking at can never show two different figures. Left off entirely
- * when nothing on the program is priced — a table of blanks is worse than no table, and that is
- * what makes an unpriced program print exactly as the owner's layout draws it.
- */
-const pricingHtml = (program: MachineProgramRecord): string => {
-  const pricing = programContractorPricing({ runs: program.runs, rates: program.articleRates });
-  if (pricing.articles.length === 0 || pricing.articles.every((article) => !article.rates)) return "";
-  const money = (paisa: number) => escapeHtml(formatMoney(fromPaisa(paisa)));
-
-  const rows = pricing.articles
-    .map((article) => {
-      const name = `<th scope="row">${escapeHtml(article.article)} ${escapeHtml(article.size)}<span class="qty">${escapeHtml(
-        formatAmount(article.quantity, article.unitCode)
-      )}</span></th>`;
-      if (!article.rates) {
-        return `<tr>${name}<td class="unpriced" colspan="4">${escapeHtml(copy.machineProgram.pricingUnpricedRow)}</td></tr>`;
-      }
-      return `<tr>${name}<td>${money(article.rates.machineRatePaisa)}</td><td>${money(
-        article.rates.packingRatePaisa
-      )}</td><td>${money(article.rates.printingRatePaisa)}</td><td><b>${money(
-        article.committed?.totalPaisa ?? 0
-      )}</b></td></tr>`;
-    })
-    .join("");
-
-  return `<section class="pricing">
-      <h2 class="pricing-name">${escapeHtml(copy.machineProgram.pricingTitle)}</h2>
-      <table>
-        <thead>
-          <tr>
-            <th>${escapeHtml(copy.machineProgram.colArticleSize)}</th>
-            <th>${escapeHtml(copy.machineProgram.colMachine)}</th>
-            <th>${escapeHtml(copy.machineProgram.colPacking)}</th>
-            <th>${escapeHtml(copy.machineProgram.colPrinting)}</th>
-            <th>${escapeHtml(copy.machineProgram.colCommitted)}</th>
-          </tr>
-        </thead>
-        <tbody>${rows}</tbody>
-        <tfoot>
-          <tr>
-            <th>${escapeHtml(copy.machineProgram.pricingTotal)}</th>
-            <td>${money(pricing.committed.machinePaisa)}</td>
-            <td>${money(pricing.committed.packingPaisa)}</td>
-            <td>${money(pricing.committed.printingPaisa)}</td>
-            <td><b>${money(pricing.committed.totalPaisa)}</b></td>
-          </tr>
-        </tfoot>
-      </table>
-    </section>`;
-};
 
 const buildSheetHtml = (program: MachineProgramRecord, preparedBy: string | null | undefined, logo: string): string => {
   const injectors = MACHINE_INJECTORS.map((injectorNo) => injectorHtml(program, injectorNo)).join("");
@@ -378,8 +305,6 @@ const buildSheetHtml = (program: MachineProgramRecord, preparedBy: string | null
       ${totalCell(FACTORY_ICON, copy.machineProgram.printTotalInjectors, String(injectorsInUse(program)))}
       ${totalCell(BOX_ICON, totalLabel, totalValue)}
     </dl>
-
-    ${pricingHtml(program)}
 
     <div class="foot">
       <div>

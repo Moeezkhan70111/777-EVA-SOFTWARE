@@ -24,11 +24,15 @@ interface CartonRunListProps {
   /** The run being generated right now, by key, so only its own button says so. */
   printingKey: string | null;
   onPrint: (run: CartonRun) => void;
+  /** Prints a printed run's labels again — the same codes, for a label torn or lost. */
+  onReprint: (run: PrintedCartonRun) => void;
+  /** The program is closed: no new labels are printed for it (a reprint creates nothing, so it stays). */
+  locked?: boolean;
   /** Packets whose cartons the main process could not work out, with its reason. */
   blocked: MachineProgramCartonPacket[];
 }
 
-export const CartonRunList: React.FC<CartonRunListProps> = ({ runs, printed, printingKey, onPrint, blocked }) => (
+export const CartonRunList: React.FC<CartonRunListProps> = ({ runs, printed, printingKey, onPrint, onReprint, blocked, locked = false }) => (
   <section className="mpo-batch" aria-label={copy.programOut.cartonTitle}>
     <header className="mpo-batch-head">
       <h3 className="mpo-batch-title">{copy.programOut.cartonTitle}</h3>
@@ -49,7 +53,7 @@ export const CartonRunList: React.FC<CartonRunListProps> = ({ runs, printed, pri
               type="button"
               className="btn btn-primary mpo-carton-print"
               onClick={() => onPrint(run)}
-              disabled={printingKey !== null}
+              disabled={printingKey !== null || locked}
               aria-label={copy.programOut.cartonPrintLabel(run.cartons, cartonRunLabel(run))}
             >
               {printingKey === run.key ? copy.programOut.cartonPrinting : copy.programOut.cartonPrint}
@@ -76,6 +80,15 @@ export const CartonRunList: React.FC<CartonRunListProps> = ({ runs, printed, pri
             <span className="mpo-carton-what">{run.label}</span>
             <span className="mpo-carton-range">{copy.programOut.cartonPrinted(run.range)}</span>
             <span className="mpo-carton-back">{copy.programOut.cartonBack(run.received, run.cartons)}</span>
+            <button
+              type="button"
+              className="btn btn-secondary mpo-carton-reprint"
+              onClick={() => onReprint(run)}
+              disabled={printingKey !== null}
+              aria-label={copy.programOut.cartonReprintLabel(run.label)}
+            >
+              {printingKey === run.key ? copy.programOut.cartonReprinting : copy.programOut.cartonReprint}
+            </button>
           </li>
         ))}
       </ul>

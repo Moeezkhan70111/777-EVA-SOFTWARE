@@ -4,7 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { StoreInPage } from "./StoreInPage";
 import { NotificationsProvider } from "../../state/NotificationsContext";
-import type { MachineProgramCartonPacket, MachineProgramRecord } from "../../types/desktopApi";
+import type { MachineProgramCartonPacket, MachineProgramReconciliation, MachineProgramRecord } from "../../types/desktopApi";
 
 // STORE IN — the machine program lookup.
 //
@@ -40,12 +40,12 @@ const finishedProgram: MachineProgramRecord = {
   contractorPartyId: "c-A", contractorName: "CONTRACTOR A", packingContractorPartyId: "c-B", packingContractorName: "CONTRACTOR B",
   programDate: TODAY, shiftStartMinute: 360, shiftEndMinute: 1080,
   status: "COMPLETED", displayStatus: "COMPLETED",
-  totalQuantity: 20, consumedQuantity: 20, outstandingQuantity: 0, unitCode: "DOZEN",
+  totalQuantity: 20, fixQuantity: 0, productionQuantity: 20, consumedQuantity: 20, outstandingQuantity: 0, unitCode: "DOZEN",
   createdBy: "aslam", createdAt: `${TODAY}T07:00:00.000Z`, updatedAt: `${TODAY}T07:00:00.000Z`,
   completedAt: `${TODAY}T09:00:00.000Z`, cancelledAt: null, cancelledBy: null, cancelReason: null,
   runs: [
     {
-      id: "run-1", programId: "prog-1", injectorNo: 1, runNo: 1, soleColour: "BLACK", articleSizeId: "as-sk6-710",
+      id: "run-1", programId: "prog-1", injectorNo: 1, runNo: 1, soleColour: "BLACK", innerSoleColour: null, fixQuantity: 0, articleSizeId: "as-sk6-710",
       article: "SK6", size: "7/10", totalQuantity: 20, consumedQuantity: 20, unitCode: "DOZEN",
       lines: [
         {
@@ -79,7 +79,31 @@ const owedPacket: MachineProgramCartonPacket = {
   cartonNote: null, label: null,
 };
 
-function installApi(packets: MachineProgramCartonPacket[] = [owedPacket]) {
+/** MP-000001 standing against its cartons: BLACK GREY had 8 due and `back` came back. */
+const standing = (back: number): MachineProgramReconciliation => ({
+  programId: "prog-1",
+  code: "MP-000001",
+  closure: null,
+  machineContractor: { partyId: "c-A", name: "CONTRACTOR A" },
+  packingContractor: { partyId: "c-B", name: "CONTRACTOR B" },
+  cartonsDue: 8,
+  cartonsBack: back,
+  blockedReason: null,
+  lines: [
+    {
+      lineId: "line-black", itemId: "u-black", upperName: "UPPER — SK6 — BLACK — 7/10", article: "SK6", size: "7/10",
+      soleColour: "BLACK", upperColour: "GREY", cartonsDue: 8, cartonsBack: back, shortfallUppers: (8 - back) * 6,
+      suppliers: [{ partyId: "s-1", name: "ABC UPPER" }], saved: null,
+    },
+  ],
+});
+
+function installApi(
+  packets: MachineProgramCartonPacket[] = [owedPacket],
+  progress: Array<{ lineId: string; cartonsDue: number | null; cartonsBack: number }> = [],
+  reconciliation: MachineProgramReconciliation = standing(8)
+) {
+  const close = { view: reconciliation };
   const api = {
     openMachineProgramStoreOut: vi.fn(async (lookup: string) =>
       ["MP-000001", "1"].includes(lookup)
@@ -90,7 +114,15 @@ function installApi(packets: MachineProgramCartonPacket[] = [owedPacket]) {
         : { accepted: false, outcome: "PROGRAM_NOT_FOUND", reason: `${lookup} does not exist.`, program: null }
     ),
     listMachineProgramIssueBatches: vi.fn(async () => ({ accepted: true, rows: [] })),
-    listMachineProgramCartonPackets: vi.fn(async () => ({ accepted: true, rows: packets })),
+    listMachineProgramCartonPackets: vi.fn(async () => ({ accepted: true, rows: packets, progress })),
+    getMachineProgramReconciliation: vi.fn(async () => ({ accepted: true, reconciliation: close.view })),
+    // The backend closes it and says how; the screen then re-reads and shows it closed.
+    completeMachineProgramProduction: vi.fn(async (input: { programId: string; entries: unknown[] }) => {
+      const outcome = input.entries.length > 0 ? "RECONCILED" : "COMPLETE";
+      const closure = { outcome, cartonsDue: 8, cartonsBack: close.view.cartonsBack, closedBy: "aslam", closedAt: `${TODAY}T12:00:00.000Z` } as const;
+      close.view = { ...close.view, closure };
+      return { accepted: true, closure };
+    }),
     // The backend's verdict on one scanned carton label, verbatim.
     machineProgramCartonIn: vi.fn(async (input: { programId: string; rawScan: string }) =>
       input.rawScan === "SK6_BLACK_7/10_000002"
@@ -117,7 +149,7 @@ function installApi(packets: MachineProgramCartonPacket[] = [owedPacket]) {
   return api;
 }
 
-const renderPage = () =>
+const renderPage = (onNavigate: (route: string) => void = () => undefined) =>
   render(
     <NotificationsProvider>
       <StoreInPage
@@ -126,7 +158,7 @@ const renderPage = () =>
         username="aslam"
         isAdmin={false}
         access={{ stock: true, labels: true, settings: true }}
-        onNavigate={() => undefined}
+        onNavigate={onNavigate}
       />
     </NotificationsProvider>
   );
@@ -229,4 +261,105 @@ describe("Store In — machine program lookup", () => {
     expect(within(cartonIn).getByRole("button", { name: /Start Scan/ })).toBeDisabled();
     expect(within(cartonIn).getByText("No carton labels printed yet")).toBeInTheDocument();
   });
+  it("reads the program in CARTONS coming back: due for what was issued, back, and still to come", async () => {
+    // 20 DOZEN of BLACK went out, so 40 cartons are due; 6 of them are back.
+    installApi([printedPacket], [{ lineId: "line-black", cartonsDue: 40, cartonsBack: 6 }]);
+    renderPage();
+    await openProgram("MP-000001");
+    await screen.findByRole("heading", { name: "Machine Program" });
+
+    const card = screen.getByRole("progressbar", { name: "Cartons of SK6 7/10 back in store" }).closest("section") as HTMLElement;
+    expect(within(card).getByText("6 / 40")).toBeInTheDocument();
+    expect(within(card).getByText("Coming back")).toBeInTheDocument();
+    expect(within(card).getByRole("columnheader", { name: "Due (Cartons)" })).toBeInTheDocument();
+    expect(within(card).getByRole("columnheader", { name: "To come" })).toBeInTheDocument();
+    // Store Out's dozens are not what Store In reads.
+    expect(within(card).queryByRole("columnheader", { name: /Planned/ })).toBeNull();
+    const row = within(card).getByRole("row", { name: /BLACK/ });
+    expect(row).toHaveTextContent("40");
+    expect(row).toHaveTextContent("6");
+    expect(row).toHaveTextContent("34");
+  });
+
+  it("puts the program away when a section tab is chosen", async () => {
+    installApi();
+    const navigate = vi.fn();
+    renderPage(navigate);
+    await openProgram("MP-000001");
+    await screen.findByRole("heading", { name: "Machine Program" });
+
+    await userEvent.click(screen.getByRole("tab", { name: "Stock" }));
+
+    expect(await screen.findByTestId("rm-section")).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Machine Program" })).not.toBeInTheDocument();
+    expect(navigate).toHaveBeenCalledWith("store-in-stock");
+  });
+  it("completes a program when every carton is back, after a confirmation", async () => {
+    const api = installApi([printedPacket], [], standing(8));
+    renderPage();
+    await openProgram("MP-000001");
+
+    const section = await screen.findByRole("region", { name: "Complete Program" });
+    expect(await within(section).findByText("8 of 8 cartons back")).toBeInTheDocument();
+    expect(within(section).getByText("Every carton due is back.")).toBeInTheDocument();
+    await userEvent.click(within(section).getByRole("button", { name: "Complete Program" }));
+
+    const confirm = await screen.findByRole("dialog", { name: "Complete MP-000001?" });
+    await userEvent.click(within(confirm).getByRole("button", { name: "Complete Program" }));
+
+    await waitFor(() => expect(api.completeMachineProgramProduction).toHaveBeenCalledWith({ programId: "prog-1", entries: [] }, { token: "t-1" }));
+    expect(await within(section).findByText(/Closed — complete/)).toBeInTheDocument();
+    // Closed is final: Carton In says so and will not open.
+    const cartonIn = screen.getByRole("region", { name: "Carton In" });
+    expect(within(cartonIn).getByRole("button", { name: /Start Scan/ })).toBeDisabled();
+    expect(within(cartonIn).getByText("Program closed")).toBeInTheDocument();
+  });
+
+  it("short cartons open the reconciliation: every missing upper accounted for, claims with their party and reason", async () => {
+    const api = installApi([printedPacket], [], standing(7));
+    renderPage();
+    await openProgram("MP-000001");
+
+    const section = await screen.findByRole("region", { name: "Complete Program" });
+    expect(await within(section).findByText("1 carton short — 6 uppers to account for")).toBeInTheDocument();
+    await userEvent.click(within(section).getByRole("button", { name: "Complete Program" }));
+
+    const dialog = await screen.findByRole("dialog", { name: "Reconcile MP-000001" });
+    const submit = within(dialog).getByRole("button", { name: "Reconcile & Complete" });
+    expect(submit).toBeDisabled();
+
+    await userEvent.type(within(dialog).getByLabelText("Cut size uppers of SK6 7/10 GREY"), "4");
+    expect(within(dialog).getByRole("status")).toHaveTextContent("2 of the 6 missing uppers are not accounted for yet.");
+    await userEvent.type(within(dialog).getByLabelText("Wastage uppers of SK6 7/10 GREY"), "1");
+    await userEvent.type(within(dialog).getByLabelText("Lost uppers of SK6 7/10 GREY"), "1");
+
+    // The only supplier is already named; the reasons and the contractor are the store's to say.
+    expect(within(dialog).getByRole("button", { name: "ABC UPPER" })).toHaveAttribute("aria-pressed", "true");
+    await userEvent.type(within(dialog).getByLabelText("Why were they wasted?"), "torn upper");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Packing — CONTRACTOR B" }));
+    expect(submit).toBeDisabled();
+    await userEvent.type(within(dialog).getByLabelText("How were they lost?"), "not found at packing");
+
+    expect(within(dialog).getByRole("status")).toHaveTextContent("6 of 6 accounted for");
+    await userEvent.click(submit);
+
+    await waitFor(() =>
+      expect(api.completeMachineProgramProduction).toHaveBeenCalledWith(
+        {
+          programId: "prog-1",
+          entries: [
+            {
+              lineId: "line-black", cutSize: 4,
+              wastage: 1, wastagePartyId: "s-1", wastageReason: "torn upper",
+              lost: 1, lostParty: "PACKING", lostReason: "not found at packing",
+            },
+          ],
+        },
+        { token: "t-1" }
+      )
+    );
+    expect(await within(section).findByText(/Closed — reconciled/)).toBeInTheDocument();
+  });
 });
+
+

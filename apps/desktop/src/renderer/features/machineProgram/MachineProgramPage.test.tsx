@@ -181,8 +181,16 @@ function installApi(options: { program?: MachineProgramRecord | null } = {}) {
           article: "SK10",
           sizes: [{ articleSizeId: "as-sk10", size: "8/11", machineRatePaisa: null, packingRatePaisa: null, printingRatePaisa: null }],
         },
+        // EVR FIX: moulded from an outer and an inner sole, with no upper (migration 067).
+        {
+          article: "EVR9",
+          sizes: [
+            { articleSizeId: "as-evr9-710", size: "7/10", machineRatePaisa: null, packingRatePaisa: null, printingRatePaisa: null, hasNoUpper: true },
+          ],
+        },
       ],
     })),
+    saveMachineProgramFixRun: vi.fn(async () => ({ accepted: true, outcome: "SAVED", programId: "prog-1", runId: "run-fix" })),
     listMachineProgramUppers: vi.fn(async () => ({ accepted: true, rows: UPPERS })),
     saveMachineProgramLine: vi.fn(async (input: SaveMachineProgramLineInput) => {
       const colour = UPPERS.find((candidate) => candidate.itemId === input.itemId)?.colour ?? "BLACK";
@@ -1003,17 +1011,19 @@ describe("Contractor pricing", () => {
     expect(api.saveMachineProgramArticleRates).toHaveBeenCalledTimes(1);
   });
 
-  it("prints the pricing on the program sheet", async () => {
+  // The sheet goes to the floor and into the contractor's hand: what the work is paid at stays on
+  // the screen (owner, 2026-10-11), even when the program is priced.
+  it("never prints the contractor pricing on the program sheet", async () => {
     installApi({ program: programWith([{ colour: "GREEN", quantity: 30 }], DAY_SHIFT, { machine: 4500, packing: 1800, printing: 1200 }) });
     renderPage();
     await openMachine1();
     await click("Print Program");
 
     const text = await sheetText();
-    expect(text).toContain("Contractor Pricing");
-    expect(text).toContain("Machine");
-    expect(text).toContain("45.00");
-    expect(text).toContain("2,250.00");
+    expect(text).toContain("GREEN");
+    expect(text).not.toContain("Contractor Pricing");
+    expect(text).not.toContain("45.00");
+    expect(text).not.toContain("2,250.00");
   });
 });
 
@@ -1081,5 +1091,81 @@ describe("Contractor pricing — the product's standard rates", () => {
     expect(screen.getByLabelText(/machine rate/i)).toHaveValue(null);
     expect(screen.getByLabelText(/packing rate/i)).toHaveValue(null);
     expect(api.saveMachineProgramArticleRates).not.toHaveBeenCalled();
+  });
+});
+
+describe("FIX articles — two soles, no upper", () => {
+  /** Opens the add dialog, picks BLACK as the sole, then the fix article EVR9 7/10. */
+  const openFixArticle = async () => {
+    const dialog = await addSoleColour(1);
+    await click(/^BLACK/);
+    await describeArticle("EVR9", "7/10");
+    return dialog;
+  };
+
+  /** A sole colour picked from one of the Sole Color panel's two dropdowns. */
+  const chooseSole = async (which: "Outer sole colour" | "Inner sole colour", colour: string) => {
+    await userEvent.click(screen.getByRole("combobox", { name: which }));
+    await userEvent.click(await screen.findByRole("option", { name: new RegExp(`^${colour}`) }));
+  };
+
+  it("drops the Upper Stock panel and asks for both soles and the quantity in the Sole Color panel", async () => {
+    const api = installApi();
+    renderPage();
+    await openMachine1();
+    const dialog = await openFixArticle();
+
+    // No upper at all: the panel and the upper selection are gone.
+    expect(within(dialog).queryByRole("region", { name: "Upper Stock" })).toBeNull();
+    expect(within(dialog).queryByRole("region", { name: "Selected Articles" })).toBeNull();
+
+    // Both soles are dropdowns in the Sole Color panel; the outer one starts on the colour picked.
+    const soles = within(dialog).getByRole("region", { name: "Sole Color" });
+    expect(within(soles).getByRole("combobox", { name: "Outer sole colour" })).toHaveValue("BLACK");
+    await chooseSole("Inner sole colour", "RED");
+    expect(within(soles).getByText("BLACK outer · RED inner")).toBeInTheDocument();
+
+    await userEvent.type(within(soles).getByLabelText("How many?"), "30");
+    await typeRates({ machine: "25" });
+    await click("Add to Program");
+
+    await waitFor(() =>
+      expect(api.saveMachineProgramFixRun).toHaveBeenCalledWith({
+        machineId: "m-1",
+        programDate: TODAY,
+        shift: DAY_SHIFT,
+        injectorNo: 1,
+        soleColour: "BLACK",
+        innerSoleColour: "RED",
+        articleSizeId: "as-evr9-710",
+        quantity: 30,
+      })
+    );
+    // A fix article's work is paid for like any other: the rates go on after the run.
+    await waitFor(() =>
+      expect(api.saveMachineProgramArticleRates).toHaveBeenCalledWith(
+        expect.objectContaining({ programId: "prog-1", articleSizeId: "as-evr9-710", machineRate: 25 })
+      )
+    );
+    expect(api.saveMachineProgramLine).not.toHaveBeenCalled();
+  });
+
+  it("refuses the same colour for the outer and the inner sole, and says why", async () => {
+    const api = installApi();
+    renderPage();
+    await openMachine1();
+    await openFixArticle();
+
+    await chooseSole("Inner sole colour", "BLACK");
+    await userEvent.type(screen.getByLabelText("How many?"), "10");
+
+    expect(screen.getByRole("alert")).toHaveTextContent("The outer and inner sole must be different colours.");
+    expect(screen.getByRole("button", { name: "Add to Program" })).toBeDisabled();
+
+    // Changing the outer sole from its own dropdown clears it.
+    await chooseSole("Outer sole colour", "RED");
+    expect(screen.queryByText(/must be different colours/)).toBeNull();
+    expect(screen.getByRole("button", { name: "Add to Program" })).toBeEnabled();
+    expect(api.saveMachineProgramFixRun).not.toHaveBeenCalled();
   });
 });

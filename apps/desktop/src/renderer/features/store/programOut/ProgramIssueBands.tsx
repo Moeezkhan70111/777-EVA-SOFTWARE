@@ -24,68 +24,128 @@ const STATE_LABEL: Record<ProgramCard["state"], string> = {
   DONE: copy.programOut.stateDone,
 };
 
-const ArticleCard: React.FC<{ card: ProgramCard; soleColour: string }> = ({ card, soleColour }) => (
-  <section className={`mpi-card mpi-card--${card.state.toLowerCase()}`}>
-    <header className="mpi-card-head">
-      <span className="mpi-card-article">{card.article}</span>
-      <span className="mpi-card-size">{card.size}</span>
-      <span className="mpi-card-count">
-        {card.issued} / {card.planned}
-      </span>
-      {/* The word, not just the bar and the colour. */}
-      <span className={`mpi-pill mpi-pill--sm mpi-pill--${card.state.toLowerCase()}`}>{STATE_LABEL[card.state]}</span>
-    </header>
+const CARTON_STATE_LABEL: Record<ProgramCard["cartonState"], string> = {
+  PENDING: copy.programOut.cartonStatePending,
+  IN_PROGRESS: copy.programOut.cartonStateInProgress,
+  DONE: copy.programOut.cartonStateDone,
+};
 
-    <div
-      className="mpi-bar"
-      role="progressbar"
-      aria-valuemin={0}
-      aria-valuemax={card.planned}
-      aria-valuenow={card.issued}
-      aria-label={copy.programOut.cardProgressLabel(card.article, card.size)}
-    >
-      <span className="mpi-bar-fill" style={{ width: `${Math.round(card.progress * 100)}%` }} />
-    </div>
+/**
+ * Which figures a card reads in. Store Out takes uppers OUT, so it counts dozens planned, issued
+ * and remaining. Store In takes cartons BACK, so it counts cartons due for what was issued (3
+ * DOZEN = 6), back, and still to come.
+ */
+export type ProgramCardMode = "issue" | "cartons";
 
-    <table className="mpi-card-table">
-      <thead>
-        <tr>
-          <th scope="col">{copy.programOut.colUpperColour}</th>
-          <th scope="col" className="mpi-num">
-            {copy.programOut.colPlanned(card.unitCode)}
-          </th>
-          <th scope="col" className="mpi-num">
-            {copy.programOut.colIssued}
-          </th>
-          <th scope="col" className="mpi-num">
-            {copy.programOut.colRemaining}
-          </th>
-        </tr>
-      </thead>
-      <tbody>
-        {card.lines.map((line) => (
-          <tr key={line.key}>
-            {/* "BLACK RED": the sole is black and the upper going on it is red. */}
-            <th scope="row">
-              <span className="mpi-sole-of">{soleColour}</span>{" "}
-              <span className="mpi-upper-of">{line.upperColour}</span>
-            </th>
-            <td className="mpi-num">{line.planned}</td>
-            <td className="mpi-num">{line.issued}</td>
-            {/* Nothing left to fetch is the good outcome, so it is the quiet one. */}
-            <td className={`mpi-num ${line.remaining > 0 ? "mpi-owed" : "mpi-clear"}`}>{line.remaining}</td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
-  </section>
+/** The figures one card shows, whichever way it is read. */
+const cardFigures = (card: ProgramCard, mode: ProgramCardMode) =>
+  mode === "issue"
+    ? { done: card.issued, total: card.planned, state: card.state, word: STATE_LABEL[card.state], label: copy.programOut.cardProgressLabel }
+    : {
+        done: card.cartonsBack,
+        total: card.cartonsDue,
+        state: card.cartonState,
+        word: CARTON_STATE_LABEL[card.cartonState],
+        label: copy.programOut.cartonCardProgressLabel,
+      };
+
+/** "BLACK RED": the sole is black and the upper going on it is red. */
+const LineName: React.FC<{ soleColour: string; upperColour: string }> = ({ soleColour, upperColour }) => (
+  <th scope="row">
+    <span className="mpi-sole-of">{soleColour}</span> <span className="mpi-upper-of">{upperColour}</span>
+  </th>
 );
+
+/** Nothing left is the good outcome, so it is the quiet one. */
+const Remaining: React.FC<{ value: number }> = ({ value }) => (
+  <td className={`mpi-num ${value > 0 ? "mpi-owed" : "mpi-clear"}`}>{value}</td>
+);
+
+const IssueTable: React.FC<{ card: ProgramCard; soleColour: string }> = ({ card, soleColour }) => (
+  <table className="mpi-card-table">
+    <thead>
+      <tr>
+        <th scope="col">{copy.programOut.colUpperColour}</th>
+        <th scope="col" className="mpi-num">{copy.programOut.colPlanned(card.unitCode)}</th>
+        <th scope="col" className="mpi-num">{copy.programOut.colIssued}</th>
+        <th scope="col" className="mpi-num">{copy.programOut.colRemaining}</th>
+      </tr>
+    </thead>
+    <tbody>
+      {card.lines.map((line) => (
+        <tr key={line.key}>
+          <LineName soleColour={soleColour} upperColour={line.upperColour} />
+          <td className="mpi-num">{line.planned}</td>
+          <td className="mpi-num">{line.issued}</td>
+          <Remaining value={line.remaining} />
+        </tr>
+      ))}
+    </tbody>
+  </table>
+);
+
+const CartonTable: React.FC<{ card: ProgramCard; soleColour: string }> = ({ card, soleColour }) => (
+  <table className="mpi-card-table">
+    <thead>
+      <tr>
+        <th scope="col">{copy.programOut.colUpperColour}</th>
+        <th scope="col" className="mpi-num">{copy.programOut.colCartonsDue}</th>
+        <th scope="col" className="mpi-num">{copy.programOut.colCartonsBack}</th>
+        <th scope="col" className="mpi-num">{copy.programOut.colCartonsToCome}</th>
+      </tr>
+    </thead>
+    <tbody>
+      {card.lines.map((line) => (
+        <tr key={line.key}>
+          <LineName soleColour={soleColour} upperColour={line.upperColour} />
+          {/* "—" when the upper is not counted in whole cartons of DOZEN: no figure is invented. */}
+          <td className="mpi-num">{line.cartonsDue ?? "—"}</td>
+          <td className="mpi-num">{line.cartonsBack}</td>
+          <Remaining value={Math.max(0, (line.cartonsDue ?? 0) - line.cartonsBack)} />
+        </tr>
+      ))}
+    </tbody>
+  </table>
+);
+
+const ArticleCard: React.FC<{ card: ProgramCard; soleColour: string; mode: ProgramCardMode }> = ({ card, soleColour, mode }) => {
+  const figures = cardFigures(card, mode);
+  const share = figures.total > 0 ? Math.min(1, figures.done / figures.total) : 0;
+  return (
+    <section className={`mpi-card mpi-card--${figures.state.toLowerCase()}`}>
+      <header className="mpi-card-head">
+        <span className="mpi-card-article">{card.article}</span>
+        <span className="mpi-card-size">{card.size}</span>
+        <span className="mpi-card-count">
+          {figures.done} / {figures.total}
+        </span>
+        {/* The word, not just the bar and the colour. */}
+        <span className={`mpi-pill mpi-pill--sm mpi-pill--${figures.state.toLowerCase()}`}>{figures.word}</span>
+      </header>
+
+      <div
+        className="mpi-bar"
+        role="progressbar"
+        aria-valuemin={0}
+        aria-valuemax={figures.total}
+        aria-valuenow={figures.done}
+        aria-label={figures.label(card.article, card.size)}
+      >
+        <span className="mpi-bar-fill" style={{ width: `${Math.round(share * 100)}%` }} />
+      </div>
+
+      {mode === "issue" ? <IssueTable card={card} soleColour={soleColour} /> : <CartonTable card={card} soleColour={soleColour} />}
+    </section>
+  );
+};
 
 interface ProgramIssueBandsProps {
   bands: ProgramBand[];
+  /** Store Out reads uppers issued; Store In reads cartons coming back. */
+  mode?: ProgramCardMode;
 }
 
-export const ProgramIssueBands: React.FC<ProgramIssueBandsProps> = ({ bands }) => {
+export const ProgramIssueBands: React.FC<ProgramIssueBandsProps> = ({ bands, mode = "issue" }) => {
   if (bands.length === 0) {
     return <StateView kind="empty" compact title={copy.programOut.noLines} hint={copy.programOut.noLinesHint} />;
   }
@@ -101,7 +161,7 @@ export const ProgramIssueBands: React.FC<ProgramIssueBandsProps> = ({ bands }) =
           </header>
           <div className="mpi-cards">
             {band.cards.map((card) => (
-              <ArticleCard card={card} soleColour={band.soleColour} key={card.key} />
+              <ArticleCard card={card} soleColour={band.soleColour} mode={mode} key={card.key} />
             ))}
           </div>
         </section>

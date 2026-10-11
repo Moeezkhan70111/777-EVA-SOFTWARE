@@ -1,6 +1,7 @@
 import { MACHINE_PROGRAM_DISPLAY_STATUS, cartonsExpectedFromUppers, formatShiftRange, roundQuantity } from "@erp/domain";
 import type {
   MachineProgramCartonPacket,
+  MachineProgramLineCartons,
   MachineProgramRecord,
   MachineProgramScanVerdict,
   SaveMachineProgramBatchResult,
@@ -57,6 +58,10 @@ export interface ProgramCardLine {
   issued: number;
   remaining: number;
   unitCode: string | null;
+  /** Cartons owed back for what was issued of this upper (3 DOZEN = 6), or null when not in whole cartons. */
+  cartonsDue: number | null;
+  /** Of those, how many are back in the store. */
+  cartonsBack: number;
 }
 
 /** One article + size being made in a sole colour, and how far through it the store is. */
@@ -71,6 +76,11 @@ export interface ProgramCard {
   progress: number;
   /** PENDING before anything is taken, DONE once nothing is outstanding. */
   state: "PENDING" | "IN_PROGRESS" | "DONE";
+  /** Store In's figures for the card: cartons due back and cartons back, summed over its lines. */
+  cartonsDue: number;
+  cartonsBack: number;
+  /** PENDING until a carton is back, DONE once every carton due is back. */
+  cartonState: "PENDING" | "IN_PROGRESS" | "DONE";
   lines: ProgramCardLine[];
 }
 
@@ -82,6 +92,12 @@ export interface ProgramBand {
   cards: ProgramCard[];
 }
 
+/** Store In's word for a card: nothing back yet, some back, or every carton due is back. */
+const cartonStateOf = (due: number, back: number): ProgramCard["cartonState"] => {
+  if (due > 0 && back >= due) return "DONE";
+  return back > 0 ? "IN_PROGRESS" : "PENDING";
+};
+
 const sum = (values: number[]): number => roundQuantity(values.reduce((total, value) => total + value, 0));
 
 /**
@@ -91,9 +107,13 @@ const sum = (values: number[]): number => roundQuantity(values.reduce((total, va
  * An injector can be given more than one sole colour, so it gets a band per colour rather than
  * one band naming a colour it cannot honestly claim — the same grouping the printed sheet uses,
  * so the paper on the machine and this screen can never be read differently.
+ *
+ * `cartons` is Store In's per-line carton figures from the data layer; a line it does not name has
+ * nothing due and nothing back.
  */
-export const programBands = (program: MachineProgramRecord): ProgramBand[] => {
+export const programBands = (program: MachineProgramRecord, cartons: readonly MachineProgramLineCartons[] = []): ProgramBand[] => {
   const bands = new Map<string, ProgramBand>();
+  const cartonsOf = new Map(cartons.map((row) => [row.lineId, row]));
   for (const run of program.runs) {
     if (run.lines.length === 0) continue;
     const bandKey = `${run.injectorNo}|${run.soleColour}`;
@@ -105,7 +125,7 @@ export const programBands = (program: MachineProgramRecord): ProgramBand[] => {
     const cardKey = `${bandKey}|${run.article}|${run.size}`;
     let card = band.cards.find((candidate) => candidate.key === cardKey);
     if (!card) {
-      card = { key: cardKey, article: run.article, size: run.size, planned: 0, issued: 0, unitCode: null, progress: 0, state: "PENDING", lines: [] };
+      card = { key: cardKey, article: run.article, size: run.size, planned: 0, issued: 0, unitCode: null, progress: 0, state: "PENDING", cartonsDue: 0, cartonsBack: 0, cartonState: "PENDING", lines: [] };
       band.cards.push(card);
     }
     for (const line of run.lines) {
@@ -116,6 +136,8 @@ export const programBands = (program: MachineProgramRecord): ProgramBand[] => {
         issued: line.consumed,
         remaining: line.outstanding,
         unitCode: line.unitCode,
+        cartonsDue: cartonsOf.get(line.id)?.cartonsDue ?? 0,
+        cartonsBack: cartonsOf.get(line.id)?.cartonsBack ?? 0,
       });
     }
   }
@@ -130,6 +152,9 @@ export const programBands = (program: MachineProgramRecord): ProgramBand[] => {
       // so the last one can overshoot, and an overshot card is finished, not 120% done.
       const outstanding = sum(card.lines.map((line) => line.remaining));
       card.state = outstanding <= 0 ? "DONE" : card.issued > 0 ? "IN_PROGRESS" : "PENDING";
+      card.cartonsDue = card.lines.reduce((total, line) => total + (line.cartonsDue ?? 0), 0);
+      card.cartonsBack = card.lines.reduce((total, line) => total + line.cartonsBack, 0);
+      card.cartonState = cartonStateOf(card.cartonsDue, card.cartonsBack);
     }
   }
   return [...bands.values()];
@@ -223,6 +248,8 @@ export const pendingCartonRuns = (packets: readonly MachineProgramCartonPacket[]
 /** A carton run that has been generated, for the record on screen. */
 export interface PrintedCartonRun {
   key: string;
+  /** The carton QR run the labels were generated in — what a reprint reads the codes back from. */
+  qrBatchId: string;
   label: string;
   cartons: number;
   /** The identity range the run holds, e.g. `SK12_BLACKRED_7/10_000001 → …_000004`. */
@@ -245,6 +272,7 @@ export const printedCartonRuns = (packets: readonly MachineProgramCartonPacket[]
     }
     runs.set(label.qrBatchId, {
       key: label.qrBatchId,
+      qrBatchId: label.qrBatchId,
       label: packet.cartons ? cartonRunLabel(packet.cartons) : packet.itemDisplayName,
       cartons: label.cartonCount,
       range: label.firstQrId === label.lastQrId ? label.firstQrId : `${label.firstQrId} → ${label.lastQrId}`,

@@ -22,11 +22,13 @@ interface ProgramCartonInProps {
   programId: string;
   /** How many carton runs have been printed for the program. */
   printedRuns: number;
+  /** Closed (complete or reconciled): its figures are final, so nothing more is stored in. */
+  closed?: boolean;
   /** Re-reads the program, so the "back in store" counts are the database's. */
   onReceived: () => Promise<void>;
 }
 
-export const ProgramCartonIn: React.FC<ProgramCartonInProps> = ({ token, programId, printedRuns, onReceived }) => {
+export const ProgramCartonIn: React.FC<ProgramCartonInProps> = ({ token, programId, printedRuns, closed = false, onReceived }) => {
   const cartonIn = useCartonIn({ token, programId, onReceived });
   return (
     <ProgramScanSection
@@ -34,8 +36,14 @@ export const ProgramCartonIn: React.FC<ProgramCartonInProps> = ({ token, program
       line={copy.programOut.cartonInLine}
       icon={<CartonIcon />}
       startLabel={copy.programOut.startScan}
-      canScan={printedRuns > 0}
-      notice={<StateView kind="empty" compact title={copy.programOut.cartonInNoneTitle} hint={copy.programOut.cartonInNoneHint} />}
+      canScan={printedRuns > 0 && !closed}
+      notice={
+        closed ? (
+          <StateView kind="empty" compact title={copy.programOut.cartonInClosedTitle} hint={copy.programOut.cartonInClosedHint} />
+        ) : (
+          <StateView kind="empty" compact title={copy.programOut.cartonInNoneTitle} hint={copy.programOut.cartonInNoneHint} />
+        )
+      }
       feedback={cartonIn.feedback}
       onScan={cartonIn.scan}
       busy={cartonIn.busy}

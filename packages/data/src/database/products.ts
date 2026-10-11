@@ -55,6 +55,69 @@ const writeContractorRates = (
     .run(rates.machineRatePaisa, rates.packingRatePaisa, rates.printingRatePaisa, now, articleSizeId);
 };
 
+/** What an edited product is saved with. */
+export interface ProductUpdateInput {
+  article: string;
+  /** Unused: colour variants are managed through `colors`. Kept optional for callers that still send it. */
+  color?: string;
+  size: string;
+  description?: string;
+  costPrice?: number;
+  sellingPrice?: number;
+  /** The standard contractor rates, per DOZEN, in rupees — see migration 064. */
+  machineRate?: number | null;
+  packingRate?: number | null;
+  printingRate?: number | null;
+  mainGroupId?: string;
+  productGroupId?: string;
+  articleSeriesId?: string;
+  productTypeId?: string;
+  productSubGroupId?: string;
+  colors?: string[];
+  status?: "ACTIVE" | "DISABLED";
+}
+
+/**
+ * Renames ONE product's article and/or size — and its colour variants with it — when an edit
+ * changed them. Must run inside the caller's transaction.
+ *
+ * The article and size ARE the product's identity: every carton QR spells them out
+ * (SK6_BLACK_7/10_000001), so once a QR code carries them they can never change — the same rule
+ * Product Lists applies to a whole article. Until then nothing points at the old name except this
+ * product's own rows, which is why a rename is safe: a machine program refers to it by id, and
+ * there is no stock, scan or sale without a QR code.
+ *
+ * An empty value means the caller did not send one (the simple product form), never "blank it".
+ */
+const renameArticleSize = (db: SqliteDatabase, articleSizeId: string, article: string, size: string, now: string): void => {
+  const current = db.db.prepare("SELECT article, size FROM article_sizes WHERE id = ?").get(articleSizeId) as
+    | { article: string; size: string }
+    | undefined;
+  if (!current) return;
+  const nextArticle = article.trim().toUpperCase() || current.article;
+  const nextSize = size.trim().toUpperCase() || current.size;
+  if (nextArticle === current.article && nextSize === current.size) return;
+
+  const qrCount = (db.db.prepare("SELECT COUNT(1) AS n FROM qr_codes WHERE article = ? AND size = ?").get(current.article, current.size) as { n: number }).n;
+  if (qrCount > 0) {
+    throw new Error(
+      `${current.article} ${current.size} cannot be renamed: ${qrCount.toLocaleString()} QR ${qrCount === 1 ? "code carries" : "codes carry"} it in their identity. Create ${nextArticle} ${nextSize} as a new product instead.`
+    );
+  }
+  // UNIQUE(article, size) and UNIQUE(article, color, size) count disabled rows too.
+  const clash = db.db
+    .prepare(
+      `SELECT 1 FROM article_sizes WHERE article = ? AND size = ? AND id <> ?
+       UNION SELECT 1 FROM product_variants WHERE article = ? AND size = ? AND COALESCE(article_size_id, '') <> ?
+       LIMIT 1`
+    )
+    .get(nextArticle, nextSize, articleSizeId, nextArticle, nextSize, articleSizeId);
+  if (clash) throw new Error(`${nextArticle} ${nextSize} already exists. Edit that product, or disable it first.`);
+
+  db.db.prepare("UPDATE article_sizes SET article = ?, size = ?, updated_at = ? WHERE id = ?").run(nextArticle, nextSize, now, articleSizeId);
+  db.db.prepare("UPDATE product_variants SET article = ?, size = ?, updated_at = ? WHERE article_size_id = ?").run(nextArticle, nextSize, now, articleSizeId);
+};
+
 const PRODUCT_LIST_TABLES: Record<
     "main-group" | "product-group" | "article-series" | "product-type" | "product-sub-group",
     { table: string; nameColumn: string; fk: string; label: string; discountTable: string | null; discountFk: string | null }
@@ -491,31 +554,27 @@ export const productsMethods = {
     return variantId;
   },
 
-  updateProduct(this: SqliteDatabase, 
-    id: string,
-    input: {
-      article: string;
-      /** Unused: colour variants are managed through `colors`. Kept optional for callers that still send it. */
-      color?: string;
-      size: string;
-      description?: string;
-      costPrice?: number;
-      sellingPrice?: number;
-      /** The standard contractor rates, per DOZEN, in rupees — see migration 064. */
-      machineRate?: number | null;
-      packingRate?: number | null;
-      printingRate?: number | null;
-      mainGroupId?: string;
-      productGroupId?: string;
-      articleSeriesId?: string;
-      productTypeId?: string;
-      productSubGroupId?: string;
-      colors?: string[];
-      status?: "ACTIVE" | "DISABLED";
+  /**
+   * Saves an edited product. A changed ARTICLE or SIZE renames this one product (and its colour
+   * variants) while no QR code carries it — see renameArticleSize.
+   */
+  updateProduct(this: SqliteDatabase, id: string, input: ProductUpdateInput): void {
+    // All of it or none of it: a rename that went through with the prices refused (or the other
+    // way round) would leave a product nobody asked for.
+    this.db.exec("BEGIN IMMEDIATE TRANSACTION");
+    try {
+      const articleSizeId = this.getProduct(id)?.articleSizeId ?? id;
+      renameArticleSize(this, articleSizeId, input.article, input.size, new Date().toISOString());
+      this.applyProductUpdate(articleSizeId, input);
+      this.db.exec("COMMIT");
+    } catch (error) {
+      try { this.db.exec("ROLLBACK"); } catch { /* no transaction to roll back */ }
+      throw error;
     }
-  ): void {
-    const articleSize = this.getProduct(id);
-    const articleSizeId = articleSize?.articleSizeId ?? id;
+  },
+
+  /** @internal The body of updateProduct, inside its transaction. */
+  applyProductUpdate(this: SqliteDatabase, articleSizeId: string, input: ProductUpdateInput): void {
     const now = new Date().toISOString();
     const costPricePaisa = toPaisaOrNull(input.costPrice);
     const sellingPricePaisa = toPaisaOrNull(input.sellingPrice);

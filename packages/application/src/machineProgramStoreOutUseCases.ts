@@ -71,6 +71,8 @@ export interface MachineProgramStoreOutHead {
   authorizedQuantity: number;
   issuedQuantity: number;
   outstandingQuantity: number;
+  /** Closed in Store In (complete or reconciled): production is over. */
+  closed?: boolean;
 }
 
 /** What one program promises of one upper, across every run it appears on. */
@@ -165,6 +167,9 @@ export const machineProgramStoreOutRefusal = (
   const code = formatMachineProgramCodeNumber(head.programNumber);
   if (head.status === MACHINE_PROGRAM_STATUS.CANCELLED) {
     return { outcome: "PROGRAM_CANCELLED", reason: `${code} has been deleted. Nothing can be issued against it.` };
+  }
+  if (head.closed) {
+    return { outcome: "PROGRAM_COMPLETED", reason: `${code} is closed — production is complete. Nothing more can be issued against it.` };
   }
   if (head.status === MACHINE_PROGRAM_STATUS.COMPLETED) {
     return { outcome: "PROGRAM_COMPLETED", reason: `${code} is fully issued. Everything on it has already left the store.` };

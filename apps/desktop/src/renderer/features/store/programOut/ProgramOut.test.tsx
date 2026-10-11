@@ -246,22 +246,16 @@ function installApi(
       };
     }),
     listMachineProgramIssueBatches: vi.fn(async () => ({ accepted: true, rows: [] })),
+    listQrCodesForBatch: vi.fn(async (_batchId: string): Promise<Array<{ id: string; batchId: string; article: string; color: string; size: string; sequence: number; status: string }>> => []),
     listMachineProgramCartonPackets: vi.fn(async () => ({ accepted: true, rows: state.cartonPackets.map((packet) => ({ ...packet })) })),
     // Dana Issue: the store holds two BLACK Danas, which is exactly the case a colour
     // alone cannot describe — the operator has to pick the material.
     listMachineProgramDanaOptions: vi.fn(async () => ({
       accepted: true,
       rows: [
-        {
-          itemId: "d-eva-black", displayName: "DANA — EVA — BLACK", colour: "BLACK", subCategoryName: "EVA",
-          packName: "BAG", packSize: 25, packingUnitCode: "KILOGRAM", stockUnitCode: "KILOGRAM",
-          quantityOnHand: 200, bagsOnHand: 8, blockedReason: null as string | null,
-        },
-        {
-          itemId: "d-pvc-black", displayName: "DANA — PVC — BLACK", colour: "BLACK", subCategoryName: "PVC",
-          packName: "BAG", packSize: 25, packingUnitCode: "KILOGRAM", stockUnitCode: "KILOGRAM",
-          quantityOnHand: 75, bagsOnHand: 3, blockedReason: null,
-        },
+        // EVA BLACK has 1 BAG = 25 KG on its ladder; PVC BLACK is counted in KG only.
+        { itemId: "d-eva-black", displayName: "DANA — EVA — BLACK", colour: "BLACK", subCategoryName: "EVA", units: ["BAG", "KG"], stockUnitCode: "KG", issuedQuantity: 45, blockedReason: null as string | null },
+        { itemId: "d-pvc-black", displayName: "DANA — PVC — BLACK", colour: "BLACK", subCategoryName: "PVC", units: ["KG"], stockUnitCode: "KG", issuedQuantity: 0, blockedReason: null },
       ],
     })),
     issueMachineProgramDana: vi.fn(async (): Promise<{ accepted: boolean; outcome: string; reason?: string; quantity?: number; unitCode?: string }> => ({ accepted: true, outcome: "MOVED", quantity: 50, unitCode: "KILOGRAM" })),
@@ -559,7 +553,7 @@ describe("Machine Move Out — one scan, one movement", () => {
     // No Start Scan: the list is on the program itself. 2 DOZEN is 4 carton labels.
     expect(await within(cartonSection()).findByText("4 cartons")).toBeInTheDocument();
     expect(within(cartonSection()).getByText(/SK6_RED_7\/10_000001 → SK6_RED_7\/10_000004/)).toBeInTheDocument();
-    expect(within(cartonSection()).queryByRole("button", { name: /RED/ })).not.toBeInTheDocument();
+    expect(within(cartonSection()).queryByRole("button", { name: /^Print .*RED/ })).not.toBeInTheDocument();
 
     await userEvent.click(within(cartonSection()).getByRole("button", { name: "Print 4 carton QR labels for SK6 / 7/10 / BLACK" }));
     await waitFor(() => expect(printWindow).toHaveBeenCalledTimes(1));
@@ -572,6 +566,34 @@ describe("Machine Move Out — one scan, one movement", () => {
     // Printed, recorded, and gone from the owed list.
     await waitFor(() => expect(within(cartonSection()).queryByRole("button", { name: /Print 4/ })).not.toBeInTheDocument());
     expect(within(cartonSection()).getByText(/SK6_BLACK_7\/10_000001 → SK6_BLACK_7\/10_000004/)).toBeInTheDocument();
+  });
+
+  it("reprints a printed run with the SAME codes, and never generates or records anything new", async () => {
+    // RED's 4 labels were printed earlier; one has since been voided in QR Management.
+    const printed = cartonPacket("RM_6_43_1", "RED");
+    printed.label = {
+      qrBatchId: "qrb-old", firstQrId: "SK6_RED_7/10_000001", lastQrId: "SK6_RED_7/10_000004",
+      cartonCount: 4, receivedInRun: 1, printedBy: "aslam", printedAt: `${TODAY}T06:30:00.000Z`,
+    };
+    const api = installApi({ earlierPackets: [printed] });
+    api.listQrCodesForBatch.mockResolvedValue(
+      [1, 2, 3, 4].map((sequence) => ({
+        id: `SK6_RED_7/10_00000${sequence}`, batchId: "qrb-old", article: "SK6", color: "RED", size: "7/10",
+        sequence, status: sequence === 3 ? "VOID" : "GENERATED",
+      }))
+    );
+    renderPage();
+    await userEvent.type(lookupBox(), "MP-000001");
+    await userEvent.keyboard("{Enter}");
+    await openedProgram();
+
+    await userEvent.click(await within(cartonSection()).findByRole("button", { name: "Reprint the carton QR labels for SK6 / 7/10 / RED" }));
+
+    await waitFor(() => expect(printWindow).toHaveBeenCalledTimes(1));
+    expect(api.listQrCodesForBatch).toHaveBeenCalledWith("qrb-old");
+    // The same identities, minus the voided one — nothing new is reserved, nothing is recorded.
+    expect(printWindow.mock.calls[0][0].ids).toEqual(["SK6_RED_7/10_000001", "SK6_RED_7/10_000002", "SK6_RED_7/10_000004"]);
+    expect(api.printMachineProgramCartons).not.toHaveBeenCalled();
   });
 });
 // ─── Dana Issue ───────────────────────────────────────────────────────────────
@@ -587,7 +609,7 @@ describe("Machine Program Issue — Dana", () => {
 
   const danaSection = () => screen.getByRole("region", { name: "Dana Issue" });
 
-  it("offers one stepper per MATERIAL, so two Danas of one colour can be told apart", async () => {
+  it("offers one quantity box per MATERIAL, in its own unit, with no stock shown first", async () => {
     const api = installApi();
     renderPage();
     await open();
@@ -595,49 +617,64 @@ describe("Machine Program Issue — Dana", () => {
     await waitFor(() => expect(api.listMachineProgramDanaOptions).toHaveBeenCalledWith("prog-1", { token: "t-1" }));
     const dana = danaSection();
     // A colour alone would not say which of these left the store.
-    expect(within(dana).getByText("BLACK · EVA")).toBeInTheDocument();
-    expect(within(dana).getByText("BLACK · PVC")).toBeInTheDocument();
-    expect(within(dana).getByText("8 BAGS in store")).toBeInTheDocument();
-    expect(within(dana).getByText("3 BAGS in store")).toBeInTheDocument();
-    // Nothing is asked for yet, so there is nothing to issue.
+    expect(within(dana).getByRole("textbox", { name: "Quantity of BLACK · EVA" })).toBeInTheDocument();
+    expect(within(dana).getByRole("textbox", { name: "Quantity of BLACK · PVC" })).toBeInTheDocument();
+    // EVA has 1 BAG = 25 KG on its ladder, so its unit is chosen; PVC is counted in KG only.
+    const evaUnits = within(dana).getByRole("group", { name: "Unit for BLACK · EVA" });
+    expect(within(evaUnits).getByRole("button", { name: "KG" })).toHaveAttribute("aria-pressed", "true");
+    expect(within(evaUnits).getByRole("button", { name: "BAG" })).toHaveAttribute("aria-pressed", "false");
+    expect(within(dana).queryByRole("group", { name: "Unit for BLACK · PVC" })).toBeNull();
+    // What has already gone out for this program is shown on each row.
+    expect(within(dana).getByText("Issued for this program: 45 KG")).toBeInTheDocument();
+    expect(within(dana).getByText("Issued for this program: 0 KG")).toBeInTheDocument();
+    // No stock figure, and no bag size to set.
+    expect(within(dana).queryByText(/in store|holds/)).toBeNull();
     expect(within(dana).getByRole("button", { name: "Issue Dana" })).toBeDisabled();
   });
 
-  it("issues the bags that were asked for, and only those", async () => {
+  it("issues the quantity typed, in the unit chosen, and only for the Dana asked for", async () => {
     const api = installApi();
     renderPage();
     await open();
     const dana = danaSection();
 
-    await userEvent.click(await within(dana).findByRole("button", { name: "One more bag of BLACK · EVA" }));
-    await userEvent.click(within(dana).getByRole("button", { name: "One more bag of BLACK · EVA" }));
+    await userEvent.type(await within(dana).findByRole("textbox", { name: "Quantity of BLACK · EVA" }), "2");
+    await userEvent.click(within(within(dana).getByRole("group", { name: "Unit for BLACK · EVA" })).getByRole("button", { name: "BAG" }));
+    await userEvent.type(within(dana).getByRole("textbox", { name: "Quantity of BLACK · PVC" }), "7.5");
     await userEvent.click(within(dana).getByRole("button", { name: "Issue Dana" }));
 
-    await waitFor(() =>
-      expect(api.issueMachineProgramDana).toHaveBeenCalledWith(
-        { programId: "prog-1", itemId: "d-eva-black", bags: 2 },
-        { token: "t-1" }
-      )
+    await waitFor(() => expect(api.issueMachineProgramDana).toHaveBeenCalledTimes(2));
+    expect(api.issueMachineProgramDana).toHaveBeenCalledWith(
+      { programId: "prog-1", itemId: "d-eva-black", quantity: 2, unitCode: "BAG" },
+      { token: "t-1" }
     );
-    // The PVC bag was never asked for, so it never moved.
-    expect(api.issueMachineProgramDana).toHaveBeenCalledTimes(1);
+    expect(api.issueMachineProgramDana).toHaveBeenCalledWith(
+      { programId: "prog-1", itemId: "d-pvc-black", quantity: 7.5, unitCode: "KG" },
+      { token: "t-1" }
+    );
     // And the program is re-read, because its figures are the database's, never the screen's.
     await waitFor(() => expect(api.openMachineProgramStoreOut).toHaveBeenCalledTimes(2));
   });
 
-  it("never offers more bags than the store holds", async () => {
-    installApi();
+  it("takes any quantity typed, and says so when the store does not hold that much", async () => {
+    const api = installApi();
+    api.issueMachineProgramDana.mockResolvedValueOnce({
+      accepted: false,
+      outcome: "NOT_ENOUGH_STOCK",
+      reason: "Only 75 KG is in the store.",
+    });
     renderPage();
     await open();
     const dana = danaSection();
 
-    const box = await within(dana).findByRole("textbox", { name: "Bags of BLACK · PVC" });
-    await userEvent.clear(box);
+    // No ceiling on the box: what was typed is what is asked for.
+    const box = await within(dana).findByRole("textbox", { name: "Quantity of BLACK · PVC" });
     await userEvent.type(box, "99");
+    expect(box).toHaveValue("99");
 
-    // 3 bags on the shelf is the ceiling, typed or clicked.
-    expect(box).toHaveValue("3");
-    expect(within(dana).getByRole("button", { name: "One more bag of BLACK · PVC" })).toBeDisabled();
+    await userEvent.click(within(dana).getByRole("button", { name: "Issue Dana" }));
+    // The stock rule is the main process's, and its sentence is what the operator reads.
+    expect(await within(dana).findByRole("alert")).toHaveTextContent("Only 75 KG is in the store.");
   });
 
   it("will not let a labelled Dana be typed out, and says to scan it instead", async () => {
@@ -647,8 +684,7 @@ describe("Machine Program Issue — Dana", () => {
       rows: [
         {
           itemId: "d-eva-black", displayName: "DANA — EVA — BLACK", colour: "BLACK", subCategoryName: "EVA",
-          packName: "BAG", packSize: 25, packingUnitCode: "KILOGRAM", stockUnitCode: "KILOGRAM",
-          quantityOnHand: 200, bagsOnHand: 8,
+          units: ["KG"], stockUnitCode: "KG", issuedQuantity: 0,
           blockedReason: "6 labelled packets of this material are in the store. Scan them out on the right instead.",
         },
       ],
@@ -658,25 +694,8 @@ describe("Machine Program Issue — Dana", () => {
     const dana = danaSection();
 
     expect(await within(dana).findByText(/6 labelled packets/)).toBeInTheDocument();
-    expect(within(dana).getByRole("button", { name: "One more bag of BLACK · EVA" })).toBeDisabled();
+    expect(within(dana).getByRole("textbox", { name: "Quantity of BLACK · EVA" })).toBeDisabled();
     expect(within(dana).getByRole("button", { name: "Issue Dana" })).toBeDisabled();
-  });
-
-  it("keeps the refusal on screen when the store turns an issue down", async () => {
-    const api = installApi();
-    api.issueMachineProgramDana.mockResolvedValue({
-      accepted: false,
-      outcome: "NOT_ENOUGH_STOCK",
-      reason: "Only 50 KILOGRAM is in the store.",
-    });
-    renderPage();
-    await open();
-    const dana = danaSection();
-
-    await userEvent.click(await within(dana).findByRole("button", { name: "One more bag of BLACK · EVA" }));
-    await userEvent.click(within(dana).getByRole("button", { name: "Issue Dana" }));
-
-    expect(await within(dana).findByRole("alert")).toHaveTextContent("Only 50 KILOGRAM is in the store.");
   });
 });
 

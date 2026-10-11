@@ -111,6 +111,9 @@ export const IPC = {
   printMachineProgramCartons: "erp:print-machine-program-cartons",
   // Store In: one carton label of an open program scanned back in (produced + stored in).
   machineProgramCartonIn: "erp:machine-program-carton-in",
+  // Store In closing a program: how it stands against the cartons back, and Complete Program.
+  getMachineProgramReconciliation: "erp:get-machine-program-reconciliation",
+  completeMachineProgramProduction: "erp:complete-machine-program-production",
   // Dana issued out of the store FOR a program (Machine Program Issue screen).
   listMachineProgramDanaOptions: "erp:list-machine-program-dana-options",
   issueMachineProgramDana: "erp:issue-machine-program-dana",

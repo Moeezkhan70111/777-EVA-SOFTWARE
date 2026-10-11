@@ -102,7 +102,16 @@ export const StoreInPage: React.FC<StoreInPageProps> = ({ tab, token, username, 
       {programView.loading ? <StateView kind="loading" compact message={copy.programOut.opening} /> : null}
 
       {active ? (
-        <TabStrip items={items} active={active} onSelect={(id) => onNavigate(storeInTabRoute(id))} label={copy.store.storeInSections} />
+        <TabStrip
+          items={items}
+          active={programView.program ? null : active}
+          onSelect={(id) => {
+            // An open program sits where the sections do: choosing a section puts it away.
+            programView.close();
+            onNavigate(storeInTabRoute(id));
+          }}
+          label={copy.store.storeInSections}
+        />
       ) : null}
 
       <div className="si-body">

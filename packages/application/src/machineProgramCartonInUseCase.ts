@@ -26,6 +26,8 @@ import type { EventPublisher, ScanOperationalContext, TransactionContext, Transa
 export interface MachineProgramCartonOrigin {
   programId: string;
   programNumber: number;
+  /** Closed (complete or reconciled): its figures are final, so no carton is stored in against it. */
+  closed: boolean;
 }
 
 export type MachineProgramCartonInOutcome =
@@ -37,6 +39,8 @@ export type MachineProgramCartonInOutcome =
   | "NOT_ON_PROGRAM"
   /** A carton printed for a different machine program. */
   | "OTHER_PROGRAM"
+  /** The program is closed: its reconciliation is final. */
+  | "PROGRAM_CLOSED"
   | "ALREADY_IN_STORE"
   | "NOT_ELIGIBLE"
   /** Voided in QR Management: there is no carton to produce. */
@@ -74,7 +78,7 @@ export type MachineProgramCartonInDeps = RecordProductionDeps &
 
 /** Thrown inside the transaction when the carton is not this program's. Nothing is written. */
 class CartonNotOnProgramError extends Error {
-  constructor(readonly outcome: "NOT_ON_PROGRAM" | "OTHER_PROGRAM", message: string) {
+  constructor(readonly outcome: "NOT_ON_PROGRAM" | "OTHER_PROGRAM" | "PROGRAM_CLOSED", message: string) {
     super(message);
     this.name = "CartonNotOnProgramError";
   }
@@ -119,6 +123,10 @@ const requireCartonOfProgram = async (
   if (origin.programId !== programId) {
     const code = formatMachineProgramCodeNumber(origin.programNumber);
     throw new CartonNotOnProgramError("OTHER_PROGRAM", `This carton was printed for ${code}. Open ${code} to receive it.`);
+  }
+  if (origin.closed) {
+    const code = formatMachineProgramCodeNumber(origin.programNumber);
+    throw new CartonNotOnProgramError("PROGRAM_CLOSED", `${code} is closed — its cartons are reconciled, so this one cannot be stored in against it.`);
   }
 };
 

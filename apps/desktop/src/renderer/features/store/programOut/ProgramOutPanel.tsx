@@ -1,4 +1,4 @@
-import React, { useMemo } from "react";
+import React, { useEffect, useMemo } from "react";
 import { copy } from "../../../config/copy";
 import { StateView } from "../../../components/shared/StateView";
 import { SCAN_STATION_CSS } from "../../scanStation/scanStation";
@@ -8,6 +8,8 @@ import { ProgramIssueBands, ProgramIssueTotals } from "./ProgramIssueBands";
 import { ProgramIssueHeader } from "./ProgramIssueHeader";
 import { ProgramCartonIn } from "./ProgramCartonIn";
 import { ProgramScanSection } from "./ProgramScanSection";
+import { ProgramCloseSection } from "../programClose/ProgramCloseSection";
+import { useProgramClose } from "../programClose/useProgramClose";
 import { canIssueMore, injectorsOnProgram, programBands, programStatusLabel } from "./programOut";
 import type { ProgramOutState } from "./useProgramOut";
 
@@ -52,7 +54,16 @@ interface ProgramOutPanelProps {
 
 export const ProgramOutPanel: React.FC<ProgramOutPanelProps> = ({ state, onClose, onChangeJob, viewOnly = false }) => {
   const { program, cartonRuns, printedRuns, blockedCartons, printingKey, history } = state;
-  const bands = useMemo(() => (program ? programBands(program) : []), [program]);
+  const { cartonProgress } = state;
+  const bands = useMemo(() => (program ? programBands(program, cartonProgress) : []), [program, cartonProgress]);
+  const close = useProgramClose({ token: state.token, programId: program?.id ?? "", onClosed: state.reload });
+  const { load: loadClose } = close;
+  // Every carton stored in changes how the program stands, so Complete Program counts afresh.
+  useEffect(() => {
+    void loadClose();
+  }, [cartonProgress, loadClose]);
+  // Closed is final: nothing more is issued, printed or stored in against the program.
+  const closed = Boolean(close.reconciliation?.closure);
 
   if (!program) return null;
   const canIssue = canIssueMore(program);
@@ -81,13 +92,19 @@ export const ProgramOutPanel: React.FC<ProgramOutPanelProps> = ({ state, onClose
       ) : null}
 
       {viewOnly ? (
-        <ProgramCartonIn token={state.token} programId={program.id} printedRuns={printedRuns.length} onReceived={state.reload} />
+        <ProgramCartonIn
+          token={state.token}
+          programId={program.id}
+          printedRuns={printedRuns.length}
+          closed={closed}
+          onReceived={state.reload}
+        />
       ) : (
         <>
           <DanaIssuePanel
             programId={program.id}
             token={state.token}
-            enabled={program.displayStatus !== "CANCELLED"}
+            enabled={program.displayStatus !== "CANCELLED" && !closed}
             onIssued={() => void state.reload()}
           />
           <ProgramScanSection
@@ -120,10 +137,16 @@ export const ProgramOutPanel: React.FC<ProgramOutPanelProps> = ({ state, onClose
         printed={printedRuns}
         printingKey={printingKey}
         onPrint={(run) => void state.printCartons(run)}
+        onReprint={(run) => void state.reprintCartons(run)}
         blocked={blockedCartons}
+        locked={closed}
       />
 
-      <ProgramIssueBands bands={bands} />
+      {/* Store In completes the program; Store Out shows how it was closed, once it is. */}
+      <ProgramCloseSection close={close} allowComplete={viewOnly} />
+
+      {/* Store Out counts uppers going out; Store In counts the cartons coming back for them. */}
+      <ProgramIssueBands bands={bands} mode={viewOnly ? "cartons" : "issue"} />
 
       <ProgramIssueTotals
         injectors={injectorsOnProgram(program)}
