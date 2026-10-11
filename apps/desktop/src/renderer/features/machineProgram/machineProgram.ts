@@ -1,5 +1,6 @@
 import {
   MACHINE_PROGRAM_DISPLAY_STATUS,
+  checkFixQuantity,
   MACHINE_SHIFTS,
   checkMachineShift,
   checkProgramQuantity,
@@ -60,6 +61,18 @@ export const draftFromRun = (run: MachineProgramRunRecord): RunDraft => ({
   articleSizeId: run.articleSizeId,
   size: run.size,
 });
+
+/**
+ * Why a FIX run's quantity cannot be saved, or null.
+ *
+ * The same shape rule a line quantity follows, minus the stock ceiling: a fix run reserves
+ * nothing, so there is nothing it could ask for more of than the store holds.
+ */
+export const fixQuantityProblem = (text: string): string | null => {
+  if (text.trim() === "") return null;
+  const quantity = Number(text);
+  return checkFixQuantity(quantity) ? null : copy.machineProgram.quantityInvalid;
+};
 
 /** `30`, `12.5` — a quantity without floating-point dust. */
 export const formatNumber = (value: number): string => String(roundQuantity(value));

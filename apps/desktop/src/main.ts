@@ -166,6 +166,7 @@ function composeUseCases(db: SqliteDatabase, dataModule: DataModule, application
       assignContractor: new applicationModule.AssignMachineContractorUseCase(deps),
       saveLine: new applicationModule.SaveMachineProgramLineUseCase(deps),
       saveRun: new applicationModule.SaveMachineProgramRunUseCase(deps),
+      saveFixRun: new applicationModule.SaveMachineProgramFixRunUseCase(deps),
       removeLine: new applicationModule.RemoveMachineProgramLineUseCase(deps),
       removeRun: new applicationModule.RemoveMachineProgramRunUseCase(deps),
       deleteProgram: new applicationModule.DeleteMachineProgramUseCase(deps),

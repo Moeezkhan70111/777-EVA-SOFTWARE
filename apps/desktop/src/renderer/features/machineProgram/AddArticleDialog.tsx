@@ -7,11 +7,12 @@ import { StateView } from "../../components/shared/StateView";
 import { StepHeading } from "../../components/shared/StepHeading";
 import { copy } from "../../config/copy";
 import { ChosenUppersTable } from "./ChosenUppersTable";
+import { FixSolePanel } from "./FixSolePanel";
 import { ContractorRateFields } from "./ContractorRateFields";
 import { ArticleStep, ColourStep, SizeStep } from "./RunSteps";
 import { UpperPicker } from "./UpperPicker";
 import { isEmptyRateDraft } from "./ContractorRateFields";
-import { danaLabel, runForArticleSize, type RunDraft } from "./machineProgram";
+import { danaLabel, fixQuantityProblem, runForArticleSize, type RunDraft } from "./machineProgram";
 import { useChosenUppers } from "./useChosenUppers";
 import { useArticles, useSoleColours } from "./useMachineProgramData";
 import type { ProgramWrites } from "./useProgramWrites";
@@ -65,6 +66,17 @@ export const AddArticleDialog: React.FC<AddArticleDialogProps> = ({ fixedColour,
   const articles = useArticles();
   const chosen = useChosenUppers({ ...target, articles: articles.value });
 
+  // A FIX article has no upper: the third panel asks for the inner sole and a quantity.
+  // The flag rides on the article list, so it is known the moment a size is chosen.
+  const [innerColour, setInnerColour] = useState<string | null>(null);
+  const [fixQuantity, setFixQuantity] = useState("");
+  const [fixSaving, setFixSaving] = useState(false);
+  const [fixRefused, setFixRefused] = useState<string | null>(null);
+  const chosenSize = articles.value
+    .flatMap((entry) => entry.sizes)
+    .find((size) => size.articleSizeId === draft.articleSizeId);
+  const isFix = Boolean(chosenSize?.hasNoUpper);
+
   const describedRun =
     draft.soleColour && draft.article && draft.size && draft.articleSizeId
       ? { soleColour: draft.soleColour, article: draft.article, size: draft.size, articleSizeId: draft.articleSizeId }
@@ -76,8 +88,39 @@ export const AddArticleDialog: React.FC<AddArticleDialogProps> = ({ fixedColour,
   const takenItemIds = new Set((existing?.lines ?? []).map((line) => line.itemId));
 
   const save = async () => {
-    if (await chosen.addToProgram()) onClose();
+    if (!isFix) {
+      if (await chosen.addToProgram()) onClose();
+      return;
+    }
+    if (!draft.soleColour || !innerColour || !draft.articleSizeId) return;
+    setFixSaving(true);
+    setFixRefused(null);
+    try {
+      const refusal = await target.writes.saveFixRun({
+        machineId: target.machineId,
+        programDate: target.programDate,
+        shift: target.shift,
+        injectorNo: target.injectorNo,
+        soleColour: draft.soleColour,
+        innerSoleColour: innerColour,
+        articleSizeId: draft.articleSizeId,
+        quantity: Number(fixQuantity),
+      });
+      if (refusal) setFixRefused(refusal);
+      else onClose();
+    } finally {
+      setFixSaving(false);
+    }
   };
+
+  const fixProblem = fixQuantityProblem(fixQuantity);
+  // Both soles and a usable quantity, and never the same colour twice: an outer and an inner
+  // sole of one colour is one sole, and the floor would have nothing to tell them apart by.
+  const fixReady =
+    Boolean(draft.soleColour && innerColour && draft.articleSizeId) &&
+    innerColour !== draft.soleColour &&
+    !fixProblem &&
+    fixQuantity.trim() !== "";
 
   // On a short screen the selection sits below the panels. Choosing an upper brings it into
   // view, so the box its quantity goes in is never off the bottom of the dialog.
@@ -94,8 +137,13 @@ export const AddArticleDialog: React.FC<AddArticleDialogProps> = ({ fixedColour,
       wide="xl"
       onClose={onClose}
       footer={
-        <button type="button" className="btn btn-primary btn-lg" disabled={!chosen.ready || chosen.saving} onClick={() => void save()}>
-          {chosen.saving ? copy.machineProgram.addingToProgram : copy.machineProgram.addToProgram}
+        <button
+          type="button"
+          className="btn btn-primary btn-lg"
+          disabled={isFix ? !fixReady || fixSaving : !chosen.ready || chosen.saving}
+          onClick={() => void save()}
+        >
+          {(isFix ? fixSaving : chosen.saving) ? copy.machineProgram.addingToProgram : copy.machineProgram.addToProgram}
         </button>
       }
     >
@@ -147,9 +195,16 @@ export const AddArticleDialog: React.FC<AddArticleDialogProps> = ({ fixedColour,
           </div>
         </section>
 
-        <section className="mpa-panel mpa-panel--stock" aria-label={copy.machineProgram.panelUpperStock}>
+        <section
+          className="mpa-panel mpa-panel--stock"
+          aria-label={isFix ? copy.machineProgram.panelInnerSole : copy.machineProgram.panelUpperStock}
+        >
           <div className="mpa-panel-head">
-            <StepHeading index={3} done={chosen.rows.length > 0} title={copy.machineProgram.panelUpperStock} />
+            <StepHeading
+              index={3}
+              done={isFix ? fixReady : chosen.rows.length > 0}
+              title={isFix ? copy.machineProgram.panelInnerSole : copy.machineProgram.panelUpperStock}
+            />
             {describedRun ? (
               <span className="mpa-for">
                 {describedRun.article} / {describedRun.size}
@@ -157,6 +212,18 @@ export const AddArticleDialog: React.FC<AddArticleDialogProps> = ({ fixedColour,
             ) : null}
           </div>
           <div className="mpa-panel-body">
+            {isFix ? (
+              <FixSolePanel
+                outerColour={draft.soleColour}
+                innerColour={innerColour}
+                onChooseInner={setInnerColour}
+                quantity={fixQuantity}
+                onQuantityChange={setFixQuantity}
+                problem={fixProblem}
+                ready={Boolean(draft.articleSizeId)}
+                disabled={fixSaving}
+              />
+            ) : (
             <UpperPicker
               machineId={target.machineId}
               articleSizeId={draft.articleSizeId}
@@ -169,9 +236,16 @@ export const AddArticleDialog: React.FC<AddArticleDialogProps> = ({ fixedColour,
                 if (describedRun) chosen.add(describedRun, material);
               }}
             />
+            )}
           </div>
         </section>
       </div>
+
+      {fixRefused ? (
+        <p className="mp-problem" role="alert">
+          ⚠ {fixRefused}
+        </p>
+      ) : null}
 
       {/* ④ What the article's work is paid at. Beside the selection rather than in the panel row
           above: it is about the article, not about which upper is being fetched for it, and the

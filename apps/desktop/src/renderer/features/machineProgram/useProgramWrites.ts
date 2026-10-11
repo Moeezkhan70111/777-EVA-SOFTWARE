@@ -45,6 +45,25 @@ export const useProgramWrites = (onSaved: () => void) => {
     stockVersion,
     saveLine: (input: SaveMachineProgramLineInput) => run(() => api.saveMachineProgramLine(input)),
     changeRun: (runId: string, header: MachineProgramRunHeader) => run(() => api.saveMachineProgramRun({ runId, ...header })),
+    /**
+     * A FIX article: two sole colours and a quantity, with no upper.
+     *
+     * Answers with the sentence that explains a refusal, or null when it saved — the dialog
+     * shows it in place rather than closing on a save that did not happen.
+     */
+    saveFixRun: async (input: {
+      machineId: string;
+      programDate: string;
+      shift: MachineShift;
+      injectorNo: number;
+      soleColour: string;
+      innerSoleColour: string;
+      articleSizeId: string;
+      quantity: number;
+    }): Promise<string | null> => {
+      const answer = await run(() => api.saveMachineProgramFixRun(input));
+      return answer.ok ? null : answer.reason;
+    },
     saveArticleRates: (input: { programId: string; articleSizeId: string; machineRate: number; packingRate: number; printingRate: number }) =>
       run(() => api.saveMachineProgramArticleRates(input)),
     removeLine: (lineId: string) => run(() => api.removeMachineProgramLine({ lineId })),

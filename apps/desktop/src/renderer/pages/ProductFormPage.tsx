@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import type { AppRoute } from "../app/routes";
 import { useDesktopApi } from "../hooks/useDesktopApi";
-import type { ProductRow, ProductGroup, MainGroup } from "../types/desktopApi";
+import type { ProductRow, ProductGroup, MainGroup, ProductTypeRow, ProductSubGroupRow } from "../types/desktopApi";
 import { useNotifications } from "../state/NotificationsContext";
 import { computeBTypePrice, fromPaisa, isValidContractorRatePaisa, toPaisa } from "@erp/domain";
 import { copy } from "../config/copy";
@@ -51,6 +51,8 @@ interface ProductFormData {
   mainGroupId: string;
   productGroupId: string;
   articleSeriesId: string;
+  productTypeId: string;
+  productSubGroupId: string;
 }
 
 /**
@@ -108,7 +110,7 @@ export const ProductFormPage: React.FC<ProductFormPageProps> = ({ productId, onN
 
   const [formData, setFormData] = useState<ProductFormData>({
     article: "", size: "", costPrice: "", sellingPrice: "", bTypePrice: "", productCode: "",
-    mainGroupId: "", productGroupId: "", articleSeriesId: "",
+    mainGroupId: "", productGroupId: "", articleSeriesId: "", productTypeId: "", productSubGroupId: "",
   });
   const [rates, setRates] = useState<ContractorRateForm>({ machine: "", packing: "", printing: "" });
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -118,6 +120,9 @@ export const ProductFormPage: React.FC<ProductFormPageProps> = ({ productId, onN
   const [mainGroups, setMainGroups] = useState<MainGroup[]>([]);
   const [productGroups, setProductGroups] = useState<ProductGroup[]>([]);
   const [articleSeries, setArticleSeries] = useState<ArticleSeries[]>([]);
+  const [productTypes, setProductTypes] = useState<ProductTypeRow[]>([]);
+  // Only the sub groups of the chosen product group: a sub group belongs to a group.
+  const [productSubGroups, setProductSubGroups] = useState<ProductSubGroupRow[]>([]);
   const [articleImageUrl, setArticleImageUrl] = useState<string | null>(null);
 
   // combobox: article
@@ -154,6 +159,19 @@ export const ProductFormPage: React.FC<ProductFormPageProps> = ({ productId, onN
   const [newMainGroupName, setNewMainGroupName] = useState("");
   const [newProductGroupName, setNewProductGroupName] = useState("");
   const [newArticleSeriesName, setNewArticleSeriesName] = useState("");
+  const [productTypeQuery, setProductTypeQuery] = useState("");
+  const [productTypeMenuOpen, setProductTypeMenuOpen] = useState(false);
+  const [productTypeHighlight, setProductTypeHighlight] = useState(0);
+  const [productSubGroupQuery, setProductSubGroupQuery] = useState("");
+  const [productSubGroupMenuOpen, setProductSubGroupMenuOpen] = useState(false);
+  const [productSubGroupHighlight, setProductSubGroupHighlight] = useState(0);
+  const [showAddProductType, setShowAddProductType] = useState(false);
+  const [showAddProductSubGroup, setShowAddProductSubGroup] = useState(false);
+  const [newProductTypeName, setNewProductTypeName] = useState("");
+  const [newProductSubGroupName, setNewProductSubGroupName] = useState("");
+  // FIX articles: products in this sub group have NO UPPER and are moulded from two soles.
+  // A machine program for one then asks for the second sole instead of uppers (migration 067).
+  const [newSubGroupHasNoUpper, setNewSubGroupHasNoUpper] = useState(false);
   const [newArticleName, setNewArticleName] = useState("");
   const [newSizeName, setNewSizeName] = useState("");
 
@@ -162,7 +180,7 @@ export const ProductFormPage: React.FC<ProductFormPageProps> = ({ productId, onN
   const [duplicateMatch, setDuplicateMatch] = useState<ProductRow | null>(null);
 
   // ESC suppression: mount sentinel when any mini-modal is open
-  const anyModalOpen = showAddMainGroup || showAddProductGroup || showAddArticleSeries || showAddArticle || showAddSize || showDuplicateConfirm;
+  const anyModalOpen = showAddMainGroup || showAddProductGroup || showAddArticleSeries || showAddProductType || showAddProductSubGroup || showAddArticle || showAddSize || showDuplicateConfirm;
   const sentinelRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
     if (!anyModalOpen) return;
@@ -187,6 +205,12 @@ export const ProductFormPage: React.FC<ProductFormPageProps> = ({ productId, onN
   const filteredProductGroups = productGroups.filter((g) =>
     g.groupName.toLowerCase().includes(productGroupQuery.trim().toLowerCase()),
   );
+  const filteredProductTypes = productTypes.filter((t) =>
+    t.name.toLowerCase().includes(productTypeQuery.trim().toLowerCase()),
+  );
+  const filteredProductSubGroups = productSubGroups.filter((g) =>
+    g.name.toLowerCase().includes(productSubGroupQuery.trim().toLowerCase()),
+  );
   const filteredSeriesList = articleSeries.filter((s) =>
     s.name.toLowerCase().includes(seriesQuery.trim().toLowerCase()),
   );
@@ -194,24 +218,64 @@ export const ProductFormPage: React.FC<ProductFormPageProps> = ({ productId, onN
   const selectedMainGroupName  = mainGroups.find((g) => g.id === formData.mainGroupId)?.groupName ?? "";
   const selectedProductGroupName = productGroups.find((g) => g.id === formData.productGroupId)?.groupName ?? "";
   const selectedSeriesName     = articleSeries.find((s) => s.id === formData.articleSeriesId)?.name ?? "";
+  const selectedProductTypeName = productTypes.find((t) => t.id === formData.productTypeId)?.name ?? "";
+  const selectedProductSubGroupName = productSubGroups.find((g) => g.id === formData.productSubGroupId)?.name ?? "";
 
   // data loading
+  /**
+   * Every dropdown's list, each applied on its own.
+   *
+   * allSettled, NOT all: these are five independent lists, and one of them failing must not
+   * leave the form with no articles to pick either. One notice is raised however many failed,
+   * because the operator fixes the connection once, not five times.
+   */
   const loadGroupsAndArticles = useCallback(async () => {
+    // Wrapped as well as settled: a bridge method that is missing entirely throws at the call
+    // site, before allSettled ever sees a promise.
     try {
-      const [articles, mGroups, pGroups, series] = await Promise.all([
-        api.listUniqueArticles(),
-        api.listMainGroups(),
-        api.listProductGroups(),
-        api.listArticleSeries(),
-      ]);
-      setUniqueArticles(articles);
-      setMainGroups(mGroups);
-      setProductGroups(pGroups);
-      setArticleSeries(series.map((s) => ({ id: s.id, name: s.name })));
+    const [articles, mGroups, pGroups, series, types] = await Promise.allSettled([
+      api.listUniqueArticles(),
+      api.listMainGroups(),
+      api.listProductGroups(),
+      api.listArticleSeries(),
+      api.listProductTypes(),
+    ]);
+    if (articles.status === "fulfilled") setUniqueArticles(articles.value);
+    if (mGroups.status === "fulfilled") setMainGroups(mGroups.value);
+    if (pGroups.status === "fulfilled") setProductGroups(pGroups.value);
+    if (series.status === "fulfilled") setArticleSeries(series.value.map((s) => ({ id: s.id, name: s.name })));
+    if (types.status === "fulfilled") setProductTypes(types.value);
+    if ([articles, mGroups, pGroups, series, types].some((result) => result.status === "rejected")) {
+      push("error", copy.toast.loadFailed, "Could not load product data");
+    }
     } catch {
       push("error", copy.toast.loadFailed, "Could not load product data");
     }
   }, [api, push]);
+
+  /**
+   * A sub group belongs to a product group, so the list follows the group that is chosen.
+   * Clearing or changing the group clears the sub group with it — a sub group of a group the
+   * product is no longer in would be a classification nobody chose.
+   */
+  useEffect(() => {
+    let cancelled = false;
+    if (!formData.productGroupId) {
+      setProductSubGroups([]);
+      return;
+    }
+    void api
+      .listProductSubGroups(formData.productGroupId)
+      .then((rows) => {
+        if (!cancelled) setProductSubGroups(rows);
+      })
+      .catch(() => {
+        if (!cancelled) setProductSubGroups([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [api, formData.productGroupId]);
 
   const loadArticleImage = useCallback(async (article: string) => {
     const name = article.trim();
@@ -254,6 +318,8 @@ export const ProductFormPage: React.FC<ProductFormPageProps> = ({ productId, onN
           mainGroupId: product.mainGroupId ?? "",
           productGroupId: product.groupId ?? "",
           articleSeriesId: product.articleSeriesId ?? "",
+          productTypeId: product.productTypeId ?? "",
+          productSubGroupId: product.productSubGroupId ?? "",
         });
         setRates({
           machine: rateBoxValue(product.machineRatePaisa),
@@ -332,6 +398,8 @@ export const ProductFormPage: React.FC<ProductFormPageProps> = ({ productId, onN
   const mainGroupKeyDown   = makeKeyDown(mainGroupMenuOpen,   setMainGroupMenuOpen,   mainGroupHighlight,   setMainGroupHighlight,   filteredMainGroups,   (g) => { handleInputChange("mainGroupId", g.id); setMainGroupQuery(""); setMainGroupMenuOpen(false); setMainGroupHighlight(0); });
   const productGroupKeyDown = makeKeyDown(productGroupMenuOpen, setProductGroupMenuOpen, productGroupHighlight, setProductGroupHighlight, filteredProductGroups, (g) => { handleInputChange("productGroupId", g.id); setProductGroupQuery(""); setProductGroupMenuOpen(false); setProductGroupHighlight(0); });
   const seriesKeyDown      = makeKeyDown(seriesMenuOpen,      setSeriesMenuOpen,      seriesHighlight,      setSeriesHighlight,      filteredSeriesList,   (s) => { handleInputChange("articleSeriesId", s.id); setSeriesQuery(""); setSeriesMenuOpen(false); setSeriesHighlight(0); });
+  const productTypeKeyDown = makeKeyDown(productTypeMenuOpen, setProductTypeMenuOpen, productTypeHighlight, setProductTypeHighlight, filteredProductTypes, (t) => { handleInputChange("productTypeId", t.id); setProductTypeQuery(""); setProductTypeMenuOpen(false); setProductTypeHighlight(0); });
+  const productSubGroupKeyDown = makeKeyDown(productSubGroupMenuOpen, setProductSubGroupMenuOpen, productSubGroupHighlight, setProductSubGroupHighlight, filteredProductSubGroups, (g) => { handleInputChange("productSubGroupId", g.id); setProductSubGroupQuery(""); setProductSubGroupMenuOpen(false); setProductSubGroupHighlight(0); });
 
   // image upload
   const handleImageUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -390,6 +458,35 @@ export const ProductFormPage: React.FC<ProductFormPageProps> = ({ productId, onN
     } catch { push("error", copy.toast.failed, "Error creating article series"); }
   };
 
+  const handleAddProductType = async () => {
+    if (!newProductTypeName.trim()) return;
+    try {
+      const result = await api.createProductType({ name: newProductTypeName.trim().toUpperCase() });
+      if (result.accepted) {
+        await loadGroupsAndArticles();
+        handleInputChange("productTypeId", result.id || "");
+        setShowAddProductType(false); setNewProductTypeName("");
+      } else { push("error", copy.toast.failed, result.reason || "Failed to create product type"); }
+    } catch { push("error", copy.toast.failed, "Error creating product type"); }
+  };
+
+  /** A sub group needs the group it goes under, so this is only reachable with one chosen. */
+  const handleAddProductSubGroup = async () => {
+    if (!newProductSubGroupName.trim() || !formData.productGroupId) return;
+    try {
+      const result = await api.createProductSubGroup({
+        productGroupId: formData.productGroupId,
+        name: newProductSubGroupName.trim().toUpperCase(),
+        hasNoUpper: newSubGroupHasNoUpper,
+      });
+      if (result.accepted) {
+        setProductSubGroups(await api.listProductSubGroups(formData.productGroupId));
+        handleInputChange("productSubGroupId", result.id || "");
+        setShowAddProductSubGroup(false); setNewProductSubGroupName(""); setNewSubGroupHasNoUpper(false);
+      } else { push("error", copy.toast.failed, result.reason || "Failed to create product sub group"); }
+    } catch { push("error", copy.toast.failed, "Error creating product sub group"); }
+  };
+
   const handleAddArticle = () => {
     const value = newArticleName.trim().toUpperCase();
     if (!value) return;
@@ -433,6 +530,8 @@ export const ProductFormPage: React.FC<ProductFormPageProps> = ({ productId, onN
         mainGroupId: formData.mainGroupId || undefined,
         productGroupId: formData.productGroupId || undefined,
         articleSeriesId: formData.articleSeriesId || undefined,
+        productTypeId: formData.productTypeId || undefined,
+        productSubGroupId: formData.productSubGroupId || undefined,
         productCode: formData.productCode || undefined,
         color: "",
         description: undefined,
@@ -494,6 +593,10 @@ export const ProductFormPage: React.FC<ProductFormPageProps> = ({ productId, onN
     onKeyDown: (e: React.KeyboardEvent<HTMLInputElement>) => void;
     onAdd: () => void;
     addLabel: string;
+    /** Shut until something it depends on is chosen (a sub group needs its group). */
+    disabled?: boolean;
+    /** What to say in the box while it is shut, so the reason is on screen, not guessed. */
+    disabledHint?: string;
   }) => {
     const displayItems = opts.items.map((i) => ({ id: i.id, label: i.name ?? i.groupName ?? "" }));
     return (
@@ -512,10 +615,11 @@ export const ProductFormPage: React.FC<ProductFormPageProps> = ({ productId, onN
                 opts.onQueryChange(e.target.value.toUpperCase());
                 opts.setMenuOpen(true);
               }}
-              onFocus={(e) => { e.currentTarget.select(); opts.setMenuOpen(true); }}
+              onFocus={(e) => { if (opts.disabled) return; e.currentTarget.select(); opts.setMenuOpen(true); }}
               onBlur={() => window.setTimeout(() => opts.setMenuOpen(false), 120)}
               onKeyDown={opts.onKeyDown}
-              placeholder="Search or select…"
+              placeholder={opts.disabled ? (opts.disabledHint ?? "Not available yet") : "Search or select…"}
+              disabled={opts.disabled}
               role="combobox"
               aria-expanded={opts.menuOpen}
               aria-autocomplete="list"
@@ -532,7 +636,7 @@ export const ProductFormPage: React.FC<ProductFormPageProps> = ({ productId, onN
                 ×
               </button>
             )}
-            {opts.menuOpen && (
+            {opts.menuOpen && !opts.disabled && (
               <div className="city-options" role="listbox">
                 {displayItems.length === 0
                   ? <div className="city-options-empty">No results found</div>
@@ -557,7 +661,9 @@ export const ProductFormPage: React.FC<ProductFormPageProps> = ({ productId, onN
             type="button"
             className="btn btn-icon"
             title={opts.addLabel}
+            aria-label={opts.addLabel}
             onClick={opts.onAdd}
+            disabled={opts.disabled}
           >
             +
           </button>
@@ -938,6 +1044,45 @@ export const ProductFormPage: React.FC<ProductFormPageProps> = ({ productId, onN
               onAdd: () => setShowAddArticleSeries(true),
               addLabel: "Add new article series",
             })}
+
+            {renderCombobox({
+              id: "productTypeId",
+              label: "Product Type",
+              selectedId: formData.productTypeId,
+              selectedName: selectedProductTypeName,
+              query: productTypeQuery,
+              onQueryChange: setProductTypeQuery,
+              menuOpen: productTypeMenuOpen,
+              setMenuOpen: setProductTypeMenuOpen,
+              highlight: productTypeHighlight,
+              items: filteredProductTypes,
+              onSelect: (item) => { handleInputChange("productTypeId", item.id); setProductTypeQuery(""); setProductTypeMenuOpen(false); setProductTypeHighlight(0); },
+              onClear: () => { handleInputChange("productTypeId", ""); setProductTypeQuery(""); },
+              onKeyDown: productTypeKeyDown,
+              onAdd: () => setShowAddProductType(true),
+              addLabel: "Add new product type",
+            })}
+
+            {/* A sub group belongs to a product group, so this stays shut until one is chosen. */}
+            {renderCombobox({
+              id: "productSubGroupId",
+              label: "Product Sub Group",
+              selectedId: formData.productSubGroupId,
+              selectedName: selectedProductSubGroupName,
+              query: productSubGroupQuery,
+              onQueryChange: setProductSubGroupQuery,
+              menuOpen: productSubGroupMenuOpen,
+              setMenuOpen: setProductSubGroupMenuOpen,
+              highlight: productSubGroupHighlight,
+              items: filteredProductSubGroups,
+              onSelect: (item) => { handleInputChange("productSubGroupId", item.id); setProductSubGroupQuery(""); setProductSubGroupMenuOpen(false); setProductSubGroupHighlight(0); },
+              onClear: () => { handleInputChange("productSubGroupId", ""); setProductSubGroupQuery(""); },
+              onKeyDown: productSubGroupKeyDown,
+              onAdd: () => setShowAddProductSubGroup(true),
+              addLabel: "Add new product sub group",
+              disabled: !formData.productGroupId,
+              disabledHint: "Choose a Product Group first",
+            })}
           </div>
         </section>
 
@@ -1076,6 +1221,98 @@ export const ProductFormPage: React.FC<ProductFormPageProps> = ({ productId, onN
         </div>
       )}
 
+      {showAddProductType && (
+        <div
+          className="member-modal-backdrop"
+          role="presentation"
+          onMouseDown={(e) => { if (e.target === e.currentTarget) { setShowAddProductType(false); setNewProductTypeName(""); } }}
+        >
+          <section className="member-modal product-add-modal" role="dialog" aria-modal="true" aria-labelledby="add-product-type-title">
+            <div className="member-modal-header">
+              <div className="member-modal-identity">
+                <div>
+                  <h2 id="add-product-type-title">Add Product Type</h2>
+                </div>
+              </div>
+              <button type="button" className="member-modal-close" aria-label={copy.common.close} onClick={() => { setShowAddProductType(false); setNewProductTypeName(""); }}>×</button>
+            </div>
+            <div className="form-group" style={{ margin: "18px 0 6px" }}>
+              <label htmlFor="newProductTypeName" className="input-label">Type Name <span className="required-mark">*</span></label>
+              <input
+                id="newProductTypeName"
+                type="text"
+                className="form-input input-upper"
+                style={{ width: "100%" }}
+                value={newProductTypeName}
+                onChange={(e) => setNewProductTypeName(e.target.value.toUpperCase())}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") { e.preventDefault(); void handleAddProductType(); }
+                  if (e.key === "Escape") { e.stopPropagation(); setShowAddProductType(false); setNewProductTypeName(""); }
+                }}
+                placeholder="Enter product type"
+                autoFocus
+              />
+            </div>
+            <div className="member-modal-actions">
+              <span />
+              <button type="button" className="btn btn-secondary" onClick={() => { setShowAddProductType(false); setNewProductTypeName(""); }}>{copy.common.cancel}</button>
+              <button type="button" className="btn btn-primary" onClick={() => void handleAddProductType()} disabled={!newProductTypeName.trim()}>{copy.common.save}</button>
+            </div>
+          </section>
+        </div>
+      )}
+      {showAddProductSubGroup && (
+        <div
+          className="member-modal-backdrop"
+          role="presentation"
+          onMouseDown={(e) => { if (e.target === e.currentTarget) { setShowAddProductSubGroup(false); setNewProductSubGroupName(""); setNewSubGroupHasNoUpper(false); } }}
+        >
+          <section className="member-modal product-add-modal" role="dialog" aria-modal="true" aria-labelledby="add-product-sub-group-title">
+            <div className="member-modal-header">
+              <div className="member-modal-identity">
+                <div>
+                  <h2 id="add-product-sub-group-title">Add Product Sub Group</h2>
+                  <p className="member-modal-sub">{`Under ${selectedProductGroupName}`}</p>
+                </div>
+              </div>
+              <button type="button" className="member-modal-close" aria-label={copy.common.close} onClick={() => { setShowAddProductSubGroup(false); setNewProductSubGroupName(""); setNewSubGroupHasNoUpper(false); }}>×</button>
+            </div>
+            <div className="form-group" style={{ margin: "18px 0 6px" }}>
+              <label htmlFor="newProductSubGroupName" className="input-label">Sub Group Name <span className="required-mark">*</span></label>
+              <input
+                id="newProductSubGroupName"
+                type="text"
+                className="form-input input-upper"
+                style={{ width: "100%" }}
+                value={newProductSubGroupName}
+                onChange={(e) => setNewProductSubGroupName(e.target.value.toUpperCase())}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") { e.preventDefault(); void handleAddProductSubGroup(); }
+                  if (e.key === "Escape") { e.stopPropagation(); setShowAddProductSubGroup(false); setNewProductSubGroupName(""); setNewSubGroupHasNoUpper(false); }
+                }}
+                placeholder="Enter sub group name"
+                autoFocus
+              />
+            </div>
+            <label className="product-fix-tick">
+              <input
+                type="checkbox"
+                checked={newSubGroupHasNoUpper}
+                onChange={(e) => setNewSubGroupHasNoUpper(e.target.checked)}
+              />
+              <span>
+                <b>No upper — two sole colours</b>
+                <small>For FIX articles, moulded from an outer and an inner sole. A machine program for one asks for the second sole instead of uppers.</small>
+              </span>
+            </label>
+            <div className="member-modal-actions">
+              <span />
+              <button type="button" className="btn btn-secondary" onClick={() => { setShowAddProductSubGroup(false); setNewProductSubGroupName(""); setNewSubGroupHasNoUpper(false); }}>{copy.common.cancel}</button>
+              <button type="button" className="btn btn-primary" onClick={() => void handleAddProductSubGroup()} disabled={!newProductSubGroupName.trim()}>{copy.common.save}</button>
+            </div>
+          </section>
+        </div>
+      )}
       {/* ── Add New Article modal ────────────────────────────────────────── */}
       {showAddArticle && (
         <div

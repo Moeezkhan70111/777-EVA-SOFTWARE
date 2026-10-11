@@ -125,6 +125,8 @@ export function registerProductsHandlers(ctx: IpcContext): void {
       mainGroupId: typeof input?.mainGroupId === "string" && input.mainGroupId ? input.mainGroupId : undefined,
       productGroupId: typeof input?.productGroupId === "string" && input.productGroupId ? input.productGroupId : undefined,
       articleSeriesId: typeof input?.articleSeriesId === "string" && input.articleSeriesId ? input.articleSeriesId : undefined,
+      productTypeId: typeof input?.productTypeId === "string" && input.productTypeId ? input.productTypeId : undefined,
+      productSubGroupId: typeof input?.productSubGroupId === "string" && input.productSubGroupId ? input.productSubGroupId : undefined,
       colors: Array.isArray(input?.colors) ? input.colors.filter((value): value is string => typeof value === "string") : undefined,
       productCode: typeof input?.productCode === "string" && input.productCode ? input.productCode : undefined,
       status: PRODUCT_STATUS.ACTIVE
@@ -158,6 +160,8 @@ export function registerProductsHandlers(ctx: IpcContext): void {
       mainGroupId: typeof input?.mainGroupId === "string" && input.mainGroupId ? input.mainGroupId : undefined,
       productGroupId: typeof input?.productGroupId === "string" && input.productGroupId ? input.productGroupId : undefined,
       articleSeriesId: typeof input?.articleSeriesId === "string" && input.articleSeriesId ? input.articleSeriesId : undefined,
+      productTypeId: typeof input?.productTypeId === "string" && input.productTypeId ? input.productTypeId : undefined,
+      productSubGroupId: typeof input?.productSubGroupId === "string" && input.productSubGroupId ? input.productSubGroupId : undefined,
       colors: Array.isArray(input?.colors) ? input.colors.filter((value): value is string => typeof value === "string") : undefined,
       status: PRODUCT_STATUS.ACTIVE
     });
@@ -342,6 +346,80 @@ export function registerProductsHandlers(ctx: IpcContext): void {
     } catch (error) {
       logger.log({ module: "product", severity: "ERROR", operation: "create-article-series", deviceId, message: error instanceof Error ? error.message : "Failed to create article series" });
       return { accepted: false, reason: error instanceof Error ? error.message : "Failed to create article series" };
+    }
+  });
+
+  // ─── Product type and product sub group (migration 066) ───────────────────
+  // A TYPE is a flat list. A SUB GROUP belongs to a product group, so listing one takes the
+  // group the form has chosen and creating one takes the group it goes under.
+
+  ipcMain.handle(IPC.listProductTypes, () => {
+    try {
+      return db.listProductTypes();
+    } catch (error) {
+      logger.log({
+        module: "product", severity: "ERROR", operation: "list-product-types", deviceId,
+        message: error instanceof Error ? error.message : "Failed to list product types",
+      });
+      return [];
+    }
+  });
+
+  ipcMain.handle(IPC.createProductType, (event, input?: Record<string, unknown>) => {
+    try {
+      authorizer.requirePermission(event, PERMISSION.PRODUCT_FORM);
+      const name = typeof input?.name === "string" ? input.name.trim() : "";
+      if (!name) return { accepted: false, reason: "Product type name is required" };
+      const id = db.createProductType({ name, description: typeof input?.description === "string" ? input.description : null });
+      logger.log({ module: "product", severity: "INFO", operation: "create-product-type", deviceId, message: `Product type created: ${name}` });
+      return { accepted: true, id };
+    } catch (error) {
+      logger.log({ module: "product", severity: "ERROR", operation: "create-product-type", deviceId, message: error instanceof Error ? error.message : "Failed to create product type" });
+      return { accepted: false, reason: error instanceof Error ? error.message : "Failed to create product type" };
+    }
+  });
+
+  ipcMain.handle(IPC.listProductSubGroups, (_event, productGroupId?: string) => {
+    try {
+      return db.listProductSubGroups(typeof productGroupId === "string" ? productGroupId : null);
+    } catch (error) {
+      logger.log({
+        module: "product", severity: "ERROR", operation: "list-product-sub-groups", deviceId,
+        message: error instanceof Error ? error.message : "Failed to list product sub groups",
+      });
+      return [];
+    }
+  });
+
+  ipcMain.handle(IPC.createProductSubGroup, (event, input?: Record<string, unknown>) => {
+    try {
+      authorizer.requirePermission(event, PERMISSION.PRODUCT_FORM);
+      const name = typeof input?.name === "string" ? input.name.trim() : "";
+      const productGroupId = typeof input?.productGroupId === "string" ? input.productGroupId.trim() : "";
+      if (!name) return { accepted: false, reason: "Product sub group name is required" };
+      // The parent is the whole point of a SUB group, so it is refused here as well as below.
+      if (!productGroupId) return { accepted: false, reason: "Choose the product group this sub group belongs to" };
+      const id = db.createProductSubGroup({
+        productGroupId,
+        name,
+        description: typeof input?.description === "string" ? input.description : null,
+        hasNoUpper: input?.hasNoUpper === true,
+      });
+      logger.log({ module: "product", severity: "INFO", operation: "create-product-sub-group", deviceId, message: `Product sub group created: ${name}` });
+      return { accepted: true, id };
+    } catch (error) {
+      logger.log({ module: "product", severity: "ERROR", operation: "create-product-sub-group", deviceId, message: error instanceof Error ? error.message : "Failed to create product sub group" });
+      return { accepted: false, reason: error instanceof Error ? error.message : "Failed to create product sub group" };
+    }
+  });
+
+  ipcMain.handle(IPC.setProductSubGroupHasNoUpper, (event, id?: string, hasNoUpper?: boolean) => {
+    try {
+      authorizer.requirePermission(event, PERMISSION.PRODUCT_FORM);
+      db.setProductSubGroupHasNoUpper(String(id ?? ""), hasNoUpper === true);
+      return { accepted: true };
+    } catch (error) {
+      return { accepted: false, reason: error instanceof Error ? error.message : "Could not change this sub group" };
     }
   });
 

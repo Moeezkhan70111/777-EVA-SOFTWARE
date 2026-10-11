@@ -107,6 +107,9 @@ contextBridge.exposeInMainWorld("desktop", {
       ipcRenderer.invoke(IPC.listMachineProgramUppers, machineId, articleSizeId),
     saveMachineProgramLine: (input: Record<string, unknown>) => ipcRenderer.invoke(IPC.saveMachineProgramLine, input),
     saveMachineProgramRun: (input: Record<string, unknown>) => ipcRenderer.invoke(IPC.saveMachineProgramRun, input),
+    saveMachineProgramFixRun: (input: Record<string, unknown>) => ipcRenderer.invoke(IPC.saveMachineProgramFixRun, input),
+    setProductSubGroupHasNoUpper: (id: string, hasNoUpper: boolean) =>
+      ipcRenderer.invoke(IPC.setProductSubGroupHasNoUpper, id, hasNoUpper),
     saveMachineProgramArticleRates: (input: Record<string, unknown>) =>
       ipcRenderer.invoke(IPC.saveMachineProgramArticleRates, input),
     removeMachineProgramLine: (input: Record<string, unknown>) => ipcRenderer.invoke(IPC.removeMachineProgramLine, input),
@@ -313,6 +316,10 @@ contextBridge.exposeInMainWorld("desktop", {
     createProductGroup: (input: Record<string, unknown>) => ipcRenderer.invoke(IPC.createProductGroup, input),
     listArticleSeries: () => ipcRenderer.invoke(IPC.listArticleSeries),
     createArticleSeries: (input: Record<string, unknown>) => ipcRenderer.invoke(IPC.createArticleSeries, input),
+    listProductTypes: () => ipcRenderer.invoke(IPC.listProductTypes),
+    createProductType: (input: Record<string, unknown>) => ipcRenderer.invoke(IPC.createProductType, input),
+    listProductSubGroups: (productGroupId?: string) => ipcRenderer.invoke(IPC.listProductSubGroups, productGroupId),
+    createProductSubGroup: (input: Record<string, unknown>) => ipcRenderer.invoke(IPC.createProductSubGroup, input),
     createPartyProductGroupDiscount: (input: Record<string, unknown>) => ipcRenderer.invoke(IPC.createPartyProductGroupDiscount, input),
     createPartyArticleSeriesDiscount: (input: Record<string, unknown>) => ipcRenderer.invoke(IPC.createPartyArticleSeriesDiscount, input),
     createPartyArticleDiscount: (input: Record<string, unknown>) => ipcRenderer.invoke(IPC.createPartyArticleDiscount, input),

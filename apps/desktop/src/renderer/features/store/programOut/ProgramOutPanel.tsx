@@ -230,7 +230,7 @@ export const ProgramOutPanel: React.FC<ProgramOutPanelProps> = ({ state, onClose
 
       <ProgramIssueTotals
         injectors={injectorsOnProgram(program)}
-        total={program.totalQuantity}
+        total={program.productionQuantity}
         unitCode={program.unitCode}
       />
 

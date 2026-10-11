@@ -239,6 +239,29 @@ export interface MachineProgramRepository {
    * transaction — so a program that rolls back leaves no notice behind, exactly as a gatepass
    * transition notice does.
    */
+  // ─── FIX articles: no upper, two soles (migration 067) ─────────────────────
+  /** Whether an article + size is a FIX article, read from its product sub group. */
+  articleHasNoUpperForWrite(articleSizeId: string, tx: TransactionContext): Promise<boolean>;
+  /** The fix run already on this injector for an article + size, or null. */
+  findMachineProgramFixRun(
+    input: { programId: string; injectorNo: number; articleSizeId: string },
+    tx: TransactionContext
+  ): Promise<string | null>;
+  insertMachineProgramFixRun(
+    payload: {
+      id: string; programId: string; injectorNo: number; runNo: number; soleColour: string;
+      innerSoleColour: string; articleSizeId: string; quantity: number; unitId: string | null;
+      createdBy: string; createdAt: string;
+    },
+    tx: TransactionContext
+  ): Promise<void>;
+  updateMachineProgramFixRun(
+    payload: { id: string; soleColour: string; innerSoleColour: string; quantity: number; updatedAt: string },
+    tx: TransactionContext
+  ): Promise<void>;
+  /** The unit a program counts in (DOZEN), so a fix quantity matches its upper lines. */
+  defaultProgramUnitId(tx: TransactionContext): Promise<string | null>;
+
   notifyMachineProgramIssued(
     notice: { entityId: string; title: string; message: string },
     tx: TransactionContext
@@ -365,6 +388,76 @@ export interface SaveMachineProgramLineInput extends MachineProgramActor {
  * program — copying the machine's contractor onto it. All of it in one transaction, so a
  * refused quantity leaves no half-made program behind.
  */
+/**
+ * The machine's program for a date, made now if this is the first thing saved on it.
+ *
+ * ONE implementation, shared by every kind of run: an upper line and a fix run must agree
+ * about when a program may be created, which contractors it needs and what notice it sends.
+ */
+export const resolveProgramForDate = async (
+  deps: MachineProgramDeps,
+  input: { machineId: string; programDate: string; shift?: MachineShift | null } & MachineProgramActor,
+  tx: TransactionContext
+): Promise<{ id: string; status: string; shiftStartMinute: number; shiftEndMinute: number }> => {
+  const actor = input.actor;
+    const machine = await deps.repo.getMachineForProgram(String(input.machineId ?? "").trim(), tx);
+    if (!machine) throw new MachineProgramRejectedError("MACHINE_NOT_FOUND", "This machine is no longer set up. Go back and choose another.");
+    if (machine.status !== "ACTIVE") throw new MachineProgramRejectedError("MACHINE_INACTIVE", `${machine.name} has been retired and cannot be programmed.`);
+
+    const existing = await deps.repo.getMachineProgramByDateForWrite(machine.id, input.programDate, tx);
+    if (existing) return existing;
+
+    // A program the screen never named a shift for runs the day shift, which is what the floor
+    // works by default. An existing program keeps the shift it was made with — adding an upper
+    // to it never rewrites it.
+    const shift: MachineShift = input.shift ?? DEFAULT_MACHINE_SHIFT;
+
+    // A machine is worked by two contractors and the day's output is paid against both, so a
+    // program cannot be made until both are set and both are still active.
+    if (!machine.contractorPartyId) {
+      throw new MachineProgramRejectedError("NO_CONTRACTOR", `Choose the machine contractor for ${machine.name} before making its program.`);
+    }
+    if (!machine.packingContractorPartyId) {
+      throw new MachineProgramRejectedError("NO_PACKING_CONTRACTOR", `Choose the packing contractor for ${machine.name} before making its program.`);
+    }
+    const contractor = await deps.repo.getContractorForProgram(machine.contractorPartyId, tx);
+    if (!contractor || contractor.status !== "ACTIVE") {
+      throw new MachineProgramRejectedError("CONTRACTOR_INACTIVE", `The machine contractor on ${machine.name} is no longer active. Change the contractor first.`);
+    }
+    const packer = await deps.repo.getContractorForProgram(machine.packingContractorPartyId, tx);
+    if (!packer || packer.status !== "ACTIVE") {
+      throw new MachineProgramRejectedError("CONTRACTOR_INACTIVE", `The packing contractor on ${machine.name} is no longer active. Change the contractor first.`);
+    }
+
+    const id = deps.idGenerator.nextId();
+    const programNumber = await deps.repo.allocateMachineProgramNumber(tx);
+    await deps.repo.insertMachineProgram(
+      {
+        id, programNumber, machineId: machine.id, machineName: machine.name, contractorPartyId: contractor.id,
+        contractorName: contractor.partyName, packingContractorPartyId: packer.id, packingContractorName: packer.partyName,
+        programDate: input.programDate,
+        shiftStartMinute: shift.startMinute, shiftEndMinute: shift.endMinute,
+        createdBy: actor, createdAt: tx.nowIso,
+      },
+      tx
+    );
+    await auditProgramChange(
+      deps,
+      { ...input, actor, eventType: "MACHINE_PROGRAM_CREATED", entityId: id, payload: { code: formatMachineProgramCode(programNumber), machineName: machine.name, contractorName: contractor.partyName, packingContractorName: packer.partyName, programDate: input.programDate, shift } },
+      tx
+    );
+    // The program now reserves stock, so the store has work: one notice, in this transaction,
+    // carrying the program's stored id so clicking it opens exactly this program on Store Out.
+    await deps.repo.notifyMachineProgramIssued(
+      {
+        entityId: id,
+        title: "Machine program ready for Store Out",
+        message: `${formatMachineProgramCode(programNumber)} — ${machine.name} · ${contractor.partyName}. Issue its uppers from Store Out.`,
+      },
+      tx
+    );
+    return { id, status: MACHINE_PROGRAM_STATUS.PROGRAMMED, shiftStartMinute: shift.startMinute, shiftEndMinute: shift.endMinute };
+};
 export class SaveMachineProgramLineUseCase {
   constructor(private readonly deps: MachineProgramDeps) {}
 
@@ -421,64 +514,8 @@ export class SaveMachineProgramLineUseCase {
   }
 
   /** The machine's program for the date, made now if this is the first thing on it. */
-  private async programForDate(input: SaveMachineProgramLineInput, actor: string, tx: TransactionContext) {
-    const machine = await this.deps.repo.getMachineForProgram(String(input.machineId ?? "").trim(), tx);
-    if (!machine) throw new MachineProgramRejectedError("MACHINE_NOT_FOUND", "This machine is no longer set up. Go back and choose another.");
-    if (machine.status !== "ACTIVE") throw new MachineProgramRejectedError("MACHINE_INACTIVE", `${machine.name} has been retired and cannot be programmed.`);
-
-    const existing = await this.deps.repo.getMachineProgramByDateForWrite(machine.id, input.programDate, tx);
-    if (existing) return existing;
-
-    // A program the screen never named a shift for runs the day shift, which is what the floor
-    // works by default. An existing program keeps the shift it was made with — adding an upper
-    // to it never rewrites it.
-    const shift: MachineShift = input.shift ?? DEFAULT_MACHINE_SHIFT;
-
-    // A machine is worked by two contractors and the day's output is paid against both, so a
-    // program cannot be made until both are set and both are still active.
-    if (!machine.contractorPartyId) {
-      throw new MachineProgramRejectedError("NO_CONTRACTOR", `Choose the machine contractor for ${machine.name} before making its program.`);
-    }
-    if (!machine.packingContractorPartyId) {
-      throw new MachineProgramRejectedError("NO_PACKING_CONTRACTOR", `Choose the packing contractor for ${machine.name} before making its program.`);
-    }
-    const contractor = await this.deps.repo.getContractorForProgram(machine.contractorPartyId, tx);
-    if (!contractor || contractor.status !== "ACTIVE") {
-      throw new MachineProgramRejectedError("CONTRACTOR_INACTIVE", `The machine contractor on ${machine.name} is no longer active. Change the contractor first.`);
-    }
-    const packer = await this.deps.repo.getContractorForProgram(machine.packingContractorPartyId, tx);
-    if (!packer || packer.status !== "ACTIVE") {
-      throw new MachineProgramRejectedError("CONTRACTOR_INACTIVE", `The packing contractor on ${machine.name} is no longer active. Change the contractor first.`);
-    }
-
-    const id = this.deps.idGenerator.nextId();
-    const programNumber = await this.deps.repo.allocateMachineProgramNumber(tx);
-    await this.deps.repo.insertMachineProgram(
-      {
-        id, programNumber, machineId: machine.id, machineName: machine.name, contractorPartyId: contractor.id,
-        contractorName: contractor.partyName, packingContractorPartyId: packer.id, packingContractorName: packer.partyName,
-        programDate: input.programDate,
-        shiftStartMinute: shift.startMinute, shiftEndMinute: shift.endMinute,
-        createdBy: actor, createdAt: tx.nowIso,
-      },
-      tx
-    );
-    await auditProgramChange(
-      this.deps,
-      { ...input, actor, eventType: "MACHINE_PROGRAM_CREATED", entityId: id, payload: { code: formatMachineProgramCode(programNumber), machineName: machine.name, contractorName: contractor.partyName, packingContractorName: packer.partyName, programDate: input.programDate, shift } },
-      tx
-    );
-    // The program now reserves stock, so the store has work: one notice, in this transaction,
-    // carrying the program's stored id so clicking it opens exactly this program on Store Out.
-    await this.deps.repo.notifyMachineProgramIssued(
-      {
-        entityId: id,
-        title: "Machine program ready for Store Out",
-        message: `${formatMachineProgramCode(programNumber)} — ${machine.name} · ${contractor.partyName}. Issue its uppers from Store Out.`,
-      },
-      tx
-    );
-    return { id, status: MACHINE_PROGRAM_STATUS.PROGRAMMED, shiftStartMinute: shift.startMinute, shiftEndMinute: shift.endMinute };
+  private programForDate(input: SaveMachineProgramLineInput, actor: string, tx: TransactionContext) {
+    return resolveProgramForDate(this.deps, { ...input, actor }, tx);
   }
 
   private async addLine(input: SaveMachineProgramLineInput, run: MachineProgramRunForWrite, actor: string, tx: TransactionContext): Promise<string> {
@@ -518,6 +555,15 @@ export class SaveMachineProgramLineUseCase {
 
   /** The upper must exist, be an UPPER for exactly this article + size, and reach this machine. */
   private async checkUpper(itemId: string, run: MachineProgramRunForWrite, excludeLineId: string | null, tx: TransactionContext) {
+    // A FIX article has no upper at all — it is moulded from two soles (migration 067). Refused
+    // here as well as hidden on the screen, so the two kinds of run can never be mixed on one
+    // article however the save was reached.
+    if (await this.deps.repo.articleHasNoUpperForWrite(run.articleSizeId, tx)) {
+      throw new MachineProgramRejectedError(
+        "WRONG_ARTICLE",
+        `${run.article} ${run.size} has no upper — it is moulded from two soles. Add its inner sole instead.`
+      );
+    }
     const stock = await this.deps.repo.getMachineProgramUpperAvailability(
       { itemId: String(itemId ?? "").trim(), machineSectionId: run.machineSectionId, excludeLineId },
       tx

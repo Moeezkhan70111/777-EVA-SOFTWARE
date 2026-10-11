@@ -234,6 +234,82 @@ export const machineProgramWritesMethods = {
       );
   },
 
+  /**
+   * A FIX run: an article with no upper, moulded from an OUTER and an INNER sole.
+   *
+   * It carries its own quantity because it has no upper lines to add up, and that quantity is
+   * NOT a reservation — nothing in the Reserved arithmetic looks at machine_program_runs.
+   */
+  async insertMachineProgramFixRun(
+    this: SqliteDatabase,
+    payload: {
+      id: string; programId: string; injectorNo: number; runNo: number; soleColour: string;
+      innerSoleColour: string; articleSizeId: string; quantity: number; unitId: string | null;
+      createdBy: string; createdAt: string;
+    },
+    tx: TransactionContext
+  ): Promise<void> {
+    dbOf(tx)
+      .prepare(
+        `INSERT INTO machine_program_runs (
+           id, program_id, injector_no, run_no, sole_colour, inner_sole_colour, article_size_id,
+           quantity, unit_id, created_by, created_at, updated_at
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      )
+      .run(
+        payload.id, payload.programId, payload.injectorNo, payload.runNo, payload.soleColour,
+        payload.innerSoleColour, payload.articleSizeId, payload.quantity, payload.unitId,
+        payload.createdBy, payload.createdAt, payload.createdAt
+      );
+  },
+
+  /** Changes a fix run's two soles and its quantity. Moves nothing and releases nothing. */
+  async updateMachineProgramFixRun(
+    this: SqliteDatabase,
+    payload: { id: string; soleColour: string; innerSoleColour: string; quantity: number; updatedAt: string },
+    tx: TransactionContext
+  ): Promise<void> {
+    dbOf(tx)
+      .prepare(
+        `UPDATE machine_program_runs SET sole_colour = ?, inner_sole_colour = ?, quantity = ?, updated_at = ?
+          WHERE id = ? AND inner_sole_colour IS NOT NULL`
+      )
+      .run(payload.soleColour, payload.innerSoleColour, payload.quantity, payload.updatedAt, payload.id);
+  },
+
+  /** The fix run already on this injector for an article + size, or null. */
+  async findMachineProgramFixRun(
+    this: SqliteDatabase,
+    input: { programId: string; injectorNo: number; articleSizeId: string },
+    tx: TransactionContext
+  ): Promise<string | null> {
+    const row = dbOf(tx)
+      .prepare(
+        `SELECT id FROM machine_program_runs
+          WHERE program_id = ? AND injector_no = ? AND article_size_id = ? AND inner_sole_colour IS NOT NULL
+          LIMIT 1`
+      )
+      .get(input.programId, input.injectorNo, input.articleSizeId) as { id: string } | undefined;
+    return row ? text(row.id) : null;
+  },
+
+  /** Whether an article + size is a FIX article, read inside the write lock. */
+  async articleHasNoUpperForWrite(this: SqliteDatabase, articleSizeId: string, tx: TransactionContext): Promise<boolean> {
+    const row = dbOf(tx)
+      .prepare(
+        `SELECT sg.has_no_upper FROM article_sizes a
+           JOIN product_sub_groups sg ON sg.id = a.product_sub_group_id
+          WHERE a.id = ? AND sg.deleted_at IS NULL LIMIT 1`
+      )
+      .get(text(articleSizeId).trim()) as { has_no_upper: number } | undefined;
+    return Boolean(row?.has_no_upper);
+  },
+
+  /** The stock unit uppers are counted in (DOZEN), so a fix quantity is in the same unit. */
+  async defaultProgramUnitId(this: SqliteDatabase, tx: TransactionContext): Promise<string | null> {
+    const row = dbOf(tx).prepare("SELECT id FROM inventory_units WHERE code = 'DOZEN' LIMIT 1").get() as { id: string } | undefined;
+    return row ? text(row.id) : null;
+  },
   async updateMachineProgramRun(
     this: SqliteDatabase,
     payload: { id: string; soleColour: string; articleSizeId: string; updatedAt: string },

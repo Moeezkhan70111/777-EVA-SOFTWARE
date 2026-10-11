@@ -98,12 +98,14 @@ const mapRun = (row: Record<string, unknown>, lines: MachineProgramUpperLineReco
   injectorNo: Number(row.injector_no ?? 0),
   runNo: Number(row.run_no ?? 0),
   soleColour: text(row.sole_colour),
+  innerSoleColour: row.inner_sole_colour ? attributeKey(text(row.inner_sole_colour)) : null,
   articleSizeId: text(row.article_size_id),
   article: text(row.article),
   size: text(row.size),
+  fixQuantity: roundQuantity(Math.max(0, Number(row.quantity ?? 0))),
   totalQuantity: sum(lines.map((line) => line.quantity)),
   consumedQuantity: sum(lines.map((line) => line.consumed)),
-  unitCode: sharedUnit(lines),
+  unitCode: sharedUnit(lines) ?? (row.unit_code ? text(row.unit_code) : null),
   lines,
 });
 
@@ -114,6 +116,11 @@ const mapProgram = (
 ): MachineProgramRecord => {
   const lines = runs.flatMap((run) => run.lines);
   const totalQuantity = sum(lines.map((line) => line.quantity));
+  // Fix runs are counted SEPARATELY and deliberately kept out of totalQuantity: that figure is
+  // what the program RESERVES, and it is what displayStatus and the Store Out arithmetic are
+  // judged against. A fix run reserves nothing, so folding it in would leave a program that can
+  // never be fully issued.
+  const fixQuantity = sum(runs.map((run) => run.fixQuantity));
   const consumedQuantity = sum(lines.map((line) => line.consumed));
   const status = text(row.status) || MACHINE_PROGRAM_STATUS.PROGRAMMED;
   const programNumber = Number(row.program_number ?? 0);
@@ -133,9 +140,11 @@ const mapProgram = (
     status,
     displayStatus: machineProgramDisplayStatus(status, totalQuantity, consumedQuantity),
     totalQuantity,
+    fixQuantity,
+    productionQuantity: roundQuantity(totalQuantity + fixQuantity),
     consumedQuantity,
     outstandingQuantity: sum(lines.map((line) => line.outstanding)),
-    unitCode: sharedUnit(lines),
+    unitCode: sharedUnit(lines) ?? runs.find((run) => run.fixQuantity > 0)?.unitCode ?? null,
     createdBy: row.created_by ? text(row.created_by) : null,
     createdAt: text(row.created_at),
     updatedAt: text(row.updated_at),
@@ -237,10 +246,12 @@ export const machineProgramsMethods = {
   listMachineProgramArticles(this: SqliteDatabase): MachineProgramArticle[] {
     const rows = this.db
       .prepare(
-        `SELECT id, article, size, machine_rate_paisa, packing_rate_paisa, printing_rate_paisa
-         FROM article_sizes
-         WHERE deleted_at IS NULL AND status = 'ACTIVE'
-         ORDER BY article, size`
+        `SELECT a.id, a.article, a.size, a.machine_rate_paisa, a.packing_rate_paisa, a.printing_rate_paisa,
+                COALESCE(sg.has_no_upper, 0) AS has_no_upper
+         FROM article_sizes a
+         LEFT JOIN product_sub_groups sg ON sg.id = a.product_sub_group_id AND sg.deleted_at IS NULL
+         WHERE a.deleted_at IS NULL AND a.status = 'ACTIVE'
+         ORDER BY a.article, a.size`
       )
       .all() as Array<Record<string, unknown>>;
 
@@ -257,6 +268,8 @@ export const machineProgramsMethods = {
         machineRatePaisa: row.machine_rate_paisa == null ? null : Number(row.machine_rate_paisa),
         packingRatePaisa: row.packing_rate_paisa == null ? null : Number(row.packing_rate_paisa),
         printingRatePaisa: row.printing_rate_paisa == null ? null : Number(row.printing_rate_paisa),
+        // A FIX article has no upper and is moulded from two soles (migration 067).
+        hasNoUpper: Boolean(row.has_no_upper),
       });
       byArticle.set(article, entry);
     }
@@ -307,9 +320,10 @@ export const machineProgramsMethods = {
   readMachineProgramRuns(this: SqliteDatabase, programId: string, db: DatabaseSync): MachineProgramRunRecord[] {
     const runs = db
       .prepare(
-        `SELECT mpr.*, ass.article, ass.size
+        `SELECT mpr.*, ass.article, ass.size, u.code AS unit_code
          FROM machine_program_runs mpr
          JOIN article_sizes ass ON ass.id = mpr.article_size_id
+         LEFT JOIN inventory_units u ON u.id = mpr.unit_id
          WHERE mpr.program_id = ? ORDER BY mpr.injector_no, mpr.run_no`
       )
       .all(text(programId).trim()) as Array<Record<string, unknown>>;
