@@ -11,6 +11,7 @@ export * from "./storeExitScanUseCase.js";
 export * from "./gatepassUseCases.js";
 export * from "./machineProgramUseCases.js";
 export * from "./machineProgramEditUseCases.js";
+export * from "./machineProgramFixUseCase.js";
 export * from "./machineProgramStoreOutUseCases.js";
 export * from "./machineProgramCartonInUseCase.js";
 export * from "./machineProgramRatesUseCase.js";

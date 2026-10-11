@@ -55,6 +55,30 @@ export interface SaleableVariant {
   productGroupId: string | null;
 }
 
+/** One entry of the flat Product Type list. */
+export interface ProductTypeRow {
+  id: string;
+  name: string;
+  description: string | null;
+  isActive: boolean;
+}
+
+/** One sub group, and the product group it belongs to. */
+export interface ProductSubGroupRow {
+  id: string;
+  productGroupId: string;
+  productGroupName: string;
+  name: string;
+  description: string | null;
+  isActive: boolean;
+  /**
+   * FIX articles: these products have NO UPPER and are moulded from two soles, an outer and
+   * an inner (migration 067). A machine program for one asks for the second colour and a
+   * quantity instead of uppers.
+   */
+  hasNoUpper: boolean;
+}
+
 export interface ProductRow {
   id: string;
   articleSizeId?: string | null;
@@ -80,6 +104,9 @@ export interface ProductRow {
   mainGroupId: string | null;
   groupId: string | null;
   articleSeriesId?: string | null;
+  /** Added 2026-10-11 (migration 066). Null on every product saved before it. */
+  productTypeId?: string | null;
+  productSubGroupId?: string | null;
   articleSeriesName?: string | null;
   mainGroupName?: string | null;
   groupName?: string | null;
@@ -839,13 +866,22 @@ export interface QrBatchMemberRow {
 }
 
 /** The dropdown lists offered on the Add / Edit Product page. */
-export type ProductListKind = "article" | "size" | "main-group" | "product-group" | "article-series";
+export type ProductListKind =
+  | "article"
+  | "size"
+  | "main-group"
+  | "product-group"
+  | "article-series"
+  | "product-type"
+  | "product-sub-group";
 
 export interface ProductListEntry {
   kind: ProductListKind;
   /** Group / series id; for articles and sizes, the value itself. */
   id: string;
   name: string;
+  /** The product group a sub group belongs to. Null for every other kind. */
+  parentName?: string | null;
   productCount: number;
   disabledProductCount: number;
   qrCount: number;
@@ -1310,6 +1346,19 @@ export interface DesktopApi {
   ): Promise<{ accepted: boolean; rows: MachineProgramMaterial[]; reason?: string }>;
   saveMachineProgramLine(input: SaveMachineProgramLineInput): Promise<MachineProgramWriteResult>;
   saveMachineProgramRun(input: MachineProgramRunHeader & { runId: string }): Promise<MachineProgramWriteResult>;
+  /** A FIX article: two sole colours and a quantity, with no upper. */
+  saveMachineProgramFixRun(input: {
+    machineId: string;
+    programDate: string;
+    shift?: MachineShift | null;
+    injectorNo: number;
+    runId?: string | null;
+    soleColour: string;
+    innerSoleColour: string;
+    articleSizeId: string;
+    quantity: number;
+  }): Promise<MachineProgramWriteResult>;
+  setProductSubGroupHasNoUpper(id: string, hasNoUpper: boolean): Promise<{ accepted: boolean; reason?: string }>;
   /**
    * Prices one article's work on one program. The three rates are PER DOZEN, in rupees as the
    * operator typed them — the main process converts them to paisa and validates them.
@@ -1721,6 +1770,12 @@ export interface DesktopApi {
   createProductGroup(input: { groupName: string; description?: string }): Promise<{ accepted: boolean; groupId?: string; reason?: string }>;
   listArticleSeries(): Promise<Array<{ id: string; name: string; description?: string | null; isActive: boolean }>>;
   createArticleSeries(input: { name: string; description?: string }): Promise<{ accepted: boolean; id?: string; reason?: string }>;
+  /** The flat Product Type list. */
+  listProductTypes(): Promise<ProductTypeRow[]>;
+  createProductType(input: { name: string; description?: string | null }): Promise<{ accepted: boolean; id?: string; reason?: string }>;
+  /** The sub groups of one product group, or every one of them when no group is named. */
+  listProductSubGroups(productGroupId?: string): Promise<ProductSubGroupRow[]>;
+  createProductSubGroup(input: { productGroupId: string; name: string; description?: string | null; hasNoUpper?: boolean }): Promise<{ accepted: boolean; id?: string; reason?: string }>;
   createPartyProductGroupDiscount(input: { partyId: string; productGroupId: string; discountPerPair: number }): Promise<{ accepted: boolean; id?: string; reason?: string }>;
   createPartyArticleSeriesDiscount(input: { partyId: string; articleSeriesId: string; discountPerPair: number }): Promise<{ accepted: boolean; id?: string; reason?: string }>;
   /** `article` is the article name (a rule covers every colour of it). */
@@ -2245,6 +2300,8 @@ export interface MachineProgramArticle {
     machineRatePaisa: number | null;
     packingRatePaisa: number | null;
     printingRatePaisa: number | null;
+    /** FIX: no upper, moulded from an outer and an inner sole (migration 067). */
+    hasNoUpper: boolean;
   }>;
 }
 
@@ -2300,7 +2357,12 @@ export interface MachineProgramRunRecord {
   programId: string;
   injectorNo: number;
   runNo: number;
+  /** THE sole on a normal run, the OUTER sole on a fix run. */
   soleColour: string;
+  /** The INNER sole, and the mark of a FIX run. Null on every normal run. */
+  innerSoleColour: string | null;
+  /** What a fix run plans, typed on the run. 0 on a normal run. NOT a reservation. */
+  fixQuantity: number;
   articleSizeId: string;
   article: string;
   size: string;
@@ -2333,7 +2395,12 @@ export interface MachineProgramRecord {
   status: string;
   /** PROGRAMMED / PARTIALLY_USED / COMPLETED / CANCELLED — derived, never stored. */
   displayStatus: string;
+  /** What the program RESERVES: the sum of its upper lines. Fix runs are not in it. */
   totalQuantity: number;
+  /** What its FIX runs plan, which reserves nothing. */
+  fixQuantity: number;
+  /** Everything the machine is to make — uppers plus fix. What "Total Dozen" shows. */
+  productionQuantity: number;
   consumedQuantity: number;
   outstandingQuantity: number;
   unitCode: string | null;

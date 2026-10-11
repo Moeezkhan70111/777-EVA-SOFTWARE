@@ -7797,6 +7797,15 @@ tr.has-error .gp-qty-stepper input { color: var(--err); }
   .mpi-meta-cell + .mpi-meta-cell { border-left: none; border-top: 1px solid var(--line-soft); }
 }
 
+/* "under GENTS" beside a product sub group: its name is unique only within its group. */
+.pl-parent { margin-left: 8px; font-size: .76rem; font-weight: 600; color: var(--text-3); }
+
+/* "No upper — two sole colours": the tick that makes a sub group a FIX one. */
+.product-fix-tick { display: flex; align-items: flex-start; gap: 10px; margin: 14px 0 2px; cursor: pointer; }
+.product-fix-tick input { margin-top: 3px; width: 17px; height: 17px; flex: 0 0 17px; cursor: pointer; }
+.product-fix-tick b { display: block; font-size: .88rem; font-weight: 700; color: var(--foreground); }
+.product-fix-tick small { display: block; margin-top: 2px; font-size: .74rem; line-height: 1.4; color: var(--text-3); }
+
 /* Searchable picker options: the main line, then an optional smaller detail line. */
 .city-option-label { display: block; font-weight: 700; color: inherit; white-space: normal; overflow-wrap: anywhere; line-height: 1.3; }
 .city-option-detail { display: block; margin-top: 2px; font-size: .76rem; font-weight: 500; color: var(--text-3); white-space: normal; overflow-wrap: anywhere; }

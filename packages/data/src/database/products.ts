@@ -56,7 +56,7 @@ const writeContractorRates = (
 };
 
 const PRODUCT_LIST_TABLES: Record<
-    "main-group" | "product-group" | "article-series",
+    "main-group" | "product-group" | "article-series" | "product-type" | "product-sub-group",
     { table: string; nameColumn: string; fk: string; label: string; discountTable: string | null; discountFk: string | null }
   > = {
   "main-group": { table: "main_groups", nameColumn: "group_name", fk: "main_group_id", label: "main group", discountTable: null, discountFk: null },
@@ -75,6 +75,16 @@ const PRODUCT_LIST_TABLES: Record<
     label: "article series",
     discountTable: "party_article_series_discounts",
     discountFk: "article_series_id",
+  },
+  // Added 2026-10-11. Neither carries party discounts, so both read like the main group.
+  "product-type": { table: "product_types", nameColumn: "name", fk: "product_type_id", label: "product type", discountTable: null, discountFk: null },
+  "product-sub-group": {
+    table: "product_sub_groups",
+    nameColumn: "name",
+    fk: "product_sub_group_id",
+    label: "product sub group",
+    discountTable: null,
+    discountFk: null,
   },
 };
 
@@ -136,6 +146,8 @@ export const productsMethods = {
                 ass.main_group_id,
                 ass.product_group_id,
                 ass.article_series_id,
+                ass.product_type_id,
+                ass.product_sub_group_id,
                 ass.status,
                 ass.created_at,
                 ass.updated_at,
@@ -170,6 +182,8 @@ export const productsMethods = {
         mainGroupId: row.main_group_id ? String(row.main_group_id) : null,
         groupId: row.product_group_id ? String(row.product_group_id) : null,
         articleSeriesId: row.article_series_id ? String(row.article_series_id) : null,
+      productTypeId: row.product_type_id ? String(row.product_type_id) : null,
+      productSubGroupId: row.product_sub_group_id ? String(row.product_sub_group_id) : null,
         articleSeriesName: row.article_series_name ? String(row.article_series_name) : null,
         mainGroupName: row.main_group_name ? String(row.main_group_name) : null,
         groupName: row.product_group_name ? String(row.product_group_name) : null,
@@ -199,6 +213,8 @@ export const productsMethods = {
             ass.main_group_id,
             ass.product_group_id,
             ass.article_series_id,
+            ass.product_type_id,
+            ass.product_sub_group_id,
             ass.status,
             ass.created_at,
             ass.updated_at,
@@ -237,6 +253,8 @@ export const productsMethods = {
       mainGroupId: row.main_group_id ? String(row.main_group_id) : null,
       groupId: row.product_group_id ? String(row.product_group_id) : null,
       articleSeriesId: row.article_series_id ? String(row.article_series_id) : null,
+      productTypeId: row.product_type_id ? String(row.product_type_id) : null,
+      productSubGroupId: row.product_sub_group_id ? String(row.product_sub_group_id) : null,
       articleSeriesName: row.article_series_name ? String(row.article_series_name) : null,
       mainGroupName: row.main_group_name ? String(row.main_group_name) : null,
       groupName: row.product_group_name ? String(row.product_group_name) : null,
@@ -257,6 +275,8 @@ export const productsMethods = {
            ass.id as article_size_id, ass.product_code,
            ass.selling_price_paisa,
            ass.article_series_id,
+           ass.product_type_id,
+           ass.product_sub_group_id,
            ass.product_group_id,
            ${IN_STORE_STOCK_SQL} AS stock_quantity
          FROM product_variants pv
@@ -293,6 +313,8 @@ export const productsMethods = {
     mainGroupId?: string;
     productGroupId?: string;
     articleSeriesId?: string;
+    productTypeId?: string;
+    productSubGroupId?: string;
     updateExisting?: boolean;
     productCode?: string;
     status?: "ACTIVE" | "DISABLED";
@@ -321,8 +343,8 @@ export const productsMethods = {
     if (existing) {
       const now = new Date().toISOString();
       if (input.updateExisting) {
-        this.db.prepare(`UPDATE article_sizes SET description = ?, cost_price_paisa = ?, selling_price_paisa = ?, main_group_id = ?, product_group_id = ?, article_series_id = ?, status = ?, updated_at = ? WHERE id = ?`)
-          .run(input.description ?? null, costPricePaisa, sellingPricePaisa, input.mainGroupId ?? null, input.productGroupId ?? null, input.articleSeriesId ?? null, input.status ?? "ACTIVE", now, existing.id);
+        this.db.prepare(`UPDATE article_sizes SET description = ?, cost_price_paisa = ?, selling_price_paisa = ?, main_group_id = ?, product_group_id = ?, article_series_id = ?, product_type_id = ?, product_sub_group_id = ?, status = ?, updated_at = ? WHERE id = ?`)
+          .run(input.description ?? null, costPricePaisa, sellingPricePaisa, input.mainGroupId ?? null, input.productGroupId ?? null, input.articleSeriesId ?? null, input.productTypeId ?? null, input.productSubGroupId ?? null, input.status ?? "ACTIVE", now, existing.id);
         // Only when the caller said something about them — see mentionsContractorRates.
         if (mentionsContractorRates(input)) writeContractorRates(this, existing.id, input, now);
       }
@@ -336,8 +358,8 @@ export const productsMethods = {
     }
     const id = crypto.randomUUID();
     const now = new Date().toISOString();
-    this.db.prepare(`INSERT INTO article_sizes (id, product_code, article, size, description, cost_price_paisa, selling_price_paisa, machine_rate_paisa, packing_rate_paisa, printing_rate_paisa, main_group_id, product_group_id, article_series_id, status, created_at, updated_at, deleted_at, deleted_by, delete_reason) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL)`)
-      .run(id, input.productCode ?? this.getNextProductCode(), article, size, input.description ?? null, costPricePaisa, sellingPricePaisa, rates.machineRatePaisa, rates.packingRatePaisa, rates.printingRatePaisa, input.mainGroupId ?? null, input.productGroupId ?? null, input.articleSeriesId ?? null, input.status ?? "ACTIVE", now, now);
+    this.db.prepare(`INSERT INTO article_sizes (id, product_code, article, size, description, cost_price_paisa, selling_price_paisa, machine_rate_paisa, packing_rate_paisa, printing_rate_paisa, main_group_id, product_group_id, article_series_id, product_type_id, product_sub_group_id, status, created_at, updated_at, deleted_at, deleted_by, delete_reason) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL)`)
+      .run(id, input.productCode ?? this.getNextProductCode(), article, size, input.description ?? null, costPricePaisa, sellingPricePaisa, rates.machineRatePaisa, rates.packingRatePaisa, rates.printingRatePaisa, input.mainGroupId ?? null, input.productGroupId ?? null, input.articleSeriesId ?? null, input.productTypeId ?? null, input.productSubGroupId ?? null, input.status ?? "ACTIVE", now, now);
     return id;
   },
 
@@ -355,6 +377,8 @@ export const productsMethods = {
     mainGroupId?: string;
     productGroupId?: string;
     articleSeriesId?: string;
+    productTypeId?: string;
+    productSubGroupId?: string;
     colors?: string[];
     status?: "ACTIVE" | "DISABLED";
     productCode?: string;
@@ -377,14 +401,16 @@ export const productsMethods = {
         mainGroupId: input.mainGroupId ?? null,
         productGroupId: input.productGroupId ?? null,
         articleSeriesId: input.articleSeriesId ?? null,
+        productTypeId: input.productTypeId ?? null,
+        productSubGroupId: input.productSubGroupId ?? null,
         status: input.status ?? "ACTIVE",
         now,
       });
       if (firstId === articleSizeId) firstId = id;
     }
     // Existing variants keep independent copies of these fields (read by sale/discount/report queries), so keep them in sync.
-    this.db.prepare(`UPDATE product_variants SET description = ?, cost_price_paisa = ?, selling_price_paisa = ?, main_group_id = ?, product_group_id = ?, article_series_id = ?, updated_at = ? WHERE article_size_id = ? AND deleted_at IS NULL`)
-      .run(input.description ?? null, costPricePaisa, sellingPricePaisa, input.mainGroupId ?? null, input.productGroupId ?? null, input.articleSeriesId ?? null, now, articleSizeId);
+    this.db.prepare(`UPDATE product_variants SET description = ?, cost_price_paisa = ?, selling_price_paisa = ?, main_group_id = ?, product_group_id = ?, article_series_id = ?, product_type_id = ?, product_sub_group_id = ?, updated_at = ? WHERE article_size_id = ? AND deleted_at IS NULL`)
+      .run(input.description ?? null, costPricePaisa, sellingPricePaisa, input.mainGroupId ?? null, input.productGroupId ?? null, input.articleSeriesId ?? null, input.productTypeId ?? null, input.productSubGroupId ?? null, now, articleSizeId);
     return firstId;
   },
 
@@ -482,6 +508,8 @@ export const productsMethods = {
       mainGroupId?: string;
       productGroupId?: string;
       articleSeriesId?: string;
+      productTypeId?: string;
+      productSubGroupId?: string;
       colors?: string[];
       status?: "ACTIVE" | "DISABLED";
     }
@@ -494,14 +522,14 @@ export const productsMethods = {
     // The contractor rates live ONLY on the ArticleSize: a carton's colour has no bearing on what
     // moulding a dozen is paid, so unlike the prices below there is nothing to copy onto the
     // colour variants and nothing that can fall out of sync.
-    this.db.prepare(`UPDATE article_sizes SET description = ?, cost_price_paisa = ?, selling_price_paisa = ?, main_group_id = ?, product_group_id = ?, article_series_id = ?, status = ?, updated_at = ? WHERE id = ?`)
-      .run(input.description ?? null, costPricePaisa, sellingPricePaisa, input.mainGroupId ?? null, input.productGroupId ?? null, input.articleSeriesId ?? null, input.status ?? "ACTIVE", now, articleSizeId);
+    this.db.prepare(`UPDATE article_sizes SET description = ?, cost_price_paisa = ?, selling_price_paisa = ?, main_group_id = ?, product_group_id = ?, article_series_id = ?, product_type_id = ?, product_sub_group_id = ?, status = ?, updated_at = ? WHERE id = ?`)
+      .run(input.description ?? null, costPricePaisa, sellingPricePaisa, input.mainGroupId ?? null, input.productGroupId ?? null, input.articleSeriesId ?? null, input.productTypeId ?? null, input.productSubGroupId ?? null, input.status ?? "ACTIVE", now, articleSizeId);
     // The rates are written only when this save was about them. A form that knows nothing about
     // contractor pricing (the simple one on ProductsPage) must not blank an agreed rate.
     if (mentionsContractorRates(input)) writeContractorRates(this, articleSizeId, input, now);
     // Existing variants keep independent copies of these fields (read by sale/discount/report queries), so keep them in sync.
-    this.db.prepare(`UPDATE product_variants SET description = ?, cost_price_paisa = ?, selling_price_paisa = ?, main_group_id = ?, product_group_id = ?, article_series_id = ?, status = ?, updated_at = ? WHERE article_size_id = ? AND deleted_at IS NULL`)
-      .run(input.description ?? null, costPricePaisa, sellingPricePaisa, input.mainGroupId ?? null, input.productGroupId ?? null, input.articleSeriesId ?? null, input.status ?? "ACTIVE", now, articleSizeId);
+    this.db.prepare(`UPDATE product_variants SET description = ?, cost_price_paisa = ?, selling_price_paisa = ?, main_group_id = ?, product_group_id = ?, article_series_id = ?, product_type_id = ?, product_sub_group_id = ?, status = ?, updated_at = ? WHERE article_size_id = ? AND deleted_at IS NULL`)
+      .run(input.description ?? null, costPricePaisa, sellingPricePaisa, input.mainGroupId ?? null, input.productGroupId ?? null, input.articleSeriesId ?? null, input.productTypeId ?? null, input.productSubGroupId ?? null, input.status ?? "ACTIVE", now, articleSizeId);
     const existing = this.db.prepare("SELECT article, size FROM article_sizes WHERE id = ?").get(articleSizeId) as { article: string; size: string } | undefined;
     if (!existing) return;
     for (const color of (input.colors ?? []).map((value) => value.trim().toUpperCase()).filter((value) => value && value !== "N/A" && value !== "NULL" && value !== "UNDEFINED")) {
@@ -516,6 +544,8 @@ export const productsMethods = {
         mainGroupId: input.mainGroupId ?? null,
         productGroupId: input.productGroupId ?? null,
         articleSeriesId: input.articleSeriesId ?? null,
+        productTypeId: input.productTypeId ?? null,
+        productSubGroupId: input.productSubGroupId ?? null,
         status: input.status ?? "ACTIVE",
         now,
       });
@@ -545,6 +575,8 @@ export const productsMethods = {
     mainGroupId: string | null;
     productGroupId: string | null;
     articleSeriesId: string | null;
+    productTypeId: string | null;
+    productSubGroupId: string | null;
     status: "ACTIVE" | "DISABLED";
     now: string;
   }): string {
@@ -567,11 +599,11 @@ export const productsMethods = {
     const id = crypto.randomUUID();
     this.db
       .prepare(
-        `INSERT INTO product_variants (id, article, color, size, description, cost_price_paisa, selling_price_paisa, main_group_id, product_group_id, article_series_id, article_size_id, status, created_at, updated_at, deleted_at, deleted_by, delete_reason) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL)`
+        `INSERT INTO product_variants (id, article, color, size, description, cost_price_paisa, selling_price_paisa, main_group_id, product_group_id, article_series_id, product_type_id, product_sub_group_id, article_size_id, status, created_at, updated_at, deleted_at, deleted_by, delete_reason) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL)`
       )
       .run(
         id, input.article, input.color, input.size, input.description, input.costPricePaisa, input.sellingPricePaisa,
-        input.mainGroupId, input.productGroupId, input.articleSeriesId, input.articleSizeId, input.status, input.now, input.now
+        input.mainGroupId, input.productGroupId, input.articleSeriesId, input.productTypeId, input.productSubGroupId, input.articleSizeId, input.status, input.now, input.now
       );
     return id;
   },
@@ -819,12 +851,18 @@ export const productsMethods = {
     }
 
     const meta = PRODUCT_LIST_TABLES[kind];
+    // A product sub group is unique only WITHIN its product group — "CASUAL" can be under
+    // GENTS and under LADIES — so the list says which group each one belongs to.
+    const parentSql =
+      kind === "product-sub-group"
+        ? "(SELECT pg.group_name FROM product_groups pg WHERE pg.id = g.product_group_id)"
+        : "NULL";
     const discountSql = meta.discountTable
       ? `(SELECT COUNT(1) FROM ${meta.discountTable} d WHERE d.${meta.discountFk} = g.id AND d.deleted_at IS NULL)`
       : "0";
     const rows = this.db
       .prepare(
-        `SELECT g.id, g.${meta.nameColumn} AS name,
+        `SELECT g.id, g.${meta.nameColumn} AS name, ${parentSql} AS parent_name,
                 (SELECT COUNT(1) FROM article_sizes a WHERE a.${meta.fk} = g.id AND a.deleted_at IS NULL AND a.status = 'ACTIVE')
                 + (SELECT COUNT(1) FROM product_variants v WHERE v.${meta.fk} = g.id AND v.deleted_at IS NULL AND v.article_size_id IS NULL) AS product_count,
                 (SELECT COUNT(1) FROM article_sizes a WHERE a.${meta.fk} = g.id AND (a.deleted_at IS NOT NULL OR a.status <> 'ACTIVE')) AS disabled_count,
@@ -844,6 +882,7 @@ export const productsMethods = {
         kind,
         id: String(row.id),
         name: String(row.name),
+        parentName: row.parent_name ? String(row.parent_name) : null,
         productCount,
         disabledProductCount: Number(row.disabled_count ?? 0),
         qrCount: 0,

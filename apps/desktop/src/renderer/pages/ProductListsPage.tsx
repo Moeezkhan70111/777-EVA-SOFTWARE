@@ -38,6 +38,18 @@ const LISTS: ListMeta[] = [
   { kind: "main-group", label: "Main Groups", singular: "main group", canAdd: true, explain: "Groups can be removed only while no product uses them.", deleteVerb: "Delete" },
   { kind: "product-group", label: "Product Groups", singular: "product group", canAdd: true, explain: "Groups can be removed only while no product or party discount rule uses them.", deleteVerb: "Delete" },
   { kind: "article-series", label: "Article Series", singular: "article series", canAdd: true, explain: "Series can be removed only while no product or party discount rule uses them.", deleteVerb: "Delete" },
+  { kind: "product-type", label: "Product Types", singular: "product type", canAdd: true, explain: "Types can be removed only while no product uses them.", deleteVerb: "Delete" },
+  // A sub group belongs to a product group, and this page has no group to add it under — it is
+  // added from the product form, where the group is already chosen. Renaming and deleting
+  // work here like any other list.
+  {
+    kind: "product-sub-group",
+    label: "Product Sub Groups",
+    singular: "product sub group",
+    canAdd: false,
+    explain: "A sub group is added from the Add Product page, under the product group it belongs to. It can be removed here only while no product uses it.",
+    deleteVerb: "Delete",
+  },
 ];
 
 const listMeta = (kind: ProductListKind): ListMeta => LISTS.find((l) => l.kind === kind) ?? LISTS[0];
@@ -195,7 +207,9 @@ export const ProductListsPage: React.FC<ProductListsPageProps> = ({ username }) 
           ? await api.createMainGroup({ groupName: value })
           : kind === "product-group"
             ? await api.createProductGroup({ groupName: value })
-            : await api.createArticleSeries({ name: value });
+            : kind === "product-type"
+              ? await api.createProductType({ name: value })
+              : await api.createArticleSeries({ name: value });
       if (!result.accepted) {
         push("error", copy.toast.addFailed, result.reason ?? "");
         return;
@@ -344,7 +358,11 @@ export const ProductListsPage: React.FC<ProductListsPageProps> = ({ username }) 
                             <button type="button" className="btn btn-secondary btn-sm" onClick={cancelRename} disabled={busy}>{copy.common.cancel}</button>
                           </form>
                         ) : (
-                          <strong>{entry.name}</strong>
+                          <>
+                            <strong>{entry.name}</strong>
+                            {/* A sub group name is unique only within its group, so the group is said beside it. */}
+                            {entry.parentName ? <span className="pl-parent">under {entry.parentName}</span> : null}
+                          </>
                         )}
                       </td>
                       <td>

@@ -830,6 +830,17 @@ export const copy = {
     stepQuantity: "How many?",
     sole: "Sole",
     soleColour: "Sole colour",
+    // FIX articles: no upper, two soles (migration 067).
+    innerSoleColour: "Inner sole colour",
+    outerSoleColour: "Outer sole colour",
+    panelInnerSole: "Inner Sole & Quantity",
+    fixNoUpperNote:
+      "This article has no upper — it is moulded from two soles. Choose the inner sole and how many are to be made.",
+    fixPair: (outer: string, inner: string) => `${outer} outer · ${inner} inner`,
+    dozenUnit: "DOZEN",
+    /** On the program and the printed sheet, where a fix run is listed beside upper runs. */
+    fixRunLabel: (outer: string, inner: string) => `${outer} / ${inner}`,
+    fixNoUpperShort: "No upper · two soles",
     article: "Article",
     size: "Size",
     upper: "Upper",

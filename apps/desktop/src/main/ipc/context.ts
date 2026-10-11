@@ -18,6 +18,7 @@ import type {
   SaveMachineProgramArticleRatesUseCase,
   SaveMachineProgramLineUseCase,
   SaveMachineProgramRunUseCase,
+  SaveMachineProgramFixRunUseCase,
   StoreEntryScanUseCase,
   StoreExitScanUseCase,
 } from "@erp/application";
@@ -50,6 +51,8 @@ export interface UseCases {
     assignContractor: AssignMachineContractorUseCase;
     saveLine: SaveMachineProgramLineUseCase;
     saveRun: SaveMachineProgramRunUseCase;
+    /** FIX articles: no upper, two soles (migration 067). */
+    saveFixRun: SaveMachineProgramFixRunUseCase;
     removeLine: RemoveMachineProgramLineUseCase;
     removeRun: RemoveMachineProgramRunUseCase;
     deleteProgram: DeleteMachineProgramUseCase;

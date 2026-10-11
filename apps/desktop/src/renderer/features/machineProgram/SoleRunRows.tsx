@@ -5,6 +5,7 @@ import { copy } from "../../config/copy";
 import { QuantityCell } from "./QuantityCell";
 import { TrashIcon } from "./MachineProgramIcons";
 import { formatNumber } from "./machineProgram";
+import { isFixRun } from "@erp/domain";
 import { useUppers } from "./useMachineProgramData";
 import type { ProgramWrites } from "./useProgramWrites";
 
@@ -54,6 +55,43 @@ export const SoleRunRows: React.FC<SoleRunRowsProps> = ({ run, machineId, progra
     if (stock != null) return formatNumber(stock);
     return uppers.loading ? copy.common.loading : "—";
   };
+
+  // A FIX article has no upper: one row, naming both soles, with nothing to fetch from the
+  // store. The quantity is the run's own and is not a reservation, so there is no Available
+  // Stock figure and no box measured against one.
+  if (isFixRun(run)) {
+    return (
+      <tbody className="mpx-run">
+        <tr>
+          <td className="mpx-cell-article" data-label={copy.machineProgram.colArticle}>
+            <button
+              type="button"
+              className="mpx-run-link"
+              aria-label={`${copy.machineProgram.editSole} ${described}`}
+              onClick={onChangeRun}
+            >
+              {run.article}
+            </button>
+          </td>
+          <td className="mpx-cell-size" data-label={copy.machineProgram.colSize}>
+            {run.size}
+          </td>
+          <td className="mpx-cell-upper" data-label={copy.machineProgram.colUpper}>
+            <ColorSwatch color={run.innerSoleColour ?? ""} />
+            <span className="mpx-upper-colour">{run.innerSoleColour}</span>
+            <span className="mpx-upper-kind">{copy.machineProgram.fixNoUpperShort}</span>
+          </td>
+          <td className="mpx-num" data-label={copy.machineProgram.colAvailable}>
+            —
+          </td>
+          <td className="mpx-cell-qty" data-label={copy.machineProgram.colQuantityShort}>
+            {formatNumber(run.fixQuantity)}
+          </td>
+          <td className="mpx-cell-remove" />
+        </tr>
+      </tbody>
+    );
+  }
 
   return (
     <tbody className="mpx-run">

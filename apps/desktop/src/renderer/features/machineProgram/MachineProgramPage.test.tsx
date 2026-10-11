@@ -112,12 +112,12 @@ const programWith = (
     programDate: TODAY,
     shiftStartMinute: shift.startMinute, shiftEndMinute: shift.endMinute,
     status: "PROGRAMMED", displayStatus: consumed > 0 ? "PARTIALLY_USED" : "PROGRAMMED",
-    totalQuantity: total, consumedQuantity: consumed, outstandingQuantity: total - consumed, unitCode: "DOZEN", createdBy: "aslam",
+    totalQuantity: total, fixQuantity: 0, productionQuantity: total, consumedQuantity: consumed, outstandingQuantity: total - consumed, unitCode: "DOZEN", createdBy: "aslam",
     createdAt: `${TODAY}T07:00:00.000Z`, updatedAt: `${TODAY}T07:00:00.000Z`, completedAt: null, cancelledAt: null, cancelledBy: null, cancelReason: null,
     runs: [
       {
-        id: "run-1", programId: "prog-1", injectorNo: 1, runNo: 1, soleColour: "BLACK",
-        articleSizeId: "as-sk6-710", article: "SK6", size: "7/10", totalQuantity: total, consumedQuantity: consumed, unitCode: "DOZEN", lines: records,
+        id: "run-1", programId: "prog-1", injectorNo: 1, runNo: 1, soleColour: "BLACK", innerSoleColour: null,
+        articleSizeId: "as-sk6-710", article: "SK6", size: "7/10", fixQuantity: 0, totalQuantity: total, consumedQuantity: consumed, unitCode: "DOZEN", lines: records,
       },
     ],
     articleRates: rates

@@ -167,6 +167,23 @@ export function registerMachineProgramHandlers(ctx: IpcContext): void {
     })
   );
 
+  // A FIX article has no upper: two sole colours and a quantity typed on the run itself. The
+  // numbers are NOT coerced, so an empty box reaches the use case as something it refuses.
+  write(IPC.saveMachineProgramFixRun, (input, actor) =>
+    programs.saveFixRun.execute({
+      machineId: asString(input.machineId),
+      programDate: asString(input.programDate),
+      shift: readShift(input.shift),
+      injectorNo: rawNumber(input.injectorNo),
+      runId: asOptionalString(input.runId) ?? null,
+      soleColour: asString(input.soleColour),
+      innerSoleColour: asString(input.innerSoleColour),
+      articleSizeId: asString(input.articleSizeId),
+      quantity: rawNumber(input.quantity),
+      ...actor,
+    })
+  );
+
   write(IPC.removeMachineProgramLine, (input, actor) => programs.removeLine.execute({ lineId: asString(input.lineId), ...actor }));
   write(IPC.removeMachineProgramRun, (input, actor) => programs.removeRun.execute({ runId: asString(input.runId), ...actor }));
   write(IPC.deleteMachineProgram, (input, actor) =>

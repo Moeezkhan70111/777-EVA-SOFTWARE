@@ -1,4 +1,4 @@
-import { MACHINE_INJECTORS, formatShiftRange, fromPaisa, programContractorPricing } from "@erp/domain";
+import { MACHINE_INJECTORS, formatShiftRange, fromPaisa, isFixRun, programContractorPricing } from "@erp/domain";
 import type { MachineProgramRecord, MachineProgramRunRecord } from "../../types/desktopApi";
 import { renderQrSvgMarkup } from "../../utils/qrLabels";
 import { loadLogoDataUrl, openPrintDocumentAsync } from "../../platform/print";
@@ -76,6 +76,12 @@ const articleCards = (runs: MachineProgramRunRecord[]): ArticleCard[] => {
     if (!card) {
       card = { article: run.article, size: run.size, rows: [] };
       byArticleSize.set(key, card);
+    }
+    // A FIX run has no uppers at all: it is moulded from two soles, and the row names the
+    // inner one where an upper colour would be (migration 067).
+    if (isFixRun(run)) {
+      card.rows.push({ sole: run.soleColour, upper: run.innerSoleColour ?? "", quantity: formatNumber(run.fixQuantity) });
+      continue;
     }
     for (const line of run.lines) {
       card.rows.push({ sole: run.soleColour, upper: line.upperColour, quantity: formatNumber(line.quantity) });
@@ -334,9 +340,10 @@ const buildSheetHtml = (program: MachineProgramRecord, preparedBy: string | null
   const injectors = MACHINE_INJECTORS.map((injectorNo) => injectorHtml(program, injectorNo)).join("");
   // "Total DOZEN · 70" when every line shares a unit, and a plain total when they differ.
   const totalLabel = program.unitCode ? copy.machineProgram.printTotalIn(program.unitCode) : copy.machineProgram.totalProduction;
+  // Everything the machine makes — uppers plus fix — not only what is reserved.
   const totalValue = program.unitCode
-    ? `${formatNumber(program.totalQuantity)} ${program.unitCode}`
-    : formatAmount(program.totalQuantity, program.unitCode);
+    ? `${formatNumber(program.productionQuantity)} ${program.unitCode}`
+    : formatAmount(program.productionQuantity, program.unitCode);
 
   return `<!DOCTYPE html>
 <html lang="en">

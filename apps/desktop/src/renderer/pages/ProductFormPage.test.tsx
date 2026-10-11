@@ -23,6 +23,8 @@ describe("ProductFormPage article image handling", () => {
       listMainGroups: vi.fn().mockResolvedValue([]),
       listProductGroups: vi.fn().mockResolvedValue([]),
       listArticleSeries: vi.fn().mockResolvedValue([]),
+      listProductTypes: vi.fn().mockResolvedValue([]),
+      listProductSubGroups: vi.fn().mockResolvedValue([]),
       getNextProductCode: vi.fn().mockResolvedValue("P-0001"),
       getProductImage,
       saveProductImage,
@@ -63,6 +65,8 @@ describe("ProductFormPage uppercase inputs", () => {
       listMainGroups: vi.fn().mockResolvedValue([]),
       listProductGroups: vi.fn().mockResolvedValue([]),
       listArticleSeries: vi.fn().mockResolvedValue([]),
+      listProductTypes: vi.fn().mockResolvedValue([]),
+      listProductSubGroups: vi.fn().mockResolvedValue([]),
       getNextProductCode: vi.fn().mockResolvedValue("P-0001"),
       getProductImage: vi.fn().mockResolvedValue(null),
     });
@@ -119,6 +123,8 @@ describe("ProductFormPage contractor pricing", () => {
     listMainGroups: vi.fn().mockResolvedValue([]),
     listProductGroups: vi.fn().mockResolvedValue([]),
     listArticleSeries: vi.fn().mockResolvedValue([]),
+      listProductTypes: vi.fn().mockResolvedValue([]),
+      listProductSubGroups: vi.fn().mockResolvedValue([]),
     getNextProductCode: vi.fn().mockResolvedValue("P-0001"),
     getProductImage: vi.fn().mockResolvedValue(null),
   };

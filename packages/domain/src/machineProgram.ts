@@ -129,6 +129,35 @@ export const attributeKey = (value: string | null | undefined): string => String
 export const sameAttributeValue = (a: string | null | undefined, b: string | null | undefined): boolean =>
   attributeKey(a) !== "" && attributeKey(a) === attributeKey(b);
 
+// ─── FIX articles: no upper, two soles ───────────────────────────────────────
+//
+//   a normal article   BLACK sole  +  an UPPER going on it
+//   a FIX article      OUTER sole  +  INNER sole, and no upper at all
+//
+// Which articles these are is a fact about the PRODUCT SUB GROUP (has_no_upper, migration 067),
+// never a name matched in code. A fix run therefore carries its own quantity, because the figure
+// it plans cannot come from upper lines it does not have.
+//
+// A fix run RESERVES NOTHING. There is no upper to promise, and Dana has never been reserved by
+// a program, so none of the arithmetic below looks at a fix quantity and Store Out has nothing
+// to issue for it.
+
+/** A run is a FIX run exactly when it names a second (inner) sole colour. */
+export const isFixRun = (run: { innerSoleColour?: string | null }): boolean =>
+  attributeKey(run.innerSoleColour) !== "";
+
+/**
+ * Whether a quantity may be typed on a fix run.
+ *
+ * The same rule a line quantity follows — above zero, at most two decimals — minus the stock
+ * ceiling, because a fix run holds nothing against the store.
+ */
+export const checkFixQuantity = (quantity: number): boolean =>
+  typeof quantity === "number" &&
+  Number.isFinite(quantity) &&
+  quantity > 0 &&
+  Math.abs(roundQuantity(quantity) - quantity) <= QUANTITY_EPSILON;
+
 // ─── The reservation arithmetic ──────────────────────────────────────────────
 
 /** What a line still owes: allocated minus what Raw Material Output actually took for it. */

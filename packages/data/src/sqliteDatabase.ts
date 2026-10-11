@@ -29,6 +29,7 @@ import { machineProgramWritesMethods, type MachineProgramWritesMethods } from ".
 import { machineProgramStoreOutMethods, type MachineProgramStoreOutMethods } from "./database/machineProgramStoreOut.js";
 import { machineProgramCartonsMethods, type MachineProgramCartonsMethods } from "./database/machineProgramCartons.js";
 import { machineProgramDanaMethods, type MachineProgramDanaMethods } from "./database/machineProgramDana.js";
+import { productClassificationMethods, type ProductClassificationMethods } from "./database/productClassification.js";
 import { machineProgramRatesMethods, type MachineProgramRatesMethods } from "./database/machineProgramRates.js";
 import { stockCorrectionsMethods, type StockCorrectionsMethods } from "./database/stockCorrections.js";
 import { removalRequestsMethods, type RemovalRequestsMethods } from "./database/removalRequests.js";
@@ -785,6 +786,7 @@ export interface SqliteDatabase
     MachineProgramStoreOutMethods,
     MachineProgramCartonsMethods,
     MachineProgramDanaMethods,
+    ProductClassificationMethods,
     MachineProgramRatesMethods,
     StockCorrectionsMethods,
     RemovalRequestsMethods,
@@ -815,6 +817,7 @@ Object.assign(
   machineProgramStoreOutMethods,
   machineProgramCartonsMethods,
   machineProgramDanaMethods,
+  productClassificationMethods,
   machineProgramRatesMethods,
   stockCorrectionsMethods,
   removalRequestsMethods,

@@ -216,6 +216,9 @@ export interface ProductVariantRecord {
   mainGroupId: string | null;
   groupId: string | null;
   articleSeriesId: string | null;
+  /** Added 2026-10-11 (migration 066). Null on every product saved before it. */
+  productTypeId: string | null;
+  productSubGroupId: string | null;
   articleSeriesName?: string | null;
   mainGroupName: string | null;
   groupName: string | null;
@@ -1014,14 +1017,48 @@ export interface QrBatchMemberRow {
   lastActivityAt: string;
 }
 
+/** One entry of the flat Product Type list. */
+export interface ProductTypeRecord {
+  id: string;
+  name: string;
+  description: string | null;
+  isActive: boolean;
+}
+
+/** One sub group, and the product group it belongs to. */
+export interface ProductSubGroupRecord {
+  id: string;
+  productGroupId: string;
+  /** Carried so a list of ALL sub groups can say which group each one is under. */
+  productGroupName: string;
+  name: string;
+  description: string | null;
+  isActive: boolean;
+  /**
+   * FIX articles: these products have NO UPPER and are moulded from two soles, an outer and
+   * an inner (migration 067). A machine program for one asks for the second colour and a
+   * quantity instead of uppers.
+   */
+  hasNoUpper: boolean;
+}
+
 /** The dropdown lists offered on the Add / Edit Product page. */
-export type ProductListKind = "article" | "size" | "main-group" | "product-group" | "article-series";
+export type ProductListKind =
+  | "article"
+  | "size"
+  | "main-group"
+  | "product-group"
+  | "article-series"
+  | "product-type"
+  | "product-sub-group";
 
 export interface ProductListEntry {
   kind: ProductListKind;
   /** Group / series id; for articles and sizes, the value itself. */
   id: string;
   name: string;
+  /** The product group a sub group belongs to. Null for every other kind. */
+  parentName?: string | null;
   /** Active Product Master entries using this value (what the dropdown shows). */
   productCount: number;
   /** Disabled entries still carrying it — kept for history, not offered in dropdowns. */
@@ -1642,6 +1679,8 @@ export interface MachineProgramArticle {
     machineRatePaisa: number | null;
     packingRatePaisa: number | null;
     printingRatePaisa: number | null;
+    /** FIX: no upper, moulded from an outer and an inner sole (migration 067). */
+    hasNoUpper: boolean;
   }>;
 }
 
@@ -1718,10 +1757,21 @@ export interface MachineProgramRunRecord {
   programId: string;
   injectorNo: number;
   runNo: number;
+  /** THE sole on a normal run, the OUTER sole on a fix run. */
   soleColour: string;
+  /**
+   * The INNER sole, and the mark of a FIX run: an article with no upper, moulded from two
+   * soles (migration 067). Null on every normal run.
+   */
+  innerSoleColour: string | null;
   articleSizeId: string;
   article: string;
   size: string;
+  /**
+   * A fix run plans this many, typed on the run itself, because it has no upper lines to add
+   * up. 0 on a normal run, where totalQuantity is the figure. NOT a reservation.
+   */
+  fixQuantity: number;
   totalQuantity: number;
   consumedQuantity: number;
   /** The unit every line on this run shares, or null when they differ. */
@@ -1767,7 +1817,12 @@ export interface MachineProgramRecord {
   status: string;
   /** PROGRAMMED / PARTIALLY_USED / COMPLETED / CANCELLED — derived, never stored. */
   displayStatus: string;
+  /** What the program RESERVES: the sum of its upper lines. Fix runs are not in it. */
   totalQuantity: number;
+  /** What its FIX runs plan, which reserves nothing. */
+  fixQuantity: number;
+  /** Everything the machine is to make — uppers plus fix. What "Total Dozen" shows. */
+  productionQuantity: number;
   consumedQuantity: number;
   outstandingQuantity: number;
   /** The unit every line on the program shares, or null when they differ. */
