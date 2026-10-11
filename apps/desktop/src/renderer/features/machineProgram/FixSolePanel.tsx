@@ -1,6 +1,5 @@
 import React from "react";
 import { copy } from "../../config/copy";
-<<<<<<< HEAD
 import { SearchableCombobox } from "../../components/shared/SearchableCombobox";
 import { StateView } from "../../components/shared/StateView";
 import { danaLabel } from "./machineProgram";
@@ -24,32 +23,10 @@ interface FixSolePanelProps {
   outerColour: string | null;
   /** Omitted when the outer sole is the card's own colour: it is then shown, not chosen. */
   onChooseOuter?: (colour: string) => void;
-=======
-import { StateView } from "../../components/shared/StateView";
-import { ColourStep } from "./RunSteps";
-
-// Panel ③ for a FIX article: no upper, a second sole instead.
-//
-//   ③ Inner Sole & Quantity              EVR9 / 7/10
-//   ● BLACK  ● RED  ● WHITE
-//   BLACK outer · RED inner
-//   How many?  [ 30 ] DOZEN
-//
-// It takes the place of the Upper Stock panel, because a fix article has no upper to fetch — it
-// is moulded from an outer sole and an inner one. There is no ceiling on the quantity and no
-// stock figure beside it: a fix run reserves nothing, so there is nothing the store could run
-// out of for it. Dana for both soles is issued on the Machine Program Issue screen, exactly as
-// it is for any other sole.
-
-interface FixSolePanelProps {
-  /** The outer sole, chosen in panel ①, so the pair can be said in full. */
-  outerColour: string | null;
->>>>>>> 3269f98a641b7a34ca7c94a185e4a1e67738de8f
   innerColour: string | null;
   onChooseInner: (colour: string) => void;
   quantity: string;
   onQuantityChange: (value: string) => void;
-<<<<<<< HEAD
   /** Why what has been chosen cannot be saved, or null. */
   problem: string | null;
   disabled?: boolean;
@@ -65,32 +42,11 @@ export const FixSolePanel: React.FC<FixSolePanelProps> = (props) => {
 
   // The same colours, with the Dana the store holds for each, as the sole colour list shows.
   const options = colours.value.map((option) => ({ value: option.colour, label: option.colour, detail: danaLabel(option) }));
-=======
-  /** Why the typed quantity cannot be saved, or null. */
-  problem: string | null;
-  /** False until an article and size are chosen — there is nothing to count yet. */
-  ready: boolean;
-  disabled?: boolean;
-}
-
-export const FixSolePanel: React.FC<FixSolePanelProps> = ({
-  outerColour,
-  innerColour,
-  onChooseInner,
-  quantity,
-  onQuantityChange,
-  problem,
-  ready,
-  disabled = false,
-}) => {
-  if (!ready) return <StateView kind="empty" compact title={copy.machineProgram.chooseArticleFirst} />;
->>>>>>> 3269f98a641b7a34ca7c94a185e4a1e67738de8f
 
   return (
     <div className="mpa-fix">
       <p className="mp-note">{copy.machineProgram.fixNoUpperNote}</p>
 
-<<<<<<< HEAD
       <p className="mpa-field-label">{copy.machineProgram.outerSoleColour}</p>
       {onChooseOuter ? (
         <SearchableCombobox
@@ -119,13 +75,6 @@ export const FixSolePanel: React.FC<FixSolePanelProps> = ({
 
       {/* Said in words, because the sheet and the floor name both soles. */}
       {outerColour && innerColour && outerColour !== innerColour ? (
-=======
-      <p className="mpa-field-label">{copy.machineProgram.innerSoleColour}</p>
-      <ColourStep layout="rows" selected={innerColour} onChoose={onChooseInner} />
-
-      {/* Said in words, because the sheet and the floor name both soles. */}
-      {outerColour && innerColour ? (
->>>>>>> 3269f98a641b7a34ca7c94a185e4a1e67738de8f
         <p className="mpa-fix-pair">{copy.machineProgram.fixPair(outerColour, innerColour)}</p>
       ) : null}
 

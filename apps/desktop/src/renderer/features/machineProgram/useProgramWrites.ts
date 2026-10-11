@@ -46,19 +46,10 @@ export const useProgramWrites = (onSaved: () => void) => {
     saveLine: (input: SaveMachineProgramLineInput) => run(() => api.saveMachineProgramLine(input)),
     changeRun: (runId: string, header: MachineProgramRunHeader) => run(() => api.saveMachineProgramRun({ runId, ...header })),
     /**
-<<<<<<< HEAD
      * A FIX article: two sole colours and a quantity, with no upper. Answers like saveLine, so the
      * caller has the program it went on — the article's pricing is saved onto that next.
      */
     saveFixRun: (input: {
-=======
-     * A FIX article: two sole colours and a quantity, with no upper.
-     *
-     * Answers with the sentence that explains a refusal, or null when it saved — the dialog
-     * shows it in place rather than closing on a save that did not happen.
-     */
-    saveFixRun: async (input: {
->>>>>>> 3269f98a641b7a34ca7c94a185e4a1e67738de8f
       machineId: string;
       programDate: string;
       shift: MachineShift;
@@ -67,14 +58,7 @@ export const useProgramWrites = (onSaved: () => void) => {
       innerSoleColour: string;
       articleSizeId: string;
       quantity: number;
-<<<<<<< HEAD
     }) => run(() => api.saveMachineProgramFixRun(input)),
-=======
-    }): Promise<string | null> => {
-      const answer = await run(() => api.saveMachineProgramFixRun(input));
-      return answer.ok ? null : answer.reason;
-    },
->>>>>>> 3269f98a641b7a34ca7c94a185e4a1e67738de8f
     saveArticleRates: (input: { programId: string; articleSizeId: string; machineRate: number; packingRate: number; printingRate: number }) =>
       run(() => api.saveMachineProgramArticleRates(input)),
     removeLine: (lineId: string) => run(() => api.removeMachineProgramLine({ lineId })),

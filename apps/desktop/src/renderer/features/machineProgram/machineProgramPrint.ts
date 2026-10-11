@@ -1,8 +1,4 @@
-<<<<<<< HEAD
 import { MACHINE_INJECTORS, formatShiftRange, isFixRun } from "@erp/domain";
-=======
-import { MACHINE_INJECTORS, formatShiftRange, fromPaisa, isFixRun, programContractorPricing } from "@erp/domain";
->>>>>>> 3269f98a641b7a34ca7c94a185e4a1e67738de8f
 import type { MachineProgramRecord, MachineProgramRunRecord } from "../../types/desktopApi";
 import { renderQrSvgMarkup } from "../../utils/qrLabels";
 import { loadLogoDataUrl, openPrintDocumentAsync } from "../../platform/print";
