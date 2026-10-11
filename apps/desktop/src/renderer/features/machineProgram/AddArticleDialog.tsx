@@ -1,17 +1,19 @@
 import React, { useEffect, useRef, useState } from "react";
 import type { MachineShift } from "@erp/domain";
-import type { MachineProgramRunRecord } from "../../types/desktopApi";
+import type { MachineProgramArticleRate, MachineProgramRunRecord } from "../../types/desktopApi";
 import { ColorSwatch } from "../../components/shared/ColorSwatch";
 import { Modal } from "../../components/shared/Modal";
 import { StateView } from "../../components/shared/StateView";
 import { StepHeading } from "../../components/shared/StepHeading";
 import { copy } from "../../config/copy";
 import { ChosenUppersTable } from "./ChosenUppersTable";
+import { ContractorRateFields } from "./ContractorRateFields";
 import { ArticleStep, ColourStep, SizeStep } from "./RunSteps";
 import { UpperPicker } from "./UpperPicker";
+import { isEmptyRateDraft } from "./ContractorRateFields";
 import { danaLabel, runForArticleSize, type RunDraft } from "./machineProgram";
 import { useChosenUppers } from "./useChosenUppers";
-import { useSoleColours } from "./useMachineProgramData";
+import { useArticles, useSoleColours } from "./useMachineProgramData";
 import type { ProgramWrites } from "./useProgramWrites";
 
 // + ADD SOLE COLOR / + ADD ARTICLE — one screen, three panels, and what has been chosen under
@@ -40,6 +42,8 @@ interface AddArticleDialogProps {
   injectorNo: number;
   /** The runs already in scope — a repeated article + size joins its run, never rivals it. */
   runs: MachineProgramRunRecord[];
+  /** What the program already pays for each article, so the rate boxes open on that. */
+  articleRates: MachineProgramArticleRate[];
   writes: ProgramWrites;
   onClose: () => void;
   /** Set when the card's own sole colour is the answer to the first panel. */
@@ -56,7 +60,10 @@ export const AddArticleDialog: React.FC<AddArticleDialogProps> = ({ fixedColour,
     articleSizeId: null,
     size: null,
   });
-  const chosen = useChosenUppers(target);
+  // The Product Master list the article panel is picked from. Read here too so the pricing boxes
+  // can open on an article's STANDARD rates when the program has not priced it yet.
+  const articles = useArticles();
+  const chosen = useChosenUppers({ ...target, articles: articles.value });
 
   const describedRun =
     draft.soleColour && draft.article && draft.size && draft.articleSizeId
@@ -165,6 +172,36 @@ export const AddArticleDialog: React.FC<AddArticleDialogProps> = ({ fixedColour,
           </div>
         </section>
       </div>
+
+      {/* ④ What the article's work is paid at. Beside the selection rather than in the panel row
+          above: it is about the article, not about which upper is being fetched for it, and the
+          three panels are already as narrow as they read well at. */}
+      <section className="mpa-pricing" aria-label={copy.machineProgram.pricingPanel}>
+        <div className="mpa-pricing-head">
+          <StepHeading index={4} done={!isEmptyRateDraft(chosen.rateFor(draft.articleSizeId))} title={copy.machineProgram.pricingPanel} />
+          {describedRun ? (
+            <span className="mpa-for">{copy.machineProgram.pricingFor(describedRun.article, describedRun.size)}</span>
+          ) : null}
+        </div>
+        {draft.articleSizeId ? (
+          <>
+            <p className="mp-note">{copy.machineProgram.pricingHint}</p>
+            <ContractorRateFields
+              idPrefix={`mpa-rate-${draft.articleSizeId}`}
+              value={chosen.rateFor(draft.articleSizeId)}
+              onChange={(next) => chosen.setRate(draft.articleSizeId as string, next)}
+              disabled={chosen.saving}
+            />
+            {chosen.rateProblem(draft.articleSizeId) ? (
+              <p className="mp-problem" role="alert">
+                ⚠ {chosen.rateProblem(draft.articleSizeId)}
+              </p>
+            ) : null}
+          </>
+        ) : (
+          <StateView kind="empty" compact title={copy.machineProgram.pricingChooseArticleFirst} />
+        )}
+      </section>
 
       <section ref={selection} className="mpa-chosen" aria-label={copy.machineProgram.selectedArticles}>
         <h3 className="mpa-chosen-title">{copy.machineProgram.selectedArticles}</h3>

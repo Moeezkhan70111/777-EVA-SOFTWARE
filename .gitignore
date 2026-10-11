@@ -12,6 +12,23 @@ release-archive/
 .DS_Store
 .vscode/settings.json
 
+# --- Signing credentials and secrets must NEVER be committed -----------------
+# Code-signing keys live on a hardware token or cloud HSM and are supplied to the
+# build through environment variables (see docs/25-code-signing.md). These patterns
+# are a second line of defence in case a certificate, key or env file is ever
+# written into the repository by mistake.
+.env
+.env.*
+!.env.example
+*.pfx
+*.p12
+*.pem
+*.key
+*.cer
+*.crt
+*.spc
+*.pvk
+
 # Local runtime data (the app keeps its database in the per-user app-data folder;
 # this repo-local folder is a legacy location that is only read, never written)
 apps/desktop/.runtime/

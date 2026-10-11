@@ -8,6 +8,53 @@ import type { InventoryRow, PagedResult, ProductListEntry, ProductListKind, Prod
 import { fromPaisa, fromPaisaOrNull, multiplyMoney, subtractMoney, toPaisaOrNull } from "@erp/domain";
 import { IN_STORE_STOCK_SQL } from "./shared.js";
 
+/**
+ * The standard contractor rates of a product as they are stored: integer paisa, or null.
+ *
+ * Null is "not set" and is kept apart from 0 all the way down (migration 064): a product nobody
+ * has priced shows as "Not priced" on a machine program, while an explicit 0 means that job is
+ * not paid for this article. `undefined` in means null out — the form sends an empty box as
+ * nothing, not as free work.
+ */
+const contractorRatesInPaisa = (input: {
+  machineRate?: number | null;
+  packingRate?: number | null;
+  printingRate?: number | null;
+}): { machineRatePaisa: number | null; packingRatePaisa: number | null; printingRatePaisa: number | null } => ({
+  machineRatePaisa: toPaisaOrNull(input.machineRate),
+  packingRatePaisa: toPaisaOrNull(input.packingRate),
+  printingRatePaisa: toPaisaOrNull(input.printingRate),
+});
+
+/**
+ * Whether a caller said anything about the contractor rates at all.
+ *
+ * NOT the same question as whether they are set: `null` means "clear it", and the full product
+ * form sends null for a box left empty. Sending NOTHING means "leave them as they are", which is
+ * what keeps a caller that knows nothing about contractor pricing — the older simple product
+ * form, an import, anything added later — from silently blanking a rate somebody agreed.
+ */
+const mentionsContractorRates = (input: {
+  machineRate?: number | null;
+  packingRate?: number | null;
+  printingRate?: number | null;
+}): boolean => "machineRate" in input || "packingRate" in input || "printingRate" in input;
+
+/** Writes only the three rate columns of one ArticleSize. Called only when they were given. */
+const writeContractorRates = (
+  db: SqliteDatabase,
+  articleSizeId: string,
+  input: { machineRate?: number | null; packingRate?: number | null; printingRate?: number | null },
+  now: string
+): void => {
+  const rates = contractorRatesInPaisa(input);
+  db.db
+    .prepare(
+      "UPDATE article_sizes SET machine_rate_paisa = ?, packing_rate_paisa = ?, printing_rate_paisa = ?, updated_at = ? WHERE id = ?"
+    )
+    .run(rates.machineRatePaisa, rates.packingRatePaisa, rates.printingRatePaisa, now, articleSizeId);
+};
+
 const PRODUCT_LIST_TABLES: Record<
     "main-group" | "product-group" | "article-series",
     { table: string; nameColumn: string; fk: string; label: string; discountTable: string | null; discountFk: string | null }
@@ -146,6 +193,9 @@ export const productsMethods = {
             ass.description,
             ass.cost_price_paisa,
             ass.selling_price_paisa,
+            ass.machine_rate_paisa,
+            ass.packing_rate_paisa,
+            ass.printing_rate_paisa,
             ass.main_group_id,
             ass.product_group_id,
             ass.article_series_id,
@@ -179,6 +229,11 @@ export const productsMethods = {
       description: row.description ? String(row.description) : null,
       costPrice: fromPaisaOrNull(row.cost_price_paisa == null ? null : Number(row.cost_price_paisa)),
       sellingPrice: fromPaisaOrNull(row.selling_price_paisa == null ? null : Number(row.selling_price_paisa)),
+      // The product's STANDARD contractor rates, per DOZEN, in paisa. Null is "not set", which
+      // every reader keeps apart from a rate of 0 (that job is not paid for this article).
+      machineRatePaisa: row.machine_rate_paisa == null ? null : Number(row.machine_rate_paisa),
+      packingRatePaisa: row.packing_rate_paisa == null ? null : Number(row.packing_rate_paisa),
+      printingRatePaisa: row.printing_rate_paisa == null ? null : Number(row.printing_rate_paisa),
       mainGroupId: row.main_group_id ? String(row.main_group_id) : null,
       groupId: row.product_group_id ? String(row.product_group_id) : null,
       articleSeriesId: row.article_series_id ? String(row.article_series_id) : null,
@@ -231,6 +286,10 @@ export const productsMethods = {
     description?: string;
     costPrice?: number;
     sellingPrice?: number;
+    /** The standard contractor rates, per DOZEN, in rupees. Undefined leaves them untouched. */
+    machineRate?: number | null;
+    packingRate?: number | null;
+    printingRate?: number | null;
     mainGroupId?: string;
     productGroupId?: string;
     articleSeriesId?: string;
@@ -242,18 +301,43 @@ export const productsMethods = {
     const size = input.size.trim();
     const costPricePaisa = toPaisaOrNull(input.costPrice);
     const sellingPricePaisa = toPaisaOrNull(input.sellingPrice);
-    const existing = this.db.prepare("SELECT id FROM article_sizes WHERE article = ? AND size = ? AND deleted_at IS NULL LIMIT 1").get(article, size) as { id: string } | undefined;
+    const rates = contractorRatesInPaisa(input);
+    // Deliberately NOT filtered on deleted_at.
+    //
+    // Deleting a product is a SOFT delete (disableProduct sets status = 'DISABLED' and
+    // deleted_at), but the schema's UNIQUE(article, size) is a hard constraint that knows
+    // nothing about deleted_at. Filtering the lookup to live rows therefore used to miss the
+    // very row holding the slot, fall through to the INSERT below, and die on the constraint —
+    // "Error processing product" when an operator deleted a product and made it again.
+    //
+    // So a deleted row is found and REVIVED: making SK9 7/10 again gives back SK9 7/10, keeping
+    // its id and its product code, which is what every QR, stock row and voucher line already
+    // pointing at that id requires. Its colour variants are left as they are — re-enabling the
+    // product is what brings those back (enableProduct), while creating it again only promises
+    // the product itself, with whatever colours this call names.
+    const existing = this.db
+      .prepare("SELECT id, deleted_at FROM article_sizes WHERE article = ? AND size = ? LIMIT 1")
+      .get(article, size) as { id: string; deleted_at: string | null } | undefined;
     if (existing) {
+      const now = new Date().toISOString();
       if (input.updateExisting) {
         this.db.prepare(`UPDATE article_sizes SET description = ?, cost_price_paisa = ?, selling_price_paisa = ?, main_group_id = ?, product_group_id = ?, article_series_id = ?, status = ?, updated_at = ? WHERE id = ?`)
-          .run(input.description ?? null, costPricePaisa, sellingPricePaisa, input.mainGroupId ?? null, input.productGroupId ?? null, input.articleSeriesId ?? null, input.status ?? "ACTIVE", new Date().toISOString(), existing.id);
+          .run(input.description ?? null, costPricePaisa, sellingPricePaisa, input.mainGroupId ?? null, input.productGroupId ?? null, input.articleSeriesId ?? null, input.status ?? "ACTIVE", now, existing.id);
+        // Only when the caller said something about them — see mentionsContractorRates.
+        if (mentionsContractorRates(input)) writeContractorRates(this, existing.id, input, now);
+      }
+      // Bringing it back is its own step, so a caller that asked not to overwrite the row's
+      // figures still gets a product it can actually use.
+      if (existing.deleted_at) {
+        this.db.prepare(`UPDATE article_sizes SET status = ?, deleted_at = NULL, deleted_by = NULL, delete_reason = NULL, updated_at = ? WHERE id = ?`)
+          .run(input.status ?? "ACTIVE", now, existing.id);
       }
       return existing.id;
     }
     const id = crypto.randomUUID();
     const now = new Date().toISOString();
-    this.db.prepare(`INSERT INTO article_sizes (id, product_code, article, size, description, cost_price_paisa, selling_price_paisa, main_group_id, product_group_id, article_series_id, status, created_at, updated_at, deleted_at, deleted_by, delete_reason) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL)`)
-      .run(id, input.productCode ?? this.getNextProductCode(), article, size, input.description ?? null, costPricePaisa, sellingPricePaisa, input.mainGroupId ?? null, input.productGroupId ?? null, input.articleSeriesId ?? null, input.status ?? "ACTIVE", now, now);
+    this.db.prepare(`INSERT INTO article_sizes (id, product_code, article, size, description, cost_price_paisa, selling_price_paisa, machine_rate_paisa, packing_rate_paisa, printing_rate_paisa, main_group_id, product_group_id, article_series_id, status, created_at, updated_at, deleted_at, deleted_by, delete_reason) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL)`)
+      .run(id, input.productCode ?? this.getNextProductCode(), article, size, input.description ?? null, costPricePaisa, sellingPricePaisa, rates.machineRatePaisa, rates.packingRatePaisa, rates.printingRatePaisa, input.mainGroupId ?? null, input.productGroupId ?? null, input.articleSeriesId ?? null, input.status ?? "ACTIVE", now, now);
     return id;
   },
 
@@ -264,6 +348,10 @@ export const productsMethods = {
     description?: string;
     costPrice?: number;
     sellingPrice?: number;
+    /** The standard contractor rates, per DOZEN, in rupees — see migration 064. */
+    machineRate?: number | null;
+    packingRate?: number | null;
+    printingRate?: number | null;
     mainGroupId?: string;
     productGroupId?: string;
     articleSeriesId?: string;
@@ -278,9 +366,20 @@ export const productsMethods = {
     const colors = (input.colors ?? (input.color ? [input.color] : [])).map((color) => color.trim().toUpperCase()).filter((color) => color && color !== "N/A" && color !== "NULL" && color !== "UNDEFINED");
     let firstId = articleSizeId;
     for (const color of [...new Set(colors)]) {
-      const id = crypto.randomUUID();
-      this.db.prepare(`INSERT INTO product_variants (id, article, color, size, description, cost_price_paisa, selling_price_paisa, main_group_id, product_group_id, article_series_id, article_size_id, status, created_at, updated_at, deleted_at, deleted_by, delete_reason) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL)`)
-        .run(id, input.article.trim().toUpperCase(), color, input.size.trim(), input.description ?? null, costPricePaisa, sellingPricePaisa, input.mainGroupId ?? null, input.productGroupId ?? null, input.articleSeriesId ?? null, articleSizeId, input.status ?? "ACTIVE", now, now);
+      const id = this.upsertProductVariant({
+        articleSizeId,
+        article: input.article.trim().toUpperCase(),
+        color,
+        size: input.size.trim(),
+        description: input.description ?? null,
+        costPricePaisa,
+        sellingPricePaisa,
+        mainGroupId: input.mainGroupId ?? null,
+        productGroupId: input.productGroupId ?? null,
+        articleSeriesId: input.articleSeriesId ?? null,
+        status: input.status ?? "ACTIVE",
+        now,
+      });
       if (firstId === articleSizeId) firstId = id;
     }
     // Existing variants keep independent copies of these fields (read by sale/discount/report queries), so keep them in sync.
@@ -376,6 +475,10 @@ export const productsMethods = {
       description?: string;
       costPrice?: number;
       sellingPrice?: number;
+      /** The standard contractor rates, per DOZEN, in rupees — see migration 064. */
+      machineRate?: number | null;
+      packingRate?: number | null;
+      printingRate?: number | null;
       mainGroupId?: string;
       productGroupId?: string;
       articleSeriesId?: string;
@@ -388,20 +491,89 @@ export const productsMethods = {
     const now = new Date().toISOString();
     const costPricePaisa = toPaisaOrNull(input.costPrice);
     const sellingPricePaisa = toPaisaOrNull(input.sellingPrice);
+    // The contractor rates live ONLY on the ArticleSize: a carton's colour has no bearing on what
+    // moulding a dozen is paid, so unlike the prices below there is nothing to copy onto the
+    // colour variants and nothing that can fall out of sync.
     this.db.prepare(`UPDATE article_sizes SET description = ?, cost_price_paisa = ?, selling_price_paisa = ?, main_group_id = ?, product_group_id = ?, article_series_id = ?, status = ?, updated_at = ? WHERE id = ?`)
       .run(input.description ?? null, costPricePaisa, sellingPricePaisa, input.mainGroupId ?? null, input.productGroupId ?? null, input.articleSeriesId ?? null, input.status ?? "ACTIVE", now, articleSizeId);
+    // The rates are written only when this save was about them. A form that knows nothing about
+    // contractor pricing (the simple one on ProductsPage) must not blank an agreed rate.
+    if (mentionsContractorRates(input)) writeContractorRates(this, articleSizeId, input, now);
     // Existing variants keep independent copies of these fields (read by sale/discount/report queries), so keep them in sync.
     this.db.prepare(`UPDATE product_variants SET description = ?, cost_price_paisa = ?, selling_price_paisa = ?, main_group_id = ?, product_group_id = ?, article_series_id = ?, status = ?, updated_at = ? WHERE article_size_id = ? AND deleted_at IS NULL`)
       .run(input.description ?? null, costPricePaisa, sellingPricePaisa, input.mainGroupId ?? null, input.productGroupId ?? null, input.articleSeriesId ?? null, input.status ?? "ACTIVE", now, articleSizeId);
     const existing = this.db.prepare("SELECT article, size FROM article_sizes WHERE id = ?").get(articleSizeId) as { article: string; size: string } | undefined;
     if (!existing) return;
     for (const color of (input.colors ?? []).map((value) => value.trim().toUpperCase()).filter((value) => value && value !== "N/A" && value !== "NULL" && value !== "UNDEFINED")) {
-      const found = this.db.prepare("SELECT id FROM product_variants WHERE article_size_id = ? AND color = ? AND deleted_at IS NULL LIMIT 1").get(articleSizeId, color) as { id: string } | undefined;
-      if (!found) {
-        this.db.prepare(`INSERT INTO product_variants (id, article, color, size, description, cost_price_paisa, selling_price_paisa, main_group_id, product_group_id, article_series_id, article_size_id, status, created_at, updated_at, deleted_at, deleted_by, delete_reason) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL)`)
-          .run(crypto.randomUUID(), existing.article, color, existing.size, input.description ?? null, costPricePaisa, sellingPricePaisa, input.mainGroupId ?? null, input.productGroupId ?? null, input.articleSeriesId ?? null, articleSizeId, input.status ?? "ACTIVE", now, now);
-      }
+      this.upsertProductVariant({
+        articleSizeId,
+        article: existing.article,
+        color,
+        size: existing.size,
+        description: input.description ?? null,
+        costPricePaisa,
+        sellingPricePaisa,
+        mainGroupId: input.mainGroupId ?? null,
+        productGroupId: input.productGroupId ?? null,
+        articleSeriesId: input.articleSeriesId ?? null,
+        status: input.status ?? "ACTIVE",
+        now,
+      });
     }
+  },
+
+  /**
+   * @internal Makes sure one colour variant of a product exists, and returns its id.
+   *
+   * The colour counterpart of the lookup in getOrCreateArticleSize, and for the same reason:
+   * `product_variants` has a hard UNIQUE(article, color, size) while deleting a colour only sets
+   * deleted_at. A lookup narrowed to live rows misses the row holding the slot and the INSERT
+   * dies on the constraint, so the match deliberately ignores deleted_at and a deleted colour is
+   * brought back rather than duplicated — keeping its id, which its QR codes and stock point at.
+   *
+   * One place, because createProduct and updateProduct must never disagree about what
+   * "this colour exists" means.
+   */
+  upsertProductVariant(this: SqliteDatabase, input: {
+    articleSizeId: string;
+    article: string;
+    color: string;
+    size: string;
+    description: string | null;
+    costPricePaisa: number | null;
+    sellingPricePaisa: number | null;
+    mainGroupId: string | null;
+    productGroupId: string | null;
+    articleSeriesId: string | null;
+    status: "ACTIVE" | "DISABLED";
+    now: string;
+  }): string {
+    const existing = this.db
+      .prepare("SELECT id, deleted_at FROM product_variants WHERE article = ? AND color = ? AND size = ? LIMIT 1")
+      .get(input.article, input.color, input.size) as { id: string; deleted_at: string | null } | undefined;
+
+    if (existing) {
+      // An older variant may predate the article_sizes link, so it is attached here too.
+      this.db
+        .prepare(
+          `UPDATE product_variants SET article_size_id = COALESCE(article_size_id, ?), status = ?,
+             deleted_at = NULL, deleted_by = NULL, delete_reason = NULL, updated_at = ?
+           WHERE id = ?`
+        )
+        .run(input.articleSizeId, input.status, input.now, existing.id);
+      return existing.id;
+    }
+
+    const id = crypto.randomUUID();
+    this.db
+      .prepare(
+        `INSERT INTO product_variants (id, article, color, size, description, cost_price_paisa, selling_price_paisa, main_group_id, product_group_id, article_series_id, article_size_id, status, created_at, updated_at, deleted_at, deleted_by, delete_reason) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL)`
+      )
+      .run(
+        id, input.article, input.color, input.size, input.description, input.costPricePaisa, input.sellingPricePaisa,
+        input.mainGroupId, input.productGroupId, input.articleSeriesId, input.articleSizeId, input.status, input.now, input.now
+      );
+    return id;
   },
 
   disableProduct(this: SqliteDatabase, id: string, reason = "Disabled from product management"): void {

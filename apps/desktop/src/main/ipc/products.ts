@@ -12,6 +12,31 @@ import type { ProductListKind } from "@erp/data";
 import fs from "node:fs";
 import path from "node:path";
 
+const RATE_KEYS = ["machineRate", "packingRate", "printingRate"] as const;
+
+/**
+ * The product's standard contractor rates, as the form sent them: rupees per DOZEN, or null.
+ *
+ * An empty box is **null — not set** — and not 0 (migration 064): a product nobody has priced is
+ * reported as unpriced on a machine program, while a typed 0 means that job is not paid for this
+ * article. A value that is not a finite number is therefore null too, never silently zero.
+ *
+ * A caller that sends NONE of the three keys gets `{}` back, which the data layer reads as "leave
+ * the rates alone". That is what keeps the older simple product form (ProductsPage), which knows
+ * nothing about contractor pricing, from blanking rates somebody set on the full form.
+ */
+const contractorRates = (
+  input?: Record<string, unknown>
+): { machineRate?: number | null; packingRate?: number | null; printingRate?: number | null } => {
+  if (!RATE_KEYS.some((key) => input != null && key in input)) return {};
+  const rate = (value: unknown): number | null => (Number.isFinite(value) ? Number(value) : null);
+  return {
+    machineRate: rate(input?.machineRate),
+    packingRate: rate(input?.packingRate),
+    printingRate: rate(input?.printingRate),
+  };
+};
+
 export function registerProductsHandlers(ctx: IpcContext): void {
   const { db, logger, authorizer, deviceId, paths, useCases } = ctx;
   const { processScanUseCase, dispatchScanUseCase, returnScanUseCase, storeEntryScanUseCase, storeExitScanUseCase, createGatepassUseCase, cancelGatepassUseCase } = useCases;
@@ -96,6 +121,7 @@ export function registerProductsHandlers(ctx: IpcContext): void {
       description: typeof input?.description === "string" ? input.description : undefined,
       costPrice: Number.isFinite(input?.costPrice) ? Number(input?.costPrice) : undefined,
       sellingPrice: Number.isFinite(input?.sellingPrice) ? Number(input?.sellingPrice) : undefined,
+      ...contractorRates(input),
       mainGroupId: typeof input?.mainGroupId === "string" && input.mainGroupId ? input.mainGroupId : undefined,
       productGroupId: typeof input?.productGroupId === "string" && input.productGroupId ? input.productGroupId : undefined,
       articleSeriesId: typeof input?.articleSeriesId === "string" && input.articleSeriesId ? input.articleSeriesId : undefined,
@@ -128,6 +154,7 @@ export function registerProductsHandlers(ctx: IpcContext): void {
       description: typeof input?.description === "string" ? input.description : undefined,
       costPrice: Number.isFinite(input?.costPrice) ? Number(input?.costPrice) : undefined,
       sellingPrice: Number.isFinite(input?.sellingPrice) ? Number(input?.sellingPrice) : undefined,
+      ...contractorRates(input),
       mainGroupId: typeof input?.mainGroupId === "string" && input.mainGroupId ? input.mainGroupId : undefined,
       productGroupId: typeof input?.productGroupId === "string" && input.productGroupId ? input.productGroupId : undefined,
       articleSeriesId: typeof input?.articleSeriesId === "string" && input.articleSeriesId ? input.articleSeriesId : undefined,

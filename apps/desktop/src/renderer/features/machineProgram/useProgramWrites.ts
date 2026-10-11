@@ -45,6 +45,8 @@ export const useProgramWrites = (onSaved: () => void) => {
     stockVersion,
     saveLine: (input: SaveMachineProgramLineInput) => run(() => api.saveMachineProgramLine(input)),
     changeRun: (runId: string, header: MachineProgramRunHeader) => run(() => api.saveMachineProgramRun({ runId, ...header })),
+    saveArticleRates: (input: { programId: string; articleSizeId: string; machineRate: number; packingRate: number; printingRate: number }) =>
+      run(() => api.saveMachineProgramArticleRates(input)),
     removeLine: (lineId: string) => run(() => api.removeMachineProgramLine({ lineId })),
     removeRun: (runId: string) => run(() => api.removeMachineProgramRun({ runId })),
     deleteProgram: (programId: string) => run(() => api.deleteMachineProgram({ programId })),

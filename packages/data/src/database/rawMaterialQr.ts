@@ -558,6 +558,14 @@ export const rawMaterialQrMethods = {
        * column machine_program_line_id is history and is no longer written.)
        */
       machineProgramLineId?: string | null;
+      /**
+       * The saved Store Out batch that committed this movement, or null.
+       *
+       * Beside machineProgramLineId, which says which ALLOCATION authorised the packet. This says
+       * which Save Batch recorded it (migration 062). The generic store scanner has no batch, so
+       * a packet it issues carries the line stamp and nothing here.
+       */
+      machineProgramBatchId?: string | null;
     },
     tx: TransactionContext
   ): void {
@@ -568,8 +576,8 @@ export const rawMaterialQrMethods = {
            (id, qr_id, item_id, party_id, event_type, event_ts_local, event_date,
             factory_id, workstation_id, device_id, actor, session_id,
             quantity, unit_id, previous_status, new_status, section_id, item_display_name,
-            machine_program_upper_line_id, metadata_json, created_at, sync_status, source_app)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING', 'desktop-store-scanner')`
+            machine_program_upper_line_id, machine_program_batch_id, metadata_json, created_at, sync_status, source_app)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING', 'desktop-store-scanner')`
       )
       .run(
         payload.eventId,
@@ -591,6 +599,7 @@ export const rawMaterialQrMethods = {
         payload.sectionId,
         payload.itemDisplayName,
         payload.machineProgramLineId ?? null,
+        payload.machineProgramBatchId ?? null,
         JSON.stringify({ eventType: payload.eventType, actor: payload.actor ?? null, sessionId: payload.sessionId ?? null }),
         payload.occurredAt
       );

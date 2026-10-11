@@ -93,10 +93,20 @@ export const IPC = {
   listMachineProgramUppers: "erp:list-machine-program-uppers",
   saveMachineProgramLine: "erp:save-machine-program-line",
   saveMachineProgramRun: "erp:save-machine-program-run",
+  saveMachineProgramArticleRates: "erp:save-machine-program-article-rates",
   removeMachineProgramLine: "erp:remove-machine-program-line",
   removeMachineProgramRun: "erp:remove-machine-program-run",
   deleteMachineProgram: "erp:delete-machine-program",
   setMachineProgramShift: "erp:set-machine-program-shift",
+  // Store Out through one open Machine Program: look it up, judge one scan, save the batch.
+  openMachineProgramStoreOut: "erp:open-machine-program-store-out",
+  machineProgramStoreOutCheckScan: "erp:machine-program-store-out-check-scan",
+  machineProgramStoreOutSaveBatch: "erp:machine-program-store-out-save-batch",
+  listMachineProgramIssueBatches: "erp:list-machine-program-issue-batches",
+  // Dana issued out of the store FOR a program (Machine Program Issue screen).
+  listMachineProgramDanaOptions: "erp:list-machine-program-dana-options",
+  issueMachineProgramDana: "erp:issue-machine-program-dana",
+  listMachineProgramDanaIssues: "erp:list-machine-program-dana-issues",
   // Moving raw material in or out by hand, for loose stock that carries no label.
   getRawMaterialHandMoveOptions: "erp:get-raw-material-hand-move-options",
   moveRawMaterialByHand: "erp:move-raw-material-by-hand",

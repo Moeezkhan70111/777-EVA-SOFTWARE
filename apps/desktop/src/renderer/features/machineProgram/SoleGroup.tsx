@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import type { MachineShift } from "@erp/domain";
-import type { MachineProgramRunRecord, MachineProgramUpperLineRecord } from "../../types/desktopApi";
+import type { MachineProgramArticleRate, MachineProgramRunRecord, MachineProgramUpperLineRecord } from "../../types/desktopApi";
 import { ColorSwatch } from "../../components/shared/ColorSwatch";
 import { copy } from "../../config/copy";
 import { RunChangeDialog } from "./RunChange";
@@ -41,10 +41,21 @@ interface SoleGroupProps {
   programDate: string;
   shift: MachineShift;
   injectorNo: number;
+  /** What the program already pays per article, for the pricing boxes in + Add Article. */
+  articleRates: MachineProgramArticleRate[];
   writes: ProgramWrites;
 }
 
-export const SoleGroup: React.FC<SoleGroupProps> = ({ colour, runs, machineId, programDate, shift, injectorNo, writes }) => {
+export const SoleGroup: React.FC<SoleGroupProps> = ({
+  colour,
+  runs,
+  machineId,
+  programDate,
+  shift,
+  injectorNo,
+  articleRates,
+  writes,
+}) => {
   const [editing, setEditing] = useState<Editing>({ kind: "none" });
   const done = () => setEditing({ kind: "none" });
   const total = injectorTotal(runs);
@@ -113,6 +124,7 @@ export const SoleGroup: React.FC<SoleGroupProps> = ({ colour, runs, machineId, p
           shift={shift}
           injectorNo={injectorNo}
           runs={runs}
+          articleRates={articleRates}
           writes={writes}
           onClose={done}
         />

@@ -63,6 +63,8 @@ export type MachineProgramOutcome =
   | "WRONG_ARTICLE"
   | "MATERIAL_NOT_ALLOCATABLE"
   | "ALREADY_ON_PROGRAM"
+  /** A contractor rate that is negative, fractional in paisa, or beyond what the books take. */
+  | "INVALID_RATE"
   | "BELOW_CONSUMED"
   | "NOT_ENOUGH_STOCK"
   /** Something on it has already been scanned out, so it cannot be taken off. */
@@ -230,6 +232,15 @@ export interface MachineProgramRepository {
       id: string; eventType: string; entityType: string; entityId: string; actorUserId: string | null;
       actorDeviceId: string | null; occurredAt: string; payload: Record<string, unknown>;
     },
+    tx: TransactionContext
+  ): Promise<void>;
+  /**
+   * Tells the Store Out desk that a program now exists to fetch uppers for, in the caller's
+   * transaction — so a program that rolls back leaves no notice behind, exactly as a gatepass
+   * transition notice does.
+   */
+  notifyMachineProgramIssued(
+    notice: { entityId: string; title: string; message: string },
     tx: TransactionContext
   ): Promise<void>;
 }
@@ -455,6 +466,16 @@ export class SaveMachineProgramLineUseCase {
     await auditProgramChange(
       this.deps,
       { ...input, actor, eventType: "MACHINE_PROGRAM_CREATED", entityId: id, payload: { code: formatMachineProgramCode(programNumber), machineName: machine.name, contractorName: contractor.partyName, packingContractorName: packer.partyName, programDate: input.programDate, shift } },
+      tx
+    );
+    // The program now reserves stock, so the store has work: one notice, in this transaction,
+    // carrying the program's stored id so clicking it opens exactly this program on Store Out.
+    await this.deps.repo.notifyMachineProgramIssued(
+      {
+        entityId: id,
+        title: "Machine program ready for Store Out",
+        message: `${formatMachineProgramCode(programNumber)} — ${machine.name} · ${contractor.partyName}. Issue its uppers from Store Out.`,
+      },
       tx
     );
     return { id, status: MACHINE_PROGRAM_STATUS.PROGRAMMED, shiftStartMinute: shift.startMinute, shiftEndMinute: shift.endMinute };

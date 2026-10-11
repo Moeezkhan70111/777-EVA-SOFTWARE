@@ -231,6 +231,9 @@ export const copy = {
     emptyTitle: "No products yet",
     emptyHint: "Add a product from Setup › Add / Edit Product.",
     noMatch: "No products match your search.",
+    /** Says what the three rates are for, and that a machine program may still differ from them. */
+    contractorPricingNote:
+      "What this product's work is normally paid. A machine program starts from these rates and keeps its own, so changing them here never changes a program already priced. Leave a box empty if the rate is not set.",
     stockStatus: {
       in: "In stock",
       low: "Low stock",
@@ -783,6 +786,42 @@ export const copy = {
       `${colour} upper (${article} ${size}): ${reason}`,
     addRefusedPartly: "What was added before it stays on the program. Fix the rest and add it again.",
 
+    // Contractor pricing — what the day's work is paid at, per article, per dozen.
+    pricingPanel: "Contractor Pricing",
+    pricingFor: (article: string, size: string) => `${article} / ${size}`,
+    pricingHint: "What this article's work is paid at. Leave a rate empty if that job is not paid for it.",
+    pricingChooseArticleFirst: "Pick an article above to price its work.",
+    machineRate: "Machine rate",
+    packingRate: "Packing rate",
+    printingRate: "Printing rate",
+    perDozen: "per DOZEN",
+    rupeePrefix: "Rs",
+    rateNotANumber: "A rate must be a number, like 45 or 45.50.",
+    rateOutOfRange: "A rate must be 0 or more, and no more than Rs 100,000 per dozen.",
+    pricingSaveFailed: (article: string, size: string, reason: string) => `${article} ${size} pricing: ${reason}`,
+    pricingSavedPartly: "The uppers are on the program. Only the pricing was not saved — set it from Program Summary.",
+
+    // The pricing table on the program
+    pricingTitle: "Contractor Pricing",
+    pricingNote: "Per DOZEN. What is owed is settled when production is recorded — these are the agreed rates.",
+    pricingSet: "Set Pricing",
+    pricingEdit: "Edit Pricing",
+    pricingEmpty: "No rates set yet.",
+    pricingEmptyHint: "Set what the machine, packing and printing work is paid for each article.",
+    pricingUnpriced: (articles: number) => `${articles} article${articles === 1 ? "" : "s"} not priced yet`,
+    pricingUnpricedRow: "Not priced",
+    colMachine: "Machine",
+    colPacking: "Packing",
+    colPrinting: "Printing",
+    colCommitted: "For the program",
+    pricingTotal: "Total at these rates",
+    pricingDialogTitle: (code: string) => `Contractor Pricing — ${code}`,
+    pricingDialogSubtitle: "Machine, packing and printing per DOZEN, for every article on this program.",
+    pricingSave: "Save Pricing",
+    pricingSaving: "Saving pricing…",
+    pricingNothingChanged: "Change a rate to save it.",
+    pricingArticleQuantity: (quantity: string) => `${quantity} programmed`,
+
     // Building a sole run
     back: "← Back",
     stepSoleColour: "Choose sole colour",
@@ -850,8 +889,21 @@ export const copy = {
     injectorTotal: "Injector total",
     printProgram: "Print Program",
     /** Short labels for the printed sheet's summary box, where a column is 16mm wide. */
-    printProgramNo: "Program",
+    printProgramNo: "Program #",
     printPacking: "Packing",
+    /** Printed beside the program QR, so the storekeeper knows what it is for. */
+    printScanHint: "Scan on Store Out",
+    /** The sole colour on the printed injector band — the floor calls it "color". */
+    printSoleColour: "Sole Color",
+    printTotalInjectors: "Total Injectors",
+    /**
+     * "Total Dozen" — the unit every line of this program is counted in, as a LABEL.
+     * Title-cased here and left upper case in the figure beside it ("70 DOZEN"), because one
+     * is a caption and the other is the quantity.
+     */
+    printTotalIn: (unitCode: string) =>
+      `Total ${unitCode.charAt(0).toUpperCase()}${unitCode.slice(1).toLowerCase()}`,
+    printPreparedBy: "Prepared by:",
     deleteProgram: "Delete program",
     deleteTitle: "Delete machine program?",
     deleteExplain: "This will release any unused stock reservations. Physical Store stock will NOT be changed.",
@@ -993,6 +1045,115 @@ export const copy = {
     cannotConvert: "That unit cannot be turned into the unit this material is stocked in. Check its unit ladder.",
     notEnough: (onHand: string, unit: string, asked: string) =>
       `Only ${onHand} ${unit} is in the store, and that comes to ${asked} ${unit}.`,
+  },
+
+  // STORE OUT against a MACHINE PROGRAM — the program the floor is waiting for, and the batch
+  // the storekeeper fetches for it. Every figure shown is the data layer's.
+  programOut: {
+    // ── The Machine Program Issue screen ──────────────────────────────────
+    issueTitle: "Machine Program Issue",
+    upperOutTitle: "Upper Out",
+    upperOutLine: "Scan and out uppers against this program.",
+    startScan: "Start Scan",
+    resumeScan: "Resume Scan",
+    stopScan: "Close scanner",
+
+    // The authorised-uppers cards.
+    colUpperColour: "Upper Colour",
+    /** "Planned (Dozen)" — the unit is named ONCE, in the column head, not on every figure. */
+    colPlanned: (unitCode: string | null) => (unitCode ? `Planned (${unitCode.charAt(0)}${unitCode.slice(1).toLowerCase()})` : "Planned"),
+    colIssuedShort: "Issued",
+    colRemainingShort: "Remaining",
+    statePending: "Pending",
+    stateInProgress: "In Progress",
+    stateDone: "Completed",
+    bandLabel: (injectorNo: number, soleColour: string) => `Injector ${injectorNo}, ${soleColour} sole`,
+    cardProgressLabel: (article: string, size: string) => `${article} ${size} issued so far`,
+    /** "Total Dozen (Upper)" — a caption, so the unit is title-cased as on the printed sheet. */
+    totalUpperLabel: (unitCode: string | null) =>
+      unitCode ? `Total ${unitCode.charAt(0)}${unitCode.slice(1).toLowerCase()} (Upper)` : "Total Uppers",
+
+    // ── Dana Issue ────────────────────────────────────────────────────────
+    // Dana is the sole's own material. A program never reserved it, so there is no planned or
+    // remaining figure here — only what the store holds and what is being taken today.
+    danaTitle: "Dana Issue",
+    danaLine: "Issue raw material (dana) to start production for this program.",
+    danaQuantityLabel: "Quantity (Bags)",
+    danaIssue: "Issue Dana",
+    danaIssuing: "Issuing…",
+    danaOnHand: (bags: number, packName: string) =>
+      `${bags} ${packName}${bags === 1 ? "" : "S"} in store`,
+    danaScanInstead: "Scan these out",
+    danaMore: (name: string) => `One more bag of ${name}`,
+    danaFewer: (name: string) => `One fewer bag of ${name}`,
+    danaBagsFor: (name: string) => `Bags of ${name}`,
+    danaNoneTitle: "No Dana for this program's sole colours",
+    danaNoneHint: "Receive Dana in the sole's colour on Store In and it appears here.",
+    danaIssuedTitle: "Dana issued",
+    danaIssuedBody: (materials: number) =>
+      `${materials} Dana${materials === 1 ? "" : "s"} left the store for this program.`,
+    danaRefusedTitle: "Dana not issued",
+
+    lookupLabel: "Machine program",
+    lookupPlaceholder: "Scan QR or enter Machine Program No.",
+    lookupAction: "Open",
+    lookupHelp: "Scan the program sheet's QR, or type its number — MP-000012 or 12.",
+    opening: "Opening the program…",
+    back: "Back to Store Out",
+
+    title: (code: string) => `${code} — Machine Move Out`,
+    machine: "Machine",
+    contractor: "Machine contractor",
+    packer: "Packing contractor",
+    shift: "Shift",
+    date: "Program date",
+    status: "Status",
+
+    linesTitle: "Uppers this program authorises",
+    linesNote: "Only these uppers can be issued against this program.",
+    colArticle: "Article",
+    colSize: "Size",
+    colUpper: "Upper",
+    colSole: "Sole",
+    colAuthorized: "Authorised",
+    colIssued: "Issued",
+    colRemaining: "Remaining",
+    noLines: "No uppers on this program yet",
+    noLinesHint: "Production has not finished planning it. Nothing can be fetched.",
+
+    scanIdleTitle: "READY TO SCAN",
+    scanIdleMessage: "Scan a packet this program asks for — it leaves the store at once",
+    scanAcceptedTitle: "✓ MOVED OUT OF STORE",
+    scanRefusedTitle: "✕ NOT MOVED OUT",
+    scanBusy: "Moving it out of the store…",
+    scanDisabled: "Nothing more can be issued against this program",
+
+    issuedTitle: "Moved out",
+    issuedBody: (name: string, quantity: string, code: string) => `${quantity} of ${name} issued against ${code}.`,
+    alreadySavedTitle: "Already moved out",
+    alreadySavedBody: "This scan had already been recorded. Nothing was issued twice.",
+    completedTitle: "Program fully issued",
+    completedBody: (code: string) => `${code} has everything it asked for. Nothing more can be issued against it.`,
+    refusedTitle: "Nothing was issued",
+
+    // Cartons to label: what the machine will send back for what has just gone out.
+    cartonTitle: "Cartons to label",
+    cartonNote: "Uppers out are cartons coming back — 1 DOZEN is 2 cartons of 6 pairs.",
+    cartonEmpty: "Scan a packet out and its cartons appear here.",
+    cartonCount: (cartons: number) => `${cartons} carton${cartons === 1 ? "" : "s"}`,
+    cartonPrint: "Print Carton QR",
+    cartonPrinting: "Generating carton QR…",
+    cartonPrintLabel: (cartons: number, what: string) => `Print ${cartons} carton QR labels for ${what}`,
+    cartonPrinted: (range: string) => `✓ Printed · ${range}`,
+    cartonPrintedTitle: "Carton QR generated",
+    cartonPrintedBody: (cartons: number, what: string) => `${cartons} carton QR codes generated for ${what}.`,
+    cartonFailedTitle: "Carton QR not generated",
+    cartonBlocked: "Allow popups to print the carton labels. The codes are generated — reprint them from QR Management.",
+
+    historyTitle: "Already issued",
+    historyNote: "Every packet that has left the store for this program.",
+    historyEmpty: "Nothing has been issued against this program yet.",
+    historyPacket: (by: string, at: string) => `${by} · ${at}`,
   },
 
   // The Munshi's station: the three jobs on the Munshi's own screen.

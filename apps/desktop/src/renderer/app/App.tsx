@@ -109,6 +109,8 @@ export const App = () => {
   const [saleVoucherGatepassId, setSaleVoucherGatepassId] = useState<string | undefined>(undefined);
   /** The raw material the workspace was opened for (from a stock-correction notification). */
   const [rawMaterialItemId, setRawMaterialItemId] = useState<string | undefined>(undefined);
+  /** The machine program Store Out was opened for (from a machine-program notification). */
+  const [storeOutProgramId, setStoreOutProgramId] = useState<string | undefined>(undefined);
   const [appVersion, setAppVersion] = useState("");
 
   const auth = useAuthSession({ api, push, route, setRoute });
@@ -181,6 +183,15 @@ export const App = () => {
     setRawMaterialItemId(itemId);
     setRoute("raw-material");
   }, []);
+  /**
+   * A machine-program notice opens Store Out on that program. The stored id travels, and the
+   * main process still resolves it and judges whether it may be issued against — clicking a
+   * notice is not authorisation.
+   */
+  const openStoreOutForProgram = useCallback((programId: string) => {
+    setStoreOutProgramId(programId);
+    setRoute("store-out-operator");
+  }, []);
   const onNotificationClick = useCallback(
     (notification: UserNotification) => {
       admin.handleNotificationClick(notification);
@@ -188,9 +199,10 @@ export const App = () => {
       if (!target) return;
       if (target.route === "sale-voucher-form") openSaleVoucherForGatepass(target.gatepassId);
       else if (target.route === "gatepass-list") openGatepassDocument(target.gatepassId);
+      else if (target.route === "store-out-operator") openStoreOutForProgram(target.programId);
       else openRawMaterialItem(target.itemId);
     },
-    [admin, openSaleVoucherForGatepass, openGatepassDocument, openRawMaterialItem]
+    [admin, openSaleVoucherForGatepass, openGatepassDocument, openRawMaterialItem, openStoreOutForProgram]
   );
   const leavePartyForm = useCallback((next: AppRoute) => {
     setSelectedPartyId(undefined);
@@ -370,7 +382,15 @@ export const App = () => {
           />
         );
       case "store-out-operator":
-        return <StoreOutPage token={sessionToken ?? ""} username={session.username} onBack={() => setRoute("store-home")} />;
+        return (
+          <StoreOutPage
+            token={sessionToken ?? ""}
+            username={session.username}
+            onBack={() => setRoute("store-home")}
+            initialProgramId={storeOutProgramId}
+            onInitialProgramConsumed={() => setStoreOutProgramId(undefined)}
+          />
+        );
       // The Munshi's station, and the raw material Stock section opened from it. Stock is the
       // store's own workspace section — the same component, the same data, the same checks —
       // with the Munshi's way back instead of the Move In operator's.
@@ -574,6 +594,7 @@ export const App = () => {
     selectedProductId,
     session,
     sessionToken,
+    storeOutProgramId,
     workspaceTab,
   ]);
 

@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import type { MachineShift } from "@erp/domain";
-import type { MachineProgramRunRecord, MachineRecord } from "../../types/desktopApi";
+import type { MachineProgramArticleRate, MachineProgramRunRecord, MachineRecord } from "../../types/desktopApi";
 import { copy } from "../../config/copy";
 import { AddSoleColourDialog } from "./SoleEditors";
 import { SoleGroup } from "./SoleGroup";
@@ -31,6 +31,8 @@ interface InjectorPanelProps {
   injectorNo: number;
   /** The sole runs already saved on this injector. */
   runs: MachineProgramRunRecord[];
+  /** What the program already pays per article, for the pricing boxes in the add dialogs. */
+  articleRates: MachineProgramArticleRate[];
   /** The injector the tabs are pointing at. */
   isActive: boolean;
   writes: ProgramWrites;
@@ -43,6 +45,7 @@ export const InjectorPanel: React.FC<InjectorPanelProps> = ({
   shift,
   injectorNo,
   runs,
+  articleRates,
   isActive,
   writes,
 }) => {
@@ -89,6 +92,7 @@ export const InjectorPanel: React.FC<InjectorPanelProps> = ({
                 programDate={programDate}
                 shift={shift}
                 injectorNo={injectorNo}
+                articleRates={articleRates}
                 writes={writes}
               />
             ))}
@@ -102,6 +106,7 @@ export const InjectorPanel: React.FC<InjectorPanelProps> = ({
           shift={shift}
           injectorNo={injectorNo}
           runs={runs}
+          articleRates={articleRates}
           writes={writes}
           onClose={() => setAdding(false)}
         />

@@ -294,6 +294,15 @@ export const NOTIFICATION_KIND = {
   STOCK_CORRECTION_APPROVED: "STOCK_CORRECTION_APPROVED",
   /** A stock correction was declined; nothing changed. entity = inventory item id. */
   STOCK_CORRECTION_REJECTED: "STOCK_CORRECTION_REJECTED",
+  /**
+   * A machine program has been made and the store may now start issuing its uppers.
+   * entity = machine program id.
+   *
+   * Sent once, when the program row is created — the moment it first reserves anything and the
+   * only once-per-program event there is. Adding more uppers to it afterwards sends nothing: the
+   * notice opens the program itself, which always shows what is outstanding right now.
+   */
+  MACHINE_PROGRAM_ISSUED: "MACHINE_PROGRAM_ISSUED",
   /** Someone asked to remove a category or a material. entity = the thing's id. */
   REMOVAL_REQUESTED: "REMOVAL_REQUESTED",
   /** A removal was approved and has been carried out. entity = the thing's id. */

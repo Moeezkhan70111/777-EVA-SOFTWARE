@@ -25,10 +25,16 @@ import {
   ReceiveRawMaterialScanUseCase,
   RemoveMachineProgramLineUseCase,
   RemoveMachineProgramRunUseCase,
+  SaveMachineProgramArticleRatesUseCase,
   SaveMachineProgramLineUseCase,
   SaveMachineProgramRunUseCase,
 } from "@erp/application";
-import { MACHINE_PROGRAM_DISPLAY_STATUS, MACHINE_PROGRAM_STATUS } from "@erp/domain";
+import {
+  MACHINE_PROGRAM_DISPLAY_STATUS,
+  MACHINE_PROGRAM_STATUS,
+  programContractorPricing,
+  toPaisa,
+} from "@erp/domain";
 import { SqliteDatabase } from "./sqliteDatabase.js";
 import { UuidGenerator } from "./idGenerator.js";
 
@@ -56,6 +62,7 @@ function createFixture(options: { withDana?: boolean } = {}) {
     remove: new DeleteMachineProgramUseCase(deps),
     receive: new ReceiveRawMaterialScanUseCase(deps),
     issue: new IssueRawMaterialScanUseCase(deps),
+    priceArticle: new SaveMachineProgramArticleRatesUseCase(deps),
   };
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- direct schema access for assertions
   const raw = (db as any).db;
@@ -180,10 +187,29 @@ function createFixture(options: { withDana?: boolean } = {}) {
   const balanceOf = (itemId: string): number =>
     Number((raw.prepare("SELECT quantity_on_hand AS q FROM inventory_stock_balances WHERE item_id = ?").get(itemId) as { q: number } | undefined)?.q ?? 0);
 
+  /** Prices one article's work on a program — machine, packing and printing per DOZEN, in rupees. */
+  const price = (input: { programId: string; articleSizeId?: string; machine: number; packing: number; printing: number }) =>
+    useCases.priceArticle.execute({
+      programId: input.programId,
+      articleSizeId: input.articleSizeId ?? sk6_710,
+      machineRate: input.machine,
+      packingRate: input.packing,
+      printingRate: input.printing,
+      actor: ACTOR,
+    });
+
+  /** Every rate row stored for a program, straight from the table. */
+  const rateRows = (programId: string) =>
+    raw
+      .prepare(
+        "SELECT article_size_id, machine_rate_paisa, packing_rate_paisa, printing_rate_paisa FROM machine_program_article_rates WHERE program_id = ?"
+      )
+      .all(programId) as Array<{ article_size_id: string; machine_rate_paisa: number; packing_rate_paisa: number; printing_rate_paisa: number }>;
+
   return {
     db, raw, unitId, ...useCases, machine1, machine2, contractorA, contractorB, supplierA, supplierB, assignBothContractors,
     sk6_710, sk6_46, black, green, black46, blueElsewhere, danaBlack,
-    stockIn, issueOut, bringBack, upperFor, assignContractor, addToNewRun, saveOnRun, balanceOf,
+    stockIn, issueOut, bringBack, upperFor, assignContractor, addToNewRun, saveOnRun, balanceOf, price, rateRows,
     cleanup: () => {
       db.close();
       fs.rmSync(tempDir, { recursive: true, force: true });
@@ -751,4 +777,236 @@ test("adding a machine name twice returns the first machine, and a chosen sectio
   assert.equal(db.listMachines().length, 1);
   assert.throws(() => db.createMachine({ name: "Machine 2", sectionId: "no-such-section" }), /no longer exists/);
   assert.throws(() => db.createMachine({ name: "   " }), /name is required/);
+});
+
+// ─── Contractor pricing ───────────────────────────────────────────────────────
+// What the day's work is paid at: machine, packing and printing, per DOZEN, per ARTICLE
+// (migration 063). Stored as integer paisa, one row per article, and never an amount — what is
+// owed is settled when production is recorded, which this ERP does not do yet.
+
+test("pricing an article stores the three rates in paisa, and the program reads them back", async () => {
+  await withFixture(async (f) => {
+    await readyToProgram(f);
+    const saved = await f.addToNewRun({ machineId: f.machine1.id, itemId: f.black, quantity: 20 });
+    assert.equal(saved.accepted, true, saved.reason);
+
+    const priced = await f.price({ programId: saved.programId!, machine: 45, packing: 18, printing: 12 });
+    assert.equal(priced.accepted, true, priced.reason);
+
+    // Paisa in the table, never rupees (R15).
+    assert.deepEqual(
+      f.rateRows(saved.programId!).map((row) => [row.article_size_id, row.machine_rate_paisa, row.packing_rate_paisa, row.printing_rate_paisa]),
+      [[f.sk6_710, 4500, 1800, 1200]]
+    );
+
+    const program = f.db.getMachineProgram(saved.programId!);
+    assert.deepEqual(program?.articleRates.map((row) => [row.articleSizeId, row.machineRatePaisa, row.packingRatePaisa, row.printingRatePaisa]), [
+      [f.sk6_710, 4500, 1800, 1200],
+    ]);
+
+    // 20 DOZEN at 75.00 the dozen — the arithmetic is the domain's, from the record as stored.
+    const pricing = programContractorPricing({ runs: program!.runs, rates: program!.articleRates });
+    assert.equal(pricing.committed.totalPaisa, toPaisa(75) * 20);
+    assert.equal(pricing.committed.machinePaisa, toPaisa(45) * 20);
+    assert.equal(pricing.fullyPriced, true);
+  });
+});
+
+test("pricing the same article again CHANGES its rates — one price per article, never two", async () => {
+  await withFixture(async (f) => {
+    await readyToProgram(f);
+    const saved = await f.addToNewRun({ machineId: f.machine1.id, itemId: f.black, quantity: 20 });
+
+    await f.price({ programId: saved.programId!, machine: 45, packing: 18, printing: 12 });
+    const again = await f.price({ programId: saved.programId!, machine: 50, packing: 18, printing: 0 });
+    assert.equal(again.accepted, true, again.reason);
+
+    const rows = f.rateRows(saved.programId!);
+    assert.equal(rows.length, 1, "re-pricing replaces, it does not add a second row");
+    assert.equal(rows[0].machine_rate_paisa, 5000);
+    assert.equal(rows[0].printing_rate_paisa, 0, "a rate taken back to zero is stored as zero");
+  });
+});
+
+test("the same article on two sole runs is ONE price for both", async () => {
+  await withFixture(async (f) => {
+    await readyToProgram(f);
+    await f.stockIn(f.green, 6, f.supplierA);
+    // SK6 7/10 on a BLACK sole and again on a RED one: two runs, one article.
+    const first = await f.addToNewRun({ machineId: f.machine1.id, itemId: f.black, quantity: 20, soleColour: "BLACK" });
+    const second = await f.addToNewRun({ machineId: f.machine1.id, itemId: f.green, quantity: 10, soleColour: "RED" });
+    assert.equal(second.accepted, true, second.reason);
+    assert.equal(first.programId, second.programId, "one program for the machine and date");
+
+    await f.price({ programId: first.programId!, machine: 45, packing: 18, printing: 0 });
+
+    assert.equal(f.rateRows(first.programId!).length, 1, "the article is priced once, not per run");
+    const program = f.db.getMachineProgram(first.programId!);
+    const pricing = programContractorPricing({ runs: program!.runs, rates: program!.articleRates });
+    assert.equal(pricing.articles.length, 1);
+    assert.equal(pricing.articles[0].quantity, 30, "both runs are one priced quantity");
+    assert.equal(pricing.committed.totalPaisa, toPaisa(63) * 30);
+  });
+});
+
+test("an article the program is not making cannot be priced", async () => {
+  await withFixture(async (f) => {
+    await readyToProgram(f);
+    const saved = await f.addToNewRun({ machineId: f.machine1.id, itemId: f.black, quantity: 20 });
+
+    // SK6 4/6 is a real product, but nothing on this program is making it.
+    const refused = await f.price({ programId: saved.programId!, articleSizeId: f.sk6_46, machine: 45, packing: 18, printing: 0 });
+    assert.equal(refused.accepted, false);
+    assert.equal(refused.outcome, "ARTICLE_NOT_FOUND");
+    assert.match(refused.reason ?? "", /not on the program/);
+    assert.equal(f.rateRows(saved.programId!).length, 0, "nothing was stored");
+  });
+});
+
+test("a rate that is negative or absurd is refused, and nothing is stored", async () => {
+  await withFixture(async (f) => {
+    await readyToProgram(f);
+    const saved = await f.addToNewRun({ machineId: f.machine1.id, itemId: f.black, quantity: 20 });
+
+    for (const bad of [{ machine: -1, packing: 0, printing: 0 }, { machine: 0, packing: 100_001, printing: 0 }]) {
+      const refused = await f.price({ programId: saved.programId!, ...bad });
+      assert.equal(refused.accepted, false, JSON.stringify(bad));
+      assert.equal(refused.outcome, "INVALID_RATE");
+    }
+    assert.equal(f.rateRows(saved.programId!).length, 0);
+
+    // Zero is not absurd: it means that job is not paid for this article.
+    const free = await f.price({ programId: saved.programId!, machine: 0, packing: 0, printing: 0 });
+    assert.equal(free.accepted, true, free.reason);
+    assert.deepEqual(f.rateRows(saved.programId!).map((row) => row.machine_rate_paisa), [0]);
+  });
+});
+
+test("a deleted program cannot be priced", async () => {
+  await withFixture(async (f) => {
+    await readyToProgram(f);
+    const saved = await f.addToNewRun({ machineId: f.machine1.id, itemId: f.black, quantity: 20 });
+    const deleted = await f.remove.execute({ programId: saved.programId!, reason: "wrong machine", actor: ACTOR });
+    assert.equal(deleted.accepted, true, deleted.reason);
+
+    const refused = await f.price({ programId: saved.programId!, machine: 45, packing: 18, printing: 0 });
+    assert.equal(refused.accepted, false);
+    assert.equal(refused.outcome, "PROGRAM_CLOSED");
+    assert.equal(f.rateRows(saved.programId!).length, 0);
+  });
+});
+
+test("pricing is on the record: who priced what, from what to what", async () => {
+  await withFixture(async (f) => {
+    await readyToProgram(f);
+    const saved = await f.addToNewRun({ machineId: f.machine1.id, itemId: f.black, quantity: 20 });
+    await f.price({ programId: saved.programId!, machine: 45, packing: 18, printing: 12 });
+    await f.price({ programId: saved.programId!, machine: 50, packing: 18, printing: 12 });
+
+    const rows = f.raw
+      .prepare("SELECT payload_json FROM audit_log WHERE event_type = 'MACHINE_PROGRAM_ARTICLE_PRICED' ORDER BY occurred_at, rowid")
+      .all() as Array<{ payload_json: string }>;
+    assert.equal(rows.length, 2);
+
+    const first = JSON.parse(rows[0].payload_json) as Record<string, unknown>;
+    assert.equal(first.from, null, "nothing was priced before the first one");
+    assert.deepEqual(first.to, { machineRatePaisa: 4500, packingRatePaisa: 1800, printingRatePaisa: 1200 });
+    assert.equal(first.actor, ACTOR);
+
+    const second = JSON.parse(rows[1].payload_json) as Record<string, unknown>;
+    assert.deepEqual(second.from, { machineRatePaisa: 4500, packingRatePaisa: 1800, printingRatePaisa: 1200 }, "the rate it was changed FROM");
+    assert.deepEqual(second.to, { machineRatePaisa: 5000, packingRatePaisa: 1800, printingRatePaisa: 1200 });
+  });
+});
+
+// ─── The product's standard rates ─────────────────────────────────────────────
+// Set on the product itself (migration 064), beside its sale price, and offered to a program as
+// the default for an article it has not priced yet.
+
+test("a product's standard contractor rates are stored in paisa and offered to the program", async () => {
+  await withFixture(async (f) => {
+    f.db.createProduct({
+      article: "SK6",
+      size: "7/10",
+      sellingPrice: 650,
+      machineRate: 45,
+      packingRate: 18.5,
+      printingRate: 0,
+      status: "ACTIVE",
+    });
+
+    // Read back through the product screens…
+    const product = f.db.getProduct(f.sk6_710);
+    assert.equal(product?.machineRatePaisa, 4500);
+    assert.equal(product?.packingRatePaisa, 1850, "18.50 is exact in paisa");
+    assert.equal(product?.printingRatePaisa, 0, "an explicit zero is a rate, not a missing one");
+
+    // …and offered to the Machine Program's article list, which is where a program defaults from.
+    const size = f.db
+      .listMachineProgramArticles()
+      .flatMap((entry) => entry.sizes)
+      .find((entry) => entry.articleSizeId === f.sk6_710);
+    assert.deepEqual(
+      [size?.machineRatePaisa, size?.packingRatePaisa, size?.printingRatePaisa],
+      [4500, 1850, 0]
+    );
+  });
+});
+
+test("a product nobody has priced is offered as UNPRICED, never as zero", async () => {
+  await withFixture(async (f) => {
+    // The fixture's own products were made with no rates at all.
+    const product = f.db.getProduct(f.sk6_46);
+    assert.equal(product?.machineRatePaisa, null);
+    assert.equal(product?.packingRatePaisa, null);
+    assert.equal(product?.printingRatePaisa, null);
+
+    const size = f.db
+      .listMachineProgramArticles()
+      .flatMap((entry) => entry.sizes)
+      .find((entry) => entry.articleSizeId === f.sk6_46);
+    assert.deepEqual([size?.machineRatePaisa, size?.packingRatePaisa, size?.printingRatePaisa], [null, null, null]);
+  });
+});
+
+test("changing a product's standard rate does NOT change a program already priced", async () => {
+  await withFixture(async (f) => {
+    await readyToProgram(f);
+    const saved = await f.addToNewRun({ machineId: f.machine1.id, itemId: f.black, quantity: 20 });
+    await f.price({ programId: saved.programId!, machine: 45, packing: 18, printing: 12 });
+
+    // The deal with the contractors changes afterwards.
+    f.db.updateProduct(f.sk6_710, { article: "SK6", size: "7/10", sellingPrice: 650, machineRate: 60, packingRate: 25, printingRate: 15 });
+
+    assert.equal(f.db.getProduct(f.sk6_710)?.machineRatePaisa, 6000, "the product carries the new standard");
+    assert.deepEqual(
+      f.rateRows(saved.programId!).map((row) => [row.machine_rate_paisa, row.packing_rate_paisa, row.printing_rate_paisa]),
+      [[4500, 1800, 1200]],
+      "the program keeps what its own day was agreed at"
+    );
+  });
+});
+
+test("a product saved by a form that knows nothing about the rates leaves them alone", async () => {
+  await withFixture(async (f) => {
+    f.db.updateProduct(f.sk6_710, { article: "SK6", size: "7/10", sellingPrice: 650, machineRate: 45, packingRate: 18, printingRate: 12 });
+    assert.equal(f.db.getProduct(f.sk6_710)?.machineRatePaisa, 4500);
+
+    // The simple product form (ProductsPage) sends no rate fields at all. Blanking an agreed rate
+    // because another screen does not know about it would be silent data loss.
+    f.db.updateProduct(f.sk6_710, { article: "SK6", size: "7/10", sellingPrice: 700 });
+
+    const after = f.db.getProduct(f.sk6_710);
+    assert.equal(after?.sellingPrice, 700, "the price it DID send is saved");
+    assert.deepEqual(
+      [after?.machineRatePaisa, after?.packingRatePaisa, after?.printingRatePaisa],
+      [4500, 1800, 1200],
+      "and the rates it said nothing about are untouched"
+    );
+
+    // Sending them as null IS a change — that is how a box cleared on the full form clears a rate.
+    f.db.updateProduct(f.sk6_710, { article: "SK6", size: "7/10", sellingPrice: 700, machineRate: null, packingRate: null, printingRate: null });
+    const cleared = f.db.getProduct(f.sk6_710);
+    assert.deepEqual([cleared?.machineRatePaisa, cleared?.packingRatePaisa, cleared?.printingRatePaisa], [null, null, null]);
+  });
 });

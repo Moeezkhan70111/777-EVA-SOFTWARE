@@ -6,7 +6,7 @@
 import { ipcMain } from "electron";
 import { IPC } from "../../shared/ipcChannels";
 import type { IpcContext } from "./context";
-import { ACCESS_STATUS, USER_ROLE, asOptionalNumber, asOptionalString, isRecord, optionalOneOf } from "@erp/domain";
+import { ACCESS_STATUS, USER_ROLE, asOptionalNumber, asOptionalString, asString, asStringArray, isRecord, optionalOneOf } from "@erp/domain";
 
 export function registerStoreHandlers(ctx: IpcContext): void {
   const { db, logger, scanContext, deviceId, useCases } = ctx;
@@ -185,6 +185,173 @@ export function registerStoreHandlers(ctx: IpcContext): void {
         message: `Raw material issue error: ${error instanceof Error ? error.message : String(error)}`,
       });
       return { accepted: false, outcome: "ERROR", reason: "The scan could not be saved. Nothing was changed." };
+    }
+  });
+
+  // ─── Store Out through an open Machine Program ────────────────────────────────
+  // The other way a machine program is consumed, beside the generic scanner above: the
+  // storekeeper OPENS MP-000012 and issues against it. Three calls, and not one of them trusts
+  // the screen — the lookup is resolved here, every scan is judged here, and Save Batch
+  // re-validates the whole batch inside the write lock before anything leaves the store.
+  //
+  // Authorised exactly as the scans above are: the renderer passes its session token and the
+  // handler resolves a Store Scanning operator from it. Hiding a button is not authorisation.
+
+  ipcMain.handle(IPC.openMachineProgramStoreOut, async (_event, lookup?: string, opts?: { token?: string }) => {
+    const auth = resolveStoreOperator(opts?.token);
+    if (!auth.ok) return { accepted: false, outcome: "NOT_AUTHORIZED", reason: auth.reason };
+    try {
+      const result = await useCases.machineProgramStoreOut.open.execute({ lookup: String(lookup ?? "") });
+      // The program itself is the existing read the Machine Program screens use, so Store Out
+      // shows the same authorised quantities, issued and remaining, from one source of truth.
+      const program = result.accepted && result.programId ? db.getMachineProgram(result.programId) : null;
+      logger.log({
+        module: "machine-program-store-out", severity: result.accepted ? "INFO" : "WARNING", operation: "open", deviceId,
+        message: JSON.stringify({ outcome: result.outcome, programId: result.programId ?? null }),
+      });
+      return { ...result, program };
+    } catch (error) {
+      logger.log({
+        module: "machine-program-store-out", severity: "ERROR", operation: "open-error", deviceId,
+        message: error instanceof Error ? error.message : String(error),
+      });
+      return { accepted: false, outcome: "ERROR", reason: "The machine program could not be opened. Try again." };
+    }
+  });
+
+  ipcMain.handle(IPC.machineProgramStoreOutCheckScan, async (_event, input?: unknown, opts?: { token?: string }) => {
+    const auth = resolveStoreOperator(opts?.token);
+    if (!auth.ok) return { accepted: false, verdict: "NOT_AUTHORIZED", reason: auth.reason };
+    const payload = isRecord(input) ? input : {};
+    try {
+      return await useCases.machineProgramStoreOut.checkScan.execute({
+        programId: asString(payload.programId),
+        rawScan: asString(payload.rawScan),
+        batchQrIds: asStringArray(payload.batchQrIds),
+      });
+    } catch (error) {
+      logger.log({
+        module: "machine-program-store-out", severity: "ERROR", operation: "check-scan-error", deviceId,
+        message: error instanceof Error ? error.message : String(error),
+      });
+      return { accepted: false, verdict: "INVALID_FORMAT", reason: "The scan could not be checked. Scan it again." };
+    }
+  });
+
+  ipcMain.handle(IPC.machineProgramStoreOutSaveBatch, async (_event, input?: unknown, opts?: { token?: string }) => {
+    const auth = resolveStoreOperator(opts?.token);
+    if (!auth.ok) return { accepted: false, outcome: "NOT_AUTHORIZED", reason: auth.reason };
+    const payload = isRecord(input) ? input : {};
+
+    // The batch prints on this terminal's issue slip, so the session is resolved here rather
+    // than taken on trust. A closed or unknown session simply leaves the packets unsessioned —
+    // it must never stop the stock movement the operator is committing.
+    const sessionId = asOptionalString(payload.sessionId);
+    const session = sessionId ? db.getRawMaterialIssueSession(sessionId) : null;
+
+    try {
+      const result = await useCases.machineProgramStoreOut.saveBatch.execute({
+        programId: asString(payload.programId),
+        batchKey: asString(payload.batchKey),
+        sessionId: session?.status === "OPEN" ? session.id : null,
+        qrIds: asStringArray(payload.qrIds),
+        context: scanContext,
+        actor: auth.username,
+        deviceId,
+      });
+      logger.log({
+        module: "machine-program-store-out", severity: result.accepted ? "INFO" : "WARNING", operation: "save-batch", deviceId,
+        message: JSON.stringify({
+          outcome: result.outcome, programId: result.programId ?? null, batchId: result.batchId ?? null,
+          packetCount: result.packetCount ?? 0, refusedQrId: result.refusedQrId ?? null,
+        }),
+      });
+      // The program is re-read after the write, never patched on screen: issued and remaining
+      // come back from the event log the batch just added to.
+      const program = result.programId ? db.getMachineProgram(result.programId) : null;
+      return { ...result, program };
+    } catch (error) {
+      logger.log({
+        module: "machine-program-store-out", severity: "ERROR", operation: "save-batch-error", deviceId,
+        message: error instanceof Error ? `${error.message}\n${error.stack ?? ""}` : String(error),
+      });
+      return { accepted: false, outcome: "ERROR", reason: "The batch could not be saved. Nothing was issued — try again." };
+    }
+  });
+
+  ipcMain.handle(IPC.listMachineProgramIssueBatches, (_event, programId?: string, opts?: { token?: string }) => {
+    const auth = resolveStoreOperator(opts?.token);
+    if (!auth.ok) return { accepted: false, rows: [] };
+    try {
+      return { accepted: true, rows: db.listMachineProgramIssueBatches(String(programId ?? "")) };
+    } catch (error) {
+      logger.log({
+        module: "machine-program-store-out", severity: "WARNING", operation: "list-batches", deviceId,
+        message: error instanceof Error ? error.message : String(error),
+      });
+      return { accepted: false, rows: [] };
+    }
+  });
+
+  // ─── Dana issued FOR a machine program ────────────────────────────────────────
+  // The sole's own material. A program never reserved it, so there is no allocation to consume
+  // here — only "this program runs these sole colours, and these bags went out for it today".
+  //
+  // The movement itself is moveRawMaterialByHand, the one path a typed quantity leaves the raw
+  // material store by, so Dana Issue inherits its rules: a Dana with LABELLED PACKETS in the
+  // store is refused here and must be scanned out instead.
+
+  ipcMain.handle(IPC.listMachineProgramDanaOptions, (_event, programId?: string, opts?: { token?: string }) => {
+    const auth = resolveStoreOperator(opts?.token);
+    if (!auth.ok) return { accepted: false, rows: [] };
+    try {
+      return { accepted: true, rows: db.listMachineProgramDanaOptions(String(programId ?? "")) };
+    } catch (error) {
+      logger.log({
+        module: "machine-program-dana", severity: "WARNING", operation: "list-options", deviceId,
+        message: error instanceof Error ? error.message : String(error),
+      });
+      return { accepted: false, rows: [] };
+    }
+  });
+
+  ipcMain.handle(IPC.issueMachineProgramDana, (_event, input?: unknown, opts?: { token?: string }) => {
+    const auth = resolveStoreOperator(opts?.token);
+    if (!auth.ok) return { accepted: false, outcome: "NOT_AUTHORIZED", reason: auth.reason };
+    const payload = isRecord(input) ? input : {};
+    try {
+      const result = db.issueMachineProgramDana({
+        programId: asString(payload.programId),
+        itemId: asString(payload.itemId),
+        // Deliberately NOT coerced: an empty box must reach the rule as something it refuses,
+        // never silently become 0.
+        bags: typeof payload.bags === "number" ? payload.bags : Number.NaN,
+        actor: auth.username,
+      });
+      logger.log({
+        module: "machine-program-dana", severity: result.accepted ? "INFO" : "WARNING", operation: "issue", deviceId,
+        message: JSON.stringify({
+          outcome: result.outcome, programId: asString(payload.programId), itemId: asString(payload.itemId),
+          reason: result.reason ?? null,
+        }),
+      });
+      return result;
+    } catch (error) {
+      logger.log({
+        module: "machine-program-dana", severity: "ERROR", operation: "issue-error", deviceId,
+        message: error instanceof Error ? `${error.message}\n${error.stack ?? ""}` : String(error),
+      });
+      return { accepted: false, outcome: "ERROR", reason: "The Dana could not be issued. Nothing was changed — try again." };
+    }
+  });
+
+  ipcMain.handle(IPC.listMachineProgramDanaIssues, (_event, programId?: string, opts?: { token?: string }) => {
+    const auth = resolveStoreOperator(opts?.token);
+    if (!auth.ok) return { accepted: false, rows: [] };
+    try {
+      return { accepted: true, rows: db.listMachineProgramDanaIssues(String(programId ?? "")) };
+    } catch {
+      return { accepted: false, rows: [] };
     }
   });
 

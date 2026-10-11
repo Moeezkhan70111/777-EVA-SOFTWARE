@@ -5,7 +5,9 @@ import { ColorSwatch } from "../../components/shared/ColorSwatch";
 import { ConfirmDialog } from "../../components/shared/ConfirmDialog";
 import { copy } from "../../config/copy";
 import { formatLongDate } from "../../utils/dates";
+import { ContractorPricingDialog } from "./ContractorPricingDialog";
 import { ClockIcon, MachineIcon, PersonIcon, ProductionIcon } from "./MachineProgramIcons";
+import { ProgramPricing } from "./ProgramPricing";
 import { colourRuns, formatAmount, injectorRuns, injectorTotal, runColours } from "./machineProgram";
 import type { ProgramWrites } from "./useProgramWrites";
 
@@ -49,6 +51,7 @@ export const ProgramSummaryRail: React.FC<ProgramSummaryRailProps> = ({
   onChangeContractor,
 }) => {
   const [confirming, setConfirming] = useState(false);
+  const [pricing, setPricing] = useState(false);
 
   return (
     <aside className="mpx-summary" aria-label={copy.machineProgram.programSummary}>
@@ -81,10 +84,18 @@ export const ProgramSummaryRail: React.FC<ProgramSummaryRailProps> = ({
         />
       </dl>
 
+      {/* What the day's work is paid at. Only once there is a program to price: rates belong to
+          articles, and an empty program has none. */}
+      {program ? <ProgramPricing program={program} onEdit={() => setPricing(true)} /> : null}
+
       {program ? (
         <button type="button" className="btn btn-danger mpx-delete" onClick={() => setConfirming(true)}>
           {copy.machineProgram.deleteProgram}
         </button>
+      ) : null}
+
+      {program && pricing ? (
+        <ContractorPricingDialog program={program} writes={writes} onClose={() => setPricing(false)} />
       ) : null}
 
       {program && confirming ? (

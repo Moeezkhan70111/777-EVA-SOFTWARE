@@ -6576,6 +6576,37 @@ tr.has-error .gp-qty-stepper input { color: var(--err); }
 .mpa-chosen .mpa-table { background: var(--surface); }
 .mpa-chosen .mpx-qty-input { width: 72px; }
 
+/* ── Contractor pricing: the three rates, wherever they are typed ───────── */
+.mpa-pricing {
+  margin-top: 12px; padding: 13px 14px;
+  background: var(--surface-faint); border: 1px solid var(--border); border-radius: var(--radius-xl);
+}
+.mpa-pricing-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+
+.mpr-fields { display: flex; align-items: flex-end; gap: 12px; margin-top: 10px; flex-wrap: wrap; }
+.mpr-fields--stacked { flex-direction: column; align-items: stretch; }
+.mpr-field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.mpr-label { font-size: .72rem; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; color: var(--text-3); }
+.mpr-input-wrap { display: flex; align-items: center; gap: 6px; }
+.mpr-currency { font-size: .78rem; font-weight: 800; color: var(--foreground-muted); }
+.mpr-input {
+  width: 110px; min-height: 44px; padding: 0 10px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-md);
+  font: inherit; font-size: 1rem; font-weight: 700; color: var(--foreground); font-variant-numeric: tabular-nums;
+}
+.mpr-input:focus-visible { outline: 2px solid var(--action); outline-offset: 1px; }
+.mpr-input:disabled { opacity: .55; }
+.mpr-per { margin: 0 0 12px; font-size: .74rem; font-weight: 700; color: var(--foreground-muted); }
+
+/* One article's row in the pricing dialog. */
+.mpr-articles { list-style: none; margin: 10px 0 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.mpr-article { padding: 11px 13px; background: var(--surface-faint); border: 1px solid var(--border); border-radius: var(--radius-xl); }
+.mpr-article-head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.mpr-article-name { font-size: .98rem; font-weight: 800; color: var(--chrome-ink); }
+.mpr-article-qty { font-size: .8rem; color: var(--foreground-muted); }
+.mpr-article-amount { margin-left: auto; font-size: .85rem; font-weight: 800; color: var(--primary-dark); font-variant-numeric: tabular-nums; }
+.mpr-article-unpriced { margin-left: auto; font-size: .8rem; font-weight: 700; color: var(--warning-deep); }
+
 @media (max-width: 980px) {
   .mpa-panels { grid-template-columns: 1fr; }
   .mpa-panel-body { max-height: none; }
@@ -7016,6 +7047,29 @@ tr.has-error .gp-qty-stepper input { color: var(--err); }
 .mpx-quick-action:focus-visible { outline: 2px solid var(--action); outline-offset: 2px; border-radius: var(--radius-sm); }
 .mpx-delete { min-height: 40px; }
 
+/* ── Contractor pricing on the program summary ─────────────────────────── */
+.mpx-pricing { display: flex; flex-direction: column; gap: 8px; }
+.mpx-pricing-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.mpx-pricing-edit {
+  padding: 0; cursor: pointer; background: transparent; border: 0;
+  font: inherit; font-size: .74rem; font-weight: 800; color: var(--action); text-decoration: underline;
+}
+.mpx-pricing-edit:focus-visible { outline: 2px solid var(--action); outline-offset: 2px; border-radius: var(--radius-sm); }
+.mpx-pricing-table { width: 100%; border-collapse: collapse; font-size: .78rem; }
+.mpx-pricing-table th, .mpx-pricing-table td { padding: 5px 6px; border-top: 1px solid var(--line-soft); }
+.mpx-pricing-table thead th {
+  border-top: none; text-align: right; font-size: .62rem; font-weight: 800;
+  letter-spacing: .05em; text-transform: uppercase; color: var(--text-3);
+}
+.mpx-pricing-table thead th:first-child, .mpx-pricing-table tbody th, .mpx-pricing-table tfoot th { text-align: left; }
+.mpx-pricing-table .mpx-num { text-align: right; font-variant-numeric: tabular-nums; }
+.mpx-pricing-article { display: block; font-weight: 800; color: var(--chrome-ink); }
+.mpx-pricing-qty { display: block; font-size: .68rem; font-weight: 600; color: var(--text-3); }
+.mpx-pricing-unpriced { font-size: .72rem; font-weight: 700; color: var(--warning-deep); }
+.mpx-pricing-table tfoot th, .mpx-pricing-table tfoot td { font-weight: 800; color: var(--primary-dark); }
+.mpx-pricing-note { margin: 0; font-size: .68rem; color: var(--text-3); }
+.mpx-pricing-warn { margin: 0; font-size: .72rem; font-weight: 700; color: var(--warning-deep); }
+
 /* ── Machines panel, in Raw Material ▸ Setup ──────────────────────────── */
 .rm-machine-list { list-style: none; margin: 0 0 12px; padding: 0; }
 .rm-machine-row {
@@ -7437,6 +7491,311 @@ tr.has-error .gp-qty-stepper input { color: var(--err); }
   .mo-page .si-body { grid-template-columns: minmax(0, 1fr); }
 }
 
+/* ── STORE OUT against a MACHINE PROGRAM ──────────────────────────────────
+   Machine program  [ Scan QR or enter Machine Program No. ]  [ Open ]
+   ┌─ Uppers this program authorises ─────────┬─ Scan ──────────────┐
+   │ SK6 7/10 BLACK  100 DOZEN  30  70        │ READY TO SCAN       │
+   │ [Start Scan] [Save Batch] [Cancel Batch] │ This batch …        │
+   └──────────────────────────────────────────┴─────────────────────┘
+   Every value below is a central token (R3). Nothing here uses a gradient, a drop-shadow, a
+   one-sided border or a backdrop-filter: they each cost this hardware a 50-100ms first-draw
+   stall (docs/24 §GPU). */
+.mpo-lookup { flex: 0 0 auto; }
+.mpo-lookup-label { display: block; margin: 0 0 5px; font-size: .66rem; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; color: var(--text-3); }
+.mpo-lookup-row { display: flex; align-items: center; gap: 9px; max-width: 560px; }
+.mpo-lookup-input {
+  flex: 1; min-width: 0; min-height: 44px; padding: 0 13px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg);
+  font: inherit; font-size: .98rem; font-weight: 700; letter-spacing: .02em; color: var(--foreground);
+}
+.mpo-lookup-input::placeholder { font-weight: 500; letter-spacing: 0; color: var(--text-3); }
+.mpo-lookup-input:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; border-color: var(--primary); }
+.mpo-lookup-input:disabled { background: var(--surface-faint); color: var(--text-3); }
+.mpo-lookup-btn {
+  flex: 0 0 auto; min-height: 44px; padding: 0 20px; cursor: pointer;
+  background: var(--primary); border: 1px solid var(--primary); border-radius: var(--radius-lg);
+  font: inherit; font-size: .9rem; font-weight: 800; color: var(--sc-primary-foreground);
+}
+.mpo-lookup-btn:hover:not(:disabled) { background: var(--primary-dark); border-color: var(--primary-dark); }
+.mpo-lookup-btn:disabled { cursor: default; opacity: .55; }
+.mpo-lookup-help { margin: 5px 0 0; font-size: .76rem; color: var(--foreground-muted); }
+.mpo-lookup-error { margin: 7px 0 0; font-size: .82rem; font-weight: 700; color: var(--danger); }
+.mpo-retry {
+  min-height: 30px; padding: 0 12px; cursor: pointer;
+  background: transparent; border: 1px solid var(--danger); border-radius: var(--radius-md);
+  font: inherit; font-size: .76rem; font-weight: 800; color: var(--danger);
+}
+
+/* The program's own screen, in place of the two Move Out panes. */
+.mo-page--program .si-head { padding-right: 180px; }
+.mpo-panel { display: flex; flex-direction: column; flex: 1; min-height: 0; gap: 11px; }
+.mpo-head { display: flex; align-items: flex-start; gap: 14px; flex: 0 0 auto; }
+.mpo-title { margin: 0; font-size: 1.22rem; font-weight: 900; letter-spacing: -.01em; }
+.mpo-facts { display: flex; flex-wrap: wrap; gap: 4px 16px; margin: 4px 0 0; font-size: .85rem; color: var(--text-2); }
+.mpo-facts b { color: var(--foreground); }
+.mpo-status { font-weight: 800; color: var(--primary-dark); }
+
+.mpo-body { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(340px, 420px); gap: 14px; }
+.mpo-left, .mpo-right { display: flex; flex-direction: column; min-width: 0; min-height: 0; gap: 11px; overflow-y: auto; }
+.mpo-section-title { margin: 0; font-size: .72rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: var(--text-3); }
+
+.mpo-lines { background: var(--surface); border: 1px solid var(--line-soft); border-radius: var(--radius-xl); overflow: hidden; }
+.mpo-table { width: 100%; border-collapse: collapse; font-size: .88rem; }
+.mpo-table-caption { padding: 9px 13px; text-align: left; font-size: .76rem; color: var(--foreground-muted); border-bottom: 1px solid var(--line-soft); }
+.mpo-table th { padding: 8px 13px; text-align: left; font-size: .66rem; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; color: var(--text-3); background: var(--surface-faint); }
+.mpo-table td { padding: 9px 13px; border-top: 1px solid var(--line-soft); }
+.mpo-num { text-align: right; font-variant-numeric: tabular-nums; }
+.mpo-upper { font-weight: 800; }
+.mpo-row--done td { color: var(--text-3); }
+.mpo-done-tag { display: block; font-size: .68rem; font-weight: 700; color: var(--success-deep); }
+
+/* The cartons owed back and the issued history: two lists, two headings, never one. */
+.mpo-batch, .mpo-history {
+  flex: 0 0 auto; padding: 12px 14px 14px;
+  background: var(--surface); border: 1px solid var(--line-soft); border-radius: var(--radius-xl);
+}
+.mpo-batch-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.mpo-batch-title { margin: 0; font-size: .92rem; font-weight: 800; }
+.mpo-batch-note { margin: 5px 0 10px; font-size: .76rem; font-weight: 700; color: var(--warning-deep); }
+.mpo-batch-note--plain { font-weight: 500; color: var(--foreground-muted); }
+.mpo-batch-empty { margin: 0; font-size: .82rem; color: var(--text-3); }
+.mpo-batch-list, .mpo-history-list, .mpo-carton-printed, .mpo-carton-blocked { list-style: none; margin: 0; padding: 0; }
+.mpo-mono { font-family: Consolas, "Courier New", monospace; font-size: .78rem; color: var(--text-2); }
+.mpo-batch-material { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mpo-batch-qty { font-weight: 800; font-variant-numeric: tabular-nums; }
+
+/* One carton run waiting for its labels: what it is, how many, and the one button. */
+.mpo-carton-row {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center;
+  gap: 6px 10px; padding: 9px 0; border-top: 1px solid var(--line-soft); font-size: .84rem;
+}
+.mpo-batch-list > .mpo-carton-row:first-child { border-top: none; }
+.mpo-carton-what { font-weight: 800; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mpo-carton-print { grid-column: 2; grid-row: 1 / span 2; min-height: 44px; min-width: 150px; }
+.mpo-carton-blocked { margin-top: 9px; }
+.mpo-carton-blocked li { padding: 7px 0; font-size: .8rem; font-weight: 700; color: var(--warning-deep); }
+.mpo-carton-printed { margin-top: 9px; }
+.mpo-carton-printed li { display: flex; flex-wrap: wrap; gap: 2px 10px; padding: 6px 0; font-size: .78rem; }
+.mpo-carton-range { font-family: Consolas, "Courier New", monospace; font-size: .74rem; color: var(--success-deep); }
+
+/* What has already left, one packet per row, newest first. */
+.mpo-history-row {
+  display: grid; grid-template-columns: minmax(0, auto) minmax(0, 1fr) auto auto;
+  align-items: center; gap: 2px 10px; padding: 7px 0; border-top: 1px solid var(--line-soft); font-size: .82rem;
+}
+.mpo-history-list > .mpo-history-row:first-child { border-top: none; }
+.mpo-history-cartons { font-weight: 700; color: var(--primary-dark); font-variant-numeric: tabular-nums; }
+.mpo-history-meta { grid-column: 1 / -1; margin: 0; font-size: .74rem; color: var(--text-3); }
+
+/* The scan station sits in the right column and scrolls with it. */
+.mpo-station { display: flex; flex: 0 0 auto; min-height: 0; }
+.mpo-station .ssn-scan { width: 100%; }
+.mpo-busy { margin: 0; font-size: .8rem; font-weight: 800; color: var(--primary-dark); }
+
+@media (max-width: 1100px) {
+  .mpo-body { grid-template-columns: minmax(0, 1fr); }
+  .mpo-left, .mpo-right { overflow: visible; }
+}
+
+/* ── MACHINE PROGRAM ISSUE ────────────────────────────────────────────────
+   ← Machine Program Issue                            ● Program Ready
+   📄 MP-000008 ⚙ MACHINE 1 📅 09 Oct 👤 ALAMGIR 📦 Daniyal 🕐 06–06
+   ┌ Dana Issue ──────────── ● BLACK·EVA [−0+] ──── [Issue Dana] ┐
+   ┌ Upper Out ──────────────────────────────── [ Start Scan ] ──┐
+   ┌ Injector 1 │ Sole Color : BLACK ────────────────────────────┐
+   Read top to bottom: what is this → put the Dana out → take the uppers out →
+   how far through am I → what the day comes to. Every value is a central token (R3),
+   and nothing here uses a gradient, drop-shadow, one-sided border or backdrop-filter —
+   each costs this hardware a 50-100ms first-draw stall (docs/24 §GPU). */
+/* The page is a tall stack inside a FIXED-height shell: .page-content--fullscreen and
+   .si-page are both overflow:hidden, so without a scroll container here everything below
+   the fold is simply clipped. The two-pane layout this replaced scrolled inside each pane
+   instead, which is why the stack needed its own. */
+.mpi-page {
+  flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain;
+  display: flex; flex-direction: column; gap: 13px;
+  padding: 0 4px 10px 0;
+}
+
+.mpi-head { display: flex; flex-direction: column; gap: 11px; flex: 0 0 auto; }
+.mpi-title-row { display: flex; align-items: center; gap: 13px; }
+.mpi-back {
+  display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto;
+  width: 38px; height: 38px; cursor: pointer;
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg);
+  font: inherit; font-size: 1.15rem; color: var(--foreground-muted);
+}
+.mpi-back:hover { border-color: var(--primary); color: var(--primary-dark); }
+.mpi-back:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+.mpi-title { margin: 0; font-size: 1.72rem; font-weight: 900; letter-spacing: -.02em; color: var(--chrome-ink); }
+.mpi-change-job {
+  margin-left: auto; min-height: 38px; padding: 0 15px; cursor: pointer;
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg);
+  font: inherit; font-size: .84rem; font-weight: 700; color: var(--foreground-muted);
+}
+.mpi-change-job:hover { border-color: var(--primary); color: var(--primary-dark); }
+
+/* The status, and a card's state: a dot AND the word, never the colour alone (R18). */
+.mpi-pill {
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 5px 13px; border-radius: 999px;
+  font-size: .82rem; font-weight: 800; letter-spacing: .01em;
+}
+.mpi-pill-dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+.mpi-pill--ok { background: var(--success-soft); color: var(--success-deep); }
+.mpi-pill--warn { background: var(--warning-soft); color: var(--warning-deep); }
+.mpi-pill--muted { background: var(--surface-faint); color: var(--text-3); }
+.mpi-pill--sm { padding: 2px 9px; font-size: .68rem; }
+.mpi-pill--done { background: var(--success-soft); color: var(--success-deep); }
+.mpi-pill--in_progress { background: var(--warning-soft); color: var(--warning-deep); }
+.mpi-pill--pending { background: var(--surface-faint); color: var(--text-3); }
+
+/* The seven facts, across one strip — the same order the printed sheet uses. */
+.mpi-meta {
+  display: flex; flex-wrap: wrap; margin: 0;
+  background: var(--surface); border: 1px solid var(--line-soft); border-radius: var(--radius-xl);
+}
+.mpi-meta-cell { flex: 1 1 0; min-width: 142px; display: flex; align-items: center; gap: 11px; padding: 11px 15px; }
+/* The shift is the longest fact on the strip and must never wrap or clip. */
+.mpi-meta-cell:nth-last-child(1) { flex: 1.5 1 0; min-width: 186px; }
+.mpi-meta-cell + .mpi-meta-cell { border-left: 1px solid var(--line-soft); }
+.mpi-meta-icon { flex: 0 0 auto; display: inline-flex; color: var(--primary-dark); }
+.mpi-meta-icon svg { width: 21px; height: 21px; fill: currentColor; display: block; }
+.mpi-meta-words { min-width: 0; }
+.mpi-meta-words dt { margin: 0; font-size: .7rem; font-weight: 500; color: var(--text-3); }
+.mpi-meta-words dd {
+  margin: 1px 0 0; font-size: .96rem; font-weight: 800; color: var(--foreground);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+/* ── A section that DOES something: Dana Issue, Upper Out ── */
+.mpi-section {
+  flex: 0 0 auto; padding: 14px 16px;
+  background: var(--surface); border: 1px solid var(--line-soft); border-radius: var(--radius-2xl);
+}
+.mpi-section-head { display: flex; align-items: center; gap: 13px; }
+.mpi-section-mark {
+  display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto;
+  width: 42px; height: 42px; border-radius: var(--radius-xl);
+  background: var(--primary-soft); color: var(--primary-dark);
+}
+.mpi-section-mark svg { width: 23px; height: 23px; fill: currentColor; display: block; }
+.mpi-section-title { margin: 0; font-size: 1.12rem; font-weight: 900; color: var(--chrome-ink); }
+.mpi-section-line { margin: 2px 0 0; font-size: .82rem; color: var(--foreground-muted); }
+
+/* The two buttons that move stock. */
+.mpi-action {
+  margin-left: auto; flex: 0 0 auto;
+  display: inline-flex; align-items: center; gap: 10px;
+  min-height: 48px; padding: 0 24px; cursor: pointer;
+  background: var(--action); border: 1px solid var(--action);
+  border-radius: var(--radius-lg);
+  font: inherit; font-size: 1rem; font-weight: 800; color: #fff;
+}
+.mpi-action:hover:not(:disabled) { background: var(--primary-dark); border-color: var(--primary-dark); }
+.mpi-action:focus-visible { outline: 2px solid var(--primary-dark); outline-offset: 2px; }
+.mpi-action:disabled { cursor: default; opacity: .5; }
+.mpi-action--quiet { background: var(--surface); border-color: var(--border); color: var(--foreground-muted); }
+.mpi-action--quiet:hover:not(:disabled) { background: var(--bg-soft); border-color: var(--primary); color: var(--primary-dark); }
+.mpi-action-mark { font-family: Consolas, "Courier New", monospace; letter-spacing: -.12em; font-size: 1.1rem; }
+
+/* ── Dana Issue: a row per MATERIAL, because two Danas can share a colour ── */
+.mpi-dana-row { display: flex; align-items: flex-end; flex-wrap: wrap; gap: 12px; margin-top: 13px; }
+.mpi-dana-label {
+  flex: 0 0 auto; align-self: center; padding: 0 13px 0 0;
+  font-size: .86rem; font-weight: 800; color: var(--text-2);
+}
+.mpi-dana-items { flex: 1 1 auto; display: flex; flex-wrap: wrap; gap: 10px; min-width: 0; }
+.mpi-dana-item {
+  flex: 0 1 auto; min-width: 168px; padding: 9px 12px;
+  background: var(--surface-faint); border: 1px solid var(--border); border-radius: var(--radius-lg);
+}
+.mpi-dana-item.is-blocked { opacity: .72; }
+.mpi-dana-name { display: flex; align-items: center; gap: 8px; font-size: .88rem; font-weight: 800; color: var(--foreground); }
+.mpi-dana-dot { width: 13px; height: 13px; border-radius: 50%; border: 1px solid rgba(15,23,42,.2); flex: 0 0 13px; }
+.mpi-dana-stock { display: block; margin: 2px 0 7px; font-size: .7rem; font-weight: 600; color: var(--text-3); }
+.mpi-dana-blocked { margin: 7px 0 0; font-size: .7rem; line-height: 1.35; color: var(--warning-deep); }
+.mpi-stepper { display: flex; align-items: center; gap: 6px; }
+.mpi-step {
+  width: 34px; height: 34px; flex: 0 0 34px; cursor: pointer;
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-md);
+  font: inherit; font-size: 1.05rem; font-weight: 800; color: var(--foreground-muted);
+}
+.mpi-step:hover:not(:disabled) { border-color: var(--primary); color: var(--primary-dark); }
+.mpi-step:disabled { cursor: default; opacity: .45; }
+.mpi-step-value {
+  width: 56px; height: 34px; padding: 0 6px; text-align: center;
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-md);
+  font: inherit; font-size: 1rem; font-weight: 800; font-variant-numeric: tabular-nums; color: var(--foreground);
+}
+.mpi-step-value:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
+.mpi-action--dana { margin-left: 0; }
+
+/* ── The scanner, opened by Start Scan ── */
+.mpi-scan { display: grid; grid-template-columns: minmax(0, 1fr) minmax(300px, 380px); gap: 13px; margin-top: 13px; }
+.mpi-station { display: flex; min-height: 0; }
+.mpi-station .ssn-scan { width: 100%; }
+.mpi-scan-side { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+
+/* ── A band: one injector running one sole colour ── */
+.mpi-band { flex: 0 0 auto; border: 1px solid var(--line-soft); border-radius: var(--radius-2xl); overflow: hidden; }
+.mpi-band-head {
+  display: flex; align-items: baseline; gap: 13px;
+  padding: 11px 17px; background: var(--sidebar-bg); color: #fff;
+}
+.mpi-band-no { font-size: 1.08rem; font-weight: 900; }
+.mpi-band-sole { padding-left: 13px; border-left: 1px solid rgba(255,255,255,.3); font-size: .95rem; color: #dbe7f7; }
+.mpi-band-sole b { font-weight: 900; color: #fff; letter-spacing: .02em; }
+
+.mpi-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(286px, 1fr)); gap: 12px; padding: 12px; background: var(--surface); }
+.mpi-card { border: 1px solid var(--border); border-radius: var(--radius-xl); overflow: hidden; background: var(--surface); }
+.mpi-card-head { display: flex; align-items: baseline; gap: 9px; padding: 10px 13px; background: var(--surface-faint); }
+.mpi-card-article { font-size: 1.22rem; font-weight: 900; letter-spacing: -.01em; color: var(--chrome-ink); }
+.mpi-card-size { font-size: .95rem; font-weight: 600; color: var(--text-2); }
+.mpi-card-count { margin-left: auto; font-size: .88rem; font-weight: 800; font-variant-numeric: tabular-nums; color: var(--text-2); }
+
+.mpi-bar { height: 7px; background: var(--border); }
+.mpi-bar-fill { display: block; height: 100%; background: var(--action); }
+.mpi-card--done .mpi-bar-fill { background: var(--success-deep); }
+
+.mpi-card-table { width: 100%; border-collapse: collapse; font-size: .86rem; }
+.mpi-card-table th, .mpi-card-table td { padding: 8px 13px; text-align: left; }
+.mpi-card-table thead th {
+  font-size: .66rem; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: var(--text-3);
+  border-bottom: 1px solid var(--line-soft);
+}
+.mpi-card-table tbody th { font-weight: 700; color: var(--foreground); }
+.mpi-sole-of { font-weight: 600; color: var(--text-3); }
+.mpi-card-table tbody tr + tr th, .mpi-card-table tbody tr + tr td { border-top: 1px solid var(--line-soft); }
+.mpi-num { text-align: right; font-variant-numeric: tabular-nums; }
+.mpi-card-table td.mpi-num { font-weight: 700; color: var(--foreground); }
+/* Nothing left to fetch is the good outcome, so it is the quiet one. */
+.mpi-owed { color: var(--danger); font-weight: 800; }
+.mpi-clear { color: var(--success-deep); font-weight: 800; }
+.mpi-unit-note { margin: -2px 0 0; font-size: .74rem; color: var(--text-3); }
+
+/* ── What the day comes to — the same two marks the printed sheet uses ── */
+.mpi-totals {
+  display: flex; flex-wrap: wrap; margin: 0; flex: 0 0 auto;
+  background: var(--surface); border: 1px solid var(--line-soft); border-radius: var(--radius-2xl);
+}
+.mpi-total { flex: 1 1 0; min-width: 200px; display: flex; align-items: center; gap: 15px; padding: 15px 22px; }
+.mpi-total + .mpi-total { border-left: 1px solid var(--line-soft); }
+.mpi-total-icon { flex: 0 0 auto; display: inline-flex; color: var(--sidebar-bg); }
+.mpi-total-icon svg { width: 36px; height: 36px; fill: currentColor; display: block; }
+.mpi-total-words dt { margin: 0; font-size: .86rem; color: var(--foreground-muted); }
+.mpi-total-words dd {
+  margin: 1px 0 0; font-size: 1.62rem; font-weight: 900; line-height: 1.1;
+  color: var(--chrome-ink); font-variant-numeric: tabular-nums;
+}
+
+.mpi-error { margin: 0; font-size: .86rem; font-weight: 700; color: var(--danger); }
+
+@media (max-width: 1100px) {
+  .mpi-scan { grid-template-columns: minmax(0, 1fr); }
+  .mpi-meta-cell + .mpi-meta-cell { border-left: none; border-top: 1px solid var(--line-soft); }
+}
+
 /* Searchable picker options: the main line, then an optional smaller detail line. */
 .city-option-label { display: block; font-weight: 700; color: inherit; white-space: normal; overflow-wrap: anywhere; line-height: 1.3; }
 .city-option-detail { display: block; margin-top: 2px; font-size: .76rem; font-weight: 500; color: var(--text-3); white-space: normal; overflow-wrap: anywhere; }
@@ -7458,3 +7817,4 @@ tr.has-error .gp-qty-stepper input { color: var(--err); }
 .rm-unit-picker-row { display: flex; gap: 8px; align-items: center; }
 .rm-unit-picker-row .form-input { flex: 1; min-width: 0; }
 .rm-unit-missing { display: flex; flex-direction: column; gap: 10px; }
+.form-section-note{display: none;}

@@ -98,13 +98,14 @@ export const stockCorrectionsMethods = {
 
     const now = new Date().toISOString();
     const id = crypto.randomUUID();
-    const next = this.db
-      .prepare("SELECT COALESCE(MAX(CAST(SUBSTR(request_code, 5) AS INTEGER)), 0) + 1 AS n FROM stock_correction_requests WHERE request_code LIKE 'SCR-%'")
-      .get() as { n: number };
-    const requestCode = `SCR-${String(next.n).padStart(6, "0")}`;
-
     this.db.exec("BEGIN IMMEDIATE TRANSACTION");
     try {
+      // Allocated inside the write lock, so the code that is read is the code that is inserted.
+      const next = this.db
+        .prepare("SELECT COALESCE(MAX(CAST(SUBSTR(request_code, 5) AS INTEGER)), 0) + 1 AS n FROM stock_correction_requests WHERE request_code LIKE 'SCR-%'")
+        .get() as { n: number };
+      const requestCode = `SCR-${String(next.n).padStart(6, "0")}`;
+
       this.db
         .prepare(
           `INSERT INTO stock_correction_requests

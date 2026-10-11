@@ -66,6 +66,17 @@ export interface ProductRow {
   description: string | null;
   costPrice: number | null;
   sellingPrice: number | null;
+  /**
+   * The product's STANDARD contractor rates, per DOZEN, in integer paisa (migration 064): what
+   * machine, packing and printing work on it is normally paid. A machine program starts from
+   * these and then keeps its own copy, like a sale voucher and a selling price.
+   *
+   * Null is NOT SET and is never shown as 0 — an unpriced product reads as "Not priced", while a
+   * stored 0 means that job is not paid for this article.
+   */
+  machineRatePaisa?: number | null;
+  packingRatePaisa?: number | null;
+  printingRatePaisa?: number | null;
   mainGroupId: string | null;
   groupId: string | null;
   articleSeriesId?: string | null;
@@ -1299,10 +1310,54 @@ export interface DesktopApi {
   ): Promise<{ accepted: boolean; rows: MachineProgramMaterial[]; reason?: string }>;
   saveMachineProgramLine(input: SaveMachineProgramLineInput): Promise<MachineProgramWriteResult>;
   saveMachineProgramRun(input: MachineProgramRunHeader & { runId: string }): Promise<MachineProgramWriteResult>;
+  /**
+   * Prices one article's work on one program. The three rates are PER DOZEN, in rupees as the
+   * operator typed them — the main process converts them to paisa and validates them.
+   */
+  saveMachineProgramArticleRates(input: {
+    programId: string;
+    articleSizeId: string;
+    machineRate: number;
+    packingRate: number;
+    printingRate: number;
+  }): Promise<MachineProgramWriteResult>;
   removeMachineProgramLine(input: { lineId: string }): Promise<MachineProgramWriteResult>;
   removeMachineProgramRun(input: { runId: string }): Promise<MachineProgramWriteResult>;
   deleteMachineProgram(input: { programId: string; reason?: string | null }): Promise<MachineProgramWriteResult>;
   setMachineProgramShift(input: { programId: string; shift: MachineShift }): Promise<MachineProgramWriteResult>;
+  // ── Store Out through one open Machine Program ───────────────────────────────
+  /** Resolves what the operator typed, scanned or clicked through from a notification. */
+  openMachineProgramStoreOut(lookup: string, opts?: { token?: string }): Promise<OpenMachineProgramStoreOutResult>;
+  /** Judges one scan against the open program. Writes nothing — Save Batch does that. */
+  machineProgramStoreOutCheckScan(
+    input: { programId: string; rawScan: string; batchQrIds: string[] },
+    opts?: { token?: string }
+  ): Promise<MachineProgramScanCheckResult>;
+  /** Commits the batch: every packet out of the store in one transaction, or none of them. */
+  machineProgramStoreOutSaveBatch(
+    input: { programId: string; batchKey: string; sessionId?: string | null; qrIds: string[] },
+    opts?: { token?: string }
+  ): Promise<SaveMachineProgramBatchResult>;
+  /** Every batch already issued against a program, newest first. */
+  listMachineProgramIssueBatches(
+    programId: string,
+    opts?: { token?: string }
+  ): Promise<{ accepted: boolean; rows: MachineProgramIssueBatchRow[] }>;
+  /** Every Dana the store holds in a sole colour this program runs. */
+  listMachineProgramDanaOptions(
+    programId: string,
+    opts?: { token?: string }
+  ): Promise<{ accepted: boolean; rows: MachineProgramDanaOption[] }>;
+  /** Issues whole bags of one Dana out of the store for a program. Moves stock. */
+  issueMachineProgramDana(
+    input: { programId: string; itemId: string; bags: number },
+    opts?: { token?: string }
+  ): Promise<MachineProgramDanaIssueResult>;
+  /** Every Dana issue already made for a program, newest first. */
+  listMachineProgramDanaIssues(
+    programId: string,
+    opts?: { token?: string }
+  ): Promise<{ accepted: boolean; rows: MachineProgramDanaIssueRow[] }>;
   /** What a material may be moved by hand in this direction. Null when it is not in the master. */
   getRawMaterialHandMoveOptions(
     itemId: string,
@@ -2080,6 +2135,11 @@ export type RawMaterialIssueOutcome =
   | "NOT_CONFIGURED"
   | "INVALID_FORMAT"
   | "STATUS_CHANGED"
+  /**
+   * Only reachable with a Machine Program open on Store Out: the program does not ask for this
+   * upper, or everything it asked for has already been issued. The packet stays in the store.
+   */
+  | "NOT_ON_PROGRAM"
   /** Main-process only: session missing or lacks the store-scanning permission. */
   | "NOT_AUTHORIZED"
   /** Main-process only: infrastructure failure; nothing was written. */
@@ -2160,7 +2220,17 @@ export interface SoleColourOption {
 /** An article from the Product Master with the sizes it is made in. */
 export interface MachineProgramArticle {
   article: string;
-  sizes: Array<{ articleSizeId: string; size: string }>;
+  sizes: Array<{
+    articleSizeId: string;
+    size: string;
+    /**
+     * The product's STANDARD contractor rates, per DOZEN, in integer paisa (migration 064), so
+     * the pricing boxes can open on what this article is normally paid. Null is NOT SET, never 0.
+     */
+    machineRatePaisa: number | null;
+    packingRatePaisa: number | null;
+    printingRatePaisa: number | null;
+  }>;
 }
 
 /** One source of a material: a supplier, or stock with no supplier recorded (supplierPartyId null). */
@@ -2260,8 +2330,179 @@ export interface MachineProgramRecord {
   cancelledBy: string | null;
   cancelReason: string | null;
   runs: MachineProgramRunRecord[];
+  /**
+   * Contractor pricing: what each article's machine, packing and printing work is paid at, per
+   * DOZEN, in integer paisa. One row per article however many runs it is on; an article with no
+   * row here is UNPRICED, which is not the same as priced at zero. Empty until somebody prices
+   * the program. What the rates come to is `programContractorPricing` in @erp/domain.
+   */
+  articleRates: MachineProgramArticleRate[];
 }
 
+/** One article's three rates on one program, per DOZEN, in integer paisa. */
+export interface MachineProgramArticleRate {
+  articleSizeId: string;
+  machineRatePaisa: number;
+  packingRatePaisa: number;
+  printingRatePaisa: number;
+  updatedAt: string;
+}
+
+// ─── Store Out against a Machine Program ──────────────────────────────────────
+// The shapes the main process answers with. Every quantity on them is computed in the data
+// layer from the event log; the screen formats them and decides nothing.
+
+export type MachineProgramStoreOutOutcome =
+  | "OPENED"
+  | "SAVED"
+  | "ALREADY_SAVED"
+  | "INVALID_LOOKUP"
+  | "PROGRAM_NOT_FOUND"
+  | "PROGRAM_CANCELLED"
+  | "PROGRAM_COMPLETED"
+  | "PROGRAM_EMPTY"
+  | "NOTHING_TO_SAVE"
+  | "SCAN_REFUSED"
+  | "NOT_AUTHORIZED"
+  | "ERROR";
+
+export interface OpenMachineProgramStoreOutResult {
+  accepted: boolean;
+  outcome: MachineProgramStoreOutOutcome;
+  reason?: string;
+  programId?: string;
+  programCode?: string;
+  /** The program itself, read through the same call the Machine Program screens use. */
+  program?: MachineProgramRecord | null;
+}
+
+export type MachineProgramScanVerdict =
+  | "ACCEPTED"
+  | "INVALID_FORMAT"
+  | "UNKNOWN_QR"
+  | "NOT_IN_STORE"
+  | "NOT_ELIGIBLE"
+  | "NOT_CONFIGURED"
+  | "NOT_ON_PROGRAM"
+  | "VARIANT_FULFILLED"
+  | "ALREADY_IN_BATCH"
+  | "PROGRAM_NOT_FOUND"
+  | "PROGRAM_CLOSED"
+  | "NOT_AUTHORIZED";
+
+export interface MachineProgramScanCheckResult {
+  accepted: boolean;
+  verdict: MachineProgramScanVerdict;
+  reason?: string;
+  qrId?: string;
+  itemId?: string;
+  itemDisplayName?: string;
+  partyName?: string;
+  packingQuantity?: number;
+  packName?: string | null;
+  unitCode?: string | null;
+  /** What the program asked for of this upper, and what has COMMITTED so far. */
+  authorized?: number;
+  issued?: number;
+  /** What the unsaved batch would add, this packet included. */
+  pending?: number;
+}
+
+/** The cartons one issued packet's output will be labelled with. */
+export interface IssuedCartonPlan {
+  articleSizeId: string;
+  article: string;
+  size: string;
+  soleColour: string;
+  /** The colour the carton QR identity carries — the upper's own colour. */
+  colour: string;
+  /** How many carton QR labels this packet's quantity needs. */
+  count: number;
+}
+
+/** One packet that left the store, as the main process reports it back. */
+export interface IssuedProgramPacket {
+  qrId: string;
+  itemId: string;
+  itemDisplayName: string;
+  partyName: string | null;
+  quantity: number;
+  unitCode: string | null;
+  packName: string | null;
+  cartons: IssuedCartonPlan | null;
+  /** Why these cartons cannot be labelled here. Set only when `cartons` is null. */
+  cartonNote: string | null;
+}
+
+export interface SaveMachineProgramBatchResult {
+  accepted: boolean;
+  outcome: MachineProgramStoreOutOutcome;
+  reason?: string;
+  batchId?: string;
+  programId?: string;
+  packetCount?: number;
+  /** Every packet that left the store in this call, in the order it was scanned. */
+  packets?: IssuedProgramPacket[];
+  refusedQrId?: string;
+  refusedVerdict?: MachineProgramScanVerdict;
+  programCompleted?: boolean;
+  /** The program re-read after the write, so progress is never patched on screen. */
+  program?: MachineProgramRecord | null;
+}
+
+/** One Dana the store holds in a sole colour a machine program runs. */
+export interface MachineProgramDanaOption {
+  itemId: string;
+  displayName: string;
+  colour: string;
+  /** EVA, PVC — what tells two Danas of one colour apart. */
+  subCategoryName: string;
+  packName: string;
+  /** One bag in the unit stock is counted in, or null when the material has no packing set. */
+  packSize: number | null;
+  packingUnitCode: string | null;
+  stockUnitCode: string | null;
+  quantityOnHand: number;
+  bagsOnHand: number;
+  /** Why it cannot be issued by typing a count (labelled packets), or null when it can. */
+  blockedReason: string | null;
+}
+
+export interface MachineProgramDanaIssueResult {
+  accepted: boolean;
+  outcome: string;
+  reason?: string;
+  /** What actually left, in the material own stock unit. */
+  quantity?: number;
+  unitCode?: string;
+  quantityOnHand?: number;
+}
+
+/** One Dana issue already made for a program. */
+export interface MachineProgramDanaIssueRow {
+  itemId: string;
+  displayName: string;
+  quantity: number;
+  unitCode: string | null;
+  note: string | null;
+  actor: string | null;
+  issuedAt: string;
+}
+
+/** One saved batch and the packets it took, for the audit trail under the program. */
+export interface MachineProgramIssueBatchRow {
+  batch: {
+    id: string;
+    batchKey: string;
+    programId: string;
+    sessionId: string | null;
+    deviceId: string;
+    issuedBy: string | null;
+    packetCount: number;
+    createdAt: string;
+  };
+  packets: Array<{ qrId: string; itemDisplayName: string; quantity: number; unitCode: string | null; issuedAt: string }>;
+}
 /** A machine as the board shows it for one date. */
 export interface MachineProgramBoardRow {
   machine: MachineRecord;

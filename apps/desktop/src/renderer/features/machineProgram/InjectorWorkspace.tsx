@@ -63,6 +63,7 @@ export const InjectorWorkspace: React.FC<InjectorWorkspaceProps> = ({ machine, p
           shift={shift}
           injectorNo={injectorNo}
           runs={injectorRuns(program, injectorNo)}
+          articleRates={program?.articleRates ?? []}
           isActive={injectorNo === active}
           writes={writes}
         />

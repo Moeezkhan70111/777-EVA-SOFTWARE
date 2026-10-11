@@ -26,33 +26,45 @@ export const cashMethods = {
   }): string {
     const now = new Date().toISOString();
     const id = crypto.randomUUID();
-    const voucherNumber = this.getNextCashVoucherNumber();
 
-    this.db
-      .prepare(
-        `INSERT INTO cash_vouchers (
-          id, voucher_number, party_id, voucher_date, mode_of_transfer, description,
-          receipt_amount_paisa, payment_amount_paisa, status, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'ACTIVE', ?, ?)`
-      )
-      .run(
-        id,
-        voucherNumber,
-        input.partyId,
-        input.voucherDate,
-        input.modeOfTransfer ?? "Cash",
-        input.description,
-        toPaisa(input.receiptAmount ?? 0),
-        toPaisa(input.paymentAmount ?? 0),
-        now,
-        now
-      );
+    // The header and its lines are one transaction. The customer ledger sums
+    // cash_voucher_lines, so a voucher that kept its header but lost its lines would quietly
+    // produce a wrong party balance. The voucher number is taken inside the transaction too,
+    // so it is read under the same write lock that inserts it.
+    this.db.exec("BEGIN IMMEDIATE TRANSACTION");
+    try {
+      const voucherNumber = this.getNextCashVoucherNumber();
 
-    const lines = input.lines?.length ? input.lines : [{ partyId: input.partyId, description: input.description, modeOfTransfer: input.modeOfTransfer ?? "Cash", receiptAmount: input.receiptAmount ?? 0, paymentAmount: input.paymentAmount ?? 0 }];
-    const insertLine = this.db.prepare("INSERT INTO cash_voucher_lines (id, voucher_id, party_id, description, mode_of_transfer, bank_account_title, cheque_number, cheque_date, online_from, online_to, reference_no, receipt_amount_paisa, payment_amount_paisa, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
-    for (const line of lines) insertLine.run(crypto.randomUUID(), id, line.partyId, line.description, line.modeOfTransfer, line.bankAccountTitle ?? "", line.chequeNumber ?? "", line.chequeDate ?? "", line.onlineFrom ?? "", line.onlineTo ?? "", line.referenceNo ?? "", toPaisa(line.receiptAmount), toPaisa(line.paymentAmount), now);
+      this.db
+        .prepare(
+          `INSERT INTO cash_vouchers (
+            id, voucher_number, party_id, voucher_date, mode_of_transfer, description,
+            receipt_amount_paisa, payment_amount_paisa, status, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'ACTIVE', ?, ?)`
+        )
+        .run(
+          id,
+          voucherNumber,
+          input.partyId,
+          input.voucherDate,
+          input.modeOfTransfer ?? "Cash",
+          input.description,
+          toPaisa(input.receiptAmount ?? 0),
+          toPaisa(input.paymentAmount ?? 0),
+          now,
+          now
+        );
 
-    return id;
+      const lines = input.lines?.length ? input.lines : [{ partyId: input.partyId, description: input.description, modeOfTransfer: input.modeOfTransfer ?? "Cash", receiptAmount: input.receiptAmount ?? 0, paymentAmount: input.paymentAmount ?? 0 }];
+      const insertLine = this.db.prepare("INSERT INTO cash_voucher_lines (id, voucher_id, party_id, description, mode_of_transfer, bank_account_title, cheque_number, cheque_date, online_from, online_to, reference_no, receipt_amount_paisa, payment_amount_paisa, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+      for (const line of lines) insertLine.run(crypto.randomUUID(), id, line.partyId, line.description, line.modeOfTransfer, line.bankAccountTitle ?? "", line.chequeNumber ?? "", line.chequeDate ?? "", line.onlineFrom ?? "", line.onlineTo ?? "", line.referenceNo ?? "", toPaisa(line.receiptAmount), toPaisa(line.paymentAmount), now);
+
+      this.db.exec("COMMIT");
+      return id;
+    } catch (error) {
+      try { this.db.exec("ROLLBACK"); } catch { /* ignore missing transaction state */ }
+      throw error;
+    }
   },
 
   updateCashVoucher(this: SqliteDatabase, 
@@ -103,15 +115,26 @@ export const cashMethods = {
 
     values.push(voucherId);
 
-    this.db
-      .prepare(`UPDATE cash_vouchers SET ${updates.join(", ")} WHERE id = ?`)
-      .run(...values);
+    // Replacing the lines is a delete followed by inserts. Outside a transaction a failure
+    // part way through leaves the voucher with fewer lines than it started with — existing
+    // financial detail destroyed by a failed edit, not merely an edit that did not apply.
+    this.db.exec("BEGIN IMMEDIATE TRANSACTION");
+    try {
+      this.db
+        .prepare(`UPDATE cash_vouchers SET ${updates.join(", ")} WHERE id = ?`)
+        .run(...values);
 
-    if (input.lines?.length) {
-      this.db.prepare("DELETE FROM cash_voucher_lines WHERE voucher_id = ?").run(voucherId);
-      const insertLine = this.db.prepare("INSERT INTO cash_voucher_lines (id, voucher_id, party_id, description, mode_of_transfer, bank_account_title, cheque_number, cheque_date, online_from, online_to, reference_no, receipt_amount_paisa, payment_amount_paisa, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
-      const nowLine = new Date().toISOString();
-      for (const line of input.lines) insertLine.run(crypto.randomUUID(), voucherId, line.partyId, line.description, line.modeOfTransfer, line.bankAccountTitle ?? "", line.chequeNumber ?? "", line.chequeDate ?? "", line.onlineFrom ?? "", line.onlineTo ?? "", line.referenceNo ?? "", toPaisa(line.receiptAmount), toPaisa(line.paymentAmount), nowLine);
+      if (input.lines?.length) {
+        this.db.prepare("DELETE FROM cash_voucher_lines WHERE voucher_id = ?").run(voucherId);
+        const insertLine = this.db.prepare("INSERT INTO cash_voucher_lines (id, voucher_id, party_id, description, mode_of_transfer, bank_account_title, cheque_number, cheque_date, online_from, online_to, reference_no, receipt_amount_paisa, payment_amount_paisa, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+        const nowLine = new Date().toISOString();
+        for (const line of input.lines) insertLine.run(crypto.randomUUID(), voucherId, line.partyId, line.description, line.modeOfTransfer, line.bankAccountTitle ?? "", line.chequeNumber ?? "", line.chequeDate ?? "", line.onlineFrom ?? "", line.onlineTo ?? "", line.referenceNo ?? "", toPaisa(line.receiptAmount), toPaisa(line.paymentAmount), nowLine);
+      }
+
+      this.db.exec("COMMIT");
+    } catch (error) {
+      try { this.db.exec("ROLLBACK"); } catch { /* ignore missing transaction state */ }
+      throw error;
     }
   },
 

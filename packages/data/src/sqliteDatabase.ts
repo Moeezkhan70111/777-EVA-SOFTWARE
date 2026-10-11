@@ -26,6 +26,9 @@ import { rawMaterialsMethods, type RawMaterialsMethods } from "./database/rawMat
 import { machineProgramsMethods, type MachineProgramsMethods } from "./database/machinePrograms.js";
 import { machineProgramStockMethods, type MachineProgramStockMethods } from "./database/machineProgramStock.js";
 import { machineProgramWritesMethods, type MachineProgramWritesMethods } from "./database/machineProgramWrites.js";
+import { machineProgramStoreOutMethods, type MachineProgramStoreOutMethods } from "./database/machineProgramStoreOut.js";
+import { machineProgramDanaMethods, type MachineProgramDanaMethods } from "./database/machineProgramDana.js";
+import { machineProgramRatesMethods, type MachineProgramRatesMethods } from "./database/machineProgramRates.js";
 import { stockCorrectionsMethods, type StockCorrectionsMethods } from "./database/stockCorrections.js";
 import { removalRequestsMethods, type RemovalRequestsMethods } from "./database/removalRequests.js";
 import { inventoryMovesMethods, type InventoryMovesMethods } from "./database/inventoryMoves.js";
@@ -454,6 +457,36 @@ export class SqliteDatabase
     });
   }
 
+  /**
+   * The workstation this database already belongs to, or null on a fresh database.
+   *
+   * Read-only, and used for one thing: an installation that predates per-machine identities
+   * must keep the workstation its own history refers to. `production_events.workstation_id`
+   * is a foreign key to `workstations(id)`, so inventing a new identity for an existing
+   * database would split one physical machine across two workstation rows.
+   *
+   * Oldest row wins, so the answer cannot change once a second workstation exists.
+   */
+  findExistingWorkstation(): { workstationId: string; workstationCode: string; workstationName: string; deviceId: string } | null {
+    const row = this.db
+      .prepare(
+        `SELECT id, workstation_code, name, device_id
+         FROM workstations
+         WHERE deleted_at IS NULL
+         ORDER BY created_at ASC, id ASC
+         LIMIT 1`
+      )
+      .get() as { id: string; workstation_code: string; name: string; device_id: string } | undefined;
+
+    if (!row) return null;
+    return {
+      workstationId: String(row.id),
+      workstationCode: String(row.workstation_code),
+      workstationName: String(row.name),
+      deviceId: String(row.device_id),
+    };
+  }
+
   updateDeviceHeartbeat(deviceId: string): void {
     this.db.prepare("UPDATE devices SET last_seen_at = ?, updated_at = ? WHERE id = ?").run(new Date().toISOString(), new Date().toISOString(), deviceId);
   }
@@ -748,6 +781,9 @@ export interface SqliteDatabase
     MachineProgramsMethods,
     MachineProgramStockMethods,
     MachineProgramWritesMethods,
+    MachineProgramStoreOutMethods,
+    MachineProgramDanaMethods,
+    MachineProgramRatesMethods,
     StockCorrectionsMethods,
     RemovalRequestsMethods,
     InventoryMovesMethods,
@@ -774,6 +810,9 @@ Object.assign(
   machineProgramsMethods,
   machineProgramStockMethods,
   machineProgramWritesMethods,
+  machineProgramStoreOutMethods,
+  machineProgramDanaMethods,
+  machineProgramRatesMethods,
   stockCorrectionsMethods,
   removalRequestsMethods,
   inventoryMovesMethods,

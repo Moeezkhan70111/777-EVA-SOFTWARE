@@ -19,6 +19,7 @@ import {
 import { COLOUR_SQL, LINE_CONSUMED_SQL, TYPE_SQL } from "./machineProgramSql.js";
 import type {
   MachineProgramArticle,
+  MachineProgramArticleRateRecord,
   MachineProgramBoardRow,
   MachineProgramRecord,
   MachineProgramRunRecord,
@@ -106,7 +107,11 @@ const mapRun = (row: Record<string, unknown>, lines: MachineProgramUpperLineReco
   lines,
 });
 
-const mapProgram = (row: Record<string, unknown>, runs: MachineProgramRunRecord[]): MachineProgramRecord => {
+const mapProgram = (
+  row: Record<string, unknown>,
+  runs: MachineProgramRunRecord[],
+  articleRates: MachineProgramArticleRateRecord[]
+): MachineProgramRecord => {
   const lines = runs.flatMap((run) => run.lines);
   const totalQuantity = sum(lines.map((line) => line.quantity));
   const consumedQuantity = sum(lines.map((line) => line.consumed));
@@ -139,6 +144,8 @@ const mapProgram = (row: Record<string, unknown>, runs: MachineProgramRunRecord[
     cancelledBy: row.cancelled_by ? text(row.cancelled_by) : null,
     cancelReason: row.cancel_reason ? text(row.cancel_reason) : null,
     runs,
+    // The rates only — what they come to is the domain's arithmetic, computed where it is shown.
+    articleRates,
   };
 };
 
@@ -230,7 +237,8 @@ export const machineProgramsMethods = {
   listMachineProgramArticles(this: SqliteDatabase): MachineProgramArticle[] {
     const rows = this.db
       .prepare(
-        `SELECT id, article, size FROM article_sizes
+        `SELECT id, article, size, machine_rate_paisa, packing_rate_paisa, printing_rate_paisa
+         FROM article_sizes
          WHERE deleted_at IS NULL AND status = 'ACTIVE'
          ORDER BY article, size`
       )
@@ -240,7 +248,16 @@ export const machineProgramsMethods = {
     for (const row of rows) {
       const article = text(row.article);
       const entry = byArticle.get(article) ?? { article, sizes: [] };
-      entry.sizes.push({ articleSizeId: text(row.id), size: text(row.size) });
+      entry.sizes.push({
+        articleSizeId: text(row.id),
+        size: text(row.size),
+        // The product's standard contractor rates, so the pricing boxes in + Add Article can open
+        // on what this article is normally paid (migration 064). Null stays null: a product
+        // nobody has priced must not arrive here looking like free work.
+        machineRatePaisa: row.machine_rate_paisa == null ? null : Number(row.machine_rate_paisa),
+        packingRatePaisa: row.packing_rate_paisa == null ? null : Number(row.packing_rate_paisa),
+        printingRatePaisa: row.printing_rate_paisa == null ? null : Number(row.printing_rate_paisa),
+      });
       byArticle.set(article, entry);
     }
     return [...byArticle.values()];
@@ -266,14 +283,20 @@ export const machineProgramsMethods = {
       .get(text(machineId).trim(), text(programDate).trim(), INJECTOR_LAYOUT, MACHINE_PROGRAM_STATUS.CANCELLED) as
       | Record<string, unknown>
       | undefined;
-    return row ? mapProgram(row, this.readMachineProgramRuns(text(row.id), this.db)) : null;
+    return row ? this.mapProgramWithRates(row) : null;
   },
 
   getMachineProgram(this: SqliteDatabase, programId: string): MachineProgramRecord | null {
     const row = this.db.prepare("SELECT * FROM machine_programs WHERE id = ? LIMIT 1").get(text(programId).trim()) as
       | Record<string, unknown>
       | undefined;
-    return row ? mapProgram(row, this.readMachineProgramRuns(text(row.id), this.db)) : null;
+    return row ? this.mapProgramWithRates(row) : null;
+  },
+
+  /** @internal One program row, with its runs and its contractor pricing read for it. */
+  mapProgramWithRates(this: SqliteDatabase, row: Record<string, unknown>): MachineProgramRecord {
+    const programId = text(row.id);
+    return mapProgram(row, this.readMachineProgramRuns(programId, this.db), this.readMachineProgramArticleRates(programId, this.db));
   },
 
   /**

@@ -152,6 +152,21 @@ export function registerMachineProgramHandlers(ctx: IpcContext): void {
     })
   );
 
+  // Contractor pricing. The rates arrive as the operator typed them, in rupees, and are
+  // converted to paisa inside the use case — the renderer never does money arithmetic. A rate
+  // the screen got wrong must reach the use case as something it refuses, so the numbers are
+  // read raw rather than coerced to 0.
+  write(IPC.saveMachineProgramArticleRates, (input, actor) =>
+    programs.saveArticleRates.execute({
+      programId: asString(input.programId),
+      articleSizeId: asString(input.articleSizeId),
+      machineRate: rawNumber(input.machineRate),
+      packingRate: rawNumber(input.packingRate),
+      printingRate: rawNumber(input.printingRate),
+      ...actor,
+    })
+  );
+
   write(IPC.removeMachineProgramLine, (input, actor) => programs.removeLine.execute({ lineId: asString(input.lineId), ...actor }));
   write(IPC.removeMachineProgramRun, (input, actor) => programs.removeRun.execute({ runId: asString(input.runId), ...actor }));
   write(IPC.deleteMachineProgram, (input, actor) =>

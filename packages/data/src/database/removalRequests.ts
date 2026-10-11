@@ -200,15 +200,16 @@ export const removalRequestsMethods = {
     const reason = typeof input.reason === "string" ? input.reason.trim() || null : null;
     const now = new Date().toISOString();
     const id = crypto.randomUUID();
-    const next = this.db
-      .prepare(
-        "SELECT COALESCE(MAX(CAST(SUBSTR(request_code, 5) AS INTEGER)), 0) + 1 AS n FROM removal_requests WHERE request_code LIKE 'DEL-%'"
-      )
-      .get() as { n: number };
-    const requestCode = `DEL-${String(next.n).padStart(6, "0")}`;
-
     this.db.exec("BEGIN IMMEDIATE TRANSACTION");
     try {
+      // Allocated inside the write lock, so the code that is read is the code that is inserted.
+      const next = this.db
+        .prepare(
+          "SELECT COALESCE(MAX(CAST(SUBSTR(request_code, 5) AS INTEGER)), 0) + 1 AS n FROM removal_requests WHERE request_code LIKE 'DEL-%'"
+        )
+        .get() as { n: number };
+      const requestCode = `DEL-${String(next.n).padStart(6, "0")}`;
+
       this.db
         .prepare(
           `INSERT INTO removal_requests
@@ -282,16 +283,18 @@ export const removalRequestsMethods = {
     const reason = typeof input.reason === "string" ? input.reason.trim() || null : null;
     const now = new Date().toISOString();
     const id = crypto.randomUUID();
-    const next = this.db
-      .prepare(
-        "SELECT COALESCE(MAX(CAST(SUBSTR(request_code, 5) AS INTEGER)), 0) + 1 AS n FROM removal_requests WHERE request_code LIKE 'DEL-%'"
-      )
-      .get() as { n: number };
-    const requestCode = `DEL-${String(next.n).padStart(6, "0")}`;
     const cost = this.itemRemovalCost(input.itemId);
 
     this.db.exec("BEGIN IMMEDIATE TRANSACTION");
     try {
+      // Allocated inside the write lock, so the code that is read is the code that is inserted.
+      const next = this.db
+        .prepare(
+          "SELECT COALESCE(MAX(CAST(SUBSTR(request_code, 5) AS INTEGER)), 0) + 1 AS n FROM removal_requests WHERE request_code LIKE 'DEL-%'"
+        )
+        .get() as { n: number };
+      const requestCode = `DEL-${String(next.n).padStart(6, "0")}`;
+
       this.db
         .prepare(
           `INSERT INTO removal_requests

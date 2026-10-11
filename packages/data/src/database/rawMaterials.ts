@@ -515,7 +515,7 @@ export const rawMaterialsMethods = {
    * event must never be able to disagree about whether the correction happened. There is
    * still exactly one implementation of what a correction does to stock.
    */
-  applyInventoryStockChange(this: SqliteDatabase, input: { itemId: string; quantity: number; eventType?: "RECEIVE" | "ADJUST" | "CONSUME" | "TRANSFER_IN" | "TRANSFER_OUT" | "RETURN"; unitId?: string; note?: string; createdBy?: string; partyId?: string | null }): { unitId: string; quantityOnHand: number } {
+  applyInventoryStockChange(this: SqliteDatabase, input: { itemId: string; quantity: number; eventType?: "RECEIVE" | "ADJUST" | "CONSUME" | "TRANSFER_IN" | "TRANSFER_OUT" | "RETURN"; unitId?: string; note?: string; createdBy?: string; partyId?: string | null; machineProgramId?: string | null }): { unitId: string; quantityOnHand: number } {
     const item = this.db.prepare("SELECT * FROM inventory_items WHERE id = ? AND status = 'ACTIVE'").get(input.itemId) as Record<string, unknown> | undefined;
     if (!item) throw new Error("Item not found");
     const balance = this.db.prepare("SELECT * FROM inventory_stock_balances WHERE item_id = ?").get(input.itemId) as { quantity_on_hand: number; unit_id: string } | undefined;
@@ -525,8 +525,10 @@ export const rawMaterialsMethods = {
     const now = new Date().toISOString();
     const eventType = input.eventType ?? "ADJUST";
 
-    this.db.prepare("INSERT INTO inventory_stock_events (id, item_id, event_type, quantity, unit_id, note, created_by, created_at, party_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
-      .run(crypto.randomUUID(), input.itemId, eventType, input.quantity, unitId, input.note ?? null, input.createdBy ?? null, now, input.partyId ?? null);
+    // machine_program_id is the Dana issue's link to the program it was fetched for (migration
+    // 065). Null for every other movement, which is most of them.
+    this.db.prepare("INSERT INTO inventory_stock_events (id, item_id, event_type, quantity, unit_id, note, created_by, created_at, party_id, machine_program_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+      .run(crypto.randomUUID(), input.itemId, eventType, input.quantity, unitId, input.note ?? null, input.createdBy ?? null, now, input.partyId ?? null, input.machineProgramId ?? null);
     const nextQuantity = (balance?.quantity_on_hand ?? 0) + input.quantity;
     this.db.prepare(`INSERT INTO inventory_stock_balances (item_id, quantity_on_hand, unit_id, updated_at) VALUES (?, ?, ?, ?)
       ON CONFLICT(item_id) DO UPDATE SET quantity_on_hand = excluded.quantity_on_hand, unit_id = excluded.unit_id, updated_at = excluded.updated_at`)

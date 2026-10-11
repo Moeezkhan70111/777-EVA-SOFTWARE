@@ -153,6 +153,7 @@ export const rawMaterialHandMoveMethods = {
         note,
         createdBy: input.actor ? String(input.actor) : undefined,
         partyId,
+        machineProgramId: input.machineProgramId ?? null,
       });
       this.db.exec("COMMIT");
       return {

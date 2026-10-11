@@ -3,7 +3,7 @@ import type { AppRoute } from "../app/routes";
 import { useDesktopApi } from "../hooks/useDesktopApi";
 import type { ProductRow, ProductGroup, MainGroup } from "../types/desktopApi";
 import { useNotifications } from "../state/NotificationsContext";
-import { computeBTypePrice } from "@erp/domain";
+import { computeBTypePrice, fromPaisa, isValidContractorRatePaisa, toPaisa } from "@erp/domain";
 import { copy } from "../config/copy";
 
 const fileToPngDataUrl = (file: File): Promise<string> =>
@@ -53,6 +53,48 @@ interface ProductFormData {
   articleSeriesId: string;
 }
 
+/**
+ * The product's STANDARD contractor rates, per DOZEN, as typed.
+ *
+ * Set here the way the sale price is, and used as the DEFAULT when a machine program prices this
+ * article (docs/28). The program then owns its own copy, so changing the standard later never
+ * rewrites a day already priced.
+ *
+ * An EMPTY box is "not set", not zero: a product nobody has priced shows as "Not priced" on a
+ * program, while a typed 0 means that job is not paid for this article.
+ */
+type ContractorRateForm = { machine: string; packing: string; printing: string };
+
+const CONTRACTOR_RATE_JOBS: ReadonlyArray<{ key: keyof ContractorRateForm; label: string }> = [
+  { key: "machine", label: copy.machineProgram.machineRate },
+  { key: "packing", label: copy.machineProgram.packingRate },
+  { key: "printing", label: copy.machineProgram.printingRate },
+];
+
+/** Paisa as stored → what the box shows. Null stays an empty box. */
+const rateBoxValue = (paisa: number | null | undefined): string =>
+  paisa == null ? "" : String(fromPaisa(paisa));
+
+/** What the save sends: rupees, or null for a box left empty. */
+const rateToSend = (typed: string): number | null => {
+  const text = typed.trim();
+  if (text === "") return null;
+  const value = Number(text);
+  return Number.isFinite(value) ? value : null;
+};
+
+/** Why the rates cannot be saved, or null. The rule itself is the domain's. */
+const contractorRateError = (rates: ContractorRateForm): string | null => {
+  for (const { key } of CONTRACTOR_RATE_JOBS) {
+    const text = rates[key].trim();
+    if (text === "") continue;
+    const value = Number(text);
+    if (!Number.isFinite(value)) return copy.machineProgram.rateNotANumber;
+    if (!isValidContractorRatePaisa(toPaisa(value))) return copy.machineProgram.rateOutOfRange;
+  }
+  return null;
+};
+
 interface ArticleSeries { id: string; name: string; }
 
 interface ProductFormPageProps {
@@ -68,6 +110,7 @@ export const ProductFormPage: React.FC<ProductFormPageProps> = ({ productId, onN
     article: "", size: "", costPrice: "", sellingPrice: "", bTypePrice: "", productCode: "",
     mainGroupId: "", productGroupId: "", articleSeriesId: "",
   });
+  const [rates, setRates] = useState<ContractorRateForm>({ machine: "", packing: "", printing: "" });
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
   const [uniqueArticles, setUniqueArticles] = useState<string[]>([]);
@@ -211,6 +254,11 @@ export const ProductFormPage: React.FC<ProductFormPageProps> = ({ productId, onN
           mainGroupId: product.mainGroupId ?? "",
           productGroupId: product.groupId ?? "",
           articleSeriesId: product.articleSeriesId ?? "",
+        });
+        setRates({
+          machine: rateBoxValue(product.machineRatePaisa),
+          packing: rateBoxValue(product.packingRatePaisa),
+          printing: rateBoxValue(product.printingRatePaisa),
         });
         const sizes = await api.listUniqueSizesByArticle(product.article);
         setUniqueSizes(sizes);
@@ -365,6 +413,8 @@ export const ProductFormPage: React.FC<ProductFormPageProps> = ({ productId, onN
     const newErrors: Record<string, string> = {};
     if (!formData.article.trim()) newErrors.article = "Product name/article is required";
     if (!formData.size.trim()) newErrors.size = "Size is required";
+    const rateError = contractorRateError(rates);
+    if (rateError) newErrors.rates = rateError;
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -377,6 +427,9 @@ export const ProductFormPage: React.FC<ProductFormPageProps> = ({ productId, onN
         size: formData.size.trim().toUpperCase(),
         costPrice: formData.costPrice ? Number(formData.costPrice) : undefined,
         sellingPrice: formData.sellingPrice ? Number(formData.sellingPrice) : undefined,
+        machineRate: rateToSend(rates.machine),
+        packingRate: rateToSend(rates.packing),
+        printingRate: rateToSend(rates.printing),
         mainGroupId: formData.mainGroupId || undefined,
         productGroupId: formData.productGroupId || undefined,
         articleSeriesId: formData.articleSeriesId || undefined,
@@ -393,7 +446,9 @@ export const ProductFormPage: React.FC<ProductFormPageProps> = ({ productId, onN
         push("success", "Product Created", formData.article);
       }
       onNavigate("product-list");
-    } catch { push("error", copy.toast.failed, "Error processing product"); }
+      // The main process says WHY it refused — a duplicate, a missing group, a locked product.
+      // Swallowing that left the operator with "Error processing product" and nothing to act on.
+    } catch (error) { push("error", copy.toast.failed, error instanceof Error ? error.message : "Error processing product"); }
     finally { setLoading(false); }
   };
 
@@ -771,6 +826,41 @@ export const ProductFormPage: React.FC<ProductFormPageProps> = ({ productId, onN
                 )}
               </div>
             )}
+          </section>
+
+          {/* ── Contractor pricing ────────────────────────────────────────────
+              What this product's work is normally paid: machine, packing and printing per
+              DOZEN. Master data, set here like the sale price, and used as the DEFAULT when a
+              machine program prices the article (docs/28). An empty box is NOT SET, not zero. */}
+          <section className="party-form-card form-section">
+            <h2>{copy.machineProgram.pricingTitle}</h2>
+            <p className="form-section-note">{copy.products.contractorPricingNote}</p>
+            <div className="pricing-fields">
+              {CONTRACTOR_RATE_JOBS.map(({ key, label }) => (
+                <div className="form-group" key={key}>
+                  <label htmlFor={`rate-${key}`}>
+                    {label}
+                    <span style={{ fontWeight: 400, color: "var(--neutral-400)", fontSize: "0.7rem", marginLeft: 6 }}>
+                      ({copy.machineProgram.perDozen})
+                    </span>
+                  </label>
+                  <input
+                    id={`rate-${key}`}
+                    type="text"
+                    inputMode="decimal"
+                    className="form-input"
+                    value={rates[key]}
+                    onChange={(event) => {
+                      const raw = event.target.value;
+                      if (raw !== "" && !/^\d*\.?\d*$/.test(raw)) return;
+                      setRates((previous) => ({ ...previous, [key]: raw }));
+                    }}
+                    placeholder="0.00"
+                  />
+                </div>
+              ))}
+            </div>
+            {errors.rates && <span className="error-message">{errors.rates}</span>}
           </section>
         </div>
 

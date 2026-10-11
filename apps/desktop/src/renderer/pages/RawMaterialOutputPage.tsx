@@ -9,7 +9,7 @@ import { openPrintDocument } from "../platform/print";
 import { escapeHtml } from "../utils/html";
 import { formatDateTime } from "../utils/dates";
 import { isCompleteQr, sanitizeScanInput } from "../utils/qr";
-import { isValidRawMaterialQrId } from "@erp/domain";
+import { isMachineProgramCodeScan, isValidRawMaterialQrId } from "@erp/domain";
 import {
   LastScanCard,
   PlusIcon,
@@ -181,9 +181,31 @@ interface RawMaterialOutputPageProps {
   onNavigate?: (route: AppRoute) => void;
   /** Set when the station is a pane of the Store Out page rather than the whole screen. */
   embedded?: boolean;
+  /**
+   * Reports this terminal's open issue session as it opens or closes, so Store Out can put a
+   * Machine Program batch on the same session — and therefore the same printed issue slip — as
+   * everything else that left the store here.
+   */
+  onSessionChange?: (sessionId: string | null) => void;
+  /**
+   * Handed a MACHINE PROGRAM code scanned into this station's box — MP-000012.
+   *
+   * This station keeps the keyboard focus whenever its session is open, so the program sheet's
+   * QR lands here however carefully the page above arms its own lookup. Rather than refusing it
+   * as "not a raw material QR", the station passes it up to whoever owns the program lookup.
+   * Only the unmistakable MP form is passed on; a bare number is a mis-scan, not a program.
+   */
+  onMachineProgramScan?: (code: string) => void;
 }
 
-export const RawMaterialOutputPage: React.FC<RawMaterialOutputPageProps> = ({ token, onBack, onNavigate, embedded = false }) => {
+export const RawMaterialOutputPage: React.FC<RawMaterialOutputPageProps> = ({
+  token,
+  onBack,
+  onNavigate,
+  embedded = false,
+  onSessionChange,
+  onMachineProgramScan,
+}) => {
   const api = useDesktopApi();
   const { push } = useNotifications();
 
@@ -231,6 +253,12 @@ export const RawMaterialOutputPage: React.FC<RawMaterialOutputPageProps> = ({ to
   useEffect(() => {
     void openSession(false);
   }, [openSession]);
+
+  // The session is a database row, not this component's state, so the page above is told
+  // which one is open rather than being handed a copy of it.
+  useEffect(() => {
+    onSessionChange?.(session?.status === "OPEN" ? session.id : null);
+  }, [onSessionChange, session]);
 
   useEffect(() => {
     if (typeof api.getScannerStatus !== "function") return;
@@ -290,10 +318,16 @@ export const RawMaterialOutputPage: React.FC<RawMaterialOutputPageProps> = ({ to
       const cleaned = sanitizeScanInput(raw);
       if (!cleaned || cleaned.length < 3) return;
       setInputVal("");
+      // A machine program sheet scanned into the station belongs to the program lookup above it,
+      // not to this station. Passed up rather than refused as "not a raw material QR".
+      if (onMachineProgramScan && isMachineProgramCodeScan(cleaned)) {
+        onMachineProgramScan(cleaned);
+        return;
+      }
       queueRef.current.push(cleaned);
       void drainQueue();
     },
-    [drainQueue]
+    [drainQueue, onMachineProgramScan]
   );
 
   const handleKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {

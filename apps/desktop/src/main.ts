@@ -12,6 +12,7 @@ import {
   type RuntimePaths,
 } from "./main/runtimePaths";
 import { reportFatalStartupError, type StartupFailure } from "./main/startupFailure";
+import { resolveDeviceIdentity } from "./main/deviceIdentity";
 import { createIpcContext, registerIpcHandlers } from "./main/ipc";
 import type { UseCases } from "./main/ipc/context";
 
@@ -75,18 +76,6 @@ if (!hasInstanceLock) {
   app.quit();
 }
 
-/** This workstation's identity, stamped on every scan event. */
-const OPERATIONAL_CONTEXT = {
-  factoryId: "factory-777",
-  factoryCode: "777",
-  factoryName: "777 Manufacturing",
-  workstationId: "ws-prod-01",
-  workstationCode: "PROD-01",
-  workstationName: "Production Line 01",
-  deviceId: "desktop-main",
-  deviceName: "Desktop Main",
-};
-
 interface DesktopServices {
   db: SqliteDatabase;
   logger: StructuredLogger;
@@ -123,22 +112,30 @@ async function initializeServices({ paths, dataMigration }: Bootstrap): Promise<
     migrationsDir: paths.migrationsDir,
   });
   const logger = new dataModule.StructuredLogger(paths.logsDir);
+
+  // Who this machine is. Decided once per installation and then stable — an existing database
+  // keeps the workstation its own history already refers to. See main/deviceIdentity.ts.
+  const identity = resolveDeviceIdentity({
+    dataRoot: paths.dataRoot,
+    findExistingWorkstation: () => db.findExistingWorkstation(),
+  });
+
   logger.log({
     module: "runtime",
     severity: dataMigration.status === "FAILED" ? "CRITICAL" : "INFO",
     operation: "data-location",
-    deviceId: OPERATIONAL_CONTEXT.deviceId,
+    deviceId: identity.deviceId,
     message: JSON.stringify({ status: dataMigration.status, dataRoot: paths.dataRoot, legacyRoot: dataMigration.legacyRoot ?? null, copied: dataMigration.copied.length }),
     errorDetails: dataMigration.error,
   });
 
-  db.ensureOperationalContext({ ...OPERATIONAL_CONTEXT, appVersion: app.getVersion() });
+  db.ensureOperationalContext({ ...identity, appVersion: app.getVersion() });
 
   const useCases = composeUseCases(db, dataModule, applicationModule);
   const scanContext = {
-    factoryId: OPERATIONAL_CONTEXT.factoryId,
-    workstationId: OPERATIONAL_CONTEXT.workstationId,
-    deviceId: OPERATIONAL_CONTEXT.deviceId,
+    factoryId: identity.factoryId,
+    workstationId: identity.workstationId,
+    deviceId: identity.deviceId,
   };
 
   registerIpcHandlers(
@@ -155,6 +152,14 @@ type ApplicationModule = typeof import("@erp/application");
 function composeUseCases(db: SqliteDatabase, dataModule: DataModule, applicationModule: ApplicationModule): UseCases {
   const eventPublisher = () => new applicationModule.InMemoryEventBus();
   const idGenerator = () => new dataModule.UuidGenerator();
+  const machineProgramStoreOutUseCases = () => {
+    const deps = { txManager: db, repo: db, eventPublisher: eventPublisher(), idGenerator: idGenerator() };
+    return {
+      open: new applicationModule.OpenMachineProgramForStoreOutUseCase(deps),
+      checkScan: new applicationModule.CheckMachineProgramScanUseCase(deps),
+      saveBatch: new applicationModule.SaveMachineProgramBatchUseCase(deps),
+    };
+  };
   const machineProgramUseCases = () => {
     const deps = { txManager: db, repo: db, eventPublisher: eventPublisher(), idGenerator: idGenerator() };
     return {
@@ -165,6 +170,7 @@ function composeUseCases(db: SqliteDatabase, dataModule: DataModule, application
       removeRun: new applicationModule.RemoveMachineProgramRunUseCase(deps),
       deleteProgram: new applicationModule.DeleteMachineProgramUseCase(deps),
       setShift: new applicationModule.SetMachineProgramShiftUseCase(deps),
+      saveArticleRates: new applicationModule.SaveMachineProgramArticleRatesUseCase(deps),
     };
   };
 
@@ -260,6 +266,10 @@ function composeUseCases(db: SqliteDatabase, dataModule: DataModule, application
     // date. Like the Gatepass above it writes only its own tables — the uppers leave the store
     // through the Raw Material Output scanner, which is where the reservation is consumed.
     machineProgram: machineProgramUseCases(),
+    // Store Out working through ONE open Machine Program. Same repository, and the packets still
+    // leave through issueRawMaterialPacket — the one function that debits raw material stock —
+    // so this adds a way of choosing which allocation is kept, never a second deduction path.
+    machineProgramStoreOut: machineProgramStoreOutUseCases(),
   };
 }
 

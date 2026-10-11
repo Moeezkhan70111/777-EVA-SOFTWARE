@@ -5,9 +5,11 @@ import {
   checkProgramQuantity,
   roundQuantity,
   sameMachineShift,
+  type ContractorRates,
   type MachineShift,
 } from "@erp/domain";
 import type {
+  MachineProgramArticle,
   MachineProgramMaterial,
   MachineProgramRecord,
   MachineProgramRunRecord,
@@ -228,3 +230,31 @@ export const shiftOf = (program: MachineProgramRecord | null | undefined, chosen
  */
 export const shiftChoices = (current: MachineShift): MachineShift[] =>
   MACHINE_SHIFTS.some((shift) => sameMachineShift(shift, current)) ? [...MACHINE_SHIFTS] : [...MACHINE_SHIFTS, current];
+
+/**
+ * The STANDARD contractor rates of an article, from the Product Master.
+ *
+ * This is what the pricing boxes open on for an article the program has not priced yet — the
+ * same relationship a sale voucher line has with a product's selling price: the master holds the
+ * standard, the document records what was actually agreed.
+ *
+ * Null when the product has no rates at all, so an unpriced product can never arrive at a
+ * program looking like free work. A product with some rates set and others not is answered with
+ * zeros for the missing ones, because the operator is about to see and confirm all three.
+ */
+export const articleDefaultRates = (
+  articles: readonly MachineProgramArticle[],
+  articleSizeId: string | null | undefined
+): ContractorRates | null => {
+  if (!articleSizeId) return null;
+  const size = articles.flatMap((entry) => entry.sizes).find((entry) => entry.articleSizeId === articleSizeId);
+  if (!size) return null;
+  const anySet = size.machineRatePaisa != null || size.packingRatePaisa != null || size.printingRatePaisa != null;
+  return anySet
+    ? {
+        machineRatePaisa: size.machineRatePaisa ?? 0,
+        packingRatePaisa: size.packingRatePaisa ?? 0,
+        printingRatePaisa: size.printingRatePaisa ?? 0,
+      }
+    : null;
+};

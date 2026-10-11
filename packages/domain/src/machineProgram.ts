@@ -27,6 +27,8 @@
 //
 // This mirrors packages/domain/src/gatepassStock.ts, which does the same job for cartons.
 
+import { dozensToCartons } from "./units.js";
+
 export const MACHINE_PROGRAM_STATUS = {
   /** Saved and holding a reservation. */
   PROGRAMMED: "PROGRAMMED",
@@ -261,3 +263,82 @@ export const formatShiftRange = (shift: MachineShift): string =>
 
 /** True when the shift finishes on the morning after the program's date. */
 export const shiftEndsNextDay = (shift: MachineShift): boolean => shift.endMinute > MINUTES_IN_DAY;
+
+// ─── Looking a program up by what was typed or scanned ───────────────────────
+// Store Out opens a program by its printed number, and the printed sheet carries a QR of its
+// own code, so "MP-000012" arrives both ways. The parsing lives here, beside the rules, because
+// both the main process (which resolves the lookup) and the screens (which have to tell a
+// program code apart from a raw material label before submitting it) need the same answer.
+
+/** A program's identity as Store Out looks it up: the number on the sheet, or its stored id. */
+export type MachineProgramLookup = { kind: "ID"; id: string } | { kind: "NUMBER"; programNumber: number };
+
+const PROGRAM_ID_PATTERN = /^[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}$/i;
+const PROGRAM_NUMBER_PATTERN = /^(?:MP[-_ ]?)?0*([0-9]{1,9})$/i;
+/** Only the MP form — a bare number could be anything, so it is never claimed from a scanner. */
+const PROGRAM_CODE_PATTERN = /^MP[-_ ]?0*[0-9]{1,9}$/i;
+
+/**
+ * What the operator typed or scanned, as something the database can be asked about.
+ *
+ * Accepts the stored id (what a notification carries), and the program number however it is
+ * written on the sheet — `MP-000012`, `MP000012`, `mp 12`, `000012`, `12` — because the number is
+ * one number whatever padding is around it. Anything else is null: the lookup never guesses at a
+ * different program than the one named.
+ */
+export const parseMachineProgramLookup = (raw: string): MachineProgramLookup | null => {
+  const text = String(raw ?? "").trim();
+  if (!text) return null;
+  if (PROGRAM_ID_PATTERN.test(text)) return { kind: "ID", id: text };
+  const match = text.match(PROGRAM_NUMBER_PATTERN);
+  if (!match) return null;
+  const programNumber = Number(match[1]);
+  return Number.isSafeInteger(programNumber) && programNumber > 0 ? { kind: "NUMBER", programNumber } : null;
+};
+
+/**
+ * True when a scanned value is unmistakably a machine program code — `MP-000012`.
+ *
+ * This is the test a scan box uses to decide that what just arrived belongs to the program
+ * lookup rather than to it. Deliberately stricter than `parseMachineProgramLookup`: a bare
+ * number typed into a scan box is a mis-scan, not a program, and must not be claimed.
+ */
+export const isMachineProgramCodeScan = (raw: string): boolean => PROGRAM_CODE_PATTERN.test(String(raw ?? "").trim());
+
+// ─── What the machine sends back: cartons ────────────────────────────────────
+
+/**
+ * How many finished-goods cartons an issued quantity of uppers will come back as.
+ *
+ * The floor's own arithmetic: uppers are programmed in DOZEN, and one dozen of slippers is
+ * packed into two cartons of six pairs each (units.ts). Two dozen of uppers going out to the
+ * machine therefore means four cartons coming back, and four carton QR labels to put on them.
+ *
+ * Null when the quantity is not counted in DOZEN, or does not come to a whole number of
+ * cartons. A carton label is a permanent identity, so a figure that had to be guessed at is
+ * refused rather than rounded.
+ */
+export const cartonsExpectedFromUppers = (quantity: number, unitCode: string | null | undefined): number | null => {
+  if (attributeKey(unitCode) !== "DOZEN") return null;
+  if (!Number.isFinite(quantity) || quantity <= 0) return null;
+  const cartons = dozensToCartons(quantity);
+  return Number.isInteger(cartons) && cartons > 0 ? cartons : null;
+};
+
+/**
+ * The finished goods one issued packet of uppers will come back as, so the store can label the
+ * cartons before they arrive.
+ *
+ * Read off the program line the packet was issued against — the run says which article and size
+ * is being moulded, and the upper itself carries the colour the carton will be sold as.
+ */
+export interface MachineProgramCartonTarget {
+  /** The product master row a carton QR batch is generated against. */
+  articleSizeId: string;
+  article: string;
+  size: string;
+  /** The sole's colour, shown for recognition. It is not what a carton QR is identified by. */
+  soleColour: string;
+  /** The upper's own colour — the colour the carton QR identity carries. "" when it has none. */
+  upperColour: string;
+}

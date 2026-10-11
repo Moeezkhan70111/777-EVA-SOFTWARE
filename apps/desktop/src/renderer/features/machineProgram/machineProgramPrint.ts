@@ -1,53 +1,73 @@
-import { MACHINE_INJECTORS, formatShiftRange } from "@erp/domain";
+import { MACHINE_INJECTORS, formatShiftRange, fromPaisa, programContractorPricing } from "@erp/domain";
 import type { MachineProgramRecord, MachineProgramRunRecord } from "../../types/desktopApi";
-import { getColorHex } from "../../components/shared/ColorSwatch";
+import { renderQrSvgMarkup } from "../../utils/qrLabels";
 import { loadLogoDataUrl, openPrintDocumentAsync } from "../../platform/print";
 import { escapeHtml } from "../../utils/html";
-import { formatDate, formatDateTime } from "../../utils/dates";
+import { formatDate } from "../../utils/dates";
+import { formatMoney } from "../../app/format";
 import { copy } from "../../config/copy";
-import { formatAmount, formatNumber, injectorRuns, injectorsInUse, statusLabel } from "./machineProgram";
+import {
+  colourRuns,
+  formatAmount,
+  formatNumber,
+  injectorRuns,
+  injectorsInUse,
+  runColours,
+  statusLabel,
+  statusTone,
+} from "./machineProgram";
 
 // The machine program as it goes to the floor: ONE A5 sheet, drawn to the owner's layout
-// (2026-10-09).
+// (2026-10-11).
 //
-//   ┌──────────────────────────────────────────────────────────────┐
-//   │  [logo]        Machine Program          Program #  MP-000008 │
-//   │           Generated on 09 Oct 2026 …    Machine    MACHINE 1 │
-//   │                                         Contractor ALAMGIR   │
-//   ├──────────────────────────────────────────────────────────────┤
-//   │ Injector 1                                                   │
-//   │  ┌ SK30  7/10 ┐ ┌ SK12  7/10 ┐ ┌ SK46  7/10 ┐                │
-//   │  │ ● BLACK·RED 10 │ …        │ │ …          │                │
-//   ├──────────────────────────────────────────────────────────────┤
-//   │  Total injectors 1          Total DOZEN 70                   │
-//   └──────────────────────────────────────────────────────────────┘
+//   ┌──────────────────────────────────────────────────────────────────────┐
+//   │                             [ 777 logo ]                             │
+//   │                          Machine Program                             │
+//   │  Program# │ Machine │ Date │ Contractor │ Packing │ Shift │ Status    │
+//   ├──────────────────────────────────────────────────────────────────────┤
+//   │ Injector 1 │ Sole Color : BLACK                                       │
+//   │  ┌ SK30 7/10 ─┐ ┌ SK12 7/10 ─┐ ┌ SK46 7/10 ─┐                        │
+//   │  │ BLACK RED 10│ │ BLACK RED 10│ │ BLACK RED 10│                      │
+//   ├──────────────────────────────────────────────────────────────────────┤
+//   │  🏭 Total Injectors 1        📦 Total Dozen 70 DOZEN                  │
+//   ├──────────────────────────────────────────────────────────────────────┤
+//   │  Prepared by …                              [QR] MP-000008            │
+//   └──────────────────────────────────────────────────────────────────────┘
 //
 // Built from the SAVED program, never from what is on screen: the sheet that goes to the
-// machine has to be the same document the store scans against.
+// machine has to be the same document the store scans against. It opens through
+// platform/print, so "PDF" is the print dialog's Save as PDF and no second print path exists.
 //
-// It is NOT the generic report table any more. A machine minder reads this standing at a
-// machine, so it is grouped the way they work — injector, then article and size, then one
-// line per colour pair — rather than as eight columns of repeated text. The sheet still opens
-// through platform/print, so "PDF" is the print dialog's Save as PDF and no second print path
-// exists (R1, R7).
+// WHERE EACH THING SITS, and why — the sheet is read in three passes:
 //
-// A line reads "BLACK · RED": the SOLE is black and the UPPER going on it is red. Two colours
-// in one row is how the floor says it, so the dot is the upper's colour and the words name
-// both — colour is never the only cue (R18).
+//   1. WHAT IS THIS?      the mark, the title, and the meta strip. Seven facts that identify
+//                         the document, laid across one line rather than stacked in a corner
+//                         box: a machine minder checks "is this my machine, my shift?" at a
+//                         glance, and a strip reads left-to-right in one sweep.
+//   2. WHAT DO I MAKE?    a band per INJECTOR + SOLE COLOUR, then a card per article + size.
+//                         The sole colour moved OUT of every line and onto the band, because
+//                         it is a property of the run, not of the upper — it was being
+//                         repeated on every row of every card. Grouping this way also makes
+//                         the sheet agree with the workspace screen, which groups by sole.
+//   3. WHAT DOES IT COME TO?  the totals, then the rates, then who prepared it.
+//
+// THE QR lives in the FOOTER, not the header. It is not a fact about the program — the number
+// beside it is already in the meta strip. It is an ACTION on the document: the storekeeper
+// scans it to open this program on Store Out. So it belongs with the document's own
+// provenance (who prepared it, when), away from the production figures a minder reads.
+//
+// A line reads "BLACK RED": the SOLE is black and the UPPER going on it is red. That is how
+// the floor says it out loud, and both colours are named in words, so nothing here depends on
+// a reader telling two printed colours apart (R18).
 
-/** One article + size on an injector, and every colour pair being made in it. */
+/** One article + size under a sole colour, and every upper being made in it. */
 interface ArticleCard {
   article: string;
   size: string;
   rows: Array<{ sole: string; upper: string; quantity: string }>;
 }
 
-/**
- * The cards of one injector: its runs grouped by article and size.
- *
- * Several sole colours can be making the same article, so the sole is named on every line
- * rather than on the card — the card is the thing being made, the line is what it is made of.
- */
+/** The cards of one sole colour: its runs grouped by article and size. */
 const articleCards = (runs: MachineProgramRunRecord[]): ArticleCard[] => {
   const byArticleSize = new Map<string, ArticleCard>();
   for (const run of runs) {
@@ -64,39 +84,78 @@ const articleCards = (runs: MachineProgramRunRecord[]): ArticleCard[] => {
   return [...byArticleSize.values()].filter((card) => card.rows.length > 0);
 };
 
-const dot = (colour: string): string =>
-  `<span class="dot" style="background:${escapeHtml(getColorHex(colour))}"></span>`;
-
 const cardHtml = (card: ArticleCard): string => `
   <section class="card">
     <header class="card-head">
       <span class="card-article">${escapeHtml(card.article)}</span>
       <span class="card-size">${escapeHtml(card.size)}</span>
     </header>
-    <div class="card-cols"><span>Sole · Upper</span><span>Qty</span></div>
-    ${card.rows
-      .map(
-        (row) => `<div class="line">
-          <span class="line-colour">${dot(row.upper)}${escapeHtml(row.sole)} · <b>${escapeHtml(row.upper)}</b></span>
-          <span class="line-qty">${escapeHtml(row.quantity)}</span>
-        </div>`
-      )
-      .join("")}
+    <div class="card-body">
+      ${card.rows
+        .map(
+          (row) => `<div class="line">
+            <span class="line-colour">${escapeHtml(row.sole)} ${escapeHtml(row.upper)}</span>
+            <span class="line-qty">${escapeHtml(row.quantity)}</span>
+          </div>`
+        )
+        .join("")}
+    </div>
   </section>`;
 
-const injectorHtml = (program: MachineProgramRecord, injectorNo: number): string => {
-  const cards = articleCards(injectorRuns(program, injectorNo));
+/**
+ * One band and its cards: an injector making one sole colour.
+ *
+ * An injector can be given more than one sole colour, so it gets a band per colour rather than
+ * one band with a colour it cannot honestly name.
+ */
+const soleBlockHtml = (injectorNo: number, colour: string, runs: MachineProgramRunRecord[]): string => {
+  const cards = articleCards(runs);
   if (cards.length === 0) return "";
   return `
     <section class="injector">
-      <h2 class="injector-name">${escapeHtml(copy.machineProgram.injector(injectorNo))}</h2>
+      <h2 class="injector-name">
+        <span class="injector-no">${escapeHtml(copy.machineProgram.injector(injectorNo))}</span>
+        <span class="injector-sole">${escapeHtml(copy.machineProgram.printSoleColour)} : <b>${escapeHtml(colour)}</b></span>
+      </h2>
       <div class="cards">${cards.map(cardHtml).join("")}</div>
     </section>`;
 };
 
-/** One row of the box at the top right. */
-const fact = (label: string, value: string, tone?: "ok"): string =>
-  `<div class="fact"><dt>${escapeHtml(label)}</dt><dd${tone ? ` class="${tone}"` : ""}>${escapeHtml(value)}</dd></div>`;
+const injectorHtml = (program: MachineProgramRecord, injectorNo: number): string => {
+  const runs = injectorRuns(program, injectorNo);
+  return runColours(runs)
+    .map((colour) => soleBlockHtml(injectorNo, colour, colourRuns(runs, colour)))
+    .join("");
+};
+
+/** One cell of the strip under the title: a quiet label with the fact under it. */
+const metaCell = (label: string, value: string, modifier?: string): string =>
+  `<div class="meta-cell${modifier ? ` meta-cell--${modifier}` : ""}">
+     <dt>${escapeHtml(label)}</dt>
+     <dd>${escapeHtml(value)}</dd>
+   </div>`;
+
+/** The status cell: a dot AND the word, so the state never depends on the colour alone (R18). */
+const statusCell = (program: MachineProgramRecord): string =>
+  `<div class="meta-cell meta-cell--status">
+     <dt>${escapeHtml(copy.columns.status)}</dt>
+     <dd class="tone-${statusTone(program.displayStatus)}"><span class="status-dot" aria-hidden="true"></span>${escapeHtml(
+       statusLabel(program.displayStatus)
+     )}</dd>
+   </div>`;
+
+/** Decorative marks beside the two totals. The label beside each one is what is read (R18). */
+const FACTORY_ICON = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3h4v6.2l5-2.8v2.8l5-2.8v2.8l5-2.8V21H3V3zm3 12v3h3v-3H6zm5 0v3h3v-3h-3z"/></svg>`;
+const BOX_ICON = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2 3 7v10l9 5 9-5V7l-9-5zm0 2.3 6.4 3.6L12 11.5 5.6 7.9 12 4.3zM5 9.6l6 3.4v6.7l-6-3.3V9.6zm8 10.1V13l6-3.4v6.8l-6 3.3z"/></svg>`;
+
+const totalCell = (icon: string, label: string, value: string): string =>
+  `<div class="total">
+     <span class="total-icon">${icon}</span>
+     <div class="total-words">
+       <dt>${escapeHtml(label)}</dt>
+       <dd>${escapeHtml(value)}</dd>
+     </div>
+   </div>`;
 
 const STYLES = `
   * { box-sizing: border-box; }
@@ -115,75 +174,169 @@ const STYLES = `
 
   .sheet { max-width: 196mm; margin: 0 auto; }
 
-  /* ── Head: the mark, the title, and what this program IS ──
-     The left column is kept the same width as the box on the right so the title sits on the
-     centre line of the paper, not pushed off it by a wide box. */
-  .head { display: flex; align-items: flex-start; gap: 8px; }
-  .head-logo { flex: 0 0 60mm; padding-top: 2px; }
-  .head-logo img { width: 46px; height: auto; }
-  .head-title { flex: 1; text-align: center; padding-top: 2px; }
-  .head-title h1 { margin: 0; font-size: 19pt; font-weight: 800; letter-spacing: -.01em; color: #17365d; }
-  .head-title p { margin: 2px 0 0; font-size: 8pt; color: #475569; }
-  .head-title p b { color: #0f172a; }
-  .facts {
-    flex: 0 0 60mm; margin: 0; padding: 6px 9px;
-    background: #eff4fb; border: 1px solid #c7d7ee; border-radius: 4px;
-  }
-  .fact { display: flex; gap: 6px; align-items: baseline; }
-  .fact + .fact { margin-top: 1.5px; }
-  .fact dt { flex: 0 0 16mm; margin: 0; font-size: 7pt; color: #475569; }
-  .fact dd { margin: 0; font-size: 8pt; font-weight: 700; color: #0f172a; }
-  .fact dd.ok { color: #15803d; }
+  /* ── 1. What is this? ──────────────────────────────────────────────────
+     The mark is centred on the paper, the title under it, and the seven facts
+     that identify the program across one strip. */
+  .mark { text-align: center; padding-bottom: 4px; border-bottom: 1px solid #c7d7ee; }
+  .mark img { height: 13mm; width: auto; }
+  .title { margin: 6px 0 7px; text-align: center; font-size: 22pt; font-weight: 800; letter-spacing: -.015em; color: #17365d; }
 
-  /* ── One injector, and the articles running in it ── */
+  .meta {
+    display: flex; margin: 0; border: 1px solid #c7d7ee; border-radius: 5px; background: #f6f9fd; overflow: hidden;
+  }
+  .meta-cell { flex: 1 1 0; min-width: 0; padding: 5px 9px; }
+  .meta-cell + .meta-cell { border-left: 1px solid #c7d7ee; }
+  /* The shift is the longest fact on the strip and must never wrap onto a second line. */
+  .meta-cell--shift { flex: 1.65 1 0; }
+  .meta-cell--status { flex: 1.3 1 0; }
+  .meta-cell dt { margin: 0; font-size: 7pt; font-weight: 500; color: #64748b; }
+  .meta-cell dd {
+    margin: 1px 0 0; font-size: 9.5pt; font-weight: 700; color: #0f172a;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .meta-cell dd.tone-ok { color: #15803d; }
+  .meta-cell dd.tone-warn { color: #b45309; }
+  .meta-cell dd.tone-muted { color: #64748b; }
+  .status-dot {
+    display: inline-block; width: 6px; height: 6px; margin-right: 5px; border-radius: 50%;
+    background: currentColor; vertical-align: middle;
+  }
+
+  /* ── 2. What do I make? ────────────────────────────────────────────────
+     One band per injector + sole colour, then a card per article and size. */
   .injector { margin-top: 8px; border: 1px solid #c7d7ee; border-radius: 5px; overflow: hidden; }
   /* A band never sits alone at the foot of a page; a card is never split down the middle. */
   .injector-name {
-    margin: 0; padding: 5px 10px; background: #17365d; color: #fff;
-    font-size: 11.5pt; font-weight: 700; letter-spacing: .01em;
+    display: flex; align-items: baseline; gap: 11px;
+    margin: 0; padding: 6px 11px; background: #17365d; color: #fff;
     break-after: avoid; page-break-after: avoid;
   }
-  .cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; padding: 5px; }
+  .injector-no { font-size: 12.5pt; font-weight: 800; }
+  .injector-sole {
+    padding-left: 11px; border-left: 1px solid rgba(255,255,255,.35);
+    font-size: 10pt; font-weight: 500; color: #dbe7f7;
+  }
+  .injector-sole b { font-weight: 800; color: #fff; letter-spacing: .02em; }
+
+  .cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; padding: 6px; }
   .card { border: 1px solid #d7e2f2; border-radius: 4px; overflow: hidden; break-inside: avoid; page-break-inside: avoid; }
-  .card-head { display: flex; align-items: baseline; gap: 6px; padding: 3px 7px; background: #eff4fb; }
-  .card-article { font-size: 13pt; font-weight: 800; color: #0f172a; }
-  .card-size { font-size: 9.5pt; font-weight: 600; color: #334155; }
-  .card-cols {
-    display: flex; justify-content: space-between; padding: 2px 7px;
-    font-size: 6pt; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; color: #94a3b8;
-    border-bottom: 1px solid #e6edf7;
-  }
-  .line { display: flex; justify-content: space-between; align-items: center; gap: 6px; padding: 4px 7px; }
+  .card-head { display: flex; align-items: baseline; gap: 7px; padding: 4px 9px; background: #eff4fb; border-bottom: 1px solid #d7e2f2; }
+  .card-article { font-size: 14pt; font-weight: 800; color: #0f172a; letter-spacing: -.01em; }
+  .card-size { font-size: 10.5pt; font-weight: 600; color: #475569; }
+  .card-body { padding: 0 9px; }
+  .line { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 5px 0; }
   .line + .line { border-top: 1px solid #eef3fa; }
-  .line-colour { display: flex; align-items: center; gap: 5px; font-size: 9pt; color: #334155; }
-  .line-colour b { color: #0f172a; }
-  .dot { width: 9px; height: 9px; border-radius: 50%; border: 1px solid rgba(15,23,42,.18); flex: 0 0 9px; }
-  .line-qty { font-size: 11pt; font-weight: 800; font-variant-numeric: tabular-nums; }
+  .line-colour { font-size: 9.5pt; font-weight: 700; color: #1e293b; letter-spacing: .01em; }
+  .line-qty { font-size: 12pt; font-weight: 800; font-variant-numeric: tabular-nums; color: #0f172a; }
 
-  /* ── What the machine comes to ── */
-  .totals {
-    display: flex; margin-top: 8px; border: 1px solid #c7d7ee; border-radius: 5px; background: #f8fafc;
-  }
-  .total { flex: 1; padding: 6px 12px; text-align: center; }
+  /* ── 3. What does it come to? ──────────────────────────────────────── */
+  .totals { display: flex; margin: 8px 0 0; border: 1px solid #c7d7ee; border-radius: 5px; background: #f6f9fd; }
+  .total { flex: 1; display: flex; align-items: center; justify-content: center; gap: 11px; padding: 7px 12px; }
   .total + .total { border-left: 1px solid #c7d7ee; }
-  .total dt { margin: 0; font-size: 8pt; color: #475569; }
-  .total dd { margin: 1px 0 0; font-size: 15pt; font-weight: 800; color: #17365d; font-variant-numeric: tabular-nums; }
+  .total-icon svg { width: 10mm; height: 10mm; fill: #17365d; display: block; }
+  .total-words dt { margin: 0; font-size: 9pt; color: #475569; }
+  .total-words dd { margin: 0; font-size: 16pt; font-weight: 800; color: #17365d; font-variant-numeric: tabular-nums; line-height: 1.15; }
 
-  .foot {
-    display: flex; justify-content: space-between; align-items: baseline; gap: 12px;
-    margin-top: 7px; padding-top: 5px; border-top: 1px solid #c7d7ee; font-size: 7.5pt; color: #64748b;
+  /* ── What the work is paid at ── */
+  .pricing { margin-top: 8px; border: 1px solid #c7d7ee; border-radius: 5px; overflow: hidden; break-inside: avoid; page-break-inside: avoid; }
+  .pricing-name {
+    margin: 0; padding: 6px 11px; background: #17365d; color: #fff;
+    font-size: 11pt; font-weight: 800; break-after: avoid; page-break-after: avoid;
   }
-  .foot .tagline { font-style: italic; }
-  .note { margin: 4px 0 0; font-size: 6.5pt; color: #94a3b8; }
+  .pricing table { width: 100%; border-collapse: collapse; font-size: 9pt; }
+  .pricing th, .pricing td { padding: 3px 9px; border-top: 1px solid #e6edf7; }
+  .pricing thead th {
+    border-top: none; background: #eff4fb; text-align: right;
+    font-size: 6.5pt; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: #475569;
+  }
+  .pricing thead th:first-child, .pricing tbody th, .pricing tfoot th { text-align: left; }
+  .pricing td { text-align: right; font-variant-numeric: tabular-nums; }
+  .pricing tbody th { font-weight: 700; color: #0f172a; }
+  .pricing .qty { padding-left: 6px; font-size: 7.5pt; font-weight: 500; color: #64748b; }
+  .pricing tfoot th, .pricing tfoot td { background: #f6f9fd; font-weight: 800; color: #17365d; }
+  .pricing .unpriced { text-align: left; font-size: 8pt; font-style: italic; color: #64748b; }
+
+  /* ── Who prepared it, and how to act on it ──────────────────────────────
+     The QR sits here rather than in the head: it is what the STORE does with the
+     sheet, not one of the facts the floor reads off it. */
+  .foot {
+    display: flex; align-items: center; justify-content: space-between; gap: 14px;
+    margin-top: 8px; padding-top: 6px; border-top: 1px solid #c7d7ee;
+  }
+  .foot-by { font-size: 8pt; color: #475569; }
+  .foot-by b { color: #0f172a; }
+  .foot-note { margin: 2px 0 0; font-size: 6.5pt; color: #94a3b8; max-width: 120mm; }
+  .foot-scan { display: flex; align-items: center; gap: 8px; flex: 0 0 auto; }
+  .foot-scan svg { width: 16mm; height: 16mm; shape-rendering: crispEdges; display: block; }
+  .foot-scan-words { text-align: right; font-size: 7pt; color: #64748b; line-height: 1.35; }
+  .foot-scan-words b { display: block; font-size: 9.5pt; color: #0f172a; letter-spacing: .04em; }
+
   .empty { margin: 16px 0; text-align: center; font-size: 10pt; color: #64748b; }
 `;
 
+/**
+ * CONTRACTOR PRICING on the sheet: what each article's work is paid at, and what the day comes
+ * to at those rates.
+ *
+ * The same `programContractorPricing` the screen uses, so the sheet in the contractor's hand and
+ * the screen the munshi is looking at can never show two different figures. Left off entirely
+ * when nothing on the program is priced — a table of blanks is worse than no table, and that is
+ * what makes an unpriced program print exactly as the owner's layout draws it.
+ */
+const pricingHtml = (program: MachineProgramRecord): string => {
+  const pricing = programContractorPricing({ runs: program.runs, rates: program.articleRates });
+  if (pricing.articles.length === 0 || pricing.articles.every((article) => !article.rates)) return "";
+  const money = (paisa: number) => escapeHtml(formatMoney(fromPaisa(paisa)));
+
+  const rows = pricing.articles
+    .map((article) => {
+      const name = `<th scope="row">${escapeHtml(article.article)} ${escapeHtml(article.size)}<span class="qty">${escapeHtml(
+        formatAmount(article.quantity, article.unitCode)
+      )}</span></th>`;
+      if (!article.rates) {
+        return `<tr>${name}<td class="unpriced" colspan="4">${escapeHtml(copy.machineProgram.pricingUnpricedRow)}</td></tr>`;
+      }
+      return `<tr>${name}<td>${money(article.rates.machineRatePaisa)}</td><td>${money(
+        article.rates.packingRatePaisa
+      )}</td><td>${money(article.rates.printingRatePaisa)}</td><td><b>${money(
+        article.committed?.totalPaisa ?? 0
+      )}</b></td></tr>`;
+    })
+    .join("");
+
+  return `<section class="pricing">
+      <h2 class="pricing-name">${escapeHtml(copy.machineProgram.pricingTitle)}</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>${escapeHtml(copy.machineProgram.colArticleSize)}</th>
+            <th>${escapeHtml(copy.machineProgram.colMachine)}</th>
+            <th>${escapeHtml(copy.machineProgram.colPacking)}</th>
+            <th>${escapeHtml(copy.machineProgram.colPrinting)}</th>
+            <th>${escapeHtml(copy.machineProgram.colCommitted)}</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+        <tfoot>
+          <tr>
+            <th>${escapeHtml(copy.machineProgram.pricingTotal)}</th>
+            <td>${money(pricing.committed.machinePaisa)}</td>
+            <td>${money(pricing.committed.packingPaisa)}</td>
+            <td>${money(pricing.committed.printingPaisa)}</td>
+            <td><b>${money(pricing.committed.totalPaisa)}</b></td>
+          </tr>
+        </tfoot>
+      </table>
+    </section>`;
+};
+
 const buildSheetHtml = (program: MachineProgramRecord, preparedBy: string | null | undefined, logo: string): string => {
   const injectors = MACHINE_INJECTORS.map((injectorNo) => injectorHtml(program, injectorNo)).join("");
-  const total = formatAmount(program.totalQuantity, program.unitCode);
   // "Total DOZEN · 70" when every line shares a unit, and a plain total when they differ.
-  const totalLabel = program.unitCode ? `Total ${program.unitCode}` : copy.machineProgram.totalProduction;
-  const totalValue = program.unitCode ? formatNumber(program.totalQuantity) : total;
+  const totalLabel = program.unitCode ? copy.machineProgram.printTotalIn(program.unitCode) : copy.machineProgram.totalProduction;
+  const totalValue = program.unitCode
+    ? `${formatNumber(program.totalQuantity)} ${program.unitCode}`
+    : formatAmount(program.totalQuantity, program.unitCode);
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -195,41 +348,44 @@ const buildSheetHtml = (program: MachineProgramRecord, preparedBy: string | null
 <body>
   <div class="print-actions"><button onclick="window.print()">${escapeHtml(copy.reports.printOrSave)}</button></div>
   <div class="sheet">
-    <div class="head">
-      <div class="head-logo">${logo ? `<img src="${logo}" alt="" />` : ""}</div>
-      <div class="head-title">
-        <h1>${escapeHtml(copy.machineProgram.title)}</h1>
-        <p>Generated on <b>${escapeHtml(formatDateTime(new Date()))}</b></p>
-      </div>
-      <dl class="facts">
-        ${fact(copy.machineProgram.printProgramNo, program.code)}
-        ${fact(copy.machineProgram.machineLabel, program.machineName)}
-        ${fact(copy.columns.date, formatDate(program.programDate))}
-        ${fact(copy.machineProgram.contractor, program.contractorName)}
-        ${fact(copy.machineProgram.printPacking, program.packingContractorName ?? copy.machineProgram.noPackingContractorYet)}
-        ${fact(copy.machineProgram.shiftTime, formatShiftRange({ startMinute: program.shiftStartMinute, endMinute: program.shiftEndMinute }))}
-        ${fact(copy.columns.status, statusLabel(program.displayStatus), "ok")}
-      </dl>
-    </div>
+    <div class="mark">${logo ? `<img src="${logo}" alt="777" />` : ""}</div>
+    <h1 class="title">${escapeHtml(copy.machineProgram.title)}</h1>
+
+    <dl class="meta">
+      ${metaCell(copy.machineProgram.printProgramNo, program.code)}
+      ${metaCell(copy.machineProgram.machineLabel, program.machineName)}
+      ${metaCell(copy.columns.date, formatDate(program.programDate))}
+      ${metaCell(copy.machineProgram.contractor, program.contractorName)}
+      ${metaCell(copy.machineProgram.printPacking, program.packingContractorName ?? copy.machineProgram.noPackingContractorYet)}
+      ${metaCell(
+        copy.machineProgram.shiftTime,
+        formatShiftRange({ startMinute: program.shiftStartMinute, endMinute: program.shiftEndMinute }),
+        "shift"
+      )}
+      ${statusCell(program)}
+    </dl>
 
     ${injectors || `<p class="empty">${escapeHtml(copy.machineProgram.noProgramYet)}</p>`}
 
     <dl class="totals">
-      <div class="total">
-        <dt>Total injectors</dt>
-        <dd>${escapeHtml(String(injectorsInUse(program)))}</dd>
-      </div>
-      <div class="total">
-        <dt>${escapeHtml(totalLabel)}</dt>
-        <dd>${escapeHtml(totalValue)}</dd>
-      </div>
+      ${totalCell(FACTORY_ICON, copy.machineProgram.printTotalInjectors, String(injectorsInUse(program)))}
+      ${totalCell(BOX_ICON, totalLabel, totalValue)}
     </dl>
 
+    ${pricingHtml(program)}
+
     <div class="foot">
-      <span>Prepared by <b>${escapeHtml(preparedBy?.trim() || program.createdBy || "—")}</b> · ${escapeHtml(formatDate(program.createdAt))}</span>
-      <span class="tagline">Quality Today. Better Tomorrow.</span>
+      <div>
+        <div class="foot-by">${escapeHtml(copy.machineProgram.printPreparedBy)} <b>${escapeHtml(
+          preparedBy?.trim() || program.createdBy || "—"
+        )}</b> · ${escapeHtml(formatDate(program.createdAt))}</div>
+        <p class="foot-note">${escapeHtml(copy.machineProgram.reservationNote)}</p>
+      </div>
+      <div class="foot-scan">
+        ${renderQrSvgMarkup(program.code)}
+        <span class="foot-scan-words"><b>${escapeHtml(program.code)}</b>${escapeHtml(copy.machineProgram.printScanHint)}</span>
+      </div>
     </div>
-    <p class="note">${escapeHtml(copy.machineProgram.reservationNote)}</p>
   </div>
 </body>
 </html>`;

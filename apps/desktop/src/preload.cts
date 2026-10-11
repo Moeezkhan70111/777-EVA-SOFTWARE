@@ -107,10 +107,26 @@ contextBridge.exposeInMainWorld("desktop", {
       ipcRenderer.invoke(IPC.listMachineProgramUppers, machineId, articleSizeId),
     saveMachineProgramLine: (input: Record<string, unknown>) => ipcRenderer.invoke(IPC.saveMachineProgramLine, input),
     saveMachineProgramRun: (input: Record<string, unknown>) => ipcRenderer.invoke(IPC.saveMachineProgramRun, input),
+    saveMachineProgramArticleRates: (input: Record<string, unknown>) =>
+      ipcRenderer.invoke(IPC.saveMachineProgramArticleRates, input),
     removeMachineProgramLine: (input: Record<string, unknown>) => ipcRenderer.invoke(IPC.removeMachineProgramLine, input),
     removeMachineProgramRun: (input: Record<string, unknown>) => ipcRenderer.invoke(IPC.removeMachineProgramRun, input),
     deleteMachineProgram: (input: Record<string, unknown>) => ipcRenderer.invoke(IPC.deleteMachineProgram, input),
     setMachineProgramShift: (input: Record<string, unknown>) => ipcRenderer.invoke(IPC.setMachineProgramShift, input),
+    openMachineProgramStoreOut: (lookup: string, opts?: Record<string, unknown>) =>
+      ipcRenderer.invoke(IPC.openMachineProgramStoreOut, lookup, opts),
+    machineProgramStoreOutCheckScan: (input: Record<string, unknown>, opts?: Record<string, unknown>) =>
+      ipcRenderer.invoke(IPC.machineProgramStoreOutCheckScan, input, opts),
+    machineProgramStoreOutSaveBatch: (input: Record<string, unknown>, opts?: Record<string, unknown>) =>
+      ipcRenderer.invoke(IPC.machineProgramStoreOutSaveBatch, input, opts),
+    listMachineProgramIssueBatches: (programId: string, opts?: Record<string, unknown>) =>
+      ipcRenderer.invoke(IPC.listMachineProgramIssueBatches, programId, opts),
+    listMachineProgramDanaOptions: (programId: string, opts?: Record<string, unknown>) =>
+      ipcRenderer.invoke(IPC.listMachineProgramDanaOptions, programId, opts),
+    issueMachineProgramDana: (input: Record<string, unknown>, opts?: Record<string, unknown>) =>
+      ipcRenderer.invoke(IPC.issueMachineProgramDana, input, opts),
+    listMachineProgramDanaIssues: (programId: string, opts?: Record<string, unknown>) =>
+      ipcRenderer.invoke(IPC.listMachineProgramDanaIssues, programId, opts),
     getRawMaterialHandMoveOptions: (itemId: string, direction: string, opts?: { token?: string }) =>
       ipcRenderer.invoke(IPC.getRawMaterialHandMoveOptions, itemId, direction, opts),
     moveRawMaterialByHand: (input: Record<string, unknown>, opts?: { token?: string }) =>

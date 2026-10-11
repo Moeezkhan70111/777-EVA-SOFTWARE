@@ -3,6 +3,7 @@ import { copy } from "../../config/copy";
 import { escapeHtml } from "../../utils/html";
 import { formatClockTime, formatDashedDate } from "../../utils/dates";
 import { loadLogoDataUrl, openPrintDocumentAsync } from "../../platform/print";
+import { startTransition } from "react";
 
 // The printed voucher for one supplier's delivery: the company letterhead, the session it was
 // received under, and what it totalled by material — the physical slip that goes with the
@@ -100,7 +101,7 @@ export const renderReceivingReceiptHtml = (summary: RawMaterialReceivingSessionS
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>${e(session.code)} — ${e(session.partyName)}</title>
+  <title>${e(session.code)} — ${e(session.partyName)}</tit le>
   <style>${PRINT_STYLES}</style>
 </head>
 <body>

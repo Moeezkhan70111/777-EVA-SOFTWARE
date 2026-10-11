@@ -1,6 +1,6 @@
 import React from "react";
 import type { MachineShift } from "@erp/domain";
-import type { MachineProgramRunRecord, MachineProgramUpperLineRecord } from "../../types/desktopApi";
+import type { MachineProgramArticleRate, MachineProgramRunRecord, MachineProgramUpperLineRecord } from "../../types/desktopApi";
 import { ConfirmDialog } from "../../components/shared/ConfirmDialog";
 import { copy } from "../../config/copy";
 import { AddArticleDialog as AddArticlePanels } from "./AddArticleDialog";
@@ -23,6 +23,8 @@ interface AddProps {
   injectorNo: number;
   /** The runs already in scope — a repeated article + size joins its run, never rivals it. */
   runs: MachineProgramRunRecord[];
+  /** What the program already pays per article, so the pricing boxes open on what is agreed. */
+  articleRates: MachineProgramArticleRate[];
   writes: ProgramWrites;
   onClose: () => void;
 }

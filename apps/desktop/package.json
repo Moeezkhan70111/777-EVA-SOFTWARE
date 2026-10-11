@@ -12,7 +12,8 @@
     "test": "vitest run",
     "lint": "echo 'no lint configured yet'",
     "package": "electron-builder --win --config electron-builder.yml",
-    "package:dir": "electron-builder --dir --config electron-builder.yml"
+    "package:dir": "electron-builder --dir --config electron-builder.yml",
+    "verify:signatures": "node ./scripts/verify-signatures.mjs"
   },
   "dependencies": {
     "@erp/application": "0.1.0",

@@ -29,7 +29,10 @@ export const purchasesMethods = {
   }): { id: string; voucherNumber: string } {
     const id = crypto.randomUUID();
     const now = new Date().toISOString();
-    const voucherNumber = input.voucherNumber && input.voucherNumber.trim() ? input.voucherNumber.trim() : this.getNextPurchaseVoucherNumber();
+    // A supplied number (typed from the paper book) always wins. When one is not supplied the
+    // allocation happens inside the transaction below, so the number that is read is the
+    // number that is inserted. Declared here because the return value is outside the try.
+    let voucherNumber = input.voucherNumber?.trim() ?? "";
     const lines = input.lines ?? [];
     let totalQuantity = 0;
     let totalAmount = 0;
@@ -42,6 +45,8 @@ export const purchasesMethods = {
 
     this.db.exec("BEGIN IMMEDIATE TRANSACTION");
     try {
+      if (!voucherNumber) voucherNumber = this.getNextPurchaseVoucherNumber();
+
       this.db
         .prepare(
           `INSERT INTO purchase_vouchers (

@@ -108,3 +108,125 @@ describe("ProductFormPage uppercase inputs", () => {
     expect(newMainGroup).toHaveValue("LADIES");
   });
 });
+
+// CONTRACTOR PRICING on a product — the standard rate its work is paid at, set here beside the
+// sale price. An empty box is NOT SET, never 0: an unpriced product must not reach a machine
+// program looking like free work.
+describe("ProductFormPage contractor pricing", () => {
+  const lookups = {
+    listUniqueArticles: vi.fn().mockResolvedValue(["SK6"]),
+    listUniqueSizesByArticle: vi.fn().mockResolvedValue(["7/10"]),
+    listMainGroups: vi.fn().mockResolvedValue([]),
+    listProductGroups: vi.fn().mockResolvedValue([]),
+    listArticleSeries: vi.fn().mockResolvedValue([]),
+    getNextProductCode: vi.fn().mockResolvedValue("P-0001"),
+    getProductImage: vi.fn().mockResolvedValue(null),
+  };
+
+  const renderForm = (api: Record<string, unknown>, productId?: string) => {
+    setupDesktop({ ...lookups, ...api });
+    render(
+      <NotificationsProvider>
+        <ProductFormPage productId={productId} onNavigate={() => undefined} />
+      </NotificationsProvider>
+    );
+  };
+
+  const typeIn = async (label: RegExp, value: string) => {
+    const box = screen.getByLabelText(label);
+    await userEvent.clear(box);
+    await userEvent.type(box, value);
+  };
+
+  /**
+   * The article and size, the way the form takes them: both are select-only comboboxes, so each
+   * is opened and PICKED from. Choosing the article is also what loads the sizes it is made in,
+   * and the size box stays disabled until there is an article.
+   */
+  const describeProduct = async () => {
+    await userEvent.click(screen.getByLabelText(/product name \/ article/i));
+    await userEvent.click(await screen.findByRole("option", { name: "SK6" }));
+    await userEvent.click(screen.getByLabelText(/^size/i));
+    await userEvent.click(await screen.findByRole("option", { name: "7/10" }));
+  };
+
+  it("saves the three rates with the product, beside its prices", async () => {
+    const createProduct = vi.fn().mockResolvedValue("new-product");
+    renderForm({ createProduct, updateProduct: vi.fn() });
+
+    await describeProduct();
+    await typeIn(/sale price/i, "650");
+    await typeIn(/machine rate/i, "45");
+    await typeIn(/packing rate/i, "18");
+    await typeIn(/printing rate/i, "12.5");
+
+    await userEvent.click(screen.getByRole("button", { name: "Create Product" }));
+
+    await waitFor(() =>
+      expect(createProduct).toHaveBeenCalledWith(
+        expect.objectContaining({ article: "SK6", machineRate: 45, packingRate: 18, printingRate: 12.5 })
+      )
+    );
+  });
+
+  it("sends an untouched rate as nothing, not as zero", async () => {
+    const createProduct = vi.fn().mockResolvedValue("new-product");
+    renderForm({ createProduct, updateProduct: vi.fn() });
+
+    await describeProduct();
+    await typeIn(/machine rate/i, "45");
+
+    await userEvent.click(screen.getByRole("button", { name: "Create Product" }));
+
+    await waitFor(() =>
+      expect(createProduct).toHaveBeenCalledWith(
+        expect.objectContaining({ machineRate: 45, packingRate: null, printingRate: null })
+      )
+    );
+  });
+
+  it("opens an existing product on the rates it is already priced at", async () => {
+    renderForm(
+      {
+        getProduct: vi.fn().mockResolvedValue({
+          id: "as-1",
+          articleSizeId: "as-1",
+          article: "SK6",
+          color: "",
+          size: "7/10",
+          description: null,
+          costPrice: 600,
+          sellingPrice: 650,
+          machineRatePaisa: 4500,
+          packingRatePaisa: 1800,
+          printingRatePaisa: 0,
+          mainGroupId: null,
+          groupId: null,
+          status: "ACTIVE",
+          createdAt: "",
+          updatedAt: "",
+        }),
+        updateProduct: vi.fn(),
+      },
+      "as-1"
+    );
+
+    await waitFor(() => expect(screen.getByLabelText(/machine rate/i)).toHaveValue("45"));
+    expect(screen.getByLabelText(/packing rate/i)).toHaveValue("18");
+    // A stored zero is a real rate — "printing is not paid for this article" — and shows as 0.
+    expect(screen.getByLabelText(/printing rate/i)).toHaveValue("0");
+  });
+
+  it("refuses a rate above what the books take, and does not save", async () => {
+    const createProduct = vi.fn().mockResolvedValue("new-product");
+    renderForm({ createProduct, updateProduct: vi.fn() });
+
+    await describeProduct();
+    await typeIn(/machine rate/i, "100001");
+
+    await userEvent.click(screen.getByRole("button", { name: "Create Product" }));
+
+    expect(await screen.findByText(/no more than Rs 100,000 per dozen/)).toBeInTheDocument();
+    expect(createProduct).not.toHaveBeenCalled();
+  });
+});

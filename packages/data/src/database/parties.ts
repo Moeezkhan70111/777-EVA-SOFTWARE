@@ -70,6 +70,18 @@ export const partiesMethods = {
   }): string {
     const id = crypto.randomUUID();
     const now = new Date().toISOString();
+
+    // Allocating the party code and inserting the row are one transaction, so the code that is
+    // read is the code that is written. party_code is UNIQUE, so without the write lock two
+    // writers could read the same MAX and the second insert would fail.
+    //
+    // getNextPartyCode stays public and unchanged: the Party form calls it over IPC purely to
+    // preview the code in a read-only field, and does not send that value back on save.
+    //
+    // Sole caller is apps/desktop/src/main/ipc/parties.ts, which opens no transaction, so this
+    // cannot nest.
+    this.db.exec("BEGIN IMMEDIATE TRANSACTION");
+    try {
     const nextCode = this.getNextPartyCode();
 
     this.db
@@ -101,7 +113,12 @@ export const partiesMethods = {
         now
       );
 
-    return id;
+      this.db.exec("COMMIT");
+      return id;
+    } catch (error) {
+      try { this.db.exec("ROLLBACK"); } catch { /* ignore missing transaction state */ }
+      throw error;
+    }
   },
 
   getNextPartyCode(this: SqliteDatabase): string {

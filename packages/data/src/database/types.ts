@@ -202,6 +202,17 @@ export interface ProductVariantRecord {
   description: string | null;
   costPrice: number | null;
   sellingPrice: number | null;
+  /**
+   * The product's STANDARD contractor rates, per DOZEN, in integer paisa (migration 064) — what
+   * machine, packing and printing work on it is normally paid. A machine program defaults from
+   * these and then owns its own copy, the way a sale voucher owns the rate it was billed at.
+   *
+   * Null is NOT SET and is never read as 0: an unpriced product is reported as unpriced, while a
+   * stored 0 means that job is not paid for this article.
+   */
+  machineRatePaisa?: number | null;
+  packingRatePaisa?: number | null;
+  printingRatePaisa?: number | null;
   mainGroupId: string | null;
   groupId: string | null;
   articleSeriesId: string | null;
@@ -1416,6 +1427,32 @@ export interface RawMaterialHandMoveOptions {
   blockedReason: string | null;
 }
 
+/**
+ * One Dana the store holds in a sole colour a machine program runs.
+ *
+ * A row per MATERIAL, not per colour: EVA BLACK and PVC BLACK are both BLACK, and "3 bags of
+ * BLACK" would not say which left the store.
+ */
+export interface MachineProgramDanaOption {
+  itemId: string;
+  displayName: string;
+  /** The COLOR attribute, trimmed and upper-cased. */
+  colour: string;
+  /** EVA, PVC — what kind of Dana this is, which is what tells two of one colour apart. */
+  subCategoryName: string;
+  /** The store own word for the container: BAG. */
+  packName: string;
+  /** One bag in the unit stock is counted in, or null when the material has no packing set. */
+  packSize: number | null;
+  packingUnitCode: string | null;
+  stockUnitCode: string | null;
+  quantityOnHand: number;
+  /** Whole bags on the shelf — a part bag is not a bag anybody can carry. */
+  bagsOnHand: number;
+  /** Why this Dana cannot be issued by typing a count, or null when it can. */
+  blockedReason: string | null;
+}
+
 export interface RawMaterialHandMoveInput {
   itemId: string;
   direction: HandMoveDirection;
@@ -1427,6 +1464,11 @@ export interface RawMaterialHandMoveInput {
   /** Why it moved, kept on the stock event beside what was typed. */
   note?: string | null;
   actor?: string | null;
+  /**
+   * The machine program this move was made FOR, stamped on the stock event (migration 065).
+   * Set by Dana Issue on the Machine Program Issue screen, null for an ordinary hand move.
+   */
+  machineProgramId?: string | null;
 }
 
 export interface RawMaterialHandMoveResult {
@@ -1590,7 +1632,17 @@ export interface SoleColourOption {
 /** An article from the Product Master with the sizes it is made in. */
 export interface MachineProgramArticle {
   article: string;
-  sizes: Array<{ articleSizeId: string; size: string }>;
+  sizes: Array<{
+    articleSizeId: string;
+    size: string;
+    /**
+     * The products STANDARD contractor rates, per DOZEN, in integer paisa (migration 064), so a
+     * program can open its pricing boxes on them. Null is NOT SET and is never read as 0.
+     */
+    machineRatePaisa: number | null;
+    packingRatePaisa: number | null;
+    printingRatePaisa: number | null;
+  }>;
 }
 
 /**
@@ -1677,6 +1729,21 @@ export interface MachineProgramRunRecord {
   lines: MachineProgramUpperLineRecord[];
 }
 
+/**
+ * What one article's work is paid at on one program, per DOZEN, in integer paisa.
+ *
+ * One row per article, however many runs it is spread across (migration 063). An article with
+ * NO row is unpriced — which is not the same as an article priced at zero, and no reader may
+ * treat it as such.
+ */
+export interface MachineProgramArticleRateRecord {
+  articleSizeId: string;
+  machineRatePaisa: number;
+  packingRatePaisa: number;
+  printingRatePaisa: number;
+  updatedAt: string;
+}
+
 export interface MachineProgramRecord {
   id: string;
   programNumber: number;
@@ -1713,6 +1780,8 @@ export interface MachineProgramRecord {
   cancelledBy: string | null;
   cancelReason: string | null;
   runs: MachineProgramRunRecord[];
+  /** Contractor pricing, one row per article on the program. Empty until somebody prices it. */
+  articleRates: MachineProgramArticleRateRecord[];
 }
 
 /** A machine as the board shows it for one date: the machine, and that date's program. */

@@ -12,7 +12,15 @@ import type {
   MachineProgramRunForWrite,
   TransactionContext,
 } from "@erp/application";
-import { MACHINE_PROGRAM_STATUS, QUANTITY_EPSILON, roundQuantity, type MachineContractorRole } from "@erp/domain";
+import {
+  MACHINE_PROGRAM_STATUS,
+  NOTIFICATION_KIND,
+  NOTIFICATION_SEVERITY,
+  PERMISSION,
+  QUANTITY_EPSILON,
+  roundQuantity,
+  type MachineContractorRole,
+} from "@erp/domain";
 import type { MutableTransactionContext } from "./shared.js";
 import { LINE_CONSUMED_SQL } from "./machineProgramSql.js";
 import { INJECTOR_LAYOUT } from "./machinePrograms.js";
@@ -483,6 +491,31 @@ export const machineProgramWritesMethods = {
       )
       .get(text(qrId).trim()) as { machine_program_upper_line_id: string | null } | undefined;
     return row?.machine_program_upper_line_id ? text(row.machine_program_upper_line_id) : null;
+  },
+
+  /**
+   * One notice per user who works Store Scanning (and every administrator), written through the
+   * caller's transaction — so a program that rolls back leaves no notice behind.
+   *
+   * STORE_SCANNING is exactly who the Store Out page is open to (session.ts), which is where the
+   * notice leads, so the notice reaches the people who can act on it and nobody else.
+   */
+  async notifyMachineProgramIssued(
+    this: SqliteDatabase,
+    notice: { entityId: string; title: string; message: string },
+    tx: TransactionContext
+  ): Promise<void> {
+    this.notifyUsersWithPermission(
+      PERMISSION.STORE_SCANNING,
+      {
+        kind: NOTIFICATION_KIND.MACHINE_PROGRAM_ISSUED,
+        severity: NOTIFICATION_SEVERITY.INFO,
+        entityId: notice.entityId,
+        title: notice.title,
+        message: notice.message,
+      },
+      tx
+    );
   },
 
   async getMachineProgramOfLine(

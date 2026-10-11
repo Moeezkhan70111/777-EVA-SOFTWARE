@@ -1,4 +1,10 @@
-import { InvalidQrError, RAW_MATERIAL_QR_STATUS, isValidRawMaterialQrId, parseRawMaterialQrId } from "@erp/domain";
+import {
+  InvalidQrError,
+  RAW_MATERIAL_QR_STATUS,
+  isValidRawMaterialQrId,
+  parseRawMaterialQrId,
+  type MachineProgramCartonTarget,
+} from "@erp/domain";
 import type { EventPublisher, IdGenerator, ScanOperationalContext, TransactionContext, TransactionManager } from "./ports.js";
 
 // Raw Material Input: receiving a supplier's delivery into the store, one packet at a time.
@@ -72,6 +78,8 @@ export interface RawMaterialMovementRepository {
       itemDisplayName: string;
       /** The machine program allocation this movement was counted against, or null. */
       machineProgramLineId?: string | null;
+      /** The saved Store Out batch that committed it, or null for the generic scanner. */
+      machineProgramBatchId?: string | null;
     },
     tx: TransactionContext
   ): void;
@@ -100,6 +108,34 @@ export interface RawMaterialMovementRepository {
     quantity: number;
     consumedQuantity: number;
     unitCode: string | null;
+  } | null>;
+
+  /**
+   * The same answer narrowed to ONE program: the allocation on `programId` that still owes this
+   * upper, or null when the program does not authorise it (or has already had all of it).
+   *
+   * This is what Store Out working through an open Machine Program consumes. It deliberately
+   * ignores every other program's claim on the same upper, because the operator named this one.
+   */
+  findOutstandingMachineProgramLineOfProgram(
+    input: { programId: string; itemId: string },
+    tx: TransactionContext
+  ): Promise<{
+    lineId: string;
+    programId: string;
+    programNumber: number;
+    machineName: string;
+    contractorName: string;
+    itemDisplayName: string;
+    quantity: number;
+    consumedQuantity: number;
+    unitCode: string | null;
+    /**
+     * The finished goods this line's run is moulding, so the store can label the cartons the
+     * machine will send back. Read off the run and the upper itself — never worked out on a
+     * screen. Null only when the line's run has lost its product master row.
+     */
+    cartonTarget: MachineProgramCartonTarget | null;
   } | null>;
 
   /** The allocation this packet's last Store exit was counted against, for the compensating record. */

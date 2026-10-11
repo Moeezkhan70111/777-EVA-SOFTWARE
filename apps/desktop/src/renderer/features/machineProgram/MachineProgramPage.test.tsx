@@ -86,10 +86,17 @@ const UPPERS = [
   upper("BROWN", [["s-xyz", "XYZ UPPER", 24]]),
 ];
 
-/** A saved program with the given upper lines on injector 1's first sole. */
+/**
+ * A saved program with the given upper lines on injector 1's first sole.
+ *
+ * `rates` is the contractor pricing of its one article — machine, packing and printing per
+ * dozen, in paisa. Left out, the article is UNPRICED, which is what a program looks like before
+ * anybody has priced it.
+ */
 const programWith = (
   lines: Array<{ colour: string; quantity: number; consumed?: number }>,
-  shift: MachineShift = DAY_SHIFT
+  shift: MachineShift = DAY_SHIFT,
+  rates?: { machine: number; packing: number; printing: number }
 ): MachineProgramRecord => {
   const records = lines.map((line, index) => ({
     id: `line-${index + 1}`, runId: "run-1", lineNo: index + 1, itemId: `u-${line.colour.toLowerCase()}`,
@@ -113,6 +120,17 @@ const programWith = (
         articleSizeId: "as-sk6-710", article: "SK6", size: "7/10", totalQuantity: total, consumedQuantity: consumed, unitCode: "DOZEN", lines: records,
       },
     ],
+    articleRates: rates
+      ? [
+          {
+            articleSizeId: "as-sk6-710",
+            machineRatePaisa: rates.machine,
+            packingRatePaisa: rates.packing,
+            printingRatePaisa: rates.printing,
+            updatedAt: `${TODAY}T07:30:00.000Z`,
+          },
+        ]
+      : [],
   };
 };
 
@@ -147,9 +165,23 @@ function installApi(options: { program?: MachineProgramRecord | null } = {}) {
       accepted: true,
       rows: [{ ...upper("BLACK", [["s-abc", "ABC RUBBER", 75], ["s-xyz", "XYZ MATERIALS", 25]]), subCategoryName: "EVA", packName: "BAG" }],
     })),
+    // SK6 7/10 carries the PRODUCT's standard contractor rates (migration 064); SK6 4/6 carries
+    // none, so a program defaulting from it must open on empty boxes rather than on zeros.
     listMachineProgramArticles: vi.fn(async () => ({
       accepted: true,
-      rows: [{ article: "SK6", sizes: [{ articleSizeId: "as-sk6-46", size: "4/6" }, { articleSizeId: "as-sk6-710", size: "7/10" }] }, { article: "SK10", sizes: [{ articleSizeId: "as-sk10", size: "8/11" }] }],
+      rows: [
+        {
+          article: "SK6",
+          sizes: [
+            { articleSizeId: "as-sk6-46", size: "4/6", machineRatePaisa: null, packingRatePaisa: null, printingRatePaisa: null },
+            { articleSizeId: "as-sk6-710", size: "7/10", machineRatePaisa: 4000, packingRatePaisa: 1600, printingRatePaisa: 0 },
+          ],
+        },
+        {
+          article: "SK10",
+          sizes: [{ articleSizeId: "as-sk10", size: "8/11", machineRatePaisa: null, packingRatePaisa: null, printingRatePaisa: null }],
+        },
+      ],
     })),
     listMachineProgramUppers: vi.fn(async () => ({ accepted: true, rows: UPPERS })),
     saveMachineProgramLine: vi.fn(async (input: SaveMachineProgramLineInput) => {
@@ -158,6 +190,27 @@ function installApi(options: { program?: MachineProgramRecord | null } = {}) {
       return { accepted: true, outcome: "SAVED", programId: "prog-1", runId: "run-1", lineId: "line-1" };
     }),
     saveMachineProgramRun: vi.fn(async () => ({ accepted: true, outcome: "SAVED" })),
+    // Contractor pricing: the rates land on the program the same way the backend puts them
+    // there, so what the screen shows afterwards is read back and never patched.
+    saveMachineProgramArticleRates: vi.fn(
+      async (input: { machineRate: number; packingRate: number; printingRate: number }) => {
+        if (state.program) {
+          state.program = {
+            ...state.program,
+            articleRates: [
+              {
+                articleSizeId: "as-sk6-710",
+                machineRatePaisa: Math.round(input.machineRate * 100),
+                packingRatePaisa: Math.round(input.packingRate * 100),
+                printingRatePaisa: Math.round(input.printingRate * 100),
+                updatedAt: `${TODAY}T08:00:00.000Z`,
+              },
+            ],
+          };
+        }
+        return { accepted: true, outcome: "SAVED", programId: "prog-1" };
+      }
+    ),
     removeMachineProgramLine: vi.fn(async () => ({ accepted: true, outcome: "REMOVED" })),
     removeMachineProgramRun: vi.fn(async () => ({ accepted: true, outcome: "REMOVED" })),
     deleteMachineProgram: vi.fn(async () => {
@@ -208,6 +261,15 @@ const describeArticle = async (article = "SK6", size = "7/10") => {
   await userEvent.click(screen.getByRole("combobox", { name: "Article" }));
   await userEvent.click(await screen.findByRole("option", { name: article }));
   await click(size);
+};
+
+/** The three contractor rate boxes of the dialog's fourth panel, or the pricing dialog's row. */
+const typeRates = async (rates: { machine?: string; packing?: string; printing?: string }) => {
+  for (const [job, value] of Object.entries(rates)) {
+    const box = screen.getByLabelText(new RegExp(`${job} rate`, "i"));
+    await userEvent.clear(box);
+    if (value) await userEvent.type(box, value);
+  }
 };
 
 /** + Add on an upper row of the Upper Stock panel, then how many of it in the selection below. */
@@ -636,7 +698,7 @@ describe("MachineProgramPage", () => {
     expect(await sheetText()).toMatch(/06:00 PM/);
   });
 
-  it("prints an A5 sheet grouped by injector and article, one line per colour pair, no supplier", async () => {
+  it("prints an A5 sheet: the meta strip, a band per injector and sole, and a card per article", async () => {
     installApi({ program: programWith([{ colour: "BLACK", quantity: 30 }, { colour: "GREEN", quantity: 10 }]) });
     renderPage();
     await openMachine1();
@@ -646,23 +708,34 @@ describe("MachineProgramPage", () => {
     expect(html).toContain("size: A5 landscape");
 
     const text = await sheetText();
-    // What this program IS, at the top.
-    expect(text).toMatch(/MP-000001/);
-    expect(text).toMatch(/MACHINE 1/);
-    // Short labels: the summary box has a 16mm column, so nothing in it wraps.
+    // 1. What this program IS — seven facts across one strip under the title.
+    expect(text).toMatch(/Program # MP-000001/);
+    expect(text).toMatch(/Machine MACHINE 1/);
     expect(text).toMatch(/Contractor CONTRACTOR A/);
     expect(text).toMatch(/Packing CONTRACTOR B/);
-    // Grouped the way the floor works: injector, then the article and size being made.
-    expect(text).toMatch(/Injector 1/);
+    expect(text).toMatch(/Shift Time 06:00 AM – 06:00 PM/);
+    expect(text).toMatch(/Status Program ready/);
+
+    // 2. What to make — the sole colour is on the BAND, not buried in every row.
+    expect(text).toMatch(/Injector 1 Sole Color : BLACK/);
     expect(text).toMatch(/SK6 7\/10/);
-    // One line per colour pair — the sole, then the upper going on it.
-    expect(text).toMatch(/BLACK · BLACK 30/);
-    expect(text).toMatch(/BLACK · GREEN 10/);
-    // What the machine comes to.
-    expect(text).toMatch(/Total injectors 1/);
-    expect(text).toMatch(/Total DOZEN 40/);
+    // A row still names both colours the way the floor says it: black sole, green upper.
+    expect(text).toMatch(/BLACK BLACK 30/);
+    expect(text).toMatch(/BLACK GREEN 10/);
     // A program promises an upper, not a particular supplier's pile of it.
     expect(text).not.toMatch(/ABC UPPER|XYZ UPPER/);
+
+    // 3. What it comes to.
+    expect(text).toMatch(/Total Injectors 1/);
+    expect(text).toMatch(/Total Dozen 40 DOZEN/);
+
+    // The QR is an action on the document, so it sits in the footer with who prepared it —
+    // never in the head among the facts the floor reads.
+    expect(text).toMatch(/Prepared by: aslam/);
+    expect(text).toMatch(/MP-000001 Scan on Store Out/);
+    const body = html.slice(html.indexOf("<body"));
+    expect(body.slice(body.indexOf('class="foot"'))).toContain("<svg");
+    expect(body.slice(0, body.indexOf('class="foot"'))).not.toContain("foot-scan");
   });
 
   it("removing an upper asks first, and deleting the program says stock does not change", async () => {
@@ -804,5 +877,209 @@ describe("+ Add Machine", () => {
 
     expect(api.createMachine).not.toHaveBeenCalled();
     expect(within(nav).getByRole("button", { name: "+ Add Machine" })).toBeInTheDocument();
+  });
+});
+
+describe("Contractor pricing", () => {
+  it("prices the article while it is added, and saves the rates after the uppers are on", async () => {
+    const api = installApi();
+    renderPage();
+    await openMachine1();
+
+    const dialog = await addSoleColour(1);
+    // The fourth question of the add screen, beside the three it always asked.
+    expect(within(dialog).getByRole("region", { name: "Contractor Pricing" })).toBeInTheDocument();
+    // Nothing to price until there is an article to price.
+    expect(within(dialog).getByText(/Pick an article above/)).toBeInTheDocument();
+
+    await click(/^BLACK/);
+    await describeArticle();
+    await chooseUpper("GREEN", "30");
+    await typeRates({ machine: "45", packing: "18", printing: "12" });
+    await click("Add to Program");
+
+    // The uppers first: an article can only be priced once it is on the program.
+    expect(api.saveMachineProgramLine).toHaveBeenCalledTimes(1);
+    await waitFor(() =>
+      expect(api.saveMachineProgramArticleRates).toHaveBeenCalledWith({
+        programId: "prog-1",
+        articleSizeId: "as-sk6-710",
+        machineRate: 45,
+        packingRate: 18,
+        printingRate: 12,
+      })
+    );
+  });
+
+  it("leaves an article unpriced when neither the operator nor the product has priced it", async () => {
+    const api = installApi();
+    renderPage();
+    await openMachine1();
+
+    await addSoleColour(1);
+    await click(/^BLACK/);
+    // SK6 4/6 has no standard rates in Product Master, and nothing is typed here either.
+    await describeArticle("SK6", "4/6");
+    await chooseUpper("GREEN", "30");
+    await click("Add to Program");
+
+    // The uppers go on as always; the article simply stays unpriced rather than priced at zero.
+    expect(api.saveMachineProgramLine).toHaveBeenCalledTimes(1);
+    expect(api.saveMachineProgramArticleRates).not.toHaveBeenCalled();
+  });
+
+  it("refuses a negative rate before anything is sent", async () => {
+    const api = installApi();
+    renderPage();
+    await openMachine1();
+
+    await addSoleColour(1);
+    await click(/^BLACK/);
+    await describeArticle();
+    await chooseUpper("GREEN", "30");
+    await typeRates({ machine: "-5" });
+
+    expect(screen.getByRole("alert")).toHaveTextContent(/0 or more/);
+    expect(screen.getByRole("button", { name: "Add to Program" })).toBeDisabled();
+    expect(api.saveMachineProgramArticleRates).not.toHaveBeenCalled();
+  });
+
+  it("shows the rates and what the program comes to at them, from the saved program", async () => {
+    // 30 DOZEN of SK6 7/10 at machine 45, packing 18, printing 12 — 75.00 the dozen.
+    installApi({ program: programWith([{ colour: "GREEN", quantity: 30 }], DAY_SHIFT, { machine: 4500, packing: 1800, printing: 1200 }) });
+    renderPage();
+    await openMachine1();
+
+    const pricing = await screen.findByRole("region", { name: "Contractor Pricing" });
+    const row = within(pricing).getByRole("row", { name: /SK6 \/ 7\/10/ });
+    expect(row).toHaveTextContent("45.00");
+    expect(row).toHaveTextContent("18.00");
+    expect(row).toHaveTextContent("12.00");
+    expect(row).toHaveTextContent("2,250.00");
+
+    // The total is the domain's, not the screen's: 30 × 75.00.
+    expect(within(pricing).getByRole("row", { name: /Total at these rates/ })).toHaveTextContent("2,250.00");
+    // And it is never called "owed" — that waits for production.
+    expect(within(pricing).getByText(/settled when production is recorded/)).toBeInTheDocument();
+  });
+
+  it("says an article is not priced instead of showing it as free", async () => {
+    installApi({ program: programWith([{ colour: "GREEN", quantity: 30 }]) });
+    renderPage();
+    await openMachine1();
+
+    const pricing = await screen.findByRole("region", { name: "Contractor Pricing" });
+    expect(within(pricing).getByRole("row", { name: /SK6 \/ 7\/10/ })).toHaveTextContent("Not priced");
+    expect(within(pricing).getByText(/1 article not priced yet/)).toBeInTheDocument();
+    expect(within(pricing).getByRole("button", { name: "Set Pricing" })).toBeInTheDocument();
+  });
+
+  it("changes the pricing of an article already on the program, and sends only what changed", async () => {
+    const api = installApi({
+      program: programWith([{ colour: "GREEN", quantity: 30 }], DAY_SHIFT, { machine: 4500, packing: 1800, printing: 1200 }),
+    });
+    renderPage();
+    await openMachine1();
+
+    await click("Edit Pricing");
+    const dialog = await screen.findByRole("dialog");
+    // It opens on what the program already pays, not on empty boxes.
+    expect(within(dialog).getByLabelText(/machine rate/i)).toHaveValue(45);
+    // Nothing changed yet, so there is nothing to save.
+    expect(within(dialog).getByRole("button", { name: "Save Pricing" })).toBeDisabled();
+
+    await typeRates({ machine: "50" });
+    await userEvent.click(within(dialog).getByRole("button", { name: "Save Pricing" }));
+
+    await waitFor(() =>
+      expect(api.saveMachineProgramArticleRates).toHaveBeenCalledWith({
+        programId: "prog-1",
+        articleSizeId: "as-sk6-710",
+        machineRate: 50,
+        packingRate: 18,
+        printingRate: 12,
+      })
+    );
+    expect(api.saveMachineProgramArticleRates).toHaveBeenCalledTimes(1);
+  });
+
+  it("prints the pricing on the program sheet", async () => {
+    installApi({ program: programWith([{ colour: "GREEN", quantity: 30 }], DAY_SHIFT, { machine: 4500, packing: 1800, printing: 1200 }) });
+    renderPage();
+    await openMachine1();
+    await click("Print Program");
+
+    const text = await sheetText();
+    expect(text).toContain("Contractor Pricing");
+    expect(text).toContain("Machine");
+    expect(text).toContain("45.00");
+    expect(text).toContain("2,250.00");
+  });
+});
+
+describe("Contractor pricing — the product's standard rates", () => {
+  it("opens the pricing boxes on what the PRODUCT is normally paid, and saves that onto the program", async () => {
+    const api = installApi();
+    renderPage();
+    await openMachine1();
+
+    await addSoleColour(1);
+    await click(/^BLACK/);
+    await describeArticle();
+
+    // Not typed by the operator: these are SK6 7/10's standard rates from Product Master.
+    expect(screen.getByLabelText(/machine rate/i)).toHaveValue(40);
+    expect(screen.getByLabelText(/packing rate/i)).toHaveValue(16);
+    expect(screen.getByLabelText(/printing rate/i)).toHaveValue(0);
+
+    await chooseUpper("GREEN", "30");
+    await click("Add to Program");
+
+    // The default is only a starting point — what it opened on is what the program now owns.
+    await waitFor(() =>
+      expect(api.saveMachineProgramArticleRates).toHaveBeenCalledWith({
+        programId: "prog-1",
+        articleSizeId: "as-sk6-710",
+        machineRate: 40,
+        packingRate: 16,
+        printingRate: 0,
+      })
+    );
+  });
+
+  it("lets the day be priced differently from the product without touching the product", async () => {
+    const api = installApi();
+    renderPage();
+    await openMachine1();
+
+    await addSoleColour(1);
+    await click(/^BLACK/);
+    await describeArticle();
+    await typeRates({ machine: "52" });
+    await chooseUpper("GREEN", "30");
+    await click("Add to Program");
+
+    // Only the program is written: the typed 52 goes on it, the untouched 16 comes from the
+    // product, and nothing on this screen can write back to Product Master.
+    await waitFor(() =>
+      expect(api.saveMachineProgramArticleRates).toHaveBeenCalledWith(
+        expect.objectContaining({ machineRate: 52, packingRate: 16 })
+      )
+    );
+  });
+
+  it("opens on empty boxes for a product nobody has priced", async () => {
+    const api = installApi();
+    renderPage();
+    await openMachine1();
+
+    await addSoleColour(1);
+    await click(/^BLACK/);
+    // SK6 4/6 has no standard rates.
+    await describeArticle("SK6", "4/6");
+
+    expect(screen.getByLabelText(/machine rate/i)).toHaveValue(null);
+    expect(screen.getByLabelText(/packing rate/i)).toHaveValue(null);
+    expect(api.saveMachineProgramArticleRates).not.toHaveBeenCalled();
   });
 });

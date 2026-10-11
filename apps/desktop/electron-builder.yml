@@ -67,6 +67,57 @@ win:
       arch:
         - x64
 
+  # ── Code signing ────────────────────────────────────────────────────────────
+  # NO CREDENTIAL EVER BELONGS IN THIS FILE. electron-builder picks the certificate
+  # up from the environment at build time:
+  #
+  #   signtool (OV certificate on a token or cloud HSM)
+  #     CSC_LINK          path to, or base64 of, the .pfx          } set by the
+  #     CSC_KEY_PASSWORD  its password                             } release operator
+  #   or, for a token/HSM where the key cannot be exported, set
+  #   signtoolOptions.certificateSubjectName / certificateSha1 instead.
+  #
+  # With none of those present the build still succeeds and simply produces an
+  # UNSIGNED installer, exactly as it does today — so this block is inert until
+  # credentials exist. See docs/25-code-signing.md for the full procedure.
+  #
+  # Smart App Control evaluates every executable file, not just the one the user
+  # double-clicks, and Microsoft's guidance is to sign the .exe, the .dll files, the
+  # installer and the uninstaller. The Electron runtime ships several unsigned DLLs
+  # (ffmpeg, libEGL, libGLESv2, vk_swiftshader, vulkan-1, dxcompiler), so they are
+  # added here rather than relying on the main executable alone.
+  signExts:
+    - .dll
+    - .node
+
+  signtoolOptions:
+    # RFC 3161 timestamping. electron-builder already defaults to this exact DigiCert
+    # timestamp authority, so this line pins the default rather than enabling something
+    # that was off — it is written out because a signature without a timestamp stops
+    # validating the day the certificate expires, and that is too important to leave
+    # implicit. Switch it to the issuing CA's own TSA if they recommend one.
+    rfc3161TimeStampServer: http://timestamp.digicert.com
+    # Default is ['sha1','sha256'], which dual-signs. SHA-1 Authenticode is deprecated and
+    # buys nothing on supported Windows versions, so only SHA-256 is produced. Note this
+    # also makes `timeStampServer` irrelevant: signtool uses /t with it for the SHA-1 pass
+    # only, and /tr with the RFC 3161 server above for SHA-256.
+    signingHashAlgorithms:
+      - sha256
+    # publisherName MUST equal the certificate's subject CN exactly once a certificate
+    # exists. It is deliberately not guessed here — a wrong value breaks signature
+    # verification rather than failing loudly. Fill it in from the issued certificate.
+    # publisherName: "<exact CN from the issued certificate>"
+
+  # Turn this on IN THE SAME CHANGE that introduces the certificate, never before: with no
+  # credentials present it would fail every build, including ordinary development ones.
+  #
+  # It matters because electron-builder is forgiving by default — when a file cannot be
+  # signed it logs "signing failed for file, queue will continue to next file" as a WARNING
+  # and carries on, so a release can finish successfully with some binaries unsigned. This
+  # flag turns that into a hard error. `npm run verify:signatures` is the second check, and
+  # catches the same class of problem by inspecting the finished artifacts.
+  # forceCodeSigning: true
+
 nsis:
   # An assisted installer: the operator sees a wizard and can choose the folder. Per-user, so
   # installing needs no administrator rights on a factory workstation.

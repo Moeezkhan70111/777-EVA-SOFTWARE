@@ -8,9 +8,13 @@ import type {
   ProcessScanUseCase,
   ReturnScanUseCase,
   IssueRawMaterialScanUseCase,
+  OpenMachineProgramForStoreOutUseCase,
+  CheckMachineProgramScanUseCase,
+  SaveMachineProgramBatchUseCase,
   ReceiveRawMaterialScanUseCase,
   RemoveMachineProgramLineUseCase,
   RemoveMachineProgramRunUseCase,
+  SaveMachineProgramArticleRatesUseCase,
   SaveMachineProgramLineUseCase,
   SaveMachineProgramRunUseCase,
   StoreEntryScanUseCase,
@@ -49,6 +53,14 @@ export interface UseCases {
     removeRun: RemoveMachineProgramRunUseCase;
     deleteProgram: DeleteMachineProgramUseCase;
     setShift: SetMachineProgramShiftUseCase;
+    /** Contractor pricing: what one article's machine, packing and printing work is paid at. */
+    saveArticleRates: SaveMachineProgramArticleRatesUseCase;
+  };
+  /** Store Out working through one open Machine Program (features/store + pages/RawMaterialOutput). */
+  machineProgramStoreOut: {
+    open: OpenMachineProgramForStoreOutUseCase;
+    checkScan: CheckMachineProgramScanUseCase;
+    saveBatch: SaveMachineProgramBatchUseCase;
   };
 }
 

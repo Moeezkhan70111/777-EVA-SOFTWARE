@@ -376,25 +376,6 @@ export const salesMethods = {
       }
     }
     
-    // Generate sequential voucher number without relying on SQLite REGEXP support.
-    let voucherNumber = input.voucherNumber;
-    if (!voucherNumber || !voucherNumber.trim()) {
-      const lastVoucher = this.db
-        .prepare(
-          `SELECT voucher_number
-           FROM sale_vouchers
-           WHERE TRIM(COALESCE(voucher_number, '')) <> ''
-           ORDER BY CAST(COALESCE(NULLIF(TRIM(voucher_number), ''), '0') AS INTEGER) DESC
-           LIMIT 1`
-        )
-        .get() as Record<string, unknown> | undefined;
-
-      const numericValue = lastVoucher ? Number(lastVoucher.voucher_number ?? 0) : NaN;
-      const nextNumber = Number.isFinite(numericValue) ? String(numericValue + 1) : "1";
-
-      voucherNumber = nextNumber;
-    }
-
     // ── BALANCE LIMIT CHECK ───────────────────────────────────────────────────
     // Read the party's balance_limit. NULL = no limit configured → always allow.
     const partyRow = this.db
@@ -425,6 +406,26 @@ export const salesMethods = {
     // is billed by a bill that failed to save, nor the reverse.
     this.db.exec("BEGIN IMMEDIATE TRANSACTION");
     try {
+    // The number is read inside the write lock, so the value that is checked is the value that
+    // is inserted. A bill typed from the paper book (input.voucherNumber) always wins — the
+    // office numbers its own bills and the ERP must never silently renumber one.
+    let voucherNumber = input.voucherNumber;
+    if (!voucherNumber || !voucherNumber.trim()) {
+      // Sequential, without relying on SQLite REGEXP support.
+      const lastVoucher = this.db
+        .prepare(
+          `SELECT voucher_number
+           FROM sale_vouchers
+           WHERE TRIM(COALESCE(voucher_number, '')) <> ''
+           ORDER BY CAST(COALESCE(NULLIF(TRIM(voucher_number), ''), '0') AS INTEGER) DESC
+           LIMIT 1`
+        )
+        .get() as Record<string, unknown> | undefined;
+
+      const numericValue = lastVoucher ? Number(lastVoucher.voucher_number ?? 0) : NaN;
+      voucherNumber = Number.isFinite(numericValue) ? String(numericValue + 1) : "1";
+    }
+
     this.db
       .prepare(
         `INSERT INTO sale_vouchers (
