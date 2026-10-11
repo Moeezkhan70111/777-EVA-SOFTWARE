@@ -554,6 +554,7 @@ export const productsMethods = {
     return variantId;
   },
 
+<<<<<<< HEAD
   /**
    * Saves an edited product. A changed ARTICLE or SIZE renames this one product (and its colour
    * variants) while no QR code carries it — see renameArticleSize.
@@ -570,6 +571,29 @@ export const productsMethods = {
     } catch (error) {
       try { this.db.exec("ROLLBACK"); } catch { /* no transaction to roll back */ }
       throw error;
+=======
+  updateProduct(this: SqliteDatabase, 
+    id: string,
+    input: {
+      article: string;
+      /** Unused: colour variants are managed through `colors`. Kept optional for callers that still send it. */
+      color?: string;
+      size: string;
+      description?: string;
+      costPrice?: number;
+      sellingPrice?: number;
+      /** The standard contractor rates, per DOZEN, in rupees — see migration 064. */
+      machineRate?: number | null;
+      packingRate?: number | null;
+      printingRate?: number | null;
+      mainGroupId?: string;
+      productGroupId?: string;
+      articleSeriesId?: string;
+      productTypeId?: string;
+      productSubGroupId?: string;
+      colors?: string[];
+      status?: "ACTIVE" | "DISABLED";
+>>>>>>> 3269f98a641b7a34ca7c94a185e4a1e67738de8f
     }
   },
 

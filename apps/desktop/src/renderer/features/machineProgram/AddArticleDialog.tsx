@@ -76,8 +76,11 @@ export const AddArticleDialog: React.FC<AddArticleDialogProps> = ({ fixedColour,
   const [fixQuantity, setFixQuantity] = useState("");
   const [fixSaving, setFixSaving] = useState(false);
   const [fixRefused, setFixRefused] = useState<string | null>(null);
+<<<<<<< HEAD
   // Set once the fix run is on the program, so a pricing refusal can never lead to saving it twice.
   const [fixSaved, setFixSaved] = useState(false);
+=======
+>>>>>>> 3269f98a641b7a34ca7c94a185e4a1e67738de8f
   const chosenSize = articles.value
     .flatMap((entry) => entry.sizes)
     .find((size) => size.articleSizeId === draft.articleSizeId);
@@ -102,7 +105,11 @@ export const AddArticleDialog: React.FC<AddArticleDialogProps> = ({ fixedColour,
     setFixSaving(true);
     setFixRefused(null);
     try {
+<<<<<<< HEAD
       const answer = await target.writes.saveFixRun({
+=======
+      const refusal = await target.writes.saveFixRun({
+>>>>>>> 3269f98a641b7a34ca7c94a185e4a1e67738de8f
         machineId: target.machineId,
         programDate: target.programDate,
         shift: target.shift,
@@ -112,6 +119,7 @@ export const AddArticleDialog: React.FC<AddArticleDialogProps> = ({ fixedColour,
         articleSizeId: draft.articleSizeId,
         quantity: Number(fixQuantity),
       });
+<<<<<<< HEAD
       if (!answer.ok) {
         setFixRefused(answer.reason);
         return;
@@ -122,12 +130,16 @@ export const AddArticleDialog: React.FC<AddArticleDialogProps> = ({ fixedColour,
       const programId = answer.result.programId;
       const pricingRefused = programId ? await chosen.saveRates(programId, [draft.articleSizeId]) : null;
       if (pricingRefused) setFixRefused(pricingRefused);
+=======
+      if (refusal) setFixRefused(refusal);
+>>>>>>> 3269f98a641b7a34ca7c94a185e4a1e67738de8f
       else onClose();
     } finally {
       setFixSaving(false);
     }
   };
 
+<<<<<<< HEAD
   // Never the same colour twice: an outer and an inner sole of one colour is one sole, and the
   // floor would have nothing to tell them apart by — so it is said, not just refused.
   const sameSoles = Boolean(innerColour && innerColour === draft.soleColour);
@@ -138,6 +150,16 @@ export const AddArticleDialog: React.FC<AddArticleDialogProps> = ({ fixedColour,
     !fixProblem &&
     fixQuantity.trim() !== "" &&
     chosen.rateProblem(draft.articleSizeId) === null;
+=======
+  const fixProblem = fixQuantityProblem(fixQuantity);
+  // Both soles and a usable quantity, and never the same colour twice: an outer and an inner
+  // sole of one colour is one sole, and the floor would have nothing to tell them apart by.
+  const fixReady =
+    Boolean(draft.soleColour && innerColour && draft.articleSizeId) &&
+    innerColour !== draft.soleColour &&
+    !fixProblem &&
+    fixQuantity.trim() !== "";
+>>>>>>> 3269f98a641b7a34ca7c94a185e4a1e67738de8f
 
   // On a short screen the selection sits below the panels. Choosing an upper brings it into
   // view, so the box its quantity goes in is never off the bottom of the dialog.
@@ -157,7 +179,11 @@ export const AddArticleDialog: React.FC<AddArticleDialogProps> = ({ fixedColour,
         <button
           type="button"
           className="btn btn-primary btn-lg"
+<<<<<<< HEAD
           disabled={isFix ? !fixReady || fixSaving || fixSaved : !chosen.ready || chosen.saving}
+=======
+          disabled={isFix ? !fixReady || fixSaving : !chosen.ready || chosen.saving}
+>>>>>>> 3269f98a641b7a34ca7c94a185e4a1e67738de8f
           onClick={() => void save()}
         >
           {(isFix ? fixSaving : chosen.saving) ? copy.machineProgram.addingToProgram : copy.machineProgram.addToProgram}
@@ -239,6 +265,7 @@ export const AddArticleDialog: React.FC<AddArticleDialogProps> = ({ fixedColour,
           </div>
         </section>
 
+<<<<<<< HEAD
         {isFix ? null : (
           <section className="mpa-panel mpa-panel--stock" aria-label={copy.machineProgram.panelUpperStock}>
             <div className="mpa-panel-head">
@@ -265,6 +292,52 @@ export const AddArticleDialog: React.FC<AddArticleDialogProps> = ({ fixedColour,
             </div>
           </section>
         )}
+=======
+        <section
+          className="mpa-panel mpa-panel--stock"
+          aria-label={isFix ? copy.machineProgram.panelInnerSole : copy.machineProgram.panelUpperStock}
+        >
+          <div className="mpa-panel-head">
+            <StepHeading
+              index={3}
+              done={isFix ? fixReady : chosen.rows.length > 0}
+              title={isFix ? copy.machineProgram.panelInnerSole : copy.machineProgram.panelUpperStock}
+            />
+            {describedRun ? (
+              <span className="mpa-for">
+                {describedRun.article} / {describedRun.size}
+              </span>
+            ) : null}
+          </div>
+          <div className="mpa-panel-body">
+            {isFix ? (
+              <FixSolePanel
+                outerColour={draft.soleColour}
+                innerColour={innerColour}
+                onChooseInner={setInnerColour}
+                quantity={fixQuantity}
+                onQuantityChange={setFixQuantity}
+                problem={fixProblem}
+                ready={Boolean(draft.articleSizeId)}
+                disabled={fixSaving}
+              />
+            ) : (
+            <UpperPicker
+              machineId={target.machineId}
+              articleSizeId={draft.articleSizeId}
+              article={draft.article}
+              size={draft.size}
+              takenItemIds={takenItemIds}
+              chosenItemIds={new Set(chosen.rows.map((row) => row.itemId))}
+              stockVersion={target.writes.stockVersion}
+              onAdd={(material) => {
+                if (describedRun) chosen.add(describedRun, material);
+              }}
+            />
+            )}
+          </div>
+        </section>
+>>>>>>> 3269f98a641b7a34ca7c94a185e4a1e67738de8f
       </div>
 
       {fixRefused ? (
