@@ -54,6 +54,7 @@ export const PAGE_TITLES: Record<AppRoute, string> = {
   "purchase-voucher-list": "Purchase Bills",
   "supplier-ledger": "Supplier Ledger",
   "supplier-balance": "Supplier Balance",
+  "contractor-ledger": "Contractor Ledger",
   "cash-voucher-form": "Cash Voucher",
   "cash-voucher-list": "Cash Vouchers",
   profile: "Profile",

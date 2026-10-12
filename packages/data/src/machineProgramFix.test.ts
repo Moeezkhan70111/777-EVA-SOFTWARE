@@ -105,11 +105,10 @@ function createFixture() {
     await stockIn(black, 20);
   };
 
-  const saveFix = (input: { articleSizeId?: string; outer?: string; inner?: string; quantity?: number; injectorNo?: number }) =>
+  const saveFix = (input: { articleSizeId?: string; outer?: string; inner?: string; quantity?: number }) =>
     useCases.saveFix.execute({
       machineId: machine.id,
       programDate: TODAY,
-      injectorNo: input.injectorNo ?? 1,
       soleColour: input.outer ?? "BLACK",
       innerSoleColour: input.inner ?? "RED",
       articleSizeId: input.articleSizeId ?? evr9,
@@ -227,7 +226,35 @@ test("an upper and a fix run can never be mixed on one article", async () => {
   });
 });
 
-test("the same fix article on an injector is CHANGED, never duplicated", async () => {
+// EVR FIX is not moulded on the injectors (owner, 2026-10-12; migration 073).
+test("a fix run has NO injector — it belongs to the program", async () => {
+  await withFixture(async (f) => {
+    await f.ready();
+    const saved = await f.saveFix({ quantity: 30 });
+    assert.equal(saved.accepted, true, saved.reason);
+    const [run] = f.program()?.runs ?? [];
+    assert.equal(run.injectorNo, null);
+    assert.equal(run.runNo, 1, "fix runs are numbered among themselves");
+    assert.equal(
+      (f.raw.prepare("SELECT injector_no FROM machine_program_runs WHERE id = ?").get(run.id) as { injector_no: number | null }).injector_no,
+      null
+    );
+
+    // The table itself holds the rule both ways: a normal run must have an injector, a fix run must not.
+    const programId = f.program()!.id;
+    const insert = (injector: number | null, inner: string | null) =>
+      f.raw
+        .prepare(
+          `INSERT INTO machine_program_runs (id, program_id, injector_no, run_no, sole_colour, inner_sole_colour, article_size_id, created_at, updated_at)
+           VALUES (?, ?, ?, 99, 'BLACK', ?, ?, '2026-10-12', '2026-10-12')`
+        )
+        .run(`r-${injector}-${inner}`, programId, injector, inner, f.sk6);
+    assert.throws(() => insert(null, null), /CHECK/, "a normal run with no injector");
+    assert.throws(() => insert(1, "RED"), /CHECK/, "a fix run on an injector");
+  });
+});
+
+test("the same fix article on the program is CHANGED, never duplicated", async () => {
   await withFixture(async (f) => {
     await f.ready();
     const first = await f.saveFix({ quantity: 30 });
@@ -470,5 +497,117 @@ test("EVR FIX: program -> carton labels -> scanned back -> produced -> in stock"
     await f.cartonIn.execute({ programId, rawScan: cartons[1], context: CONTEXT, actor: ACTOR });
     assert.equal(f.db.getReport("DAILY").totalProduction, 2);
     assert.equal(f.db.listInventory("EVR9")[0].quantity, 2);
+  });
+});
+
+// ─── Closing an EVR FIX program against its cartons ──────────────────────────
+// Reported 2026-10-12: 1 of 20 fix cartons back, and Complete Program said "0 of 0 cartons back —
+// every carton due is back", because it only counted cartons owed for UPPERS. A fix run's cartons
+// are owed by its plan and must be counted, and a short one can never close as COMPLETE.
+
+test("Complete Program counts a fix run's cartons: 1 of 20 back is 1 of 20, not 0 of 0", async () => {
+  await withFixture(async (f) => {
+    await f.ready();
+    await f.saveFix({ outer: "BLACK", inner: "RED", quantity: 10 });
+    const programId = f.program()!.id;
+    const cartons = f.printFixCartons(f.fixCartons()[0].runId).qrCodes.map((qr) => qr.id);
+    const received = await f.cartonIn.execute({ programId, rawScan: cartons[0], context: CONTEXT, actor: ACTOR });
+    assert.equal(received.outcome, "RECEIVED", received.reason);
+
+    const view = f.db.getMachineProgramReconciliation(programId)!;
+    assert.equal(view.cartonsDue, 20);
+    assert.equal(view.cartonsBack, 1);
+    assert.equal(view.fixCartonsShort, 19);
+    assert.deepEqual(view.fixRuns.map((run) => [run.article, run.cartonsDue, run.cartonsBack]), [["EVR9", 20, 1]]);
+    // The program CANNOT close while a fix carton is out (owner, 2026-10-12) — not even short.
+    assert.match(view.blockedReason ?? "", /19 EVR FIX cartons are still to come back/);
+    assert.throws(
+      () => f.db.completeMachineProgramProduction({ programId, entries: [], closedBy: ACTOR, deviceId: "device-1" }),
+      /cannot close until every carton is back/
+    );
+    assert.equal(f.db.isMachineProgramClosed(programId), false);
+    // Turning the missing labels into B cartons stays open while it is blocked.
+    assert.equal(f.db.convertFixCartonsToB({ programId, runId: f.fixCartons()[0].runId, count: 19, convertedBy: ACTOR, deviceId: "device-1" }).qrCodes.length, 19);
+  });
+});
+
+test("a fix program with every carton back closes COMPLETE", async () => {
+  await withFixture(async (f) => {
+    await f.ready();
+    await f.saveFix({ outer: "BLACK", inner: "RED", quantity: 1 });
+    const programId = f.program()!.id;
+    const cartons = f.printFixCartons(f.fixCartons()[0].runId).qrCodes.map((qr) => qr.id);
+    for (const rawScan of cartons) await f.cartonIn.execute({ programId, rawScan, context: CONTEXT, actor: ACTOR });
+
+    const view = f.db.getMachineProgramReconciliation(programId)!;
+    assert.equal(view.cartonsDue, 2);
+    assert.equal(view.cartonsBack, 2);
+    assert.equal(view.fixCartonsShort, 0);
+    assert.equal(f.db.completeMachineProgramProduction({ programId, entries: [], closedBy: ACTOR, deviceId: "device-1" }).outcome, "COMPLETE");
+  });
+});
+
+// ─── B cartons: the labels that did not come back, labelled again as MIX / B ─────────────
+// The owner's flow (2026-10-12): 20 labels printed, 10 back. "Where are the other 10?" They came
+// off the machine in mixed colours — B cartons. Reconciliation turns the 10 labels not back into
+// 10 new labels (MIX, grade B); those are scanned in, and the program completes.
+
+test("B cartons: the labels not back are voided and relabelled MIX / B, and scanning them completes the program", async () => {
+  await withFixture(async (f) => {
+    await f.ready();
+    await f.saveFix({ outer: "BLACK", inner: "RED", quantity: 10 });
+    const programId = f.program()!.id;
+    const runId = f.fixCartons()[0].runId;
+    const originals = f.printFixCartons(runId).qrCodes.map((qr) => qr.id);
+    for (const rawScan of originals.slice(0, 10)) await f.cartonIn.execute({ programId, rawScan, context: CONTEXT, actor: ACTOR });
+
+    const before = f.db.getMachineProgramReconciliation(programId)!;
+    assert.equal(before.fixRuns[0].convertible, 10);
+
+    const b = f.db.convertFixCartonsToB({ programId, runId, count: 10, convertedBy: ACTOR, deviceId: "device-1" });
+    assert.equal(b.qrCodes.length, 10);
+    assert.match(b.qrCodes[0].id, /^EVR9_MIX_7\/10_\d{6}$/, "same article and size, colour MIX");
+    assert.deepEqual([...b.voidedQrIds].sort(), [...originals.slice(10)].sort(), "exactly the 10 that did not come back");
+    assert.equal((f.raw.prepare("SELECT grade FROM qr_batches WHERE id = ?").get(b.batch.id) as { grade: string }).grade, "B");
+
+    // A converted label can never be stored in afterwards — it would be counted twice.
+    const stale = await f.cartonIn.execute({ programId, rawScan: originals[15], context: CONTEXT, actor: ACTOR });
+    assert.equal(stale.accepted, false);
+    assert.equal(stale.outcome, "VOIDED");
+
+    // The B run replaces labels; it never shows as more cartons to print for the plan.
+    assert.equal(f.fixCartons()[0].cartonsToPrint, 0);
+    assert.equal(f.fixCartons()[0].labels.find((label) => label.grade === "B")?.colour, "MIX");
+
+    for (const qr of b.qrCodes) {
+      const received = await f.cartonIn.execute({ programId, rawScan: qr.id, context: CONTEXT, actor: ACTOR });
+      assert.equal(received.outcome, "RECEIVED", received.reason);
+    }
+    const after = f.db.getMachineProgramReconciliation(programId)!;
+    assert.equal(after.cartonsBack, 20);
+    assert.equal(after.fixRuns[0].bCartons, 10);
+    assert.equal(after.fixRuns[0].bBack, 10);
+    assert.equal(after.fixCartonsShort, 0);
+    assert.equal(f.db.completeMachineProgramProduction({ programId, entries: [], closedBy: ACTOR, deviceId: "device-1" }).outcome, "COMPLETE");
+  });
+});
+
+test("B cartons: never more than are missing, the last serials first, and a label is never converted twice", async () => {
+  await withFixture(async (f) => {
+    await f.ready();
+    await f.saveFix({ outer: "BLACK", inner: "RED", quantity: 2.5 });
+    const programId = f.program()!.id;
+    const runId = f.fixCartons()[0].runId;
+    const originals = f.printFixCartons(runId).qrCodes.map((qr) => qr.id); // 5 labels: 0001..0005
+    for (const rawScan of originals.slice(0, 3)) await f.cartonIn.execute({ programId, rawScan, context: CONTEXT, actor: ACTOR });
+
+    assert.throws(() => f.db.convertFixCartonsToB({ programId, runId, count: 3, convertedBy: ACTOR, deviceId: "device-1" }), /at most 2/);
+    assert.throws(() => f.db.convertFixCartonsToB({ programId, runId, count: 0, convertedBy: ACTOR, deviceId: "device-1" }), /at least 1/);
+
+    const one = f.db.convertFixCartonsToB({ programId, runId, count: 1, convertedBy: ACTOR, deviceId: "device-1" });
+    assert.deepEqual(one.voidedQrIds, [originals[4]], "0005 first");
+    const two = f.db.convertFixCartonsToB({ programId, runId, count: 1, convertedBy: ACTOR, deviceId: "device-1" });
+    assert.deepEqual(two.voidedQrIds, [originals[3]], "then 0004");
+    assert.throws(() => f.db.convertFixCartonsToB({ programId, runId, count: 1, convertedBy: ACTOR, deviceId: "device-1" }), /nothing to make B/);
   });
 });

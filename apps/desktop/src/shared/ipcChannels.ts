@@ -110,6 +110,7 @@ export const IPC = {
   // The carton QR labels owed for the uppers a program has taken out, and printing them once.
   listMachineProgramCartonPackets: "erp:list-machine-program-carton-packets",
   printMachineProgramCartons: "erp:print-machine-program-cartons",
+  convertMachineProgramCartonsToB: "erp:convert-machine-program-cartons-to-b",
   // Store In: one carton label of an open program scanned back in (produced + stored in).
   machineProgramCartonIn: "erp:machine-program-carton-in",
   // Store In closing a program: how it stands against the cartons back, and Complete Program.
@@ -337,6 +338,8 @@ export const IPC = {
   deletePurchaseVoucher: "erp:delete-purchase-voucher",
   getSupplierLedger: "erp:get-supplier-ledger",
   listSupplierBalances: "erp:list-supplier-balances",
+  listContractorLedgerAccounts: "erp:list-contractor-ledger-accounts",
+  getContractorLedger: "erp:get-contractor-ledger",
 } as const;
 
 export type IpcChannel = (typeof IPC)[keyof typeof IPC];

@@ -213,6 +213,8 @@ export interface ProductVariantRecord {
   machineRatePaisa?: number | null;
   packingRatePaisa?: number | null;
   printingRatePaisa?: number | null;
+  /** What the packing rate is made of, in paisa (migration 072). Empty when it was typed as one figure. */
+  packingRateItems?: Array<{ name: string; ratePaisa: number }>;
   mainGroupId: string | null;
   groupId: string | null;
   articleSeriesId: string | null;
@@ -1752,7 +1754,8 @@ export interface MachineProgramUpperLineRecord {
 export interface MachineProgramRunRecord {
   id: string;
   programId: string;
-  injectorNo: number;
+  /** 1 or 2 — or null on a FIX run, which belongs to the program, not an injector (migration 073). */
+  injectorNo: number | null;
   runNo: number;
   /** THE sole on a normal run, the OUTER sole on a fix run. */
   soleColour: string;

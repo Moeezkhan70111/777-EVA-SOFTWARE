@@ -19,12 +19,14 @@ interface ModalProps {
   footer?: React.ReactNode;
   /** Wider shell for content that is a table or a multi-column form; "xl" for side-by-side panels. */
   wide?: boolean | "xl";
+  /** Extra class on the dialog, so a page can match its own dialogs (e.g. the narrower product ones). */
+  className?: string;
   children: React.ReactNode;
 }
 
-export const Modal: React.FC<ModalProps> = ({ title, subtitle, onClose, footer, wide = false, children }) => {
+export const Modal: React.FC<ModalProps> = ({ title, subtitle, onClose, footer, wide = false, className, children }) => {
   const titleId = useId();
-  const widthClass = wide === "xl" ? " rm-modal--xl" : wide ? " rm-modal--wide" : "";
+  const widthClass = (wide === "xl" ? " rm-modal--xl" : wide ? " rm-modal--wide" : "") + (className ? ` ${className}` : "");
 
   useEffect(() => {
     const handle = (event: KeyboardEvent) => {

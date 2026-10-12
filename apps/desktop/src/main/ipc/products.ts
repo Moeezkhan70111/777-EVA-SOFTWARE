@@ -12,7 +12,10 @@ import type { ProductListKind } from "@erp/data";
 import fs from "node:fs";
 import path from "node:path";
 
-const RATE_KEYS = ["machineRate", "packingRate", "printingRate"] as const;
+const RATE_KEYS = ["machineRate", "packingRate", "printingRate", "packingRateItems"] as const;
+
+/** One packing attribute (migration 072): a name and its price in rupees per DOZEN. */
+type PackingRateItemInput = { name: string; rate: number };
 
 /**
  * The product's standard contractor rates, as the form sent them: rupees per DOZEN, or null.
@@ -27,14 +30,37 @@ const RATE_KEYS = ["machineRate", "packingRate", "printingRate"] as const;
  */
 const contractorRates = (
   input?: Record<string, unknown>
-): { machineRate?: number | null; packingRate?: number | null; printingRate?: number | null } => {
+): {
+  machineRate?: number | null;
+  packingRate?: number | null;
+  printingRate?: number | null;
+  packingRateItems?: PackingRateItemInput[];
+} => {
   if (!RATE_KEYS.some((key) => input != null && key in input)) return {};
   const rate = (value: unknown): number | null => (Number.isFinite(value) ? Number(value) : null);
   return {
     machineRate: rate(input?.machineRate),
     packingRate: rate(input?.packingRate),
     printingRate: rate(input?.printingRate),
+    ...(input != null && "packingRateItems" in input ? { packingRateItems: packingRateItems(input.packingRateItems) } : {}),
   };
+};
+
+/**
+ * The packing attributes, as the form sent them: `[{ name, rate }]`, rate in rupees per DOZEN.
+ *
+ * Refused as a whole rather than filtered: dropping one malformed attribute would quietly save a
+ * packing rate smaller than the one the operator saw added up on screen.
+ */
+const packingRateItems = (value: unknown): PackingRateItemInput[] => {
+  if (!Array.isArray(value)) throw new Error("The packing attributes could not be read.");
+  return value.map((item: unknown) => {
+    const record = typeof item === "object" && item !== null ? (item as Record<string, unknown>) : {};
+    if (typeof record.name !== "string" || !Number.isFinite(record.rate)) {
+      throw new Error("Every packing attribute needs a name and a price.");
+    }
+    return { name: record.name, rate: Number(record.rate) };
+  });
 };
 
 export function registerProductsHandlers(ctx: IpcContext): void {

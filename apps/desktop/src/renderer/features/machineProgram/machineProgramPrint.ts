@@ -12,6 +12,7 @@ import {
   formatNumber,
   injectorRuns,
   injectorsInUse,
+  programFixRuns,
   runColours,
   statusLabel,
   statusTone,
@@ -187,6 +188,23 @@ const injectorHtml = (program: MachineProgramRecord, injectorNo: number): string
     .join("");
 };
 
+/**
+ * The FIX articles: a band of their own after the injectors, because EVR FIX is not moulded on an
+ * injector (migration 073). Each card shows the two soles exactly as on an injector band.
+ */
+const fixBlockHtml = (program: MachineProgramRecord): string => {
+  const cards = articleCards(programFixRuns(program));
+  if (cards.length === 0) return "";
+  return `
+    <section class="injector">
+      <h2 class="injector-name">
+        <span class="injector-no">${escapeHtml(copy.machineProgram.fixSection)}</span>
+        <span class="injector-sole">${escapeHtml(copy.machineProgram.fixSectionNote)}</span>
+      </h2>
+      <div class="cards">${cards.map(cardHtml).join("")}</div>
+    </section>`;
+};
+
 /** One cell of the strip under the title: a quiet label with the fact under it. */
 const metaCell = (label: string, value: string, modifier?: string): string =>
   `<div class="meta-cell${modifier ? ` meta-cell--${modifier}` : ""}">
@@ -332,7 +350,7 @@ const STYLES = `
 `;
 
 const buildSheetHtml = (program: MachineProgramRecord, preparedBy: string | null | undefined, logo: string): string => {
-  const injectors = MACHINE_INJECTORS.map((injectorNo) => injectorHtml(program, injectorNo)).join("");
+  const injectors = MACHINE_INJECTORS.map((injectorNo) => injectorHtml(program, injectorNo)).join("") + fixBlockHtml(program);
   // "Total DOZEN · 70" when every line shares a unit, and a plain total when they differ.
   const totalLabel = program.unitCode ? copy.machineProgram.printTotalIn(program.unitCode) : copy.machineProgram.totalProduction;
   // Everything the machine makes — uppers plus fix — not only what is reserved.

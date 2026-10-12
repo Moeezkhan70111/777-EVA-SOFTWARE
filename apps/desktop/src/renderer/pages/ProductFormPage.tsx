@@ -5,6 +5,14 @@ import type { ProductRow, ProductGroup, MainGroup, ProductTypeRow, ProductSubGro
 import { useNotifications } from "../state/NotificationsContext";
 import { computeBTypePrice, fromPaisa, isValidContractorRatePaisa, toPaisa } from "@erp/domain";
 import { copy } from "../config/copy";
+import { PackingItemDialog } from "../features/products/PackingItemDialog";
+import { PackingRateBreakdown } from "../features/products/PackingRateBreakdown";
+import {
+  packingItemsError,
+  packingItemsToSend,
+  packingTotalRupees,
+  type PackingRateItem,
+} from "../features/products/packingRateItems";
 
 const fileToPngDataUrl = (file: File): Promise<string> =>
   new Promise((resolve, reject) => {
@@ -113,6 +121,11 @@ export const ProductFormPage: React.FC<ProductFormPageProps> = ({ productId, onN
     mainGroupId: "", productGroupId: "", articleSeriesId: "", productTypeId: "", productSubGroupId: "",
   });
   const [rates, setRates] = useState<ContractorRateForm>({ machine: "", packing: "", printing: "" });
+  // The packing rate as named attributes (BOX 50 + TAPE 30 + …). While there are any, the
+  // packing box is their sum and cannot be typed into.
+  const [packingItems, setPackingItems] = useState<PackingRateItem[]>([]);
+  // Closed, or open on one attribute: `index` null adds a new one.
+  const [packingDialog, setPackingDialog] = useState<{ index: number | null } | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
   const [uniqueArticles, setUniqueArticles] = useState<string[]>([]);
@@ -326,6 +339,7 @@ export const ProductFormPage: React.FC<ProductFormPageProps> = ({ productId, onN
           packing: rateBoxValue(product.packingRatePaisa),
           printing: rateBoxValue(product.printingRatePaisa),
         });
+        setPackingItems(product.packingRateItems ?? []);
         const sizes = await api.listUniqueSizesByArticle(product.article);
         setUniqueSizes(sizes);
       } else {
@@ -365,6 +379,22 @@ export const ProductFormPage: React.FC<ProductFormPageProps> = ({ productId, onN
   const handleInputChange = (field: keyof ProductFormData, value: string) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
     if (errors[field]) setErrors((prev) => { const e = { ...prev }; delete e[field]; return e; });
+  };
+
+  /**
+   * Every change to the packing attributes goes through here, so the packing box always shows
+   * their sum. Removing the last one leaves the packing rate NOT SET, not 0.
+   */
+  const updatePackingItems = (next: PackingRateItem[]) => {
+    setPackingItems(next);
+    setRates((previous) => ({ ...previous, packing: next.length > 0 ? String(packingTotalRupees(next)) : "" }));
+    if (errors.rates) setErrors((prev) => { const e = { ...prev }; delete e.rates; return e; });
+  };
+
+  const savePackingItem = (item: PackingRateItem) => {
+    const index = packingDialog?.index ?? null;
+    updatePackingItems(index === null ? [...packingItems, item] : packingItems.map((existing, i) => (i === index ? item : existing)));
+    setPackingDialog(null);
   };
 
   // generic combobox keyboard factory
@@ -510,7 +540,7 @@ export const ProductFormPage: React.FC<ProductFormPageProps> = ({ productId, onN
     const newErrors: Record<string, string> = {};
     if (!formData.article.trim()) newErrors.article = "Product name/article is required";
     if (!formData.size.trim()) newErrors.size = "Size is required";
-    const rateError = contractorRateError(rates);
+    const rateError = contractorRateError(rates) ?? packingItemsError(packingItems);
     if (rateError) newErrors.rates = rateError;
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
@@ -527,6 +557,9 @@ export const ProductFormPage: React.FC<ProductFormPageProps> = ({ productId, onN
         machineRate: rateToSend(rates.machine),
         packingRate: rateToSend(rates.packing),
         printingRate: rateToSend(rates.printing),
+        // Always sent, so removing the last attribute clears the saved breakdown too. The main
+        // process works the packing rate out from these again; it never trusts the sum above.
+        packingRateItems: packingItemsToSend(packingItems),
         mainGroupId: formData.mainGroupId || undefined,
         productGroupId: formData.productGroupId || undefined,
         articleSeriesId: formData.articleSeriesId || undefined,
@@ -942,20 +975,18 @@ export const ProductFormPage: React.FC<ProductFormPageProps> = ({ productId, onN
             <h2>{copy.machineProgram.pricingTitle}</h2>
             <p className="form-section-note">{copy.products.contractorPricingNote}</p>
             <div className="pricing-fields">
-              {CONTRACTOR_RATE_JOBS.map(({ key, label }) => (
-                <div className="form-group" key={key}>
-                  <label htmlFor={`rate-${key}`}>
-                    {label}
-                    <span style={{ fontWeight: 400, color: "var(--neutral-400)", fontSize: "0.7rem", marginLeft: 6 }}>
-                      ({copy.machineProgram.perDozen})
-                    </span>
-                  </label>
+              {CONTRACTOR_RATE_JOBS.map(({ key, label }) => {
+                // The packing rate is the sum of its attributes once it has any.
+                const fromAttributes = key === "packing" && packingItems.length > 0;
+                const rateInput = (
                   <input
                     id={`rate-${key}`}
                     type="text"
                     inputMode="decimal"
                     className="form-input"
                     value={rates[key]}
+                    readOnly={fromAttributes}
+                    aria-readonly={fromAttributes || undefined}
                     onChange={(event) => {
                       const raw = event.target.value;
                       if (raw !== "" && !/^\d*\.?\d*$/.test(raw)) return;
@@ -963,9 +994,37 @@ export const ProductFormPage: React.FC<ProductFormPageProps> = ({ productId, onN
                     }}
                     placeholder="0.00"
                   />
-                </div>
-              ))}
+                );
+                return (
+                  <div className="form-group" key={key}>
+                    <label htmlFor={`rate-${key}`}>
+                      {label}
+                      <span className="label-hint">({copy.machineProgram.perDozen})</span>
+                    </label>
+                    {key === "packing" ? (
+                      <div className="input-with-button">
+                        {rateInput}
+                        <button
+                          type="button"
+                          className="btn btn-icon"
+                          title={copy.products.packingItems.add}
+                          aria-label={copy.products.packingItems.add}
+                          onClick={() => setPackingDialog({ index: null })}
+                        >
+                          +
+                        </button>
+                      </div>
+                    ) : rateInput}
+                    {fromAttributes && <span className="field-help">{copy.products.packingItems.sumOf(packingItems.length)}</span>}
+                  </div>
+                );
+              })}
             </div>
+            <PackingRateBreakdown
+              items={packingItems}
+              onEdit={(index) => setPackingDialog({ index })}
+              onRemove={(index) => updatePackingItems(packingItems.filter((_, i) => i !== index))}
+            />
             {errors.rates && <span className="error-message">{errors.rates}</span>}
           </section>
         </div>
@@ -1395,6 +1454,15 @@ export const ProductFormPage: React.FC<ProductFormPageProps> = ({ productId, onN
             </div>
           </section>
         </div>
+      )}
+
+      {/* ── Add / Edit packing attribute ─────────────────────────────────── */}
+      {packingDialog && (
+        <PackingItemDialog
+          item={packingDialog.index === null ? null : packingItems[packingDialog.index] ?? null}
+          onSave={savePackingItem}
+          onClose={() => setPackingDialog(null)}
+        />
       )}
 
       {/* ── Duplicate Article+Size confirmation ──────────────────────────── */}

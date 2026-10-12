@@ -1,7 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  MAX_CONTRACTOR_RATE_PAISA,
+  MAX_PACKING_ITEM_NAME_LENGTH,
   areValidContractorRates,
+  areValidPackingRateItems,
+  isValidPackingRateItem,
+  packingRateTotalPaisa,
   contractorChargeFor,
   hasAnyRate,
   isValidContractorRatePaisa,
@@ -112,4 +117,34 @@ test("a program with nothing on it is not 'fully priced'", () => {
   assert.equal(pricing.committed.totalPaisa, 0);
   assert.equal(pricing.fullyPriced, false);
   assert.equal(pricing.unpricedArticles, 0);
+});
+
+// A product's packing rate entered as named attributes (migration 072): the rate IS their sum.
+
+test("the packing rate is the exact sum of its attributes, in paisa", () => {
+  const items = [
+    { name: "BOX", ratePaisa: toPaisa(50) },
+    { name: "TAPE", ratePaisa: toPaisa(30) },
+    { name: "POLY BAG", ratePaisa: toPaisa(50) },
+    { name: "LABOUR", ratePaisa: toPaisa(20) },
+  ];
+  assert.equal(packingRateTotalPaisa(items), toPaisa(150));
+  // 0.10 + 0.20 is 0.30000000000000004 in rupees — but never in paisa.
+  assert.equal(packingRateTotalPaisa([{ name: "A", ratePaisa: toPaisa(0.1) }, { name: "B", ratePaisa: toPaisa(0.2) }]), 30);
+  assert.equal(packingRateTotalPaisa([]), 0);
+});
+
+test("a packing attribute needs a name and a price the books take", () => {
+  assert.equal(isValidPackingRateItem({ name: "BOX", ratePaisa: 5000 }), true);
+  assert.equal(isValidPackingRateItem({ name: "FREE", ratePaisa: 0 }), true, "a price of 0 is a real price");
+  assert.equal(isValidPackingRateItem({ name: "   ", ratePaisa: 5000 }), false);
+  assert.equal(isValidPackingRateItem({ name: "BOX", ratePaisa: -1 }), false);
+  assert.equal(isValidPackingRateItem({ name: "BOX", ratePaisa: 10.5 }), false, "whole paisa only");
+  assert.equal(isValidPackingRateItem({ name: "X".repeat(MAX_PACKING_ITEM_NAME_LENGTH + 1), ratePaisa: 1 }), false);
+});
+
+test("attributes that are each fine but add up past one rate's limit are refused", () => {
+  const half = { name: "HALF", ratePaisa: MAX_CONTRACTOR_RATE_PAISA / 2 };
+  assert.equal(areValidPackingRateItems([half, half]), true);
+  assert.equal(areValidPackingRateItems([half, half, { name: "ONE MORE", ratePaisa: 1 }]), false);
 });

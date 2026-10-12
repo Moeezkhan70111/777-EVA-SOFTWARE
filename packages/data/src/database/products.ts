@@ -5,8 +5,45 @@
 
 import type { SqliteDatabase } from "../sqliteDatabase.js";
 import type { InventoryRow, PagedResult, ProductListEntry, ProductListKind, ProductListQuery, ProductVariantRecord, SaleableVariant } from "./types.js";
-import { fromPaisa, fromPaisaOrNull, multiplyMoney, subtractMoney, toPaisaOrNull } from "@erp/domain";
+import {
+  areValidPackingRateItems,
+  fromPaisa,
+  fromPaisaOrNull,
+  multiplyMoney,
+  packingRateTotalPaisa,
+  subtractMoney,
+  toPaisa,
+  toPaisaOrNull,
+  type PackingRateItem,
+} from "@erp/domain";
 import { IN_STORE_STOCK_SQL } from "./shared.js";
+
+/** One packing attribute as a caller sends it: a name and a price in rupees per DOZEN. */
+export interface PackingRateItemInput {
+  name: string;
+  rate: number;
+}
+
+/** The standard contractor rates as a caller sends them, in rupees per DOZEN. */
+interface ContractorRateInput {
+  machineRate?: number | null;
+  packingRate?: number | null;
+  printingRate?: number | null;
+  /**
+   * What the packing rate is made of (migration 072). Undefined leaves the saved list alone,
+   * an empty list clears it, and a non-empty list REPLACES the packing rate with its sum.
+   */
+  packingRateItems?: PackingRateItemInput[];
+}
+
+/** The attributes in paisa, refused as a whole if any of them could not be saved. */
+const packingItemsInPaisa = (items: PackingRateItemInput[]): PackingRateItem[] => {
+  const inPaisa = items.map((item) => ({ name: item.name.trim(), ratePaisa: toPaisa(item.rate) }));
+  if (!areValidPackingRateItems(inPaisa)) {
+    throw new Error("Every packing attribute needs a name and a price of 0 or more, and together they must stay within Rs 100,000 per dozen.");
+  }
+  return inPaisa;
+};
 
 /**
  * The standard contractor rates of a product as they are stored: integer paisa, or null.
@@ -15,16 +52,27 @@ import { IN_STORE_STOCK_SQL } from "./shared.js";
  * has priced shows as "Not priced" on a machine program, while an explicit 0 means that job is
  * not paid for this article. `undefined` in means null out — the form sends an empty box as
  * nothing, not as free work.
+ *
+ * When packing attributes are given, the packing rate is THEIR SUM — worked out here from the
+ * attributes themselves, never taken from a total the caller typed or added up.
  */
-const contractorRatesInPaisa = (input: {
-  machineRate?: number | null;
-  packingRate?: number | null;
-  printingRate?: number | null;
-}): { machineRatePaisa: number | null; packingRatePaisa: number | null; printingRatePaisa: number | null } => ({
-  machineRatePaisa: toPaisaOrNull(input.machineRate),
-  packingRatePaisa: toPaisaOrNull(input.packingRate),
-  printingRatePaisa: toPaisaOrNull(input.printingRate),
-});
+const contractorRatesInPaisa = (
+  input: ContractorRateInput
+): {
+  machineRatePaisa: number | null;
+  packingRatePaisa: number | null;
+  printingRatePaisa: number | null;
+  packingItems: PackingRateItem[] | null;
+} => {
+  const packingItems = input.packingRateItems === undefined ? null : packingItemsInPaisa(input.packingRateItems);
+  return {
+    machineRatePaisa: toPaisaOrNull(input.machineRate),
+    packingRatePaisa:
+      packingItems && packingItems.length > 0 ? packingRateTotalPaisa(packingItems) : toPaisaOrNull(input.packingRate),
+    printingRatePaisa: toPaisaOrNull(input.printingRate),
+    packingItems,
+  };
+};
 
 /**
  * Whether a caller said anything about the contractor rates at all.
@@ -34,25 +82,35 @@ const contractorRatesInPaisa = (input: {
  * what keeps a caller that knows nothing about contractor pricing — the older simple product
  * form, an import, anything added later — from silently blanking a rate somebody agreed.
  */
-const mentionsContractorRates = (input: {
-  machineRate?: number | null;
-  packingRate?: number | null;
-  printingRate?: number | null;
-}): boolean => "machineRate" in input || "packingRate" in input || "printingRate" in input;
+const mentionsContractorRates = (input: ContractorRateInput): boolean =>
+  "machineRate" in input || "packingRate" in input || "printingRate" in input || "packingRateItems" in input;
 
-/** Writes only the three rate columns of one ArticleSize. Called only when they were given. */
-const writeContractorRates = (
-  db: SqliteDatabase,
-  articleSizeId: string,
-  input: { machineRate?: number | null; packingRate?: number | null; printingRate?: number | null },
-  now: string
-): void => {
+/** Replaces one ArticleSize's packing attributes with these, in the order given. */
+const writePackingRateItems = (db: SqliteDatabase, articleSizeId: string, items: PackingRateItem[], now: string): void => {
+  db.db.prepare("DELETE FROM article_size_packing_items WHERE article_size_id = ?").run(articleSizeId);
+  const insert = db.db.prepare(
+    "INSERT INTO article_size_packing_items (id, article_size_id, position, name, rate_paisa, created_at) VALUES (?, ?, ?, ?, ?, ?)"
+  );
+  items.forEach((item, position) => insert.run(crypto.randomUUID(), articleSizeId, position, item.name, item.ratePaisa, now));
+};
+
+/** One ArticleSize's packing attributes, in the order they were entered. */
+const readPackingRateItems = (db: SqliteDatabase, articleSizeId: string): PackingRateItem[] =>
+  (
+    db.db
+      .prepare("SELECT name, rate_paisa FROM article_size_packing_items WHERE article_size_id = ? ORDER BY position")
+      .all(articleSizeId) as Array<{ name: string; rate_paisa: number }>
+  ).map((row) => ({ name: String(row.name), ratePaisa: Number(row.rate_paisa) }));
+
+/** Writes the rate columns of one ArticleSize (and its packing attributes, when given). */
+const writeContractorRates = (db: SqliteDatabase, articleSizeId: string, input: ContractorRateInput, now: string): void => {
   const rates = contractorRatesInPaisa(input);
   db.db
     .prepare(
       "UPDATE article_sizes SET machine_rate_paisa = ?, packing_rate_paisa = ?, printing_rate_paisa = ?, updated_at = ? WHERE id = ?"
     )
     .run(rates.machineRatePaisa, rates.packingRatePaisa, rates.printingRatePaisa, now, articleSizeId);
+  if (rates.packingItems) writePackingRateItems(db, articleSizeId, rates.packingItems, now);
 };
 
 /** What an edited product is saved with. */
@@ -68,6 +126,8 @@ export interface ProductUpdateInput {
   machineRate?: number | null;
   packingRate?: number | null;
   printingRate?: number | null;
+  /** What the packing rate is made of — see migration 072. */
+  packingRateItems?: PackingRateItemInput[];
   mainGroupId?: string;
   productGroupId?: string;
   articleSeriesId?: string;
@@ -313,6 +373,8 @@ export const productsMethods = {
       machineRatePaisa: row.machine_rate_paisa == null ? null : Number(row.machine_rate_paisa),
       packingRatePaisa: row.packing_rate_paisa == null ? null : Number(row.packing_rate_paisa),
       printingRatePaisa: row.printing_rate_paisa == null ? null : Number(row.printing_rate_paisa),
+      // What the packing rate is made of, when it was entered as attributes (migration 072).
+      packingRateItems: readPackingRateItems(this, String(row.article_size_id ?? "")),
       mainGroupId: row.main_group_id ? String(row.main_group_id) : null,
       groupId: row.product_group_id ? String(row.product_group_id) : null,
       articleSeriesId: row.article_series_id ? String(row.article_series_id) : null,
@@ -373,6 +435,7 @@ export const productsMethods = {
     machineRate?: number | null;
     packingRate?: number | null;
     printingRate?: number | null;
+    packingRateItems?: PackingRateItemInput[];
     mainGroupId?: string;
     productGroupId?: string;
     articleSeriesId?: string;
@@ -423,6 +486,7 @@ export const productsMethods = {
     const now = new Date().toISOString();
     this.db.prepare(`INSERT INTO article_sizes (id, product_code, article, size, description, cost_price_paisa, selling_price_paisa, machine_rate_paisa, packing_rate_paisa, printing_rate_paisa, main_group_id, product_group_id, article_series_id, product_type_id, product_sub_group_id, status, created_at, updated_at, deleted_at, deleted_by, delete_reason) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL)`)
       .run(id, input.productCode ?? this.getNextProductCode(), article, size, input.description ?? null, costPricePaisa, sellingPricePaisa, rates.machineRatePaisa, rates.packingRatePaisa, rates.printingRatePaisa, input.mainGroupId ?? null, input.productGroupId ?? null, input.articleSeriesId ?? null, input.productTypeId ?? null, input.productSubGroupId ?? null, input.status ?? "ACTIVE", now, now);
+    if (rates.packingItems) writePackingRateItems(this, id, rates.packingItems, now);
     return id;
   },
 
@@ -437,6 +501,7 @@ export const productsMethods = {
     machineRate?: number | null;
     packingRate?: number | null;
     printingRate?: number | null;
+    packingRateItems?: PackingRateItemInput[];
     mainGroupId?: string;
     productGroupId?: string;
     articleSeriesId?: string;

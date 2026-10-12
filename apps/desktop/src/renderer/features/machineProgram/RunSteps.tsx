@@ -3,7 +3,7 @@ import { SearchableCombobox } from "../../components/shared/SearchableCombobox";
 import { StateView } from "../../components/shared/StateView";
 import { copy } from "../../config/copy";
 import { ChoiceCards } from "./ChoiceCards";
-import { danaLabel } from "./machineProgram";
+import { articlesOfKind, danaLabel, sizesOfKind, type ArticleKind } from "./machineProgram";
 import { useArticles, useSoleColours } from "./useMachineProgramData";
 
 // The three questions after the sole: its colour, the article, the size. The colour and the size
@@ -45,19 +45,29 @@ export const ColourStep: React.FC<{
   );
 };
 
-export const ArticleStep: React.FC<{ selected: string | null; onChoose: (article: string) => void }> = ({ selected, onChoose }) => {
+export const ArticleStep: React.FC<{
+  selected: string | null;
+  onChoose: (article: string) => void;
+  /** Only FIX articles (the Fix Articles section) or only those made with uppers (an injector). */
+  kind?: ArticleKind;
+}> = ({ selected, onChoose, kind }) => {
   const articles = useArticles();
   if (articles.loading && articles.value.length === 0) return <StateView kind="loading" compact />;
   if (articles.error) return <StateView kind="error" compact message={articles.error} onRetry={() => void articles.reload()} />;
-  if (articles.value.length === 0) {
-    return <StateView kind="empty" compact title={copy.machineProgram.noArticlesTitle} hint={copy.machineProgram.noArticlesHint} />;
+  const offered = articlesOfKind(articles.value, kind);
+  if (offered.length === 0) {
+    return kind === "FIX" ? (
+      <StateView kind="empty" compact title={copy.machineProgram.noFixArticlesTitle} hint={copy.machineProgram.noFixArticlesHint} />
+    ) : (
+      <StateView kind="empty" compact title={copy.machineProgram.noArticlesTitle} hint={copy.machineProgram.noArticlesHint} />
+    );
   }
 
   return (
     <SearchableCombobox
       dropdown
       value={selected ?? ""}
-      options={articles.value.map((entry) => ({ value: entry.article, label: entry.article }))}
+      options={offered.map((entry) => ({ value: entry.article, label: entry.article }))}
       placeholder={copy.machineProgram.chooseArticle}
       ariaLabel={copy.machineProgram.article}
       emptyLabel={copy.machineProgram.articleNoMatch}
@@ -72,12 +82,14 @@ export const SizeStep: React.FC<{
   onChoose: (size: { articleSizeId: string; size: string }) => void;
   /** `small` packs the size tiles into the narrow Article & Size panel. */
   layout?: "large" | "small";
-}> = ({ article, selectedId, onChoose, layout = "large" }) => {
+  /** Only the sizes of this kind — see ArticleStep. */
+  kind?: ArticleKind;
+}> = ({ article, selectedId, onChoose, layout = "large", kind }) => {
   const articles = useArticles();
   if (articles.loading && articles.value.length === 0) return <StateView kind="loading" compact />;
   if (articles.error) return <StateView kind="error" compact message={articles.error} onRetry={() => void articles.reload()} />;
 
-  const sizes = articles.value.find((entry) => entry.article === article)?.sizes ?? [];
+  const sizes = sizesOfKind(articles.value.find((entry) => entry.article === article)?.sizes ?? [], kind);
   return (
     <ChoiceCards
       choices={sizes.map((size) => ({ key: size.articleSizeId, title: size.size }))}

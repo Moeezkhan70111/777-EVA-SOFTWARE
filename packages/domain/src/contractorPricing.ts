@@ -87,6 +87,13 @@ export const rateOf = (rates: ContractorRates, work: ContractorWork): number =>
       : rates.printingRatePaisa;
 
 /**
+ * What `dozens` of ONE job comes to at its rate per dozen, rounded to the paisa once.
+ * 10 DOZEN at Rs 70.00 is 7000 × 10 = 70,000 paisa (Rs 700.00).
+ */
+export const jobChargePaisa = (ratePaisa: number, dozens: number): number =>
+  Number.isFinite(dozens) && dozens > 0 ? Math.round(ratePaisa * dozens) : 0;
+
+/**
  * What `dozens` of an article comes to at its rates.
  *
  * The quantity may be fractional (half a dozen is a real line), so each job is rounded to the
@@ -95,9 +102,9 @@ export const rateOf = (rates: ContractorRates, work: ContractorWork): number =>
  */
 export const contractorChargeFor = (rates: ContractorRates | null | undefined, dozens: number): ContractorCharge => {
   if (!rates || !Number.isFinite(dozens) || dozens <= 0) return ZERO_CHARGE;
-  const machinePaisa = Math.round(rates.machineRatePaisa * dozens);
-  const packingPaisa = Math.round(rates.packingRatePaisa * dozens);
-  const printingPaisa = Math.round(rates.printingRatePaisa * dozens);
+  const machinePaisa = jobChargePaisa(rates.machineRatePaisa, dozens);
+  const packingPaisa = jobChargePaisa(rates.packingRatePaisa, dozens);
+  const printingPaisa = jobChargePaisa(rates.printingRatePaisa, dozens);
   return { machinePaisa, packingPaisa, printingPaisa, totalPaisa: machinePaisa + packingPaisa + printingPaisa };
 };
 
@@ -111,6 +118,36 @@ export const addCharges = (...charges: ContractorCharge[]): ContractorCharge =>
     }),
     ZERO_CHARGE
   );
+
+// ─── A product's packing rate, made of named attributes ─────────────────────
+//
+//   BOX 50.00 + TAPE 30.00 + POLY BAG 50.00 + LABOUR 20.00  =  packing rate 150.00 per DOZEN
+//
+// The packing rate is still ONE figure everywhere it is used: a machine program copies it and
+// every charge is computed from it. The attributes only say what that figure is made of, so when
+// a product has them its packing rate IS their sum — worked out here, once, in paisa.
+
+/** One named part of a product's packing rate, per DOZEN, in integer paisa. */
+export interface PackingRateItem {
+  name: string;
+  ratePaisa: number;
+}
+
+export const MAX_PACKING_ITEM_NAME_LENGTH = 40;
+
+/** The packing rate the attributes add up to, in integer paisa. */
+export const packingRateTotalPaisa = (items: readonly PackingRateItem[]): number =>
+  items.reduce((sum, item) => sum + item.ratePaisa, 0);
+
+/** A name that is not blank and not too long, and a price the books take (0 is allowed). */
+export const isValidPackingRateItem = (item: PackingRateItem): boolean => {
+  const name = item.name.trim();
+  return name.length > 0 && name.length <= MAX_PACKING_ITEM_NAME_LENGTH && isValidContractorRatePaisa(item.ratePaisa);
+};
+
+/** Every attribute valid, and the sum still within what one rate may be. */
+export const areValidPackingRateItems = (items: readonly PackingRateItem[]): boolean =>
+  items.every(isValidPackingRateItem) && isValidContractorRatePaisa(packingRateTotalPaisa(items));
 
 // ─── One program's pricing ────────────────────────────────────────────────────
 

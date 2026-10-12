@@ -5,6 +5,9 @@ import { StateView } from "../../../components/shared/StateView";
 import { formatDateTime } from "../../../utils/dates";
 import type { MachineProgramReconciliation } from "../../../types/desktopApi";
 import { ReconciliationDialog } from "./ReconciliationDialog";
+import { FixShortfall } from "./FixShortfall";
+import { FixReconciliation, fixRunsToReconcile } from "./FixReconciliation";
+import { useBConversion } from "./useBConversion";
 import type { ProgramCloseState } from "./useProgramClose";
 
 // COMPLETE PROGRAM — the last thing done to a machine program, from Store In.
@@ -20,7 +23,22 @@ interface ProgramCloseSectionProps {
   close: ProgramCloseState;
   /** Store In closes programs; Store Out only shows how one was closed. */
   allowComplete: boolean;
+  /** Store In: what the EVR FIX Reconciliation needs to turn missing cartons into B cartons. */
+  bCartons?: BCartonsTarget;
 }
+
+interface BCartonsTarget {
+  token: string;
+  programId: string;
+  programCode: string;
+  onConverted: () => Promise<void>;
+}
+
+/** The EVR FIX Reconciliation, with the action that makes B cartons. */
+const BCartonReconciliation: React.FC<{ view: MachineProgramReconciliation; target: BCartonsTarget }> = ({ view, target }) => {
+  const convert = useBConversion(target);
+  return <FixReconciliation view={view} convert={convert} />;
+};
 
 const shortCartons = (view: MachineProgramReconciliation): number => Math.max(0, view.cartonsDue - view.cartonsBack);
 const shortUppers = (view: MachineProgramReconciliation): number => view.lines.reduce((total, line) => total + line.shortfallUppers, 0);
@@ -57,7 +75,15 @@ const ClosedSummary: React.FC<{ view: MachineProgramReconciliation }> = ({ view 
   );
 };
 
-export const ProgramCloseSection: React.FC<ProgramCloseSectionProps> = ({ close, allowComplete }) => {
+/** The standing line under the figures: uppers to account for, fix cartons not back, or all back. */
+const standingLines = (view: MachineProgramReconciliation): string[] => {
+  const lines: string[] = [];
+  if (shortUppers(view) > 0) lines.push(copy.programClose.cartonsShort(shortCartons(view) - view.fixCartonsShort, shortUppers(view)));
+  if (view.fixCartonsShort > 0) lines.push(copy.programClose.fixCartonsShort(view.fixCartonsShort));
+  return lines.length > 0 ? lines : [copy.programClose.allBack];
+};
+
+export const ProgramCloseSection: React.FC<ProgramCloseSectionProps> = ({ close, allowComplete, bCartons }) => {
   const [dialog, setDialog] = useState<null | "confirm" | "reconcile">(null);
   const [opening, setOpening] = useState(false);
   const view = close.reconciliation;
@@ -95,9 +121,18 @@ export const ProgramCloseSection: React.FC<ProgramCloseSectionProps> = ({ close,
       {view && !view.closure ? (
         <div className="mpr-standing">
           <p className="mpr-standing-figures">{copy.programClose.cartonsBack(view.cartonsBack, view.cartonsDue)}</p>
-          <p className="mpi-section-line">
-            {shortCartons(view) > 0 ? copy.programClose.cartonsShort(shortCartons(view), shortUppers(view)) : copy.programClose.allBack}
-          </p>
+          {standingLines(view).map((line) => (
+            <p className="mpi-section-line" key={line}>
+              {line}
+            </p>
+          ))}
+          {/* With labels to turn into B cartons, the Reconciliation table says where the missing
+              cartons are; without one (Store Out), the plain shortfall list says it. */}
+          {bCartons && fixRunsToReconcile(view).length > 0 ? (
+            <BCartonReconciliation view={view} target={bCartons} />
+          ) : (
+            <FixShortfall view={view} />
+          )}
           {view.blockedReason ? (
             <p className="mp-problem" role="alert">
               ⚠ {view.blockedReason}
@@ -107,6 +142,7 @@ export const ProgramCloseSection: React.FC<ProgramCloseSectionProps> = ({ close,
       ) : null}
 
       {dialog === "confirm" && view ? (
+        // Every carton is back: an EVR FIX carton still out keeps Complete disabled (blockedReason).
         <ConfirmDialog
           title={copy.programClose.confirmTitle(view.code)}
           facts={[{ label: copy.programClose.confirmFactCartons, value: copy.programClose.cartonsBack(view.cartonsBack, view.cartonsDue) }]}

@@ -227,6 +227,83 @@ export const copy = {
     youSaw: (seen: number) => `(you saw ${seen})`,
   },
 
+  contractorLedger: {
+    title: "Contractor Ledger",
+    subtitle: "Pick a contractor to see their account.",
+    contractor: "Contractor",
+    choose: "Select a contractor",
+    noMatch: "No contractor matches that name.",
+    loading: "Loading contractors…",
+    loadFailed: "Could not load the contractors",
+    emptyTitle: "No contractors yet",
+    emptyHint: "Add a party with the type Contractor in Setup › Add / Edit Party.",
+    addContractor: "Add Contractor",
+    count: (n: number) => `${n} contractor${n === 1 ? "" : "s"}`,
+    nothingPicked: "Select a contractor above to open their ledger.",
+    noCity: "City not provided",
+
+    // Who a contractor is paid as.
+    roles: {
+      MACHINE: "Machine Contractor",
+      PACKING: "Packing Contractor",
+      PRINTING: "Printing Contractor",
+    },
+    /** The job on one line of work. */
+    jobs: { MACHINE: "Machine", PACKING: "Packing", PRINTING: "Printing" },
+    noRoleYet: "Not on a machine yet",
+    printingName: "Printing Contractor",
+    printingDetail: "All printing work — no contractor assigned yet",
+
+    // Period
+    from: "From",
+    to: "To",
+    thisMonth: "This month",
+
+    // Summary
+    openingBalance: "Opening Balance",
+    workDone: "Work Done",
+    paid: "Paid",
+    balance: "Balance Payable",
+    advance: "Advance Paid",
+    dozensLine: (dozens: string) => `${dozens} produced`,
+    paidLine: "Cash vouchers",
+    asOf: (date: string) => `as of ${date}`,
+    unpriced: (dozens: string) =>
+      `${dozens} produced has no rate set, so it is not counted. Set the rate on the machine program or the product.`,
+
+    // Table
+    loadingLedger: "Loading ledger…",
+    ledgerFailed: "Could not load this ledger",
+    noEntries: "No production or payments in this period.",
+    noEntriesHint: "Production appears here when Store In scans a machine program's cartons.",
+    colDate: "Date",
+    colParticulars: "Particulars",
+    colQty: "Qty",
+    colEarned: "Earned (Cr)",
+    colPaid: "Paid (Dr)",
+    colBalance: "Balance",
+    openingRow: "Opening balance",
+    totalRow: "Total",
+    production: "Production",
+    payment: "Payment",
+    receipt: "Received back",
+    showDetails: (date: string) => `Show production details for ${date}`,
+    hideDetails: (date: string) => `Hide production details for ${date}`,
+
+    // Production detail
+    colProgram: "Program",
+    colWork: "Work",
+    colArticle: "Article",
+    colRate: "Rate / dozen",
+    colCalculation: "Calculation",
+    colAmount: "Amount",
+    cartons: (count: number) => `${count} carton${count === 1 ? "" : "s"}`,
+    programRate: "Program rate",
+    productRate: "Product rate",
+    notPriced: "Not priced",
+    dayTotal: "Day total",
+  },
+
   products: {
     emptyTitle: "No products yet",
     emptyHint: "Add a product from Setup › Add / Edit Product.",
@@ -234,6 +311,28 @@ export const copy = {
     /** Says what the three rates are for, and that a machine program may still differ from them. */
     contractorPricingNote:
       "What this product's work is normally paid. A machine program starts from these rates and keeps its own, so changing them here never changes a program already priced. Leave a box empty if the rate is not set.",
+    /** The packing rate built from named attributes — BOX 50 + TAPE 30 + … (migration 072). */
+    packingItems: {
+      add: "Add packing attribute",
+      addTitle: "Add Packing Attribute",
+      editTitle: "Edit Packing Attribute",
+      dialogSubtitle: "Adds to this product's packing rate, per DOZEN.",
+      name: "Name of Attribute",
+      namePlaceholder: "e.g. BOX",
+      price: "Price",
+      pricePlaceholder: "0.00",
+      addButton: "Add",
+      breakdownTitle: "Packing Breakdown",
+      total: "Total",
+      sumOf: (count: number) => `Total of ${count} attribute${count === 1 ? "" : "s"}`,
+      edit: (name: string) => `Edit ${name}`,
+      remove: (name: string) => `Remove ${name}`,
+      nameRequired: "Enter a name for this attribute, like BOX or TAPE.",
+      nameTooLong: (max: number) => `Keep the name to ${max} characters or fewer.`,
+      priceRequired: "Enter a price, like 50 or 12.50. Use 0 if it costs nothing.",
+      priceOutOfRange: "A price must be 0 or more, and no more than Rs 100,000 per dozen.",
+      totalOutOfRange: "Together the packing attributes must stay within Rs 100,000 per dozen.",
+    },
     stockStatus: {
       in: "In stock",
       low: "Low stock",
@@ -859,6 +958,15 @@ export const copy = {
     /** On the program and the printed sheet, where a fix run is listed beside upper runs. */
     fixRunLabel: (outer: string, inner: string) => `${outer} / ${inner}`,
     fixNoUpperShort: "No upper · two soles",
+    // FIX articles have no injector: they get their own section beside Injector 1 and 2.
+    fixSection: "Fix Articles",
+    fixSectionNote: "EVR FIX — two soles, no upper, no injector",
+    fixSectionEmptyTitle: "No fix articles on this program",
+    fixSectionEmptyHint: "EVR FIX articles are not moulded on the injectors. Add them here.",
+    addFixArticle: "Add Fix Article",
+    fixArticleCount: (n: number) => `${n} article${n === 1 ? "" : "s"}`,
+    noFixArticlesTitle: "No fix articles in the Product Master",
+    noFixArticlesHint: "Mark the article's product sub group as “No upper — two sole colours” in Add / Edit Product.",
     article: "Article",
     size: "Size",
     upper: "Upper",
@@ -1114,6 +1222,9 @@ export const copy = {
     /** "Total Dozen (Upper)" — a caption, so the unit is title-cased as on the printed sheet. */
     totalUpperLabel: (unitCode: string | null) =>
       unitCode ? `Total ${unitCode.charAt(0)}${unitCode.slice(1).toLowerCase()} (Upper)` : "Total Uppers",
+    /** "Total Dozen" — an EVR FIX program has no upper, so the total says nothing about one. */
+    totalLabel: (unitCode: string | null) =>
+      unitCode ? `Total ${unitCode.charAt(0)}${unitCode.slice(1).toLowerCase()}` : "Total",
 
     // ── Dana Issue ────────────────────────────────────────────────────────
     // Dana is the sole's own material. A program never reserved it, so there is no planned or
@@ -1182,8 +1293,26 @@ export const copy = {
     // True of both kinds now: an upper issued, and a FIX article that issues nothing at all.
     cartonNote: "1 DOZEN is 2 cartons of 6 pairs.",
     cartonEmpty: "Scan a packet out and its cartons appear here.",
+    cartonEmptyTitle: "Nothing to label yet",
     cartonCount: (cartons: number) => `${cartons} carton${cartons === 1 ? "" : "s"}`,
-    cartonPrint: "Print Carton QR",
+    // The banner on top of Cartons to label: it says what to DO, in the state the program is in.
+    cartonHeroEyebrow: "Action needed",
+    cartonHeroTitle: (cartons: number) => `Print ${cartons} carton QR label${cartons === 1 ? "" : "s"}`,
+    cartonHeroBody: (runs: number) =>
+      `${runs} article${runs === 1 ? " is" : "s are"} waiting for labels. Print them before production starts — every carton needs one.`,
+    cartonSteps: ["Print the labels", "Stick one on every carton", "Store In scans it back"] as readonly string[],
+    cartonDoneTitle: "All carton labels printed",
+    cartonDoneBody: "Stick one on every carton. Store In scans each label as its carton comes back.",
+    cartonDoneBack: (back: number, total: number) => `${back} of ${total} cartons back in store`,
+    cartonLockedTitle: "Program closed",
+    cartonLockedBody: "No new carton labels are printed for a closed program. Reprints still work.",
+    // One label-style card per run still owed its labels.
+    cartonsWord: (cartons: number) => (cartons === 1 ? "carton" : "cartons"),
+    cartonOneEach: "One QR label per carton",
+    cartonPrintCount: (cartons: number) => `Print ${cartons} label${cartons === 1 ? "" : "s"}`,
+    cartonPrintedHeading: "Printed",
+    cartonBBadgeLabel: "B cartons",
+    cartonConvertedToB: (count: number) => `${count} converted to B — voided`,
     cartonPrinting: "Generating carton QR…",
     cartonPrintLabel: (cartons: number, what: string) => `Print ${cartons} carton QR labels for ${what}`,
     cartonPrinted: (range: string) => `✓ Printed · ${range}`,
@@ -1202,6 +1331,8 @@ export const copy = {
     // Back in store: Store In scanning the program's own carton labels as the machine sends them.
     cartonBack: (received: number, total: number) => `${received} of ${total} back in store`,
     cartonInTitle: "Carton In",
+    /** The right-hand station on Store In while a program is open. */
+    cartonInStationTitle: (code: string) => `Carton In · ${code}`,
     cartonInLine: "Scan each carton label printed for this program as it comes back. One scan produces it and stores it in.",
     cartonInNoneTitle: "No carton labels printed yet",
     cartonInClosedTitle: "Program closed",
@@ -1241,6 +1372,34 @@ export const copy = {
     cartonsShort: (short: number, uppers: number) =>
       `${short} carton${short === 1 ? "" : "s"} short — ${uppers} uppers to account for`,
     allBack: "Every carton due is back.",
+    // FIX cartons (EVR FIX, no upper) still out: the program cannot close until they are back.
+    fixCartonsShort: (short: number) =>
+      `${short} EVR FIX carton${short === 1 ? "" : "s"} still to come back — the program closes when every carton is back.`,
+    fixShortOpen: "Still to come back before the program can close:",
+    fixRunName: (article: string, size: string, outer: string, inner: string) => `${article} ${size} (${outer} / ${inner})`,
+    fixRunShort: (short: number, due: number) => `${short} of ${due} carton${due === 1 ? "" : "s"} not back`,
+    // Reconciliation for EVR FIX: the cartons not back become B cartons (MIX), labelled again.
+    bTitle: "Reconciliation",
+    bLine: "Where are the cartons that did not come back? If they came off the machine as B — mixed colours — make them B cartons: their labels are replaced by B labels (MIX), and the B cartons are scanned back in.",
+    bColArticle: "Article",
+    bColDue: "Due",
+    bColBack: "Back",
+    bColNotBack: "Not back",
+    bColB: "B cartons",
+    bInputLabel: (article: string) => `B cartons of ${article}`,
+    bGenerate: "Generate B labels",
+    bGenerating: "Generating B labels…",
+    bStatus: (printed: number, back: number) => `B · ${printed} label${printed === 1 ? "" : "s"} printed · ${back} of ${printed} back`,
+    bRunName: (article: string, size: string) => `${article} / ${size} / MIX · B`,
+    bConfirmTitle: (count: number) => `Make ${count} B carton${count === 1 ? "" : "s"}?`,
+    bConfirmVoided: "Labels not back",
+    bConfirmVoidedValue: (count: number) => `${count} voided — they can no longer be scanned`,
+    bConfirmNew: "New labels",
+    bConfirmNewValue: (count: number, article: string, size: string) => `${count} × B · ${article} · ${size} · MIX`,
+    bConfirmExplain: (count: number) =>
+      `The ${count} label${count === 1 ? "" : "s"} that did not come back are voided, and ${count} new B label${count === 1 ? " is" : "s are"} printed. Stick one on each B carton and scan it on Carton In — the program completes when they are back.`,
+    bGeneratedTitle: "B labels generated",
+    bGeneratedBody: (count: number, what: string) => `${count} B carton label${count === 1 ? "" : "s"} for ${what}. Scan the B cartons on Carton In.`,
     complete: "Complete Program",
     completing: "Completing…",
     loading: "Counting the cartons…",
@@ -1368,6 +1527,7 @@ export const copy = {
       purchaseVoucherList: { label: "Purchase Bills", line: "All supplier bills" },
       supplierLedger: { label: "Supplier Ledger", line: "One supplier's transactions" },
       supplierBalance: { label: "Supplier Balance", line: "All supplier balances" },
+      contractorLedger: { label: "Contractor Ledger", line: "One contractor's work and payments" },
       settings: { label: "System Settings", line: "Application configuration" },
       rawMaterialSetup: { label: "Raw Material Setup", line: "Categories, units and fields" },
       health: { label: "System Health", line: "Database and device status" },

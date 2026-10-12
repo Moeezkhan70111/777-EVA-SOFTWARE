@@ -74,6 +74,8 @@ All four are the owner's (2026-10-10/11), and none of them is recoverable from t
 
 ### The ledger waits for production
 
+> **Done 2026-10-12** — see docs/29-contractor-ledger.md. The section below is kept as the reasoning.
+
 The first answer was "also post to the contractor's ledger", and then: *"it will be done when
 production comes."* That is the rule this is built to:
 

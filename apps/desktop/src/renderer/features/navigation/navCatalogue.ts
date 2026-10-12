@@ -180,6 +180,7 @@ export const NAV_SECTIONS: readonly NavSection[] = [
       item("purchase-voucher-list", t.purchaseVoucherList, "history"),
       item("supplier-ledger", t.supplierLedger, "ledger"),
       item("supplier-balance", t.supplierBalance, "balance"),
+      item("contractor-ledger", t.contractorLedger, "ledger"),
     ],
   },
   {

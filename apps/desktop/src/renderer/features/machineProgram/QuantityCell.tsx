@@ -3,7 +3,7 @@ import { roundQuantity } from "@erp/domain";
 import type { MachineProgramRunRecord, MachineProgramUpperLineRecord } from "../../types/desktopApi";
 import { copy } from "../../config/copy";
 import { QuantityBox } from "./QuantityBox";
-import { formatAmount, quantityProblem } from "./machineProgram";
+import { formatAmount, quantityProblem, upperRunInjector } from "./machineProgram";
 import type { ProgramWrites } from "./useProgramWrites";
 
 // How many of ONE UPPER this line promises, and the ceiling it is held to.
@@ -37,7 +37,7 @@ export const QuantityCell: React.FC<QuantityCellProps> = ({ machineId, programDa
       writes.saveLine({
         machineId,
         programDate,
-        injectorNo: run.injectorNo,
+        injectorNo: upperRunInjector(run),
         runId: run.id,
         lineId: line.id,
         itemId: line.itemId,

@@ -128,6 +128,7 @@ export const NAV_PERMISSION_MODULES = [
       ["purchase-voucher-list", "Purchase Bill List"],
       ["supplier-ledger", "Supplier Ledger"],
       ["supplier-balance", "Supplier Balance"],
+      ["contractor-ledger", "Contractor Ledger"],
     ],
   },
   {

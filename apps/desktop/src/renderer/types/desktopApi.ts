@@ -1,3 +1,5 @@
+import type { ContractorLedger, ContractorRole } from "@erp/domain";
+
 export type SortOrder = "ASC" | "DESC";
 
 export interface DashboardSnapshot {
@@ -101,6 +103,11 @@ export interface ProductRow {
   machineRatePaisa?: number | null;
   packingRatePaisa?: number | null;
   printingRatePaisa?: number | null;
+  /**
+   * What the packing rate is made of, in integer paisa (migration 072) — BOX 50 + TAPE 30 + …
+   * When present, packingRatePaisa is their sum. Empty when the rate was typed as one figure.
+   */
+  packingRateItems?: Array<{ name: string; ratePaisa: number }>;
   mainGroupId: string | null;
   groupId: string | null;
   articleSeriesId?: string | null;
@@ -1351,7 +1358,6 @@ export interface DesktopApi {
     machineId: string;
     programDate: string;
     shift?: MachineShift | null;
-    injectorNo: number;
     runId?: string | null;
     soleColour: string;
     innerSoleColour: string;
@@ -1421,6 +1427,14 @@ export interface DesktopApi {
     input: { programId: string; eventIds?: string[]; runId?: string },
     opts?: { token?: string }
   ): Promise<{ accepted: boolean; reason?: string; batch?: QrBatchRow; qrCodes?: QrCodeRow[] }>;
+  /**
+   * Reconciliation for EVR FIX: `count` of a FIX run's labels that did not come back become B
+   * cartons — those labels are voided and as many new MIX labels, grade B, are generated.
+   */
+  convertMachineProgramCartonsToB(
+    input: { programId: string; runId: string; count: number },
+    opts?: { token?: string }
+  ): Promise<{ accepted: boolean; reason?: string; batch?: QrBatchRow; qrCodes?: QrCodeRow[]; voidedQrIds?: string[] }>;
   /** Store In: one of the program's carton labels scanned back — produced and stored in, or refused. */
   machineProgramCartonIn(
     input: { programId: string; rawScan: string },
@@ -1853,6 +1867,32 @@ export interface DesktopApi {
     }>;
   }>;
   listSupplierBalances(query?: Record<string, unknown>): Promise<{ rows: Array<{ partyId: string; partyName: string; city: string | null; balance: number; lastVoucherDate: string | null; totalPurchases: number; totalPayments: number }>; total: number }>;
+  /** Contractors a ledger can be opened for, with the work they are on record for. */
+  listContractorLedgerAccounts(): Promise<{ accepted: boolean; reason?: string; accounts?: ContractorLedgerAccount[] }>;
+  /** One contractor's ledger (or the printing ledger) for an inclusive `YYYY-MM-DD` range. */
+  getContractorLedger(
+    accountId: string,
+    query: { fromDate: string; toDate: string }
+  ): Promise<{ accepted: boolean; reason?: string; ledger?: ContractorLedgerReport }>;
+}
+
+// ─── Contractor Ledger ───────────────────────────────────────────────────────
+// Worked out in the main process from the cartons machine programs produced, their rates and
+// the cash vouchers; the shapes and the arithmetic are @erp/domain contractorLedger.ts.
+
+export interface ContractorLedgerAccount {
+  id: string;
+  name: string;
+  city: string | null;
+  active: boolean;
+  /** MACHINE and/or PACKING — from the programs and machines they were assigned to. */
+  roles: ContractorRole[];
+}
+
+export interface ContractorLedgerReport extends ContractorLedger {
+  account: ContractorLedgerAccount;
+  fromDate: string;
+  toDate: string;
 }
 
 // ─── Raw material Store movement configuration ───────────────────────────────────
@@ -2384,7 +2424,8 @@ export interface MachineProgramUpperLineRecord {
 export interface MachineProgramRunRecord {
   id: string;
   programId: string;
-  injectorNo: number;
+  /** 1 or 2 — or null on a FIX run, which has no injector (migration 073). */
+  injectorNo: number | null;
   runNo: number;
   /** THE sole on a normal run, the OUTER sole on a fix run. */
   soleColour: string;
@@ -2614,6 +2655,12 @@ export interface MachineProgramCartonLabel {
   cartonCount: number;
   /** How many of the WHOLE run's cartons have come back and been stored in so far. */
   receivedInRun: number;
+  /** How many of the run's labels are void — on a FIX run, the ones converted to B cartons. */
+  voidedInRun: number;
+  /** The colour the run's labels carry — MIX on a B run. */
+  colour: string;
+  /** "B" on a run of B carton labels (migration 074), null on an ordinary run. */
+  grade: "B" | null;
   printedBy: string | null;
   printedAt: string;
 }
@@ -2679,10 +2726,31 @@ export interface MachineProgramReconciliation {
   machineContractor: ReconciliationParty | null;
   packingContractor: ReconciliationParty | null;
   lines: ReconciliationLine[];
+  /** FIX runs (EVR FIX, no upper): cartons owed by the plan, counted beside the upper lines. */
+  fixRuns: ReconciliationFixRun[];
+  /** Every carton due and back — upper lines and fix runs. */
   cartonsDue: number;
   cartonsBack: number;
+  /** Fix cartons not back. While any are out, the program cannot close. */
+  fixCartonsShort: number;
   /** Why the program cannot be completed here at all, or null. */
   blockedReason: string | null;
+}
+
+export interface ReconciliationFixRun {
+  runId: string;
+  article: string;
+  size: string;
+  outerSoleColour: string;
+  innerSoleColour: string;
+  cartonsDue: number | null;
+  cartonsBack: number;
+  cartonNote: string | null;
+  /** Printed labels not back — the most that can be turned into B cartons. */
+  convertible: number;
+  /** B carton labels printed for this run, and how many of them are back. */
+  bCartons: number;
+  bBack: number;
 }
 
 export interface MachineProgramCartonInResult {

@@ -358,6 +358,36 @@ export function registerStoreHandlers(ctx: IpcContext): void {
     }
   });
 
+  // Reconciliation for EVR FIX: the labels of a FIX run that did not come back become B cartons.
+  // Generating labels needs QR Generator access, exactly as printing them does; which labels are
+  // voided is chosen by the data layer inside its write lock, never sent from the screen.
+  ipcMain.handle(IPC.convertMachineProgramCartonsToB, (event, input?: unknown, opts?: { token?: string }) => {
+    const auth = resolveStoreOperator(opts?.token);
+    if (!auth.ok) return { accepted: false, reason: auth.reason };
+    const payload = isRecord(input) ? input : {};
+    try {
+      authorizer.requirePermission(event, PERMISSION.QR_GENERATOR, opts?.token);
+    } catch {
+      return { accepted: false, reason: "Your account does not have QR Generator access, so it cannot generate B carton labels." };
+    }
+    try {
+      const converted = db.convertFixCartonsToB({
+        programId: asString(payload.programId),
+        runId: asString(payload.runId),
+        count: asOptionalNumber(payload.count) ?? Number.NaN,
+        convertedBy: auth.username,
+        deviceId,
+      });
+      logger.log({
+        module: "machine-program-store-out", severity: "WARNING", operation: "convert-b-cartons", deviceId,
+        message: JSON.stringify({ programId: asString(payload.programId), runId: asString(payload.runId), qrBatchId: converted.batch.id, voided: converted.voidedQrIds }),
+      });
+      return { accepted: true, batch: converted.batch, qrCodes: converted.qrCodes, voidedQrIds: converted.voidedQrIds };
+    } catch (error) {
+      return { accepted: false, reason: error instanceof Error ? error.message : "The B carton labels could not be generated." };
+    }
+  });
+
   // Store In: one carton label of the open program scanned back. The use case refuses a carton
   // printed for another program (or none) and otherwise produces and stores it in, in one
   // transaction — authorised as every other store scan is, from the session token.

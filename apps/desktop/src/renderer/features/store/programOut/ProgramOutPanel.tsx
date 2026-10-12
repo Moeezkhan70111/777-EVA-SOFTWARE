@@ -1,16 +1,16 @@
-import React, { useEffect, useMemo } from "react";
+import React, { useMemo } from "react";
 import { copy } from "../../../config/copy";
 import { StateView } from "../../../components/shared/StateView";
 import { SCAN_STATION_CSS } from "../../scanStation/scanStation";
-import { CartonRunList, IssuedPacketList } from "./ProgramOutCartons";
+import { CartonRunList } from "./CartonLabels";
+import { IssuedPacketList } from "./ProgramOutCartons";
 import { DanaIssuePanel } from "./DanaIssuePanel";
 import { ProgramIssueBands, ProgramIssueTotals } from "./ProgramIssueBands";
 import { ProgramIssueHeader } from "./ProgramIssueHeader";
-import { ProgramCartonIn } from "./ProgramCartonIn";
 import { ProgramScanSection } from "./ProgramScanSection";
 import { ProgramCloseSection } from "../programClose/ProgramCloseSection";
-import { useProgramClose } from "../programClose/useProgramClose";
-import { canIssueMore, injectorsOnProgram, programBands, programStatusLabel } from "./programOut";
+import { isProgramClosed, type ProgramCloseState } from "../programClose/useProgramClose";
+import { canIssueMore, injectorsOnProgram, isFixOnlyProgram, programBands, programStatusLabel } from "./programOut";
 import type { ProgramOutState } from "./useProgramOut";
 
 // MACHINE PROGRAM ISSUE — one program, read top to bottom.
@@ -32,9 +32,13 @@ import type { ProgramOutState } from "./useProgramOut";
 //
 // Nothing here decides whether a packet may be issued, moves stock, or works out a carton count.
 //
+// EVR FIX (every article a FIX article): no upper, so no Upper Out, no upper cards and no
+// "(Upper)" on the total. Dana Issue and the cartons stay — the soles are still Dana, and the
+// cartons are still labelled and scanned back. A program with any upper article is unchanged.
+//
 // VIEW ONLY (Store In): the same program, read the same way, without the two sections that take
-// stock OUT — Dana Issue and Upper Out. In their place is Store In's own job on a program: Carton
-// In, scanning the program's printed carton labels back into the store.
+// stock OUT — Dana Issue and Upper Out. Store In scans the program's cartons back on its own scan
+// station on the right (CartonInStation), so there is never a second scanner here.
 
 const UpperIcon = () => (
   <svg viewBox="0 0 24 24">
@@ -48,25 +52,24 @@ interface ProgramOutPanelProps {
   onClose: () => void;
   /** Leaves Store Out altogether, for the Store Station job chooser. */
   onChangeJob?: () => void;
-  /** Store In: read the program and scan its cartons back in; nothing can be issued. */
+  /** Store In: read the program and complete it; nothing can be issued. Its cartons are scanned
+   *  in on the page's own scan station on the right (CartonInStation), not here. */
   viewOnly?: boolean;
+  /** The page's one close state for this program (useProgramCloseFor). */
+  close: ProgramCloseState;
 }
 
-export const ProgramOutPanel: React.FC<ProgramOutPanelProps> = ({ state, onClose, onChangeJob, viewOnly = false }) => {
+export const ProgramOutPanel: React.FC<ProgramOutPanelProps> = ({ state, onClose, onChangeJob, viewOnly = false, close }) => {
   const { program, cartonRuns, printedRuns, blockedCartons, printingKey, history } = state;
   const { cartonProgress } = state;
   const bands = useMemo(() => (program ? programBands(program, cartonProgress) : []), [program, cartonProgress]);
-  const close = useProgramClose({ token: state.token, programId: program?.id ?? "", onClosed: state.reload });
-  const { load: loadClose } = close;
-  // Every carton stored in changes how the program stands, so Complete Program counts afresh.
-  useEffect(() => {
-    void loadClose();
-  }, [cartonProgress, loadClose]);
-  // Closed is final: nothing more is issued, printed or stored in against the program.
-  const closed = Boolean(close.reconciliation?.closure);
+  const closed = isProgramClosed(close);
 
   if (!program) return null;
   const canIssue = canIssueMore(program);
+  // EVR FIX has no upper: nothing goes out as one, so the upper sections are not shown for it.
+  // Any program with an upper article on it keeps them all (isFixOnlyProgram).
+  const fixOnly = isFixOnlyProgram(program);
 
   return (
     <div className="mpi-page">
@@ -91,15 +94,7 @@ export const ProgramOutPanel: React.FC<ProgramOutPanelProps> = ({ state, onClose
         </p>
       ) : null}
 
-      {viewOnly ? (
-        <ProgramCartonIn
-          token={state.token}
-          programId={program.id}
-          printedRuns={printedRuns.length}
-          closed={closed}
-          onReceived={state.reload}
-        />
-      ) : (
+      {viewOnly ? null : (
         <>
           <DanaIssuePanel
             programId={program.id}
@@ -107,26 +102,28 @@ export const ProgramOutPanel: React.FC<ProgramOutPanelProps> = ({ state, onClose
             enabled={program.displayStatus !== "CANCELLED" && !closed}
             onIssued={() => void state.reload()}
           />
-          <ProgramScanSection
-            title={copy.programOut.upperOutTitle}
-            line={copy.programOut.upperOutLine}
-            icon={<UpperIcon />}
-            startLabel={program.consumedQuantity > 0 ? copy.programOut.resumeScan : copy.programOut.startScan}
-            canScan={canIssue}
-            notice={
-              <StateView
-                kind="empty"
-                compact
-                title={programStatusLabel(program.displayStatus)}
-                hint={state.issueBlockedReason ?? copy.programOut.completedBody(program.code)}
-              />
-            }
-            feedback={state.feedback}
-            onScan={state.scan}
-            busy={state.issuing}
-            busyLabel={copy.programOut.scanBusy}
-            disabledHint={copy.programOut.scanDisabled}
-          />
+          {fixOnly ? null : (
+            <ProgramScanSection
+              title={copy.programOut.upperOutTitle}
+              line={copy.programOut.upperOutLine}
+              icon={<UpperIcon />}
+              startLabel={program.consumedQuantity > 0 ? copy.programOut.resumeScan : copy.programOut.startScan}
+              canScan={canIssue}
+              notice={
+                <StateView
+                  kind="empty"
+                  compact
+                  title={programStatusLabel(program.displayStatus)}
+                  hint={state.issueBlockedReason ?? copy.programOut.completedBody(program.code)}
+                />
+              }
+              feedback={state.feedback}
+              onScan={state.scan}
+              busy={state.issuing}
+              busyLabel={copy.programOut.scanBusy}
+              disabledHint={copy.programOut.scanDisabled}
+            />
+          )}
         </>
       )}
 
@@ -144,15 +141,35 @@ export const ProgramOutPanel: React.FC<ProgramOutPanelProps> = ({ state, onClose
       />
 
       {/* Store In completes the program; Store Out shows how it was closed, once it is. */}
-      <ProgramCloseSection close={close} allowComplete={viewOnly} />
+      <ProgramCloseSection
+        close={close}
+        allowComplete={viewOnly}
+        bCartons={
+          viewOnly
+            ? {
+                token: state.token,
+                programId: program.id,
+                programCode: program.code,
+                // The B run changes the program's cartons AND how it stands, so both are re-read.
+                onConverted: async () => {
+                  await state.reload();
+                  await close.load();
+                },
+              }
+            : undefined
+        }
+      />
 
-      {/* Store Out counts uppers going out; Store In counts the cartons coming back for them. */}
-      <ProgramIssueBands bands={bands} mode={viewOnly ? "cartons" : "issue"} />
+      {/* Store Out counts uppers going out; Store In counts the cartons coming back for them.
+          EVR FIX has no upper card to show, and no "no uppers yet" to say about it either: its
+          cartons are followed in Cartons to label above. */}
+      {fixOnly ? null : <ProgramIssueBands bands={bands} mode={viewOnly ? "cartons" : "issue"} />}
 
       <ProgramIssueTotals
         injectors={injectorsOnProgram(program)}
         total={program.productionQuantity}
         unitCode={program.unitCode}
+        fixOnly={fixOnly}
       />
 
       <IssuedPacketList history={history} />

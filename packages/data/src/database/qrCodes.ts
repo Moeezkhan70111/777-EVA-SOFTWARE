@@ -9,7 +9,7 @@ import type { QrBatchRecord, QrCodeRecord, PagedResult, QrBatchMemberRow, QrDeta
 import { GATE_LOCATION_TYPE, IN_STORE_LOCATION_TYPE, IN_STORE_STATUS, TO_GATE_STATUS } from "@erp/application";
 import type { TransactionContext } from "@erp/application";
 import type { MutableTransactionContext } from "./shared.js";
-import { buildQrId, formatQrSerial, fromPaisaOrNull, isValidRawMaterialQrId, normalizeQrArticle, normalizeQrColor, normalizeQrSize } from "@erp/domain";
+import { buildQrId, formatQrSerial, fromPaisaOrNull, isValidRawMaterialQrId, normalizeQrArticle, normalizeQrColor, normalizeQrSize, type CartonGrade } from "@erp/domain";
 
 /**
  * SQL form of `qrStageOf` so grouped counts are derived by the database from the same two
@@ -27,6 +27,8 @@ export interface QrBatchRequest {
   quantity: number;
   createdBy?: string;
   requestedBy?: string;
+  /** "B" for a run of B carton labels (migration 074). Left out, an ordinary run. */
+  grade?: CartonGrade | null;
 }
 
 export interface GeneratedQrBatch {
@@ -126,9 +128,9 @@ export const qrCodesMethods = {
 
     const batchId = crypto.randomUUID();
     this.db.prepare(
-      `INSERT INTO qr_batches (id, article_size_id, article, color, size, start_sequence, end_sequence, quantity, created_at, created_by, requested_by)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-    ).run(batchId, product.id, article, color, size, startSequence, endSequence, quantity, now, createdBy, requestedBy);
+      `INSERT INTO qr_batches (id, article_size_id, article, color, size, start_sequence, end_sequence, quantity, created_at, created_by, requested_by, grade)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(batchId, product.id, article, color, size, startSequence, endSequence, quantity, now, createdBy, requestedBy, input.grade ?? null);
 
     const insertQrCode = this.db.prepare(
       `INSERT INTO qr_codes (id, batch_id, article, color, size, sequence, status, created_at, updated_at, product_variant_id)

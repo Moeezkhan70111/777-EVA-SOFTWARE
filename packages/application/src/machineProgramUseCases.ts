@@ -173,7 +173,8 @@ export interface MachineProgramRepository {
   ): Promise<{ id: string; article: string; size: string; active: boolean } | null>;
   isKnownSoleColour(colour: string): boolean;
   getMachineProgramRunForWrite(runId: string, tx: TransactionContext): Promise<MachineProgramRunForWrite | null>;
-  nextMachineProgramRunNo(programId: string, injectorNo: number, tx: TransactionContext): Promise<number>;
+  /** The next run number on an injector — or among the fix runs, which have no injector (null). */
+  nextMachineProgramRunNo(programId: string, injectorNo: number | null, tx: TransactionContext): Promise<number>;
   insertMachineProgramRun(
     payload: {
       id: string; programId: string; injectorNo: number; runNo: number; soleColour: string;
@@ -251,14 +252,14 @@ export interface MachineProgramRepository {
   // ─── FIX articles: no upper, two soles (migration 067) ─────────────────────
   /** Whether an article + size is a FIX article, read from its product sub group. */
   articleHasNoUpperForWrite(articleSizeId: string, tx: TransactionContext): Promise<boolean>;
-  /** The fix run already on this injector for an article + size, or null. */
+  /** The fix run already on the program for an article + size, or null. A fix run has no injector. */
   findMachineProgramFixRun(
-    input: { programId: string; injectorNo: number; articleSizeId: string },
+    input: { programId: string; articleSizeId: string },
     tx: TransactionContext
   ): Promise<string | null>;
   insertMachineProgramFixRun(
     payload: {
-      id: string; programId: string; injectorNo: number; runNo: number; soleColour: string;
+      id: string; programId: string; runNo: number; soleColour: string;
       innerSoleColour: string; articleSizeId: string; quantity: number; unitId: string | null;
       createdBy: string; createdAt: string;
     },

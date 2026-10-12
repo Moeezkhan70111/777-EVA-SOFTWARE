@@ -8,7 +8,7 @@ import { formatLongDate } from "../../utils/dates";
 import { ContractorPricingDialog } from "./ContractorPricingDialog";
 import { ClockIcon, MachineIcon, PersonIcon, ProductionIcon } from "./MachineProgramIcons";
 import { ProgramPricing } from "./ProgramPricing";
-import { colourRuns, formatAmount, injectorRuns, injectorTotal, runColours } from "./machineProgram";
+import { colourRuns, formatAmount, injectorRuns, injectorTotal, programFixRuns, runColours } from "./machineProgram";
 import type { MachineProgramRunRecord } from "../../types/desktopApi";
 import type { ProgramWrites } from "./useProgramWrites";
 
@@ -73,6 +73,7 @@ export const ProgramSummaryRail: React.FC<ProgramSummaryRailProps> = ({
       {MACHINE_INJECTORS.map((injectorNo) => (
         <InjectorSummary key={injectorNo} injectorNo={injectorNo} program={program} />
       ))}
+      <FixSummary program={program} />
 
       <h3 className="mpx-summary-subtitle">{copy.machineProgram.quickView}</h3>
       <dl className="mpx-quick">
@@ -196,6 +197,40 @@ const InjectorSummary: React.FC<{ injectorNo: number; program: MachineProgramRec
           {copy.machineProgram.totalProduction} <span className="mpx-summary-total-of">({copy.machineProgram.injector(injectorNo)})</span>
         </span>
         <b>{formatAmount(total.quantity, unitCode)}</b>
+      </p>
+    </section>
+  );
+};
+
+/**
+ * The program's FIX articles — they have no injector, so they are summed on their own. Shown only
+ * when the program has some: a machine that makes none has nothing to say here.
+ */
+const FixSummary: React.FC<{ program: MachineProgramRecord | null }> = ({ program }) => {
+  const runs = programFixRuns(program);
+  if (runs.length === 0) return null;
+  const total = injectorTotal(runs);
+  return (
+    <section className="mpx-summary-injector">
+      <header className="mpx-summary-injector-head">
+        <h3 className="mpx-summary-injector-title">{copy.machineProgram.fixSection}</h3>
+        <span className="mp-badge mp-badge--ok">{copy.machineProgram.fixArticleCount(runs.length)}</span>
+      </header>
+      <ul className="mpx-summary-lines">
+        {runs.map((run) => (
+          <li key={run.id} className="mpx-summary-line">
+            <span className="mpx-summary-line-what">
+              {run.article} {run.size} <b>{copy.machineProgram.fixRunLabel(run.soleColour, run.innerSoleColour ?? "")}</b>
+            </span>
+            <span className="mpx-summary-line-qty">{formatAmount(run.fixQuantity, run.unitCode)}</span>
+          </li>
+        ))}
+      </ul>
+      <p className="mpx-summary-total">
+        <span>
+          {copy.machineProgram.totalProduction} <span className="mpx-summary-total-of">({copy.machineProgram.fixSection})</span>
+        </span>
+        <b>{formatAmount(total.quantity, total.unitCode)}</b>
       </p>
     </section>
   );

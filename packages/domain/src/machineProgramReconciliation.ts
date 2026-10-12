@@ -28,7 +28,7 @@ export type ReconciliationLossParty = (typeof RECONCILIATION_LOSS_PARTY)[keyof t
 export const MACHINE_PROGRAM_CLOSE_OUTCOME = {
   /** Every carton due came back. */
   COMPLETE: "COMPLETE",
-  /** Cartons were short, and the uppers they stand for were accounted for. */
+  /** Cartons were short, and the uppers they stand for were accounted for. (EVR FIX never closes short.) */
   RECONCILED: "RECONCILED",
 } as const;
 export type MachineProgramCloseOutcome = (typeof MACHINE_PROGRAM_CLOSE_OUTCOME)[keyof typeof MACHINE_PROGRAM_CLOSE_OUTCOME];
@@ -72,5 +72,33 @@ export const reconciliationEntryProblem = (shortfall: number, entry: Reconciliat
   if (entry.wastage > 0 && !entry.wastageReason.trim()) return "Say why the uppers were wasted — the claim needs a reason.";
   if (entry.lost > 0 && !entry.lostParty) return "Choose who lost the uppers: the machine or the packing contractor.";
   if (entry.lost > 0 && !entry.lostReason.trim()) return "Say how the uppers were lost — the claim needs a reason.";
+  return null;
+};
+
+// ─── B cartons (EVR FIX) ──────────────────────────────────────────────────────
+//
+//   20 labels printed, 10 back  →  "10 B cartons"  →  10 labels voided, 10 new MIX labels, grade B
+//
+// A carton that came off the machine in mixed colours is a B carton: its colour label no longer
+// tells the truth, so it is labelled again as MIX with a B on it, and THAT label comes back.
+
+/** The grade a carton QR run can carry. Only B exists; an ordinary run has none. */
+export const CARTON_GRADE = { B: "B" } as const;
+export type CartonGrade = (typeof CARTON_GRADE)[keyof typeof CARTON_GRADE];
+
+/** What a B carton's label says for its colour: B cartons are mixed colours. */
+export const B_CARTON_COLOUR = "MIX";
+
+/**
+ * Why `count` labels cannot be turned into B cartons, or null. Only a label that was printed and
+ * has not come back can be converted — `convertible` of them — and a carton is a whole carton.
+ */
+export const bConversionProblem = (count: number, convertible: number): string | null => {
+  if (!Number.isInteger(count) || count < 1) return "Type how many B cartons — a whole number, at least 1.";
+  if (count > convertible) {
+    return convertible === 0
+      ? "Every label of this article is back or already converted, so there is nothing to make B."
+      : `Only ${convertible} label${convertible === 1 ? " is" : "s are"} not back, so at most ${convertible} can be B cartons.`;
+  }
   return null;
 };

@@ -1211,11 +1211,12 @@ describe("Contractor pricing — the product's standard rates", () => {
   });
 });
 
-describe("FIX articles — two soles, no upper", () => {
+// EVR FIX is not moulded on the injectors (owner, 2026-10-12): a fix article has its own Fix
+// Articles section, is saved with no injector, and is never offered from Injector 1 or 2.
+describe("FIX articles — two soles, no upper, no injector", () => {
   /**
    * A SAVED fix run: EVR9 7/10 moulded in a SILVER GREY outer sole and a BLACK inner one, 60
-   * of them. No upper lines at all — which is the whole point, and what the card has to cope
-   * with: its figure lives on the run.
+   * of them. No upper lines and no injector — its figure lives on the run.
    */
   const fixProgram = (quantity = 60): MachineProgramRecord => ({
     ...programWith([{ colour: "BLACK", quantity: 0 }]),
@@ -1226,7 +1227,7 @@ describe("FIX articles — two soles, no upper", () => {
     outstandingQuantity: 0,
     runs: [
       {
-        id: "run-fix", programId: "prog-1", injectorNo: 1, runNo: 1,
+        id: "run-fix", programId: "prog-1", injectorNo: null, runNo: 1,
         soleColour: "SILVER GREY", innerSoleColour: "BLACK",
         articleSizeId: "as-evr9-710", article: "EVR9", size: "7/10",
         fixQuantity: quantity, totalQuantity: 0, consumedQuantity: 0, unitCode: "DOZEN",
@@ -1235,21 +1236,39 @@ describe("FIX articles — two soles, no upper", () => {
     ],
   });
 
-  /** Opens the add dialog, picks BLACK as the sole, then the fix article EVR9 7/10. */
-  const openFixArticle = async () => {
-    const dialog = await addSoleColour(1);
-    await click(/^BLACK/);
-    await describeArticle("EVR9", "7/10");
-    return dialog;
-  };
-
   /** A sole colour picked from one of the Sole Color panel's two dropdowns. */
   const chooseSole = async (which: "Outer sole colour" | "Inner sole colour", colour: string) => {
     await userEvent.click(screen.getByRole("combobox", { name: which }));
     await userEvent.click(await screen.findByRole("option", { name: new RegExp(`^${colour}`) }));
   };
 
-  it("drops the Upper Stock panel and asks for both soles and the quantity in the Sole Color panel", async () => {
+  const fixSection = () => screen.findByRole("region", { name: "Fix Articles" });
+
+  /** Opens + Add Fix Article, picks BLACK as the outer sole, then the fix article EVR9 7/10. */
+  const openFixArticle = async () => {
+    await userEvent.click(within(await fixSection()).getByRole("button", { name: "Add Fix Article" }));
+    const dialog = await screen.findByRole("dialog");
+    await chooseSole("Outer sole colour", "BLACK");
+    await describeArticle("EVR9", "7/10");
+    return dialog;
+  };
+
+  it("has its own Fix Articles section beside the injectors, and the injectors never offer a fix article", async () => {
+    installApi();
+    renderPage();
+    await openMachine1();
+
+    expect(await fixSection()).toHaveTextContent("No fix articles on this program");
+
+    // From an injector, EVR9 is not in the list at all — only articles made with uppers.
+    await addSoleColour(1);
+    await click(/^BLACK/);
+    await userEvent.click(screen.getByRole("combobox", { name: "Article" }));
+    expect(screen.queryByRole("option", { name: "EVR9" })).toBeNull();
+    expect(screen.getByRole("option", { name: "SK6" })).toBeInTheDocument();
+  });
+
+  it("asks for both soles and the quantity, offers only fix articles, and saves with NO injector", async () => {
     const api = installApi();
     renderPage();
     await openMachine1();
@@ -1259,9 +1278,7 @@ describe("FIX articles — two soles, no upper", () => {
     expect(within(dialog).queryByRole("region", { name: "Upper Stock" })).toBeNull();
     expect(within(dialog).queryByRole("region", { name: "Selected Articles" })).toBeNull();
 
-    // Both soles are dropdowns in the Sole Color panel; the outer one starts on the colour picked.
     const soles = within(dialog).getByRole("region", { name: "Sole Color" });
-    expect(within(soles).getByRole("combobox", { name: "Outer sole colour" })).toHaveValue("BLACK");
     await chooseSole("Inner sole colour", "RED");
     expect(within(soles).getByText("BLACK outer · RED inner")).toBeInTheDocument();
 
@@ -1274,7 +1291,6 @@ describe("FIX articles — two soles, no upper", () => {
         machineId: "m-1",
         programDate: TODAY,
         shift: DAY_SHIFT,
-        injectorNo: 1,
         soleColour: "BLACK",
         innerSoleColour: "RED",
         articleSizeId: "as-evr9-710",
@@ -1309,32 +1325,31 @@ describe("FIX articles — two soles, no upper", () => {
     expect(api.saveMachineProgramFixRun).not.toHaveBeenCalled();
   });
 
-  it("shows a saved fix article with no upper columns, and totals what it makes", async () => {
+  it("shows a saved fix article in Fix Articles, not under an injector, and totals what it makes", async () => {
     installApi({ program: fixProgram(60) });
     renderPage();
     await openMachine1();
 
-    const card = await screen.findByRole("article", { name: "SILVER GREY sole" });
-    const headings = within(card)
-      .getAllByRole("columnheader")
-      .map((cell) => cell.textContent);
-    // The two columns that only mean something for an upper are not there at all.
+    const section = await fixSection();
+    // Neither injector has it.
+    expect(screen.getByRole("region", { name: "Injector 1" })).toHaveTextContent("No program added yet");
+    expect(screen.queryByRole("article", { name: "SILVER GREY sole" })).toBeNull();
+
+    const headings = within(section).getAllByRole("columnheader").map((cell) => cell.textContent);
     expect(headings).not.toContain("Upper Color");
-    expect(headings).not.toContain("Available Stock (Upper)");
-    // Both soles are named, because a fix article is moulded from the two of them.
     expect(headings).toContain("Outer Sole");
     expect(headings).toContain("Inner Sole");
-    expect(within(card).queryByText("No upper · two soles")).toBeNull();
 
-    const row = within(card).getByRole("textbox", { name: /Change EVR9 7\/10/ }).closest("tr") as HTMLElement;
+    const row = within(section).getByRole("textbox", { name: /Change EVR9 7\/10/ }).closest("tr") as HTMLElement;
     expect(within(row).getByText("SILVER GREY")).toBeInTheDocument();
     expect(within(row).getByText("BLACK")).toBeInTheDocument();
+    expect(within(section).getByText("Total (Fix Articles)").closest("p")).toHaveTextContent("60 DOZEN");
 
-    // The figure lives on the RUN, so a total that only added up upper lines read 0 here.
-    expect(within(card).getByText("Total (SILVER GREY sole)").closest("p")).toHaveTextContent("60 DOZEN");
-    // And it reaches the Program Summary, where a fix run has no upper line to be listed on.
-    const summary = document.querySelector(".mpx-summary-injector") as HTMLElement;
-    expect(summary).toHaveTextContent("EVR9 7/10 BLACK");
+    // The Program Summary sums the fix articles on their own.
+    const summary = Array.from(document.querySelectorAll(".mpx-summary-injector")).find((block) =>
+      block.textContent?.includes("Fix Articles")
+    ) as HTMLElement;
+    expect(summary).toHaveTextContent("EVR9 7/10 SILVER GREY / BLACK");
     expect(summary).toHaveTextContent("60 DOZEN");
   });
 
@@ -1343,8 +1358,7 @@ describe("FIX articles — two soles, no upper", () => {
     renderPage();
     await openMachine1();
 
-    const card = await screen.findByRole("article", { name: "SILVER GREY sole" });
-    const box = within(card).getByRole("textbox", { name: /Change EVR9 7\/10/ });
+    const box = within(await fixSection()).getByRole("textbox", { name: /Change EVR9 7\/10/ });
     expect(box).toHaveValue("60");
 
     await userEvent.clear(box);
@@ -1356,7 +1370,6 @@ describe("FIX articles — two soles, no upper", () => {
         machineId: "m-1",
         programDate: TODAY,
         shift: DAY_SHIFT,
-        injectorNo: 1,
         runId: "run-fix",
         soleColour: "SILVER GREY",
         innerSoleColour: "BLACK",
@@ -1372,30 +1385,31 @@ describe("FIX articles — two soles, no upper", () => {
     renderPage();
     await openMachine1();
 
-    const card = await screen.findByRole("article", { name: "SILVER GREY sole" });
-    const box = within(card).getByRole("textbox", { name: /Change EVR9 7\/10/ });
+    const section = await fixSection();
+    const box = within(section).getByRole("textbox", { name: /Change EVR9 7\/10/ });
     await userEvent.clear(box);
     await userEvent.type(box, "0");
 
-    expect(await within(card).findByRole("alert")).toHaveTextContent("Type a number above 0.");
+    expect(await within(section).findByRole("alert")).toHaveTextContent("Type a number above 0.");
     fireEvent.blur(box);
     await waitFor(() => expect(api.saveMachineProgramFixRun).not.toHaveBeenCalled());
   });
 
-  it("prints a fix article as its two soles, one colour to a line, in Urdu", async () => {
+  it("prints fix articles as their own band, after the injectors, with both soles in Urdu", async () => {
     installApi({ program: fixProgram(60) });
     renderPage();
     await openMachine1();
     await click("Print Program");
 
     const text = await sheetText();
-    // The band is the outer sole, and the card says which colour is which.
-    expect(text).toContain(`Sole Color : ${colorValueInUrdu("SILVER GREY")}`);
+    expect(text).toContain("Fix Articles");
+    expect(text).not.toContain(`Sole Color : ${colorValueInUrdu("SILVER GREY")}`);
     expect(text).toMatch(/EVR9 7\/10/);
     expect(text).toContain(`Outer ${colorValueInUrdu("SILVER GREY")} Inner ${colorValueInUrdu("BLACK")} 60`);
-    // A fix article is not an upper and must never be printed as one.
     expect(text).not.toMatch(/No upper/);
     expect(text).toMatch(/Total Dozen 60 DOZEN/);
+    // A fix article puts nothing on an injector.
+    expect(text).toMatch(/Total Injectors 0/);
   });
 
   it("takes one fix article off the program, releasing nothing", async () => {
@@ -1403,8 +1417,7 @@ describe("FIX articles — two soles, no upper", () => {
     renderPage();
     await openMachine1();
 
-    const card = await screen.findByRole("article", { name: "SILVER GREY sole" });
-    await userEvent.click(within(card).getByRole("button", { name: /Remove EVR9 7\/10/ }));
+    await userEvent.click(within(await fixSection()).getByRole("button", { name: /Remove EVR9 7\/10/ }));
 
     const dialog = await screen.findByRole("dialog");
     expect(dialog).toHaveTextContent("SILVER GREY outer · BLACK inner");

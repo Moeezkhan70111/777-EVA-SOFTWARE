@@ -53,7 +53,6 @@ export const useProgramWrites = (onSaved: () => void) => {
       machineId: string;
       programDate: string;
       shift: MachineShift;
-      injectorNo: number;
       /** The run being changed — a quantity typed on a fix row. Left out, a run is added. */
       runId?: string;
       soleColour: string;

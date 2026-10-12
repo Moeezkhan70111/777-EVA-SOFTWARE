@@ -12,7 +12,7 @@ import { ContractorRateFields } from "./ContractorRateFields";
 import { ArticleStep, ColourStep, SizeStep } from "./RunSteps";
 import { UpperPicker } from "./UpperPicker";
 import { isEmptyRateDraft } from "./ContractorRateFields";
-import { danaLabel, fixQuantityProblem, runForArticleSize, type RunDraft } from "./machineProgram";
+import { danaLabel, fixQuantityProblem, runForArticleSize, type ArticleKind, type RunDraft } from "./machineProgram";
 import { useChosenUppers } from "./useChosenUppers";
 import { useArticles, useSoleColours } from "./useMachineProgramData";
 import type { ProgramWrites } from "./useProgramWrites";
@@ -32,9 +32,11 @@ import type { ProgramWrites } from "./useProgramWrites";
 // save anything — it joins the selection, so several uppers (and several articles) go on in one
 // go and the figures above stay where they were while that is being decided.
 //
-// A FIX article (EVR FIX: two soles, no upper) changes the screen the moment its size is chosen:
-// the Upper Stock panel and the upper selection disappear, and the Sole Color panel asks for the
-// outer sole, the inner sole (two dropdowns) and the quantity instead (FixSolePanel).
+// A FIX article (EVR FIX: two soles, no upper) is not moulded on the injectors, so it is never
+// offered here from an injector. It is added from the Fix Articles section, which opens this
+// dialog with NO injector: then only fix articles are offered, the Upper Stock panel and the upper
+// selection are not there, and the Sole Color panel asks for the outer sole, the inner sole and
+// the quantity instead (FixSolePanel).
 //
 // `fixedColour` is the sole colour the dialog was opened under. Adding an article inside a sole
 // colour's card cannot change it: otherwise an article added under BLACK could quietly save
@@ -44,7 +46,8 @@ interface AddArticleDialogProps {
   machineId: string;
   programDate: string;
   shift: MachineShift;
-  injectorNo: number;
+  /** The injector the uppers go on — or null for the Fix Articles section, which has none. */
+  injectorNo: number | null;
   /** The runs already in scope — a repeated article + size joins its run, never rivals it. */
   runs: MachineProgramRunRecord[];
   /** What the program already pays for each article, so the rate boxes open on that. */
@@ -70,18 +73,16 @@ export const AddArticleDialog: React.FC<AddArticleDialogProps> = ({ fixedColour,
   const articles = useArticles();
   const chosen = useChosenUppers({ ...target, articles: articles.value });
 
-  // A FIX article has no upper: the third panel asks for the inner sole and a quantity.
-  // The flag rides on the article list, so it is known the moment a size is chosen.
+  // No injector means the Fix Articles section: only FIX articles, asked for both soles and a
+  // quantity. From an injector, only articles made with uppers are offered.
+  const isFix = target.injectorNo === null;
+  const kind: ArticleKind = isFix ? "FIX" : "UPPER";
   const [innerColour, setInnerColour] = useState<string | null>(null);
   const [fixQuantity, setFixQuantity] = useState("");
   const [fixSaving, setFixSaving] = useState(false);
   const [fixRefused, setFixRefused] = useState<string | null>(null);
   // Set once the fix run is on the program, so a pricing refusal can never lead to saving it twice.
   const [fixSaved, setFixSaved] = useState(false);
-  const chosenSize = articles.value
-    .flatMap((entry) => entry.sizes)
-    .find((size) => size.articleSizeId === draft.articleSizeId);
-  const isFix = Boolean(chosenSize?.hasNoUpper);
 
   const describedRun =
     draft.soleColour && draft.article && draft.size && draft.articleSizeId
@@ -106,7 +107,6 @@ export const AddArticleDialog: React.FC<AddArticleDialogProps> = ({ fixedColour,
         machineId: target.machineId,
         programDate: target.programDate,
         shift: target.shift,
-        injectorNo: target.injectorNo,
         soleColour: draft.soleColour,
         innerSoleColour: innerColour,
         articleSizeId: draft.articleSizeId,
@@ -214,6 +214,7 @@ export const AddArticleDialog: React.FC<AddArticleDialogProps> = ({ fixedColour,
               <>
                 <p className="mpa-field-label">{copy.machineProgram.article}</p>
                 <ArticleStep
+                  kind={kind}
                   selected={draft.article}
                   onChoose={(article) =>
                     setDraft((previous) =>
@@ -225,6 +226,7 @@ export const AddArticleDialog: React.FC<AddArticleDialogProps> = ({ fixedColour,
                 {draft.article ? (
                   <SizeStep
                     layout="small"
+                    kind={kind}
                     article={draft.article}
                     selectedId={draft.articleSizeId}
                     onChoose={(size) => setDraft((previous) => ({ ...previous, ...size }))}

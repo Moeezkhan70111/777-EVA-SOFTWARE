@@ -11,7 +11,8 @@ import type { MachineProgramCartonPacket, MachineProgramReconciliation, MachineP
 // What matters here: Store In can open ANY machine program to read it (fully issued included),
 // can print the cartons it is owed, and can never issue against it — no Dana Issue, no Upper Out
 // scanner. Its own job on a program is Carton In: the program's printed carton labels scanned
-// back into the store. The receiving station on the right stays mounted throughout.
+// back into the store — on the page's ONE scan station on the right, which becomes Carton In while a
+// program is open (Scan Material stays mounted behind it). There is never a second scanner on the left.
 //
 // The sections and the receiving station are existing screens with their own tests; they are
 // mocked so only the lookup and the program view are under test here.
@@ -67,7 +68,7 @@ const printedPacket: MachineProgramCartonPacket = {
   cartonNote: null,
   label: {
     qrBatchId: "qrb-0", firstQrId: "SK6_BLACK_7/10_000001", lastQrId: "SK6_BLACK_7/10_000004",
-    cartonCount: 4, receivedInRun: 1, printedBy: "aslam", printedAt: `${TODAY}T07:30:00.000Z`,
+    cartonCount: 4, receivedInRun: 1, voidedInRun: 0, colour: "BLACK", grade: null, printedBy: "aslam", printedAt: `${TODAY}T07:30:00.000Z`,
   },
 };
 
@@ -89,6 +90,8 @@ const standing = (back: number): MachineProgramReconciliation => ({
   cartonsDue: 8,
   cartonsBack: back,
   blockedReason: null,
+  fixRuns: [],
+  fixCartonsShort: 0,
   lines: [
     {
       lineId: "line-black", itemId: "u-black", upperName: "UPPER — SK6 — BLACK — 7/10", article: "SK6", size: "7/10",
@@ -187,7 +190,9 @@ describe("Store In — machine program lookup", () => {
     expect(screen.getByText("Finished")).toBeInTheDocument();
     // Nothing can be issued: the two sections that take stock out are not on the page at all.
     expect(screen.queryByRole("region", { name: "Upper Out" })).not.toBeInTheDocument();
-    expect(screen.getByRole("region", { name: "Carton In" })).toBeInTheDocument();
+    // ONE scanner: the station on the right becomes Carton In; the program on the left has none.
+    expect(screen.getByRole("complementary", { name: "Carton In · MP-000001" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Start Scan/ })).not.toBeInTheDocument();
     expect(api.listMachineProgramDanaOptions).not.toHaveBeenCalled();
     // The program replaces the section on the left; the receiving station is untouched.
     expect(screen.queryByTestId("rm-section")).not.toBeInTheDocument();
@@ -236,11 +241,12 @@ describe("Store In — machine program lookup", () => {
     renderPage();
     await openProgram("MP-000001");
 
-    const cartonIn = await screen.findByRole("region", { name: "Carton In" });
+    // The right-hand station is Carton In now, armed — no Start Scan, no second scanner.
+    const station = await screen.findByRole("complementary", { name: "Carton In · MP-000001" });
     expect(screen.getByText("1 of 4 back in store")).toBeInTheDocument();
-    await userEvent.click(within(cartonIn).getByRole("button", { name: /Start Scan/ }));
+    await waitFor(() => expect(within(station).getByLabelText("Scanner input")).toBeEnabled());
 
-    await userEvent.type(screen.getByLabelText("Scanner input"), "SK6_BLACK_7/10_000002{Enter}");
+    await userEvent.type(within(station).getByLabelText("Scanner input"), "SK6_BLACK_7/10_000002{Enter}");
     expect(await screen.findByTestId("scan-status")).toHaveTextContent("STORED IN");
     expect(api.machineProgramCartonIn).toHaveBeenCalledWith(
       { programId: "prog-1", rawScan: "SK6_BLACK_7/10_000002" },
@@ -259,9 +265,9 @@ describe("Store In — machine program lookup", () => {
     renderPage();
     await openProgram("MP-000001");
 
-    const cartonIn = await screen.findByRole("region", { name: "Carton In" });
-    expect(within(cartonIn).getByRole("button", { name: /Start Scan/ })).toBeDisabled();
-    expect(within(cartonIn).getByText("No carton labels printed yet")).toBeInTheDocument();
+    const station = await screen.findByRole("complementary", { name: "Carton In · MP-000001" });
+    expect(within(station).getByText("No carton labels printed yet")).toBeInTheDocument();
+    expect(within(station).queryByLabelText("Scanner input")).not.toBeInTheDocument();
   });
   // A FIX article issues nothing, so a program made only of them has no packet to print cartons
   // against — its labels come from the plan. Store In must still open for them to be scanned back.
@@ -274,7 +280,7 @@ describe("Store In — machine program lookup", () => {
         labels: [
           {
             qrBatchId: "qrb-fix", firstQrId: "DC3_BLACK_7/10_000001", lastQrId: "DC3_BLACK_7/10_000064",
-            cartonCount: 64, receivedInRun: 0, printedBy: "aslam", printedAt: "2026-10-12T05:00:00.000Z",
+            cartonCount: 64, receivedInRun: 0, voidedInRun: 0, colour: "BLACK", grade: null, printedBy: "aslam", printedAt: "2026-10-12T05:00:00.000Z",
           },
         ],
       },
@@ -282,9 +288,9 @@ describe("Store In — machine program lookup", () => {
     renderPage();
     await openProgram("MP-000001");
 
-    const cartonIn = await screen.findByRole("region", { name: "Carton In" });
-    await waitFor(() => expect(within(cartonIn).getByRole("button", { name: /Start Scan/ })).toBeEnabled());
-    expect(within(cartonIn).queryByText("No carton labels printed yet")).toBeNull();
+    const station = await screen.findByRole("complementary", { name: "Carton In · MP-000001" });
+    await waitFor(() => expect(within(station).getByLabelText("Scanner input")).toBeEnabled());
+    expect(within(station).queryByText("No carton labels printed yet")).toBeNull();
   });
 
   it("reads the program in CARTONS coming back: due for what was issued, back, and still to come", async () => {
@@ -320,6 +326,79 @@ describe("Store In — machine program lookup", () => {
     expect(screen.queryByRole("heading", { name: "Machine Program" })).not.toBeInTheDocument();
     expect(navigate).toHaveBeenCalledWith("store-in-stock");
   });
+  // Reported 2026-10-12: 1 of 20 EVR FIX cartons back read "0 of 0 cartons back — every carton due
+  // is back". A fix run's cartons are counted — and (owner, 2026-10-12) the program cannot be
+  // completed at all until every carton is back: Complete stays disabled and says why.
+  it("counts an EVR FIX program's cartons, and will not complete until every carton is back", async () => {
+    const fixStanding: MachineProgramReconciliation = {
+      ...standing(0),
+      lines: [],
+      cartonsDue: 20,
+      cartonsBack: 1,
+      fixCartonsShort: 19,
+      blockedReason:
+        "19 EVR FIX cartons are still to come back. Scan them on Carton In — or, if they came back as B, make them B cartons in Reconciliation. MP-000001 cannot close until every carton is back.",
+      fixRuns: [
+        { runId: "run-fix", article: "DC3", size: "7/10", outerSoleColour: "BLACK", innerSoleColour: "RED", cartonsDue: 20, cartonsBack: 1, cartonNote: null, convertible: 19, bCartons: 0, bBack: 0 },
+      ],
+    };
+    const api = installApi([], [], fixStanding);
+    renderPage();
+    await openProgram("MP-000001");
+
+    const section = await screen.findByRole("region", { name: "Complete Program" });
+    expect(await within(section).findByText("1 of 20 cartons back")).toBeInTheDocument();
+    expect(within(section).queryByText("Every carton due is back.")).not.toBeInTheDocument();
+    expect(within(section).getByText(/19 EVR FIX cartons still to come back/)).toBeInTheDocument();
+    // The missing ones are listed where they can be made B cartons.
+    expect(within(section).getByRole("row", { name: /DC3 7\/10 \(BLACK \/ RED\)/ })).toBeInTheDocument();
+
+    // Complete Program is disabled, and says why — there is no way to close it short.
+    expect(within(section).getByRole("button", { name: "Complete Program" })).toBeDisabled();
+    expect(within(section).getByText(/cannot close until every carton is back/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Close Program Short/ })).not.toBeInTheDocument();
+    expect(api.completeMachineProgramProduction).not.toHaveBeenCalled();
+  });
+
+  // The owner's B-carton flow (2026-10-12): 20 labels printed, 10 back. Reconciliation asks how
+  // many are B; Generate voids the 10 not back and prints 10 B labels (MIX), confirmed first.
+  it("Reconciliation turns the EVR FIX cartons not back into B cartons, after a confirmation", async () => {
+    const fixRun = { runId: "run-fix", article: "EVR9", size: "7/10", outerSoleColour: "BLACK", innerSoleColour: "RED", cartonsDue: 20, cartonsBack: 10, cartonNote: null, convertible: 10, bCartons: 0, bBack: 0 };
+    const api = installApi([], [], { ...standing(0), lines: [], cartonsDue: 20, cartonsBack: 10, fixCartonsShort: 10, fixRuns: [fixRun] });
+    const bCodes = Array.from({ length: 10 }, (_, i) => ({ id: `EVR9_MIX_7/10_00000${i}`, article: "EVR9", color: "MIX", size: "7/10", status: "GENERATED" }));
+    const convert = vi.fn(async () => ({ accepted: true, batch: { id: "qrb-b" }, qrCodes: bCodes, voidedQrIds: [] }));
+    Object.assign(api, { convertMachineProgramCartonsToB: convert });
+    renderPage();
+    await openProgram("MP-000001");
+
+    const table = await screen.findByRole("region", { name: "Reconciliation" });
+    const row = within(table).getByRole("row", { name: /EVR9 7\/10/ });
+    expect(row).toHaveTextContent("20");
+    // How many B cartons: it opens on everything that is not back.
+    const input = within(row).getByLabelText(/B cartons of EVR9/);
+    expect(input).toHaveValue("10");
+
+    // More than are missing is refused before anything is sent.
+    await userEvent.clear(input);
+    await userEvent.type(input, "11");
+    expect(within(row).getByRole("alert")).toHaveTextContent("at most 10");
+    expect(within(row).getByRole("button", { name: "Generate B labels" })).toBeDisabled();
+
+    await userEvent.clear(input);
+    await userEvent.type(input, "10");
+    await userEvent.click(within(row).getByRole("button", { name: "Generate B labels" }));
+    const confirm = await screen.findByRole("dialog", { name: "Make 10 B cartons?" });
+    expect(confirm).toHaveTextContent("10 voided — they can no longer be scanned");
+    await userEvent.click(within(confirm).getByRole("button", { name: "Generate B labels" }));
+
+    await waitFor(() => expect(convert).toHaveBeenCalledWith({ programId: "prog-1", runId: "run-fix", count: 10 }, { token: "t-1" }));
+    // The B labels print straight away, as B — MIX, no inner sole.
+    await waitFor(() => expect(printWindow).toHaveBeenCalled());
+    const printed = printWindow.mock.calls[printWindow.mock.calls.length - 1][0] as unknown as { ids: string[]; identity: { color: string; grade: string; innerColor: string | null } };
+    expect(printed.ids).toHaveLength(10);
+    expect(printed.identity).toMatchObject({ color: "MIX", grade: "B", innerColor: null });
+  });
+
   it("completes a program when every carton is back, after a confirmation", async () => {
     const api = installApi([printedPacket], [], standing(8));
     renderPage();
@@ -335,10 +414,10 @@ describe("Store In — machine program lookup", () => {
 
     await waitFor(() => expect(api.completeMachineProgramProduction).toHaveBeenCalledWith({ programId: "prog-1", entries: [] }, { token: "t-1" }));
     expect(await within(section).findByText(/Closed — complete/)).toBeInTheDocument();
-    // Closed is final: Carton In says so and will not open.
-    const cartonIn = screen.getByRole("region", { name: "Carton In" });
-    expect(within(cartonIn).getByRole("button", { name: /Start Scan/ })).toBeDisabled();
-    expect(within(cartonIn).getByText("Program closed")).toBeInTheDocument();
+    // Closed is final: the Carton In station says so and has no scan box.
+    const station = screen.getByRole("complementary", { name: "Carton In · MP-000001" });
+    expect(await within(station).findByText("Program closed")).toBeInTheDocument();
+    expect(within(station).queryByLabelText("Scanner input")).not.toBeInTheDocument();
   });
 
   it("short cartons open the reconciliation: every missing upper accounted for, claims with their party and reason", async () => {
