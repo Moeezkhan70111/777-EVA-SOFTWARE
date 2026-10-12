@@ -10,6 +10,19 @@ import type { DatabaseSync } from "node:sqlite";
 import { fromPaisaOrNull, packetsInStore as countPacketsInStore, toPaisaOrNull } from "@erp/domain";
 import type { InventoryStockEventRow, RawMaterialHop, RawMaterialMovementConfigRow, RawMaterialSetupTemplate, WorkSection } from "./types.js";
 
+function readWorkSectionByName(db: DatabaseSync, name: string): WorkSection | undefined {
+  const row = db
+    .prepare("SELECT id, section_code, name, status FROM work_sections WHERE name = ? LIMIT 1")
+    .get(name) as Record<string, unknown> | undefined;
+  if (!row) return undefined;
+  return {
+    id: String(row.id),
+    sectionCode: String(row.section_code),
+    name: String(row.name),
+    status: String(row.status),
+  };
+}
+
 export const rawMaterialsMethods = {
   listInventoryUnits(this: SqliteDatabase): Array<Record<string, unknown>> {
     return this.db.prepare("SELECT * FROM inventory_units WHERE is_active = 1 ORDER BY name").all() as Array<Record<string, unknown>>;
@@ -840,28 +853,53 @@ export const rawMaterialsMethods = {
     const name = normalizeInventoryText(input.name);
     if (!name) throw new Error("Section name is required.");
 
-    const existing = this.db
-      .prepare("SELECT id, section_code, name, status FROM work_sections WHERE name = ? LIMIT 1")
-      .get(name) as Record<string, unknown> | undefined;
-    if (existing) {
-      return {
-        id: String(existing.id),
-        sectionCode: String(existing.section_code),
-        name: String(existing.name),
-        status: String(existing.status),
-      };
-    }
+    // A SAVEPOINT rather than BEGIN/COMMIT, because this runs in two contexts and must be
+    // correct in both: standalone from the Raw Material IPC handler, and inside the machine
+    // transaction (machinePrograms.ts createMachine -> defaultMachineSectionId) when a machine
+    // is added before any section exists. A BEGIN there would be a nested transaction and fail.
+    //
+    // Outside a transaction SQLite starts one for the savepoint and RELEASE commits it, so the
+    // code allocates and inserts as one unit either way. Inside one, RELEASE only pops the
+    // savepoint and ROLLBACK TO undoes just this section — the outer transaction stays open and
+    // under the caller's control, which is what lets createMachine still roll the section back
+    // with the machine.
+    //
+    // The name check belongs INSIDE that scope: it decides whether to allocate a code at all,
+    // so reading it outside would be deciding on one state and writing against another.
+    this.db.exec("SAVEPOINT create_work_section");
+    try {
+      const existing = readWorkSectionByName(this.db, name);
+      if (existing) {
+        this.db.exec("RELEASE create_work_section");
+        return existing;
+      }
 
-    const next = this.db
-      .prepare("SELECT COALESCE(MAX(CAST(SUBSTR(section_code, 4) AS INTEGER)), 0) + 1 as n FROM work_sections WHERE section_code LIKE 'WS-%'")
-      .get() as { n: number };
-    const sectionCode = `WS-${String(next.n).padStart(3, "0")}`;
-    const id = crypto.randomUUID();
-    const now = new Date().toISOString();
-    this.db
-      .prepare("INSERT INTO work_sections (id, section_code, name, status, created_at, updated_at) VALUES (?, ?, ?, 'ACTIVE', ?, ?)")
-      .run(id, sectionCode, name, now, now);
-    return { id, sectionCode, name, status: "ACTIVE" };
+      const next = this.db
+        .prepare("SELECT COALESCE(MAX(CAST(SUBSTR(section_code, 4) AS INTEGER)), 0) + 1 as n FROM work_sections WHERE section_code LIKE 'WS-%'")
+        .get() as { n: number };
+      const sectionCode = `WS-${String(next.n).padStart(3, "0")}`;
+      const id = crypto.randomUUID();
+      const now = new Date().toISOString();
+      this.db
+        .prepare("INSERT INTO work_sections (id, section_code, name, status, created_at, updated_at) VALUES (?, ?, ?, 'ACTIVE', ?, ?)")
+        .run(id, sectionCode, name, now, now);
+      this.db.exec("RELEASE create_work_section");
+      return { id, sectionCode, name, status: "ACTIVE" };
+    } catch (error) {
+      // ROLLBACK TO rewinds to the savepoint without ending the outer transaction. RELEASE then
+      // pops it, so the savepoint stack is left exactly as it was found.
+      //
+      // Every failure is raised, including a UNIQUE failure on section_code: that is a numbering
+      // fault, not a section that already exists, and answering it with some other row would
+      // hand the caller a section they did not ask for. A duplicate NAME cannot reach here —
+      // the lookup above runs in this same savepoint, and a name committed by another connection
+      // after that read makes the insert fail as BUSY_SNAPSHOT rather than as a constraint.
+      try {
+        this.db.exec("ROLLBACK TO create_work_section");
+        this.db.exec("RELEASE create_work_section");
+      } catch { /* ignore missing savepoint state */ }
+      throw error;
+    }
   },
 
   setWorkSectionStatus(this: SqliteDatabase, id: string, status: "ACTIVE" | "INACTIVE"): void {
