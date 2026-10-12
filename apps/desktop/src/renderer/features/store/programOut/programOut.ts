@@ -1,6 +1,7 @@
 import { MACHINE_PROGRAM_DISPLAY_STATUS, cartonsExpectedFromUppers, formatShiftRange, roundQuantity } from "@erp/domain";
 import type {
   MachineProgramCartonPacket,
+  MachineProgramFixCartonRun,
   MachineProgramLineCartons,
   MachineProgramRecord,
   MachineProgramScanVerdict,
@@ -213,8 +214,13 @@ export interface CartonRun {
   soleColour: string;
   colour: string;
   cartons: number;
-  /** The issuances these cartons are owed to — what the print is recorded against. */
-  eventIds: string[];
+  /**
+   * What the cartons are owed to, which is also what the print is recorded against.
+   *
+   * An ordinary article's are owed to the PACKETS of uppers that left the store. A FIX article
+   * has no upper and issues nothing, so its are owed to the RUN itself — its plan.
+   */
+  source: { kind: "PACKETS"; eventIds: string[] } | { kind: "FIX_RUN"; runId: string };
 }
 
 /** `SK12 / 7/10 / BLACK RED` — one carton run in the words the labels will carry. */
@@ -235,15 +241,63 @@ export const pendingCartonRuns = (packets: readonly MachineProgramCartonPacket[]
     const { articleSizeId, article, size, soleColour, colour, count } = packet.cartons;
     const key = `${articleSizeId}:${colour}`;
     const existing = runs.get(key);
-    if (existing) {
+    if (existing && existing.source.kind === "PACKETS") {
       existing.cartons += count;
-      existing.eventIds.push(packet.eventId);
+      existing.source.eventIds.push(packet.eventId);
     } else {
-      runs.set(key, { key, articleSizeId, article, size, soleColour, colour, cartons: count, eventIds: [packet.eventId] });
+      runs.set(key, {
+        key,
+        articleSizeId,
+        article,
+        size,
+        soleColour,
+        colour,
+        cartons: count,
+        source: { kind: "PACKETS", eventIds: [packet.eventId] },
+      });
     }
   }
   return [...runs.values()];
 };
+
+/**
+ * The carton runs a program's FIX articles still owe — one per run, from its plan.
+ *
+ * Nothing is issued for a fix article, so these are ready from the moment the run is saved and
+ * do not wait on a scan. A run whose cartons cannot be worked out is left out and reported by
+ * blockedFixCartonRuns, exactly as a packet's are.
+ */
+export const fixCartonRuns = (runs: readonly MachineProgramFixCartonRun[]): CartonRun[] =>
+  runs
+    .filter((run) => run.cartonNote == null && run.cartonsToPrint > 0)
+    .map((run) => ({
+      key: `fix:${run.runId}`,
+      articleSizeId: run.articleSizeId,
+      article: run.article,
+      size: run.size,
+      soleColour: run.outerSoleColour,
+      colour: run.outerSoleColour,
+      cartons: run.cartonsToPrint,
+      source: { kind: "FIX_RUN", runId: run.runId },
+    }));
+
+/** The fix runs whose cartons cannot be labelled here, with the reason to show. */
+export const blockedFixCartonRuns = (runs: readonly MachineProgramFixCartonRun[]): MachineProgramFixCartonRun[] =>
+  runs.filter((run) => run.cartonNote != null);
+
+/** Every carton run already printed for a program's FIX articles, for the record on screen. */
+export const printedFixCartonRuns = (runs: readonly MachineProgramFixCartonRun[]): PrintedCartonRun[] =>
+  runs.flatMap((run) =>
+    run.labels.map((label) => ({
+      key: label.qrBatchId,
+      qrBatchId: label.qrBatchId,
+      label: cartonRunLabel({ article: run.article, size: run.size, colour: run.outerSoleColour }),
+      cartons: label.cartonCount,
+      range: label.firstQrId === label.lastQrId ? label.firstQrId : `${label.firstQrId} → ${label.lastQrId}`,
+      received: label.receivedInRun,
+      at: label.printedAt,
+    }))
+  );
 
 /** A carton run that has been generated, for the record on screen. */
 export interface PrintedCartonRun {

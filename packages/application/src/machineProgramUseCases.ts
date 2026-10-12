@@ -220,11 +220,20 @@ export interface MachineProgramRepository {
     payload: { programId: string; shiftStartMinute: number; shiftEndMinute: number; nowIso: string },
     tx: TransactionContext
   ): Promise<void>;
+  /** Times one sole colour on one injector, or clears it. Returns how many runs were written. */
+  setMachineProgramSoleSlot(
+    payload: {
+      programId: string; injectorNo: number; soleColour: string;
+      startMinute: number | null; endMinute: number | null; nowIso: string;
+    },
+    tx: TransactionContext
+  ): Promise<number>;
   getMachineProgramForClose(
     programId: string,
     tx: TransactionContext
   ): Promise<{
     id: string; programNumber: number; machineName: string; contractorName: string; programDate: string; status: string;
+    shiftStartMinute: number; shiftEndMinute: number;
     totalQuantity: number; consumedQuantity: number; outstandingQuantity: number;
   } | null>;
   appendAuditLog(

@@ -306,17 +306,23 @@ export function registerStoreHandlers(ctx: IpcContext): void {
 
   ipcMain.handle(IPC.listMachineProgramCartonPackets, (_event, programId?: string, opts?: { token?: string }) => {
     const auth = resolveStoreOperator(opts?.token);
-    if (!auth.ok) return { accepted: false, reason: auth.reason, rows: [], progress: [] };
+    if (!auth.ok) return { accepted: false, reason: auth.reason, rows: [], progress: [], fixRuns: [] };
     try {
       const id = String(programId ?? "");
-      // The packets owed labels, and per upper line the cartons due back and how many are back.
-      return { accepted: true, rows: db.listMachineProgramCartonPackets(id), progress: db.listMachineProgramCartonProgress(id) };
+      // The packets owed labels, per upper line the cartons due back and how many are back, and
+      // the FIX runs, whose cartons are owed by the plan because no packet ever leaves for them.
+      return {
+        accepted: true,
+        rows: db.listMachineProgramCartonPackets(id),
+        progress: db.listMachineProgramCartonProgress(id),
+        fixRuns: db.listMachineProgramFixCartonRuns(id),
+      };
     } catch (error) {
       logger.log({
         module: "machine-program-store-out", severity: "WARNING", operation: "list-carton-packets", deviceId,
         message: error instanceof Error ? error.message : String(error),
       });
-      return { accepted: false, reason: "The cartons to label could not be loaded. Try again.", rows: [], progress: [] };
+      return { accepted: false, reason: "The cartons to label could not be loaded. Try again.", rows: [], progress: [], fixRuns: [] };
     }
   });
 
@@ -330,12 +336,17 @@ export function registerStoreHandlers(ctx: IpcContext): void {
       return { accepted: false, reason: "Your account does not have QR Generator access, so it cannot print carton QR labels." };
     }
     try {
-      const printed = db.printMachineProgramCartons({
-        programId: asString(payload.programId),
-        eventIds: asStringArray(payload.eventIds),
-        printedBy: auth.username,
-        deviceId,
-      });
+      // One print button, two kinds of carton: an upper's are owed to the packets that left the
+      // store, a FIX article's to the run itself, which never issues anything.
+      const runId = asOptionalString(payload.runId) ?? "";
+      const printed = runId
+        ? db.printMachineProgramFixCartons({ programId: asString(payload.programId), runId, printedBy: auth.username, deviceId })
+        : db.printMachineProgramCartons({
+            programId: asString(payload.programId),
+            eventIds: asStringArray(payload.eventIds),
+            printedBy: auth.username,
+            deviceId,
+          });
       logger.log({
         module: "machine-program-store-out", severity: "INFO", operation: "print-cartons", deviceId,
         message: JSON.stringify({ programId: asString(payload.programId), qrBatchId: printed.batch.id, cartons: printed.qrCodes.length }),

@@ -139,6 +139,7 @@ export const ProgramOutPanel: React.FC<ProgramOutPanelProps> = ({ state, onClose
         onPrint={(run) => void state.printCartons(run)}
         onReprint={(run) => void state.reprintCartons(run)}
         blocked={blockedCartons}
+        blockedFix={state.blockedFixCartons}
         locked={closed}
       />
 

@@ -77,6 +77,27 @@ describe("cartonLabelHeader", () => {
     expect(header.attributes.find((a) => a.isColor)?.value).toMatch(/[\u0600-\u06FF]/);
   });
 
+  // A FIX article is moulded from two soles and has no upper, so its carton names both of them
+  // (owner, 2026-10-12). The code still carries one colour, because a QR identity holds one.
+  it("names BOTH soles of a fix article, and says which is which", () => {
+    const header = cartonLabelHeader({ article: "DC3", color: "BLACK", size: "7/10", innerColor: "ORANGE" });
+
+    expect(header.categoryLine).toBe("DC3");
+    expect(header.attributes.map((a) => a.label)).toEqual(["SIZE", "OUTER SOLE", "INNER SOLE"]);
+    expect(header.attributes.map((a) => a.value)).toEqual([
+      "7/10",
+      colorValueInUrdu("BLACK"),
+      colorValueInUrdu("ORANGE"),
+    ]);
+    // Both are colours, so both print large in Urdu the way the floor reads them.
+    expect(header.attributes.filter((a) => a.isColor)).toHaveLength(2);
+  });
+
+  it("says COLOUR, not OUTER SOLE, for a carton with one colour", () => {
+    const header = cartonLabelHeader({ article: "SK6", color: "BLACK", size: "7/10", innerColor: "   " });
+    expect(header.attributes.map((a) => a.label)).toEqual(["SIZE", "COLOUR"]);
+  });
+
   it("leaves out what a carton does not have, rather than printing an empty supplier line", () => {
     const header = cartonLabelHeader({ article: "SK6", color: "BLACK", size: "7/10" });
     expect(header.partyName).toBe("");

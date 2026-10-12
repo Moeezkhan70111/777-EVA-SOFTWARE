@@ -1,13 +1,15 @@
 import React from "react";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { MachineProgramPage } from "./MachineProgramPage";
 import { NotificationsProvider } from "../../state/NotificationsContext";
 import { formatLongDate, shiftIsoDate, toIsoDate } from "../../utils/dates";
+import { colorValueInUrdu } from "../../utils/urdu";
 import type {
   MachineProgramMaterial,
   MachineProgramRecord,
+  MachineProgramWriteResult,
   MachineRecord,
   MachineShift,
   SaveMachineProgramLineInput,
@@ -117,7 +119,8 @@ const programWith = (
     runs: [
       {
         id: "run-1", programId: "prog-1", injectorNo: 1, runNo: 1, soleColour: "BLACK", innerSoleColour: null,
-        articleSizeId: "as-sk6-710", article: "SK6", size: "7/10", fixQuantity: 0, totalQuantity: total, consumedQuantity: consumed, unitCode: "DOZEN", lines: records,
+        articleSizeId: "as-sk6-710", article: "SK6", size: "7/10", fixQuantity: 0, totalQuantity: total, consumedQuantity: consumed, unitCode: "DOZEN",
+        startMinute: null, endMinute: null, lines: records,
       },
     ],
     articleRates: rates
@@ -229,6 +232,26 @@ function installApi(options: { program?: MachineProgramRecord | null } = {}) {
       if (state.program) state.program = { ...state.program, shiftStartMinute: input.shift.startMinute, shiftEndMinute: input.shift.endMinute };
       return { accepted: true, outcome: "SAVED", programId: input.programId };
     }),
+    setMachineProgramSoleSlot: vi.fn(
+      async (input: {
+        programId: string;
+        injectorNo: number;
+        soleColour: string;
+        slot: MachineShift | null;
+      }): Promise<MachineProgramWriteResult> => {
+        if (state.program) {
+          state.program = {
+            ...state.program,
+            runs: state.program.runs.map((run) =>
+              run.injectorNo === input.injectorNo && run.soleColour === input.soleColour
+                ? { ...run, startMinute: input.slot?.startMinute ?? null, endMinute: input.slot?.endMinute ?? null }
+                : run
+            ),
+          };
+        }
+        return { accepted: true, outcome: "SAVED", programId: input.programId };
+      }
+    ),
   };
   Object.defineProperty(window, "desktop", { value: { versions: { node: "22", chrome: "128", electron: "43" }, api }, configurable: true });
   return api;
@@ -299,6 +322,16 @@ const printedSheet = async (): Promise<string> => {
 
 /** The sheet with its tags stripped, for reading what it actually says. */
 const sheetText = async (): Promise<string> => (await printedSheet()).replace(/<[^>]*>/g, " ").replace(/\s+/g, " ");
+
+/**
+ * The sheet as a BROWSER reads it.
+ *
+ * Reading the HTML as a string says nothing about whether it renders: an unclosed tag swallows
+ * everything after it and prints a blank page while every string assertion still passes. That
+ * is what happened to the receiving receipt (2026-10-12), and this sheet goes to the floor too.
+ */
+const printedDocument = async (): Promise<Document> =>
+  new DOMParser().parseFromString(await printedSheet(), "text/html");
 
 describe("MachineProgramPage", () => {
   it("lists every machine in the rail with how its day stands, for today, and never a dropdown", async () => {
@@ -706,6 +739,82 @@ describe("MachineProgramPage", () => {
     expect(await sheetText()).toMatch(/06:00 PM/);
   });
 
+  it("runs a machine for hours nobody chose from the list, set on the clock", async () => {
+    const api = installApi({ program: programWith([{ colour: "BLACK", quantity: 30 }]) });
+    renderPage();
+    await openMachine1();
+
+    await click(/^Shift Time/);
+    const panel = await screen.findByRole("listbox", { name: "Shift Time" });
+    const popover = panel.closest(".mpx-popover") as HTMLElement;
+    fireEvent.change(within(popover).getByLabelText("Start"), { target: { value: "08:00" } });
+    fireEvent.change(within(popover).getByLabelText("Finish"), { target: { value: "14:30" } });
+    // The figure that says whether the hours are sane before they are saved.
+    expect(within(popover).getByText("6 hours 30 min")).toBeInTheDocument();
+
+    await userEvent.click(within(popover).getByRole("button", { name: "Set time" }));
+    await waitFor(() =>
+      expect(api.setMachineProgramShift).toHaveBeenCalledWith({
+        programId: "prog-1",
+        shift: { startMinute: 480, endMinute: 870 },
+      })
+    );
+    await waitFor(() => expect(screen.getByRole("button", { name: /^Shift Time/ })).toHaveTextContent("08:00 AM – 02:30 PM"));
+  });
+
+  it("says how long each sole runs, and prints it on the band", async () => {
+    const api = installApi({ program: programWith([{ colour: "BLACK", quantity: 30 }]) });
+    renderPage();
+    await openMachine1();
+
+    // Untimed, the sole runs the whole shift — which is what one sole on an injector means.
+    const card = await screen.findByRole("article", { name: "BLACK sole" });
+    const timeButton = within(card).getByRole("button", { name: /Hours BLACK sole runs/ });
+    expect(timeButton).toHaveTextContent("Full shift");
+
+    await userEvent.click(timeButton);
+    const popover = await within(card).findByRole("dialog", { name: /Hours BLACK sole runs/ });
+    fireEvent.change(within(popover).getByLabelText("Start"), { target: { value: "06:00" } });
+    fireEvent.change(within(popover).getByLabelText("Finish"), { target: { value: "10:00" } });
+    await userEvent.click(within(popover).getByRole("button", { name: "Set time" }));
+
+    await waitFor(() =>
+      expect(api.setMachineProgramSoleSlot).toHaveBeenCalledWith({
+        programId: "prog-1",
+        injectorNo: 1,
+        soleColour: "BLACK",
+        slot: { startMinute: 360, endMinute: 600 },
+      })
+    );
+    await waitFor(() =>
+      expect(within(card).getByRole("button", { name: /Hours BLACK sole runs/ })).toHaveTextContent("06:00 AM – 10:00 AM")
+    );
+
+    await click("Print Program");
+    expect(await sheetText()).toContain(`Sole Color : ${colorValueInUrdu("BLACK")} 06:00 AM – 10:00 AM`);
+  });
+
+  it("refuses hours outside the shift in the backend's own words, and keeps showing what is saved", async () => {
+    const api = installApi({ program: programWith([{ colour: "BLACK", quantity: 30 }]) });
+    api.setMachineProgramSoleSlot.mockResolvedValueOnce({
+      accepted: false,
+      outcome: "INVALID_SHIFT",
+      reason: "The machine runs 06:00 AM – 06:00 PM. Time the sole inside that.",
+    });
+    renderPage();
+    await openMachine1();
+
+    const card = await screen.findByRole("article", { name: "BLACK sole" });
+    await userEvent.click(within(card).getByRole("button", { name: /Hours BLACK sole runs/ }));
+    const popover = await within(card).findByRole("dialog", { name: /Hours BLACK sole runs/ });
+    fireEvent.change(within(popover).getByLabelText("Start"), { target: { value: "10:00" } });
+    fireEvent.change(within(popover).getByLabelText("Finish"), { target: { value: "19:00" } });
+    await userEvent.click(within(popover).getByRole("button", { name: "Set time" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("The machine runs 06:00 AM – 06:00 PM");
+    expect(within(card).getByRole("button", { name: /Hours BLACK sole runs/ })).toHaveTextContent("Full shift");
+  });
+
   it("prints an A5 sheet: the meta strip, a band per injector and sole, and a card per article", async () => {
     installApi({ program: programWith([{ colour: "BLACK", quantity: 30 }, { colour: "GREEN", quantity: 10 }]) });
     renderPage();
@@ -724,14 +833,22 @@ describe("MachineProgramPage", () => {
     expect(text).toMatch(/Shift Time 06:00 AM – 06:00 PM/);
     expect(text).toMatch(/Status Program ready/);
 
-    // 2. What to make — the sole colour is on the BAND, not buried in every row.
-    expect(text).toMatch(/Injector 1 Sole Color : BLACK/);
+    // 2. What to make — the sole colour is on the BAND, not buried in every row, and the
+    //    colours are in Urdu, because the sheet is read at the machine (owner, 2026-10-12).
+    expect(text).toContain(`Injector 1 Sole Color : ${colorValueInUrdu("BLACK")}`);
     expect(text).toMatch(/SK6 7\/10/);
     // A row still names both colours the way the floor says it: black sole, green upper.
-    expect(text).toMatch(/BLACK BLACK 30/);
-    expect(text).toMatch(/BLACK GREEN 10/);
+    expect(text).toContain(`${colorValueInUrdu("BLACK")} ${colorValueInUrdu("BLACK")} 30`);
+    expect(text).toContain(`${colorValueInUrdu("BLACK")} ${colorValueInUrdu("GREEN")} 10`);
+    expect(text).not.toMatch(/BLACK|GREEN/);
     // A program promises an upper, not a particular supplier's pile of it.
     expect(text).not.toMatch(/ABC UPPER|XYZ UPPER/);
+
+    // It is a document a browser can render, not just a string that contains the right words.
+    const doc = await printedDocument();
+    expect(doc.title).toContain("MP-000001");
+    expect(doc.body.textContent ?? "").toContain("Machine Program");
+    expect(doc.querySelectorAll(".card").length).toBeGreaterThan(0);
 
     // 3. What it comes to.
     expect(text).toMatch(/Total Injectors 1/);
@@ -1020,7 +1137,7 @@ describe("Contractor pricing", () => {
     await click("Print Program");
 
     const text = await sheetText();
-    expect(text).toContain("GREEN");
+    expect(text).toContain(colorValueInUrdu("GREEN"));
     expect(text).not.toContain("Contractor Pricing");
     expect(text).not.toContain("45.00");
     expect(text).not.toContain("2,250.00");
@@ -1095,6 +1212,29 @@ describe("Contractor pricing — the product's standard rates", () => {
 });
 
 describe("FIX articles — two soles, no upper", () => {
+  /**
+   * A SAVED fix run: EVR9 7/10 moulded in a SILVER GREY outer sole and a BLACK inner one, 60
+   * of them. No upper lines at all — which is the whole point, and what the card has to cope
+   * with: its figure lives on the run.
+   */
+  const fixProgram = (quantity = 60): MachineProgramRecord => ({
+    ...programWith([{ colour: "BLACK", quantity: 0 }]),
+    totalQuantity: 0,
+    fixQuantity: quantity,
+    productionQuantity: quantity,
+    consumedQuantity: 0,
+    outstandingQuantity: 0,
+    runs: [
+      {
+        id: "run-fix", programId: "prog-1", injectorNo: 1, runNo: 1,
+        soleColour: "SILVER GREY", innerSoleColour: "BLACK",
+        articleSizeId: "as-evr9-710", article: "EVR9", size: "7/10",
+        fixQuantity: quantity, totalQuantity: 0, consumedQuantity: 0, unitCode: "DOZEN",
+        startMinute: null, endMinute: null, lines: [],
+      },
+    ],
+  });
+
   /** Opens the add dialog, picks BLACK as the sole, then the fix article EVR9 7/10. */
   const openFixArticle = async () => {
     const dialog = await addSoleColour(1);
@@ -1167,5 +1307,110 @@ describe("FIX articles — two soles, no upper", () => {
     expect(screen.queryByText(/must be different colours/)).toBeNull();
     expect(screen.getByRole("button", { name: "Add to Program" })).toBeEnabled();
     expect(api.saveMachineProgramFixRun).not.toHaveBeenCalled();
+  });
+
+  it("shows a saved fix article with no upper columns, and totals what it makes", async () => {
+    installApi({ program: fixProgram(60) });
+    renderPage();
+    await openMachine1();
+
+    const card = await screen.findByRole("article", { name: "SILVER GREY sole" });
+    const headings = within(card)
+      .getAllByRole("columnheader")
+      .map((cell) => cell.textContent);
+    // The two columns that only mean something for an upper are not there at all.
+    expect(headings).not.toContain("Upper Color");
+    expect(headings).not.toContain("Available Stock (Upper)");
+    // Both soles are named, because a fix article is moulded from the two of them.
+    expect(headings).toContain("Outer Sole");
+    expect(headings).toContain("Inner Sole");
+    expect(within(card).queryByText("No upper · two soles")).toBeNull();
+
+    const row = within(card).getByRole("textbox", { name: /Change EVR9 7\/10/ }).closest("tr") as HTMLElement;
+    expect(within(row).getByText("SILVER GREY")).toBeInTheDocument();
+    expect(within(row).getByText("BLACK")).toBeInTheDocument();
+
+    // The figure lives on the RUN, so a total that only added up upper lines read 0 here.
+    expect(within(card).getByText("Total (SILVER GREY sole)").closest("p")).toHaveTextContent("60 DOZEN");
+    // And it reaches the Program Summary, where a fix run has no upper line to be listed on.
+    const summary = document.querySelector(".mpx-summary-injector") as HTMLElement;
+    expect(summary).toHaveTextContent("EVR9 7/10 BLACK");
+    expect(summary).toHaveTextContent("60 DOZEN");
+  });
+
+  it("types a new quantity straight onto the fix row and saves it against the same run", async () => {
+    const api = installApi({ program: fixProgram(60) });
+    renderPage();
+    await openMachine1();
+
+    const card = await screen.findByRole("article", { name: "SILVER GREY sole" });
+    const box = within(card).getByRole("textbox", { name: /Change EVR9 7\/10/ });
+    expect(box).toHaveValue("60");
+
+    await userEvent.clear(box);
+    await userEvent.type(box, "75");
+    fireEvent.blur(box);
+
+    await waitFor(() =>
+      expect(api.saveMachineProgramFixRun).toHaveBeenCalledWith({
+        machineId: "m-1",
+        programDate: TODAY,
+        shift: DAY_SHIFT,
+        injectorNo: 1,
+        runId: "run-fix",
+        soleColour: "SILVER GREY",
+        innerSoleColour: "BLACK",
+        articleSizeId: "as-evr9-710",
+        quantity: 75,
+      })
+    );
+    expect(api.saveMachineProgramLine).not.toHaveBeenCalled();
+  });
+
+  it("refuses a quantity that is not a quantity before anything is sent", async () => {
+    const api = installApi({ program: fixProgram(60) });
+    renderPage();
+    await openMachine1();
+
+    const card = await screen.findByRole("article", { name: "SILVER GREY sole" });
+    const box = within(card).getByRole("textbox", { name: /Change EVR9 7\/10/ });
+    await userEvent.clear(box);
+    await userEvent.type(box, "0");
+
+    expect(await within(card).findByRole("alert")).toHaveTextContent("Type a number above 0.");
+    fireEvent.blur(box);
+    await waitFor(() => expect(api.saveMachineProgramFixRun).not.toHaveBeenCalled());
+  });
+
+  it("prints a fix article as its two soles, one colour to a line, in Urdu", async () => {
+    installApi({ program: fixProgram(60) });
+    renderPage();
+    await openMachine1();
+    await click("Print Program");
+
+    const text = await sheetText();
+    // The band is the outer sole, and the card says which colour is which.
+    expect(text).toContain(`Sole Color : ${colorValueInUrdu("SILVER GREY")}`);
+    expect(text).toMatch(/EVR9 7\/10/);
+    expect(text).toContain(`Outer ${colorValueInUrdu("SILVER GREY")} Inner ${colorValueInUrdu("BLACK")} 60`);
+    // A fix article is not an upper and must never be printed as one.
+    expect(text).not.toMatch(/No upper/);
+    expect(text).toMatch(/Total Dozen 60 DOZEN/);
+  });
+
+  it("takes one fix article off the program, releasing nothing", async () => {
+    const api = installApi({ program: fixProgram(60) });
+    renderPage();
+    await openMachine1();
+
+    const card = await screen.findByRole("article", { name: "SILVER GREY sole" });
+    await userEvent.click(within(card).getByRole("button", { name: /Remove EVR9 7\/10/ }));
+
+    const dialog = await screen.findByRole("dialog");
+    expect(dialog).toHaveTextContent("SILVER GREY outer · BLACK inner");
+    expect(dialog).toHaveTextContent("It has no upper, so nothing is released.");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Yes, remove" }));
+
+    await waitFor(() => expect(api.removeMachineProgramRun).toHaveBeenCalledWith({ runId: "run-fix" }));
   });
 });

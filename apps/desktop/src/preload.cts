@@ -116,6 +116,7 @@ contextBridge.exposeInMainWorld("desktop", {
     removeMachineProgramRun: (input: Record<string, unknown>) => ipcRenderer.invoke(IPC.removeMachineProgramRun, input),
     deleteMachineProgram: (input: Record<string, unknown>) => ipcRenderer.invoke(IPC.deleteMachineProgram, input),
     setMachineProgramShift: (input: Record<string, unknown>) => ipcRenderer.invoke(IPC.setMachineProgramShift, input),
+    setMachineProgramSoleSlot: (input: Record<string, unknown>) => ipcRenderer.invoke(IPC.setMachineProgramSoleSlot, input),
     openMachineProgramStoreOut: (lookup: string, opts?: Record<string, unknown>) =>
       ipcRenderer.invoke(IPC.openMachineProgramStoreOut, lookup, opts),
     machineProgramStoreOutCheckScan: (input: Record<string, unknown>, opts?: Record<string, unknown>) =>

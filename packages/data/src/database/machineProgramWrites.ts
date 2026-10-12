@@ -13,11 +13,13 @@ import type {
   TransactionContext,
 } from "@erp/application";
 import {
+  DEFAULT_MACHINE_SHIFT,
   MACHINE_PROGRAM_STATUS,
   NOTIFICATION_KIND,
   NOTIFICATION_SEVERITY,
   PERMISSION,
   QUANTITY_EPSILON,
+  attributeKey,
   roundQuantity,
   type MachineContractorRole,
 } from "@erp/domain";
@@ -155,6 +157,39 @@ export const machineProgramWritesMethods = {
     dbOf(tx)
       .prepare("UPDATE machine_programs SET shift_start_minute = ?, shift_end_minute = ?, updated_at = ? WHERE id = ?")
       .run(payload.shiftStartMinute, payload.shiftEndMinute, payload.nowIso, text(payload.programId).trim());
+  },
+
+  /**
+   * Sets, or clears, the hours one sole colour runs on one injector (migration 070).
+   *
+   * Written to EVERY run of that colour on that injector, because the sole card the floor reads
+   * is the colour — not the articles under it — and one card must have one answer. Null start
+   * and end clear the slot, which puts the colour back to running the whole shift.
+   *
+   * Plans time only: no quantity, reservation or event depends on it.
+   */
+  async setMachineProgramSoleSlot(
+    this: SqliteDatabase,
+    payload: {
+      programId: string;
+      injectorNo: number;
+      soleColour: string;
+      startMinute: number | null;
+      endMinute: number | null;
+      nowIso: string;
+    },
+    tx: TransactionContext
+  ): Promise<number> {
+    const result = dbOf(tx)
+      .prepare(
+        `UPDATE machine_program_runs SET start_minute = ?, end_minute = ?, updated_at = ?
+          WHERE program_id = ? AND injector_no = ? AND sole_colour = ?`
+      )
+      .run(
+        payload.startMinute, payload.endMinute, payload.nowIso,
+        text(payload.programId).trim(), payload.injectorNo, attributeKey(text(payload.soleColour))
+      );
+    return Number(result.changes ?? 0);
   },
 
   // ─── Masters a run names ────────────────────────────────────────────────────
@@ -472,6 +507,7 @@ export const machineProgramWritesMethods = {
     tx: TransactionContext
   ): Promise<{
     id: string; programNumber: number; machineName: string; contractorName: string; programDate: string; status: string;
+    shiftStartMinute: number; shiftEndMinute: number;
     totalQuantity: number; consumedQuantity: number; outstandingQuantity: number;
   } | null> {
     const db = dbOf(tx);
@@ -488,6 +524,8 @@ export const machineProgramWritesMethods = {
       contractorName: text(row.contractor_name_snapshot),
       programDate: text(row.program_date),
       status: text(row.status),
+      shiftStartMinute: Number(row.shift_start_minute ?? DEFAULT_MACHINE_SHIFT.startMinute),
+      shiftEndMinute: Number(row.shift_end_minute ?? DEFAULT_MACHINE_SHIFT.endMinute),
       totalQuantity: total((line) => line.quantity),
       consumedQuantity: total((line) => line.consumed),
       outstandingQuantity: total((line) => line.outstanding),

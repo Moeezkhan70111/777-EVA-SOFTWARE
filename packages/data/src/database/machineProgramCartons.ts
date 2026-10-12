@@ -58,6 +58,36 @@ export interface MachineProgramCartonPacket {
   label: MachineProgramCartonLabel | null;
 }
 
+/**
+ * A FIX article's cartons (migration 071).
+ *
+ * An ordinary article's cartons are owed to an ISSUED PACKET of uppers. A fix article has no
+ * upper, so nothing ever leaves the store for it and there is no packet to hang them on: what it
+ * is owed is its PLAN — the dozens typed on the run, two cartons to the dozen — and it is owed
+ * them from the moment the run is saved.
+ */
+export interface MachineProgramFixCartonRun {
+  runId: string;
+  articleSizeId: string;
+  article: string;
+  size: string;
+  /** The OUTER sole: what the finished slipper is sold as, and what the carton QR carries. */
+  outerSoleColour: string;
+  /** The second sole, shown so the floor can tell two runs of one article apart. */
+  innerSoleColour: string;
+  /** What the run plans to make. */
+  quantity: number;
+  unitCode: string | null;
+  /** The whole plan's cartons — 32 DOZEN is 64. Null when no carton figure can be said. */
+  cartonsPlanned: number | null;
+  /** Still to label: the plan minus what has already been printed. */
+  cartonsToPrint: number;
+  /** Why these cartons cannot be labelled here. Set only when cartonsPlanned is null. */
+  cartonNote: string | null;
+  /** The carton runs already printed for this fix run, newest last. */
+  labels: MachineProgramCartonLabel[];
+}
+
 /** One upper line's cartons, as Store In counts them coming back. */
 export interface MachineProgramLineCartons {
   lineId: string;
@@ -109,6 +139,32 @@ const CARTON_PACKETS_SQL = `
         AND back.machine_program_upper_line_id = rme.machine_program_upper_line_id
         AND back.rowid > rme.rowid))
   ORDER BY rme.event_ts_local ASC, rme.rowid ASC`;
+
+// Every FIX run of a program, with the cartons its plan owes and whatever has been printed
+// against it so far. A fix run is marked by its inner sole (migration 067) — the article has no
+// upper at all, so there is nothing here to join to a packet or a store event.
+const FIX_CARTON_RUNS_SQL = `
+  SELECT mpr.id AS run_id, mpr.sole_colour, mpr.inner_sole_colour, mpr.quantity,
+         u.code AS unit_code, asz.id AS article_size_id, asz.article, asz.size,
+         (SELECT COALESCE(SUM(l.carton_count), 0) FROM machine_program_fix_carton_labels l
+           WHERE l.run_id = mpr.id) AS printed_cartons
+  FROM machine_program_runs mpr
+  LEFT JOIN inventory_units u ON u.id = mpr.unit_id
+  LEFT JOIN article_sizes asz ON asz.id = mpr.article_size_id AND asz.deleted_at IS NULL
+  WHERE mpr.program_id = ? AND mpr.inner_sole_colour IS NOT NULL
+  ORDER BY mpr.injector_no, mpr.run_no`;
+
+// The printed runs of one fix run, with how many of each run's cartons are back in the store.
+const FIX_CARTON_LABELS_SQL = `
+  SELECT l.run_id, l.qr_batch_id, l.carton_count AS labelled_cartons, l.printed_by,
+         l.created_at AS labelled_at,
+         qb.article AS qb_article, qb.color AS qb_color, qb.size AS qb_size,
+         qb.start_sequence, qb.end_sequence,
+         ${RECEIVED_IN_RUN_SQL} AS received_in_run
+  FROM machine_program_fix_carton_labels l
+  JOIN qr_batches qb ON qb.id = l.qr_batch_id
+  WHERE l.program_id = ?
+  ORDER BY l.created_at, l.rowid`;
 
 const labelOf = (row: Record<string, unknown>): MachineProgramCartonLabel | null => {
   if (!row.qr_batch_id) return null;
@@ -204,6 +260,28 @@ const backByLine = (rows: Array<Record<string, unknown>>): Map<string, number> =
   return back;
 };
 
+/**
+ * Why a FIX run's cartons cannot be labelled here, or null.
+ *
+ * The same three refusals an upper's cartons get (cartonPlanFor), said for an article that has
+ * no upper: no product left in the master, no colour to put on the identity, or a quantity that
+ * is not a whole number of cartons. A carton QR is a permanent identity, so a figure that had to
+ * be guessed at is refused rather than rounded.
+ */
+const fixCartonNote = (run: {
+  article: string;
+  size: string;
+  articleSizeId: string;
+  outerSoleColour: string;
+  planned: number | null;
+}): string | null => {
+  const what = `${run.article} ${run.size}`.trim() || "this article";
+  if (!run.articleSizeId) return `This program line has no product left in Product Master, so cartons for ${what} cannot be labelled here.`;
+  if (!run.outerSoleColour) return `${what} has no outer sole colour on it, and a carton QR needs one.`;
+  if (run.planned == null) return `${what} is not planned in whole cartons of DOZEN, so its cartons have to be generated in QR Generator.`;
+  return null;
+};
+
 export const machineProgramCartonsMethods = {
   /**
    * Store In's figures for a program, per upper line: the cartons owed back for what has been
@@ -253,17 +331,132 @@ export const machineProgramCartonsMethods = {
     qrId: string,
     tx: TransactionContext
   ): Promise<MachineProgramCartonOrigin | null> {
+    // Both label tables: an upper's cartons hang off its issued packet (068) and a FIX
+    // article's off its run (071), and a carton coming back is the same carton either way.
     const row = (tx as MutableTransactionContext).db
       .prepare(
         `SELECT mp.id, mp.program_number,
                 EXISTS (SELECT 1 FROM machine_program_closures c WHERE c.program_id = mp.id) AS closed
          FROM qr_codes qc
-         JOIN machine_program_carton_labels l ON l.qr_batch_id = qc.batch_id
-         JOIN machine_programs mp ON mp.id = l.program_id
+         JOIN machine_programs mp ON mp.id = (
+           SELECT l.program_id FROM machine_program_carton_labels l WHERE l.qr_batch_id = qc.batch_id
+           UNION ALL
+           SELECT f.program_id FROM machine_program_fix_carton_labels f WHERE f.qr_batch_id = qc.batch_id
+           LIMIT 1
+         )
          WHERE qc.id = ? LIMIT 1`
       )
       .get(text(qrId).trim()) as { id: string; program_number: number; closed: number } | undefined;
     return row ? { programId: row.id, programNumber: Number(row.program_number), closed: Boolean(row.closed) } : null;
+  },
+
+  /**
+   * Every FIX run of a program and the cartons it is owed — the second half of "what cartons
+   * does this program need labelled", for the articles that have no upper to issue.
+   *
+   * The figure is the PLAN, never an issuance: 32 DOZEN of DC3 is 64 cartons, ready the moment
+   * the run is saved. What has already been printed is taken off, so raising the quantity later
+   * offers only the difference and a run printed in full offers nothing.
+   */
+  listMachineProgramFixCartonRuns(this: SqliteDatabase, programId: string): MachineProgramFixCartonRun[] {
+    const id = text(programId).trim();
+    const rows = this.db.prepare(FIX_CARTON_RUNS_SQL).all(id) as Array<Record<string, unknown>>;
+    if (rows.length === 0) return [];
+
+    const labelRows = this.db.prepare(FIX_CARTON_LABELS_SQL).all(id) as Array<Record<string, unknown>>;
+    const labelsByRun = new Map<string, MachineProgramCartonLabel[]>();
+    for (const row of labelRows) {
+      const label = labelOf(row);
+      if (!label) continue;
+      const runId = text(row.run_id);
+      labelsByRun.set(runId, [...(labelsByRun.get(runId) ?? []), label]);
+    }
+
+    return rows.map((row) => {
+      const quantity = roundQuantity(Number(row.quantity ?? 0));
+      const unitCode = row.unit_code ? text(row.unit_code) : null;
+      const article = text(row.article);
+      const size = text(row.size);
+      const outerSoleColour = attributeKey(text(row.sole_colour));
+      // The same dozens-to-cartons rule every other carton on the program follows.
+      const planned = row.article_size_id && outerSoleColour ? cartonsExpectedFromUppers(quantity, unitCode) : null;
+      const printed = Number(row.printed_cartons ?? 0);
+      return {
+        runId: text(row.run_id),
+        articleSizeId: text(row.article_size_id),
+        article,
+        size,
+        outerSoleColour,
+        innerSoleColour: attributeKey(text(row.inner_sole_colour)),
+        quantity,
+        unitCode,
+        cartonsPlanned: planned,
+        cartonsToPrint: planned == null ? 0 : Math.max(0, planned - printed),
+        cartonNote: fixCartonNote({ article, size, articleSizeId: text(row.article_size_id), outerSoleColour, planned }),
+        labels: labelsByRun.get(text(row.run_id)) ?? [],
+      };
+    });
+  },
+
+  /**
+   * Generates the carton QR labels a FIX run still owes, and records the print — in ONE
+   * transaction, so a run of carton identities never exists without the row that says which fix
+   * run justified it.
+   *
+   * The count is worked out here, inside the write lock, from the run's plan minus what is
+   * already printed. Nothing comes from the screen but which run to print, so two terminals
+   * asking at the same moment cannot between them print more cartons than the program plans.
+   */
+  printMachineProgramFixCartons(
+    this: SqliteDatabase,
+    input: { programId: string; runId: string; printedBy: string | null; deviceId: string }
+  ): PrintedMachineProgramCartons {
+    const programId = text(input.programId).trim();
+    const runId = text(input.runId).trim();
+    if (!runId) throw new Error("Choose the article to print cartons for.");
+
+    this.db.exec("BEGIN IMMEDIATE TRANSACTION");
+    try {
+      const program = this.db.prepare("SELECT program_number FROM machine_programs WHERE id = ? LIMIT 1").get(programId) as
+        | { program_number: number }
+        | undefined;
+      if (!program) throw new Error("This machine program no longer exists.");
+      if (this.isMachineProgramClosed(programId)) {
+        throw new Error(`${formatMachineProgramCodeNumber(Number(program.program_number))} is closed — no more carton labels are printed for it.`);
+      }
+
+      const run = this.listMachineProgramFixCartonRuns(programId).find((candidate) => candidate.runId === runId);
+      if (!run) throw new Error("That article is no longer on this program. Reload the program and try again.");
+      if (run.cartonNote) throw new Error(run.cartonNote);
+      if (run.cartonsToPrint <= 0) {
+        throw new Error(
+          `Every carton ${run.article} ${run.size} plans has already been labelled. Reprint them from QR Management.`
+        );
+      }
+
+      const generated = this.reserveQrBatchInTransaction({
+        articleSizeId: run.articleSizeId,
+        // A fix article has no upper: the colour the carton is sold as is its OUTER sole.
+        color: run.outerSoleColour,
+        quantity: run.cartonsToPrint,
+        createdBy: input.printedBy ?? undefined,
+        requestedBy: formatMachineProgramCodeNumber(Number(program.program_number)),
+      });
+
+      this.db
+        .prepare(
+          `INSERT INTO machine_program_fix_carton_labels
+             (run_id, qr_batch_id, program_id, carton_count, printed_by, device_id, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?)`
+        )
+        .run(runId, generated.batch.id, programId, run.cartonsToPrint, input.printedBy, input.deviceId, generated.batch.createdAt);
+
+      this.db.exec("COMMIT");
+      return { ...generated, eventIds: [] };
+    } catch (error) {
+      try { this.db.exec("ROLLBACK"); } catch { /* ignore missing transaction state */ }
+      throw error;
+    }
   },
 
   /** Every packet of uppers out for a program, oldest first, with the cartons it is owed. */

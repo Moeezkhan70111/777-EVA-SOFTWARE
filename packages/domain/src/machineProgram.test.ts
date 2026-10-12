@@ -22,6 +22,14 @@ import {
   formatShiftRange,
   sameMachineShift,
   shiftEndsNextDay,
+  checkSoleSlot,
+  clockText,
+  formatDuration,
+  minuteFromClock,
+  shiftFromClocks,
+  shiftMinutes,
+  slotFromClocks,
+  soleSlotOf,
 } from "./machineProgram.js";
 
 // The arithmetic every machine program screen and query is built on. Kept here, with the
@@ -142,4 +150,75 @@ test("a shift reads as the clock, however many days along it runs", () => {
   assert.equal(formatMinuteOfDay(1800), "06:00 AM", "1800 minutes is 06:00 the next morning");
   assert.equal(formatShiftRange(MACHINE_SHIFTS[0]), "06:00 AM – 06:00 PM");
   assert.equal(formatShiftRange(MACHINE_SHIFTS[1]), "06:00 PM – 06:00 AM");
+});
+// ─── Custom hours, and how long each sole runs in them ───────────────────────
+
+const DAY_SHIFT = { startMinute: 6 * 60, endMinute: 18 * 60 };
+const NIGHT_SHIFT = { startMinute: 18 * 60, endMinute: 30 * 60 };
+
+test("how long a stretch of time lasts, said the way somebody says it", () => {
+  assert.equal(shiftMinutes(DAY_SHIFT), 720);
+  assert.equal(shiftMinutes(NIGHT_SHIFT), 720, "a night shift is twelve hours, not minus twelve");
+  assert.equal(formatDuration(720), "12 hours");
+  assert.equal(formatDuration(60), "1 hour");
+  assert.equal(formatDuration(510), "8 hours 30 min");
+  assert.equal(formatDuration(45), "45 min");
+  assert.equal(formatDuration(0), "0 min");
+});
+
+test("a clock control reads and writes the shift convention", () => {
+  assert.equal(clockText(360), "06:00");
+  assert.equal(clockText(1080), "18:00");
+  assert.equal(clockText(1800), "06:00", "1800 minutes is 06:00 the next morning");
+  assert.equal(minuteFromClock("06:00"), 360);
+  assert.equal(minuteFromClock("18:30"), 1110);
+  assert.equal(minuteFromClock(""), null, "an empty control is not a time");
+  assert.equal(minuteFromClock("24:00"), null);
+  assert.equal(minuteFromClock("6pm"), null);
+});
+
+test("two clock faces become the shift the floor means", () => {
+  assert.deepEqual(shiftFromClocks("08:00", "14:00"), { startMinute: 480, endMinute: 840 }, "hours nobody offered before");
+  assert.deepEqual(shiftFromClocks("18:00", "06:00"), NIGHT_SHIFT, "a finish before the start is the next morning");
+  assert.deepEqual(shiftFromClocks("06:00", "06:00"), { startMinute: 360, endMinute: 1800 }, "a full day round the clock");
+  assert.equal(shiftFromClocks("08:00", ""), null, "half a time is no time");
+});
+
+test("a sole's hours are numbered on its own shift's clock", () => {
+  assert.deepEqual(slotFromClocks("06:00", "10:00", DAY_SHIFT), { startMinute: 360, endMinute: 600 });
+  assert.deepEqual(
+    slotFromClocks("22:00", "02:00", NIGHT_SHIFT),
+    { startMinute: 1320, endMinute: 1560 },
+    "02:00 inside a night shift is 26:00, not the small hours before it started"
+  );
+  assert.deepEqual(
+    slotFromClocks("01:00", "05:00", NIGHT_SHIFT),
+    { startMinute: 1500, endMinute: 1740 },
+    "the whole slot moves to the morning after"
+  );
+  assert.equal(slotFromClocks("06:00", "", DAY_SHIFT), null);
+});
+
+test("a sole may only run while the machine is running", () => {
+  assert.equal(checkSoleSlot({ startMinute: 360, endMinute: 600 }, DAY_SHIFT), null);
+  assert.equal(checkSoleSlot(DAY_SHIFT, DAY_SHIFT), null, "one colour may have the whole shift");
+  assert.equal(
+    checkSoleSlot({ startMinute: 600, endMinute: 900 }, { startMinute: 360, endMinute: 780 }),
+    "OUTSIDE_SHIFT",
+    "a sole cannot run after the machine stops"
+  );
+  assert.equal(checkSoleSlot({ startMinute: 300, endMinute: 600 }, DAY_SHIFT), "OUTSIDE_SHIFT", "nor before it starts");
+  assert.equal(checkSoleSlot({ startMinute: 600, endMinute: 600 }, DAY_SHIFT), "INVALID_TIME");
+  assert.equal(checkSoleSlot({ startMinute: 600, endMinute: 480 }, DAY_SHIFT), "INVALID_TIME");
+  assert.equal(checkSoleSlot({ startMinute: 360.5, endMinute: 600 }, DAY_SHIFT), "INVALID_TIME");
+  // Two colours sharing an hour is a sole change, not a mistake: the floor reads them in order.
+  assert.equal(checkSoleSlot({ startMinute: 360, endMinute: 660 }, DAY_SHIFT), null);
+  assert.equal(checkSoleSlot({ startMinute: 600, endMinute: 1080 }, DAY_SHIFT), null);
+});
+
+test("a run nobody timed runs the whole shift", () => {
+  assert.equal(soleSlotOf({ startMinute: null, endMinute: null }), null);
+  assert.equal(soleSlotOf({}), null, "a run saved before the hours existed");
+  assert.equal(soleSlotOf({ startMinute: 360, endMinute: null }), null, "half a slot is no slot");
+  assert.deepEqual(soleSlotOf({ startMinute: 360, endMinute: 600 }), { startMinute: 360, endMinute: 600 });
 });

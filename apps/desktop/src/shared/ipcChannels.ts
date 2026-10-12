@@ -101,6 +101,7 @@ export const IPC = {
   removeMachineProgramRun: "erp:remove-machine-program-run",
   deleteMachineProgram: "erp:delete-machine-program",
   setMachineProgramShift: "erp:set-machine-program-shift",
+  setMachineProgramSoleSlot: "erp:set-machine-program-sole-slot",
   // Store Out through one open Machine Program: look it up, judge one scan, save the batch.
   openMachineProgramStoreOut: "erp:open-machine-program-store-out",
   machineProgramStoreOutCheckScan: "erp:machine-program-store-out-check-scan",

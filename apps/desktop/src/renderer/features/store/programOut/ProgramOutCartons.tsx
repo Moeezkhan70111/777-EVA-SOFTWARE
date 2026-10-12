@@ -1,17 +1,26 @@
 import React from "react";
 import { copy } from "../../../config/copy";
 import { formatDateTime } from "../../../utils/dates";
-import type { MachineProgramCartonPacket, MachineProgramIssueBatchRow } from "../../../types/desktopApi";
+import type {
+  MachineProgramCartonPacket,
+  MachineProgramFixCartonRun,
+  MachineProgramIssueBatchRow,
+} from "../../../types/desktopApi";
 import { cartonRunLabel, cartonsFor, formatQuantity, type CartonRun, type PrintedCartonRun } from "./programOut";
 
 // The two lists beside the scanner: the cartons the machine owes back, and what has left.
 //
 //   Cartons to label                 1 DOZEN out is 2 cartons of 6 pairs
 //     SK12 / 7/10 / BLACK RED        8 cartons   [Print Carton QR]
+//     DC3 / 7/10 / SILVER GREY      64 cartons   [Print Carton QR]
 //     ✓ Printed · SK12_BLACKRED_7/10_000001 → …_000008
 //
 //   Already issued                   every packet that has left for this program
 //     RM_6_558_1   SK12 BLACK RED    2 DOZEN   4 cartons
+//
+// A FIX article has no upper to issue, so its cartons are owed by the PLAN instead and stand in
+// the same list: 32 DOZEN of DC3 is 64 cartons, ready to label the moment the run is saved. The
+// identity they carry is the OUTER sole, which is the colour the finished slipper is sold as.
 //
 // Uppers going out ARE cartons coming back, so the carton list is built from what was issued and
 // never typed. It is read back from the events, so it outlives the sitting: a packet issued
@@ -30,16 +39,27 @@ interface CartonRunListProps {
   locked?: boolean;
   /** Packets whose cartons the main process could not work out, with its reason. */
   blocked: MachineProgramCartonPacket[];
+  /** FIX runs whose cartons could not be worked out — same refusals, no packet to name. */
+  blockedFix?: MachineProgramFixCartonRun[];
 }
 
-export const CartonRunList: React.FC<CartonRunListProps> = ({ runs, printed, printingKey, onPrint, onReprint, blocked, locked = false }) => (
+export const CartonRunList: React.FC<CartonRunListProps> = ({
+  runs,
+  printed,
+  printingKey,
+  onPrint,
+  onReprint,
+  blocked,
+  blockedFix = [],
+  locked = false,
+}) => (
   <section className="mpo-batch" aria-label={copy.programOut.cartonTitle}>
     <header className="mpo-batch-head">
       <h3 className="mpo-batch-title">{copy.programOut.cartonTitle}</h3>
     </header>
     <p className="mpo-batch-note mpo-batch-note--plain">{copy.programOut.cartonNote}</p>
 
-    {runs.length === 0 && printed.length === 0 && blocked.length === 0 ? (
+    {runs.length === 0 && printed.length === 0 && blocked.length === 0 && blockedFix.length === 0 ? (
       <p className="mpo-batch-empty">{copy.programOut.cartonEmpty}</p>
     ) : null}
 
@@ -63,11 +83,16 @@ export const CartonRunList: React.FC<CartonRunListProps> = ({ runs, printed, pri
       </ul>
     ) : null}
 
-    {blocked.length > 0 ? (
+    {blocked.length > 0 || blockedFix.length > 0 ? (
       <ul className="mpo-carton-blocked">
         {blocked.map((packet) => (
           <li key={packet.eventId} role="alert">
             ⚠ {packet.cartonNote}
+          </li>
+        ))}
+        {blockedFix.map((run) => (
+          <li key={run.runId} role="alert">
+            ⚠ {run.cartonNote}
           </li>
         ))}
       </ul>

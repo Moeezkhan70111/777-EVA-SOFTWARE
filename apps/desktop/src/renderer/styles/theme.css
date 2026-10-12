@@ -6818,6 +6818,44 @@ tr.has-error .gp-qty-stepper input { color: var(--err); }
 .mpx-option-mark { margin-left: auto; font-weight: 900; color: var(--action); }
 .mpx-date-panel { display: flex; flex-direction: column; align-items: flex-end; gap: 10px; padding: 6px; }
 
+/* ── Two clock faces: the shift, and how long each sole runs in it ──────── */
+/*  START              FINISH
+    [ 06:00 AM ]  ──▸  [ 10:00 AM ]   4 hours   [ Set time ]  [ Clear ]
+    One control for both jobs (ClockRange), so a time is typed the same way wherever it is
+    asked. The native time input is deliberate: on Android and iOS it IS the platform clock,
+    which is the control the floor already knows (R7). */
+.mpx-clock { display: flex; flex-direction: column; gap: 9px; padding: 8px 6px 6px; }
+.mpx-clock-fields { display: flex; align-items: flex-end; flex-wrap: wrap; gap: 8px; }
+.mpx-clock-field { display: flex; flex-direction: column; gap: 4px; }
+.mpx-clock-label { font-size: .68rem; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: var(--text-3); }
+.mpx-clock-input {
+  min-height: 44px; padding: 0 9px;
+  background: var(--surface); color: var(--chrome-ink); border: 1px solid var(--border-dark); border-radius: var(--radius-md);
+  font: inherit; font-size: .88rem; font-weight: 700; font-variant-numeric: tabular-nums;
+}
+.mpx-clock-input:focus-visible { outline: 2px solid var(--action); outline-offset: 1px; }
+/* How long the two faces are apart — the one thing a clock cannot tell you at a glance. */
+.mpx-clock-span { padding-bottom: 12px; font-size: .78rem; font-weight: 700; color: var(--text-2); white-space: nowrap; }
+.mpx-clock-actions { display: flex; align-items: center; gap: 8px; }
+.mpx-clock-set {
+  flex: 1 1 auto; min-height: 40px; padding: 0 14px; cursor: pointer;
+  background: var(--action); color: var(--white); border: 1px solid var(--action); border-radius: var(--radius-md);
+  font: inherit; font-size: .82rem; font-weight: 800;
+}
+.mpx-clock-set:disabled { cursor: not-allowed; opacity: .55; }
+.mpx-clock-set:focus-visible, .mpx-clock-clear:focus-visible { outline: 2px solid var(--action); outline-offset: 2px; }
+.mpx-clock-clear {
+  min-height: 40px; padding: 0 12px; cursor: pointer;
+  background: var(--surface); color: var(--text-2); border: 1px solid var(--border-dark); border-radius: var(--radius-md);
+  font: inherit; font-size: .82rem; font-weight: 700;
+}
+.mpx-clock-problem { margin: 0; padding: 0 2px 2px; font-size: .76rem; font-weight: 700; color: var(--danger); }
+.mpx-popover-foot { margin-top: 4px; padding-top: 4px; border-top: 1px solid var(--border); }
+.mpx-popover-head {
+  display: block; padding: 4px 10px 0;
+  font-size: .68rem; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: var(--text-3);
+}
+
 /* ── Three columns: machines · the injectors · what they come to ───────── */
 .mpx-grid { display: grid; grid-template-columns: minmax(0, 1fr) 256px; gap: 12px; align-items: start; }
 .mpx-machines-bar, .mpx-summary, .mpx-work {
@@ -6936,7 +6974,21 @@ tr.has-error .gp-qty-stepper input { color: var(--err); }
 .mpx-sole-head { display: flex; align-items: center; gap: 9px; padding: 9px 11px; border-bottom: 1px solid var(--border); }
 .mpx-sole-swatch { width: 18px; height: 18px; }
 .mpx-sole-name { margin: 0; font-size: .92rem; font-weight: 800; color: var(--chrome-ink); }
-.mpx-sole-head .mpx-icon-btn { margin-left: auto; }
+.mpx-sole-head .mpx-icon-btn { margin-left: 0; }
+/* ◷ 06:00 AM – 10:00 AM — which sole is on this injector when, read straight off the card. */
+.mpx-sole-time { position: relative; margin-left: auto; }
+.mpx-sole-time-btn {
+  display: inline-flex; align-items: center; gap: 6px; min-height: 32px; padding: 0 9px; cursor: pointer;
+  background: var(--surface); color: var(--text-2); border: 1px solid var(--border-dark); border-radius: var(--radius-md);
+  font: inherit; font-size: .76rem; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+.mpx-sole-time-btn.is-timed { color: var(--action-strong); border-color: var(--action-line); background: var(--action-tint); }
+.mpx-sole-time-btn:disabled { cursor: not-allowed; opacity: .55; }
+.mpx-sole-time-btn:focus-visible { outline: 2px solid var(--action); outline-offset: 2px; }
+.mpx-sole-time-icon { width: 14px; height: 14px; }
+.mpx-sole-time-pop { min-width: 268px; }
+/* A FIX run with no column of its own for the outer sole: "● SILVER GREY / ● BLACK". */
+.mpx-upper-sep { color: var(--text-3); font-weight: 700; }
 
 .mpx-add-article {
   display: inline-flex; align-items: center; gap: 6px; min-height: 32px; margin: 9px 11px 0; padding: 0 10px; cursor: pointer;
@@ -7014,6 +7066,8 @@ tr.has-error .gp-qty-stepper input { color: var(--err); }
 .mpx-summary-sole { display: flex; flex-direction: column; gap: 4px; }
 .mpx-summary-sole-head { display: flex; align-items: center; gap: 7px; margin: 0; font-size: .78rem; font-weight: 800; color: var(--chrome-ink); }
 .mpx-summary-swatch { width: 14px; height: 14px; }
+/* The hours a sole runs, when it has its own — pushed to the end of its line. */
+.mpx-summary-sole-time { margin-left: auto; font-size: .7rem; font-weight: 700; color: var(--text-2); font-variant-numeric: tabular-nums; }
 /* One row per UPPER: the article, the size, the upper's colour, and how much of it. */
 .mpx-summary-lines { list-style: none; margin: 0; padding: 0 0 0 21px; display: flex; flex-direction: column; gap: 3px; }
 .mpx-summary-line { display: flex; align-items: baseline; gap: 8px; font-size: .74rem; font-weight: 600; color: var(--text-2); }

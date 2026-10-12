@@ -1,6 +1,7 @@
 import {
   MACHINE_PROGRAM_DISPLAY_STATUS,
   checkFixQuantity,
+  isFixRun,
   MACHINE_SHIFTS,
   checkMachineShift,
   checkProgramQuantity,
@@ -165,9 +166,19 @@ export const statusMark = (displayStatus: string): string =>
 export const needsContractors = (machine: MachineRecord): boolean =>
   !machine.contractorPartyId || !machine.packingContractorPartyId;
 
+/**
+ * Whether a run is actually making something.
+ *
+ * A normal run is its upper lines, and a run with none of them left is a shell the backend is
+ * about to remove. A FIX run has no lines and never will — the article has no upper — so the run
+ * itself is the work. Anything counting what a program holds has to ask this, or a day of fix
+ * articles reads as an empty program.
+ */
+export const runHasWork = (run: MachineProgramRunRecord): boolean => run.lines.length > 0 || isFixRun(run);
+
 /** A program with nothing on it is, to the operator, no program at all. */
 export const hasContent = (program: MachineProgramRecord | null | undefined): program is MachineProgramRecord =>
-  program != null && program.runs.some((run) => run.lines.length > 0);
+  program != null && program.runs.some(runHasWork);
 
 /** The sole runs on one injector, in order. */
 export const injectorRuns = (program: MachineProgramRecord | null | undefined, injectorNo: number): MachineProgramRunRecord[] =>
@@ -192,18 +203,28 @@ export const runForArticleSize = (
 ): MachineProgramRunRecord | null =>
   runs.find((run) => run.soleColour === colour && run.articleSizeId === articleSizeId) ?? null;
 
-/** What one injector adds up to, and in which unit (null when its runs are in different ones). */
+/**
+ * What a set of runs adds up to, and in which unit (null when they are counted in different ones).
+ *
+ * Everything the machine is to MAKE, which is the question a total on screen is answering: the
+ * uppers promised on normal runs plus what the FIX runs plan. A fix run keeps its figure on the
+ * run itself, because it has no upper line to put it on, so a total that only added up lines
+ * read 0 against a sole that is making hundreds.
+ *
+ * It is deliberately not the same figure as the program's `totalQuantity`, which is what is
+ * RESERVED and therefore counts uppers only (see mapProgram in the data layer).
+ */
 export const injectorTotal = (runs: readonly MachineProgramRunRecord[]): { quantity: number; unitCode: string | null } => {
   const units = new Set(runs.map((run) => run.unitCode ?? ""));
   return {
-    quantity: roundQuantity(runs.reduce((sum, run) => sum + run.totalQuantity, 0)),
+    quantity: roundQuantity(runs.reduce((sum, run) => sum + run.totalQuantity + run.fixQuantity, 0)),
     unitCode: units.size === 1 ? [...units][0] || null : null,
   };
 };
 
 /** How many injectors have anything on them — "2 injectors" on the machine card. */
 export const injectorsInUse = (program: MachineProgramRecord | null | undefined): number =>
-  new Set((program?.runs ?? []).filter((run) => run.lines.length > 0).map((run) => run.injectorNo)).size;
+  new Set((program?.runs ?? []).filter(runHasWork).map((run) => run.injectorNo)).size;
 
 /** What kind of upper a card is, under its colour: "RAGZINE UPPER · SILAI". */
 export const upperKind = (material: MachineProgramMaterial): string =>

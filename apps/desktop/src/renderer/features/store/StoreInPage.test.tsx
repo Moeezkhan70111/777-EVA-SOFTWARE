@@ -46,7 +46,7 @@ const finishedProgram: MachineProgramRecord = {
   runs: [
     {
       id: "run-1", programId: "prog-1", injectorNo: 1, runNo: 1, soleColour: "BLACK", innerSoleColour: null, fixQuantity: 0, articleSizeId: "as-sk6-710",
-      article: "SK6", size: "7/10", totalQuantity: 20, consumedQuantity: 20, unitCode: "DOZEN",
+      article: "SK6", size: "7/10", totalQuantity: 20, consumedQuantity: 20, unitCode: "DOZEN", startMinute: null, endMinute: null,
       lines: [
         {
           id: "line-black", runId: "run-1", lineNo: 1, itemId: "u-black", itemDisplayName: "UPPER — SK6 — BLACK — 7/10",
@@ -101,7 +101,9 @@ const standing = (back: number): MachineProgramReconciliation => ({
 function installApi(
   packets: MachineProgramCartonPacket[] = [owedPacket],
   progress: Array<{ lineId: string; cartonsDue: number | null; cartonsBack: number }> = [],
-  reconciliation: MachineProgramReconciliation = standing(8)
+  reconciliation: MachineProgramReconciliation = standing(8),
+  /** FIX runs: their cartons come from the plan, with no packet ever issued (migration 071). */
+  fixRuns: Array<Record<string, unknown>> = []
 ) {
   const close = { view: reconciliation };
   const api = {
@@ -114,7 +116,7 @@ function installApi(
         : { accepted: false, outcome: "PROGRAM_NOT_FOUND", reason: `${lookup} does not exist.`, program: null }
     ),
     listMachineProgramIssueBatches: vi.fn(async () => ({ accepted: true, rows: [] })),
-    listMachineProgramCartonPackets: vi.fn(async () => ({ accepted: true, rows: packets, progress })),
+    listMachineProgramCartonPackets: vi.fn(async () => ({ accepted: true, rows: packets, progress, fixRuns })),
     getMachineProgramReconciliation: vi.fn(async () => ({ accepted: true, reconciliation: close.view })),
     // The backend closes it and says how; the screen then re-reads and shows it closed.
     completeMachineProgramProduction: vi.fn(async (input: { programId: string; entries: unknown[] }) => {
@@ -261,6 +263,30 @@ describe("Store In — machine program lookup", () => {
     expect(within(cartonIn).getByRole("button", { name: /Start Scan/ })).toBeDisabled();
     expect(within(cartonIn).getByText("No carton labels printed yet")).toBeInTheDocument();
   });
+  // A FIX article issues nothing, so a program made only of them has no packet to print cartons
+  // against — its labels come from the plan. Store In must still open for them to be scanned back.
+  it("opens Carton In for a FIX article's printed cartons, though nothing was ever issued", async () => {
+    installApi([], [], standing(8), [
+      {
+        runId: "run-fix", articleSizeId: "as-dc3", article: "DC3", size: "7/10",
+        outerSoleColour: "BLACK", innerSoleColour: "ORANGE", quantity: 32, unitCode: "DOZEN",
+        cartonsPlanned: 64, cartonsToPrint: 0, cartonNote: null,
+        labels: [
+          {
+            qrBatchId: "qrb-fix", firstQrId: "DC3_BLACK_7/10_000001", lastQrId: "DC3_BLACK_7/10_000064",
+            cartonCount: 64, receivedInRun: 0, printedBy: "aslam", printedAt: "2026-10-12T05:00:00.000Z",
+          },
+        ],
+      },
+    ]);
+    renderPage();
+    await openProgram("MP-000001");
+
+    const cartonIn = await screen.findByRole("region", { name: "Carton In" });
+    await waitFor(() => expect(within(cartonIn).getByRole("button", { name: /Start Scan/ })).toBeEnabled());
+    expect(within(cartonIn).queryByText("No carton labels printed yet")).toBeNull();
+  });
+
   it("reads the program in CARTONS coming back: due for what was issued, back, and still to come", async () => {
     // 20 DOZEN of BLACK went out, so 40 cartons are due; 6 of them are back.
     installApi([printedPacket], [{ lineId: "line-black", cartonsDue: 40, cartonsBack: 6 }]);

@@ -1,11 +1,10 @@
 import React from "react";
-import { formatShiftRange, type MachineShift } from "@erp/domain";
+import type { MachineShift } from "@erp/domain";
 import type { MachineProgramRecord } from "../../types/desktopApi";
 import { copy } from "../../config/copy";
-import { HeaderSelect, type HeaderOption } from "./HeaderControl";
-import { ClockIcon, GearIcon } from "./MachineProgramIcons";
+import { GearIcon } from "./MachineProgramIcons";
 import { ProgramDate } from "./ProgramDate";
-import { shiftChoices, shiftId } from "./machineProgram";
+import { ShiftControl } from "./ShiftControl";
 
 // The bar across the top: what this screen is, then the two things it is about — which shift and
 // which day — and the one action that takes a finished program off the screen.
@@ -39,11 +38,6 @@ export const WorkspaceHeader: React.FC<WorkspaceHeaderProps> = ({
   onDateChange,
   onPrint,
 }) => {
-  const shiftOptions: HeaderOption[] = shiftChoices(shift).map((option) => ({
-    id: shiftId(option),
-    label: formatShiftRange(option),
-  }));
-
   return (
     <header className="mpx-head">
       <div className="mpx-head-title">
@@ -54,17 +48,7 @@ export const WorkspaceHeader: React.FC<WorkspaceHeaderProps> = ({
       </div>
 
       <div className="mpx-head-controls">
-        <HeaderSelect
-          label={copy.machineProgram.shiftTime}
-          icon={<ClockIcon />}
-          options={shiftOptions}
-          selectedId={shiftId(shift)}
-          placeholder={copy.machineProgram.shiftTime}
-          onChoose={(id) => {
-            const chosen = shiftChoices(shift).find((option) => shiftId(option) === id);
-            if (chosen) onShiftChange(chosen);
-          }}
-        />
+        <ShiftControl shift={shift} onChange={onShiftChange} />
 
         <ProgramDate variant="control" value={date} today={today} onChange={onDateChange} />
 

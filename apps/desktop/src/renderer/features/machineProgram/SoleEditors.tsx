@@ -52,6 +52,38 @@ export const AddArticleDialog: React.FC<AddProps & { colour: string }> = ({ colo
   />
 );
 
+/**
+ * Taking one FIX article off a sole.
+ *
+ * A fix run has no upper lines, so the run IS the article: removing it is what removing an upper
+ * is for a normal row. It released nothing when it was made and releases nothing now — its
+ * quantity was a plan for the machine, never a promise against the store.
+ */
+export const RemoveFixRunDialog: React.FC<{ run: MachineProgramRunRecord; writes: ProgramWrites; onClose: () => void }> = ({
+  run,
+  writes,
+  onClose,
+}) => (
+  <ConfirmDialog
+    title={copy.machineProgram.removeArticleTitle}
+    facts={[
+      { label: copy.machineProgram.article, value: `${run.article} / ${run.size}` },
+      {
+        label: copy.machineProgram.sole,
+        value: copy.machineProgram.fixPair(run.soleColour, run.innerSoleColour ?? ""),
+      },
+      { label: copy.machineProgram.total, value: formatAmount(run.fixQuantity, run.unitCode) },
+    ]}
+    explain={copy.machineProgram.removeArticleExplain}
+    confirmLabel={copy.machineProgram.removeConfirm}
+    onConfirm={async () => {
+      const answer = await writes.removeRun(run.id);
+      return answer.ok ? null : answer.reason;
+    }}
+    onClose={onClose}
+  />
+);
+
 export const RemoveLineDialog: React.FC<{ line: MachineProgramUpperLineRecord; writes: ProgramWrites; onClose: () => void }> = ({
   line,
   writes,

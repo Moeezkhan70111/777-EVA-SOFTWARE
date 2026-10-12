@@ -171,6 +171,7 @@ function composeUseCases(db: SqliteDatabase, dataModule: DataModule, application
       removeRun: new applicationModule.RemoveMachineProgramRunUseCase(deps),
       deleteProgram: new applicationModule.DeleteMachineProgramUseCase(deps),
       setShift: new applicationModule.SetMachineProgramShiftUseCase(deps),
+      setSoleSlot: new applicationModule.SetMachineProgramSoleSlotUseCase(deps),
       saveArticleRates: new applicationModule.SaveMachineProgramArticleRatesUseCase(deps),
     };
   };

@@ -1,18 +1,19 @@
 import React, { useState } from "react";
-import type { MachineShift } from "@erp/domain";
+import { isFixRun, type MachineShift } from "@erp/domain";
 import type { MachineProgramArticleRate, MachineProgramRunRecord, MachineProgramUpperLineRecord } from "../../types/desktopApi";
 import { ColorSwatch } from "../../components/shared/ColorSwatch";
 import { copy } from "../../config/copy";
 import { RunChangeDialog } from "./RunChange";
-import { AddArticleDialog, RemoveLineDialog, RemoveSoleColourDialog } from "./SoleEditors";
+import { AddArticleDialog, RemoveFixRunDialog, RemoveLineDialog, RemoveSoleColourDialog } from "./SoleEditors";
 import { SoleRunRows } from "./SoleRunRows";
+import { SoleTime } from "./SoleTime";
 import { PlusIcon, TrashIcon } from "./MachineProgramIcons";
 import { formatAmount, injectorTotal } from "./machineProgram";
 import type { ProgramWrites } from "./useProgramWrites";
 
 // One sole colour on one injector, and everything being made in it:
 //
-//   ● Black Sole                                                              🗑
+//   ● Black Sole                                       ◷ 06:00 AM – 10:00 AM  🗑
 //   + Add Article
 //   ┌ Article │ Size │ Upper Color │ Available Stock (Upper) │ Qty to Run │   ┐
 //   │ SK6     │ 7/10 │ ● Black     │ 30 DOZEN                │ [ 10 ]     │ 🗑 │
@@ -31,6 +32,7 @@ type Editing =
   | { kind: "addArticle" }
   | { kind: "changeRun"; run: MachineProgramRunRecord }
   | { kind: "removeLine"; line: MachineProgramUpperLineRecord }
+  | { kind: "removeRun"; run: MachineProgramRunRecord }
   | { kind: "removeColour" };
 
 interface SoleGroupProps {
@@ -60,12 +62,17 @@ export const SoleGroup: React.FC<SoleGroupProps> = ({
   const done = () => setEditing({ kind: "none" });
   const total = injectorTotal(runs);
   const soleName = copy.machineProgram.soleLine(colour);
+  // A FIX article is moulded from two soles and has no upper, so a card where every article is
+  // one has nothing to say about upper colours or upper stock: those two columns are not there.
+  // A card that mixes the two keeps them, because the uppers on it still need them.
+  const fixOnly = runs.length > 0 && runs.every(isFixRun);
 
   return (
     <article className="mpx-sole" aria-label={soleName}>
       <header className="mpx-sole-head">
         <ColorSwatch color={colour} className="mpx-sole-swatch" />
         <h4 className="mpx-sole-name">{soleName}</h4>
+        <SoleTime colour={colour} runs={runs} shift={shift} injectorNo={injectorNo} writes={writes} />
         <button
           type="button"
           className="mpx-icon-btn mpx-icon-btn--danger"
@@ -87,10 +94,13 @@ export const SoleGroup: React.FC<SoleGroupProps> = ({
             <tr>
               <th scope="col">{copy.machineProgram.colArticle}</th>
               <th scope="col">{copy.machineProgram.colSize}</th>
-              <th scope="col">{copy.machineProgram.colUpper}</th>
-              <th scope="col" className="mpx-num">
-                {copy.machineProgram.colAvailable}
-              </th>
+              {fixOnly ? <th scope="col">{copy.machineProgram.colOuterSole}</th> : null}
+              <th scope="col">{fixOnly ? copy.machineProgram.colInnerSole : copy.machineProgram.colUpper}</th>
+              {fixOnly ? null : (
+                <th scope="col" className="mpx-num">
+                  {copy.machineProgram.colAvailable}
+                </th>
+              )}
               <th scope="col">{copy.machineProgram.colQuantity(total.unitCode)}</th>
               <th scope="col">
                 <span className="sr-only">{copy.machineProgram.colActions}</span>
@@ -103,9 +113,12 @@ export const SoleGroup: React.FC<SoleGroupProps> = ({
               run={run}
               machineId={machineId}
               programDate={programDate}
+              shift={shift}
+              fixOnly={fixOnly}
               writes={writes}
               onChangeRun={() => setEditing({ kind: "changeRun", run })}
               onRemoveLine={(line) => setEditing({ kind: "removeLine", line })}
+              onRemoveRun={() => setEditing({ kind: "removeRun", run })}
             />
           ))}
         </table>
@@ -133,6 +146,8 @@ export const SoleGroup: React.FC<SoleGroupProps> = ({
       {editing.kind === "changeRun" ? <RunChangeDialog run={editing.run} writes={writes} onClose={done} /> : null}
 
       {editing.kind === "removeLine" ? <RemoveLineDialog line={editing.line} writes={writes} onClose={done} /> : null}
+
+      {editing.kind === "removeRun" ? <RemoveFixRunDialog run={editing.run} writes={writes} onClose={done} /> : null}
 
       {editing.kind === "removeColour" ? (
         <RemoveSoleColourDialog colour={colour} runs={runs} writes={writes} onClose={done} />

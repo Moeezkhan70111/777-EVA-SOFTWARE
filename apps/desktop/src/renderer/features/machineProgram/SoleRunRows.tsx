@@ -2,10 +2,11 @@ import React from "react";
 import type { MachineProgramRunRecord, MachineProgramUpperLineRecord } from "../../types/desktopApi";
 import { ColorSwatch } from "../../components/shared/ColorSwatch";
 import { copy } from "../../config/copy";
+import { FixQuantityCell } from "./FixQuantityCell";
 import { QuantityCell } from "./QuantityCell";
 import { TrashIcon } from "./MachineProgramIcons";
 import { formatNumber } from "./machineProgram";
-import { isFixRun } from "@erp/domain";
+import { isFixRun, type MachineShift } from "@erp/domain";
 import { useUppers } from "./useMachineProgramData";
 import type { ProgramWrites } from "./useProgramWrites";
 
@@ -31,12 +32,34 @@ interface SoleRunRowsProps {
   run: MachineProgramRunRecord;
   machineId: string;
   programDate: string;
+  shift: MachineShift;
+  /** True when every run under this sole is a FIX run, so the table has no upper columns. */
+  fixOnly: boolean;
   writes: ProgramWrites;
   onChangeRun: () => void;
   onRemoveLine: (line: MachineProgramUpperLineRecord) => void;
+  onRemoveRun: () => void;
 }
 
-export const SoleRunRows: React.FC<SoleRunRowsProps> = ({ run, machineId, programDate, writes, onChangeRun, onRemoveLine }) => {
+/** A sole colour as the table names it: the colour, and the word for it. */
+const SoleName: React.FC<{ colour: string }> = ({ colour }) => (
+  <>
+    <ColorSwatch color={colour} />
+    <span className="mpx-upper-colour">{colour}</span>
+  </>
+);
+
+export const SoleRunRows: React.FC<SoleRunRowsProps> = ({
+  run,
+  machineId,
+  programDate,
+  shift,
+  fixOnly,
+  writes,
+  onChangeRun,
+  onRemoveLine,
+  onRemoveRun,
+}) => {
   const uppers = useUppers(machineId, run.articleSizeId, writes.stockVersion);
   const described = `${run.article} ${run.size}`;
 
@@ -56,9 +79,16 @@ export const SoleRunRows: React.FC<SoleRunRowsProps> = ({ run, machineId, progra
     return uppers.loading ? copy.common.loading : "—";
   };
 
-  // A FIX article has no upper: one row, naming both soles, with nothing to fetch from the
-  // store. The quantity is the run's own and is not a reservation, so there is no Available
-  // Stock figure and no box measured against one.
+  // A FIX article has no upper: it is moulded from TWO soles, and the row names both of them —
+  // the outer one the card is grouped by, and the inner one that goes inside it. Both are on the
+  // row rather than only the card's heading, because what the floor is handed is a line of work
+  // and a line of work has to say what it is made of.
+  //
+  // There is nothing to fetch from the store for it, so on a card where every article is fix the
+  // upper columns are not there at all (SoleGroup writes the headings to match). On a card that
+  // mixes the two, the pair shares the Upper Color cell and says plainly that it has no upper.
+  //
+  // The quantity is the run's own and reserves nothing, so it is typed against no ceiling.
   if (isFixRun(run)) {
     return (
       <tbody className="mpx-run">
@@ -74,20 +104,56 @@ export const SoleRunRows: React.FC<SoleRunRowsProps> = ({ run, machineId, progra
             </button>
           </td>
           <td className="mpx-cell-size" data-label={copy.machineProgram.colSize}>
-            {run.size}
+            <button
+              type="button"
+              className="mpx-run-link mpx-run-link--plain"
+              aria-label={`${copy.machineProgram.editSole} ${described}`}
+              onClick={onChangeRun}
+            >
+              {run.size}
+            </button>
           </td>
-          <td className="mpx-cell-upper" data-label={copy.machineProgram.colUpper}>
-            <ColorSwatch color={run.innerSoleColour ?? ""} />
-            <span className="mpx-upper-colour">{run.innerSoleColour}</span>
-            <span className="mpx-upper-kind">{copy.machineProgram.fixNoUpperShort}</span>
-          </td>
-          <td className="mpx-num" data-label={copy.machineProgram.colAvailable}>
-            —
-          </td>
+
+          {fixOnly ? (
+            <>
+              <td className="mpx-cell-upper" data-label={copy.machineProgram.colOuterSole}>
+                <SoleName colour={run.soleColour} />
+              </td>
+              <td className="mpx-cell-upper" data-label={copy.machineProgram.colInnerSole}>
+                <SoleName colour={run.innerSoleColour ?? ""} />
+              </td>
+            </>
+          ) : (
+            <>
+              {/* No column of its own to put the outer sole in, so the pair shares the cell. */}
+              <td className="mpx-cell-upper" data-label={copy.machineProgram.colUpper}>
+                <SoleName colour={run.soleColour} />
+                <span className="mpx-upper-sep" aria-hidden="true">
+                  /
+                </span>
+                <SoleName colour={run.innerSoleColour ?? ""} />
+                <span className="mpx-upper-kind">{copy.machineProgram.fixNoUpperShort}</span>
+              </td>
+              <td className="mpx-num" data-label={copy.machineProgram.colAvailable}>
+                —
+              </td>
+            </>
+          )}
+
           <td className="mpx-cell-qty" data-label={copy.machineProgram.colQuantityShort}>
-            {formatNumber(run.fixQuantity)}
+            <FixQuantityCell machineId={machineId} programDate={programDate} shift={shift} run={run} writes={writes} />
           </td>
-          <td className="mpx-cell-remove" />
+
+          <td className="mpx-cell-remove">
+            <button
+              type="button"
+              className="mpx-icon-btn mpx-icon-btn--danger"
+              aria-label={`${copy.machineProgram.removeArticle} ${described}`}
+              onClick={onRemoveRun}
+            >
+              <TrashIcon />
+            </button>
+          </td>
         </tr>
       </tbody>
     );

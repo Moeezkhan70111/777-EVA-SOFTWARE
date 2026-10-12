@@ -7,6 +7,7 @@ import { openCartonLabelPrintWindow } from "../../../utils/qrLabels";
 import type {
   IssuedProgramPacket,
   MachineProgramCartonPacket,
+  MachineProgramFixCartonRun,
   MachineProgramIssueBatchRow,
   MachineProgramLineCartons,
   MachineProgramRecord,
@@ -17,11 +18,14 @@ import type { ScanStationFeedback } from "../../scanStation/scanStation";
 import {
   IDLE_FEEDBACK,
   blockedCartonPackets,
+  blockedFixCartonRuns,
   cartonRunLabel,
+  fixCartonRuns,
   feedbackForIssue,
   formatQuantity,
   pendingCartonRuns,
   printedCartonRuns,
+  printedFixCartonRuns,
   type CartonRun,
   type PrintedCartonRun,
 } from "./programOut";
@@ -62,6 +66,8 @@ export interface ProgramOutState {
   printedRuns: PrintedCartonRun[];
   /** Unlabelled packets whose cartons cannot be worked out, with the reason. */
   blockedCartons: MachineProgramCartonPacket[];
+  /** FIX runs whose cartons cannot be worked out, with the reason. */
+  blockedFixCartons: MachineProgramFixCartonRun[];
   /** Per upper line: cartons due back for what was issued, and how many are back (Store In). */
   cartonProgress: MachineProgramLineCartons[];
   /** The run being generated right now, by key. */
@@ -89,14 +95,20 @@ interface UseProgramOutInput {
  * Opens the print window for one carton run's labels — the first print and every reprint alike,
  * so a reprinted label can never look different from the one it replaces.
  */
-const openCartonRunLabels = (what: string, codes: Pick<QrCodeRow, "id" | "article" | "color" | "size">[], programCode: string): boolean => {
+const openCartonRunLabels = (
+  what: string,
+  codes: Pick<QrCodeRow, "id" | "article" | "color" | "size">[],
+  programCode: string,
+  /** A FIX article's second sole, so the sticker names both. Null for an ordinary carton. */
+  innerColor: string | null = null
+): boolean => {
   const ids = codes.map((code) => code.id);
   const range = ids.length === 1 ? ids[0] : `${ids[0]} → ${ids[ids.length - 1]}`;
   return openCartonLabelPrintWindow({
     title: `Carton QR — ${what}`,
     heading: what,
     subheading: `${range} · ${copy.programOut.cartonCount(ids.length)} · ${programCode}`,
-    identity: { article: codes[0].article, color: codes[0].color, size: codes[0].size },
+    identity: { article: codes[0].article, color: codes[0].color, size: codes[0].size, innerColor },
     ids,
   });
 };
@@ -113,6 +125,9 @@ export const useProgramOut = ({ token, sessionId }: UseProgramOutInput): Program
   const [feedback, setFeedback] = useState<ScanStationFeedback>(IDLE_FEEDBACK);
   const [issued, setIssued] = useState<IssuedProgramPacket[]>([]);
   const [cartonPackets, setCartonPackets] = useState<MachineProgramCartonPacket[]>([]);
+  // A FIX article issues nothing, so its cartons are owed by the plan rather than by a packet
+  // and arrive as their own list (migration 071).
+  const [fixCartons, setFixCartons] = useState<MachineProgramFixCartonRun[]>([]);
   const [cartonProgress, setCartonProgress] = useState<MachineProgramLineCartons[]>([]);
   const [printingKey, setPrintingKey] = useState<string | null>(null);
   const [history, setHistory] = useState<MachineProgramIssueBatchRow[]>([]);
@@ -133,6 +148,7 @@ export const useProgramOut = ({ token, sessionId }: UseProgramOutInput): Program
       setHistory(batches.accepted ? batches.rows : []);
       setCartonPackets(cartons.accepted ? cartons.rows : []);
       setCartonProgress(cartons.accepted ? (cartons.progress ?? []) : []);
+      setFixCartons(cartons.accepted ? (cartons.fixRuns ?? []) : []);
       if (!cartons.accepted) setError(cartons.reason ?? copy.states.loadFailedBody);
     },
     [api, token]
@@ -158,6 +174,7 @@ export const useProgramOut = ({ token, sessionId }: UseProgramOutInput): Program
         setIssued([]);
         setCartonPackets([]);
         setCartonProgress([]);
+        setFixCartons([]);
         setFeedback(IDLE_FEEDBACK);
         await loadHistory(result.program.id);
         return true;
@@ -189,6 +206,7 @@ export const useProgramOut = ({ token, sessionId }: UseProgramOutInput): Program
     setIssued([]);
     setCartonPackets([]);
     setCartonProgress([]);
+    setFixCartons([]);
     setError(null);
     setFeedback(IDLE_FEEDBACK);
     setHistory([]);
@@ -258,13 +276,24 @@ export const useProgramOut = ({ token, sessionId }: UseProgramOutInput): Program
       setPrintingKey(run.key);
       const what = cartonRunLabel(run);
       try {
-        const result = await api.printMachineProgramCartons({ programId: program.id, eventIds: run.eventIds }, { token });
+        // The same call either way: the packets a run is owed to, or the FIX run itself.
+        const result = await api.printMachineProgramCartons(
+          run.source.kind === "FIX_RUN"
+            ? { programId: program.id, runId: run.source.runId }
+            : { programId: program.id, eventIds: run.source.eventIds },
+          { token }
+        );
         if (!result.accepted || !result.batch || !result.qrCodes || result.qrCodes.length === 0) {
           push("error", copy.programOut.cartonFailedTitle, result.reason ?? copy.states.loadFailedBody);
           return;
         }
 
-        const opened = openCartonRunLabels(what, result.qrCodes, program.code);
+        const source = run.source;
+        const innerSole =
+          source.kind === "FIX_RUN"
+            ? (fixCartons.find((candidate) => candidate.runId === source.runId)?.innerSoleColour ?? null)
+            : null;
+        const opened = openCartonRunLabels(what, result.qrCodes, program.code, innerSole);
         if (!opened) push("error", copy.toast.popupBlocked, copy.programOut.cartonBlocked);
         else push("success", copy.programOut.cartonPrintedTitle, copy.programOut.cartonPrintedBody(result.qrCodes.length, what));
       } catch (caught) {
@@ -275,7 +304,7 @@ export const useProgramOut = ({ token, sessionId }: UseProgramOutInput): Program
         await loadHistory(program.id);
       }
     },
-    [api, loadHistory, printingKey, program, push, token]
+    [api, fixCartons, loadHistory, printingKey, program, push, token]
   );
 
   /**
@@ -296,7 +325,11 @@ export const useProgramOut = ({ token, sessionId }: UseProgramOutInput): Program
           push("error", copy.programOut.cartonFailedTitle, copy.programOut.cartonReprintNone);
           return;
         }
-        const opened = openCartonRunLabels(run.label, codes, program.code);
+        // Which fix run this batch was printed for, so a reprint says the same two soles.
+        const innerSole =
+          fixCartons.find((candidate) => candidate.labels.some((label) => label.qrBatchId === run.qrBatchId))
+            ?.innerSoleColour ?? null;
+        const opened = openCartonRunLabels(run.label, codes, program.code, innerSole);
         if (!opened) push("error", copy.toast.popupBlocked, copy.programOut.cartonBlocked);
         else push("success", copy.programOut.cartonReprintedTitle, copy.programOut.cartonReprintedBody(codes.length, run.label));
       } catch (caught) {
@@ -305,12 +338,21 @@ export const useProgramOut = ({ token, sessionId }: UseProgramOutInput): Program
         setPrintingKey(null);
       }
     },
-    [api, printingKey, program, push]
+    [api, fixCartons, printingKey, program, push]
   );
 
-  const cartonRuns = useMemo(() => pendingCartonRuns(cartonPackets), [cartonPackets]);
-  const printedRuns = useMemo(() => printedCartonRuns(cartonPackets), [cartonPackets]);
+  // Both kinds of carton stand in one list, because the operator is printing cartons for a
+  // program and should not have to know which of its articles has an upper.
+  const cartonRuns = useMemo(
+    () => [...pendingCartonRuns(cartonPackets), ...fixCartonRuns(fixCartons)],
+    [cartonPackets, fixCartons]
+  );
+  const printedRuns = useMemo(
+    () => [...printedCartonRuns(cartonPackets), ...printedFixCartonRuns(fixCartons)],
+    [cartonPackets, fixCartons]
+  );
   const blockedCartons = useMemo(() => blockedCartonPackets(cartonPackets), [cartonPackets]);
+  const blockedFixCartons = useMemo(() => blockedFixCartonRuns(fixCartons), [fixCartons]);
 
   // A packet that left is worth announcing once, in words, for an operator watching the toast
   // area rather than the scan card.
@@ -340,6 +382,7 @@ export const useProgramOut = ({ token, sessionId }: UseProgramOutInput): Program
     feedback,
     issued,
     cartonRuns,
+    blockedFixCartons,
     printedRuns,
     blockedCartons,
     cartonProgress,

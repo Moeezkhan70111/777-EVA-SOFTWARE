@@ -197,6 +197,17 @@ export function registerMachineProgramHandlers(ctx: IpcContext): void {
       ...actor,
     })
   );
+
+  write(IPC.setMachineProgramSoleSlot, (input, actor) =>
+    programs.setSoleSlot.execute({
+      programId: asString(input.programId),
+      injectorNo: rawNumber(input.injectorNo),
+      soleColour: asString(input.soleColour),
+      // No slot means the colour runs the whole shift, so null travels as null.
+      slot: readShift(input.slot),
+      ...actor,
+    })
+  );
 }
 
 /**

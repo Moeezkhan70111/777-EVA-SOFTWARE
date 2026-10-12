@@ -1773,6 +1773,13 @@ export interface MachineProgramRunRecord {
   consumedQuantity: number;
   /** The unit every line on this run shares, or null when they differ. */
   unitCode: string | null;
+  /**
+   * The hours this sole colour runs, in minutes from midnight of programDate — the same
+   * convention as the shift (migrations 058, 070). Both null when nobody timed it, which means
+   * the colour runs the whole shift.
+   */
+  startMinute: number | null;
+  endMinute: number | null;
   lines: MachineProgramUpperLineRecord[];
 }
 

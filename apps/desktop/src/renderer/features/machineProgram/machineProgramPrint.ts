@@ -1,10 +1,11 @@
-import { MACHINE_INJECTORS, formatShiftRange, isFixRun } from "@erp/domain";
+import { MACHINE_INJECTORS, formatShiftRange, isFixRun, soleSlotOf } from "@erp/domain";
 import type { MachineProgramRecord, MachineProgramRunRecord } from "../../types/desktopApi";
 import { renderQrSvgMarkup } from "../../utils/qrLabels";
 import { loadLogoDataUrl, openPrintDocumentAsync } from "../../platform/print";
 import { escapeHtml } from "../../utils/html";
 import { formatDate } from "../../utils/dates";
 import { copy } from "../../config/copy";
+import { colorValueInUrdu } from "../../utils/urdu";
 import {
   colourRuns,
   formatAmount,
@@ -62,11 +63,16 @@ import {
 // the floor says it out loud, and both colours are named in words, so nothing here depends on
 // a reader telling two printed colours apart (R18).
 
-/** One article + size under a sole colour, and every upper being made in it. */
+/**
+ * One article + size under a sole colour, and every upper being made in it.
+ *
+ * A FIX row is not an upper at all: it is the two soles the article is moulded from, which the
+ * card draws stacked, one colour to a line (owner, 2026-10-12).
+ */
 interface ArticleCard {
   article: string;
   size: string;
-  rows: Array<{ sole: string; upper: string; quantity: string }>;
+  rows: Array<{ sole: string; upper: string; quantity: string; fix: boolean }>;
 }
 
 /** The cards of one sole colour: its runs grouped by article and size. */
@@ -82,15 +88,60 @@ const articleCards = (runs: MachineProgramRunRecord[]): ArticleCard[] => {
     // A FIX run has no uppers at all: it is moulded from two soles, and the row names the
     // inner one where an upper colour would be (migration 067).
     if (isFixRun(run)) {
-      card.rows.push({ sole: run.soleColour, upper: run.innerSoleColour ?? "", quantity: formatNumber(run.fixQuantity) });
+      card.rows.push({ sole: run.soleColour, upper: run.innerSoleColour ?? "", quantity: formatNumber(run.fixQuantity), fix: true });
       continue;
     }
     for (const line of run.lines) {
-      card.rows.push({ sole: run.soleColour, upper: line.upperColour, quantity: formatNumber(line.quantity) });
+      card.rows.push({ sole: run.soleColour, upper: line.upperColour, quantity: formatNumber(line.quantity), fix: false });
     }
   }
   return [...byArticleSize.values()].filter((card) => card.rows.length > 0);
 };
+
+/**
+ * A colour as the floor reads it: in Urdu, in its own isolated run of text.
+ *
+ * The Urdu is the SAME dictionary the carton stickers print from (utils/urdu colorValueInUrdu),
+ * so a colour is one word wherever 777 prints it — and a correction typed once on a material
+ * (learnColorUrdu) reaches this sheet too.
+ *
+ * Isolated because the sheet around it is laid out left to right and the colour is written right
+ * to left: without it, two colours beside each other would swap places on the page and a sheet
+ * would quietly name the wrong sole.
+ */
+const colourHtml = (colour: string): string => {
+  const urdu = colorValueInUrdu(colour);
+  return urdu === colour
+    ? `<span class="colour">${escapeHtml(colour)}</span>`
+    : `<span class="colour colour--ur" lang="ur" dir="rtl">${escapeHtml(urdu)}</span>`;
+};
+
+/** One line of a card: the sole and the upper going on it, and how many. */
+const lineHtml = (row: ArticleCard["rows"][number]): string => `
+  <div class="line">
+    <span class="line-colour">${colourHtml(row.sole)} ${colourHtml(row.upper)}</span>
+    <span class="line-qty">${escapeHtml(row.quantity)}</span>
+  </div>`;
+
+/**
+ * A FIX article: the two soles it is moulded from, one to a line, each said which it is.
+ *
+ * They are not one line with two colours on it, because a minder loading two different soles
+ * into one injector has to see at a glance which goes outside and which goes in — and the two
+ * colours are often close enough on paper that only the words tell them apart.
+ */
+const fixLineHtml = (row: ArticleCard["rows"][number]): string => `
+  <div class="line line--fix">
+    <span class="line-soles">
+      <span class="sole-line">
+        <span class="sole-which">${escapeHtml(copy.machineProgram.printOuterSole)}</span>${colourHtml(row.sole)}
+      </span>
+      <span class="sole-line">
+        <span class="sole-which">${escapeHtml(copy.machineProgram.printInnerSole)}</span>${colourHtml(row.upper)}
+      </span>
+    </span>
+    <span class="line-qty">${escapeHtml(row.quantity)}</span>
+  </div>`;
 
 const cardHtml = (card: ArticleCard): string => `
   <section class="card">
@@ -99,14 +150,7 @@ const cardHtml = (card: ArticleCard): string => `
       <span class="card-size">${escapeHtml(card.size)}</span>
     </header>
     <div class="card-body">
-      ${card.rows
-        .map(
-          (row) => `<div class="line">
-            <span class="line-colour">${escapeHtml(row.sole)} ${escapeHtml(row.upper)}</span>
-            <span class="line-qty">${escapeHtml(row.quantity)}</span>
-          </div>`
-        )
-        .join("")}
+      ${card.rows.map((row) => (row.fix ? fixLineHtml(row) : lineHtml(row))).join("")}
     </div>
   </section>`;
 
@@ -115,15 +159,22 @@ const cardHtml = (card: ArticleCard): string => `
  *
  * An injector can be given more than one sole colour, so it gets a band per colour rather than
  * one band with a colour it cannot honestly name.
+ *
+ * The band carries the HOURS that colour runs when it has been given any: an injector that
+ * changes colour at ten o'clock is two bands, and without the times the sheet cannot say which
+ * of them the machine is on. An untimed colour runs the whole shift, which the strip above
+ * already prints, so the band stays quiet rather than repeating it.
  */
 const soleBlockHtml = (injectorNo: number, colour: string, runs: MachineProgramRunRecord[]): string => {
   const cards = articleCards(runs);
   if (cards.length === 0) return "";
+  const slot = runs[0] ? soleSlotOf(runs[0]) : null;
   return `
     <section class="injector">
       <h2 class="injector-name">
         <span class="injector-no">${escapeHtml(copy.machineProgram.injector(injectorNo))}</span>
-        <span class="injector-sole">${escapeHtml(copy.machineProgram.printSoleColour)} : <b>${escapeHtml(colour)}</b></span>
+        <span class="injector-sole">${escapeHtml(copy.machineProgram.printSoleColour)} : <b>${colourHtml(colour)}</b></span>
+        ${slot ? `<span class="injector-time">${escapeHtml(formatShiftRange(slot))}</span>` : ""}
       </h2>
       <div class="cards">${cards.map(cardHtml).join("")}</div>
     </section>`;
@@ -225,6 +276,19 @@ const STYLES = `
     font-size: 10pt; font-weight: 500; color: #dbe7f7;
   }
   .injector-sole b { font-weight: 800; color: #fff; letter-spacing: .02em; }
+  /* The hours THIS colour runs, pushed to the end of the band so the eye finds it in one place. */
+  .injector-time {
+    margin-left: auto; padding: 1px 8px; border: 1px solid rgba(255,255,255,.5); border-radius: 3px;
+    font-size: 9.5pt; font-weight: 800; color: #fff; white-space: nowrap;
+  }
+
+  /* Urdu on paper. The fonts are whatever Windows already has — the sheet prints with no
+     internet and no downloaded face, so the stack ends at Segoe UI, which carries the script.
+     Isolated so a right-to-left colour never reorders the left-to-right line it sits on. */
+  .colour--ur {
+    font-family: "Jameel Noori Nastaleeq", "Noto Nastaliq Urdu", "Urdu Typesetting", "Noto Naskh Arabic", "Segoe UI", sans-serif;
+    direction: rtl; unicode-bidi: isolate; font-size: 11pt; line-height: 1.5;
+  }
 
   .cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; padding: 6px; }
   .card { border: 1px solid #d7e2f2; border-radius: 4px; overflow: hidden; break-inside: avoid; page-break-inside: avoid; }
@@ -236,6 +300,10 @@ const STYLES = `
   .line + .line { border-top: 1px solid #eef3fa; }
   .line-colour { font-size: 9.5pt; font-weight: 700; color: #1e293b; letter-spacing: .01em; }
   .line-qty { font-size: 12pt; font-weight: 800; font-variant-numeric: tabular-nums; color: #0f172a; }
+  /* A FIX article: the outer sole and the inner one stacked, with the quantity beside both. */
+  .line-soles { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+  .sole-line { display: flex; align-items: baseline; gap: 6px; font-size: 9.5pt; font-weight: 700; color: #1e293b; }
+  .sole-which { min-width: 34px; font-size: 7.5pt; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: .04em; }
 
   /* ── 3. What does it come to? ──────────────────────────────────────── */
   .totals { display: flex; margin: 8px 0 0; border: 1px solid #c7d7ee; border-radius: 5px; background: #f6f9fd; }

@@ -4,6 +4,7 @@ import type {
   AssignMachineContractorUseCase,
   DeleteMachineProgramUseCase,
   SetMachineProgramShiftUseCase,
+  SetMachineProgramSoleSlotUseCase,
   DispatchScanUseCase,
   ProcessScanUseCase,
   ReturnScanUseCase,
@@ -57,6 +58,8 @@ export interface UseCases {
     removeRun: RemoveMachineProgramRunUseCase;
     deleteProgram: DeleteMachineProgramUseCase;
     setShift: SetMachineProgramShiftUseCase;
+    /** How long each sole colour runs inside that shift (migration 070). */
+    setSoleSlot: SetMachineProgramSoleSlotUseCase;
     /** Contractor pricing: what one article's machine, packing and printing work is paid at. */
     saveArticleRates: SaveMachineProgramArticleRatesUseCase;
   };

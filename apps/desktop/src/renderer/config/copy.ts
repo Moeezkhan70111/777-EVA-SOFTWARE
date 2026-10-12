@@ -671,6 +671,12 @@ export const copy = {
     colSize: "Size",
     colUpper: "Upper Color",
     colAvailable: "Available Stock (Upper)",
+    /** A FIX article is moulded from two soles, and the row names both of them. */
+    colOuterSole: "Outer Sole",
+    /** On the printed sheet, where a fix article's two soles are written one to a line. */
+    printOuterSole: "Outer",
+    printInnerSole: "Inner",
+    colInnerSole: "Inner Sole",
     /** The unit comes from the program itself — DOZEN for uppers — so it is never assumed here. */
     colQuantity: (unitCode: string | null) => (unitCode ? `Qty to Run (${unitCode})` : "Qty to Run"),
     colQuantityShort: "Qty to Run",
@@ -682,8 +688,17 @@ export const copy = {
       `Select sole color, article, size and quantity to create program for Injector ${n}.`,
     totalOf: (what: string) => `Total (${what})`,
 
-    // The shift the machine runs
+    // The shift the machine runs, and the hours each sole runs inside it
     shiftTime: "Shift Time",
+    customShift: "Custom time",
+    shiftStart: "Start",
+    shiftEnd: "Finish",
+    setTime: "Set time",
+    soleTime: "Sole Time",
+    fullShift: "Full shift",
+    clearTime: "Clear",
+    soleTimeOf: (colour: string) => `Hours ${colour} runs`,
+    shiftInvalid: "Set a start and a finish for the shift.",
     machineReady: "Ready",
     machineIdle: "Idle",
     finalProgram: (n: number) => `Final program (Injector ${n})`,
@@ -891,6 +906,9 @@ export const copy = {
     removeUpper: "Remove",
     removeUpperTitle: "Remove this upper?",
     removeUpperExplain: "It is released for other programs. Store stock does not change.",
+    removeArticle: "Remove",
+    removeArticleTitle: "Remove this article?",
+    removeArticleExplain: "It has no upper, so nothing is released. Store stock does not change.",
     removeConfirm: "Yes, remove",
     taken: (taken: string) => `${taken} taken`,
     total: "Total",
@@ -1161,7 +1179,8 @@ export const copy = {
 
     // Cartons to label: what the machine will send back for what has just gone out.
     cartonTitle: "Cartons to label",
-    cartonNote: "Uppers out are cartons coming back — 1 DOZEN is 2 cartons of 6 pairs.",
+    // True of both kinds now: an upper issued, and a FIX article that issues nothing at all.
+    cartonNote: "1 DOZEN is 2 cartons of 6 pairs.",
     cartonEmpty: "Scan a packet out and its cartons appear here.",
     cartonCount: (cartons: number) => `${cartons} carton${cartons === 1 ? "" : "s"}`,
     cartonPrint: "Print Carton QR",

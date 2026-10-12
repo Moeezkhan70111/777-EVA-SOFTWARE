@@ -293,6 +293,117 @@ export const formatShiftRange = (shift: MachineShift): string =>
 /** True when the shift finishes on the morning after the program's date. */
 export const shiftEndsNextDay = (shift: MachineShift): boolean => shift.endMinute > MINUTES_IN_DAY;
 
+// ─── The clock, as a clock control reads and writes it ───────────────────────
+//
+// A time input speaks "HH:MM" on a 24-hour clock and knows nothing about days, while a shift is
+// minutes from midnight of the program date and may run into the next morning. These two
+// functions are the whole of that translation, so no screen does clock arithmetic of its own.
+
+/** "18:00" — a minute of the clock as a time input wants it, whatever day it falls on. */
+export const clockText = (minute: number): string => {
+  const inDay = ((Math.round(minute) % MINUTES_IN_DAY) + MINUTES_IN_DAY) % MINUTES_IN_DAY;
+  return `${String(Math.floor(inDay / 60)).padStart(2, "0")}:${String(inDay % 60).padStart(2, "0")}`;
+};
+
+/** The minute "18:00" means, or null when the control is empty or holds something else. */
+export const minuteFromClock = (value: string): number | null => {
+  const match = String(value ?? "").trim().match(/^([0-9]{1,2}):([0-9]{2})$/);
+  if (!match) return null;
+  const hour = Number(match[1]);
+  const minute = Number(match[2]);
+  if (hour > 23 || minute > 59) return null;
+  return hour * 60 + minute;
+};
+
+/**
+ * The shift two clock faces mean.
+ *
+ * A finish at or before the start is read as the next morning, which is what the night shift
+ * is: 06:00 PM to 06:00 AM is twelve hours, not minus twelve.
+ */
+export const shiftFromClocks = (startValue: string, endValue: string): MachineShift | null => {
+  const startMinute = minuteFromClock(startValue);
+  const endMinute = minuteFromClock(endValue);
+  if (startMinute == null || endMinute == null) return null;
+  const shift = { startMinute, endMinute: endMinute <= startMinute ? endMinute + MINUTES_IN_DAY : endMinute };
+  return checkMachineShift(shift) ? shift : null;
+};
+
+/**
+ * The slot two clock faces mean, numbered on the shift's own clock.
+ *
+ * Inside a night shift the small hours come AFTER the start, so 01:00 means 25:00 — otherwise a
+ * sole timed at 01:00 would look like it ran sixteen hours before the machine was switched on.
+ * Returns the times as typed even when they fall outside the shift: refusing that is the use
+ * case's job, and the screen has to be able to show what was typed in order to explain it.
+ */
+export const slotFromClocks = (startValue: string, endValue: string, shift: MachineShift): MachineShift | null => {
+  const typedStart = minuteFromClock(startValue);
+  const typedEnd = minuteFromClock(endValue);
+  if (typedStart == null || typedEnd == null) return null;
+  const overnight = shiftEndsNextDay(shift);
+  const startMinute = overnight && typedStart < shift.startMinute ? typedStart + MINUTES_IN_DAY : typedStart;
+  return { startMinute, endMinute: typedEnd <= startMinute ? typedEnd + MINUTES_IN_DAY : typedEnd };
+};
+
+/** How long a shift or a slot lasts, in minutes. */
+export const shiftMinutes = (shift: MachineShift): number => shift.endMinute - shift.startMinute;
+
+/**
+ * "12 hours", "8 hours 30 min", "45 min" — how long it runs, in the words somebody says it in.
+ *
+ * The figure that tells an operator at a glance whether the times they typed are sane: 06:00 to
+ * 05:00 reads as 23 hours, which is obviously wrong in a way two clock faces are not.
+ */
+export const formatDuration = (minutes: number): string => {
+  const whole = Math.max(0, Math.round(minutes));
+  const hours = Math.floor(whole / 60);
+  const rest = whole % 60;
+  if (hours === 0) return `${rest} min`;
+  const hourWord = `${hours} hour${hours === 1 ? "" : "s"}`;
+  return rest === 0 ? hourWord : `${hourWord} ${rest} min`;
+};
+
+// ─── When each SOLE runs, inside the shift ───────────────────────────────────
+//
+//   shift        06:00 AM - 06:00 PM     how long the MACHINE runs
+//     BLACK sole 06:00 AM - 10:00 AM     how long THAT SOLE is on it
+//     BROWN sole 10:00 AM - 06:00 PM
+//
+// Same minutes-from-midnight convention as the shift (migration 058), so a slot running past
+// midnight is just an end above 1440. A sole with NO slot runs the whole shift.
+
+export type SoleSlotProblem =
+  /** Not whole minutes, or the end is not after the start. */
+  | "INVALID_TIME"
+  /** Outside the shift the machine is working. */
+  | "OUTSIDE_SHIFT";
+
+/**
+ * Whether a sole may run at these times, or why not.
+ *
+ * A slot has to sit INSIDE the shift: a sole cannot be on a machine that is not running, and a
+ * program saying so would be a plan nobody can work to. Overlapping slots are deliberately
+ * allowed — an injector can change sole mid-run and the floor reads the times in order.
+ */
+export const checkSoleSlot = (slot: MachineShift, shift: MachineShift): SoleSlotProblem | null => {
+  const { startMinute, endMinute } = slot;
+  if (!Number.isInteger(startMinute) || !Number.isInteger(endMinute)) return "INVALID_TIME";
+  if (endMinute <= startMinute) return "INVALID_TIME";
+  if (startMinute < 0 || endMinute > MAX_SHIFT_END_MINUTE) return "INVALID_TIME";
+  if (startMinute < shift.startMinute || endMinute > shift.endMinute) return "OUTSIDE_SHIFT";
+  return null;
+};
+
+/** The slot a run was saved with, or null when nobody timed it — it runs the whole shift. */
+export const soleSlotOf = (run: {
+  startMinute?: number | null;
+  endMinute?: number | null;
+}): MachineShift | null =>
+  run.startMinute == null || run.endMinute == null
+    ? null
+    : { startMinute: run.startMinute, endMinute: run.endMinute };
+
 // ─── Looking a program up by what was typed or scanned ───────────────────────
 // Store Out opens a program by its printed number, and the printed sheet carries a QR of its
 // own code, so "MP-000012" arrives both ways. The parsing lives here, beside the rules, because

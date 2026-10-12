@@ -1,6 +1,8 @@
 import {
   MACHINE_PROGRAM_STATUS,
+  attributeKey,
   checkMachineShift,
+  checkSoleSlot,
   formatShiftRange,
   isMachineContractorRole,
   type MachineContractorRole,
@@ -288,6 +290,93 @@ export class SetMachineProgramShiftUseCase {
             machineName: program.machineName,
             programDate: program.programDate,
             shift: formatShiftRange(input.shift),
+          },
+        },
+        tx
+      );
+      return { accepted: true, outcome: "SAVED", programId: program.id };
+    });
+  }
+}
+// ─── When each sole runs, inside that shift ────────────────────────────────────
+
+export interface SetMachineProgramSoleSlotInput extends MachineProgramActor {
+  programId: string;
+  injectorNo: number;
+  soleColour: string;
+  /** The hours this colour runs, or null to clear the slot and run the whole shift. */
+  slot: MachineShift | null;
+}
+
+/**
+ * Times one sole colour on one injector: "BLACK 06:00 AM - 10:00 AM".
+ *
+ * The shift says how long the MACHINE runs. This says how long a SOLE is on it, which is the
+ * answer a minder standing at the machine actually needs. The slot has to sit inside the shift,
+ * because a sole cannot run while the machine is off, and the floor would be given a plan
+ * nobody can work to. Overlapping slots are allowed on purpose — an injector changes sole
+ * mid-shift and the times read in order.
+ *
+ * It is written to every run of that colour on that injector, so the one sole card the floor
+ * reads has one answer rather than one per article. Nothing is reserved, released or moved:
+ * this plans time, not stock.
+ */
+export class SetMachineProgramSoleSlotUseCase {
+  constructor(private readonly deps: MachineProgramDeps) {}
+
+  async execute(input: SetMachineProgramSoleSlotInput): Promise<MachineProgramWriteResult> {
+    if (!String(input.actor ?? "").trim()) throw new Error("Timing a sole requires the acting user.");
+    const soleColour = attributeKey(String(input.soleColour ?? ""));
+    if (!soleColour) return { accepted: false, outcome: "UNKNOWN_COLOUR", reason: "Name the sole colour to time." };
+
+    return runProgramWrite(this.deps, async (tx) => {
+      const program = await this.deps.repo.getMachineProgramForClose(String(input.programId ?? "").trim(), tx);
+      if (!program) throw new MachineProgramRejectedError("PROGRAM_NOT_FOUND", "This program no longer exists.");
+      requireOpenProgram(program.status);
+
+      const shift: MachineShift = { startMinute: program.shiftStartMinute, endMinute: program.shiftEndMinute };
+      if (input.slot) {
+        const problem = checkSoleSlot(input.slot, shift);
+        if (problem === "INVALID_TIME") {
+          throw new MachineProgramRejectedError("INVALID_SHIFT", "Give the sole a start and a finish, with the finish later.");
+        }
+        if (problem === "OUTSIDE_SHIFT") {
+          throw new MachineProgramRejectedError(
+            "INVALID_SHIFT",
+            `The machine runs ${formatShiftRange(shift)}. Time the sole inside that.`
+          );
+        }
+      }
+
+      const written = await this.deps.repo.setMachineProgramSoleSlot(
+        {
+          programId: program.id,
+          injectorNo: Number(input.injectorNo ?? 0),
+          soleColour,
+          startMinute: input.slot ? input.slot.startMinute : null,
+          endMinute: input.slot ? input.slot.endMinute : null,
+          nowIso: tx.nowIso,
+        },
+        tx
+      );
+      if (written === 0) {
+        throw new MachineProgramRejectedError("RUN_NOT_FOUND", `${soleColour} is not on injector ${input.injectorNo}.`);
+      }
+
+      await auditProgramChange(
+        this.deps,
+        {
+          ...input,
+          eventType: "MACHINE_PROGRAM_SOLE_SLOT_CHANGED",
+          entityId: program.id,
+          payload: {
+            code: formatMachineProgramCode(program.programNumber),
+            machineName: program.machineName,
+            programDate: program.programDate,
+            injectorNo: Number(input.injectorNo ?? 0),
+            soleColour,
+            slot: input.slot ? formatShiftRange(input.slot) : null,
+            runs: written,
           },
         },
         tx

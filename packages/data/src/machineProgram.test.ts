@@ -28,6 +28,8 @@ import {
   SaveMachineProgramArticleRatesUseCase,
   SaveMachineProgramLineUseCase,
   SaveMachineProgramRunUseCase,
+  SetMachineProgramShiftUseCase,
+  SetMachineProgramSoleSlotUseCase,
 } from "@erp/application";
 import {
   MACHINE_PROGRAM_DISPLAY_STATUS,
@@ -63,6 +65,8 @@ function createFixture(options: { withDana?: boolean } = {}) {
     receive: new ReceiveRawMaterialScanUseCase(deps),
     issue: new IssueRawMaterialScanUseCase(deps),
     priceArticle: new SaveMachineProgramArticleRatesUseCase(deps),
+    setShift: new SetMachineProgramShiftUseCase(deps),
+    setSoleSlot: new SetMachineProgramSoleSlotUseCase(deps),
   };
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- direct schema access for assertions
   const raw = (db as any).db;
@@ -205,6 +209,32 @@ function createFixture(options: { withDana?: boolean } = {}) {
       actor: ACTOR,
     });
 
+  /** Times one sole colour on one injector — "BLACK runs 06:00 to 10:00". */
+  const timeSole = (input: {
+    programId: string;
+    injectorNo?: number;
+    soleColour?: string;
+    slot: { startMinute: number; endMinute: number } | null;
+  }) =>
+    useCases.setSoleSlot.execute({
+      programId: input.programId,
+      injectorNo: input.injectorNo ?? 1,
+      soleColour: input.soleColour ?? "BLACK",
+      slot: input.slot,
+      actor: ACTOR,
+    });
+
+  /** The hours stored against every run, straight from the table. */
+  const runSlots = (programId: string) =>
+    raw
+      .prepare(
+        `SELECT injector_no, sole_colour, article_size_id, start_minute, end_minute FROM machine_program_runs
+          WHERE program_id = ? ORDER BY injector_no, run_no`
+      )
+      .all(programId) as Array<{
+      injector_no: number; sole_colour: string; article_size_id: string; start_minute: number | null; end_minute: number | null;
+    }>;
+
   /** Every rate row stored for a program, straight from the table. */
   const rateRows = (programId: string) =>
     raw
@@ -217,6 +247,7 @@ function createFixture(options: { withDana?: boolean } = {}) {
     db, raw, unitId, ...useCases, machine1, machine2, contractorA, contractorB, supplierA, supplierB, assignBothContractors,
     sk6_710, sk6_46, black, green, black46, blueElsewhere, danaBlack,
     stockIn, danaIn, issueOut, bringBack, upperFor, assignContractor, addToNewRun, saveOnRun, balanceOf, price, rateRows,
+    timeSole, runSlots,
     cleanup: () => {
       db.close();
       fs.rmSync(tempDir, { recursive: true, force: true });
@@ -1015,5 +1046,177 @@ test("a product saved by a form that knows nothing about the rates leaves them a
     f.db.updateProduct(f.sk6_710, { article: "SK6", size: "7/10", sellingPrice: 700, machineRate: null, packingRate: null, printingRate: null });
     const cleared = f.db.getProduct(f.sk6_710);
     assert.deepEqual([cleared?.machineRatePaisa, cleared?.packingRatePaisa, cleared?.printingRatePaisa], [null, null, null]);
+  });
+});
+
+// ─── The shift, and how long each sole runs in it ────────────────────────────
+// The shift says how long the MACHINE runs. A sole slot says which sole is on it when, which is
+// what a minder standing at the machine needs when an injector changes colour mid-shift.
+
+const DAY_SHIFT = { startMinute: 6 * 60, endMinute: 18 * 60 };
+
+test("a program can run hours nobody chose from a list", async () => {
+  await withFixture(async (f) => {
+    await readyToProgram(f);
+    const saved = await f.addToNewRun({ machineId: f.machine1.id, itemId: f.black, quantity: 10 });
+    const custom = { startMinute: 8 * 60, endMinute: 14 * 60 + 30 };
+
+    const result = await f.setShift.execute({ programId: saved.programId!, shift: custom, actor: ACTOR });
+    assert.equal(result.outcome, "SAVED");
+
+    const program = f.db.getMachineProgram(saved.programId!);
+    assert.equal(program?.shiftStartMinute, 480);
+    assert.equal(program?.shiftEndMinute, 870, "08:00 to 14:30 is a shift like any other");
+    assert.equal(program?.totalQuantity, 10, "the hours move nothing");
+  });
+});
+
+test("timing a sole writes every run of that colour on that injector, and nothing else", async () => {
+  await withFixture(async (f) => {
+    await readyToProgram(f);
+    await f.stockIn(f.black46, 4, f.supplierA);
+    // BLACK on injector 1 across two articles, RED beside it, and BLACK again on injector 2.
+    const saved = await f.addToNewRun({ machineId: f.machine1.id, injectorNo: 1, itemId: f.black, quantity: 10 });
+    await f.addToNewRun({ machineId: f.machine1.id, injectorNo: 1, articleSizeId: f.sk6_46, itemId: f.black46, quantity: 5 });
+    await f.addToNewRun({ machineId: f.machine1.id, injectorNo: 1, soleColour: "RED", itemId: f.black, quantity: 3 });
+    await f.addToNewRun({ machineId: f.machine1.id, injectorNo: 2, itemId: f.black, quantity: 4 });
+    const programId = saved.programId!;
+
+    const result = await f.timeSole({ programId, injectorNo: 1, soleColour: "BLACK", slot: { startMinute: 360, endMinute: 600 } });
+    assert.equal(result.outcome, "SAVED");
+
+    assert.deepEqual(
+      f.runSlots(programId).map((row) => [row.injector_no, row.sole_colour, row.start_minute, row.end_minute]),
+      [
+        [1, "BLACK", 360, 600],
+        [1, "BLACK", 360, 600],
+        [1, "RED", null, null],
+        [2, "BLACK", null, null],
+      ],
+      "both BLACK runs on injector 1 are timed together; RED and injector 2 are left alone"
+    );
+
+    const program = f.db.getMachineProgram(programId);
+    const blackOnOne = program?.runs.filter((run) => run.injectorNo === 1 && run.soleColour === "BLACK") ?? [];
+    assert.equal(blackOnOne.length, 2);
+    assert.ok(blackOnOne.every((run) => run.startMinute === 360 && run.endMinute === 600), "the screens read the hours back");
+    assert.equal(program?.totalQuantity, 22, "timing a sole reserves and releases nothing");
+  });
+});
+
+test("a sole cannot be timed to run while the machine is stopped", async () => {
+  await withFixture(async (f) => {
+    await readyToProgram(f);
+    const saved = await f.addToNewRun({ machineId: f.machine1.id, itemId: f.black, quantity: 10 });
+    const programId = saved.programId!;
+
+    const late = await f.timeSole({ programId, slot: { startMinute: 600, endMinute: 19 * 60 } });
+    assert.equal(late.outcome, "INVALID_SHIFT", "the day shift ends at 06:00 PM");
+    assert.match(late.reason ?? "", /06:00 AM – 06:00 PM/, "the refusal says what hours the machine does run");
+
+    const early = await f.timeSole({ programId, slot: { startMinute: 5 * 60, endMinute: 600 } });
+    assert.equal(early.outcome, "INVALID_SHIFT");
+
+    const backwards = await f.timeSole({ programId, slot: { startMinute: 600, endMinute: 600 } });
+    assert.equal(backwards.outcome, "INVALID_SHIFT");
+
+    assert.deepEqual(
+      f.runSlots(programId).map((row) => [row.start_minute, row.end_minute]),
+      [[null, null]],
+      "nothing was stored by any of the three"
+    );
+  });
+});
+
+test("two soles on one injector may share an hour — that is the colour being changed", async () => {
+  await withFixture(async (f) => {
+    await readyToProgram(f);
+    const saved = await f.addToNewRun({ machineId: f.machine1.id, itemId: f.black, quantity: 10 });
+    await f.addToNewRun({ machineId: f.machine1.id, soleColour: "RED", itemId: f.black, quantity: 5 });
+    const programId = saved.programId!;
+
+    assert.equal((await f.timeSole({ programId, soleColour: "BLACK", slot: { startMinute: 360, endMinute: 660 } })).outcome, "SAVED");
+    assert.equal((await f.timeSole({ programId, soleColour: "RED", slot: { startMinute: 600, endMinute: 1080 } })).outcome, "SAVED");
+
+    assert.deepEqual(
+      f.runSlots(programId).map((row) => [row.sole_colour, row.start_minute, row.end_minute]),
+      [
+        ["BLACK", 360, 660],
+        ["RED", 600, 1080],
+      ]
+    );
+  });
+});
+
+test("a sole hours are cleared back to the whole shift", async () => {
+  await withFixture(async (f) => {
+    await readyToProgram(f);
+    const saved = await f.addToNewRun({ machineId: f.machine1.id, itemId: f.black, quantity: 10 });
+    const programId = saved.programId!;
+
+    await f.timeSole({ programId, slot: { startMinute: 360, endMinute: 600 } });
+    const cleared = await f.timeSole({ programId, slot: null });
+    assert.equal(cleared.outcome, "SAVED");
+    assert.deepEqual(f.runSlots(programId).map((row) => [row.start_minute, row.end_minute]), [[null, null]]);
+    assert.equal(f.db.getMachineProgram(programId)?.runs[0]?.startMinute, null, "untimed again: it runs the whole shift");
+  });
+});
+
+test("a sole hours follow the shift the program was given, not the standard one", async () => {
+  await withFixture(async (f) => {
+    await readyToProgram(f);
+    const saved = await f.addToNewRun({ machineId: f.machine1.id, itemId: f.black, quantity: 10 });
+    const programId = saved.programId!;
+    await f.setShift.execute({ programId, shift: { startMinute: 18 * 60, endMinute: 30 * 60 }, actor: ACTOR });
+
+    const inDayHours = await f.timeSole({ programId, slot: { startMinute: 360, endMinute: 600 } });
+    assert.equal(inDayHours.outcome, "INVALID_SHIFT", "this machine is running nights now");
+
+    // 10:00 PM to 02:00 AM, which on the shift own clock is 1320 to 1560.
+    const overnight = await f.timeSole({ programId, slot: { startMinute: 1320, endMinute: 1560 } });
+    assert.equal(overnight.outcome, "SAVED");
+    assert.deepEqual(f.runSlots(programId).map((row) => [row.start_minute, row.end_minute]), [[1320, 1560]]);
+  });
+});
+
+test("only a colour actually on the injector can be timed, and only on a live program", async () => {
+  await withFixture(async (f) => {
+    await readyToProgram(f);
+    const saved = await f.addToNewRun({ machineId: f.machine1.id, injectorNo: 1, itemId: f.black, quantity: 10 });
+    const programId = saved.programId!;
+
+    const wrongColour = await f.timeSole({ programId, soleColour: "PURPLE", slot: { startMinute: 360, endMinute: 600 } });
+    assert.equal(wrongColour.outcome, "RUN_NOT_FOUND");
+    const wrongInjector = await f.timeSole({ programId, injectorNo: 2, slot: { startMinute: 360, endMinute: 600 } });
+    assert.equal(wrongInjector.outcome, "RUN_NOT_FOUND");
+    assert.deepEqual(f.runSlots(programId).map((row) => [row.start_minute, row.end_minute]), [[null, null]]);
+
+    // Deleting a program CANCELS it — its history is kept, never erased — so timing a sole on
+    // it is refused as closed rather than as missing.
+    await f.remove.execute({ programId, reason: "test", actor: ACTOR });
+    const deleted = await f.timeSole({ programId, slot: { startMinute: 360, endMinute: 600 } });
+    assert.equal(deleted.outcome, "PROGRAM_CLOSED");
+    assert.deepEqual(f.runSlots(programId).map((row) => [row.start_minute, row.end_minute]), [[null, null]]);
+  });
+});
+
+test("timing a sole is on the record, with the hours it was given", async () => {
+  await withFixture(async (f) => {
+    await readyToProgram(f);
+    const saved = await f.addToNewRun({ machineId: f.machine1.id, itemId: f.black, quantity: 10 });
+    const programId = saved.programId!;
+    await f.timeSole({ programId, slot: DAY_SHIFT });
+
+    const row = f.raw
+      .prepare(
+        "SELECT payload_json FROM audit_log WHERE event_type = 'MACHINE_PROGRAM_SOLE_SLOT_CHANGED' ORDER BY occurred_at DESC LIMIT 1"
+      )
+      .get() as { payload_json: string } | undefined;
+    assert.ok(row, "the change should be on the audit trail");
+    const payload = JSON.parse(row.payload_json) as { soleColour: string; injectorNo: number; slot: string | null; runs: number };
+    assert.equal(payload.soleColour, "BLACK");
+    assert.equal(payload.injectorNo, 1);
+    assert.equal(payload.slot, "06:00 AM – 06:00 PM");
+    assert.equal(payload.runs, 1);
   });
 });

@@ -234,6 +234,21 @@ const fitUrduFontSizeIn = (text: string, widthIn: number, minIn: number, maxIn: 
   return Math.min(maxIn, Math.max(minIn, widthIn / (length * URDU_GLYPH_WIDTH_EM)));
 };
 
+/**
+ * The same, for a colour box holding more than one line — a FIX article's two soles.
+ *
+ * Sized by the longest line's width AND by the height they share, so two colours shrink to fit
+ * the box between them instead of the second one running off the sticker.
+ */
+const fitUrduFontSizeForLines = (values: string[], widthIn: number, heightIn: number, minIn: number, maxIn: number): number => {
+  const lines = values.map((value) => value.trim()).filter(Boolean);
+  if (lines.length === 0) return maxIn;
+  const longest = Math.max(...lines.map((line) => line.length));
+  const byWidth = widthIn / (longest * URDU_GLYPH_WIDTH_EM);
+  const byHeight = heightIn / (lines.length * LINE_HEIGHT_FACTOR);
+  return Math.min(maxIn, Math.max(minIn, Math.min(byWidth, byHeight)));
+};
+
 /** Usable width for a line spanning the sticker, clear of the safe margin and a little breathing room. */
 const RM_FULL_WIDTH_IN = LABEL_WIDTH_IN - 2 * SAFE_MARGIN_IN - 0.16;
 /** Usable width for the attribute list, which shares the body row with the QR symbol. */
@@ -315,7 +330,10 @@ const RAW_MATERIAL_LABEL_STYLES = `
   /* Genuinely the star of the label: no width cap forced on it beyond the flex box, no
      overflow clipping — Nastaliq's ascenders/descenders need room a Latin line-height model
      would otherwise cut into. */
-  .rm-label-color { flex: 1; min-width: 0; display: flex; align-items: center; justify-content: center; text-align: center; }
+  .rm-label-color {
+    flex: 1; min-width: 0; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; text-align: center;
+  }
   .rm-label-color span { font-family: ${URDU_FONT_STACK}; font-weight: 600; line-height: 1.4; }
   .rm-label-footer { flex: none; display: flex; flex-direction: column; align-items: center; gap: 0.02in; }
   /* With a packet quantity: quantity | party + code | an equal empty box, so the middle stays centred. */
@@ -358,12 +376,15 @@ const renderRawMaterialLabel = (header: RawMaterialLabelHeader, qrId: string, co
   const categorySizeIn = fitFontSizeIn(header.categoryLine, RM_FULL_WIDTH_IN, ...RM_CATEGORY_RANGE);
   const subCategorySizeIn = fitFontSizeIn(header.subCategoryLine, RM_FULL_WIDTH_IN, ...RM_SUBCATEGORY_RANGE);
   const plainAttributes = header.attributes.filter((attribute) => !attribute.isColor);
-  const colorAttribute = header.attributes.find((attribute) => attribute.isColor);
+  // EVERY colour, not just the first: a FIX article is moulded from two soles and its carton
+  // names both (owner, 2026-10-12). One colour is drawn exactly as it always was.
+  const colorAttributes = header.attributes.filter((attribute) => attribute.isColor);
+  const hasColor = colorAttributes.length > 0;
   const hasPlainAttrs = plainAttributes.length > 0;
   // Beside a big colour, plain attributes are a narrow column that leaves it the rest of the
   // row. With no colour to make room for, they take the full width instead — the old, single-
   // column layout for a category that has no colour attribute at all.
-  const plainAttrsWidthIn = colorAttribute ? RM_PLAIN_ATTRS_WIDTH_IN : RM_ATTRS_WIDTH_IN;
+  const plainAttrsWidthIn = hasColor ? RM_PLAIN_ATTRS_WIDTH_IN : RM_ATTRS_WIDTH_IN;
 
   const plainAttributeSizeIn = fitFontSizeForLines(
     plainAttributes.map((attribute) => attribute.value),
@@ -374,13 +395,20 @@ const renderRawMaterialLabel = (header: RawMaterialLabelHeader, qrId: string, co
   const plainAttrsHtml = plainAttributes
     .map((attribute) => `<div style="font-size:${inches(plainAttributeSizeIn)}">${escapeHtml(attribute.value)}</div>`)
     .join("");
-  const plainAttrsStyle = colorAttribute ? `flex:none;width:${inches(plainAttrsWidthIn)}` : `flex:1`;
+  const plainAttrsStyle = hasColor ? `flex:none;width:${inches(plainAttrsWidthIn)}` : `flex:1`;
 
-  const colorSizeIn = colorAttribute
-    ? fitUrduFontSizeIn(colorAttribute.value, rmColorWidthIn(hasPlainAttrs), ...RM_COLOR_RANGE)
+  const colorSizeIn = hasColor
+    ? fitUrduFontSizeForLines(
+        colorAttributes.map((attribute) => attribute.value),
+        rmColorWidthIn(hasPlainAttrs),
+        RM_QR_SIDE_IN,
+        ...RM_COLOR_RANGE
+      )
     : 0;
-  const colorHtml = colorAttribute
-    ? `<div class="rm-label-color"><span style="font-size:${inches(colorSizeIn)}">${escapeHtml(colorAttribute.value)}</span></div>`
+  const colorHtml = hasColor
+    ? `<div class="rm-label-color">${colorAttributes
+        .map((attribute) => `<span style="font-size:${inches(colorSizeIn)}">${escapeHtml(attribute.value)}</span>`)
+        .join("")}</div>`
     : "";
 
   const subCategoryHtml = header.subCategoryLine
@@ -509,17 +537,39 @@ export const printRawMaterialLabels = (sheet: RawMaterialLabelSheet): Promise<Pr
 // category, no sub-category, no supplier and no pack figure. Its colour is printed large in
 // Urdu, as the floor reads it, through the same transliteration every other Urdu field uses.
 
-/** What one carton's sticker says, from the carton's own identity. */
-export const cartonLabelHeader = (identity: { article: string; color: string; size: string }): RawMaterialLabelHeader => ({
-  categoryLine: identity.article.trim(),
-  subCategoryLine: "",
-  attributes: [
-    ...(identity.size.trim() ? [{ label: "SIZE", value: identity.size.trim(), isColor: false }] : []),
-    ...(identity.color.trim() ? [{ label: "COLOUR", value: colorValueInUrdu(identity.color), isColor: true }] : []),
-  ],
-  partyName: "",
-  packQuantity: "",
-});
+/**
+ * What one carton's sticker says, from the carton's own identity.
+ *
+ * A FIX article is moulded from TWO soles and has no upper, so its sticker names both of them —
+ * the outer one the carton is identified by, and the inner one that goes inside it (owner,
+ * 2026-10-12). The code itself still carries one colour, because a QR identity holds one:
+ *
+ *   DC3                        DC3
+ *   SIZE        7/10           SIZE        7/10
+ *   COLOUR      سیاہ            OUTER SOLE  سیاہ
+ *                              INNER SOLE  اورنج
+ */
+export const cartonLabelHeader = (identity: {
+  article: string;
+  color: string;
+  size: string;
+  /** The second sole of a FIX article. Left out, the sticker says COLOUR as it always has. */
+  innerColor?: string | null;
+}): RawMaterialLabelHeader => {
+  const inner = String(identity.innerColor ?? "").trim();
+  const colourLabel = inner ? "OUTER SOLE" : "COLOUR";
+  return {
+    categoryLine: identity.article.trim(),
+    subCategoryLine: "",
+    attributes: [
+      ...(identity.size.trim() ? [{ label: "SIZE", value: identity.size.trim(), isColor: false }] : []),
+      ...(identity.color.trim() ? [{ label: colourLabel, value: colorValueInUrdu(identity.color), isColor: true }] : []),
+      ...(inner ? [{ label: "INNER SOLE", value: colorValueInUrdu(inner), isColor: true }] : []),
+    ],
+    partyName: "",
+    packQuantity: "",
+  };
+};
 
 /**
  * Opens a print-ready window of carton QR labels — the QR Generator's run, or a single code
@@ -529,7 +579,7 @@ export const openCartonLabelPrintWindow = (opts: {
   title: string;
   heading: string;
   subheading: string;
-  identity: { article: string; color: string; size: string };
+  identity: { article: string; color: string; size: string; innerColor?: string | null };
   ids: string[];
 }): boolean =>
   openRawMaterialLabelPrintWindow({

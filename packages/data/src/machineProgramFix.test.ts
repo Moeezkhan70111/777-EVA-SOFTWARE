@@ -18,6 +18,7 @@ import path from "node:path";
 import {
   AssignMachineContractorUseCase,
   InMemoryEventBus,
+  ReceiveMachineProgramCartonUseCase,
   ReceiveRawMaterialScanUseCase,
   SaveMachineProgramFixRunUseCase,
   SaveMachineProgramLineUseCase,
@@ -131,9 +132,23 @@ function createFixture() {
   const balanceOf = (itemId: string): number =>
     Number((raw.prepare("SELECT quantity_on_hand AS q FROM inventory_stock_balances WHERE item_id = ?").get(itemId) as { q: number } | undefined)?.q ?? 0);
 
+  /** Store In scanning one of the program's carton labels back — produced and stored in. */
+  const cartonIn = new ReceiveMachineProgramCartonUseCase({
+    txManager: db, duplicateChecker: db, qrRegistry: db, productCatalog: db, qrMasterRepo: db,
+    productionEventsRepo: db, stockProjectionRepo: db, outboxRepo: db, qrLookupRepo: db, gatepassRepo: db,
+    storeEntryEventsRepo: db, cartonOriginRepo: db, eventPublisher: new InMemoryEventBus(), idGenerator: new UuidGenerator(),
+  });
+
+  /** The cartons each FIX run of today's program is owed. */
+  const fixCartons = () => db.listMachineProgramFixCartonRuns(program()?.id ?? "");
+
+  /** Prints a fix run's outstanding cartons, as Machine Move Out does. */
+  const printFixCartons = (runId: string) =>
+    db.printMachineProgramFixCartons({ programId: program()?.id ?? "", runId, printedBy: ACTOR, deviceId: "device-1" });
+
   return {
     db, raw, machine, sk6, evr9, black, casual, evrFix, group,
-    ready, saveFix, saveUpper, program, balanceOf,
+    ready, saveFix, saveUpper, program, balanceOf, fixCartons, printFixCartons, cartonIn,
     cleanup: () => {
       db.close();
       fs.rmSync(tempDir, { recursive: true, force: true });
@@ -275,5 +290,185 @@ test("reclassifying a sub group never rewrites a program already saved", async (
     const run = f.program()?.runs[0];
     assert.equal(run?.innerSoleColour, "RED", "yesterday's run is still the run it was made as");
     assert.equal(run?.fixQuantity, 30);
+  });
+});
+
+// ─── The cartons a fix article is owed ───────────────────────────────────────
+// A fix article has no upper, so nothing ever leaves the store for it and there is no issued
+// packet to hang a carton label on. What it is owed is its PLAN: 32 DOZEN is 64 cartons.
+
+test("a fix run is owed cartons for what it PLANS, two to the dozen", async () => {
+  await withFixture(async (f) => {
+    await f.ready();
+    await f.saveFix({ outer: "WHITE", inner: "BLACK", quantity: 32 });
+
+    const [run] = f.fixCartons();
+    assert.equal(run.article, "EVR9");
+    assert.equal(run.size, "7/10");
+    assert.equal(run.outerSoleColour, "WHITE", "the carton carries the OUTER sole, which is what is sold");
+    assert.equal(run.innerSoleColour, "BLACK");
+    assert.equal(run.quantity, 32);
+    assert.equal(run.cartonsPlanned, 64);
+    assert.equal(run.cartonsToPrint, 64);
+    assert.equal(run.cartonNote, null);
+    assert.deepEqual(run.labels, []);
+  });
+});
+
+test("printing a fix run generates exactly its cartons, against the outer sole", async () => {
+  await withFixture(async (f) => {
+    await f.ready();
+    await f.saveFix({ outer: "WHITE", inner: "BLACK", quantity: 32 });
+    const [run] = f.fixCartons();
+
+    const printed = f.printFixCartons(run.runId);
+    assert.equal(printed.qrCodes.length, 64, "32 dozen is 64 cartons");
+    assert.equal(printed.batch.article, "EVR9");
+    assert.equal(printed.batch.color, "WHITE");
+    assert.equal(printed.batch.size, "7/10");
+
+    // The print is on the record, and the run is no longer owed anything.
+    const after = f.fixCartons()[0];
+    assert.equal(after.cartonsToPrint, 0);
+    assert.equal(after.labels.length, 1);
+    assert.equal(after.labels[0].cartonCount, 64);
+    assert.equal(after.labels[0].printedBy, ACTOR);
+    assert.equal(after.labels[0].receivedInRun, 0);
+
+    const again = () => f.printFixCartons(run.runId);
+    assert.throws(again, /already been labelled/, "a carton identity is permanent — never printed twice");
+    assert.equal(
+      Number(f.raw.prepare("SELECT COUNT(*) AS n FROM machine_program_fix_carton_labels").get().n),
+      1
+    );
+  });
+});
+
+test("raising the quantity afterwards owes only the difference", async () => {
+  await withFixture(async (f) => {
+    await f.ready();
+    await f.saveFix({ outer: "WHITE", inner: "BLACK", quantity: 32 });
+    f.printFixCartons(f.fixCartons()[0].runId);
+
+    // The same article saved again CHANGES the run (never duplicates it), so this is 40 planned.
+    await f.saveFix({ outer: "WHITE", inner: "BLACK", quantity: 40 });
+    const run = f.fixCartons()[0];
+    assert.equal(run.cartonsPlanned, 80);
+    assert.equal(run.cartonsToPrint, 16, "64 are already labelled");
+
+    const printed = f.printFixCartons(run.runId);
+    assert.equal(printed.qrCodes.length, 16);
+    assert.equal(f.fixCartons()[0].cartonsToPrint, 0);
+    assert.equal(f.fixCartons()[0].labels.length, 2);
+  });
+});
+
+test("a fix run that does not come to whole cartons is sent to QR Generator, never rounded", async () => {
+  await withFixture(async (f) => {
+    await f.ready();
+    // Half a dozen IS a carton, so 32.5 would be a fine 65. A quarter dozen is not.
+    await f.saveFix({ outer: "WHITE", inner: "BLACK", quantity: 32.25 });
+
+    const run = f.fixCartons()[0];
+    assert.equal(run.cartonsPlanned, null);
+    assert.equal(run.cartonsToPrint, 0);
+    assert.match(run.cartonNote ?? "", /whole cartons of DOZEN/);
+    assert.throws(() => f.printFixCartons(run.runId), /whole cartons of DOZEN/);
+  });
+});
+
+test("an upper run is not offered as a fix run, and a fix run is not offered as a packet", async () => {
+  await withFixture(async (f) => {
+    await f.ready();
+    await f.saveUpper({ quantity: 10 });
+    await f.saveFix({ outer: "WHITE", inner: "BLACK", quantity: 32 });
+
+    const programId = f.program()!.id;
+    assert.deepEqual(f.fixCartons().map((run) => run.article), ["EVR9"], "only the fix run");
+    assert.deepEqual(
+      f.db.listMachineProgramCartonPackets(programId),
+      [],
+      "and nothing has been issued, so no packet is owed cartons"
+    );
+  });
+});
+
+test("a fix carton scanned back in finds the program it was printed for", async () => {
+  await withFixture(async (f) => {
+    await f.ready();
+    await f.saveFix({ outer: "WHITE", inner: "BLACK", quantity: 2 });
+    const printed = f.printFixCartons(f.fixCartons()[0].runId);
+    assert.equal(printed.qrCodes.length, 4);
+
+    // Store In asks this question of every carton scanned against an open program.
+    const origin = await f.db.runInTransaction(async (tx) => f.db.findMachineProgramOfCartonQr(printed.qrCodes[0].id, tx));
+    assert.equal(origin?.programId, f.program()!.id);
+    assert.equal(origin?.closed, false);
+  });
+});
+
+// ─── The whole journey, end to end ───────────────────────────────────────────
+// What the owner asked to have confirmed on 2026-10-12:
+//
+//   machine program made -> Store Out prints the carton QRs -> Store In scans one
+//     -> it is PRODUCED (the Daily Production page counts it) -> Current Stock goes up
+//
+// Every step is driven through the same use case the screen calls, and every figure is read
+// back through the same query the page reads.
+
+test("EVR FIX: program -> carton labels -> scanned back -> produced -> in stock", async () => {
+  await withFixture(async (f) => {
+    await f.ready();
+
+    // 1. THE PROGRAM. 32 DOZEN of a fix article: two soles, no upper, nothing reserved.
+    const saved = await f.saveFix({ outer: "WHITE", inner: "BLACK", quantity: 32 });
+    assert.equal(saved.accepted, true, saved.reason);
+    const programId = f.program()!.id;
+    assert.equal(f.program()!.totalQuantity, 0, "a fix run reserves nothing");
+    assert.equal(f.program()!.fixQuantity, 32);
+
+    // 2. STORE OUT PRINTS THE CARTON QRs. 32 dozen is 64 cartons, owed by the plan.
+    const [run] = f.fixCartons();
+    assert.equal(run.cartonsToPrint, 64);
+    const cartons = f.printFixCartons(run.runId).qrCodes.map((qr) => qr.id);
+    assert.equal(cartons.length, 64);
+    assert.match(cartons[0], /^EVR9_WHITE_7\/10_\d{6}$/, "the identity is the article, the OUTER sole and the size");
+
+    // 3. STORE IN SCANS ONE BACK.
+    const received = await f.cartonIn.execute({ programId, rawScan: cartons[0], context: CONTEXT, actor: ACTOR });
+    assert.equal(received.outcome, "RECEIVED", received.reason);
+    assert.equal(received.producedNow, true);
+
+    // 4. PRODUCED — one transaction wrote the production and the store-in.
+    const events = f.raw
+      .prepare("SELECT event_type FROM production_events WHERE qr_id = ? ORDER BY rowid")
+      .all(cartons[0]) as Array<{ event_type: string }>;
+    assert.deepEqual(events.map((event) => event.event_type), ["PRODUCED", "MOVED"]);
+
+    // The Daily Production page reads getReport. One carton is one unit of production.
+    const report = f.db.getReport("DAILY");
+    assert.equal(report.totalProduction, 1);
+    assert.deepEqual(report.byArticle.map((row) => [row.key, row.quantity]), [["EVR9", 1]]);
+    assert.deepEqual(report.byColor.map((row) => [row.key, row.quantity]), [["WHITE", 1]]);
+
+    // The page itself asks for ONE operational day (06:00 to 06:00), so ask the way it does.
+    const operationalDate = (() => {
+      const now = new Date();
+      if (now.getHours() < 6) now.setDate(now.getDate() - 1);
+      return now.toISOString().slice(0, 10);
+    })();
+    assert.equal(f.db.getReport("CUSTOM", operationalDate, operationalDate).totalProduction, 1);
+
+    // 5. CURRENT STOCK. The Stock page reads listInventory.
+    const stock = f.db.listInventory("EVR9");
+    assert.equal(stock.length, 1, "one variant: EVR9 7/10 WHITE");
+    assert.equal(stock[0].color, "WHITE");
+    assert.equal(stock[0].quantity, 1, "the carton is in the store");
+    assert.equal(stock[0].storeQuantity, 1);
+
+    // And a second carton moves it to 2 — the chain is not a one-off.
+    await f.cartonIn.execute({ programId, rawScan: cartons[1], context: CONTEXT, actor: ACTOR });
+    assert.equal(f.db.getReport("DAILY").totalProduction, 2);
+    assert.equal(f.db.listInventory("EVR9")[0].quantity, 2);
   });
 });

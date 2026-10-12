@@ -1374,6 +1374,13 @@ export interface DesktopApi {
   removeMachineProgramRun(input: { runId: string }): Promise<MachineProgramWriteResult>;
   deleteMachineProgram(input: { programId: string; reason?: string | null }): Promise<MachineProgramWriteResult>;
   setMachineProgramShift(input: { programId: string; shift: MachineShift }): Promise<MachineProgramWriteResult>;
+  /** Times one sole colour on one injector. A null slot clears it: the colour runs the whole shift. */
+  setMachineProgramSoleSlot(input: {
+    programId: string;
+    injectorNo: number;
+    soleColour: string;
+    slot: MachineShift | null;
+  }): Promise<MachineProgramWriteResult>;
   // ── Store Out through one open Machine Program ───────────────────────────────
   /** Resolves what the operator typed, scanned or clicked through from a notification. */
   openMachineProgramStoreOut(lookup: string, opts?: { token?: string }): Promise<OpenMachineProgramStoreOutResult>;
@@ -1396,10 +1403,22 @@ export interface DesktopApi {
   listMachineProgramCartonPackets(
     programId: string,
     opts?: { token?: string }
-  ): Promise<{ accepted: boolean; reason?: string; rows: MachineProgramCartonPacket[]; progress: MachineProgramLineCartons[] }>;
-  /** Generates the carton QR labels for these packets and records them as labelled, exactly once. */
+  ): Promise<{
+    accepted: boolean;
+    reason?: string;
+    rows: MachineProgramCartonPacket[];
+    progress: MachineProgramLineCartons[];
+    /** FIX articles: their cartons are owed by the plan, since no packet ever leaves for them. */
+    fixRuns?: MachineProgramFixCartonRun[];
+  }>;
+  /**
+   * Generates carton QR labels and records the print, exactly once.
+   *
+   * `eventIds` labels the cartons owed to issued packets of uppers; `runId` labels what a FIX
+   * article's run plans, which has no packet to be owed to. One or the other, never both.
+   */
   printMachineProgramCartons(
-    input: { programId: string; eventIds: string[] },
+    input: { programId: string; eventIds?: string[]; runId?: string },
     opts?: { token?: string }
   ): Promise<{ accepted: boolean; reason?: string; batch?: QrBatchRow; qrCodes?: QrCodeRow[] }>;
   /** Store In: one of the program's carton labels scanned back — produced and stored in, or refused. */
@@ -2379,6 +2398,12 @@ export interface MachineProgramRunRecord {
   totalQuantity: number;
   consumedQuantity: number;
   unitCode: string | null;
+  /**
+   * The hours this sole colour runs, in minutes from midnight of the program date. Both null
+   * when nobody timed it, which means the colour runs the whole shift.
+   */
+  startMinute: number | null;
+  endMinute: number | null;
   lines: MachineProgramUpperLineRecord[];
 }
 
@@ -2696,6 +2721,31 @@ export interface MachineProgramCartonPacket {
   cartonNote: string | null;
   /** Null while the cartons are still owed. */
   label: MachineProgramCartonLabel | null;
+}
+
+/**
+ * A FIX article's cartons: owed by the PLAN, not by an issuance.
+ *
+ * A fix article is moulded from two soles and has no upper, so nothing leaves the store for it
+ * and there is no packet to hang a carton label on. 32 DOZEN planned is 64 cartons, ready to
+ * print from the moment the run is saved (migration 071).
+ */
+export interface MachineProgramFixCartonRun {
+  runId: string;
+  articleSizeId: string;
+  article: string;
+  size: string;
+  /** The OUTER sole: what the slipper is sold as, and what the carton QR identity carries. */
+  outerSoleColour: string;
+  innerSoleColour: string;
+  quantity: number;
+  unitCode: string | null;
+  /** The whole plan's cartons, or null when no carton figure can be said. */
+  cartonsPlanned: number | null;
+  /** Still to label: the plan minus what is already printed. */
+  cartonsToPrint: number;
+  cartonNote: string | null;
+  labels: MachineProgramCartonLabel[];
 }
 
 /** One saved batch and the packets it took, for the audit trail under the program. */

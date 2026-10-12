@@ -6,7 +6,11 @@ import { NOTIFICATION_KIND } from "@erp/domain";
 import { StoreOutPage } from "../StoreOutPage";
 import { NotificationsProvider } from "../../../state/NotificationsContext";
 import { notificationTarget } from "../../users/notificationTarget";
-import type { MachineProgramCartonPacket, MachineProgramRecord } from "../../../types/desktopApi";
+import type {
+  MachineProgramCartonPacket,
+  MachineProgramFixCartonRun,
+  MachineProgramRecord,
+} from "../../../types/desktopApi";
 
 // MACHINE MOVE OUT, from the operator's side.
 //
@@ -41,9 +45,10 @@ vi.mock("../../HandMovePanel", () => ({ HandMovePanel: () => <div data-testid="h
 vi.mock("../HandMovePanel", () => ({ HandMovePanel: () => <div data-testid="hand-move">Move Out by Hand</div> }));
 vi.mock("../../../utils/playScanSound", () => ({ playScanSound: () => undefined }));
 
-const printWindow = vi.fn((_opts: { ids: string[] }) => true);
+const printWindow = vi.fn((_opts: { ids: string[]; identity?: { innerColor?: string | null } }) => true);
 vi.mock("../../../utils/qrLabels", () => ({
-  openCartonLabelPrintWindow: (opts: { ids: string[] }) => printWindow(opts) as boolean,
+  openCartonLabelPrintWindow: (opts: { ids: string[]; identity?: { innerColor?: string | null } }) =>
+    printWindow(opts) as boolean,
 }));
 
 const TODAY = "2026-10-09";
@@ -113,6 +118,8 @@ const program = (issued: { black?: number; red?: number } = {}): MachineProgramR
         totalQuantity: total,
         consumedQuantity: consumed,
         unitCode: "DOZEN",
+        startMinute: null,
+        endMinute: null,
         lines,
       },
     ],
@@ -153,6 +160,8 @@ function installApi(
     /** The program exists but may not be issued against: the backend refuses AND returns it. */
     fullyIssued?: boolean;
     earlierPackets?: MachineProgramCartonPacket[];
+    /** A FIX article on the program: no upper, two soles, and cartons owed by its PLAN. */
+    fixRuns?: MachineProgramFixCartonRun[];
   } = {}
 ) {
   const state = {
@@ -161,6 +170,7 @@ function installApi(
     red: 0,
     sequence: 0,
     cartonPackets: [...(options.earlierPackets ?? [])],
+    fixRuns: [...(options.fixRuns ?? [])],
   };
   const api = {
     openMachineProgramStoreOut: vi.fn(async (lookup: string) => {
@@ -247,7 +257,11 @@ function installApi(
     }),
     listMachineProgramIssueBatches: vi.fn(async () => ({ accepted: true, rows: [] })),
     listQrCodesForBatch: vi.fn(async (_batchId: string): Promise<Array<{ id: string; batchId: string; article: string; color: string; size: string; sequence: number; status: string }>> => []),
-    listMachineProgramCartonPackets: vi.fn(async () => ({ accepted: true, rows: state.cartonPackets.map((packet) => ({ ...packet })) })),
+    listMachineProgramCartonPackets: vi.fn(async () => ({
+      accepted: true,
+      rows: state.cartonPackets.map((packet) => ({ ...packet })),
+      fixRuns: state.fixRuns.map((run) => ({ ...run })),
+    })),
     // Dana Issue: the store holds two BLACK Danas, which is exactly the case a colour
     // alone cannot describe — the operator has to pick the material.
     listMachineProgramDanaOptions: vi.fn(async () => ({
@@ -261,8 +275,29 @@ function installApi(
     issueMachineProgramDana: vi.fn(async (): Promise<{ accepted: boolean; outcome: string; reason?: string; quantity?: number; unitCode?: string }> => ({ accepted: true, outcome: "MOVED", quantity: 50, unitCode: "KILOGRAM" })),
     listMachineProgramDanaIssues: vi.fn(async () => ({ accepted: true, rows: [] })),
     // The backend's print: the count comes from the packets, and each packet is labelled once.
-    printMachineProgramCartons: vi.fn(async (input: { programId: string; eventIds: string[] }) => {
-      const chosen = state.cartonPackets.filter((packet) => input.eventIds.includes(packet.eventId));
+    printMachineProgramCartons: vi.fn(async (input: { programId: string; eventIds?: string[]; runId?: string }) => {
+      // A FIX run is labelled by its own id: it has no packet to be owed to.
+      if (input.runId) {
+        const run = state.fixRuns.find((candidate) => candidate.runId === input.runId);
+        if (!run || run.cartonsToPrint <= 0) return { accepted: false, reason: "Every carton this article plans has already been labelled." };
+        const ids = Array.from({ length: run.cartonsToPrint }, () => {
+          state.sequence += 1;
+          return `${run.article}_${run.outerSoleColour}_${run.size}_${String(state.sequence).padStart(6, "0")}`;
+        });
+        const fixBatchId = `qrb-fix-${state.sequence}`;
+        state.fixRuns = state.fixRuns.map((candidate) =>
+          candidate.runId === run.runId ? { ...candidate, cartonsToPrint: 0 } : candidate
+        );
+        return {
+          accepted: true,
+          batch: { id: fixBatchId, article: run.article, color: run.outerSoleColour, size: run.size, quantity: ids.length },
+          qrCodes: ids.map((id, index) => ({
+            id, batchId: fixBatchId, article: run.article, color: run.outerSoleColour, size: run.size,
+            sequence: index + 1, status: "GENERATED",
+          })),
+        };
+      }
+      const chosen = state.cartonPackets.filter((packet) => (input.eventIds ?? []).includes(packet.eventId));
       if (chosen.some((packet) => packet.label)) return { accepted: false, reason: "The cartons for this upper were already printed." };
       const color = chosen[0].cartons!.colour;
       const quantity = chosen.reduce((total, packet) => total + packet.cartons!.count, 0);
@@ -733,5 +768,107 @@ describe("Machine Program Issue — reading the program", () => {
     await startScan();
     expect(await screen.findByLabelText("Scanner input")).toBeEnabled();
     expect(api.machineProgramStoreOutSaveBatch).not.toHaveBeenCalled();
+  });
+});
+
+describe("Machine Move Out — a FIX article's cartons", () => {
+  // A fix article is moulded from two soles and has no upper, so nothing is ever issued for it.
+  // Its cartons are owed by the PLAN: 32 DOZEN is 64 cartons, ready from the moment it is saved.
+  const fixRun = (over: Partial<MachineProgramFixCartonRun> = {}): MachineProgramFixCartonRun => ({
+    runId: "run-fix",
+    articleSizeId: "as-dc3-710",
+    article: "DC3",
+    size: "7/10",
+    outerSoleColour: "SILVER GREY",
+    innerSoleColour: "BLACK",
+    quantity: 32,
+    unitCode: "DOZEN",
+    cartonsPlanned: 64,
+    cartonsToPrint: 64,
+    cartonNote: null,
+    labels: [],
+    ...over,
+  });
+
+  const open = async () => {
+    await userEvent.type(lookupBox(), "MP-000001");
+    await userEvent.keyboard("{Enter}");
+    await openedProgram();
+  };
+
+  it("offers a fix article its whole plan in cartons, with nothing issued", async () => {
+    const api = installApi({ fixRuns: [fixRun()] });
+    renderPage();
+    await open();
+
+    const cartons = cartonSection();
+    await waitFor(() => expect(within(cartons).getByText("DC3 / 7/10 / SILVER GREY")).toBeInTheDocument());
+    expect(within(cartons).getByText("64 cartons")).toBeInTheDocument();
+
+    await userEvent.click(
+      within(cartons).getByRole("button", { name: "Print 64 carton QR labels for DC3 / 7/10 / SILVER GREY" })
+    );
+
+    // Labelled against the RUN, never against a packet — there is no packet.
+    await waitFor(() =>
+      expect(api.printMachineProgramCartons).toHaveBeenCalledWith(
+        { programId: "prog-1", runId: "run-fix" },
+        expect.anything()
+      )
+    );
+    expect(printWindow).toHaveBeenCalledTimes(1);
+    expect(printWindow.mock.calls[0][0].ids).toHaveLength(64);
+    // The sticker names BOTH soles: the code carries the outer, the label says the inner too.
+    expect(printWindow.mock.calls[0][0].identity?.innerColor).toBe("BLACK");
+  });
+
+  it("offers nothing once the whole plan is labelled, and shows what was printed", async () => {
+    const api = installApi({
+      fixRuns: [
+        fixRun({
+          cartonsToPrint: 0,
+          labels: [
+            {
+              qrBatchId: "qrb-9",
+              firstQrId: "DC3_SILVERGREY_7/10_000001",
+              lastQrId: "DC3_SILVERGREY_7/10_000064",
+              cartonCount: 64,
+              receivedInRun: 10,
+              printedBy: "aslam",
+              printedAt: "2026-10-12T05:00:00.000Z",
+            },
+          ],
+        }),
+      ],
+    });
+    renderPage();
+    await open();
+
+    const cartons = cartonSection();
+    await waitFor(() =>
+      expect(within(cartons).getByText(/DC3_SILVERGREY_7\/10_000001 → DC3_SILVERGREY_7\/10_000064/)).toBeInTheDocument()
+    );
+    expect(within(cartons).getByText("10 of 64 back in store")).toBeInTheDocument();
+    expect(within(cartons).queryByRole("button", { name: /^Print \d+ carton/ })).toBeNull();
+    expect(api.printMachineProgramCartons).not.toHaveBeenCalled();
+  });
+
+  it("says why a fix article cannot be labelled instead of rounding its cartons", async () => {
+    installApi({
+      fixRuns: [
+        fixRun({
+          quantity: 32.25,
+          cartonsPlanned: null,
+          cartonsToPrint: 0,
+          cartonNote: "DC3 7/10 is not planned in whole cartons of DOZEN, so its cartons have to be generated in QR Generator.",
+        }),
+      ],
+    });
+    renderPage();
+    await open();
+
+    const cartons = cartonSection();
+    await waitFor(() => expect(within(cartons).getByRole("alert")).toHaveTextContent("whole cartons of DOZEN"));
+    expect(within(cartons).queryByRole("button", { name: /^Print \d+ carton/ })).toBeNull();
   });
 });

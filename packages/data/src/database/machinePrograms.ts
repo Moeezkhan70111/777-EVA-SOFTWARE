@@ -106,6 +106,8 @@ const mapRun = (row: Record<string, unknown>, lines: MachineProgramUpperLineReco
   totalQuantity: sum(lines.map((line) => line.quantity)),
   consumedQuantity: sum(lines.map((line) => line.consumed)),
   unitCode: sharedUnit(lines) ?? (row.unit_code ? text(row.unit_code) : null),
+  startMinute: row.start_minute == null ? null : Number(row.start_minute),
+  endMinute: row.end_minute == null ? null : Number(row.end_minute),
   lines,
 });
 

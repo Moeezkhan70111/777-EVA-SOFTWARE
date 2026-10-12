@@ -54,6 +54,8 @@ export const useProgramWrites = (onSaved: () => void) => {
       programDate: string;
       shift: MachineShift;
       injectorNo: number;
+      /** The run being changed — a quantity typed on a fix row. Left out, a run is added. */
+      runId?: string;
       soleColour: string;
       innerSoleColour: string;
       articleSizeId: string;
@@ -65,6 +67,9 @@ export const useProgramWrites = (onSaved: () => void) => {
     removeRun: (runId: string) => run(() => api.removeMachineProgramRun({ runId })),
     deleteProgram: (programId: string) => run(() => api.deleteMachineProgram({ programId })),
     setShift: (programId: string, shift: MachineShift) => run(() => api.setMachineProgramShift({ programId, shift })),
+    /** Times one sole colour on one injector. `null` clears it: the colour runs the whole shift. */
+    setSoleSlot: (programId: string, injectorNo: number, soleColour: string, slot: MachineShift | null) =>
+      run(() => api.setMachineProgramSoleSlot({ programId, injectorNo, soleColour, slot })),
   };
 };
 

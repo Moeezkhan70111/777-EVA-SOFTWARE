@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { MACHINE_INJECTORS, formatShiftRange, type MachineShift } from "@erp/domain";
+import { MACHINE_INJECTORS, formatShiftRange, isFixRun, soleSlotOf, type MachineShift } from "@erp/domain";
 import type { MachineProgramRecord, MachineRecord } from "../../types/desktopApi";
 import { ColorSwatch } from "../../components/shared/ColorSwatch";
 import { ConfirmDialog } from "../../components/shared/ConfirmDialog";
@@ -9,7 +9,20 @@ import { ContractorPricingDialog } from "./ContractorPricingDialog";
 import { ClockIcon, MachineIcon, PersonIcon, ProductionIcon } from "./MachineProgramIcons";
 import { ProgramPricing } from "./ProgramPricing";
 import { colourRuns, formatAmount, injectorRuns, injectorTotal, runColours } from "./machineProgram";
+import type { MachineProgramRunRecord } from "../../types/desktopApi";
 import type { ProgramWrites } from "./useProgramWrites";
+
+/**
+ * "06:00 AM – 10:00 AM" when a sole colour has been given hours of its own, or null.
+ *
+ * Every run of one colour on one injector carries the same hours, so the first of them answers
+ * for the group. Null is the colour running the whole shift, which the Quick View below already
+ * says.
+ */
+const soleHours = (runs: readonly MachineProgramRunRecord[], colour: string): string | null => {
+  const slot = soleSlotOf(colourRuns(runs, colour)[0] ?? {});
+  return slot ? formatShiftRange(slot) : null;
+};
 
 // The right column: what the machine's day adds up to, and the one thing that can undo it.
 //
@@ -148,17 +161,31 @@ const InjectorSummary: React.FC<{ injectorNo: number; program: MachineProgramRec
           <p className="mpx-summary-sole-head">
             <ColorSwatch color={colour} className="mpx-summary-swatch" />
             {copy.machineProgram.soleLine(colour)}
+            {soleHours(runs, colour) ? <span className="mpx-summary-sole-time">{soleHours(runs, colour)}</span> : null}
           </p>
           <ul className="mpx-summary-lines">
             {colourRuns(runs, colour).flatMap((run) =>
-              run.lines.map((line) => (
-                <li key={line.id} className="mpx-summary-line">
-                  <span className="mpx-summary-line-what">
-                    {run.article} {run.size} <b>{line.upperColour}</b>
-                  </span>
-                  <span className="mpx-summary-line-qty">{formatAmount(line.quantity, line.unitCode)}</span>
-                </li>
-              ))
+              // A FIX article has no upper line to list, so the run itself is the line: the
+              // inner sole in the upper's place, and the quantity typed on the run. Without it
+              // the sole would stand here with nothing under it while its figure was in the
+              // injector's total.
+              isFixRun(run)
+                ? [
+                    <li key={run.id} className="mpx-summary-line">
+                      <span className="mpx-summary-line-what">
+                        {run.article} {run.size} <b>{run.innerSoleColour}</b>
+                      </span>
+                      <span className="mpx-summary-line-qty">{formatAmount(run.fixQuantity, run.unitCode)}</span>
+                    </li>,
+                  ]
+                : run.lines.map((line) => (
+                    <li key={line.id} className="mpx-summary-line">
+                      <span className="mpx-summary-line-what">
+                        {run.article} {run.size} <b>{line.upperColour}</b>
+                      </span>
+                      <span className="mpx-summary-line-qty">{formatAmount(line.quantity, line.unitCode)}</span>
+                    </li>
+                  ))
             )}
           </ul>
         </div>

@@ -26,7 +26,31 @@ const summaryWith = (overrides: Partial<RawMaterialReceivingSessionSummary> = {}
   ...overrides,
 });
 
+/** The voucher as a BROWSER reads it, which is the only thing the storekeeper ever sees. */
+const parse = (html: string): Document => new DOMParser().parseFromString(html, "text/html");
+
 describe("renderReceivingReceiptHtml", () => {
+  // Every other test here reads the HTML as a STRING, and a string says nothing about whether a
+  // browser can render it: an unclosed <title> swallowed the whole body once and left the print
+  // window blank while all of them still passed (2026-10-12).
+  it("renders a document, not a blank page", () => {
+    const doc = parse(renderReceivingReceiptHtml(summaryWith(), { printedBy: "storekeeper" }));
+    const body = doc.body.textContent ?? "";
+
+    expect(doc.title).toBe("RMI-000003 — Vots Chemicals");
+    expect(doc.querySelector("style")).not.toBeNull();
+    expect(doc.querySelectorAll(".materials-table tbody tr")).toHaveLength(4);
+
+    // The facts the slip exists to carry are in the BODY, where they can be read and printed.
+    expect(body).toContain("Raw Material Received");
+    expect(body).toContain("RMI-000003");
+    expect(body).toContain("Vots Chemicals");
+    expect(body).toContain("DANA — EVA — RED");
+    expect(body).toContain("175 KG");
+    expect(body).toContain("Received by");
+    expect(body).toContain("Printed by: storekeeper");
+  });
+
   it("prints the session code, the received/closed date and time, and party name", () => {
     const html = renderReceivingReceiptHtml(summaryWith());
     expect(html).toContain("RMI-000003");
