@@ -235,4 +235,23 @@ describe("ProductFormPage contractor pricing", () => {
     expect(await screen.findByText(/no more than Rs 100,000 per dozen/)).toBeInTheDocument();
     expect(createProduct).not.toHaveBeenCalled();
   });
+
+  // 1b-2: the Product Code field is a PREVIEW of the next code, not a reservation of it. Sending
+  // it back made it the allocation, so two forms opened together saved the same code and the
+  // second died on the unique index. The code is allocated where the product is written.
+  it("shows the next code as a preview but does not send it back as the allocation", async () => {
+    const createProduct = vi.fn().mockResolvedValue("new-product");
+    renderForm({ createProduct, updateProduct: vi.fn() });
+
+    // Still previewed for the operator, still read-only.
+    const preview = await screen.findByLabelText(/product code/i);
+    expect(preview).toHaveValue("P-0001");
+    expect(preview).toHaveAttribute("readonly");
+
+    await describeProduct();
+    await userEvent.click(screen.getByRole("button", { name: "Create Product" }));
+
+    await waitFor(() => expect(createProduct).toHaveBeenCalled());
+    expect(createProduct.mock.calls[0][0]).not.toHaveProperty("productCode");
+  });
 });

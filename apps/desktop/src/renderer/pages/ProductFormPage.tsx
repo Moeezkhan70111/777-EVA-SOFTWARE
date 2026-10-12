@@ -532,7 +532,9 @@ export const ProductFormPage: React.FC<ProductFormPageProps> = ({ productId, onN
         articleSeriesId: formData.articleSeriesId || undefined,
         productTypeId: formData.productTypeId || undefined,
         productSubGroupId: formData.productSubGroupId || undefined,
-        productCode: formData.productCode || undefined,
+        // No productCode: the field above is a read-only preview, and the code is allocated
+        // when the product is written. Sending the preview back is what let two forms opened
+        // together save the same code.
         color: "",
         description: undefined,
         status: "ACTIVE",

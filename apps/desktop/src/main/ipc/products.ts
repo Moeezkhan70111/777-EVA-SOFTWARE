@@ -128,7 +128,13 @@ export function registerProductsHandlers(ctx: IpcContext): void {
       productTypeId: typeof input?.productTypeId === "string" && input.productTypeId ? input.productTypeId : undefined,
       productSubGroupId: typeof input?.productSubGroupId === "string" && input.productSubGroupId ? input.productSubGroupId : undefined,
       colors: Array.isArray(input?.colors) ? input.colors.filter((value): value is string => typeof value === "string") : undefined,
-      productCode: typeof input?.productCode === "string" && input.productCode ? input.productCode : undefined,
+      // productCode is deliberately NOT taken from the renderer.
+      //
+      // The Product Code field is read-only and filled from getNextProductCode purely as a
+      // PREVIEW. Passing that preview back made it the allocation: two forms opened together
+      // previewed the same code, and the second save died on
+      // "UNIQUE constraint failed: article_sizes.product_code". A preview is not a reservation,
+      // so the code is allocated where it is written — inside createProduct's transaction.
       status: PRODUCT_STATUS.ACTIVE
     });
   });

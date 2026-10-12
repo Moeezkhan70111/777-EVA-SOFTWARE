@@ -446,35 +446,49 @@ export const productsMethods = {
     status?: "ACTIVE" | "DISABLED";
     productCode?: string;
   }): string {
-    const now = new Date().toISOString();
-    const articleSizeId = this.getOrCreateArticleSize({ ...input, updateExisting: true });
-    const costPricePaisa = toPaisaOrNull(input.costPrice);
-    const sellingPricePaisa = toPaisaOrNull(input.sellingPrice);
-    const colors = (input.colors ?? (input.color ? [input.color] : [])).map((color) => color.trim().toUpperCase()).filter((color) => color && color !== "N/A" && color !== "NULL" && color !== "UNDEFINED");
-    let firstId = articleSizeId;
-    for (const color of [...new Set(colors)]) {
-      const id = this.upsertProductVariant({
-        articleSizeId,
-        article: input.article.trim().toUpperCase(),
-        color,
-        size: input.size.trim(),
-        description: input.description ?? null,
-        costPricePaisa,
-        sellingPricePaisa,
-        mainGroupId: input.mainGroupId ?? null,
-        productGroupId: input.productGroupId ?? null,
-        articleSeriesId: input.articleSeriesId ?? null,
-        productTypeId: input.productTypeId ?? null,
-        productSubGroupId: input.productSubGroupId ?? null,
-        status: input.status ?? "ACTIVE",
-        now,
-      });
-      if (firstId === articleSizeId) firstId = id;
+    // All of it or none of it, exactly as updateProduct does it below: an article_size that
+    // landed without its colour variants is a product the Product List shows and no scan can
+    // resolve. BEGIN IMMEDIATE also takes the write lock BEFORE getOrCreateArticleSize reads
+    // MAX+1 for the product code, so two terminals creating at once allocate two different
+    // codes instead of both reading the same one.
+    //
+    // Not nested: the only caller is the createProduct IPC handler, which holds no transaction.
+    this.db.exec("BEGIN IMMEDIATE TRANSACTION");
+    try {
+      const now = new Date().toISOString();
+      const articleSizeId = this.getOrCreateArticleSize({ ...input, updateExisting: true });
+      const costPricePaisa = toPaisaOrNull(input.costPrice);
+      const sellingPricePaisa = toPaisaOrNull(input.sellingPrice);
+      const colors = (input.colors ?? (input.color ? [input.color] : [])).map((color) => color.trim().toUpperCase()).filter((color) => color && color !== "N/A" && color !== "NULL" && color !== "UNDEFINED");
+      let firstId = articleSizeId;
+      for (const color of [...new Set(colors)]) {
+        const id = this.upsertProductVariant({
+          articleSizeId,
+          article: input.article.trim().toUpperCase(),
+          color,
+          size: input.size.trim(),
+          description: input.description ?? null,
+          costPricePaisa,
+          sellingPricePaisa,
+          mainGroupId: input.mainGroupId ?? null,
+          productGroupId: input.productGroupId ?? null,
+          articleSeriesId: input.articleSeriesId ?? null,
+          productTypeId: input.productTypeId ?? null,
+          productSubGroupId: input.productSubGroupId ?? null,
+          status: input.status ?? "ACTIVE",
+          now,
+        });
+        if (firstId === articleSizeId) firstId = id;
+      }
+      // Existing variants keep independent copies of these fields (read by sale/discount/report queries), so keep them in sync.
+      this.db.prepare(`UPDATE product_variants SET description = ?, cost_price_paisa = ?, selling_price_paisa = ?, main_group_id = ?, product_group_id = ?, article_series_id = ?, product_type_id = ?, product_sub_group_id = ?, updated_at = ? WHERE article_size_id = ? AND deleted_at IS NULL`)
+        .run(input.description ?? null, costPricePaisa, sellingPricePaisa, input.mainGroupId ?? null, input.productGroupId ?? null, input.articleSeriesId ?? null, input.productTypeId ?? null, input.productSubGroupId ?? null, now, articleSizeId);
+      this.db.exec("COMMIT");
+      return firstId;
+    } catch (error) {
+      try { this.db.exec("ROLLBACK"); } catch { /* no transaction to roll back */ }
+      throw error;
     }
-    // Existing variants keep independent copies of these fields (read by sale/discount/report queries), so keep them in sync.
-    this.db.prepare(`UPDATE product_variants SET description = ?, cost_price_paisa = ?, selling_price_paisa = ?, main_group_id = ?, product_group_id = ?, article_series_id = ?, product_type_id = ?, product_sub_group_id = ?, updated_at = ? WHERE article_size_id = ? AND deleted_at IS NULL`)
-      .run(input.description ?? null, costPricePaisa, sellingPricePaisa, input.mainGroupId ?? null, input.productGroupId ?? null, input.articleSeriesId ?? null, input.productTypeId ?? null, input.productSubGroupId ?? null, now, articleSizeId);
-    return firstId;
   },
 
   /**
