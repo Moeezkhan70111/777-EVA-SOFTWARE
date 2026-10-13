@@ -424,3 +424,31 @@ test("QR Management: run-level and headline tallies always agree with the per-co
     fixture.cleanup();
   }
 });
+
+// B CARTON LABELS — a B carton holds mixed colours, so its identity carries MIX and its sticker
+// prints a B (migration 074). Generated straight from the B Carton Labels page as well as by
+// converting a FIX run's unreturned labels, through this one registry either way.
+test("QR Generator: a B run registers as MIX with its grade, and reads back as B", () => {
+  const fixture = createDbFixture();
+  try {
+    const articleSizeId = ensureProduct(fixture.db, "EVR9", "7/10");
+    const run = fixture.db.generateQrBatch({ articleSizeId, color: "MIX", quantity: 3, createdBy: "STORE", grade: "B" });
+
+    assert.equal(run.batch.color, "MIX");
+    assert.equal(run.batch.grade, "B");
+    assert.deepEqual(
+      run.qrCodes.map((code) => code.id),
+      ["EVR9_MIX_7/10_000001", "EVR9_MIX_7/10_000002", "EVR9_MIX_7/10_000003"]
+    );
+
+    // The grade is on the run wherever it is read, so a REPRINT prints the B.
+    assert.equal(fixture.db.listQrBatches({ limit: 1 })[0].grade, "B");
+
+    // An ordinary run of the same product is not a B run, and keeps its own sequence.
+    const plain = fixture.db.generateQrBatch({ articleSizeId, color: "BLACK", quantity: 1, createdBy: "STORE" });
+    assert.equal(plain.batch.grade, null);
+    assert.equal(plain.qrCodes[0].id, "EVR9_BLACK_7/10_000001");
+  } finally {
+    fixture.cleanup();
+  }
+});

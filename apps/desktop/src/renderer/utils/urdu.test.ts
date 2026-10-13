@@ -69,6 +69,20 @@ describe("Colour attribute Urdu translation", () => {
     expect(colorValueInUrdu("SKY BLUE")).toBe("سکائ بلو");
   });
 
+  // A carton's QR identity folds "BLACK RED" onto "BLACKRED" (normalizeQrColor), so the
+  // sticker only ever sees the run-together spelling.
+  it("names a compound colour written without a space, as a carton QR identity holds it", () => {
+    expect(colorValueInUrdu("BLACKRED")).toBe("سیاہ لال");
+    expect(colorValueInUrdu("SkyBlue")).toBe("سکائ بلو");
+    expect(colorValueInUrdu("ARMYGREEN")).toBe("آرمی گرین");
+  });
+
+  it("leaves a run-together colour it cannot fully name to phonetic transliteration", () => {
+    const result = colorValueInUrdu("BLUEBERRY");
+    expect(result).not.toContain("بلو ");
+    expect(/[؀-ۿ]/.test(result)).toBe(true);
+  });
+
   it("falls back to phonetic transliteration for a compound where one word is not known", () => {
     const result = colorValueInUrdu("Light Mustard");
     expect(result).not.toBe("مسٹرڈ");

@@ -9,7 +9,7 @@ import type { QrBatchRecord, QrCodeRecord, PagedResult, QrBatchMemberRow, QrDeta
 import { GATE_LOCATION_TYPE, IN_STORE_LOCATION_TYPE, IN_STORE_STATUS, TO_GATE_STATUS } from "@erp/application";
 import type { TransactionContext } from "@erp/application";
 import type { MutableTransactionContext } from "./shared.js";
-import { buildQrId, formatQrSerial, fromPaisaOrNull, isValidRawMaterialQrId, normalizeQrArticle, normalizeQrColor, normalizeQrSize, type CartonGrade } from "@erp/domain";
+import { CARTON_GRADE, buildQrId, formatQrSerial, fromPaisaOrNull, isValidRawMaterialQrId, normalizeQrArticle, normalizeQrColor, normalizeQrSize, type CartonGrade } from "@erp/domain";
 
 /**
  * SQL form of `qrStageOf` so grouped counts are derived by the database from the same two
@@ -166,16 +166,113 @@ export const qrCodesMethods = {
         createdAt: now,
         createdBy,
         requestedBy,
+        grade: input.grade ?? null,
       },
       qrCodes,
     };
   },
 
   /**
+   * Registers an identity the generator never issued, so the floor can produce a carton whose
+   * label was printed outside this system (owner, 2026-10-13).
+   *
+   * The label in the operator's hand is the fact; refusing it would lose a real carton that was
+   * really made. So the identity is ADOPTED into the registry — the same row the generator would
+   * have written — and production carries on. Everything downstream (stock, dispatch, returns,
+   * QR Management) then sees an ordinary registered carton, instead of a produced unit with no
+   * identity behind it.
+   *
+   * What it still refuses — the PRODUCT must already exist, because only the identity was ever
+   * the problem:
+   *   * an ARTICLE + SIZE the Product Master does not have;
+   *   * a COLOUR nobody has set up for it. A scan must not invent a colour: a misread character
+   *     would otherwise put a product nobody sells into the masters, and from there into stock
+   *     and the reports. A genuinely new colour is one step in the QR Generator.
+   *
+
+   * Two things keep the registry honest afterwards:
+   *   * the adopted code gets its OWN one-code run, marked with who scanned it and `requestedBy`
+   *     = the station, so QR Management shows exactly which identities came off the floor rather
+   *     than out of the generator;
+   *   * the sequence for that article + colour + size is raised to at least this serial, so a
+   *     later generator run can never hand the same identity to a second carton.
+   *
+   * Runs inside the caller's write transaction: the adoption and the PRODUCED event commit
+   * together or not at all.
+   */
+  async adoptScannedQrCode(
+    this: SqliteDatabase,
+    payload: { qrId: string; article: string; color: string; size: string; serial: string },
+    origin: { createdBy: string | null; requestedBy: string },
+    tx: TransactionContext
+  ): Promise<{ productVariantId: string; article: string; color: string; size: string; status: string }> {
+    const db = (tx as MutableTransactionContext).db;
+    const article = normalizeQrArticle(payload.article);
+    const color = normalizeQrColor(payload.color);
+    const size = normalizeQrSize(payload.size);
+    const sequence = Number(payload.serial);
+    if (!Number.isInteger(sequence) || sequence <= 0) {
+      throw new Error(`PRODUCT_NOT_FOUND: ${payload.qrId} does not carry a usable serial number.`);
+    }
+
+    const product = db
+      .prepare("SELECT id, article, size FROM article_sizes WHERE article = ? AND size = ? AND deleted_at IS NULL LIMIT 1")
+      .get(article, size) as { id: string; article: string; size: string } | undefined;
+    if (!product) {
+      throw new Error(
+        `PRODUCT_NOT_FOUND: ${article} ${size} is not in the Product Master. Add the product there, then scan this carton again.`
+      );
+    }
+
+    // The colour must be one somebody set up for this product — see the note above on why a scan
+    // may not invent one. Matched the way the generator matches it, so RED / Red / " red " are
+    // one colour, not three.
+    const variant = db
+      .prepare(
+        `SELECT id FROM product_variants
+          WHERE article = ? AND size = ? AND deleted_at IS NULL
+            AND UPPER(REPLACE(REPLACE(REPLACE(color, ' ', ''), '-', ''), '_', '')) = ?
+          LIMIT 1`
+      )
+      .get(article, size, color) as { id: string } | undefined;
+    if (!variant) {
+      throw new Error(
+        `PRODUCT_NOT_FOUND: ${article} ${color} ${size} is not a colour this product has. Generate it in the QR Generator, or correct the scan.`
+      );
+    }
+
+    const now = tx.nowIso;
+    const productVariantId = variant.id;
+
+    // Its own run, so the record says where this identity came from.
+    const batchId = crypto.randomUUID();
+    db.prepare(
+      `INSERT INTO qr_batches (id, article_size_id, article, color, size, start_sequence, end_sequence, quantity, created_at, created_by, requested_by, grade)
+       VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, NULL)`
+    ).run(batchId, product.id, article, color, size, sequence, sequence, now, origin.createdBy, origin.requestedBy);
+
+    db.prepare(
+      `INSERT INTO qr_codes (id, batch_id, article, color, size, sequence, status, created_at, updated_at, product_variant_id)
+       VALUES (?, ?, ?, ?, ?, ?, 'GENERATED', ?, ?, ?)`
+    ).run(payload.qrId, batchId, article, color, size, sequence, now, now, productVariantId);
+
+    // The generator must never issue this serial to a second carton.
+    db.prepare(
+      `INSERT INTO qr_sequences (id, article, color, size, last_sequence, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?)
+       ON CONFLICT(article, color, size) DO UPDATE SET
+         last_sequence = MAX(qr_sequences.last_sequence, excluded.last_sequence),
+         updated_at = excluded.updated_at`
+    ).run(crypto.randomUUID(), article, color, size, sequence, now);
+
+    return { productVariantId, article, color, size, status: "GENERATED" };
+  },
+
+  /**
    * Registry lookup used by the production scanner. Read-only by design: the scanner
    * confirms an identity exists here, it never creates one.
    */
-  async findRegisteredQrCode(this: SqliteDatabase, 
+  async findRegisteredQrCode(this: SqliteDatabase,
     qrId: string,
     tx: TransactionContext
   ): Promise<{ productVariantId: string | null; article: string; color: string; size: string; status: string } | null> {
@@ -258,7 +355,7 @@ export const qrCodesMethods = {
 
     const rows = this.db
       .prepare(
-        `SELECT id, article_size_id, article, color, size, start_sequence, end_sequence, quantity, created_at, created_by, requested_by
+        `SELECT id, article_size_id, article, color, size, start_sequence, end_sequence, quantity, created_at, created_by, requested_by, grade
          FROM qr_batches ${whereClause} ORDER BY created_at DESC LIMIT ?`
       )
       .all(...params) as Array<Record<string, unknown>>;
@@ -274,6 +371,7 @@ export const qrCodesMethods = {
       createdAt: String(row.created_at),
       createdBy: row.created_by ? String(row.created_by) : null,
       requestedBy: row.requested_by ? String(row.requested_by) : null,
+      grade: row.grade === CARTON_GRADE.B ? CARTON_GRADE.B : null,
     }));
   },
 

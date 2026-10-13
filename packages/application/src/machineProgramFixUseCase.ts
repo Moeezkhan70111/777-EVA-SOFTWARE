@@ -1,4 +1,4 @@
-import { attributeKey, checkFixQuantity, roundQuantity } from "@erp/domain";
+import { attributeKey, checkFixQuantity, roundQuantity, sameAttributeValue } from "@erp/domain";
 import {
   MachineProgramRejectedError,
   checkRunHeader,
@@ -102,6 +102,23 @@ export class SaveMachineProgramFixRunUseCase {
         "";
 
       if (existingId) {
+        // A carton QR carries the OUTER sole, and a printed identity is permanent. So once this
+        // run's cartons are labelled, its soles are what those labels say — changing them here
+        // would leave the printed cartons naming a colour the run no longer makes. (This is how
+        // program 2's DC3 cartons came to say BLACK on a COMMANDO run, 2026-10-12.) The quantity
+        // stays editable: raising it simply owes the difference.
+        const current = await this.deps.repo.getMachineProgramFixRunForWrite(existingId, tx);
+        if (current && current.labelledCartons > 0) {
+          const solesChanged =
+            !sameAttributeValue(current.soleColour, header.soleColour) ||
+            !sameAttributeValue(current.innerSoleColour, innerSoleColour);
+          if (solesChanged) {
+            throw new MachineProgramRejectedError(
+              "CARTONS_LABELLED",
+              `${current.labelledCartons} carton labels are already printed for ${header.article} ${header.size} in ${current.soleColour}, so its soles cannot change — those labels name that colour. Void them in QR Management first, or make this colour on its own run.`
+            );
+          }
+        }
         await this.deps.repo.updateMachineProgramFixRun(
           { id: existingId, soleColour: header.soleColour, innerSoleColour, quantity, updatedAt: tx.nowIso },
           tx

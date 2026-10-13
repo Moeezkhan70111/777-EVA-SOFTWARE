@@ -36,6 +36,7 @@ import { CustomerBalancePage } from "../pages/CustomerBalancePage";
 import { ProductListPage } from "../pages/ProductListPage";
 import { ProductFormPage } from "../pages/ProductFormPage";
 import { QrGeneratorPage } from "../pages/QrGeneratorPage";
+import { BCartonGeneratorPage } from "../pages/BCartonGeneratorPage";
 import { QrManagementPage } from "../pages/QrManagementPage";
 import { ProductListsPage } from "../pages/ProductListsPage";
 import { DiscountPolicyPage } from "../pages/DiscountPolicyPage";
@@ -513,6 +514,8 @@ export const App = () => {
         return <ProductListsPage username={session.username} />;
       case "qr-generator":
         return <QrGeneratorPage onNavigate={setRoute} username={session.username} />;
+      case "b-carton-generator":
+        return <BCartonGeneratorPage username={session.username} />;
       case "qr-management":
         return <QrManagementPage username={session.username} />;
       case "qr-journey":

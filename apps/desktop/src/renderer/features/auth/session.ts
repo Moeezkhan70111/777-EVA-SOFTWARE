@@ -159,6 +159,8 @@ export const routePermission: Partial<Record<AppRoute, PermissionCode>> = {
   // Editing the dropdown values is editing Product Master, so it shares that permission.
   "product-lists": PERMISSION.PRODUCT_FORM,
   "qr-generator": PERMISSION.QR_GENERATOR,
+  // B carton labels are carton labels: the same registry, the same permission.
+  "b-carton-generator": PERMISSION.QR_GENERATOR,
   "qr-management": PERMISSION.QR_MANAGEMENT,
   // Tracing a code's path is a read over the same registry + event log QR Management
   // audits, so it shares that permission.

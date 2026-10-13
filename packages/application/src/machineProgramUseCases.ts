@@ -8,6 +8,7 @@ import {
   isInjectorNo,
   roundQuantity,
   sameAttributeValue,
+  upperSizeForArticleSize,
   type MachineContractorRole,
   type MachineShift,
 } from "@erp/domain";
@@ -68,7 +69,9 @@ export type MachineProgramOutcome =
   | "BELOW_CONSUMED"
   | "NOT_ENOUGH_STOCK"
   /** Something on it has already been scanned out, so it cannot be taken off. */
-  | "IN_USE";
+  | "IN_USE"
+  /** A FIX run whose carton labels are already printed: they name the colour it was printed in. */
+  | "CARTONS_LABELLED";
 
 export interface MachineProgramWriteResult {
   accepted: boolean;
@@ -257,6 +260,14 @@ export interface MachineProgramRepository {
     input: { programId: string; articleSizeId: string },
     tx: TransactionContext
   ): Promise<string | null>;
+  /**
+   * One FIX run as a write needs it: the soles it currently names, and how many carton labels have
+   * been printed for it. Null for a run that is not a fix run.
+   */
+  getMachineProgramFixRunForWrite(
+    runId: string,
+    tx: TransactionContext
+  ): Promise<{ soleColour: string; innerSoleColour: string; labelledCartons: number } | null>;
   insertMachineProgramFixRun(
     payload: {
       id: string; programId: string; runNo: number; soleColour: string;
@@ -563,7 +574,14 @@ export class SaveMachineProgramLineUseCase {
     return line.id;
   }
 
-  /** The upper must exist, be an UPPER for exactly this article + size, and reach this machine. */
+  /**
+   * The upper must exist, be an UPPER for this article, be in the size this article's upper is
+   * cut in, and reach this machine.
+   *
+   * That size is not always the article's own: one 1/6 upper covers both the 1/3 and the 4/6
+   * soles (upperSizeForArticleSize), so a 4/6 program is saved against the 1/6 upper. The same
+   * rule the picker offers from, applied again here, because the screen is never trusted.
+   */
   private async checkUpper(itemId: string, run: MachineProgramRunForWrite, excludeLineId: string | null, tx: TransactionContext) {
     // A FIX article has no upper at all — it is moulded from two soles (migration 067). Refused
     // here as well as hidden on the screen, so the two kinds of run can never be mixed on one
@@ -582,7 +600,8 @@ export class SaveMachineProgramLineUseCase {
     if (attributeKey(stock.kind) !== RAW_MATERIAL_KIND.UPPER) {
       throw new MachineProgramRejectedError("NOT_AN_UPPER", `${stock.displayName} is not an upper.`);
     }
-    if (!sameAttributeValue(stock.article, run.article) || !sameAttributeValue(stock.size, run.size)) {
+    const upperSize = upperSizeForArticleSize(run.size);
+    if (!sameAttributeValue(stock.article, run.article) || !sameAttributeValue(stock.size, upperSize)) {
       throw new MachineProgramRejectedError("WRONG_ARTICLE", `${stock.displayName} is not for ${run.article} ${run.size}.`);
     }
     if (!stock.allocatable) {

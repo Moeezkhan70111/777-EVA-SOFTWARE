@@ -18,6 +18,8 @@ import type {
 export interface ProcessScanInput {
   rawScan: string;
   context: ScanOperationalContext;
+  /** Who is at the station, recorded as whoever registered an identity taken off the floor. */
+  actor?: string | null;
 }
 
 export interface ProcessScanResult {
@@ -25,7 +27,15 @@ export interface ProcessScanResult {
   qrId?: string;
   parserVersion?: string;
   reason?: string;
+  /**
+   * True when this carton's identity had never been generated and was registered by this scan,
+   * so the station can say so rather than letting it pass as an ordinary scan.
+   */
+  registeredOnScan?: boolean;
 }
+
+/** What `requested_by` says on an identity the production station registered itself. */
+export const LIVE_PRODUCTION_STATION = "Live Production scan";
 
 export interface ProcessScanDeps {
   txManager: TransactionManager;
@@ -47,7 +57,19 @@ export class ProcessScanUseCase {
     try {
       const parsed = parseQrCode(input.rawScan);
 
-      await this.deps.txManager.runInTransaction((tx) => recordProductionInTransaction(this.deps, { parsed, context: input.context }, tx));
+      // Live Production takes the carton as it finds it: a label the generator never issued is
+      // registered by this scan rather than turned away (owner, 2026-10-13).
+      const recorded = await this.deps.txManager.runInTransaction((tx) =>
+        recordProductionInTransaction(
+          this.deps,
+          {
+            parsed,
+            context: input.context,
+            registerIfUnknown: { actor: input.actor ?? null, station: LIVE_PRODUCTION_STATION },
+          },
+          tx
+        )
+      );
 
       await this.deps.eventPublisher.publish("ProductionCompleted.v1", {
         qrId: parsed.payload.qrId,
@@ -59,6 +81,7 @@ export class ProcessScanUseCase {
         accepted: true,
         qrId: parsed.payload.qrId,
         parserVersion: parsed.parserVersion,
+        registeredOnScan: recorded.registeredOnScan,
       };
     } catch (error) {
       if (
@@ -91,23 +114,45 @@ export type RecordProductionDeps = Omit<ProcessScanDeps, "txManager" | "eventPub
  */
 export async function recordProductionInTransaction(
   deps: RecordProductionDeps,
-  input: { parsed: ReturnType<typeof parseQrCode>; context: ScanOperationalContext },
+  input: {
+    parsed: ReturnType<typeof parseQrCode>;
+    context: ScanOperationalContext;
+    /**
+     * Set by a station allowed to produce a carton whose identity was never generated: the
+     * identity is registered as this run is recorded. Left out, an unregistered identity is
+     * refused as it always was.
+     */
+    registerIfUnknown?: { actor: string | null; station: string };
+  },
   tx: TransactionContext
-): Promise<{ eventId: string; productVariantId: string }> {
+): Promise<{ eventId: string; productVariantId: string; registeredOnScan: boolean }> {
   const { parsed } = input;
   const duplicate = await deps.duplicateChecker.existsByQrId(parsed.payload.qrId, tx);
   if (duplicate) {
     throw new DuplicateQrError("This QR has already been produced.");
   }
 
-  // The QR Generator is the only source of registered identities. A value that parses
-  // but was never issued is rejected here, before anything is written.
-  const registered = await deps.qrRegistry.findRegisteredQrCode(parsed.payload.qrId, tx);
-  if (!registered) {
+  // An identity the generator never issued: refused outright for every station EXCEPT the one
+  // the owner opened up — Live Production, which takes the carton as it finds it and registers
+  // the identity on the spot (see adoptScannedQrCode). Store In/Out, dispatch and returns still
+  // refuse, because a carton can only arrive, leave or come back if it was produced first.
+  const existing = await deps.qrRegistry.findRegisteredQrCode(parsed.payload.qrId, tx);
+  if (!existing && !input.registerIfUnknown) {
     throw new UnregisteredQrError(
       "This QR is not registered. Generate it in the QR Generator before production scanning."
     );
   }
+  const registered =
+    existing ??
+    (await deps.qrRegistry.adoptScannedQrCode(
+      parsed.payload,
+      {
+        createdBy: input.registerIfUnknown?.actor ?? null,
+        requestedBy: input.registerIfUnknown?.station ?? "",
+      },
+      tx
+    ));
+  const registeredOnScan = existing === null;
   if (registered.status === "VOID") {
     throw new UnregisteredQrError(
       "This QR was voided in QR Management and cannot be produced. Restore it there first if this was a mistake."
@@ -162,5 +207,5 @@ export async function recordProductionInTransaction(
     deviceId: input.context.deviceId,
   }, tx);
 
-  return { eventId, productVariantId: productVariant.id };
+  return { eventId, productVariantId: productVariant.id, registeredOnScan };
 }

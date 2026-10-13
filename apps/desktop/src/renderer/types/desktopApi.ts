@@ -136,6 +136,8 @@ export interface QrBatchRow {
   createdBy: string | null;
   /** Whoever asked for the run, as typed by the operator (optional). */
   requestedBy: string | null;
+  /** "B" for a run of B carton labels — MIX, with a B on the sticker. Null for an ordinary run. */
+  grade: "B" | null;
 }
 
 export interface RawMaterialQrBatchRow {
@@ -1621,6 +1623,8 @@ export interface DesktopApi {
     quantity: number;
     createdBy?: string;
     requestedBy?: string;
+    /** "B" registers the run as B carton labels — MIX, with a B on the sticker (migration 074). */
+    grade?: "B";
   }): Promise<{ accepted: boolean; batch?: QrBatchRow; qrCodes?: QrCodeRow[]; reason?: string }>;
   listQrBatches(
     input?: number | { limit?: number; sinceIso?: string },
@@ -1668,7 +1672,14 @@ export interface DesktopApi {
   listDispatchSessions(filter?: Record<string, unknown>): Promise<DispatchSessionSummary[]>;
   getDispatchSession(sessionId: string): Promise<DispatchSessionDetail | null>;
   getReport(query: Record<string, unknown>): Promise<ReportSummary>;
-  processScan(rawScan: string): Promise<{ accepted: boolean; qrId?: string; parserVersion?: string; reason?: string }>;
+  processScan(rawScan: string): Promise<{
+    accepted: boolean;
+    qrId?: string;
+    parserVersion?: string;
+    reason?: string;
+    /** The identity had never been generated and was registered by this scan. */
+    registeredOnScan?: boolean;
+  }>;
   dispatchScan(
     rawScan: string,
     sessionId?: string,

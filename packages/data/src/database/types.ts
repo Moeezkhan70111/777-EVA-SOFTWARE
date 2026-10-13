@@ -2,7 +2,7 @@
 // \@erp/data\ keeps the same exports; feature modules import from here to avoid cycles.
 
 import type { GatepassStatus } from "@erp/application";
-import type { DiscountSource, PriceType } from "@erp/domain";
+import type { CartonGrade, DiscountSource, PriceType } from "@erp/domain";
 
 export interface SqliteDatabaseOptions {
   dbPath: string;
@@ -722,6 +722,12 @@ export interface QrBatchRecord {
   createdBy: string | null;
   /** Whoever asked for the run, as typed by the operator (optional). */
   requestedBy: string | null;
+  /**
+   * "B" for a run of B carton labels — mixed colours, a B on the sticker (migration 074). Null
+   * for an ordinary run. Carried on the record so a REPRINT of a B run prints the B, rather than
+   * reprinting those cartons as if they were ordinary ones.
+   */
+  grade: CartonGrade | null;
 }
 
 export interface QrCodeRecord {
@@ -736,8 +742,12 @@ export interface QrCodeRecord {
   productVariantId?: string | null;
 }
 
-/** Upper bound for a single generation request — one realistic label print run. */
-export const MAX_QR_BATCH_QUANTITY = 10000;
+/**
+ * Upper bound for a single generation request. Defined in @erp/domain, so the screens that have
+ * to refuse too many before sending check the same number the registry enforces; re-exported
+ * here because this is where the data layer's callers already import it from.
+ */
+export { MAX_QR_BATCH_QUANTITY } from "@erp/domain";
 
 export interface RawMaterialQrBatchRecord {
   id: string;

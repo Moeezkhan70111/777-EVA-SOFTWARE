@@ -53,6 +53,7 @@ export type AppRoute =
   | "product-form"
   | "product-lists"
   | "qr-generator"
+  | "b-carton-generator"
   | "qr-management"
   | "qr-journey"
   | "discount-policy"

@@ -78,6 +78,10 @@ function createWorld(initial: Record<string, StoreExitQrRecord | "REGISTERED" | 
         const [article, color, size] = qrId.split("_");
         return { productVariantId: null, article, color, size, status: entry };
       },
+      // Store Out never registers an identity: a carton can only leave if it was produced.
+      async adoptScannedQrCode() {
+        throw new Error("this station must not register an unknown identity");
+      },
     },
     qrMasterRepo: {
       async markAtGate({ qrId, locationId }) {

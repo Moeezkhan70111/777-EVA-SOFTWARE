@@ -11,7 +11,7 @@
 import type { DatabaseSync } from "node:sqlite";
 import type { SqliteDatabase } from "../sqliteDatabase.js";
 import type { TransactionContext } from "@erp/application";
-import { RAW_MATERIAL_KIND, RAW_MATERIAL_QR_STATUS, attributeKey, maxNewAllocation, roundQuantity } from "@erp/domain";
+import { RAW_MATERIAL_KIND, RAW_MATERIAL_QR_STATUS, attributeKey, maxNewAllocation, roundQuantity, upperSizeForArticleSize } from "@erp/domain";
 import type { MutableTransactionContext } from "./shared.js";
 import { EFFECTIVE_PACK_NAME_SQL } from "./shared.js";
 import {
@@ -147,6 +147,10 @@ export const machineProgramStockMethods = {
    * upper-cased, never fuzzy. An upper with nothing in the store and nothing promised has nothing
    * to say and is left out; a fully promised one stays, because "none left" is the explanation
    * somebody needs.
+   *
+   * The SIZE asked for is the UPPER's size, not always the article's: one 1/6 upper is cut for
+   * both the 1/3 and the 4/6 soles, so SK30 4/6 asks the store for SK30 1/6 uppers
+   * (upperSizeForArticleSize, owner 2026-10-13).
    */
   listMachineProgramUppers(this: SqliteDatabase, machineId: string, articleSizeId: string): MachineProgramMaterial[] {
     const machine = this.db.prepare("SELECT section_id FROM machines WHERE id = ? LIMIT 1").get(text(machineId).trim()) as
@@ -164,7 +168,11 @@ export const machineProgramStockMethods = {
            AND UPPER(TRIM(${ARTICLE_SQL})) = ? AND UPPER(TRIM(${SIZE_SQL})) = ?
          ORDER BY UPPER(TRIM(${COLOUR_SQL})), ii.display_name`
       )
-      .all(RAW_MATERIAL_KIND.UPPER, attributeKey(articleSize.article), attributeKey(articleSize.size)) as Array<Record<string, unknown>>;
+      .all(
+        RAW_MATERIAL_KIND.UPPER,
+        attributeKey(articleSize.article),
+        upperSizeForArticleSize(articleSize.size)
+      ) as Array<Record<string, unknown>>;
     return rows
       .map((row) => this.buildProgramMaterial(row, machine.section_id, this.db))
       .filter((material) => material.physical > 0 || material.reserved > 0);

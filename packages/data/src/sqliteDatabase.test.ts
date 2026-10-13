@@ -451,10 +451,12 @@ test("QR scanning resolves an already-registered color variant, but never invent
     assert.equal((fixture.db as any).db.prepare("SELECT COUNT(*) c FROM product_variants WHERE article = 'SK6' AND size = '7/10' AND color = 'GREEN'").get().c, 1);
     assert.equal((fixture.db as any).db.prepare("SELECT quantity_on_hand FROM stock_projection_by_variant WHERE product_variant_id = ?").get(greenId).quantity_on_hand, 2);
 
-    // BLUE was never generated — the scanner must reject it, not create it.
+    // BLUE is a colour nobody set up for SK6 7/10. Live Production now takes an identity the
+    // generator never issued (see below), but it still may not INVENT a colour — a misread
+    // character would otherwise put a product nobody sells into the masters.
     const blueResult = await useCase.execute({ rawScan: "SK6_BLUE_7/10_000003", context });
     assert.equal(blueResult.accepted, false);
-    assert.match(blueResult.reason ?? "", /not registered/i);
+    assert.match(blueResult.reason ?? "", /not a colour this product has/i);
     assert.equal((fixture.db as any).db.prepare("SELECT id FROM product_variants WHERE article = 'SK6' AND size = '7/10' AND color = 'BLUE'").get(), undefined);
 
     const qrRows = (fixture.db as any).db.prepare("SELECT qr_id, product_variant_id FROM qr_master WHERE qr_id LIKE 'SK6_%'").all() as Array<{ qr_id: string; product_variant_id: string }>;
@@ -473,11 +475,137 @@ test("QR scanning of a completely unregistered ArticleSize is rejected and creat
     const useCase = new ProcessScanUseCase(scanDeps(fixture.db));
     const result = await useCase.execute({ rawScan: "SK6_GREEN_7/10_000001", context: SCAN_CONTEXT });
     assert.equal(result.accepted, false);
-    assert.match(result.reason ?? "", /not registered/i);
+    assert.match(result.reason ?? "", /not in the Product Master/i);
     const articleSize = (fixture.db as any).db.prepare("SELECT id FROM article_sizes WHERE article = 'SK6' AND size = '7/10'").get();
     assert.equal(articleSize, undefined, "No article_sizes row must be created by a rejected scan");
     assert.equal(fixture.db.getRowCount("qr_master"), 0);
     assert.equal(fixture.db.listUniqueArticles().includes("SK6"), false);
+  } finally {
+    fixture.cleanup();
+  }
+});
+
+// ─── Live Production takes the carton as it finds it ─────────────────────────
+//
+// Labels are printed outside this system too, and a carton that was really made must not be lost
+// because its identity was never generated (owner, 2026-10-13). Live Production registers the
+// identity as it records the production. Only the IDENTITY is adopted — the PRODUCT must already
+// exist, and every other station still refuses an unregistered code.
+
+test("Live Production registers an identity the generator never issued, and produces the carton", async () => {
+  const fixture = createDbFixture();
+  try {
+    // SK6 7/10 BLUE exists as a product (one code was generated for it), but 000777 never was.
+    registerQrIdentities(fixture.db, { article: "SK6", size: "7/10", color: "BLUE", quantity: 1 });
+    const useCase = new ProcessScanUseCase(scanDeps(fixture.db));
+
+    const result = await useCase.execute({ rawScan: "SK6_BLUE_7/10_000777", context: SCAN_CONTEXT, actor: "babar" });
+
+    assert.equal(result.accepted, true, result.reason);
+    assert.equal(result.registeredOnScan, true, "the station is told the code was registered here");
+
+    // The identity is now an ordinary registered carton, produced once.
+    const registered = rawGet(fixture.db, "SELECT status, sequence, product_variant_id FROM qr_codes WHERE id = ?", "SK6_BLUE_7/10_000777");
+    assert.equal(registered.status, "GENERATED");
+    assert.equal(registered.sequence, 777);
+    assert.equal(
+      rawGet(fixture.db, "SELECT product_variant_id FROM qr_master WHERE qr_id = ?", "SK6_BLUE_7/10_000777").product_variant_id,
+      registered.product_variant_id
+    );
+    assert.equal(fixture.db.getDashboardSnapshot().todaysProduction, 1);
+
+    // Its own one-code run says where it came from, so QR Management can tell the two apart.
+    const run = rawGet(
+      fixture.db,
+      "SELECT quantity, created_by, requested_by FROM qr_batches WHERE id = (SELECT batch_id FROM qr_codes WHERE id = ?)",
+      "SK6_BLUE_7/10_000777"
+    );
+    assert.equal(run.quantity, 1);
+    assert.equal(run.created_by, "babar");
+    assert.equal(run.requested_by, "Live Production scan");
+
+    // The generator can never hand 000777 to a second carton: the sequence moved past it.
+    const sequence = rawGet(fixture.db, "SELECT last_sequence FROM qr_sequences WHERE article = ? AND color = ? AND size = ?", "SK6", "BLUE", "7/10");
+    assert.equal(sequence.last_sequence, 777);
+    const next = fixture.db.generateQrBatch({
+      articleSizeId: rawGet(fixture.db, "SELECT id FROM article_sizes WHERE article = ? AND size = ?", "SK6", "7/10").id,
+      color: "BLUE",
+      quantity: 1,
+    });
+    assert.equal(next.qrCodes[0].id, "SK6_BLUE_7/10_000778");
+
+    // And it behaves like any other carton afterwards.
+    await receiveIntoStore(fixture.db, "SK6_BLUE_7/10_000777");
+    assert.equal(fixture.db.getDashboardSnapshot().currentStockTotal, 1);
+  } finally {
+    fixture.cleanup();
+  }
+});
+
+test("an adopted carton cannot be produced twice", async () => {
+  const fixture = createDbFixture();
+  try {
+    registerQrIdentities(fixture.db, { article: "SK6", size: "7/10", color: "BLUE", quantity: 1 });
+    const useCase = new ProcessScanUseCase(scanDeps(fixture.db));
+
+    assert.equal((await useCase.execute({ rawScan: "SK6_BLUE_7/10_000777", context: SCAN_CONTEXT })).accepted, true);
+    const again = await useCase.execute({ rawScan: "SK6_BLUE_7/10_000777", context: SCAN_CONTEXT });
+
+    assert.equal(again.accepted, false);
+    assert.match(again.reason ?? "", /already been produced/i);
+    assert.equal(fixture.db.getRowCount("production_events"), 1);
+    assert.equal(
+      rawGet(fixture.db, "SELECT COUNT(*) AS n FROM qr_codes WHERE id = ?", "SK6_BLUE_7/10_000777").n,
+      1,
+      "the refused scan must not register the identity a second time"
+    );
+  } finally {
+    fixture.cleanup();
+  }
+});
+
+test("a code VOIDED in QR Management is still refused, adoption or not", async () => {
+  const fixture = createDbFixture();
+  try {
+    const [qrId] = registerQrIdentities(fixture.db, { article: "SK6", size: "7/10", color: "BLUE", quantity: 1 });
+    fixture.db.voidQrCode({ qrId, reason: "Printed badly", actor: "admin" });
+    const useCase = new ProcessScanUseCase(scanDeps(fixture.db));
+
+    const result = await useCase.execute({ rawScan: qrId, context: SCAN_CONTEXT });
+
+    assert.equal(result.accepted, false);
+    assert.match(result.reason ?? "", /voided/i);
+    assert.equal(fixture.db.getRowCount("qr_master"), 0);
+  } finally {
+    fixture.cleanup();
+  }
+});
+
+test("Store In still refuses a carton whose identity was never generated", async () => {
+  const fixture = createDbFixture();
+  try {
+    registerQrIdentities(fixture.db, { article: "SK6", size: "7/10", color: "BLUE", quantity: 1 });
+    const { StoreEntryScanUseCase } = await import("@erp/application");
+    const storeIn = new StoreEntryScanUseCase({
+      txManager: fixture.db,
+      qrLookupRepo: fixture.db,
+      qrRegistry: fixture.db,
+      qrMasterRepo: fixture.db,
+      storeEntryEventsRepo: fixture.db,
+      stockProjectionRepo: fixture.db,
+      outboxRepo: fixture.db,
+      eventPublisher: new InMemoryEventBus(),
+      idGenerator: new UuidGenerator(),
+    });
+
+    const result = await storeIn.execute({ rawScan: "SK6_BLUE_7/10_000777", context: SCAN_CONTEXT });
+
+    assert.equal(result.accepted, false, "only production may take a carton as it finds it");
+    assert.equal(
+      rawGet(fixture.db, "SELECT COUNT(*) AS n FROM qr_codes").n,
+      1,
+      "nothing was registered by the refused scan"
+    );
   } finally {
     fixture.cleanup();
   }

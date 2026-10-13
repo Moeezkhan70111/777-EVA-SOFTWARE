@@ -5,6 +5,7 @@ import {
   MACHINE_PROGRAM_DISPLAY_STATUS,
   MACHINE_PROGRAM_STATUS,
   attributeKey,
+  upperSizeForArticleSize,
   programAvailable,
   bagsFromBalance,
   checkProgramQuantity,
@@ -221,4 +222,20 @@ test("a run nobody timed runs the whole shift", () => {
   assert.equal(soleSlotOf({}), null, "a run saved before the hours existed");
   assert.equal(soleSlotOf({ startMinute: 360, endMinute: null }), null, "half a slot is no slot");
   assert.deepEqual(soleSlotOf({ startMinute: 360, endMinute: 600 }), { startMinute: 360, endMinute: 600 });
+});
+
+// ─── The upper's own size ────────────────────────────────────────────────────
+
+test("4/6 and 1/3 are made with the 1/6 upper, and every other size with its own", () => {
+  assert.equal(upperSizeForArticleSize("4/6"), "1/6");
+  assert.equal(upperSizeForArticleSize("1/3"), "1/6");
+  assert.equal(upperSizeForArticleSize("7/10"), "7/10");
+  assert.equal(upperSizeForArticleSize("11/13"), "11/13");
+});
+
+test("an article size is read the way every other attribute is: trimmed, spaces ignored", () => {
+  assert.equal(upperSizeForArticleSize(" 4 / 6 "), "1/6");
+  assert.equal(upperSizeForArticleSize("1/6"), "1/6", "the upper's own size is already the upper's size");
+  assert.equal(upperSizeForArticleSize(""), "");
+  assert.equal(upperSizeForArticleSize(null), "");
 });

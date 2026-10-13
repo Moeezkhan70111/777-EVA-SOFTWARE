@@ -331,6 +331,37 @@ export const machineProgramWritesMethods = {
     return row ? text(row.id) : null;
   },
 
+  /**
+   * One FIX run as a write needs it: its two soles and how many carton labels have been printed
+   * for it. Voided labels (the ones turned into B cartons) do not count — they name no carton any
+   * more. Null for a run with no inner sole, which is not a fix run.
+   */
+  async getMachineProgramFixRunForWrite(
+    this: SqliteDatabase,
+    runId: string,
+    tx: TransactionContext
+  ): Promise<{ soleColour: string; innerSoleColour: string; labelledCartons: number } | null> {
+    const row = dbOf(tx)
+      .prepare(
+        `SELECT mpr.sole_colour, mpr.inner_sole_colour,
+                (SELECT COALESCE(SUM(l.carton_count), 0)
+                   FROM machine_program_fix_carton_labels l
+                   JOIN qr_batches qb ON qb.id = l.qr_batch_id
+                  WHERE l.run_id = mpr.id
+                    AND EXISTS (SELECT 1 FROM qr_codes qc WHERE qc.batch_id = qb.id AND qc.status <> 'VOID')
+                ) AS labelled_cartons
+           FROM machine_program_runs mpr
+          WHERE mpr.id = ? AND mpr.inner_sole_colour IS NOT NULL LIMIT 1`
+      )
+      .get(text(runId).trim()) as Record<string, unknown> | undefined;
+    if (!row) return null;
+    return {
+      soleColour: attributeKey(text(row.sole_colour)),
+      innerSoleColour: attributeKey(text(row.inner_sole_colour)),
+      labelledCartons: Number(row.labelled_cartons ?? 0),
+    };
+  },
+
   /** Whether an article + size is a FIX article, read inside the write lock. */
   async articleHasNoUpperForWrite(this: SqliteDatabase, articleSizeId: string, tx: TransactionContext): Promise<boolean> {
     const row = dbOf(tx)

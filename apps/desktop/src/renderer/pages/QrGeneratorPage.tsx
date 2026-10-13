@@ -5,7 +5,7 @@ import React, {
   useRef,
   useState,
 } from "react";
-import { buildQrId, formatQrSerial, normalizeQrColor } from "@erp/domain";
+import { MAX_QR_BATCH_QUANTITY, buildQrId, formatQrSerial, normalizeQrColor } from "@erp/domain";
 import type { AppRoute } from "../app/routes";
 import { useDesktopApi } from "../hooks/useDesktopApi";
 import type {
@@ -20,7 +20,8 @@ import { formatDate, formatTime } from "../utils/dates";
 import { copy } from "../config/copy";
 import { StepHeading } from "../components/shared/StepHeading";
 
-const MAX_QUANTITY = 10000;
+// The registry's own ceiling, so this screen refuses exactly what the registry would.
+const MAX_QUANTITY = MAX_QR_BATCH_QUANTITY;
 const QUICK_QUANTITIES = [50, 100, 250, 500, 1000];
 const PREVIEW_LIMIT = 12;
 // This page only shows what was just done; the full, searchable record lives in QR Management.

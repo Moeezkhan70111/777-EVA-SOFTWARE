@@ -129,6 +129,39 @@ export const attributeKey = (value: string | null | undefined): string => String
 export const sameAttributeValue = (a: string | null | undefined, b: string | null | undefined): boolean =>
   attributeKey(a) !== "" && attributeKey(a) === attributeKey(b);
 
+// ─── The upper's own size ────────────────────────────────────────────────────
+//
+//   the article's size      the upper it is made with
+//   1/3                     1/6
+//   4/6                     1/6
+//   7/10                    7/10
+//
+// An upper is not cut in every size range a sole is moulded in. ONE 1/6 upper covers both the
+// 1/3 and the 4/6 soles, for every article (owner, 2026-10-13) — so SK30 4/6 and SK30 1/3 are
+// both made with the SK30 1/6 upper, and a program for either must look for, reserve and issue
+// that upper. Every other size is its own upper's size.
+//
+// The size ranges are the store's own, so they live here as one table rather than being matched
+// in the picker, in the save and in the store again. A range the floor starts cutting its own
+// upper for is one line to remove here; a new shared range is one line to add.
+const UPPER_SIZE_BY_ARTICLE_SIZE: Record<string, string> = {
+  "1/3": "1/6",
+  "4/6": "1/6",
+};
+
+/**
+ * The size of the UPPER an article size is made with — its own size, unless the floor cuts one
+ * upper for several size ranges.
+ *
+ * Normalised exactly as attributeKey does, with spaces around the slash ignored ("4 / 6") so a
+ * stored size cannot miss the rule on whitespace alone. Anything the table does not name comes
+ * back as its own attributeKey, so matching stays exact for every other size.
+ */
+export const upperSizeForArticleSize = (size: string | null | undefined): string => {
+  const key = attributeKey(size);
+  return UPPER_SIZE_BY_ARTICLE_SIZE[key.replace(/\s+/g, "")] ?? key;
+};
+
 // ─── FIX articles: no upper, two soles ───────────────────────────────────────
 //
 //   a normal article   BLACK sole  +  an UPPER going on it

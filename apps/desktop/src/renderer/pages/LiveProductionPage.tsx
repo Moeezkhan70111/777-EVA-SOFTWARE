@@ -32,6 +32,12 @@ interface ScanResult {
   /** The code as scanned (or as the business layer normalised it). */
   qrId?: string;
   reason?: string;
+  /**
+   * The carton's identity had never been generated, so this scan registered it (owner,
+   * 2026-10-13). Said on the panel rather than passing silently: the production IS recorded,
+   * and the operator should know the label came from outside the QR Generator.
+   */
+  registeredOnScan?: boolean;
 }
 
 const IDLE: ScanResult = { status: "idle", article: "", color: "", size: "" };
@@ -620,7 +626,9 @@ const ScanPanel: React.FC<{
   const message = isIdle
     ? "Point the scanner at the carton label — recording is automatic"
     : isSuccess
-      ? "Unit recorded into today's production"
+      ? result.registeredOnScan
+        ? "Unit recorded — this label was not generated here, so its code was registered now"
+        : "Unit recorded into today's production"
       : (errInfo?.message ?? "Please scan again");
 
   return (
@@ -826,7 +834,7 @@ export const LiveProductionPage: React.FC = () => {
         const res = await api.processScan(cleaned);
         if (res.accepted) {
           playScanSound("success");
-          setResult({ status: "success", ...parsed, qrId: res.qrId ?? cleaned });
+          setResult({ status: "success", ...parsed, qrId: res.qrId ?? cleaned, registeredOnScan: res.registeredOnScan });
           push("success", "Recorded", res.qrId ?? cleaned);
           await loadSnapshot();
         } else {

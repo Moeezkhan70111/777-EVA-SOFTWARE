@@ -92,6 +92,7 @@ function createFixture(options: { withDana?: boolean } = {}) {
   };
   const sk6_710 = articleSize("SK6", "7/10");
   const sk6_46 = articleSize("SK6", "4/6");
+  const sk6_13 = articleSize("SK6", "1/3");
 
   // UPPER — RAGZINE UPPER: article, colour, size, type. Packed in PACKETs, routed to PACKING.
   const upper = db.createInventoryCategory({ name: "UPPER" });
@@ -106,7 +107,8 @@ function createFixture(options: { withDana?: boolean } = {}) {
   };
   const black = makeUpper("SK6", "BLACK", "7/10");
   const green = makeUpper("SK6", "GREEN", "7/10");
-  const black46 = makeUpper("SK6", "BLACK", "4/6");
+  // The upper SK6 4/6 AND SK6 1/3 are both made with: one 1/6 upper covers both size ranges.
+  const black16 = makeUpper("SK6", "BLACK", "1/6");
   const blueElsewhere = makeUpper("SK6", "BLUE", "7/10", upperMaker.id);
 
   // DANA — EVA: colour only.
@@ -245,7 +247,7 @@ function createFixture(options: { withDana?: boolean } = {}) {
 
   return {
     db, raw, unitId, ...useCases, machine1, machine2, contractorA, contractorB, supplierA, supplierB, assignBothContractors,
-    sk6_710, sk6_46, black, green, black46, blueElsewhere, danaBlack,
+    sk6_710, sk6_46, sk6_13, black, green, black16, blueElsewhere, danaBlack,
     stockIn, danaIn, issueOut, bringBack, upperFor, assignContractor, addToNewRun, saveOnRun, balanceOf, price, rateRows,
     timeSole, runSlots,
     cleanup: () => {
@@ -390,9 +392,9 @@ test("the database itself refuses a second live program for one machine and date
 test("injector 1 and injector 2 are programmed independently, each with several soles", async () => {
   await withFixture(async (f) => {
     await readyToProgram(f);
-    await f.stockIn(f.black46, 4, f.supplierA);
+    await f.stockIn(f.black16, 4, f.supplierA);
     await f.addToNewRun({ machineId: f.machine1.id, injectorNo: 1, itemId: f.black, quantity: 10 });
-    await f.addToNewRun({ machineId: f.machine1.id, injectorNo: 1, articleSizeId: f.sk6_46, soleColour: "RED", itemId: f.black46, quantity: 5 });
+    await f.addToNewRun({ machineId: f.machine1.id, injectorNo: 1, articleSizeId: f.sk6_46, soleColour: "RED", itemId: f.black16, quantity: 5 });
     await f.addToNewRun({ machineId: f.machine1.id, injectorNo: 2, itemId: f.black, quantity: 15 });
 
     const program = f.db.getMachineProgramForDate(f.machine1.id, TODAY);
@@ -464,7 +466,7 @@ test("with no Dana set up, every colour the store knows is offered", async () =>
 test("articles and sizes come from the Product Master", async () => {
   await withFixture(async (f) => {
     const articles = f.db.listMachineProgramArticles();
-    assert.deepEqual(articles.map((article) => [article.article, article.sizes.map((size) => size.size)]), [["SK6", ["4/6", "7/10"]]]);
+    assert.deepEqual(articles.map((article) => [article.article, article.sizes.map((size) => size.size)]), [["SK6", ["1/3", "4/6", "7/10"]]]);
   });
 });
 
@@ -473,11 +475,11 @@ test("every colour of an upper for the article and size is offered, whoever supp
     await f.stockIn(f.black, 10, f.supplierA);
     await f.stockIn(f.black, 6, f.supplierB);
     await f.stockIn(f.green, 4, f.supplierA);
-    await f.stockIn(f.black46, 4, f.supplierA);
+    await f.stockIn(f.black16, 4, f.supplierA);
     f.db.adjustInventoryStock({ itemId: f.green, quantity: 7, unitId: f.unitId, note: "Opening stock" });
 
     const uppers = f.db.listMachineProgramUppers(f.machine1.id, f.sk6_710);
-    assert.deepEqual(uppers.map((row) => row.colour), ["BLACK", "GREEN"], "4/6 is a different size and BLUE has nothing in the store");
+    assert.deepEqual(uppers.map((row) => row.colour), ["BLACK", "GREEN"], "the 1/6 upper is for 4/6 and 1/3, and BLUE has nothing in the store");
 
     // One figure per upper: two suppliers' BLACK is one pile of BLACK as far as a program cares.
     const black = f.upperFor(f.machine1.id, f.black);
@@ -486,6 +488,46 @@ test("every colour of an upper for the article and size is offered, whoever supp
     // Opening stock has no label and so no supplier, and counts towards the upper all the same.
     const green = f.upperFor(f.machine1.id, f.green);
     assert.deepEqual([green.physical, green.available], [27, 27], "20 labelled plus 7 counted in the store");
+  });
+});
+
+// ─── One upper for two size ranges ───────────────────────────────────────────
+//
+// An upper is not cut in every size range a sole is moulded in: ONE 1/6 upper is cut for both
+// the 1/3 and the 4/6 soles, for every article (owner, 2026-10-13). A program for either size
+// must therefore find, reserve and be saved against that 1/6 upper.
+
+test("4/6 and 1/3 are both offered the 1/6 upper, and 7/10 is not", async () => {
+  await withFixture(async (f) => {
+    await f.stockIn(f.black16, 4, f.supplierA);
+    await f.stockIn(f.black, 4, f.supplierA);
+
+    const for46 = f.db.listMachineProgramUppers(f.machine1.id, f.sk6_46);
+    const for13 = f.db.listMachineProgramUppers(f.machine1.id, f.sk6_13);
+    const for710 = f.db.listMachineProgramUppers(f.machine1.id, f.sk6_710);
+
+    assert.deepEqual(for46.map((row) => row.itemId), [f.black16], "SK6 4/6 is made with the SK6 1/6 upper");
+    assert.deepEqual(for13.map((row) => row.itemId), [f.black16], "and so is SK6 1/3 — the same pile");
+    assert.deepEqual(for710.map((row) => row.itemId), [f.black], "7/10 wears its own 7/10 upper");
+  });
+});
+
+test("a 4/6 run is saved against the 1/6 upper, and the two sizes draw on one pile", async () => {
+  await withFixture(async (f) => {
+    await readyToProgram(f);
+    await f.stockIn(f.black16, 4, f.supplierA); // 4 packets of 5 = 20
+
+    const on46 = await f.addToNewRun({ machineId: f.machine1.id, injectorNo: 1, articleSizeId: f.sk6_46, itemId: f.black16, quantity: 12 });
+    assert.equal(on46.outcome, "SAVED");
+
+    // What 4/6 promised is gone from what 1/3 may promise: it is one upper, not two.
+    const for13 = f.db.listMachineProgramUppers(f.machine1.id, f.sk6_13).find((row) => row.itemId === f.black16);
+    assert.deepEqual([for13?.physical, for13?.reserved, for13?.available], [20, 12, 8]);
+
+    const on13 = await f.addToNewRun({ machineId: f.machine1.id, injectorNo: 2, articleSizeId: f.sk6_13, itemId: f.black16, quantity: 8 });
+    assert.equal(on13.outcome, "SAVED");
+    const over = await f.addToNewRun({ machineId: f.machine1.id, injectorNo: 2, articleSizeId: f.sk6_13, soleColour: "RED", itemId: f.black16, quantity: 1 });
+    assert.equal(over.outcome, "NOT_ENOUGH_STOCK", "the 1/6 pile is fully promised across both sizes");
   });
 });
 
@@ -559,11 +601,12 @@ test("several upper colours go on one sole, and the same upper twice is refused"
 test("an upper for another article, or a non-upper, is refused", async () => {
   await withFixture(async (f) => {
     await readyToProgram(f);
-    await f.stockIn(f.black46, 2, f.supplierA);
+    await f.stockIn(f.black16, 2, f.supplierA);
     await f.stockIn(f.blueElsewhere, 2, f.supplierA);
     f.danaIn(f.danaBlack!, 50, f.supplierA);
 
-    const wrongSize = await f.addToNewRun({ machineId: f.machine1.id, itemId: f.black46, quantity: 5 });
+    // 7/10 wears the 7/10 upper, so the 1/6 upper is the wrong size for this run.
+    const wrongSize = await f.addToNewRun({ machineId: f.machine1.id, itemId: f.black16, quantity: 5 });
     assert.equal(wrongSize.outcome, "WRONG_ARTICLE");
     const dana = await f.addToNewRun({ machineId: f.machine1.id, itemId: f.danaBlack!, quantity: 5 });
     assert.equal(dana.outcome, "NOT_AN_UPPER", "Dana is shown, never reserved");
@@ -1074,10 +1117,10 @@ test("a program can run hours nobody chose from a list", async () => {
 test("timing a sole writes every run of that colour on that injector, and nothing else", async () => {
   await withFixture(async (f) => {
     await readyToProgram(f);
-    await f.stockIn(f.black46, 4, f.supplierA);
+    await f.stockIn(f.black16, 4, f.supplierA);
     // BLACK on injector 1 across two articles, RED beside it, and BLACK again on injector 2.
     const saved = await f.addToNewRun({ machineId: f.machine1.id, injectorNo: 1, itemId: f.black, quantity: 10 });
-    await f.addToNewRun({ machineId: f.machine1.id, injectorNo: 1, articleSizeId: f.sk6_46, itemId: f.black46, quantity: 5 });
+    await f.addToNewRun({ machineId: f.machine1.id, injectorNo: 1, articleSizeId: f.sk6_46, itemId: f.black16, quantity: 5 });
     await f.addToNewRun({ machineId: f.machine1.id, injectorNo: 1, soleColour: "RED", itemId: f.black, quantity: 3 });
     await f.addToNewRun({ machineId: f.machine1.id, injectorNo: 2, itemId: f.black, quantity: 4 });
     const programId = saved.programId!;

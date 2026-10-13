@@ -45,6 +45,8 @@ export function registerScanningHandlers(ctx: IpcContext): void {
     const result = await processScanUseCase.execute({
       rawScan: normalized,
       context: scanContext,
+      // Who to record against an identity this scan registers itself (see adoptScannedQrCode).
+      actor: operator.user.username,
     });
 
     logger.log({

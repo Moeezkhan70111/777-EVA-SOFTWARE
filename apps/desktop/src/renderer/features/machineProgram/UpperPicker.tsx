@@ -1,4 +1,5 @@
 import React from "react";
+import { upperSizeForArticleSize } from "@erp/domain";
 import type { MachineProgramMaterial } from "../../types/desktopApi";
 import { ColorSwatch } from "../../components/shared/ColorSwatch";
 import { StateView } from "../../components/shared/StateView";
@@ -10,6 +11,11 @@ import { useUppers } from "./useMachineProgramData";
 // UPPER STOCK — SK6 / 7/10. Every upper the store holds for that article and size, whatever its
 // colour: choose SK6 7/10 and the BLACK, GREEN and BROWN SK6 7/10 uppers all appear, because
 // which colour of upper goes on the sole is the operator's choice.
+//
+// The size asked for is the UPPER's, which is not always the article's: one 1/6 upper is cut for
+// both the 1/3 and the 4/6 soles (upperSizeForArticleSize), so SK30 4/6 lists SK30 1/6 uppers.
+// Nothing here decides that — the rule is the domain's, and the data layer offers from it — but
+// the empty state names the size the store would have to RECEIVE, not the article's own.
 //
 //   Upper Color      Available Stock     Action
 //   ● Brown          10 DOZEN            [ + Add ]
@@ -64,7 +70,12 @@ export const UpperPicker: React.FC<UpperPickerProps> = ({
   if (uppers.error) return <StateView kind="error" compact message={uppers.error} onRetry={() => void uppers.reload()} />;
   if (uppers.value.length === 0) {
     return (
-      <StateView kind="empty" compact title={copy.machineProgram.upperNoneTitle(article, size)} hint={copy.machineProgram.upperNoneHint} />
+      <StateView
+        kind="empty"
+        compact
+        title={copy.machineProgram.upperNoneTitle(article, upperSizeForArticleSize(size))}
+        hint={copy.machineProgram.upperNoneHint}
+      />
     );
   }
 

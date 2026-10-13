@@ -543,80 +543,219 @@ export const printRawMaterialLabels = (sheet: RawMaterialLabelSheet): Promise<Pr
   printDocumentDirect(renderRawMaterialLabelSheetHtml(sheet), { widthIn: LABEL_WIDTH_IN, heightIn: LABEL_HEIGHT_IN });
 
 // ─── The carton label ─────────────────────────────────────────────────────────
-// A finished carton prints the SAME sticker as a raw material packet — one template, so the
-// two can never drift apart again. It simply has fewer things to say: an article instead of a
-// category, no sub-category, no supplier and no pack figure. Its colour is printed large in
-// Urdu, as the floor reads it, through the same transliteration every other Urdu field uses.
+// A carton sticker says three things and says them as large as the stock allows: the QR
+// symbol on the left and, beside it, the article, the colour in Urdu and the size, one line
+// each (owner's format, 2026-10-13). The registered identity stays under them in small type,
+// so a carton whose symbol is smudged or torn can still be read and found by hand.
+//
+//   ┌──────────────────────────────┐    a B carton, which has no colour:
+//   │  ███████           SK12      │    ┌──────────────────────────────┐
+//   │  ██ ▄ ██           سیاہ      │    │  ███████         EVR9        │
+//   │  ███████           7/10      │    │  ██ ▄ ██          B          │
+//   │     SK12_BLACK_7/10_000001   │    │  ███████         7/10        │
+//   └──────────────────────────────┘    │     EVR9_MIX_7/10_000003     │
+//                                       └──────────────────────────────┘
+//
+// It has its own template rather than borrowing the raw material packet's: a packet sticker
+// carries a category, a sub-category, a supplier and a packet size that a carton has no use
+// for, and while the two shared one template the carton's three facts had to print at the
+// packet's much smaller sizes. Everything underneath is still shared — the same sticker size,
+// safe margin, QR symbol, shrink-to-fit sizing and Urdu colour dictionary.
 
+/** The gap between the symbol and the lines beside it. */
+const CARTON_GAP_IN = 0.1;
+/** What is left for the lines once the symbol and the gap have theirs. */
+const CARTON_TEXT_WIDTH_IN = ARTWORK_WIDTH_IN - QR_SIDE_IN - CARTON_GAP_IN;
+/** Room taken by a line's small "OUTER"/"INNER" tag before its value. */
+const CARTON_TAG_WIDTH_IN = 0.36;
+/** Floor/ceiling for a line, in inches. The ceiling is high on purpose: the height each line
+ *  gets is what normally decides the size, not an arbitrary cap. */
+const CARTON_LINE_RANGE = [0.12, 0.8] as const;
 /**
- * What one carton's sticker says, from the carton's own identity.
- *
- * A FIX article is moulded from TWO soles and has no upper, so its sticker names both of them —
- * the outer one the carton is identified by, and the inner one that goes inside it (owner,
- * 2026-10-12). The code itself still carries one colour, because a QR identity holds one:
- *
- *   DC3                        DC3
- *   SIZE        7/10           SIZE        7/10
- *   COLOUR      سیاہ            OUTER SOLE  سیاہ
- *                              INNER SOLE  اورنج
+ * How much more of the stack's height a `big` line takes than an ordinary one — the grade on a
+ * B carton, which the floor sorts by and must read from across the room (owner, 2026-10-13).
  */
-export const cartonLabelHeader = (identity: {
+const CARTON_BIG_LINE_WEIGHT = 2;
+/** The identity under the lines: small, but never so small it cannot be read off the carton. */
+const CARTON_CODE_RANGE = [0.08, 0.12] as const;
+/** Nastaliq needs more room above and below than a Latin line of the same size. */
+const CARTON_LATIN_LINE_HEIGHT = 1.1;
+const CARTON_URDU_LINE_HEIGHT = 1.35;
+
+/** One line of the stack beside the symbol. */
+export interface CartonLabelLine {
+  value: string;
+  /** Drawn in the Urdu typeface, which runs narrower per glyph and needs more line height. */
+  urdu: boolean;
+  /** A small tag before the value — "OUTER"/"INNER" on a FIX carton's two soles. */
+  tag?: string;
+  /** Takes a bigger share of the height than the other lines — the B on a B carton. */
+  big?: boolean;
+}
+
+/** What one carton's QR identity is, as the generator, QR Management and Program Out all hold it. */
+export interface CartonLabelIdentity {
   article: string;
   color: string;
   size: string;
-  /** The second sole of a FIX article. Left out, the sticker says COLOUR as it always has. */
+  /** The second sole of a FIX article. Left out, the sticker names one colour as it always has. */
   innerColor?: string | null;
-  /** "B" for a B carton: a B in the corner, and COLOUR MIX — its colours are mixed (migration 074). */
+  /** "B" for a B carton: a big B where the colour would be, because its colours are mixed. */
   grade?: "B" | null;
-}): RawMaterialLabelHeader => {
-  if (identity.grade === "B") {
-    //   B   EVR9
-    //   ▣   SIZE 7/10   COLOUR MIX
-    return {
-      categoryLine: identity.article.trim(),
-      subCategoryLine: "",
-      attributes: [
-        ...(identity.size.trim() ? [{ label: "SIZE", value: identity.size.trim(), isColor: false }] : []),
-        { label: "COLOUR", value: identity.color.trim() || "MIX", isColor: true },
-      ],
-      partyName: "",
-      packQuantity: "",
-      gradeMark: "B",
-    };
-  }
+}
+
+/**
+ * The lines one carton's sticker prints, top to bottom: article, colour, size.
+ *
+ * A FIX article is moulded from TWO soles and has no upper, so its sticker names both of them
+ * (owner, 2026-10-12) and tags which is which — the outer one the carton is identified by, and
+ * the inner one that goes inside it. The code itself still carries one colour, because a QR
+ * identity holds one.
+ *
+ * A B carton is moulded from MIXED colours, so it names no colour at all: where an ordinary
+ * carton says its colour, a B carton says a big B (owner, 2026-10-13). That B is the whole point
+ * of the sticker — it is what the floor sorts the cartons by — so it is the largest thing on it,
+ * and nothing says "MIX" any more. The identity underneath still reads …_MIX_… because that is
+ * the registered code, and a code cannot be rewritten to suit a label.
+ */
+export const cartonLabelLines = (identity: CartonLabelIdentity): CartonLabelLine[] => {
+  const article = identity.article.trim();
+  const size = identity.size.trim();
+  const colour = identity.color.trim();
+  const grade = identity.grade === "B" ? "B" : undefined;
   const inner = String(identity.innerColor ?? "").trim();
-  const colourLabel = inner ? "OUTER SOLE" : "COLOUR";
-  return {
-    categoryLine: identity.article.trim(),
-    subCategoryLine: "",
-    attributes: [
-      ...(identity.size.trim() ? [{ label: "SIZE", value: identity.size.trim(), isColor: false }] : []),
-      ...(identity.color.trim() ? [{ label: colourLabel, value: colorValueInUrdu(identity.color), isColor: true }] : []),
-      ...(inner ? [{ label: "INNER SOLE", value: colorValueInUrdu(inner), isColor: true }] : []),
-    ],
-    partyName: "",
-    packQuantity: "",
-  };
+  const lines: CartonLabelLine[] = [];
+
+  if (article || grade) lines.push({ value: article, urdu: false });
+  if (grade) {
+    lines.push({ value: grade, urdu: false, big: true });
+  } else if (colour) {
+    lines.push({ value: colorValueInUrdu(colour), urdu: true, tag: inner ? "OUTER" : undefined });
+  }
+  if (!grade && inner) lines.push({ value: colorValueInUrdu(inner), urdu: true, tag: "INNER" });
+  if (size) lines.push({ value: size, urdu: false });
+  return lines;
 };
 
 /**
- * Opens a print-ready window of carton QR labels — the QR Generator's run, or a single code
- * reprinted from QR Management. Both go through here, so both print the same sticker.
+ * The largest size one line can print at: the height of its own share of the stack, or the
+ * width left to it once its tag and the symbol have theirs — whichever runs out first.
+ */
+const cartonLineFontSizeIn = (line: CartonLabelLine, lineBoxIn: number): number => {
+  const widthIn = CARTON_TEXT_WIDTH_IN - (line.tag ? CARTON_TAG_WIDTH_IN : 0);
+  const glyphWidthEm = line.urdu ? URDU_GLYPH_WIDTH_EM : AVG_GLYPH_WIDTH_EM;
+  const lineHeight = line.urdu ? CARTON_URDU_LINE_HEIGHT : CARTON_LATIN_LINE_HEIGHT;
+  const byWidth = widthIn / ((line.value.trim().length || 1) * glyphWidthEm);
+  const byHeight = lineBoxIn / lineHeight;
+  const [minIn, maxIn] = CARTON_LINE_RANGE;
+  return Math.min(maxIn, Math.max(minIn, Math.min(byWidth, byHeight)));
+};
+
+const CARTON_LABEL_STYLES = `
+  .carton-label {
+    width: ${LABEL_WIDTH_IN}in; height: ${LABEL_HEIGHT_IN}in;
+    box-sizing: border-box; padding: ${SAFE_MARGIN_IN}in;
+    display: flex; flex-direction: column; gap: 0.02in;
+    border: 1px solid #999; page-break-after: always;
+  }
+  .carton-label:last-of-type { page-break-after: auto; }
+  .carton-body { flex: 1; min-height: 0; display: flex; align-items: center; gap: ${CARTON_GAP_IN}in; }
+  /* flex: none — the symbol prints at exactly QR_SIDE_IN square. Letting the row shrink it
+     shrinks the modules until they stop scanning. */
+  .carton-qr { flex: none; display: flex; align-items: center; justify-content: center; }
+  .carton-qr svg { display: block; width: ${QR_SIDE_IN}in; height: ${QR_SIDE_IN}in; }
+  .carton-lines { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+  /* Its share of the height, set inline per line (flex: 1, or more for a big one) — the same
+     share cartonLineFontSizeIn sized the text against. */
+  .carton-line { min-width: 0; display: flex; align-items: center; justify-content: center; gap: 0.04in; }
+  .carton-tag { flex: none; font-size: 0.1in; font-weight: 700; letter-spacing: .04em; }
+  .carton-value { min-width: 0; font-weight: 900; line-height: ${CARTON_LATIN_LINE_HEIGHT}; text-align: center; overflow-wrap: anywhere; }
+  .carton-value--urdu { font-family: ${URDU_FONT_STACK}; font-weight: 600; line-height: ${CARTON_URDU_LINE_HEIGHT}; }
+  /* The B on a B carton: read from across the room, so it carries no decoration to compete with. */
+  .carton-value--big { letter-spacing: .02em; }
+  .carton-code {
+    flex: none; font-family: Consolas, "Courier New", monospace; font-weight: 700;
+    text-align: center; overflow-wrap: anywhere;
+  }
+  @media print { .carton-label { border: none; } }
+`;
+
+const renderCartonLabel = (lines: CartonLabelLine[], qrId: string, codeFontSizeIn: number): string => {
+  // What the lines have left once the identity underneath has taken its own line, shared out by
+  // weight: an ordinary line takes one share, a `big` one (a B carton's grade) takes several.
+  const stackHeightIn = Math.max(0.5, ARTWORK_HEIGHT_IN - codeFontSizeIn * 1.3);
+  const weightOf = (line: CartonLabelLine): number => (line.big ? CARTON_BIG_LINE_WEIGHT : 1);
+  const totalWeight = lines.reduce((total, line) => total + weightOf(line), 0) || 1;
+  const linesHtml = lines
+    .map((line) => {
+      const lineBoxIn = (stackHeightIn * weightOf(line)) / totalWeight;
+      const tagHtml = line.tag ? `<span class="carton-tag">${escapeHtml(line.tag)}</span>` : "";
+      const valueClass = `carton-value${line.urdu ? " carton-value--urdu" : ""}${line.big ? " carton-value--big" : ""}`;
+      const style = `font-size:${inches(cartonLineFontSizeIn(line, lineBoxIn))}`;
+      // The B is a grade, not a word: said so for anything reading the sticker, not just seeing it.
+      const label = line.big ? ` aria-label="Grade ${escapeHtml(line.value)}"` : "";
+      return (
+        `<div class="carton-line" style="flex:${weightOf(line)}">${tagHtml}` +
+        `<span class="${valueClass}"${label} style="${style}">${escapeHtml(line.value)}</span></div>`
+      );
+    })
+    .join("");
+  return (
+    `<div class="carton-label">` +
+    `<div class="carton-body">` +
+    `<div class="carton-qr">${renderQrSvgMarkup(qrId)}</div>` +
+    `<div class="carton-lines">${linesHtml}</div>` +
+    `</div>` +
+    `<div class="carton-code" style="font-size:${inches(codeFontSizeIn)}">${escapeHtml(qrId)}</div>` +
+    `</div>`
+  );
+};
+
+/** Builds the print-ready HTML for a run of carton labels sharing one identity. */
+export const renderCartonLabelSheetHtml = (opts: {
+  title: string;
+  heading: string;
+  subheading: string;
+  identity: CartonLabelIdentity;
+  ids: string[];
+}): string => {
+  const lines = cartonLabelLines(opts.identity);
+  // One shared code size for the whole run — sized to the longest id in the batch, so every
+  // sticker in a print job reads at the same size rather than drifting as the serial gains a
+  // digit partway through.
+  const longestId = opts.ids.reduce((longest, id) => (id.length > longest.length ? id : longest), "");
+  const codeFontSizeIn = fitFontSizeIn(longestId, ARTWORK_WIDTH_IN, ...CARTON_CODE_RANGE);
+  const labels = opts.ids.map((id) => renderCartonLabel(lines, id, codeFontSizeIn)).join("");
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>${escapeHtml(opts.title)}</title>
+  <style>${PRINT_STYLES}${CARTON_LABEL_STYLES}</style>
+</head>
+<body>
+  <div class="print-actions"><button onclick="window.print()">${copy.reports.printOrSave}</button></div>
+  <div class="print-heading">
+    <h1>${escapeHtml(opts.heading)}</h1>
+    <p>${escapeHtml(opts.subheading)}</p>
+  </div>
+  <div class="label-grid">${labels}</div>
+</body>
+</html>`;
+};
+
+/**
+ * Opens a print-ready window of carton QR labels — the QR Generator's run, a single code
+ * reprinted from QR Management, or a program's issued packets. All of them come through here,
+ * so a reprint can never look different from the label it replaces.
  */
 export const openCartonLabelPrintWindow = (opts: {
   title: string;
   heading: string;
   subheading: string;
-  identity: { article: string; color: string; size: string; innerColor?: string | null; grade?: "B" | null };
+  identity: CartonLabelIdentity;
   ids: string[];
-}): boolean =>
-  openRawMaterialLabelPrintWindow({
-    title: opts.title,
-    heading: opts.heading,
-    subheading: opts.subheading,
-    header: cartonLabelHeader(opts.identity),
-    ids: opts.ids,
-  });
+}): boolean => openPrintDocument(renderCartonLabelSheetHtml(opts)).opened;
 
 /**
  * Opens a print-ready window of raw material QR labels. Returns false when the popup was

@@ -6,7 +6,7 @@
 import { ipcMain } from "electron";
 import { IPC } from "../../shared/ipcChannels";
 import type { IpcContext } from "./context";
-import { PERMISSION } from "@erp/domain";
+import { CARTON_GRADE, PERMISSION } from "@erp/domain";
 
 export function registerQrCodesHandlers(ctx: IpcContext): void {
   const { db, logger, authorizer, scanContext, deviceId, useCases } = ctx;
@@ -23,6 +23,9 @@ export function registerQrCodesHandlers(ctx: IpcContext): void {
           quantity: Number(input?.quantity ?? 0),
           createdBy: typeof input?.createdBy === "string" ? input.createdBy : undefined,
           requestedBy: typeof input?.requestedBy === "string" ? input.requestedBy : undefined,
+          // "B" is the only grade there is, and anything else is an ordinary run — the renderer
+          // never decides what the registry accepts (R25).
+          grade: input?.grade === CARTON_GRADE.B ? CARTON_GRADE.B : null,
         }),
       };
     } catch (error) {

@@ -20,6 +20,7 @@ import {
   InMemoryEventBus,
   ReceiveMachineProgramCartonUseCase,
   ReceiveRawMaterialScanUseCase,
+  RemoveMachineProgramRunUseCase,
   SaveMachineProgramFixRunUseCase,
   SaveMachineProgramLineUseCase,
 } from "@erp/application";
@@ -44,6 +45,7 @@ function createFixture() {
     assign: new AssignMachineContractorUseCase(deps),
     saveLine: new SaveMachineProgramLineUseCase(deps),
     saveFix: new SaveMachineProgramFixRunUseCase(deps),
+    removeRun: new RemoveMachineProgramRunUseCase(deps),
     receive: new ReceiveRawMaterialScanUseCase(deps),
   };
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- direct schema access for assertions
@@ -127,6 +129,9 @@ function createFixture() {
       actor: ACTOR,
     });
 
+  /** Taking a whole run off the program, as the Remove dialog does. */
+  const removeRun = (runId: string) => useCases.removeRun.execute({ runId, actor: ACTOR });
+
   const program = () => db.getMachineProgramForDate(machine.id, TODAY);
   const balanceOf = (itemId: string): number =>
     Number((raw.prepare("SELECT quantity_on_hand AS q FROM inventory_stock_balances WHERE item_id = ?").get(itemId) as { q: number } | undefined)?.q ?? 0);
@@ -147,7 +152,7 @@ function createFixture() {
 
   return {
     db, raw, machine, sk6, evr9, black, casual, evrFix, group,
-    ready, saveFix, saveUpper, program, balanceOf, fixCartons, printFixCartons, cartonIn,
+    ready, saveFix, saveUpper, removeRun, program, balanceOf, fixCartons, printFixCartons, cartonIn,
     cleanup: () => {
       db.close();
       fs.rmSync(tempDir, { recursive: true, force: true });
@@ -368,6 +373,74 @@ test("printing a fix run generates exactly its cartons, against the outer sole",
       Number(f.raw.prepare("SELECT COUNT(*) AS n FROM machine_program_fix_carton_labels").get().n),
       1
     );
+  });
+});
+
+// ─── Labelled cartons fix the soles ──────────────────────────────────────────
+//
+// A carton QR carries the OUTER sole and a printed identity is permanent, so a run whose cartons
+// are labelled cannot be re-coloured: the labels already name the colour they were printed in.
+// Program 2's DC3 cartons said BLACK on a COMMANDO run because this was not checked (2026-10-12).
+
+test("a fix run whose cartons are labelled cannot have its soles changed", async () => {
+  await withFixture(async (f) => {
+    await f.ready();
+    await f.saveFix({ outer: "WHITE", inner: "BLACK", quantity: 32 });
+    f.printFixCartons(f.fixCartons()[0].runId);
+
+    const recoloured = await f.saveFix({ outer: "RED", inner: "BLACK", quantity: 32 });
+    assert.equal(recoloured.outcome, "CARTONS_LABELLED");
+    assert.match(recoloured.reason ?? "", /64 carton labels are already printed for EVR9 7\/10 in WHITE/);
+
+    const innerChanged = await f.saveFix({ outer: "WHITE", inner: "RED", quantity: 32 });
+    assert.equal(innerChanged.outcome, "CARTONS_LABELLED", "the sticker names the inner sole too");
+
+    // The run is untouched, and the labels still name what they were printed as.
+    const [run] = f.fixCartons();
+    assert.equal(run.outerSoleColour, "WHITE");
+    assert.equal(run.innerSoleColour, "BLACK");
+    assert.equal(run.labels[0].colour, "WHITE");
+  });
+});
+
+test("the quantity still changes once cartons are labelled, and the soles may be re-saved as they are", async () => {
+  await withFixture(async (f) => {
+    await f.ready();
+    await f.saveFix({ outer: "WHITE", inner: "BLACK", quantity: 32 });
+    f.printFixCartons(f.fixCartons()[0].runId);
+
+    const raised = await f.saveFix({ outer: "WHITE", inner: "BLACK", quantity: 40 });
+    assert.equal(raised.outcome, "SAVED", "a plan may still grow — it owes the difference");
+    assert.equal(f.fixCartons()[0].cartonsToPrint, 16);
+  });
+});
+
+test("a fix run whose cartons are labelled cannot be taken off the program", async () => {
+  await withFixture(async (f) => {
+    await f.ready();
+    await f.saveFix({ outer: "WHITE", inner: "BLACK", quantity: 2 });
+    const runId = f.fixCartons()[0].runId;
+    f.printFixCartons(runId);
+
+    const removed = await f.removeRun(runId);
+    assert.equal(removed.outcome, "CARTONS_LABELLED");
+    assert.match(removed.reason ?? "", /4 carton labels are already printed for EVR9 7\/10/);
+    assert.equal(f.fixCartons().length, 1, "it stays on the program as the record of what was labelled");
+  });
+});
+
+test("a fix run with no cartons printed can still be taken off, and recoloured", async () => {
+  await withFixture(async (f) => {
+    await f.ready();
+    await f.saveFix({ outer: "WHITE", inner: "BLACK", quantity: 2 });
+
+    const recoloured = await f.saveFix({ outer: "RED", inner: "BLACK", quantity: 2 });
+    assert.equal(recoloured.outcome, "SAVED", "nothing is labelled, so the soles are still free");
+    assert.equal(f.fixCartons()[0].outerSoleColour, "RED");
+
+    const removed = await f.removeRun(f.fixCartons()[0].runId);
+    assert.equal(removed.outcome, "REMOVED");
+    assert.equal(f.fixCartons().length, 0);
   });
 });
 

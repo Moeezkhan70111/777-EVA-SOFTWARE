@@ -161,6 +161,7 @@ export const NAV_SECTIONS: readonly NavSection[] = [
       item("product-form", t.productForm, "product"),
       item("product-lists", t.productLists, "settings"),
       item("qr-generator", t.qrGenerator, "qr"),
+      item("b-carton-generator", t.bCartonGenerator, "qr"),
       item("qr-management", t.qrManagement, "qr"),
       item("qr-journey", t.qrJourney, "qr"),
       item("discount-policy", t.discountPolicy, "balance"),

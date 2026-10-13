@@ -109,6 +109,7 @@ export const NAV_PERMISSION_MODULES = [
       ["product-form", "Add / Edit Product"],
       ["product-lists", "Fields Management"],
       ["qr-generator", "QR Generator"],
+      ["b-carton-generator", "B Carton Labels"],
       ["qr-management", "QR Management"],
       ["qr-journey", "QR Journey"],
       ["discount-policy", "Discount Policy"],

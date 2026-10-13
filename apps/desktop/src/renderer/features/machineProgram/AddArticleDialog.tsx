@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import type { MachineShift } from "@erp/domain";
+import { upperSizeForArticleSize, type MachineShift } from "@erp/domain";
 import type { MachineProgramArticleRate, MachineProgramRunRecord } from "../../types/desktopApi";
 import { ColorSwatch } from "../../components/shared/ColorSwatch";
 import { Modal } from "../../components/shared/Modal";
@@ -248,6 +248,9 @@ export const AddArticleDialog: React.FC<AddArticleDialogProps> = ({ fixedColour,
               {describedRun ? (
                 <span className="mpa-for">
                   {describedRun.article} / {describedRun.size}
+                  {upperSizeForArticleSize(describedRun.size) === describedRun.size ? null : (
+                    <> · {copy.machineProgram.upperSizeIs(upperSizeForArticleSize(describedRun.size))}</>
+                  )}
                 </span>
               ) : null}
             </div>

@@ -187,6 +187,15 @@ export class RemoveMachineProgramRunUseCase {
           "Uppers for this sole have already been scanned out, so it cannot be taken off. Delete the whole program to release what is left."
         );
       }
+      // A FIX run's carton labels point at it, so the database would refuse the delete anyway —
+      // said here in words, because a printed carton identity is a record, not a detail.
+      const fixRun = await this.deps.repo.getMachineProgramFixRunForWrite(run.id, tx);
+      if (fixRun && fixRun.labelledCartons > 0) {
+        throw new MachineProgramRejectedError(
+          "CARTONS_LABELLED",
+          `${fixRun.labelledCartons} carton labels are already printed for ${run.article} ${run.size}, so it cannot be taken off the program. Void them in QR Management first.`
+        );
+      }
       await this.deps.repo.deleteMachineProgramRun(run.id, tx);
       await settleProgramStatus(this.deps.repo, run.programId, run.programStatus, input.actor, tx);
       await auditProgramChange(this.deps, { ...input, eventType: "MACHINE_PROGRAM_RUN_REMOVED", entityId: run.programId, payload: { runId: run.id, injectorNo: run.injectorNo, article: run.article, size: run.size, lines: run.lineCount } }, tx);

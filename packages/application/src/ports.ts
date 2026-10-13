@@ -42,6 +42,15 @@ export interface RegisteredQrCode {
  */
 export interface QrRegistryRepository {
   findRegisteredQrCode(qrId: string, tx: TransactionContext): Promise<RegisteredQrCode | null>;
+  /**
+   * Registers an identity the generator never issued, for a station allowed to take a carton as
+   * it finds it (Live Production). Refuses an article + size the Product Master does not have.
+   */
+  adoptScannedQrCode(
+    payload: { qrId: string; article: string; color: string; size: string; serial: string },
+    origin: { createdBy: string | null; requestedBy: string },
+    tx: TransactionContext
+  ): Promise<RegisteredQrCode & { productVariantId: string }>;
 }
 
 export interface QrMasterRepository {

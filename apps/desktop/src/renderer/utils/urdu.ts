@@ -209,6 +209,35 @@ export const learnColorUrdu = (englishColor: string, urduValue: string): void =>
 const namedColorWord = (word: string, learned: Record<string, string>): string | undefined => learned[word] ?? COLOR_NAME_URDU[word];
 
 /**
+ * A run-together compound colour named piece by piece: "blackred" -> "سیاہ لال".
+ *
+ * A carton's QR identity cannot hold a space — normalizeQrColor folds "BLACK RED" onto
+ * "BLACKRED" so both spellings are one logical colour — so the colour names have to be found
+ * INSIDE the single token before the sticker can print them. Without this the floor gets the
+ * whole token spelled out sound by sound ("بلاککریڈ") instead of the two colours it names.
+ *
+ * Only a token that splits ENTIRELY into known colour names is accepted, the longest name
+ * tried first. A colour this list genuinely does not name ("blueberry") is left to the
+ * phonetic fallback rather than being carved up by whatever fragment of it is a colour.
+ */
+const namedColorRun = (run: string, learned: Record<string, string>): string | undefined => {
+  const names = [...Object.keys(learned), ...Object.keys(COLOR_NAME_URDU)]
+    .filter((name) => name && !name.includes(" "))
+    .sort((left, right) => right.length - left.length);
+  const split = (rest: string): string[] | undefined => {
+    if (!rest) return [];
+    for (const name of names) {
+      if (!rest.startsWith(name)) continue;
+      const tail = split(rest.slice(name.length));
+      if (tail) return [namedColorWord(name, learned) as string, ...tail];
+    }
+    return undefined;
+  };
+  const parts = split(run);
+  return parts && parts.length > 1 ? parts.join(" ") : undefined;
+};
+
+/**
  * "BLACK" -> "سیاہ". A learned correction (see learnColorUrdu) wins over the dictionary above,
  * because it is a human's explicit "this one is wrong, it's actually this" — the whole point
  * of learning it.
@@ -216,7 +245,9 @@ const namedColorWord = (word: string, learned: Record<string, string>): string |
  * A compound colour ("CREAM MUSTARD") is named word by word when every word on its own is
  * known — "cream" + "mustard" -> "کریم مسٹرڈ" — rather than falling straight to phonetic
  * transliteration, which would spell the whole phrase out sound by sound ("کریام موسٹارڈ")
- * and miss the two colour names it is actually built from.
+ * and miss the two colour names it is actually built from. A compound written WITHOUT the
+ * space, as a carton's QR identity always is ("BLACKRED"), is named the same way through
+ * namedColorRun above.
  *
  * A colour no part of this names still comes back in Urdu script — it falls back to the
  * phonetic transliteration above — rather than silently staying in English, since the point of
@@ -231,11 +262,10 @@ export const colorValueInUrdu = (value: string): string => {
   const whole = namedColorWord(normalized, learned);
   if (whole) return whole;
 
-  const words = normalized.split(/\s+/);
-  if (words.length > 1) {
-    const named = words.map((word) => namedColorWord(word, learned));
-    if (named.every((word): word is string => Boolean(word))) return named.join(" ");
-  }
+  const named = normalized
+    .split(/\s+/)
+    .map((word) => namedColorWord(word, learned) ?? namedColorRun(word, learned));
+  if (named.every((word): word is string => Boolean(word))) return named.join(" ");
 
   return transliterateToUrdu(trimmed);
 };

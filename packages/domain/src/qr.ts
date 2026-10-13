@@ -131,6 +131,14 @@ export function isValidQrCode(rawInput: string): boolean {
 
 export const QR_SERIAL_WIDTH = 6;
 
+/**
+ * Upper bound for a single generation request — one realistic label print run.
+ *
+ * Here rather than in the data layer because the screens asking for a run have to refuse too
+ * many BEFORE sending it, and the limit a screen checks must be the limit the registry enforces.
+ */
+export const MAX_QR_BATCH_QUANTITY = 10000;
+
 const QR_ARTICLE_PATTERN = /^[A-Z0-9]+$/;
 const QR_COLOR_PATTERN = /^[A-Z0-9]+$/;
 const QR_SIZE_PATTERN = /^[0-9]+\/[0-9]+$/;

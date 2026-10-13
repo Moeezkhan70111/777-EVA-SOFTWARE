@@ -2,7 +2,7 @@ import React from "react";
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import qrcode from "qrcode-generator";
-import { QrPreview, renderQrSvgMarkup, renderRawMaterialLabelSheetHtml, cartonLabelHeader } from "./qrLabels";
+import { QrPreview, renderQrSvgMarkup, renderRawMaterialLabelSheetHtml, cartonLabelLines, renderCartonLabelSheetHtml } from "./qrLabels";
 import { colorValueInUrdu } from "./urdu";
 
 // The carton label carries a QR code, and the only thing it encodes is the registered identity.
@@ -65,75 +65,136 @@ describe("renderQrSvgMarkup", () => {
   });
 });
 
-// A carton prints the SAME sticker as a raw material packet: one template, so a reprint from
-// QR Management can never drift from what the QR Generator produced.
-describe("cartonLabelHeader", () => {
-  it("says the article large, the size beside the symbol, and the colour in Urdu", () => {
-    const header = cartonLabelHeader({ article: "SK6", color: "BLACK", size: "7/10" });
+// The carton sticker: the QR symbol, then the article, colour and size beside it, each as
+// large as the stock allows, with the identity underneath (owner's format, 2026-10-13). The
+// QR Generator, QR Management and Program Out all print through it, so a reprint can never
+// drift from what the generator produced.
+const cartonSheet = (identity: Parameters<typeof cartonLabelLines>[0], ids = [IDENTITY]) =>
+  renderCartonLabelSheetHtml({ title: "t", heading: "h", subheading: "s", identity, ids });
 
-    expect(header.categoryLine).toBe("SK6");
-    expect(header.subCategoryLine).toBe("");
-    expect(header.attributes.map((a) => a.value)).toEqual(["7/10", colorValueInUrdu("BLACK")]);
-    expect(header.attributes.find((a) => a.isColor)?.value).toMatch(/[\u0600-\u06FF]/);
+/** The font-size each line was drawn at, in inches, top to bottom. */
+const lineSizesIn = (html: string): number[] =>
+  [...html.matchAll(/class="carton-value[^"]*"[^>]*style="font-size:([\d.]+)in"/g)].map((m) => Number(m[1]));
+
+/**
+ * How tall the stack of lines actually prints, in inches — each line's font size times its own
+ * line height, which is taller for Urdu (Nastaliq) than for Latin.
+ */
+const lineStackHeightIn = (html: string): number =>
+  [...html.matchAll(/class="(carton-value[^"]*)"[^>]*style="font-size:([\d.]+)in"/g)]
+    .reduce((total, m) => total + Number(m[2]) * (m[1].includes("--urdu") ? 1.35 : 1.1), 0);
+
+describe("cartonLabelLines", () => {
+  it("says the article, then the colour in Urdu, then the size", () => {
+    const lines = cartonLabelLines({ article: "SK12", color: "BLACK", size: "7/10" });
+
+    expect(lines.map((line) => line.value)).toEqual(["SK12", colorValueInUrdu("BLACK"), "7/10"]);
+    expect(lines.map((line) => line.urdu)).toEqual([false, true, false]);
+    expect(lines[1].value).toMatch(/[\u0600-\u06FF]/);
   });
 
   // A FIX article is moulded from two soles and has no upper, so its carton names both of them
   // (owner, 2026-10-12). The code still carries one colour, because a QR identity holds one.
   it("names BOTH soles of a fix article, and says which is which", () => {
-    const header = cartonLabelHeader({ article: "DC3", color: "BLACK", size: "7/10", innerColor: "ORANGE" });
+    const lines = cartonLabelLines({ article: "DC3", color: "BLACK", size: "7/10", innerColor: "ORANGE" });
 
-    expect(header.categoryLine).toBe("DC3");
-    expect(header.attributes.map((a) => a.label)).toEqual(["SIZE", "OUTER SOLE", "INNER SOLE"]);
-    expect(header.attributes.map((a) => a.value)).toEqual([
-      "7/10",
-      colorValueInUrdu("BLACK"),
-      colorValueInUrdu("ORANGE"),
+    expect(lines.map((line) => [line.tag, line.value])).toEqual([
+      [undefined, "DC3"],
+      ["OUTER", colorValueInUrdu("BLACK")],
+      ["INNER", colorValueInUrdu("ORANGE")],
+      [undefined, "7/10"],
     ]);
-    // Both are colours, so both print large in Urdu the way the floor reads them.
-    expect(header.attributes.filter((a) => a.isColor)).toHaveLength(2);
   });
 
-  it("says COLOUR, not OUTER SOLE, for a carton with one colour", () => {
-    const header = cartonLabelHeader({ article: "SK6", color: "BLACK", size: "7/10", innerColor: "   " });
-    expect(header.attributes.map((a) => a.label)).toEqual(["SIZE", "COLOUR"]);
+  it("tags nothing when there is only one colour to name", () => {
+    const lines = cartonLabelLines({ article: "SK6", color: "BLACK", size: "7/10", innerColor: "   " });
+    expect(lines.map((line) => line.tag)).toEqual([undefined, undefined, undefined]);
   });
 
-  // A B carton (EVR FIX, mixed colours, migration 074): a B in the top-left corner, COLOUR MIX.
-  it("prints a B carton with a B in the corner and COLOUR MIX", () => {
-    const header = cartonLabelHeader({ article: "EVR9", color: "MIX", size: "7/10", innerColor: "RED", grade: "B" });
-    expect(header.gradeMark).toBe("B");
-    expect(header.categoryLine).toBe("EVR9");
-    expect(header.attributes.map((a) => [a.label, a.value])).toEqual([["SIZE", "7/10"], ["COLOUR", "MIX"]]);
+  // A B carton (EVR FIX, migration 074) is moulded from mixed colours, so it names no colour at
+  // all: where the colour would be it says a big B — nothing says "MIX" (owner, 2026-10-13).
+  it("prints a big B where the colour would be, and never the word MIX", () => {
+    const identity = { article: "EVR9", color: "MIX", size: "7/10", innerColor: "RED", grade: "B" as const };
+    const lines = cartonLabelLines(identity);
 
-    const html = renderRawMaterialLabelSheetHtml({ title: "t", heading: "h", subheading: "s", header, ids: ["EVR9_MIX_7/10_000001"] });
-    expect(html).toContain('class="rm-label-grade" aria-label="Grade B">B</div>');
-    expect(html).toContain("rm-label-heading--graded");
+    expect(lines.map((line) => line.value)).toEqual(["EVR9", "B", "7/10"]);
+    expect(lines[1].big).toBe(true);
+    expect(lines.some((line) => line.urdu)).toBe(false);
+
+    const html = cartonSheet(identity);
+    expect(html).not.toContain(">MIX<");
+    expect(html).toContain('aria-label="Grade B"');
+    // The identity underneath is the registered code and still carries MIX — a code is not
+    // rewritten to suit a label.
+    expect(html).toContain(IDENTITY);
   });
 
-  it("leaves out what a carton does not have, rather than printing an empty supplier line", () => {
-    const header = cartonLabelHeader({ article: "SK6", color: "BLACK", size: "7/10" });
-    expect(header.partyName).toBe("");
-    expect(header.packQuantity).toBe("");
+  it("prints the B larger than the article and the size beside it", () => {
+    const sizes = lineSizesIn(cartonSheet({ article: "EVR9", color: "MIX", size: "7/10", grade: "B" }));
+    const [article, grade, size] = sizes;
+
+    expect(grade).toBeGreaterThan(article);
+    expect(grade).toBeGreaterThan(size);
+    // Still inside the sticker: the three lines' own heights fit the artwork.
+    expect(lineStackHeightIn(cartonSheet({ article: "EVR9", color: "MIX", size: "7/10", grade: "B" }))).toBeLessThanOrEqual(1.84);
   });
 
   it("drops a missing colour or size instead of printing a blank line", () => {
-    const header = cartonLabelHeader({ article: "SK6", color: "", size: "" });
-    expect(header.attributes).toEqual([]);
-  });
-
-  it("prints the carton through the one shared sticker template", () => {
-    const sheet = renderRawMaterialLabelSheetHtml({
-      title: "t",
-      heading: "h",
-      subheading: "s",
-      header: cartonLabelHeader({ article: "SK6", color: "BLACK", size: "7/10" }),
-      ids: [IDENTITY],
-    });
-    expect(sheet.match(/class="rm-label"/g)).toHaveLength(1);
-    expect(sheet).toContain("SK6");
-    expect(sheet).toContain(IDENTITY);
+    expect(cartonLabelLines({ article: "SK6", color: "", size: "" }).map((line) => line.value)).toEqual(["SK6"]);
   });
 });
+
+describe("renderCartonLabelSheetHtml", () => {
+  it("prints one sticker per identity: the symbol, the three lines, and the code underneath", () => {
+    const html = cartonSheet({ article: "SK12", color: "BLACK", size: "7/10" });
+
+    expect(html.match(/class="carton-label"/g)).toHaveLength(1);
+    expect(html).toContain('<div class="carton-qr">');
+    expect(html).toContain("SK12");
+    expect(html).toContain(IDENTITY);
+    // The symbol comes first, then the lines, then the code — reading order as well as layout.
+    expect(html.indexOf('class="carton-qr"')).toBeLessThan(html.indexOf('class="carton-lines"'));
+    expect(html.indexOf('class="carton-lines"')).toBeLessThan(html.indexOf('class="carton-code"'));
+  });
+
+  it("prints a sticker per code, all at the same size, for a whole run", () => {
+    const html = cartonSheet({ article: "SK12", color: "BLACK", size: "7/10" }, [
+      "SK12_BLACK_7/10_000001",
+      "SK12_BLACK_7/10_000002",
+    ]);
+    expect(html.match(/class="carton-label"/g)).toHaveLength(2);
+    expect(new Set(html.match(/class="carton-code" style="font-size:[\d.]+in"/g)).size).toBe(1);
+  });
+
+  it("prints the lines far larger than the code, and inside the sticker", () => {
+    const html = cartonSheet({ article: "SK12", color: "BLACK", size: "7/10" });
+    const sizes = lineSizesIn(html);
+    const codeSizeIn = Number(html.match(/class="carton-code" style="font-size:([\d.]+)in"/)?.[1]);
+
+    expect(sizes).toHaveLength(3);
+    // Three lines sharing the 1.84in of artwork above a ~0.12in code line: well over a third
+    // of an inch each, and never so tall that the three of them overrun the sticker.
+    sizes.forEach((sizeIn) => expect(sizeIn).toBeGreaterThan(0.35));
+    expect(lineStackHeightIn(html)).toBeLessThanOrEqual(1.84);
+    expect(Math.min(...sizes)).toBeGreaterThan(codeSizeIn * 2);
+  });
+
+  it("shrinks the lines rather than overrunning the sticker when a fix carton needs four", () => {
+    const three = cartonSheet({ article: "SK12", color: "BLACK", size: "7/10" });
+    const four = cartonSheet({ article: "DC3", color: "BLACK", size: "7/10", innerColor: "ORANGE" });
+
+    expect(lineSizesIn(four)).toHaveLength(4);
+    expect(Math.max(...lineSizesIn(four))).toBeLessThan(Math.max(...lineSizesIn(three)));
+    expect(lineStackHeightIn(four)).toBeLessThanOrEqual(1.84);
+  });
+
+  it("draws the colour in the Urdu typeface and the article and size in the Latin one", () => {
+    const html = cartonSheet({ article: "SK12", color: "BLACK", size: "7/10" });
+    expect(html.match(/class="carton-value carton-value--urdu"/g)).toHaveLength(1);
+    expect(html.match(/class="carton-value"/g)).toHaveLength(2);
+  });
+});
+
 describe("renderRawMaterialLabelSheetHtml", () => {
   const RM_ID = "RM_6_42_1";
   // Attribute values arrive already formatted for print (e.g. Colour already translated to
