@@ -9,6 +9,7 @@ import type { IpcContext } from "./context";
 import type { StoredProfile } from "../sessionStore";
 import { USER_ROLE } from "@erp/domain";
 import { app } from "electron";
+import { readBuildInfo } from "../buildInfo";
 
 export function registerSessionHandlers(ctx: IpcContext): void {
   const { db, authorizer, sessionStore, paths, dbPath, dataMigration, useCases } = ctx;
@@ -19,6 +20,10 @@ export function registerSessionHandlers(ctx: IpcContext): void {
     dataRoot: paths.dataRoot,
     dataMigration: dataMigration.status,
     appVersion: app.getVersion(),
+    // Which code this is: commit, cleanliness, build time and the migration ceiling it ships.
+    // Version alone could not identify a build — 0.2.0 stood still while the schema moved from
+    // 069 to 076. Nothing secret: a hash, a flag, a timestamp and a number.
+    build: readBuildInfo(),
   }));
 
   ipcMain.handle(IPC.sessionStoreLoad, () => sessionStore.load());

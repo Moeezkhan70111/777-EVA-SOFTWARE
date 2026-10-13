@@ -27,6 +27,7 @@ import {
   clockText,
   formatDuration,
   minuteFromClock,
+  cartonsExpectedFromUppers,
   shiftFromClocks,
   shiftMinutes,
   slotFromClocks,
@@ -238,4 +239,47 @@ test("an article size is read the way every other attribute is: trimmed, spaces 
   assert.equal(upperSizeForArticleSize("1/6"), "1/6", "the upper's own size is already the upper's size");
   assert.equal(upperSizeForArticleSize(""), "");
   assert.equal(upperSizeForArticleSize(null), "");
+});
+
+// ─── Dozens to carton labels ─────────────────────────────────────────────────
+//
+// One rule decides every carton count on a machine program: an upper LINE's plan (migration 076)
+// and a FIX run's plan both go through cartonsExpectedFromUppers. It had no test of its own, and
+// the owner decision of 2026-10-14 turns on exactly this arithmetic: a line planned at 4.5 DOZEN
+// is owed 9 cartons, because what the store issued in whole packets can never add up to 4.5.
+//
+// A carton QR is a permanent identity, so a figure that would have to be guessed at is REFUSED
+// rather than rounded. Null means "send it to QR Generator", never "print your best guess".
+
+test("whole cartons of DOZEN become that many carton labels", () => {
+  assert.equal(cartonsExpectedFromUppers(1, "DOZEN"), 2, "a dozen is two cartons");
+  assert.equal(cartonsExpectedFromUppers(2, "DOZEN"), 4);
+  assert.equal(cartonsExpectedFromUppers(32, "DOZEN"), 64, "a fix run of 32 DOZEN");
+});
+
+test("half a dozen is a whole carton, so a fractional plan that lands on one is owed its labels", () => {
+  assert.equal(cartonsExpectedFromUppers(4.5, "DOZEN"), 9, "the 4.5 DOZEN line the plan rule was written for");
+  assert.equal(cartonsExpectedFromUppers(0.5, "DOZEN"), 1, "half a dozen IS a carton");
+  assert.equal(cartonsExpectedFromUppers(32.5, "DOZEN"), 65);
+});
+
+test("a plan that does not come to whole cartons is refused, never rounded", () => {
+  assert.equal(cartonsExpectedFromUppers(4.25, "DOZEN"), null, "8.5 cartons cannot be labelled");
+  assert.equal(cartonsExpectedFromUppers(0.25, "DOZEN"), null);
+  assert.equal(cartonsExpectedFromUppers(32.1, "DOZEN"), null);
+});
+
+test("nothing is owed when the quantity is not a usable number", () => {
+  assert.equal(cartonsExpectedFromUppers(0, "DOZEN"), null, "nothing planned is nothing owed");
+  assert.equal(cartonsExpectedFromUppers(-4, "DOZEN"), null);
+  assert.equal(cartonsExpectedFromUppers(Number.NaN, "DOZEN"), null);
+  assert.equal(cartonsExpectedFromUppers(Number.POSITIVE_INFINITY, "DOZEN"), null);
+});
+
+test("only DOZEN is counted in cartons, read the way every other attribute is", () => {
+  assert.equal(cartonsExpectedFromUppers(4.5, " dozen "), 9, "trimmed and upper-cased like attributeKey");
+  assert.equal(cartonsExpectedFromUppers(4, "PAIR"), null, "pairs are not cartons");
+  assert.equal(cartonsExpectedFromUppers(4, "PCS"), null);
+  assert.equal(cartonsExpectedFromUppers(4, null), null, "a line with no unit says nothing about cartons");
+  assert.equal(cartonsExpectedFromUppers(4, ""), null);
 });

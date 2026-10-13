@@ -6,13 +6,13 @@
   "author": "T&T Traders",
   "main": "dist/main.js",
   "scripts": {
-    "build": "node -e \"require('node:fs').rmSync('dist',{ recursive: true, force: true })\" && tsc -p tsconfig.json && tsc -p tsconfig.renderer.json --noEmit && node ./scripts/build-renderer.mjs",
+    "build": "node -e \"require('node:fs').rmSync('dist',{ recursive: true, force: true })\" && tsc -p tsconfig.json && tsc -p tsconfig.renderer.json --noEmit && node ./scripts/build-renderer.mjs && node ./scripts/write-build-info.mjs",
     "start": "npm run build && electron .",
     "dev": "node ./scripts/dev.mjs",
     "test": "vitest run",
     "lint": "echo 'no lint configured yet'",
-    "package": "electron-builder --win --config electron-builder.yml",
-    "package:dir": "electron-builder --dir --config electron-builder.yml",
+    "package": "node ./scripts/write-build-info.mjs --strict && electron-builder --win --config electron-builder.yml",
+    "package:dir": "node ./scripts/write-build-info.mjs --strict && electron-builder --dir --config electron-builder.yml",
     "verify:signatures": "node ./scripts/verify-signatures.mjs"
   },
   "dependencies": {

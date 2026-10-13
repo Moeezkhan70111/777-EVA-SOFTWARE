@@ -54,6 +54,20 @@ export { orderBy } from "./database/shared.js";
 export type { MutableTransactionContext } from "./database/shared.js";
 export type { ContractorLedgerAccount, ContractorLedgerReport } from "./database/contractorLedger.js";
 
+/**
+ * The migration number a file name or a recorded version starts with: both
+ * "076_line_carton_labels.up.sql" and "076_line_carton_labels" are 76.
+ *
+ * Numeric, not lexicographic, so the comparison keeps working past 999, and anything that does
+ * not begin with digits counts as 0 rather than throwing — a database may carry a version string
+ * this build has never seen, and that on its own is not a reason to refuse it.
+ */
+const highestMigrationNumber = (names: readonly string[]): number =>
+  names.reduce((highest, name) => {
+    const digits = /^(\d+)/.exec(name.trim());
+    return digits ? Math.max(highest, Number(digits[1])) : highest;
+  }, 0);
+
 const COUNTABLE_TABLES = new Set([
   "qr_master",
   "production_events",
@@ -132,10 +146,81 @@ export class SqliteDatabase
   private bootConnection(): void {
     this.db.exec("PRAGMA journal_mode = WAL;");
     this.db.exec("PRAGMA foreign_keys = ON;");
+    // FIRST, before anything writes. The base schema below is CREATE ... IF NOT EXISTS, which
+    // sounds harmless but is not on a newer database: a later migration may have deliberately
+    // dropped an index or rebuilt a table this build's schema file still describes, and
+    // re-running it would put them back. Nothing may touch a database this build cannot support.
+    this.ensureDatabaseIsNotNewerThanThisBuild();
     this.db.exec(this.readSchema());
     this.runMigrations();
     this.ensureSchemaCompatibility();
     this.ensureDefaultRoles();
+  }
+
+  /**
+   * The newest migration this build is able to apply: the highest number among the `.up.sql`
+   * files it actually ships. Read from the folder rather than a constant, so it can never
+   * disagree with the artifact — electron-builder copies `migrations/sqlite` into
+   * resources/erp-resources, and runtimePaths points `migrationsDir` at it.
+   */
+  private shippedMigrationCeiling(): number {
+    if (!fs.existsSync(this.migrationsDir)) return 0;
+    return highestMigrationNumber(
+      fs.readdirSync(this.migrationsDir).filter((file) => file.endsWith(".up.sql"))
+    );
+  }
+
+  /**
+   * The newest migration recorded as applied to this database. 0 for a fresh one.
+   *
+   * The table is absent on a brand-new file and on a database old enough to predate versioned
+   * migrations — runMigrations creates it, and this runs before that. Either way there is no
+   * recorded migration, so there is nothing this build could be behind.
+   */
+  private appliedMigrationCeiling(): number {
+    const tracked = this.db
+      .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'schema_migrations' LIMIT 1")
+      .get();
+    if (!tracked) return 0;
+    const rows = this.db.prepare("SELECT version FROM schema_migrations").all() as Array<{ version: string }>;
+    return highestMigrationNumber(rows.map((row) => row.version));
+  }
+
+  /**
+   * Refuses to open a database that has been migrated further than this build understands.
+   *
+   * The database lives in %LOCALAPPDATA%\777-erp, outside the installation, so it survives
+   * install, upgrade and uninstall. Install an older build over a newer one and runMigrations
+   * finds nothing pending — it only applies files it HAS — so without this check the older code
+   * would read and write a schema it was never written for: tables it does not know about,
+   * columns it does not expect, and CHECK constraints it cannot satisfy. Silent, and against
+   * live inventory and accounting data.
+   *
+   * It refuses only. It never runs a `.down.sql` — electron-builder deliberately ships only
+   * `*.up.sql`, because the application has no downgrade path — and it never deletes anything.
+   * Going back means installing the build that matches, or restoring a backup from that schema.
+   *
+   * Thrown from the constructor, so apps/desktop/src/main.ts reports it through
+   * reportFatalStartupError (stage "database"): one dialog naming startup.log, then exit.
+   */
+  private ensureDatabaseIsNotNewerThanThisBuild(): void {
+    const supported = this.shippedMigrationCeiling();
+    const applied = this.appliedMigrationCeiling();
+    if (applied <= supported) return;
+
+    throw new Error(
+      [
+        "This database was created by a newer version of 777 ERP than the one installed.",
+        "",
+        `  Database schema level : ${applied}`,
+        `  This version supports : ${supported}`,
+        `  Database              : ${this.dbPath}`,
+        "",
+        "Nothing has been changed. Install the newer version of 777 ERP to open this database.",
+        "The database cannot be moved back to an older version — if you must use this older",
+        "version, restore a backup taken before the upgrade, which will lose any work done since.",
+      ].join("\n")
+    );
   }
 
   /**
