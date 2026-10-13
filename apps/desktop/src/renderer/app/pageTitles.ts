@@ -28,6 +28,8 @@ export const PAGE_TITLES: Record<AppRoute, string> = {
   "store-in-stock": "Stock",
   "store-in-receipts": "Receipts",
   "store-in-setup": "Setup",
+  "store-in-daily-report": "Daily Report Store In",
+  "store-out-daily-report": "Daily Report Store Out",
   "munshi-home": "Munshi",
   "munshi-stock": "Raw Material Stock",
   "store-out-operator": "Move Out Operator",

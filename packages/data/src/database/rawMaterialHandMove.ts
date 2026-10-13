@@ -27,7 +27,7 @@
 //
 // These methods are merged onto SqliteDatabase (see sqliteDatabase.ts, "Feature modules").
 
-import { convertOnLadder, unitsForCount, type UnitLadderStep } from "@erp/domain";
+import { STOCK_EVENT_NOTE, convertOnLadder, unitsForCount, type UnitLadderStep } from "@erp/domain";
 import type { SqliteDatabase } from "../sqliteDatabase.js";
 import type { HandMoveDirection, RawMaterialHandMoveInput, RawMaterialHandMoveOptions, RawMaterialHandMoveResult } from "./types.js";
 
@@ -140,7 +140,7 @@ export const rawMaterialHandMoveMethods = {
     const typedNote = String(input.note ?? "").trim();
     // What the operator typed is kept word for word beside what it came to, so the ledger can
     // be read back without redoing the arithmetic.
-    const what = direction === "IN" ? "Manual move in" : "Manual move out";
+    const what = direction === "IN" ? STOCK_EVENT_NOTE.MANUAL_IN : STOCK_EVENT_NOTE.MANUAL_OUT;
     const note = [`${what} — ${round(typed)} ${typedUnit}`, typedNote].filter(Boolean).join(" · ");
 
     this.db.exec("BEGIN IMMEDIATE TRANSACTION");

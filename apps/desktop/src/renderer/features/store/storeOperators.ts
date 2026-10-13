@@ -49,7 +49,7 @@ export interface StoreJobPage {
  * Each is also a route, so the sidebar can point straight at a tab and a tab can be come back
  * to. The scan station is not among them: it is the pane down the right of every tab.
  */
-export type StoreInTab = "material" | "labels" | "stock" | "receipts" | "setup";
+export type StoreInTab = "material" | "labels" | "stock" | "receipts" | "setup" | "report";
 
 export interface StoreInSection extends StoreJobPage {
   id: StoreInTab;
@@ -61,6 +61,7 @@ export const STORE_IN_TABS: readonly StoreInSection[] = [
   { id: "stock", route: "store-in-stock", title: copy.store.stockTitle, line: copy.store.stockLine },
   { id: "receipts", route: "store-in-receipts", title: copy.store.receiptsTitle, line: copy.store.receiptsLine },
   { id: "setup", route: "store-in-setup", title: copy.store.setupTitle, line: copy.store.setupLine },
+  { id: "report", route: "store-in-daily-report", title: copy.storeDailyReport.inTitle, line: copy.storeDailyReport.inLine },
 ];
 
 /** The route that opens one tab of the Store In page. */
@@ -80,10 +81,15 @@ export const MOVE_IN_PAGES: readonly StoreJobPage[] = [
   { id: "scanner", route: "store-in-scanner", title: copy.store.scannerTitle, line: copy.store.scannerLine },
 ];
 
-/** Each job's pages. Move Out's steps are not built yet, so it has none. */
+/** The Move Out job's rows in the sidebar: everything else on Move Out is one page. */
+export const MOVE_OUT_PAGES: readonly StoreJobPage[] = [
+  { id: "report", route: "store-out-daily-report", title: copy.storeDailyReport.outTitle, line: copy.storeDailyReport.outLine },
+];
+
+/** Each job's pages. */
 export const STORE_JOB_PAGES: Record<StoreDirection, readonly StoreJobPage[]> = {
   in: MOVE_IN_PAGES,
-  out: [],
+  out: MOVE_OUT_PAGES,
 };
 
 /** Which job a screen belongs to — its home or one of its pages — or null for any other screen. */

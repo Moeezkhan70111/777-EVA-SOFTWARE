@@ -1,6 +1,7 @@
 import {
   InvalidQrError,
   RAW_MATERIAL_QR_STATUS,
+  STOCK_EVENT_NOTE,
   isValidRawMaterialQrId,
   parseRawMaterialQrId,
   type MachineProgramCartonTarget,
@@ -308,7 +309,7 @@ export class ReceiveRawMaterialScanUseCase {
             quantity: unit.packingQuantity,
             unitId: unit.packingUnitId,
             direction: "IN",
-            note: `Raw Material Input ${raw}`,
+            note: `${STOCK_EVENT_NOTE.SCAN_IN} ${raw}`,
             actor: input.actor ?? null,
             nowIso: tx.nowIso,
           },

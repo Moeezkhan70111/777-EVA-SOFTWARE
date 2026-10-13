@@ -39,6 +39,8 @@ import { ScanInIcon, StockIcon } from "./StoreIcons";
 interface StoreOutPageProps {
   token: string;
   onBack: () => void;
+  /** Opens Daily Report Store Out. */
+  onOpenReport: () => void;
   /**
    * A machine program to open on arrival, from a notification. The id is the program's stored
    * identifier — never its printed number — and is still resolved and judged in the main process.
@@ -51,6 +53,7 @@ interface StoreOutPageProps {
 export const StoreOutPage: React.FC<StoreOutPageProps> = ({
   token,
   onBack,
+  onOpenReport,
   initialProgramId,
   onInitialProgramConsumed,
 }) => {
@@ -92,7 +95,10 @@ export const StoreOutPage: React.FC<StoreOutPageProps> = ({
           <h1 className="si-title">{copy.moveOut.title}</h1>
           <p className="si-sub">{copy.moveOut.line}</p>
         </div>
-        <button type="button" className="mo-back" onClick={onBack}>
+        <button type="button" className="mo-back" onClick={onOpenReport}>
+          {copy.storeDailyReport.openReport}
+        </button>
+        <button type="button" className="mo-back mo-back--next" onClick={onBack}>
           {copy.store.changeJob}
         </button>
       </header>
