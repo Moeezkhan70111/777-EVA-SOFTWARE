@@ -1187,6 +1187,75 @@ export const copy = {
       `Only ${onHand} ${unit} is in the store, and that comes to ${asked} ${unit}.`,
   },
 
+  // DAILY REPORT — everything that came into the store on one day, or went out of it.
+  storeDailyReport: {
+    inTitle: "Daily Report Store In",
+    inLine: "Everything that came into the store on a day",
+    outTitle: "Daily Report Store Out",
+    outLine: "Everything that went out of the store on a day",
+    openReport: "Daily Report",
+    backToMoveOut: "Move Out",
+
+    dayLabel: "Day",
+    previousDay: "Previous day",
+    nextDay: "Next day",
+    today: "Today",
+
+    loading: "Loading the day's report…",
+    loadFailed: "Could not load the daily report",
+    emptyIn: "Nothing came into the store on this day",
+    emptyOut: "Nothing went out of the store on this day",
+    emptyHintIn: "Scanned packets, deliveries typed by hand and received cartons appear here.",
+    emptyHintOut: "Packets scanned out, stock typed out by hand, Dana and cartons to the gate appear here.",
+
+    /** What each kind of movement is called in the summary and in each row. */
+    sources: {
+      SCAN: "Scanned packets",
+      MANUAL: "By hand",
+      DANA: "Dana for programs",
+      OPENING: "Opening stock",
+      CORRECTION: "Stock corrections",
+      CARTON: "Cartons",
+      GATE_RETURN: "Back from gate",
+      OTHER: "Other",
+    },
+    sourceTags: {
+      SCAN: "Scan",
+      MANUAL: "Manual",
+      DANA: "Dana",
+      OPENING: "Opening",
+      CORRECTION: "Correction",
+      CARTON: "Carton",
+      GATE_RETURN: "From gate",
+      OTHER: "Other",
+    },
+    summaryLabel: "The day by kind of movement",
+    movements: "Movements",
+
+    materialsTitle: "Raw material",
+    cartonsTitle: "Cartons",
+    movementsTitle: "Every movement",
+    material: "Material",
+    packets: "Packets",
+    typed: "Typed",
+    quantity: "Quantity",
+    time: "Time",
+    kind: "Kind",
+    what: "What",
+    details: "Details",
+    by: "By",
+    article: "Article",
+    colour: "Colour",
+    size: "Size",
+    cartons: "Cartons",
+
+    from: (name: string) => `From ${name}`,
+    to: (section: string) => `To ${section}`,
+    forProgram: (code: string) => `For ${code}`,
+    showing: (shown: number, total: number) => `Showing the latest ${shown} of ${total} movements.`,
+    showMore: "Show more",
+  },
+
   // STORE OUT against a MACHINE PROGRAM — the program the floor is waiting for, and the batch
   // the storekeeper fetches for it. Every figure shown is the data layer's.
   programOut: {

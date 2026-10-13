@@ -3,6 +3,7 @@ import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { StoreInPage } from "./StoreInPage";
+import type { StoreInTab } from "./storeOperators";
 import { NotificationsProvider } from "../../state/NotificationsContext";
 import type { MachineProgramCartonPacket, MachineProgramReconciliation, MachineProgramRecord } from "../../types/desktopApi";
 
@@ -146,6 +147,10 @@ function installApi(
     })),
     machineProgramStoreOutSaveBatch: vi.fn(),
     listMachineProgramDanaOptions: vi.fn(async () => ({ accepted: true, rows: [] })),
+    getStoreDailyReport: vi.fn(async ({ date }: { date: string }) => ({
+      accepted: true,
+      report: { date, direction: "IN", entries: [], entryCount: 0, summary: { movements: 0, packets: 0, cartons: 0, bySource: [], byMaterial: [], byProduct: [] } },
+    })),
   };
   Object.defineProperty(window, "desktop", {
     value: { versions: { node: "22", chrome: "128", electron: "43" }, api },
@@ -154,15 +159,15 @@ function installApi(
   return api;
 }
 
-const renderPage = (onNavigate: (route: string) => void = () => undefined) =>
+const renderPage = (onNavigate: (route: string) => void = () => undefined, tab: StoreInTab = "stock") =>
   render(
     <NotificationsProvider>
       <StoreInPage
-        tab="stock"
+        tab={tab}
         token="t-1"
         username="aslam"
         isAdmin={false}
-        access={{ stock: true, labels: true, settings: true }}
+        access={{ stock: true, labels: true, settings: true, report: true }}
         onNavigate={onNavigate}
       />
     </NotificationsProvider>
@@ -176,6 +181,18 @@ const openProgram = async (lookup: string) => {
 afterEach(() => {
   vi.restoreAllMocks();
   printWindow.mockClear();
+});
+
+describe("Store In — Daily Report tab", () => {
+  it("shows the day's Store In report on the left while the scan station stays on the right", async () => {
+    const api = installApi();
+    renderPage(undefined, "report");
+
+    expect(await screen.findByText("Nothing came into the store on this day")).toBeInTheDocument();
+    expect(api.getStoreDailyReport).toHaveBeenCalledWith(expect.objectContaining({ direction: "IN", token: "t-1" }));
+    expect(screen.getByRole("tab", { name: "Daily Report Store In" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByTestId("rm-input-station")).toBeInTheDocument();
+  });
 });
 
 describe("Store In — machine program lookup", () => {

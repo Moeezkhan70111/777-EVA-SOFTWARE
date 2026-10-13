@@ -1,0 +1,1 @@
+DROP INDEX IF EXISTS idx_inventory_stock_events_created_at;

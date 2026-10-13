@@ -1,4 +1,4 @@
-import type { ContractorLedger, ContractorRole } from "@erp/domain";
+import type { ContractorLedger, ContractorRole, StoreDailyReport, StoreDirection } from "@erp/domain";
 
 export type SortOrder = "ASC" | "DESC";
 
@@ -1874,6 +1874,11 @@ export interface DesktopApi {
     accountId: string,
     query: { fromDate: string; toDate: string }
   ): Promise<{ accepted: boolean; reason?: string; ledger?: ContractorLedgerReport }>;
+  /**
+   * One business day of Store In or Store Out: every packet scanned, quantity typed and carton,
+   * with the day's totals. The shapes and the counting are @erp/domain storeDailyReport.ts.
+   */
+  getStoreDailyReport(query: { date: string; direction: StoreDirection; token?: string }): Promise<{ accepted: boolean; reason?: string; report?: StoreDailyReport }>;
 }
 
 // ─── Contractor Ledger ───────────────────────────────────────────────────────

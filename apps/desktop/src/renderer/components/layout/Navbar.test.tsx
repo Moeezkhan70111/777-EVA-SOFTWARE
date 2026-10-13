@@ -86,7 +86,9 @@ describe("Navbar sidebar", () => {
       const { onSelect, rail } = renderNavbar(storeOp, "store-in-operator", "in");
       // Raw Material QR needs the label permission and Setup the setup one; this operator has neither.
       // The Store In page's own tabs, in tab order, then the full-screen scan station.
-      expect(rowNames(rail)).toEqual(["Select Job", "Move In", "Add New Material", "Stock", "Receipts", "Raw Material Move In"]);
+      expect(rowNames(rail)).toEqual([
+        "Select Job", "Move In", "Add New Material", "Stock", "Receipts", "Daily Report Store In", "Raw Material Move In",
+      ]);
       expect(within(rail).getByRole("button", { name: "Move In" })).toHaveAttribute("aria-current", "page");
 
       fireEvent.click(within(rail).getByRole("button", { name: "Raw Material Move In" }));
@@ -99,9 +101,12 @@ describe("Navbar sidebar", () => {
       expect(within(rail).getByRole("button", { name: "Move In" })).not.toHaveAttribute("aria-current");
     });
 
-    it("lists Move Out on its own, as its steps are not built yet", () => {
-      const { rail } = renderNavbar(storeOp, "store-out-operator", "out");
-      expect(rowNames(rail)).toEqual(["Select Job", "Move Out"]);
+    it("lists Move Out with its one page of its own, the daily report", () => {
+      const { onSelect, rail } = renderNavbar(storeOp, "store-out-operator", "out");
+      expect(rowNames(rail)).toEqual(["Select Job", "Move Out", "Daily Report Store Out"]);
+
+      fireEvent.click(within(rail).getByRole("button", { name: "Daily Report Store Out" }));
+      expect(onSelect).toHaveBeenCalledWith("store-out-daily-report");
     });
   });
 

@@ -374,5 +374,6 @@ contextBridge.exposeInMainWorld("desktop", {
     listSupplierBalances: (query?: Record<string, unknown>) => ipcRenderer.invoke(IPC.listSupplierBalances, query),
     listContractorLedgerAccounts: () => ipcRenderer.invoke(IPC.listContractorLedgerAccounts),
     getContractorLedger: (accountId: string, query: { fromDate: string; toDate: string }) => ipcRenderer.invoke(IPC.getContractorLedger, accountId, query),
+    getStoreDailyReport: (query: { date: string; direction: "IN" | "OUT"; token?: string }) => ipcRenderer.invoke(IPC.getStoreDailyReport, query),
   },
 });

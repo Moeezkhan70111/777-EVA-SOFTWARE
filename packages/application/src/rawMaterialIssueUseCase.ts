@@ -1,6 +1,7 @@
 import {
   InvalidQrError,
   RAW_MATERIAL_QR_STATUS,
+  STOCK_EVENT_NOTE,
   cartonsExpectedFromUppers,
   isValidRawMaterialQrId,
   parseRawMaterialQrId,
@@ -304,7 +305,7 @@ export const issueRawMaterialPacket = async (
       quantity: unit.packingQuantity,
       unitId: unit.packingUnitId,
       direction: "OUT",
-      note: `Raw Material Output ${qrId}`,
+      note: `${STOCK_EVENT_NOTE.SCAN_OUT} ${qrId}`,
       actor: input.actor ?? null,
       nowIso: tx.nowIso,
     },

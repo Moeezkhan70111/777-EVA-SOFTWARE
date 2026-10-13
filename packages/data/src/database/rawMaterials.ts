@@ -7,7 +7,7 @@ import type { SqliteDatabase } from "../sqliteDatabase.js";
 import { createHash } from "node:crypto";
 import { EFFECTIVE_PACK_NAME_SQL, normalizeInventoryText, normalizePackName } from "./shared.js";
 import type { DatabaseSync } from "node:sqlite";
-import { fromPaisaOrNull, packetsInStore as countPacketsInStore, toPaisaOrNull } from "@erp/domain";
+import { STOCK_EVENT_NOTE, fromPaisaOrNull, packetsInStore as countPacketsInStore, toPaisaOrNull } from "@erp/domain";
 import type { InventoryStockEventRow, RawMaterialHop, RawMaterialMovementConfigRow, RawMaterialSetupTemplate, WorkSection } from "./types.js";
 
 function readWorkSectionByName(db: DatabaseSync, name: string): WorkSection | undefined {
@@ -489,7 +489,7 @@ export const rawMaterialsMethods = {
     if (input.stockQuantity != null && unitId) {
       this.db.prepare("INSERT INTO inventory_stock_balances (item_id, quantity_on_hand, unit_id, updated_at) VALUES (?, ?, ?, ?)").run(id, input.stockQuantity, unitId, now);
       this.db.prepare("INSERT INTO inventory_stock_events (id, item_id, event_type, quantity, unit_id, note, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
-        .run(crypto.randomUUID(), id, "RECEIVE", input.stockQuantity, unitId, "Initial stock", input.createdBy ?? null, now);
+        .run(crypto.randomUUID(), id, "RECEIVE", input.stockQuantity, unitId, STOCK_EVENT_NOTE.OPENING, input.createdBy ?? null, now);
     }
     // The pack comes WITH the material, because it is a fact about the kind of thing it is:
     // every colour of DANA — EVA arrives in the same bag. Applied inside the caller's

@@ -20,6 +20,7 @@ import { ReturnHistoryPage } from "../pages/ReturnHistoryPage";
 import { StoreHomePage } from "../features/store/StoreHomePage";
 import { StoreInPage } from "../features/store/StoreInPage";
 import { StoreOutPage } from "../features/store/StoreOutPage";
+import { StoreOutReportPage } from "../features/store/dailyReport/StoreOutReportPage";
 import { storeInTabOfRoute } from "../features/store/storeOperators";
 import { StoreWorkspacePage } from "../features/store/StoreWorkspacePage";
 import { StoreScanningPage } from "../pages/StoreScanningPage";
@@ -90,7 +91,9 @@ const FULLSCREEN_ROUTES: ReadonlySet<AppRoute> = new Set<AppRoute>([
   "store-in-stock",
   "store-in-receipts",
   "store-in-setup",
+  "store-in-daily-report",
   "store-out-operator",
+  "store-out-daily-report",
   "munshi-home",
   "munshi-stock",
   "store-scanning",
@@ -359,6 +362,7 @@ export const App = () => {
       case "store-in-stock":
       case "store-in-receipts":
       case "store-in-setup":
+      case "store-in-daily-report":
         return (
           <StoreInPage
             tab={storeInTabOfRoute(route)}
@@ -370,6 +374,7 @@ export const App = () => {
               labels: hasPermission(session, PERMISSION.RAW_MATERIAL_QR_GENERATOR),
               settings:
                 hasPermission(session, PERMISSION.SETTINGS) || hasPermission(session, PERMISSION.RAW_MATERIAL_SETUP),
+              report: hasPermission(session, PERMISSION.STORE_SCANNING),
             }}
             onNavigate={setRoute}
           />
@@ -387,10 +392,13 @@ export const App = () => {
           <StoreOutPage
             token={sessionToken ?? ""}
             onBack={() => setRoute("store-home")}
+            onOpenReport={() => setRoute("store-out-daily-report")}
             initialProgramId={storeOutProgramId}
             onInitialProgramConsumed={() => setStoreOutProgramId(undefined)}
           />
         );
+      case "store-out-daily-report":
+        return <StoreOutReportPage token={sessionToken ?? ""} onBack={() => setRoute("store-out-operator")} />;
       // The Munshi's station, and the raw material Stock section opened from it. Stock is the
       // store's own workspace section — the same component, the same data, the same checks —
       // with the Munshi's way back instead of the Move In operator's.

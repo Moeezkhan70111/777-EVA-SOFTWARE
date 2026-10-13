@@ -44,6 +44,7 @@ import { saleReturnsMethods, type SaleReturnsMethods } from "./database/saleRetu
 import { cashMethods, type CashMethods } from "./database/cash.js";
 import { purchasesMethods, type PurchasesMethods } from "./database/purchases.js";
 import { contractorLedgerMethods, type ContractorLedgerMethods } from "./database/contractorLedger.js";
+import { storeDailyReportMethods, type StoreDailyReportMethods } from "./database/storeDailyReport.js";
 import type { BackupRecord, HealthSnapshot, MoneyDriftSummary, MoneyDriftViolation, SqliteDatabaseOptions } from "./database/types.js";
 
 // The data layer's public record shapes and constants live in ./database/types.ts and are
@@ -803,7 +804,8 @@ export interface SqliteDatabase
     SaleReturnsMethods,
     CashMethods,
     PurchasesMethods,
-    ContractorLedgerMethods {}
+    ContractorLedgerMethods,
+    StoreDailyReportMethods {}
 
 Object.assign(
   SqliteDatabase.prototype,
@@ -836,5 +838,6 @@ Object.assign(
   saleReturnsMethods,
   cashMethods,
   purchasesMethods,
-  contractorLedgerMethods
+  contractorLedgerMethods,
+  storeDailyReportMethods
 );

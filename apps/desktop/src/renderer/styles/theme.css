@@ -8229,3 +8229,42 @@ tr.has-error .gp-qty-stepper input { color: var(--err); }
   .contractor-ledger-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .contractor-ledger-detail-row > td { padding-left: 12px; }
 }
+
+/* ── STORE DAILY REPORT ─────────────────────────────────────────────────────
+   One day of Store In or Store Out: the day picker, a figure per kind of movement, the totals
+   and every movement. Store In shows it as a tab beside the scan station, Store Out as a page. */
+.sdr { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.sdr-day { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.sdr-day .btn { min-height: 44px; }
+.sdr-day-step { min-width: 44px; padding: 0 12px; font-size: 1.1rem; }
+.sdr-day-input { width: auto; min-height: 44px; }
+.sdr-day-name { margin-left: auto; font-size: .92rem; font-weight: 800; color: var(--foreground); }
+
+.sdr-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; margin: 0; padding: 0; list-style: none; }
+.sdr-tile {
+  display: flex; flex-direction: column; gap: 4px; padding: 12px 14px;
+  background: var(--surface); border: 1px solid var(--line-soft); border-radius: var(--radius-xl);
+}
+.sdr-tile--total { border-color: var(--primary); background: var(--primary-soft); }
+.sdr-tile-label { font-size: .68rem; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; color: var(--text-3); }
+.sdr-tile-value { font-size: 1.5rem; font-weight: 900; line-height: 1.1; font-variant-numeric: tabular-nums; color: var(--foreground); }
+
+.sdr-section { display: flex; flex-direction: column; gap: 8px; }
+.sdr-section-title { margin: 0; font-size: .98rem; font-weight: 800; color: var(--foreground); }
+.sdr-table-wrap { overflow-x: auto; }
+.sdr .data-table th, .sdr .data-table td { white-space: nowrap; }
+.sdr .data-table .sdr-details { white-space: normal; min-width: 220px; color: var(--text-3); }
+.sdr-num { text-align: right; font-variant-numeric: tabular-nums; }
+.sdr-strong { font-weight: 700; color: var(--foreground); }
+.sdr-time { font-variant-numeric: tabular-nums; }
+.sdr-more { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: .8rem; color: var(--text-3); }
+
+/* Daily Report Store Out, as its own page: the head stays put and the report scrolls. */
+.sdr-page-body { flex: 1; min-height: 0; overflow-y: auto; padding-right: 4px; }
+/* Store Out's head carries two buttons; only the first is pushed to the right. */
+.mo-back--next { margin-left: 0; }
+
+@media (max-width: 640px) {
+  .sdr-day-name { margin-left: 0; width: 100%; }
+  .sdr-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}

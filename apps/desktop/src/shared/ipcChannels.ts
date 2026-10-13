@@ -340,6 +340,7 @@ export const IPC = {
   listSupplierBalances: "erp:list-supplier-balances",
   listContractorLedgerAccounts: "erp:list-contractor-ledger-accounts",
   getContractorLedger: "erp:get-contractor-ledger",
+  getStoreDailyReport: "erp:get-store-daily-report",
 } as const;
 
 export type IpcChannel = (typeof IPC)[keyof typeof IPC];

@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { STORE_DIRECTION } from "@erp/domain";
 import type { AppRoute } from "../../app/routes";
 import { copy } from "../../config/copy";
 import { StateView } from "../../components/shared/StateView";
@@ -8,6 +9,7 @@ import { RawMaterialSection } from "../rawMaterial/RawMaterialSection";
 import { useRawMaterialLookups } from "../rawMaterial/useRawMaterialLookups";
 import { RawMaterialInputPage } from "../../pages/RawMaterialInputPage";
 import { HandMovePanel } from "./HandMovePanel";
+import { StoreDailyReport } from "./dailyReport/StoreDailyReport";
 import { ProgramLookupField } from "./programOut/ProgramLookupField";
 import { ProgramOutPanel } from "./programOut/ProgramOutPanel";
 import { useProgramOut } from "./programOut/useProgramOut";
@@ -45,6 +47,8 @@ export interface StoreInAccess {
   labels: boolean;
   /** Categories, units, conversions and destinations. */
   settings: boolean;
+  /** The Daily Report — what came into the store on a day. */
+  report: boolean;
 }
 
 interface StoreInPageProps {
@@ -59,6 +63,7 @@ interface StoreInPageProps {
 const allows = (tab: StoreInTab, access: StoreInAccess): boolean => {
   if (tab === "setup") return access.settings;
   if (tab === "labels") return access.labels;
+  if (tab === "report") return access.report;
   return access.stock;
 };
 
@@ -126,6 +131,8 @@ export const StoreInPage: React.FC<StoreInPageProps> = ({ tab, token, username, 
             <StateView kind="empty" title={copy.store.noAccessTitle} hint={copy.store.noAccessHint} />
           ) : active === "material" ? (
             <NewMaterialForm lookups={lookups} formKey={formKey} onDone={() => setFormKey((key) => key + 1)} />
+          ) : active === "report" ? (
+            <StoreDailyReport direction={STORE_DIRECTION.IN} token={token} />
           ) : (
             <RawMaterialSection
               tab={active}

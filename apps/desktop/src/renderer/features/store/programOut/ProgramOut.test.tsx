@@ -335,7 +335,7 @@ function installApi(
 const renderPage = (props: { initialProgramId?: string } = {}) =>
   render(
     <NotificationsProvider>
-      <StoreOutPage token="t-1" onBack={() => undefined} {...props} />
+      <StoreOutPage token="t-1" onBack={() => undefined} onOpenReport={() => undefined} {...props} />
     </NotificationsProvider>
   );
 

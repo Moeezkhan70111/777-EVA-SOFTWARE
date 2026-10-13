@@ -122,7 +122,10 @@ export const routePermission: Partial<Record<AppRoute, PermissionCode>> = {
   "store-in-scanner": PERMISSION.STORE_SCANNING,
   "store-in-stock": PERMISSION.STOCK,
   "store-in-receipts": PERMISSION.STOCK,
+  // The day's movements are read by whoever works the store, the same as the stations.
+  "store-in-daily-report": PERMISSION.STORE_SCANNING,
   "store-out-operator": PERMISSION.STORE_SCANNING,
+  "store-out-daily-report": PERMISSION.STORE_SCANNING,
 
   // The Munshi's station. Only the station screen itself is the Munshi's permission; the
   // stock section keeps the Stock permission its page has always required.

@@ -6,7 +6,10 @@
 import { ipcMain } from "electron";
 import { IPC } from "../../shared/ipcChannels";
 import type { IpcContext } from "./context";
-import { ACCESS_STATUS, PERMISSION, RECONCILIATION_LOSS_PARTY, USER_ROLE, asOptionalNumber, asOptionalString, asString, asStringArray, isRecord, optionalOneOf } from "@erp/domain";
+import { rejection } from "../authorize";
+import { ACCESS_STATUS, PERMISSION, RECONCILIATION_LOSS_PARTY, STORE_DIRECTION, USER_ROLE, asOptionalNumber, asOptionalString, asString, asStringArray, isRecord, optionalOneOf } from "@erp/domain";
+
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 export function registerStoreHandlers(ctx: IpcContext): void {
   const { db, logger, authorizer, scanContext, deviceId, useCases } = ctx;
@@ -734,5 +737,23 @@ export function registerStoreHandlers(ctx: IpcContext): void {
     return db.getStoreMoveOutSessionSummary(id, {
       recentLimit: Number.isFinite(opts?.recentLimit) ? Number(opts?.recentLimit) : undefined,
     });
+  });
+
+  // ─── Daily Report ─────────────────────────────────────────────────────────────
+  // One business day of Store In or Store Out: every packet scanned, every quantity typed, every
+  // carton. Read-only, and open to whoever works the store — the same permission as the station.
+
+  ipcMain.handle(IPC.getStoreDailyReport, (event, query?: unknown) => {
+    try {
+      const input = isRecord(query) ? query : {};
+      authorizer.requirePermission(event, PERMISSION.STORE_SCANNING, input.token);
+      const date = typeof input.date === "string" && ISO_DATE.test(input.date) ? input.date : null;
+      const direction = optionalOneOf(input.direction, Object.values(STORE_DIRECTION));
+      if (!date || !direction) return { accepted: false, reason: "Choose a valid date." };
+      const report = db.getStoreDailyReport(date, direction);
+      return report ? { accepted: true, report } : { accepted: false, reason: "Choose a valid date." };
+    } catch (error) {
+      return rejection(error, "Could not load the daily report");
+    }
   });
 }
