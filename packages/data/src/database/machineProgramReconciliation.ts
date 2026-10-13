@@ -14,6 +14,7 @@
 
 import type { SqliteDatabase } from "../sqliteDatabase.js";
 import {
+  CARTON_GRADE,
   MACHINE_PROGRAM_CLOSE_OUTCOME,
   MACHINE_PROGRAM_STATUS,
   NOTIFICATION_KIND,
@@ -54,6 +55,30 @@ export interface ReconciliationLine {
   saved: (ReconciliationEntry & { wastagePartyName: string | null; lostPartyName: string | null }) | null;
 }
 
+/**
+ * One FIX run of a program (EVR FIX: two soles, no upper), as the reconciliation reads it.
+ *
+ * Its cartons are owed by its PLAN (32 DOZEN is 64), and back as its printed labels are stored in.
+ * There is no upper behind a missing fix carton, so nothing is claimed for it: it comes back as
+ * itself or as a B carton (Reconciliation), and until it does the program cannot close.
+ */
+export interface ReconciliationFixRun {
+  runId: string;
+  article: string;
+  size: string;
+  outerSoleColour: string;
+  innerSoleColour: string;
+  /** Null when the plan is not whole cartons of DOZEN — the program cannot be closed here then. */
+  cartonsDue: number | null;
+  cartonsBack: number;
+  cartonNote: string | null;
+  /** Printed labels not back — the most that can be turned into B cartons (migration 074). */
+  convertible: number;
+  /** B carton labels printed for this run, and how many of them are back. */
+  bCartons: number;
+  bBack: number;
+}
+
 export interface MachineProgramClosure {
   outcome: MachineProgramCloseOutcome;
   cartonsDue: number;
@@ -70,11 +95,63 @@ export interface MachineProgramReconciliation {
   machineContractor: ReconciliationParty | null;
   packingContractor: ReconciliationParty | null;
   lines: ReconciliationLine[];
+  /** The program's FIX runs. Counted in cartonsDue/cartonsBack beside the upper lines. */
+  fixRuns: ReconciliationFixRun[];
+  /** Every carton due and back — upper lines AND fix runs. */
   cartonsDue: number;
   cartonsBack: number;
+  /** Fix cartons that have not come back. While any are out, the program cannot close. */
+  fixCartonsShort: number;
   /** Why the program cannot be closed here at all, or null when it can. */
   blockedReason: string | null;
 }
+
+/** A fix run's cartons as the reconciliation counts them, from the run and its printed labels. */
+const fixRunOf = (
+  run: {
+    runId: string; article: string; size: string; outerSoleColour: string; innerSoleColour: string;
+    cartonsPlanned: number | null; cartonNote: string | null;
+    labels: Array<{ receivedInRun: number; cartonCount: number; grade: string | null }>;
+  },
+  convertible: number
+): ReconciliationFixRun => {
+  const bLabels = run.labels.filter((label) => label.grade === CARTON_GRADE.B);
+  return {
+    runId: run.runId,
+    article: run.article,
+    size: run.size,
+    outerSoleColour: run.outerSoleColour,
+    innerSoleColour: run.innerSoleColour,
+    cartonsDue: run.cartonsPlanned,
+    // Back counts B cartons too: a B carton IS one of the run's cartons, labelled again as MIX.
+    cartonsBack: run.labels.reduce((total, label) => total + label.receivedInRun, 0),
+    cartonNote: run.cartonNote,
+    convertible,
+    bCartons: bLabels.reduce((total, label) => total + label.cartonCount, 0),
+    bBack: bLabels.reduce((total, label) => total + label.receivedInRun, 0),
+  };
+};
+
+/** Why the program cannot be closed here, or null. */
+const closeBlockedReason = (
+  program: MachineProgramRecord,
+  lines: ReconciliationLine[],
+  fixRuns: ReconciliationFixRun[]
+): string | null => {
+  if (program.status === MACHINE_PROGRAM_STATUS.CANCELLED) return `${program.code} has been deleted, so it cannot be completed.`;
+  const notWhole = lines.find((line) => line.cartonsDue == null);
+  if (notWhole) return `${notWhole.upperName} is not counted in whole cartons of DOZEN, so its cartons cannot be reconciled here.`;
+  const fixNotWhole = fixRuns.find((run) => run.cartonsDue == null);
+  if (fixNotWhole) return fixNotWhole.cartonNote ?? `${fixNotWhole.article} ${fixNotWhole.size} is not planned in whole cartons, so its cartons cannot be reconciled here.`;
+  // EVR FIX closes only when EVERY carton is back (owner, 2026-10-12). A missing fix carton has no
+  // upper to account for, so there is nothing to reconcile it against: it comes back as itself, or
+  // as a B carton (Reconciliation), or the program stays open.
+  const fixShort = fixRuns.reduce((total, run) => total + Math.max(0, (run.cartonsDue ?? 0) - run.cartonsBack), 0);
+  if (fixShort > 0) {
+    return `${fixShort} EVR FIX carton${fixShort === 1 ? " is" : "s are"} still to come back. Scan ${fixShort === 1 ? "it" : "them"} on Carton In — or, if ${fixShort === 1 ? "it" : "they"} came back as B, make ${fixShort === 1 ? "it a B carton" : "them B cartons"} in Reconciliation. ${program.code} cannot close until every carton is back.`;
+  }
+  return null;
+};
 
 export type ReconciliationInputEntry = ReconciliationEntry & { lineId: string };
 
@@ -173,7 +250,12 @@ export const machineProgramReconciliationMethods = {
       })
     );
 
-    const notWhole = lines.find((line) => line.cartonsDue == null);
+    // EVR FIX has no upper line, so without these a fix-only program read "0 of 0 back" and
+    // "every carton due is back" while its cartons were still out on the floor.
+    const fixRuns = this.listMachineProgramFixCartonRuns(program.id).map((run) =>
+      fixRunOf(run, this.countConvertibleFixLabels(program.id, run.runId))
+    );
+    const due = (value: number | null): number => value ?? 0;
     return {
       programId: program.id,
       code: program.code,
@@ -181,14 +263,11 @@ export const machineProgramReconciliationMethods = {
       machineContractor: party(program.contractorPartyId, program.contractorName),
       packingContractor: party(program.packingContractorPartyId, program.packingContractorName),
       lines,
-      cartonsDue: lines.reduce((total, line) => total + (line.cartonsDue ?? 0), 0),
-      cartonsBack: lines.reduce((total, line) => total + line.cartonsBack, 0),
-      blockedReason:
-        program.status === MACHINE_PROGRAM_STATUS.CANCELLED
-          ? `${program.code} has been deleted, so it cannot be completed.`
-          : notWhole
-            ? `${notWhole.upperName} is not counted in whole cartons of DOZEN, so its cartons cannot be reconciled here.`
-            : null,
+      fixRuns,
+      cartonsDue: lines.reduce((total, line) => total + due(line.cartonsDue), 0) + fixRuns.reduce((total, run) => total + due(run.cartonsDue), 0),
+      cartonsBack: lines.reduce((total, line) => total + line.cartonsBack, 0) + fixRuns.reduce((total, run) => total + run.cartonsBack, 0),
+      fixCartonsShort: fixRuns.reduce((total, run) => total + Math.max(0, due(run.cartonsDue) - run.cartonsBack), 0),
+      blockedReason: closeBlockedReason(program, lines, fixRuns),
     };
   },
 
@@ -236,6 +315,8 @@ export const machineProgramReconciliationMethods = {
       }
 
       const now = new Date().toISOString();
+      // A fix carton still out never gets this far (closeBlockedReason), so a shortfall here is
+      // only ever an upper line's, accounted for above.
       const outcome = short.length > 0 ? MACHINE_PROGRAM_CLOSE_OUTCOME.RECONCILED : MACHINE_PROGRAM_CLOSE_OUTCOME.COMPLETE;
       this.db
         .prepare(

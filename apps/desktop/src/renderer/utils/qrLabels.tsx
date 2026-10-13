@@ -287,6 +287,11 @@ export interface RawMaterialLabelHeader {
    * more than one packet size, so the floor reads it off the label. Empty prints nothing.
    */
   packQuantity: string;
+  /**
+   * A grade printed big in the top-left corner, beside the heading — "B" on a B carton (EVR FIX,
+   * mixed colours, migration 074). Left out, the heading is centred as it always was.
+   */
+  gradeMark?: string;
 }
 
 // Floor/ceiling per field, in inches — the shrink-to-fit result never leaves this range.
@@ -317,6 +322,9 @@ const RAW_MATERIAL_LABEL_STYLES = `
   }
   .rm-label:last-of-type { page-break-after: auto; }
   .rm-label-heading { flex: none; text-align: center; overflow: hidden; }
+  /* A graded label: the grade boxed in the top-left corner, the article beside it. */
+  .rm-label-heading--graded { display: flex; align-items: center; gap: 0.08in; text-align: left; }
+  .rm-label-grade { flex: none; padding: 0 0.05in; border: 0.03in solid #111; font-size: 0.3in; font-weight: 900; line-height: 1; }
   .rm-label-heading .rm-category, .rm-label-heading .rm-subcategory { font-weight: 700; line-height: 1.15; overflow-wrap: anywhere; }
   .rm-label-body { flex: 1; min-height: 0; display: flex; align-items: center; gap: 0.08in; }
   .rm-label-qr { flex: none; display: flex; align-items: center; justify-content: center; }
@@ -417,7 +425,10 @@ const renderRawMaterialLabel = (header: RawMaterialLabelHeader, qrId: string, co
 
   return (
     `<div class="rm-label">` +
-    `<div class="rm-label-heading">` +
+    (header.gradeMark
+      ? `<div class="rm-label-heading rm-label-heading--graded">` +
+        `<div class="rm-label-grade" aria-label="Grade ${escapeHtml(header.gradeMark)}">${escapeHtml(header.gradeMark)}</div>`
+      : `<div class="rm-label-heading">`) +
     `<div class="rm-category" style="font-size:${inches(categorySizeIn)}">${escapeHtml(header.categoryLine)}</div>${subCategoryHtml}` +
     `</div>` +
     `<div class="rm-label-body">` +
@@ -555,7 +566,24 @@ export const cartonLabelHeader = (identity: {
   size: string;
   /** The second sole of a FIX article. Left out, the sticker says COLOUR as it always has. */
   innerColor?: string | null;
+  /** "B" for a B carton: a B in the corner, and COLOUR MIX — its colours are mixed (migration 074). */
+  grade?: "B" | null;
 }): RawMaterialLabelHeader => {
+  if (identity.grade === "B") {
+    //   B   EVR9
+    //   ▣   SIZE 7/10   COLOUR MIX
+    return {
+      categoryLine: identity.article.trim(),
+      subCategoryLine: "",
+      attributes: [
+        ...(identity.size.trim() ? [{ label: "SIZE", value: identity.size.trim(), isColor: false }] : []),
+        { label: "COLOUR", value: identity.color.trim() || "MIX", isColor: true },
+      ],
+      partyName: "",
+      packQuantity: "",
+      gradeMark: "B",
+    };
+  }
   const inner = String(identity.innerColor ?? "").trim();
   const colourLabel = inner ? "OUTER SOLE" : "COLOUR";
   return {
@@ -579,7 +607,7 @@ export const openCartonLabelPrintWindow = (opts: {
   title: string;
   heading: string;
   subheading: string;
-  identity: { article: string; color: string; size: string; innerColor?: string | null };
+  identity: { article: string; color: string; size: string; innerColor?: string | null; grade?: "B" | null };
   ids: string[];
 }): boolean =>
   openRawMaterialLabelPrintWindow({

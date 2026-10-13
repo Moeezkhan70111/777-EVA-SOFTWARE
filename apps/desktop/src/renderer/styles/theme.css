@@ -2945,6 +2945,76 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 }
 .pricing-derived-note strong { color: var(--ok); }
 .pricing-derived-note small { color: var(--neutral-400); }
+/* "(per DOZEN)" after a rate's label. */
+.label-hint { margin-left: 6px; font-weight: 400; font-size: 0.7rem; color: var(--neutral-400); }
+/* A rate worked out from something else (the packing attributes) reads as not typeable. */
+.pricing-fields .form-input[readonly] { background: var(--surface-2); color: var(--text-2); font-weight: 600; cursor: default; }
+
+/* The packing rate's attributes, under the rate boxes (features/products/PackingRateBreakdown). */
+.packing-breakdown {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--chrome-line);
+}
+.packing-breakdown-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+.packing-breakdown-head h3 {
+  margin: 0;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+  color: var(--chrome-muted);
+}
+.packing-breakdown-head span { font-size: 0.7rem; color: var(--neutral-400); }
+.packing-breakdown-list { list-style: none; margin: 0; padding: 0; }
+.packing-breakdown-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 12px;
+  min-height: 36px;
+  padding: 2px 4px 2px 10px;
+  border-radius: var(--radius-md);
+  font-size: 0.82rem;
+}
+.packing-breakdown-row:hover { background: var(--surface-2); }
+.packing-breakdown-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; color: var(--text-2); }
+.packing-breakdown-amount { font-variant-numeric: tabular-nums; color: var(--text-2); }
+.packing-breakdown-actions { display: flex; gap: 2px; }
+.packing-breakdown-btn {
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-3);
+  font-size: 0.95rem;
+  cursor: pointer;
+}
+.packing-breakdown-btn:hover { background: var(--surface-1); color: var(--primary-blue); }
+.packing-breakdown-btn--remove:hover { color: var(--danger); }
+.packing-breakdown-btn:focus-visible { outline: 2px solid var(--primary-blue); outline-offset: 1px; }
+.packing-breakdown-total {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 6px;
+  /* Right padding = the row's edit/remove buttons + gap, so the total lines up under the amounts. */
+  padding: 8px 82px 0 10px;
+  border-top: 1px dashed var(--chrome-line);
+  font-size: 0.8rem;
+  color: var(--chrome-muted);
+}
+.packing-breakdown-total strong { font-size: 0.9rem; font-variant-numeric: tabular-nums; color: var(--ok); }
 .product-image-card {
   grid-column: 2;
   grid-row: 1 / span 2;
@@ -6939,6 +7009,8 @@ tr.has-error .gp-qty-stepper input { color: var(--err); }
 .mpx-injector-head { display: flex; align-items: center; gap: 9px; margin-bottom: 10px; }
 .mpx-injector-mark { flex: 0 0 auto; width: 20px; height: 20px; color: var(--text-2); }
 .mpx-injector-title { margin: 0; font-size: 1rem; font-weight: 800; color: var(--chrome-ink); }
+/* Fix Articles (FixArticlesPanel): its own section, not an injector — the note says why. */
+.mpx-fix-note { flex: 1 1 auto; min-width: 0; font-size: 0.74rem; color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 /* An injector with nothing on it says so, and says what to do about it (R12). */
 .mpx-injector-empty {
@@ -7434,6 +7506,11 @@ tr.has-error .gp-qty-stepper input { color: var(--err); }
 .si-main { min-width: 0; min-height: 0; overflow-y: auto; padding-right: 4px; }
 /* A form that normally centres itself in a page takes the whole pane here. */
 .si-main .rm-new-page { max-width: none; }
+/* A machine program opened on Store In: the PANE scrolls it, never the program stack itself.
+   On Store Out .mpi-page is the page's scroll box, and its overscroll-behavior: contain is right
+   there. Here it is a plain block inside .si-main, so it never overflows — and Chromium still lets
+   that contain swallow the mouse wheel instead of passing it up, so nothing scrolled at all. */
+.si-main > .mpi-page { overflow: visible; overscroll-behavior: auto; }
 /* The station scrolls itself, so the pane only clips it to the rounded card. */
 .si-scan {
   display: flex; flex-direction: column; min-height: 0; overflow: hidden;
@@ -7618,21 +7695,116 @@ tr.has-error .gp-qty-stepper input { color: var(--err); }
 .mpo-batch-material { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mpo-batch-qty { font-weight: 800; font-variant-numeric: tabular-nums; }
 
-/* One carton run waiting for its labels: what it is, how many, and the one button. */
-.mpo-carton-row {
-  display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center;
-  gap: 6px 10px; padding: 9px 0; border-top: 1px solid var(--line-soft); font-size: .84rem;
+/* ── Cartons to label (programOut/CartonLabels.tsx) ─────────────────────────────
+   A banner that says what to do next, label-style cards with one big Print button each, and
+   the printed runs apart with how many cartons are back. */
+.mpo-labels { display: flex; flex-direction: column; gap: 12px; }
+.mpo-labels-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.mpo-labels-note { font-size: .74rem; color: var(--text-3); }
+
+/* The banner. */
+.mpo-hero {
+  display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 6px 16px;
+  padding: 16px 18px; border-radius: var(--radius-xl);
 }
-.mpo-batch-list > .mpo-carton-row:first-child { border-top: none; }
-.mpo-carton-what { font-weight: 800; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.mpo-carton-print { grid-column: 2; grid-row: 1 / span 2; min-height: 44px; min-width: 150px; }
-.mpo-carton-blocked { margin-top: 9px; }
-.mpo-carton-blocked li { padding: 7px 0; font-size: .8rem; font-weight: 700; color: var(--warning-deep); }
-.mpo-carton-printed { margin-top: 9px; }
-.mpo-carton-printed li { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 10px; padding: 6px 0; font-size: .78rem; }
-.mpo-carton-reprint { margin-left: auto; min-height: 44px; min-width: 96px; }
-.mpo-carton-range { font-family: Consolas, "Courier New", monospace; font-size: .74rem; color: var(--success-deep); }
-.mpo-carton-back { font-weight: 700; color: var(--text-2); }
+.mpo-hero-icon { display: grid; place-items: center; width: 56px; height: 56px; border-radius: 50%; }
+.mpo-hero-icon svg { width: 30px; height: 30px; fill: currentColor; }
+.mpo-hero-words { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.mpo-hero-title { margin: 0; font-size: 1.25rem; font-weight: 900; line-height: 1.2; }
+.mpo-hero-body { margin: 0; font-size: .84rem; line-height: 1.4; }
+
+/* Labels owed: the one loud thing on the page. */
+.mpo-hero--todo { background: var(--primary-blue); color: var(--white); box-shadow: var(--shadow-md); }
+.mpo-hero--todo .mpo-hero-icon { background: var(--white); color: var(--primary-blue); animation: mpo-hero-pulse 2s ease-in-out infinite; }
+.mpo-hero--todo .mpo-hero-body { color: color-mix(in srgb, var(--white) 88%, transparent); }
+.mpo-hero-eyebrow {
+  align-self: flex-start; padding: 2px 9px; border-radius: 999px; background: var(--warning-tint); color: var(--warning-deep);
+  font-size: .66rem; font-weight: 900; letter-spacing: .08em; text-transform: uppercase;
+}
+.mpo-hero-steps {
+  grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+  margin: 10px 0 0; padding: 0; list-style: none; counter-reset: none;
+}
+.mpo-hero-steps li {
+  display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px 6px 6px; border-radius: 999px;
+  background: color-mix(in srgb, var(--white) 16%, transparent); font-size: .8rem; font-weight: 700;
+}
+.mpo-hero-steps li + li::before { content: "→"; margin: 0 4px 0 -2px; opacity: .7; }
+.mpo-hero-step-no {
+  display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%;
+  background: var(--white); color: var(--primary-blue); font-size: .74rem; font-weight: 900;
+}
+@keyframes mpo-hero-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--white) 55%, transparent); }
+  50% { box-shadow: 0 0 0 8px color-mix(in srgb, var(--white) 0%, transparent); }
+}
+@media (prefers-reduced-motion: reduce) { .mpo-hero--todo .mpo-hero-icon { animation: none; } }
+
+/* Every label printed. */
+.mpo-hero--done { background: var(--success-tint); color: var(--success-deep); border: 1px solid color-mix(in srgb, var(--success) 35%, transparent); }
+.mpo-hero--done .mpo-hero-icon { background: var(--success); color: var(--white); }
+.mpo-hero-back { display: flex; align-items: center; gap: 10px; margin-top: 4px; font-size: .8rem; font-weight: 800; }
+
+/* Nothing yet, or the program is closed. */
+.mpo-hero--quiet { border: 1px dashed var(--border-dark); background: var(--surface-2); color: var(--text-2); }
+.mpo-hero--quiet .mpo-hero-icon { width: 44px; height: 44px; background: var(--surface); color: var(--text-3); }
+.mpo-hero--quiet .mpo-hero-icon svg { width: 22px; height: 22px; }
+.mpo-hero--quiet .mpo-hero-title { font-size: 1rem; }
+.mpo-hero--quiet .mpo-hero-body { color: var(--text-3); }
+
+/* One run owed its labels: drawn like a label to cut out. */
+.mpo-tickets { display: flex; flex-direction: column; gap: 10px; margin: 0; padding: 0; list-style: none; }
+.mpo-ticket {
+  display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; align-items: center; gap: 14px;
+  padding: 14px 16px; border: 2px dashed var(--action-line); border-radius: var(--radius-lg); background: var(--surface);
+}
+.mpo-ticket-swatch { width: 30px; height: 30px; flex: 0 0 auto; box-shadow: var(--shadow-sm); }
+.mpo-ticket-what { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.mpo-ticket-name { font-size: 1rem; font-weight: 900; color: var(--chrome-ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mpo-ticket-hint { font-size: .76rem; color: var(--text-3); }
+.mpo-ticket-count { display: flex; flex-direction: column; align-items: center; line-height: 1; padding: 0 6px; }
+.mpo-ticket-count b { font-size: 1.9rem; font-weight: 900; color: var(--primary-blue); font-variant-numeric: tabular-nums; }
+.mpo-ticket-count span { margin-top: 3px; font-size: .64rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: var(--text-3); }
+.mpo-ticket-print {
+  display: inline-flex; align-items: center; justify-content: center; gap: 9px;
+  min-height: 52px; min-width: 190px; padding: 0 20px; font-size: .95rem; font-weight: 900;
+}
+.mpo-ticket-print svg { width: 22px; height: 22px; fill: currentColor; }
+
+.mpo-carton-blocked { margin: 0; padding: 0; list-style: none; }
+.mpo-carton-blocked li {
+  padding: 9px 12px; margin-top: 6px; border-radius: var(--radius-md);
+  background: var(--warning-tint); font-size: .8rem; font-weight: 700; color: var(--warning-deep);
+}
+
+/* What is already printed. */
+.mpo-printed-title { margin: 4px 0 0; font-size: .7rem; font-weight: 900; letter-spacing: .08em; text-transform: uppercase; color: var(--text-3); }
+.mpo-printed-list { margin: 0; padding: 0; list-style: none; }
+.mpo-printed {
+  display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; align-items: center; gap: 12px;
+  padding: 10px 0; border-top: 1px solid var(--line-soft);
+}
+.mpo-printed-list > .mpo-printed:first-child { border-top: none; }
+.mpo-printed-tick { display: grid; place-items: center; width: 26px; height: 26px; border-radius: 50%; background: var(--success-tint); color: var(--success-deep); }
+.mpo-printed-tick svg { width: 16px; height: 16px; fill: currentColor; }
+.mpo-printed-what { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.mpo-printed-name { font-size: .86rem; font-weight: 800; color: var(--text-2); }
+.mpo-b-badge { display: inline-grid; place-items: center; min-width: 20px; height: 20px; margin-right: 6px; padding: 0 5px; border: 2px solid var(--chrome-ink); border-radius: var(--radius-sm); font-size: .72rem; font-weight: 900; color: var(--chrome-ink); vertical-align: middle; }
+.mpo-printed-converted { font-size: .72rem; font-weight: 700; color: var(--warning-deep); }
+.mpo-printed-range { font-family: Consolas, "Courier New", monospace; font-size: .72rem; color: var(--success-deep); overflow-wrap: anywhere; }
+.mpo-printed-back { display: flex; align-items: center; gap: 8px; font-size: .78rem; }
+.mpo-printed-reprint { min-height: 44px; min-width: 96px; }
+.mpo-carton-back { font-weight: 800; color: var(--text-2); white-space: nowrap; }
+.mpo-back-bar { display: inline-block; width: 110px; height: 7px; border-radius: 999px; background: var(--line-soft); overflow: hidden; }
+.mpo-back-bar-fill { display: block; height: 100%; border-radius: inherit; background: var(--success); }
+
+@media (max-width: 760px) {
+  .mpo-hero { grid-template-columns: 1fr; }
+  .mpo-ticket { grid-template-columns: auto minmax(0, 1fr) auto; }
+  .mpo-ticket-print { grid-column: 1 / -1; width: 100%; }
+  .mpo-printed { grid-template-columns: auto minmax(0, 1fr); }
+  .mpo-printed-back, .mpo-printed-reprint { grid-column: 2; }
+}
 
 /* What has already left, one packet per row, newest first. */
 .mpo-history-row {
@@ -7893,6 +8065,26 @@ tr.has-error .gp-qty-stepper input { color: var(--err); }
 .mpr-standing { margin-top: 10px; }
 .mpr-standing-figures { margin: 0; font-size: 1.05rem; font-weight: 800; color: var(--foreground); font-variant-numeric: tabular-nums; }
 .mpr-closed { margin-top: 10px; }
+/* EVR FIX cartons not back (programClose/FixShortfall): said plainly, never folded into "all back". */
+.mpr-fix-short { margin-top: 10px; padding: 10px 12px; border-radius: var(--radius-md); background: var(--warning-tint); color: var(--warning-deep); font-size: .82rem; }
+.mpr-fix-short-head { margin: 0 0 4px; font-weight: 800; }
+.mpr-fix-short ul { margin: 0; padding-left: 18px; }
+.mpr-fix-short li { margin: 2px 0; }
+/* EVR FIX Reconciliation (programClose/FixReconciliation): where the missing cartons are, and
+   the B labels that replace them. */
+.mpr-fix-recon { margin-top: 12px; padding: 14px; border: 1px solid var(--action-line); border-radius: var(--radius-lg); background: var(--surface); }
+.mpr-fix-recon-title { margin: 0; font-size: .95rem; font-weight: 900; color: var(--chrome-ink); }
+.mpr-fix-recon-line { margin: 4px 0 10px; font-size: .8rem; color: var(--text-2); line-height: 1.45; }
+.mpr-fix-recon-wrap { overflow-x: auto; }
+.mpr-fix-recon-table { width: 100%; min-width: 620px; border-collapse: collapse; font-size: .84rem; }
+.mpr-fix-recon-table th, .mpr-fix-recon-table td { padding: 9px 10px; border-top: 1px solid var(--line-soft); text-align: left; vertical-align: middle; }
+.mpr-fix-recon-table thead th { border-top: none; font-size: .68rem; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: var(--text-3); }
+.mpr-fix-recon-table tbody th { font-weight: 800; color: var(--chrome-ink); }
+.mpr-num { text-align: right !important; font-variant-numeric: tabular-nums; }
+.mpr-b-status { display: block; margin-top: 3px; font-size: .74rem; font-weight: 700; color: var(--primary-blue); }
+.mpr-b-input { width: 80px; min-height: 40px; text-align: right; font-weight: 800; }
+.mpr-b-problem { display: block; margin-top: 4px; font-size: .72rem; font-weight: 700; color: var(--warning-deep); }
+.mpr-b-generate { min-height: 44px; white-space: nowrap; font-weight: 800; }
 .mpr-closed-head { margin: 0 0 2px; font-weight: 800; color: var(--success-deep); }
 .mpr-summary { margin: 10px 0 0; padding-left: 18px; font-size: .86rem; line-height: 1.5; }
 .mpr-summary ul { margin: 2px 0 6px; padding-left: 18px; color: var(--text-2); }
@@ -7920,4 +8112,120 @@ tr.has-error .gp-qty-stepper input { color: var(--err); }
 .mpr-line-status.is-ok { color: var(--success-deep); }
 @media (max-width: 720px) {
   .mpr-ways, .mpr-claim { grid-template-columns: 1fr; }
+}
+
+/* ── Contractor Ledger (features/contractorLedger) ─────────────────────────────── */
+.contractor-ledger-page { max-width: 1100px; margin: 0 auto; }
+.contractor-ledger-subtitle { margin: 4px 0 0; font-size: 0.84rem; color: var(--text-3); }
+
+/* Picker card: contractor on the left, period on the right. */
+.contractor-ledger-picker { margin-bottom: 18px; }
+.contractor-ledger-picker-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 18px;
+}
+.contractor-ledger-picker-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+.contractor-ledger-label { font-size: 0.8rem; font-weight: 600; color: var(--text-2); }
+.contractor-ledger-picker-head span:last-child { font-size: 0.72rem; color: var(--text-3); }
+.contractor-ledger-period { display: flex; align-items: flex-end; gap: 10px; }
+.contractor-ledger-period .form-group { margin-bottom: 0; }
+.contractor-ledger-period .btn { min-height: 40px; }
+.contractor-ledger-identity {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--chrome-line);
+  font-size: 0.84rem;
+  color: var(--text-3);
+}
+.contractor-ledger-identity strong { color: var(--text-2); font-weight: 700; }
+.contractor-ledger-roles { display: inline-flex; flex-wrap: wrap; gap: 6px; margin-left: 4px; }
+
+/* Summary figures — the ledger card look, in a plain 4-up grid. */
+.contractor-ledger-summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; margin-bottom: 14px; }
+.contractor-ledger-figure span { font-size: 0.72rem; color: var(--text-3); }
+.contractor-ledger-figure small { font-size: 0.7rem; color: var(--neutral-400); }
+.contractor-ledger-figure strong.positive { color: var(--ok); }
+.contractor-ledger-figure strong.negative { color: var(--err); }
+.contractor-ledger-warning {
+  margin: 0 0 14px;
+  padding: 10px 14px;
+  border-radius: var(--radius-md);
+  background: var(--warning-tint);
+  color: var(--warning-deep);
+  font-size: 0.8rem;
+}
+
+/* The ledger table reuses .customer-ledger-table; these are only its production-day extras. */
+.contractor-ledger-table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--glass-85);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-md);
+  background: var(--surface-1);
+}
+.contractor-ledger-table { min-width: 760px; }
+.contractor-ledger-work-row { cursor: pointer; }
+.contractor-ledger-work-row:hover td,
+.contractor-ledger-work-row.is-open td { background: var(--surface-2); }
+.contractor-ledger-toggle {
+  width: 28px;
+  height: 28px;
+  margin-right: 6px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  vertical-align: middle;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-3);
+  cursor: pointer;
+}
+.contractor-ledger-toggle:focus-visible { outline: 2px solid var(--primary-blue); outline-offset: 1px; }
+.contractor-ledger-chevron { display: inline-block; transition: transform .15s; }
+.contractor-ledger-work-row.is-open .contractor-ledger-chevron { transform: rotate(90deg); color: var(--primary-blue); }
+.contractor-ledger-detail-row > td { padding: 0 12px 12px 46px; background: var(--surface-2); }
+
+/* One production day opened up. */
+.contractor-ledger-detail {
+  overflow-x: auto;
+  border: 1px solid var(--chrome-line);
+  border-radius: var(--radius-md);
+  background: var(--surface-1);
+}
+.contractor-ledger-detail-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.contractor-ledger-detail-table th {
+  padding: 8px 10px;
+  text-align: left;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  color: var(--chrome-muted);
+  border-bottom: 1px solid var(--chrome-line);
+}
+.contractor-ledger-detail-table td { padding: 8px 10px; border-top: 1px solid var(--line-40); color: var(--neutral-700); vertical-align: top; }
+.contractor-ledger-detail-table .amount { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.contractor-ledger-detail-table small { display: block; margin-top: 2px; font-size: 10px; color: var(--text-3); }
+.contractor-ledger-detail-table td:first-child small { display: inline; }
+.contractor-ledger-detail-table tfoot td { border-top: 1px solid var(--chrome-line); font-weight: 800; color: var(--chrome-ink); }
+.contractor-ledger-calc { font-variant-numeric: tabular-nums; color: var(--text-2); white-space: nowrap; }
+.contractor-ledger-unpriced { color: var(--warning-deep); font-weight: 700; }
+
+@media (max-width: 760px) {
+  .contractor-ledger-picker-grid { grid-template-columns: 1fr; }
+  .contractor-ledger-period { flex-wrap: wrap; }
+  .contractor-ledger-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .contractor-ledger-detail-row > td { padding-left: 12px; }
 }

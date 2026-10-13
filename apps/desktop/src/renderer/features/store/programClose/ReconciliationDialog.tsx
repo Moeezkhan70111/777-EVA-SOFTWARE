@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { Modal } from "../../../components/shared/Modal";
 import { copy } from "../../../config/copy";
 import type { MachineProgramReconciliation, ReconciliationEntryInput } from "../../../types/desktopApi";
+import { FixShortfall } from "./FixShortfall";
 import { ReconciliationLineForm } from "./ReconciliationLineForm";
 import { draftProblem, emptyDraft, toEntry, type LineDraft } from "./reconciliationDraft";
 
@@ -53,6 +54,8 @@ export const ReconciliationDialog: React.FC<ReconciliationDialogProps> = ({ reco
         </>
       }
     >
+      {/* EVR FIX cartons short have no upper to account for — said here, not asked. */}
+      <FixShortfall view={reconciliation} />
       <div className="mpr-lines">
         {short.map((line) => (
           <ReconciliationLineForm

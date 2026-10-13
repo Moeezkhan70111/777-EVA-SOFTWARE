@@ -1,6 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
 import { useDesktopApi } from "../../hooks/useDesktopApi";
-import { copy } from "../../config/copy";
 import type {
   MachineProgramArticle,
   MachineProgramBoardRow,
@@ -13,59 +11,8 @@ import type {
 // layer, and every one is re-read after a change rather than patched locally — so a figure on
 // screen is always the database's, never what the screen thought a moment ago.
 
-export interface Loaded<T> {
-  value: T;
-  loading: boolean;
-  error: string | null;
-  reload: () => Promise<void>;
-}
-
-type Answer = { accepted: boolean; reason?: string };
-
-/**
- * Loads `read()` whenever `key` changes, keeping the four states a screen needs (R12). A null
- * `read` loads nothing. A slow answer for an old key never overwrites a newer one.
- */
-export const useLoaded = <T, R extends Answer>(
-  key: string,
-  read: (() => Promise<R>) | null,
-  pick: (answer: R) => T,
-  initial: T
-): Loaded<T> => {
-  const [value, setValue] = useState<T>(initial);
-  const [loading, setLoading] = useState(read !== null);
-  const [error, setError] = useState<string | null>(null);
-  const latest = useRef(key);
-  const readRef = useRef(read);
-  const pickRef = useRef(pick);
-  readRef.current = read;
-  pickRef.current = pick;
-
-  const reload = useCallback(async () => {
-    const run = readRef.current;
-    if (!run) return;
-    const asked = key;
-    latest.current = asked;
-    setLoading(true);
-    setError(null);
-    try {
-      const answer = await run();
-      if (latest.current !== asked) return;
-      if (!answer.accepted) throw new Error(answer.reason ?? copy.states.loadFailedBody);
-      setValue(pickRef.current(answer));
-    } catch (cause) {
-      if (latest.current === asked) setError(cause instanceof Error ? cause.message : copy.states.loadFailedBody);
-    } finally {
-      if (latest.current === asked) setLoading(false);
-    }
-  }, [key]);
-
-  useEffect(() => {
-    void reload();
-  }, [reload]);
-
-  return { value, loading, error, reload };
-};
+export { useLoaded, type Loaded } from "../../hooks/useLoaded";
+import { useLoaded, type Loaded } from "../../hooks/useLoaded";
 
 export const useMachineBoard = (programDate: string): Loaded<MachineProgramBoardRow[]> => {
   const api = useDesktopApi();

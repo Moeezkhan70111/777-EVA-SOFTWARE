@@ -11,6 +11,8 @@ import { HandMovePanel } from "./HandMovePanel";
 import { ProgramLookupField } from "./programOut/ProgramLookupField";
 import { ProgramOutPanel } from "./programOut/ProgramOutPanel";
 import { useProgramOut } from "./programOut/useProgramOut";
+import { CartonInStation } from "./programOut/CartonInStation";
+import { isProgramClosed, useProgramCloseFor } from "./programClose/useProgramClose";
 import { STORE_IN_TABS, storeInTabRoute, type StoreInTab } from "./storeOperators";
 import { StockIcon, ScanInIcon } from "./StoreIcons";
 
@@ -69,6 +71,8 @@ export const StoreInPage: React.FC<StoreInPageProps> = ({ tab, token, username, 
   const [manualOpen, setManualOpen] = useState(false);
   // No issue session: nothing leaves the store from here.
   const programView = useProgramOut({ token, sessionId: null });
+  // One close state for the open program, shared by the program view and the Carton In station.
+  const programClose = useProgramCloseFor(programView);
 
   const allowed = STORE_IN_TABS.filter((entry) => allows(entry.id, access));
   // A tab this operator may not open falls back to the first they may, so the page is never blank.
@@ -117,7 +121,7 @@ export const StoreInPage: React.FC<StoreInPageProps> = ({ tab, token, username, 
       <div className="si-body">
         <section className="si-main" aria-label={allowed.find((entry) => entry.id === active)?.title ?? copy.store.storeInTitle}>
           {programView.program ? (
-            <ProgramOutPanel state={programView} onClose={programView.close} viewOnly />
+            <ProgramOutPanel state={programView} onClose={programView.close} viewOnly close={programClose} />
           ) : !active ? (
             <StateView kind="empty" title={copy.store.noAccessTitle} hint={copy.store.noAccessHint} />
           ) : active === "material" ? (
@@ -136,39 +140,56 @@ export const StoreInPage: React.FC<StoreInPageProps> = ({ tab, token, username, 
           )}
         </section>
 
-        <aside className="si-scan" aria-label={copy.store.scanMaterialTitle}>
-          <header className="si-scan-head">
-            <span className="si-scan-mark" aria-hidden="true">
-              <ScanInIcon />
-            </span>
-            <div>
-              <h2 className="si-scan-title">{copy.store.scanMaterialTitle}</h2>
-              <p className="si-scan-line">{copy.store.scanMaterialLine}</p>
-            </div>
-          </header>
-          <RawMaterialInputPage token={token} username={username} embedded />
-
-          {/* A delivery that carries no labels cannot be scanned in, so it is typed in. The
-              station above stays mounted either way — an open session is not interrupted. */}
-          <div className="si-manual">
-            <p className="si-manual-or">
-              <span>{copy.store.or}</span>
-            </p>
-            {manualOpen ? (
-              <div className="si-manual-open">
-                <header className="si-manual-head">
-                  <h3 className="si-manual-title">{copy.moveOut.manualInTitle}</h3>
-                  <button type="button" className="si-manual-close" onClick={() => setManualOpen(false)}>
-                    {copy.common.close}
-                  </button>
-                </header>
-                <HandMovePanel direction="IN" token={token} />
+        <aside
+          className="si-scan"
+          aria-label={programView.program ? copy.programOut.cartonInStationTitle(programView.program.code) : copy.store.scanMaterialTitle}
+        >
+          {/* ONE scan station on this page. While a program is open it scans that program's
+              cartons; Scan Material waits behind it, still mounted, so its session is kept. */}
+          {programView.program ? (
+            <CartonInStation
+              token={token}
+              programId={programView.program.id}
+              programCode={programView.program.code}
+              printedRuns={programView.printedRuns.length}
+              closed={isProgramClosed(programClose)}
+              onReceived={programView.reload}
+            />
+          ) : null}
+          <div className="si-material-station" hidden={Boolean(programView.program)}>
+            <header className="si-scan-head">
+              <span className="si-scan-mark" aria-hidden="true">
+                <ScanInIcon />
+              </span>
+              <div>
+                <h2 className="si-scan-title">{copy.store.scanMaterialTitle}</h2>
+                <p className="si-scan-line">{copy.store.scanMaterialLine}</p>
               </div>
-            ) : (
-              <button type="button" className="si-manual-btn" onClick={() => setManualOpen(true)}>
-                {copy.store.manualEntry}
-              </button>
-            )}
+            </header>
+            <RawMaterialInputPage token={token} username={username} embedded />
+  
+            {/* A delivery that carries no labels cannot be scanned in, so it is typed in. The
+                station above stays mounted either way — an open session is not interrupted. */}
+            <div className="si-manual">
+              <p className="si-manual-or">
+                <span>{copy.store.or}</span>
+              </p>
+              {manualOpen ? (
+                <div className="si-manual-open">
+                  <header className="si-manual-head">
+                    <h3 className="si-manual-title">{copy.moveOut.manualInTitle}</h3>
+                    <button type="button" className="si-manual-close" onClick={() => setManualOpen(false)}>
+                      {copy.common.close}
+                    </button>
+                  </header>
+                  <HandMovePanel direction="IN" token={token} />
+                </div>
+              ) : (
+                <button type="button" className="si-manual-btn" onClick={() => setManualOpen(true)}>
+                  {copy.store.manualEntry}
+                </button>
+              )}
+            </div>
           </div>
         </aside>
       </div>

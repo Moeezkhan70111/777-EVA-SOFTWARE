@@ -43,6 +43,7 @@ import { salesMethods, type SalesMethods } from "./database/sales.js";
 import { saleReturnsMethods, type SaleReturnsMethods } from "./database/saleReturns.js";
 import { cashMethods, type CashMethods } from "./database/cash.js";
 import { purchasesMethods, type PurchasesMethods } from "./database/purchases.js";
+import { contractorLedgerMethods, type ContractorLedgerMethods } from "./database/contractorLedger.js";
 import type { BackupRecord, HealthSnapshot, MoneyDriftSummary, MoneyDriftViolation, SqliteDatabaseOptions } from "./database/types.js";
 
 // The data layer's public record shapes and constants live in ./database/types.ts and are
@@ -50,6 +51,7 @@ import type { BackupRecord, HealthSnapshot, MoneyDriftSummary, MoneyDriftViolati
 export * from "./database/types.js";
 export { orderBy } from "./database/shared.js";
 export type { MutableTransactionContext } from "./database/shared.js";
+export type { ContractorLedgerAccount, ContractorLedgerReport } from "./database/contractorLedger.js";
 
 const COUNTABLE_TABLES = new Set([
   "qr_master",
@@ -800,7 +802,8 @@ export interface SqliteDatabase
     SalesMethods,
     SaleReturnsMethods,
     CashMethods,
-    PurchasesMethods {}
+    PurchasesMethods,
+    ContractorLedgerMethods {}
 
 Object.assign(
   SqliteDatabase.prototype,
@@ -832,5 +835,6 @@ Object.assign(
   salesMethods,
   saleReturnsMethods,
   cashMethods,
-  purchasesMethods
+  purchasesMethods,
+  contractorLedgerMethods
 );

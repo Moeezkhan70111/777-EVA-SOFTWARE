@@ -3,6 +3,7 @@ import type { MachineProgramRunRecord, MachineProgramUpperLineRecord } from "../
 import { StateView } from "../../components/shared/StateView";
 import { copy } from "../../config/copy";
 import { QuantityEntry } from "./QuantityEntry";
+import { upperRunInjector } from "./machineProgram";
 import { useUppers } from "./useMachineProgramData";
 import type { ProgramWrites } from "./useProgramWrites";
 
@@ -44,7 +45,7 @@ export const ChangeUpperQuantity: React.FC<ChangeUpperQuantityProps> = ({ machin
         const answer = await writes.saveLine({
           machineId,
           programDate,
-          injectorNo: run.injectorNo,
+          injectorNo: upperRunInjector(run),
           runId: run.id,
           lineId: line.id,
           itemId: line.itemId,

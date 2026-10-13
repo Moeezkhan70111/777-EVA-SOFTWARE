@@ -43,6 +43,7 @@ import { SaleVoucherListPage } from "../pages/SaleVoucherListPage";
 import { PurchaseVoucherFormPage } from "../pages/PurchaseVoucherFormPage";
 import { PurchaseVoucherListPage } from "../pages/PurchaseVoucherListPage";
 import { SupplierLedgerPage } from "../pages/SupplierLedgerPage";
+import { ContractorLedgerPage } from "../features/contractorLedger/ContractorLedgerPage";
 import { SupplierBalancePage } from "../pages/SupplierBalancePage";
 import { CashVoucherFormPage } from "../pages/CashVoucherFormPage";
 import { CashVoucherListPage } from "../pages/CashVoucherListPage";
@@ -555,6 +556,8 @@ export const App = () => {
         );
       case "supplier-balance":
         return <SupplierBalancePage onNavigate={setRoute} />;
+      case "contractor-ledger":
+        return <ContractorLedgerPage onNavigate={navigateTo} />;
       case "settings":
         return <SettingsPage />;
       case "health":

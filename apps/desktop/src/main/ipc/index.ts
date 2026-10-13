@@ -17,6 +17,7 @@ import { registerCashHandlers } from "./cash";
 import { registerPurchasesHandlers } from "./purchases";
 import { registerSystemHandlers } from "./system";
 import { registerPrintingHandlers } from "./printing";
+import { registerContractorLedgerHandlers } from "./contractorLedger";
 
 export type { IpcContext } from "./context";
 export { createIpcContext } from "./context";
@@ -41,4 +42,5 @@ export function registerIpcHandlers(ctx: IpcContext): void {
   registerPurchasesHandlers(ctx);
   registerSystemHandlers(ctx);
   registerPrintingHandlers(ctx);
+  registerContractorLedgerHandlers(ctx);
 }

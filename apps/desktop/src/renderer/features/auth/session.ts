@@ -172,6 +172,7 @@ export const routePermission: Partial<Record<AppRoute, PermissionCode>> = {
   "purchase-voucher-list": PERMISSION.PURCHASE_VOUCHER_LIST,
   "supplier-ledger": PERMISSION.SUPPLIER_LEDGER,
   "supplier-balance": PERMISSION.SUPPLIER_BALANCE,
+  "contractor-ledger": PERMISSION.CONTRACTOR_LEDGER,
 
   "cash-voucher-form": PERMISSION.CASH_VOUCHER_FORM,
   "cash-voucher-list": PERMISSION.CASH_VOUCHER_LIST,

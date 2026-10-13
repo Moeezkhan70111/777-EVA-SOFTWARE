@@ -1,0 +1,237 @@
+import { APP_TIMEZONE } from "./constants.js";
+import { jobChargePaisa } from "./contractorPricing.js";
+import { cartonsToDozens } from "./units.js";
+
+// Contractor Ledger — what a contractor earned for the work a machine program produced, and what
+// they were paid against it.
+//
+//   12 Oct   Work   MP-000011 · SK6 7/10   10 DZN × Rs 70.00 = Rs 700.00     Cr 700.00   Bal 700.00
+//   14 Oct   Paid   CV-000045 cash                                           Dr 500.00   Bal 200.00
+//
+// WHAT COUNTS AS WORK: a carton printed for a machine program and stored in by Store In. That is
+// the program's production (docs/27, machine_program_carton_labels), dated by the day it came in.
+// Two cartons are one dozen, and every rate is per dozen. A B CARTON IS NOT WORK: no contractor is
+// paid for one (owner, 2026-10-12), so B labels (EVR FIX, MIX, migration 074) never reach a ledger.
+//
+// WHO EARNS IT: the contractors the program was made with — its machine contractor earns the
+// machine rate, its packing contractor the packing rate. Printing has no contractor yet, so its
+// work is kept under one "Printing Contractor" ledger until one exists.
+//
+// THE RATE: what THIS program agreed for the article (machine_program_article_rates), or — when the
+// program was never priced — the product's standard rate. Which one was used is carried on every
+// line, so nobody has to guess. With neither, the line is NOT PRICED: it is shown, counted in
+// dozens, and adds nothing — never silently treated as free work.
+//
+// Nothing here is stored: the ledger is worked out from the cartons, the rates and the cash
+// vouchers every time it is read, so it can never disagree with them. Money is integer paisa.
+
+export const CONTRACTOR_ROLE = {
+  MACHINE: "MACHINE",
+  PACKING: "PACKING",
+  PRINTING: "PRINTING",
+} as const;
+export type ContractorRole = (typeof CONTRACTOR_ROLE)[keyof typeof CONTRACTOR_ROLE];
+
+/** The one ledger printing work is kept under until a printing contractor exists. */
+export const PRINTING_CONTRACTOR_ACCOUNT_ID = "PRINTING";
+
+export const RATE_SOURCE = {
+  /** What the machine program agreed for this article. */
+  PROGRAM: "PROGRAM",
+  /** The product's standard rate — the program itself was never priced for the article. */
+  PRODUCT: "PRODUCT",
+} as const;
+export type RateSource = (typeof RATE_SOURCE)[keyof typeof RATE_SOURCE];
+
+/**
+ * `YYYY-MM-DD` of a timestamp in the business timezone (Asia/Karachi).
+ * A zone-less local timestamp is already business-local, so its own date is used.
+ */
+export const businessDateOf = (timestamp: string): string => {
+  const zoned = /(?:Z|[+-]\d{2}:?\d{2})$/i.test(timestamp);
+  if (!zoned) return timestamp.slice(0, 10);
+  const date = new Date(timestamp);
+  if (Number.isNaN(date.getTime())) return timestamp.slice(0, 10);
+  const parts = new Intl.DateTimeFormat("en-CA", { timeZone: APP_TIMEZONE, year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(date);
+  const pick = (type: string) => parts.find((part) => part.type === type)?.value ?? "";
+  return `${pick("year")}-${pick("month")}-${pick("day")}`;
+};
+
+// ─── Work: cartons → dated days ──────────────────────────────────────────────
+
+/** One produced carton, for one job on it, as the data layer reads it. */
+export interface ContractorWorkCarton {
+  receivedAt: string;
+  programId: string;
+  programCode: string;
+  machineName: string;
+  role: ContractorRole;
+  articleSizeId: string;
+  article: string;
+  size: string;
+  /** Per DOZEN, in paisa. Null when neither the program nor the product has a rate for this job. */
+  ratePaisa: number | null;
+  rateSource: RateSource | null;
+}
+
+/** One program's work on one article, for one job, on one day. */
+export interface ContractorWorkLine {
+  programId: string;
+  programCode: string;
+  machineName: string;
+  role: ContractorRole;
+  articleSizeId: string;
+  article: string;
+  size: string;
+  cartons: number;
+  dozens: number;
+  ratePaisa: number | null;
+  rateSource: RateSource | null;
+  /** dozens × rate, rounded to the paisa. 0 when not priced. */
+  amountPaisa: number;
+}
+
+/** Everything a contractor produced on one business day. */
+export interface ContractorWorkDay {
+  date: string;
+  cartons: number;
+  dozens: number;
+  amountPaisa: number;
+  /** Dozens on this day that have no rate, so are not in amountPaisa. */
+  unpricedDozens: number;
+  lines: ContractorWorkLine[];
+}
+
+const lineKey = (carton: ContractorWorkCarton): string =>
+  [carton.programId, carton.role, carton.articleSizeId].join("|");
+
+/** One line per program × job × article, with its cartons counted. */
+const linesOf = (cartons: readonly ContractorWorkCarton[]): ContractorWorkLine[] => {
+  const counted = new Map<string, { carton: ContractorWorkCarton; count: number }>();
+  for (const carton of cartons) {
+    const key = lineKey(carton);
+    const entry = counted.get(key);
+    if (entry) entry.count += 1;
+    else counted.set(key, { carton, count: 1 });
+  }
+  return [...counted.values()].map(({ carton, count }) => {
+    const dozens = cartonsToDozens(count);
+    const { receivedAt: _receivedAt, ...identity } = carton;
+    return { ...identity, cartons: count, dozens, amountPaisa: carton.ratePaisa == null ? 0 : jobChargePaisa(carton.ratePaisa, dozens) };
+  });
+};
+
+const byProgramThenArticle = (a: ContractorWorkLine, b: ContractorWorkLine): number =>
+  a.programCode.localeCompare(b.programCode) || a.role.localeCompare(b.role) || `${a.article} ${a.size}`.localeCompare(`${b.article} ${b.size}`);
+
+/** The cartons, grouped into the business days they came in on, oldest first. */
+export const groupContractorWork = (cartons: readonly ContractorWorkCarton[]): ContractorWorkDay[] => {
+  const byDate = new Map<string, ContractorWorkCarton[]>();
+  for (const carton of cartons) {
+    const date = businessDateOf(carton.receivedAt);
+    byDate.set(date, [...(byDate.get(date) ?? []), carton]);
+  }
+  return [...byDate.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([date, dayCartons]) => {
+      const lines = linesOf(dayCartons).sort(byProgramThenArticle);
+      return {
+        date,
+        cartons: dayCartons.length,
+        dozens: cartonsToDozens(dayCartons.length),
+        amountPaisa: lines.reduce((sum, line) => sum + line.amountPaisa, 0),
+        unpricedDozens: lines.filter((line) => line.ratePaisa == null).reduce((sum, line) => sum + line.dozens, 0),
+        lines,
+      };
+    });
+};
+
+// ─── The ledger: work and payments, with a running balance ──────────────────
+
+export const CONTRACTOR_PAYMENT_KIND = {
+  /** Money paid TO the contractor — reduces what is owed. */
+  PAYMENT: "PAYMENT",
+  /** Money received FROM the contractor (an advance returned) — adds back to what is owed. */
+  RECEIPT: "RECEIPT",
+} as const;
+export type ContractorPaymentKind = (typeof CONTRACTOR_PAYMENT_KIND)[keyof typeof CONTRACTOR_PAYMENT_KIND];
+
+/** One cash voucher line naming the contractor. */
+export interface ContractorPayment {
+  date: string;
+  voucherId: string;
+  voucherNumber: string;
+  description: string;
+  modeOfTransfer: string | null;
+  kind: ContractorPaymentKind;
+  amountPaisa: number;
+}
+
+export type ContractorLedgerEntry =
+  | { kind: "WORK"; date: string; creditPaisa: number; debitPaisa: number; balancePaisa: number; work: ContractorWorkDay }
+  | { kind: ContractorPaymentKind; date: string; creditPaisa: number; debitPaisa: number; balancePaisa: number; payment: ContractorPayment };
+
+export interface ContractorLedger {
+  /** Positive: owed TO the contractor at the start of the period. */
+  openingBalancePaisa: number;
+  closingBalancePaisa: number;
+  /** Work done in the period. */
+  earnedPaisa: number;
+  /** Paid to the contractor in the period, less anything they returned. */
+  paidPaisa: number;
+  /** The Cr and Dr columns summed, for the ledger's total row (work + money returned; payments). */
+  totalCreditPaisa: number;
+  totalDebitPaisa: number;
+  dozens: number;
+  unpricedDozens: number;
+  entries: ContractorLedgerEntry[];
+}
+
+type Unbalanced = Omit<Extract<ContractorLedgerEntry, { kind: "WORK" }>, "balancePaisa"> | Omit<Extract<ContractorLedgerEntry, { kind: ContractorPaymentKind }>, "balancePaisa">;
+
+const workEntry = (work: ContractorWorkDay): Unbalanced => ({ kind: "WORK", date: work.date, creditPaisa: work.amountPaisa, debitPaisa: 0, work });
+
+const paymentEntry = (payment: ContractorPayment): Unbalanced =>
+  payment.kind === CONTRACTOR_PAYMENT_KIND.PAYMENT
+    ? { kind: payment.kind, date: payment.date, creditPaisa: 0, debitPaisa: payment.amountPaisa, payment }
+    : { kind: payment.kind, date: payment.date, creditPaisa: payment.amountPaisa, debitPaisa: 0, payment };
+
+/** Within a day, the work comes before what was paid against it. */
+const ENTRY_ORDER: Record<ContractorLedgerEntry["kind"], number> = { WORK: 0, PAYMENT: 1, RECEIPT: 2 };
+
+/**
+ * The ledger for `fromDate`…`toDate` (inclusive, `YYYY-MM-DD`), given ALL of the contractor's
+ * work and payments. Everything before the period is its opening balance.
+ */
+export const buildContractorLedger = (input: {
+  work: readonly ContractorWorkDay[];
+  payments: readonly ContractorPayment[];
+  fromDate: string;
+  toDate: string;
+}): ContractorLedger => {
+  const all = [...input.work.map(workEntry), ...input.payments.map(paymentEntry)].sort(
+    (a, b) => a.date.localeCompare(b.date) || ENTRY_ORDER[a.kind] - ENTRY_ORDER[b.kind]
+  );
+  const before = all.filter((entry) => entry.date < input.fromDate);
+  const during = all.filter((entry) => entry.date >= input.fromDate && entry.date <= input.toDate);
+
+  const openingBalancePaisa = before.reduce((sum, entry) => sum + entry.creditPaisa - entry.debitPaisa, 0);
+  let running = openingBalancePaisa;
+  const entries = during.map((entry) => {
+    running += entry.creditPaisa - entry.debitPaisa;
+    return { ...entry, balancePaisa: running } as ContractorLedgerEntry;
+  });
+
+  const workDays = during.flatMap((entry) => (entry.kind === "WORK" ? [entry.work] : []));
+  return {
+    openingBalancePaisa,
+    closingBalancePaisa: running,
+    earnedPaisa: workDays.reduce((sum, day) => sum + day.amountPaisa, 0),
+    paidPaisa: during.reduce((sum, entry) => (entry.kind === "WORK" ? sum : sum + entry.debitPaisa - entry.creditPaisa), 0),
+    totalCreditPaisa: during.reduce((sum, entry) => sum + entry.creditPaisa, 0),
+    totalDebitPaisa: during.reduce((sum, entry) => sum + entry.debitPaisa, 0),
+    dozens: workDays.reduce((sum, day) => sum + day.dozens, 0),
+    unpricedDozens: workDays.reduce((sum, day) => sum + day.unpricedDozens, 0),
+    entries,
+  };
+};

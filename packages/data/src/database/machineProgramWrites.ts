@@ -240,9 +240,11 @@ export const machineProgramWritesMethods = {
     };
   },
 
-  async nextMachineProgramRunNo(this: SqliteDatabase, programId: string, injectorNo: number, tx: TransactionContext): Promise<number> {
+  /** The next run number on an injector, or among the fix runs (null — they have no injector). */
+  async nextMachineProgramRunNo(this: SqliteDatabase, programId: string, injectorNo: number | null, tx: TransactionContext): Promise<number> {
+    // IS, not =, so null finds the fix runs (migration 073).
     const row = dbOf(tx)
-      .prepare("SELECT COALESCE(MAX(run_no), 0) + 1 AS n FROM machine_program_runs WHERE program_id = ? AND injector_no = ?")
+      .prepare("SELECT COALESCE(MAX(run_no), 0) + 1 AS n FROM machine_program_runs WHERE program_id = ? AND injector_no IS ?")
       .get(programId, injectorNo) as { n: number };
     return Number(row.n);
   },
@@ -273,12 +275,13 @@ export const machineProgramWritesMethods = {
    * A FIX run: an article with no upper, moulded from an OUTER and an INNER sole.
    *
    * It carries its own quantity because it has no upper lines to add up, and that quantity is
-   * NOT a reservation — nothing in the Reserved arithmetic looks at machine_program_runs.
+   * NOT a reservation — nothing in the Reserved arithmetic looks at machine_program_runs. It has
+   * no injector: EVR FIX is not moulded on the injectors (migration 073).
    */
   async insertMachineProgramFixRun(
     this: SqliteDatabase,
     payload: {
-      id: string; programId: string; injectorNo: number; runNo: number; soleColour: string;
+      id: string; programId: string; runNo: number; soleColour: string;
       innerSoleColour: string; articleSizeId: string; quantity: number; unitId: string | null;
       createdBy: string; createdAt: string;
     },
@@ -289,10 +292,10 @@ export const machineProgramWritesMethods = {
         `INSERT INTO machine_program_runs (
            id, program_id, injector_no, run_no, sole_colour, inner_sole_colour, article_size_id,
            quantity, unit_id, created_by, created_at, updated_at
-         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+         ) VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
       .run(
-        payload.id, payload.programId, payload.injectorNo, payload.runNo, payload.soleColour,
+        payload.id, payload.programId, payload.runNo, payload.soleColour,
         payload.innerSoleColour, payload.articleSizeId, payload.quantity, payload.unitId,
         payload.createdBy, payload.createdAt, payload.createdAt
       );
@@ -312,19 +315,19 @@ export const machineProgramWritesMethods = {
       .run(payload.soleColour, payload.innerSoleColour, payload.quantity, payload.updatedAt, payload.id);
   },
 
-  /** The fix run already on this injector for an article + size, or null. */
+  /** The fix run already on the program for an article + size, or null. A fix run has no injector. */
   async findMachineProgramFixRun(
     this: SqliteDatabase,
-    input: { programId: string; injectorNo: number; articleSizeId: string },
+    input: { programId: string; articleSizeId: string },
     tx: TransactionContext
   ): Promise<string | null> {
     const row = dbOf(tx)
       .prepare(
         `SELECT id FROM machine_program_runs
-          WHERE program_id = ? AND injector_no = ? AND article_size_id = ? AND inner_sole_colour IS NOT NULL
-          LIMIT 1`
+          WHERE program_id = ? AND article_size_id = ? AND inner_sole_colour IS NOT NULL
+          ORDER BY run_no LIMIT 1`
       )
-      .get(input.programId, input.injectorNo, input.articleSizeId) as { id: string } | undefined;
+      .get(input.programId, input.articleSizeId) as { id: string } | undefined;
     return row ? text(row.id) : null;
   },
 

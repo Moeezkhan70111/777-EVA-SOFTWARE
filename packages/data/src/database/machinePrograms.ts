@@ -95,7 +95,8 @@ const sum = (values: number[]): number => roundQuantity(values.reduce((total, va
 const mapRun = (row: Record<string, unknown>, lines: MachineProgramUpperLineRecord[]): MachineProgramRunRecord => ({
   id: text(row.id),
   programId: text(row.program_id),
-  injectorNo: Number(row.injector_no ?? 0),
+  // Null on a FIX run: EVR FIX has no injector (migration 073).
+  injectorNo: row.injector_no == null ? null : Number(row.injector_no),
   runNo: Number(row.run_no ?? 0),
   soleColour: text(row.sole_colour),
   innerSoleColour: row.inner_sole_colour ? attributeKey(text(row.inner_sole_colour)) : null,
@@ -326,7 +327,7 @@ export const machineProgramsMethods = {
          FROM machine_program_runs mpr
          JOIN article_sizes ass ON ass.id = mpr.article_size_id
          LEFT JOIN inventory_units u ON u.id = mpr.unit_id
-         WHERE mpr.program_id = ? ORDER BY mpr.injector_no, mpr.run_no`
+         WHERE mpr.program_id = ? ORDER BY mpr.injector_no IS NULL, mpr.injector_no, mpr.run_no`
       )
       .all(text(programId).trim()) as Array<Record<string, unknown>>;
     if (runs.length === 0) return [];

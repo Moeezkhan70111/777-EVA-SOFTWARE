@@ -74,6 +74,8 @@ export const PERMISSION = {
   PURCHASE_VOUCHER_LIST: "purchase-voucher-list",
   SUPPLIER_LEDGER: "supplier-ledger",
   SUPPLIER_BALANCE: "supplier-balance",
+  /** What each contractor is owed for machine and packing work, and what they were paid. */
+  CONTRACTOR_LEDGER: "contractor-ledger",
   CASH_VOUCHER_FORM: "cash-voucher-form",
   CASH_VOUCHER_LIST: "cash-voucher-list",
   SETTINGS: "settings",

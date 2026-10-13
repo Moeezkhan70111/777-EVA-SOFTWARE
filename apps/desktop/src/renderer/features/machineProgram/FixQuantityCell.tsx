@@ -11,8 +11,8 @@ import type { ProgramWrites } from "./useProgramWrites";
 //
 // It is held to no ceiling: a fix run reserves nothing, so there is no store figure it could ask
 // for more of than there is. Saving it is the same write that created it
-// (SaveMachineProgramFixRunUseCase), which changes the run already on this injector for this
-// article rather than adding a rival one, so the soles are sent back exactly as they stand.
+// (SaveMachineProgramFixRunUseCase), which changes the program's run for this article rather than
+// adding a rival one (a fix run has no injector), so the soles are sent back exactly as they stand.
 
 interface FixQuantityCellProps {
   machineId: string;
@@ -32,7 +32,6 @@ export const FixQuantityCell: React.FC<FixQuantityCellProps> = ({ machineId, pro
         machineId,
         programDate,
         shift,
-        injectorNo: run.injectorNo,
         runId: run.id,
         soleColour: run.soleColour,
         innerSoleColour: run.innerSoleColour ?? "",

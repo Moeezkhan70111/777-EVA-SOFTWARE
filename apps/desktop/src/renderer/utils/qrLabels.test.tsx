@@ -98,6 +98,18 @@ describe("cartonLabelHeader", () => {
     expect(header.attributes.map((a) => a.label)).toEqual(["SIZE", "COLOUR"]);
   });
 
+  // A B carton (EVR FIX, mixed colours, migration 074): a B in the top-left corner, COLOUR MIX.
+  it("prints a B carton with a B in the corner and COLOUR MIX", () => {
+    const header = cartonLabelHeader({ article: "EVR9", color: "MIX", size: "7/10", innerColor: "RED", grade: "B" });
+    expect(header.gradeMark).toBe("B");
+    expect(header.categoryLine).toBe("EVR9");
+    expect(header.attributes.map((a) => [a.label, a.value])).toEqual([["SIZE", "7/10"], ["COLOUR", "MIX"]]);
+
+    const html = renderRawMaterialLabelSheetHtml({ title: "t", heading: "h", subheading: "s", header, ids: ["EVR9_MIX_7/10_000001"] });
+    expect(html).toContain('class="rm-label-grade" aria-label="Grade B">B</div>');
+    expect(html).toContain("rm-label-heading--graded");
+  });
+
   it("leaves out what a carton does not have, rather than printing an empty supplier line", () => {
     const header = cartonLabelHeader({ article: "SK6", color: "BLACK", size: "7/10" });
     expect(header.partyName).toBe("");

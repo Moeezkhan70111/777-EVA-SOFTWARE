@@ -174,7 +174,6 @@ export function registerMachineProgramHandlers(ctx: IpcContext): void {
       machineId: asString(input.machineId),
       programDate: asString(input.programDate),
       shift: readShift(input.shift),
-      injectorNo: rawNumber(input.injectorNo),
       runId: asOptionalString(input.runId) ?? null,
       soleColour: asString(input.soleColour),
       innerSoleColour: asString(input.innerSoleColour),

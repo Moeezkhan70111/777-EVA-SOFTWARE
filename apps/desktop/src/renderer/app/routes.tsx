@@ -60,6 +60,7 @@ export type AppRoute =
   | "purchase-voucher-form"
   | "supplier-ledger"
   | "supplier-balance"
+  | "contractor-ledger"
   | "cash-voucher-list"
   | "cash-voucher-form"
   | "profile"

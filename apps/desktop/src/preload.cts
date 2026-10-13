@@ -129,6 +129,8 @@ contextBridge.exposeInMainWorld("desktop", {
       ipcRenderer.invoke(IPC.listMachineProgramCartonPackets, programId, opts),
     printMachineProgramCartons: (input: Record<string, unknown>, opts?: Record<string, unknown>) =>
       ipcRenderer.invoke(IPC.printMachineProgramCartons, input, opts),
+    convertMachineProgramCartonsToB: (input: Record<string, unknown>, opts?: Record<string, unknown>) =>
+      ipcRenderer.invoke(IPC.convertMachineProgramCartonsToB, input, opts),
     machineProgramCartonIn: (input: Record<string, unknown>, opts?: Record<string, unknown>) =>
       ipcRenderer.invoke(IPC.machineProgramCartonIn, input, opts),
     getMachineProgramReconciliation: (programId: string, opts?: Record<string, unknown>) =>
@@ -370,5 +372,7 @@ contextBridge.exposeInMainWorld("desktop", {
     deletePurchaseVoucher: (voucherId: string) => ipcRenderer.invoke(IPC.deletePurchaseVoucher, voucherId),
     getSupplierLedger: (partyId: string, query?: Record<string, unknown>) => ipcRenderer.invoke(IPC.getSupplierLedger, partyId, query),
     listSupplierBalances: (query?: Record<string, unknown>) => ipcRenderer.invoke(IPC.listSupplierBalances, query),
+    listContractorLedgerAccounts: () => ipcRenderer.invoke(IPC.listContractorLedgerAccounts),
+    getContractorLedger: (accountId: string, query: { fromDate: string; toDate: string }) => ipcRenderer.invoke(IPC.getContractorLedger, accountId, query),
   },
 });

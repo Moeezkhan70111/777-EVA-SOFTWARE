@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { copy } from "../../config/copy";
 import { ArticleStep, ColourStep, SizeStep } from "./RunSteps";
-import { RUN_STEPS, firstOpenStep, type RunDraft, type RunStep } from "./machineProgram";
+import { RUN_STEPS, firstOpenStep, type ArticleKind, type RunDraft, type RunStep } from "./machineProgram";
 
 // One sole run, asked one question at a time:
 //
@@ -28,6 +28,8 @@ interface RunBuilderProps {
   asks?: readonly RunStep[];
   /** What comes after the questions. */
   complete: (draft: RunDraft, back: () => void) => React.ReactNode;
+  /** Only articles of this kind — a fix run stays a fix article, an upper run an upper article. */
+  kind?: ArticleKind;
   /** ← Back from the first question. */
   onExit: () => void;
 }
@@ -38,7 +40,7 @@ const QUESTION: Record<RunStep, string> = {
   size: copy.machineProgram.stepSize,
 };
 
-export const RunBuilder: React.FC<RunBuilderProps> = ({ initialDraft, asks = RUN_STEPS, complete, onExit }) => {
+export const RunBuilder: React.FC<RunBuilderProps> = ({ initialDraft, asks = RUN_STEPS, complete, onExit, kind }) => {
   const [draft, setDraft] = useState<RunDraft>(initialDraft);
   const [step, setStep] = useState<RunStep | null>(firstOpenStep(initialDraft));
 
@@ -80,12 +82,13 @@ export const RunBuilder: React.FC<RunBuilderProps> = ({ initialDraft, asks = RUN
           {step === "colour" ? <ColourStep selected={draft.soleColour} onChoose={(soleColour) => answer({ soleColour })} /> : null}
           {step === "article" ? (
             <ArticleStep
+              kind={kind}
               selected={draft.article}
               onChoose={(article) => answer(article === draft.article ? {} : { article, articleSizeId: null, size: null })}
             />
           ) : null}
           {step === "size" && draft.article ? (
-            <SizeStep article={draft.article} selectedId={draft.articleSizeId} onChoose={(size) => answer(size)} />
+            <SizeStep kind={kind} article={draft.article} selectedId={draft.articleSizeId} onChoose={(size) => answer(size)} />
           ) : null}
         </section>
       ) : (

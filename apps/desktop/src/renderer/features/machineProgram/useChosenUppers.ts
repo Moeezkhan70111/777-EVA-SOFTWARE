@@ -58,7 +58,8 @@ interface AddToProgram {
   programDate: string;
   /** The shift to give the date's program when this is the first thing saved on it. */
   shift: MachineShift;
-  injectorNo: number;
+  /** Null in the Fix Articles section, which has no injector and never adds uppers. */
+  injectorNo: number | null;
   /** The runs already on the injector — a repeated article + size joins its run, never rivals it. */
   runs: MachineProgramRunRecord[];
   /** What the program's articles are priced at already, so a rate box opens on what is agreed. */
@@ -181,7 +182,8 @@ export const useChosenUppers = (target: AddToProgram) => {
    * pressing Add again never saves it twice.
    */
   const addToProgram = useCallback(async (): Promise<boolean> => {
-    if (rows.length === 0 || saving) return false;
+    const injectorNo = target.injectorNo;
+    if (rows.length === 0 || saving || injectorNo === null) return false;
     setSaving(true);
     setProblem(null);
     const runIds = new Map<string, string>();
@@ -195,7 +197,7 @@ export const useChosenUppers = (target: AddToProgram) => {
         machineId: target.machineId,
         programDate: target.programDate,
         shift: target.shift,
-        injectorNo: target.injectorNo,
+        injectorNo,
         runId,
         run: runId ? null : { soleColour: row.soleColour, articleSizeId: row.articleSizeId },
         itemId: row.itemId,

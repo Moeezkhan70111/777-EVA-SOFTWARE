@@ -1,4 +1,4 @@
-import { MACHINE_PROGRAM_DISPLAY_STATUS, cartonsExpectedFromUppers, formatShiftRange, roundQuantity } from "@erp/domain";
+import { MACHINE_PROGRAM_DISPLAY_STATUS, cartonsExpectedFromUppers, formatShiftRange, isFixRun, roundQuantity } from "@erp/domain";
 import type {
   MachineProgramCartonPacket,
   MachineProgramFixCartonRun,
@@ -116,7 +116,8 @@ export const programBands = (program: MachineProgramRecord, cartons: readonly Ma
   const bands = new Map<string, ProgramBand>();
   const cartonsOf = new Map(cartons.map((row) => [row.lineId, row]));
   for (const run of program.runs) {
-    if (run.lines.length === 0) continue;
+    // Only runs with uppers are issued here. A FIX run has neither uppers nor an injector.
+    if (run.injectorNo === null || run.lines.length === 0) continue;
     const bandKey = `${run.injectorNo}|${run.soleColour}`;
     let band = bands.get(bandKey);
     if (!band) {
@@ -186,6 +187,15 @@ export const programStatusTone = (displayStatus: string): "ok" | "warn" | "muted
   if (displayStatus === MACHINE_PROGRAM_DISPLAY_STATUS.PARTIALLY_USED) return "warn";
   return "ok";
 };
+
+/**
+ * An EVR FIX program: every article on it is a FIX article — two soles, no upper — so it has no
+ * upper to issue, count or wait for. Only such a program drops the upper sections (Upper Out, the
+ * upper cards and their "no uppers yet" notice, "(Upper)" on the total). A program that mixes
+ * fix and upper articles keeps every one of them, because its uppers still go out.
+ */
+export const isFixOnlyProgram = (program: MachineProgramRecord): boolean =>
+  program.runs.length > 0 && program.runs.every(isFixRun);
 
 /** How many injectors this program actually puts work on. */
 export const injectorsOnProgram = (program: MachineProgramRecord): number =>
@@ -291,13 +301,29 @@ export const printedFixCartonRuns = (runs: readonly MachineProgramFixCartonRun[]
     run.labels.map((label) => ({
       key: label.qrBatchId,
       qrBatchId: label.qrBatchId,
-      label: cartonRunLabel({ article: run.article, size: run.size, colour: run.outerSoleColour }),
+      // A B run carries MIX, not the outer sole: its cartons came back in mixed colours.
+      label: cartonRunLabel({ article: run.article, size: run.size, colour: label.grade === "B" ? label.colour : run.outerSoleColour }),
       cartons: label.cartonCount,
       range: label.firstQrId === label.lastQrId ? label.firstQrId : `${label.firstQrId} → ${label.lastQrId}`,
       received: label.receivedInRun,
       at: label.printedAt,
+      grade: label.grade,
+      voided: label.voidedInRun,
     }))
   );
+
+/**
+ * What the Cartons to label banner says in one line: how many labels are still owed, how many are
+ * printed, and how many of those cartons are back. Counts of labels on screen, never stock.
+ */
+export const cartonLabelTotals = (
+  runs: readonly CartonRun[],
+  printed: ReadonlyArray<{ cartons: number; received: number }>
+): { owed: number; printed: number; back: number } => ({
+  owed: runs.reduce((sum, run) => sum + run.cartons, 0),
+  printed: printed.reduce((sum, run) => sum + run.cartons, 0),
+  back: printed.reduce((sum, run) => sum + run.received, 0),
+});
 
 /** A carton run that has been generated, for the record on screen. */
 export interface PrintedCartonRun {
@@ -311,6 +337,10 @@ export interface PrintedCartonRun {
   /** How many of the run's cartons have come back and been stored in. */
   received: number;
   at: string;
+  /** "B" for a run of B carton labels (EVR FIX, MIX). Absent on an ordinary run. */
+  grade?: "B" | null;
+  /** Labels of the run voided since — on a FIX run, the ones turned into B cartons. */
+  voided?: number;
 }
 
 /** Every carton run already printed for the program, newest first — one row per QR run. */

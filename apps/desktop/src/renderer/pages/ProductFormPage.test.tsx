@@ -254,4 +254,84 @@ describe("ProductFormPage contractor pricing", () => {
     await waitFor(() => expect(createProduct).toHaveBeenCalled());
     expect(createProduct.mock.calls[0][0]).not.toHaveProperty("productCode");
   });
+
+  // The packing rate built from named attributes: BOX 50 + TAPE 30 + … = the packing rate.
+  const addPackingAttribute = async (name: string, price: string) => {
+    await userEvent.click(screen.getByRole("button", { name: "Add packing attribute" }));
+    await userEvent.type(screen.getByLabelText(/name of attribute/i), name);
+    await userEvent.type(screen.getByLabelText(/^price/i), price);
+    await userEvent.click(screen.getByRole("button", { name: "Add" }));
+  };
+
+  it("adds packing attributes from the popup and makes the packing rate their sum", async () => {
+    const createProduct = vi.fn().mockResolvedValue("new-product");
+    renderForm({ createProduct, updateProduct: vi.fn() });
+
+    await describeProduct();
+    await addPackingAttribute("box", "50");
+    await addPackingAttribute("TAPE", "30");
+    await addPackingAttribute("POLY BAG", "50");
+    await addPackingAttribute("LABOUR", "20");
+
+    const packing = screen.getByLabelText(/packing rate/i);
+    expect(packing).toHaveValue("150");
+    expect(packing).toHaveAttribute("readonly");
+    expect(screen.getByText("Total of 4 attributes")).toBeInTheDocument();
+    expect(screen.getByText("BOX")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "Create Product" }));
+
+    await waitFor(() =>
+      expect(createProduct).toHaveBeenCalledWith(
+        expect.objectContaining({
+          packingRate: 150,
+          packingRateItems: [
+            { name: "BOX", rate: 50 },
+            { name: "TAPE", rate: 30 },
+            { name: "POLY BAG", rate: 50 },
+            { name: "LABOUR", rate: 20 },
+          ],
+        })
+      )
+    );
+  });
+
+  it("says what to fix in the popup instead of adding a nameless attribute", async () => {
+    renderForm({ createProduct: vi.fn(), updateProduct: vi.fn() });
+
+    await userEvent.click(screen.getByRole("button", { name: "Add packing attribute" }));
+    await userEvent.type(screen.getByLabelText(/^price/i), "50");
+    await userEvent.click(screen.getByRole("button", { name: "Add" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(/enter a name/i);
+    expect(screen.getByLabelText(/packing rate/i)).not.toHaveAttribute("readonly");
+  });
+
+  it("opens a product on its packing attributes, and removing one lowers the rate", async () => {
+    const updateProduct = vi.fn().mockResolvedValue(undefined);
+    renderForm(
+      {
+        getProduct: vi.fn().mockResolvedValue({
+          id: "as-1", articleSizeId: "as-1", article: "SK6", color: "", size: "7/10", description: null,
+          costPrice: 600, sellingPrice: 650, machineRatePaisa: 4500, packingRatePaisa: 8000, printingRatePaisa: null,
+          packingRateItems: [{ name: "BOX", ratePaisa: 5000 }, { name: "TAPE", ratePaisa: 3000 }],
+          mainGroupId: null, groupId: null, status: "ACTIVE", createdAt: "", updatedAt: "",
+        }),
+        updateProduct,
+      },
+      "as-1"
+    );
+
+    await waitFor(() => expect(screen.getByLabelText(/packing rate/i)).toHaveValue("80"));
+    await userEvent.click(screen.getByRole("button", { name: "Remove TAPE" }));
+    expect(screen.getByLabelText(/packing rate/i)).toHaveValue("50");
+
+    await userEvent.click(screen.getByRole("button", { name: "Update Product" }));
+    await waitFor(() =>
+      expect(updateProduct).toHaveBeenCalledWith(
+        "as-1",
+        expect.objectContaining({ packingRate: 50, packingRateItems: [{ name: "BOX", rate: 50 }] })
+      )
+    );
+  });
 });

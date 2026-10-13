@@ -162,10 +162,12 @@ function installApi(
     earlierPackets?: MachineProgramCartonPacket[];
     /** A FIX article on the program: no upper, two soles, and cartons owed by its PLAN. */
     fixRuns?: MachineProgramFixCartonRun[];
+    /** The program Store Out opens — an EVR FIX one, say. Defaults to the SK6 upper program. */
+    program?: MachineProgramRecord;
   } = {}
 ) {
   const state = {
-    program: program(),
+    program: options.program ?? program(),
     black: 0,
     red: 0,
     sequence: 0,
@@ -309,7 +311,7 @@ function installApi(
       for (const packet of chosen) {
         packet.label = {
           qrBatchId: batchId, firstQrId: ids[0], lastQrId: ids[ids.length - 1],
-          cartonCount: packet.cartons!.count, receivedInRun: 0, printedBy: "aslam", printedAt: `${TODAY}T08:00:00.000Z`,
+          cartonCount: packet.cartons!.count, receivedInRun: 0, voidedInRun: 0, colour: "BLACK", grade: null, printedBy: "aslam", printedAt: `${TODAY}T08:00:00.000Z`,
         };
       }
       return {
@@ -531,12 +533,12 @@ describe("Machine Move Out — one scan, one movement", () => {
 
     await scan("RM_6_42_1");
     // 2 DOZEN out is 4 cartons coming back.
-    expect(await within(cartonSection()).findByText("4 cartons")).toBeInTheDocument();
+    expect(await within(cartonSection()).findByRole("button", { name: "Print 4 carton QR labels for SK6 / 7/10 / BLACK" })).toBeInTheDocument();
     expect(within(cartonSection()).getByText("SK6 / 7/10 / BLACK")).toBeInTheDocument();
 
     // A second packet of the same upper is the same carton run, not a second one.
     await scan("RM_6_42_2");
-    expect(await within(cartonSection()).findByText("8 cartons")).toBeInTheDocument();
+    expect(await within(cartonSection()).findByRole("button", { name: "Print 8 carton QR labels for SK6 / 7/10 / BLACK" })).toBeInTheDocument();
 
     // A different upper is its own run.
     await scan("RM_6_43_1");
@@ -555,10 +557,10 @@ describe("Machine Move Out — one scan, one movement", () => {
     expect(printWindow.mock.calls[0][0].ids).toHaveLength(8);
 
     // Printed once and not offered again, with the range it reserved on the record.
-    await waitFor(() => expect(within(cartonSection()).queryByText("8 cartons")).not.toBeInTheDocument());
+    await waitFor(() => expect(within(cartonSection()).queryByRole("button", { name: /^Print \d+ carton QR labels for SK6 \/ 7\/10 \/ BLACK/ })).not.toBeInTheDocument());
     expect(within(cartonSection()).getByText(/SK6_BLACK_7\/10_000001 → SK6_BLACK_7\/10_000008/)).toBeInTheDocument();
     // The RED run is untouched by printing the BLACK one.
-    expect(within(cartonSection()).getByText("4 cartons")).toBeInTheDocument();
+    expect(within(cartonSection()).getByRole("button", { name: "Print 4 carton QR labels for SK6 / 7/10 / RED" })).toBeInTheDocument();
   });
 
   it("says why cartons cannot be labelled instead of printing a guessed identity", async () => {
@@ -579,14 +581,14 @@ describe("Machine Move Out — one scan, one movement", () => {
     const printed = cartonPacket("RM_6_43_1", "RED");
     printed.label = {
       qrBatchId: "qrb-old", firstQrId: "SK6_RED_7/10_000001", lastQrId: "SK6_RED_7/10_000004",
-      cartonCount: 4, receivedInRun: 0, printedBy: "aslam", printedAt: `${TODAY}T06:30:00.000Z`,
+      cartonCount: 4, receivedInRun: 0, voidedInRun: 0, colour: "BLACK", grade: null, printedBy: "aslam", printedAt: `${TODAY}T06:30:00.000Z`,
     };
     const api = installApi({ earlierPackets: [cartonPacket("RM_6_42_1", "BLACK"), printed] });
     renderPage();
     await open();
 
     // No Start Scan: the list is on the program itself. 2 DOZEN is 4 carton labels.
-    expect(await within(cartonSection()).findByText("4 cartons")).toBeInTheDocument();
+    expect(await within(cartonSection()).findByRole("button", { name: "Print 4 carton QR labels for SK6 / 7/10 / BLACK" })).toBeInTheDocument();
     expect(within(cartonSection()).getByText(/SK6_RED_7\/10_000001 → SK6_RED_7\/10_000004/)).toBeInTheDocument();
     expect(within(cartonSection()).queryByRole("button", { name: /^Print .*RED/ })).not.toBeInTheDocument();
 
@@ -608,7 +610,7 @@ describe("Machine Move Out — one scan, one movement", () => {
     const printed = cartonPacket("RM_6_43_1", "RED");
     printed.label = {
       qrBatchId: "qrb-old", firstQrId: "SK6_RED_7/10_000001", lastQrId: "SK6_RED_7/10_000004",
-      cartonCount: 4, receivedInRun: 1, printedBy: "aslam", printedAt: `${TODAY}T06:30:00.000Z`,
+      cartonCount: 4, receivedInRun: 1, voidedInRun: 0, colour: "BLACK", grade: null, printedBy: "aslam", printedAt: `${TODAY}T06:30:00.000Z`,
     };
     const api = installApi({ earlierPackets: [printed] });
     api.listQrCodesForBatch.mockResolvedValue(
@@ -803,7 +805,8 @@ describe("Machine Move Out — a FIX article's cartons", () => {
 
     const cartons = cartonSection();
     await waitFor(() => expect(within(cartons).getByText("DC3 / 7/10 / SILVER GREY")).toBeInTheDocument());
-    expect(within(cartons).getByText("64 cartons")).toBeInTheDocument();
+    // The banner names the whole job; the label card shows the count big.
+    expect(within(cartons).getByText("Print 64 carton QR labels")).toBeInTheDocument();
 
     await userEvent.click(
       within(cartons).getByRole("button", { name: "Print 64 carton QR labels for DC3 / 7/10 / SILVER GREY" })
@@ -833,7 +836,7 @@ describe("Machine Move Out — a FIX article's cartons", () => {
               firstQrId: "DC3_SILVERGREY_7/10_000001",
               lastQrId: "DC3_SILVERGREY_7/10_000064",
               cartonCount: 64,
-              receivedInRun: 10,
+              receivedInRun: 10, voidedInRun: 0, colour: "BLACK", grade: null,
               printedBy: "aslam",
               printedAt: "2026-10-12T05:00:00.000Z",
             },
@@ -851,6 +854,93 @@ describe("Machine Move Out — a FIX article's cartons", () => {
     expect(within(cartons).getByText("10 of 64 back in store")).toBeInTheDocument();
     expect(within(cartons).queryByRole("button", { name: /^Print \d+ carton/ })).toBeNull();
     expect(api.printMachineProgramCartons).not.toHaveBeenCalled();
+  });
+
+  /** An EVR FIX program: one fix article, 32 DOZEN, no upper and no injector at all. */
+  const fixOnlyProgram = (): MachineProgramRecord => {
+    const base = program();
+    return {
+      ...base,
+      totalQuantity: 0,
+      consumedQuantity: 0,
+      outstandingQuantity: 0,
+      fixQuantity: 32,
+      productionQuantity: 32,
+      runs: [
+        {
+          ...base.runs[0],
+          id: "run-fix", injectorNo: null, soleColour: "SILVER GREY", innerSoleColour: "BLACK", fixQuantity: 32,
+          articleSizeId: "as-dc3-710", article: "DC3", size: "7/10", totalQuantity: 0, consumedQuantity: 0, lines: [],
+        },
+      ],
+    };
+  };
+
+  it("an EVR FIX program shows no upper sections: no Upper Out, no 'no uppers', no '(Upper)' on the total", async () => {
+    installApi({ program: fixOnlyProgram(), fixRuns: [fixRun()] });
+    renderPage();
+    await open();
+
+    await waitFor(() => expect(within(cartonSection()).getByText("DC3 / 7/10 / SILVER GREY")).toBeInTheDocument());
+    expect(screen.queryByRole("region", { name: "Upper Out" })).not.toBeInTheDocument();
+    expect(screen.queryByText("No uppers on this program yet")).not.toBeInTheDocument();
+    expect(screen.getByText("Total Dozen")).toBeInTheDocument();
+    expect(screen.queryByText("Total Dozen (Upper)")).not.toBeInTheDocument();
+    // EVR FIX has no injector either, so there is no injector count.
+    expect(screen.queryByText("Total Injectors")).not.toBeInTheDocument();
+  });
+
+  it("a program with uppers keeps every upper section, even with a fix article beside them", async () => {
+    installApi({ fixRuns: [fixRun()] });
+    renderPage();
+    await open();
+
+    expect(await screen.findByRole("region", { name: "Upper Out" })).toBeInTheDocument();
+    expect(screen.getByText("Total Dozen (Upper)")).toBeInTheDocument();
+    expect(screen.getByText("Total Injectors")).toBeInTheDocument();
+  });
+
+  it("asks for the carton labels to be printed, as a job — not as a line of text", async () => {
+    installApi({ program: fixOnlyProgram(), fixRuns: [fixRun()] });
+    renderPage();
+    await open();
+
+    const cartons = cartonSection();
+    // The banner says it is a job, how big, and the three steps of it.
+    const banner = await within(cartons).findByRole("status");
+    expect(banner).toHaveTextContent("Action needed");
+    expect(banner).toHaveTextContent("Print 64 carton QR labels");
+    expect(within(banner).getAllByRole("listitem").map((step) => step.textContent)).toEqual([
+      "1Print the labels",
+      "2Stick one on every carton",
+      "3Store In scans it back",
+    ]);
+    // The label card shows the count big, and its button says exactly how many it prints.
+    expect(within(cartons).getByRole("button", { name: /Print 64 carton QR labels/ })).toHaveTextContent("Print 64 labels");
+  });
+
+  it("turns the banner green once every label is printed, and says how many cartons are back", async () => {
+    installApi({
+      program: fixOnlyProgram(),
+      fixRuns: [
+        fixRun({
+          cartonsToPrint: 0,
+          labels: [
+            {
+              qrBatchId: "qrb-9", firstQrId: "DC3_SILVERGREY_7/10_000001", lastQrId: "DC3_SILVERGREY_7/10_000064",
+              cartonCount: 64, receivedInRun: 10, voidedInRun: 0, colour: "BLACK", grade: null, printedBy: "aslam", printedAt: "2026-10-12T05:00:00.000Z",
+            },
+          ],
+        }),
+      ],
+    });
+    renderPage();
+    await open();
+
+    const banner = await within(cartonSection()).findByRole("status");
+    expect(banner).toHaveTextContent("All carton labels printed");
+    expect(banner).toHaveTextContent("10 of 64 cartons back in store");
+    expect(banner).not.toHaveTextContent("Action needed");
   });
 
   it("says why a fix article cannot be labelled instead of rounding its cartons", async () => {

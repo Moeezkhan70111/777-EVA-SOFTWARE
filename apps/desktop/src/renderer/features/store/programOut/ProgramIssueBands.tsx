@@ -170,24 +170,32 @@ export const ProgramIssueBands: React.FC<ProgramIssueBandsProps> = ({ bands, mod
   );
 };
 
-/** The two figures the whole program comes to, with the same marks the printed sheet uses. */
-export const ProgramIssueTotals: React.FC<{ injectors: number; total: number; unitCode: string | null }> = ({
+/**
+ * The figures the whole program comes to, with the same marks the printed sheet uses.
+ *
+ * An EVR FIX program (`fixOnly`) has no upper and no injector, so its total is plain "Total Dozen"
+ * and there is no injector count. Every other program reads exactly as before.
+ */
+export const ProgramIssueTotals: React.FC<{ injectors: number; total: number; unitCode: string | null; fixOnly?: boolean }> = ({
   injectors,
   total,
   unitCode,
+  fixOnly = false,
 }) => (
   <dl className="mpi-totals">
-    <div className="mpi-total">
-      <span className="mpi-total-icon" aria-hidden="true">
-        <svg viewBox="0 0 24 24">
-          <path d="M3 3h4v6.2l5-2.8v2.8l5-2.8v2.8l5-2.8V21H3V3zm3 12v3h3v-3H6zm5 0v3h3v-3h-3z" />
-        </svg>
-      </span>
-      <div className="mpi-total-words">
-        <dt>{copy.machineProgram.printTotalInjectors}</dt>
-        <dd>{injectors}</dd>
+    {fixOnly ? null : (
+      <div className="mpi-total">
+        <span className="mpi-total-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24">
+            <path d="M3 3h4v6.2l5-2.8v2.8l5-2.8v2.8l5-2.8V21H3V3zm3 12v3h3v-3H6zm5 0v3h3v-3h-3z" />
+          </svg>
+        </span>
+        <div className="mpi-total-words">
+          <dt>{copy.machineProgram.printTotalInjectors}</dt>
+          <dd>{injectors}</dd>
+        </div>
       </div>
-    </div>
+    )}
     <div className="mpi-total">
       <span className="mpi-total-icon" aria-hidden="true">
         <svg viewBox="0 0 24 24">
@@ -195,7 +203,7 @@ export const ProgramIssueTotals: React.FC<{ injectors: number; total: number; un
         </svg>
       </span>
       <div className="mpi-total-words">
-        <dt>{copy.programOut.totalUpperLabel(unitCode)}</dt>
+        <dt>{fixOnly ? copy.programOut.totalLabel(unitCode) : copy.programOut.totalUpperLabel(unitCode)}</dt>
         <dd>{formatQuantity(total, null)}</dd>
       </div>
     </div>

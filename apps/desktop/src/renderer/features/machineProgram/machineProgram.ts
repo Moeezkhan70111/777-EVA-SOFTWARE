@@ -222,9 +222,34 @@ export const injectorTotal = (runs: readonly MachineProgramRunRecord[]): { quant
   };
 };
 
-/** How many injectors have anything on them — "2 injectors" on the machine card. */
+/** How many injectors have anything on them — "2 injectors" on the machine card. Fix runs have none. */
 export const injectorsInUse = (program: MachineProgramRecord | null | undefined): number =>
-  new Set((program?.runs ?? []).filter(runHasWork).map((run) => run.injectorNo)).size;
+  new Set((program?.runs ?? []).filter((run) => run.injectorNo !== null && runHasWork(run)).map((run) => run.injectorNo)).size;
+
+/**
+ * The program's FIX runs, in order. EVR FIX is not moulded on the injectors, so these belong to
+ * the program itself and have no injector (migration 073).
+ */
+export const programFixRuns = (program: MachineProgramRecord | null | undefined): MachineProgramRunRecord[] =>
+  (program?.runs ?? []).filter((run) => run.injectorNo === null);
+
+/**
+ * The injector of a run that carries uppers. Only a FIX run has none, and a fix run never has an
+ * upper line — so this is never NaN in practice, and if it were the backend would refuse it.
+ */
+export const upperRunInjector = (run: MachineProgramRunRecord): number => run.injectorNo ?? Number.NaN;
+
+/** Which articles a picker offers: FIX ones (no upper, no injector) or those made with uppers. */
+export type ArticleKind = "FIX" | "UPPER";
+
+/** The sizes of one kind. With no kind, every size. */
+export const sizesOfKind = <T extends { hasNoUpper: boolean }>(sizes: readonly T[], kind?: ArticleKind): T[] =>
+  // Boolean(): a size read without the flag is one made with uppers, never a fix article.
+  kind ? sizes.filter((size) => Boolean(size.hasNoUpper) === (kind === "FIX")) : [...sizes];
+
+/** The articles with at least one size of that kind. With no kind, every article. */
+export const articlesOfKind = <T extends { sizes: ReadonlyArray<{ hasNoUpper: boolean }> }>(articles: readonly T[], kind?: ArticleKind): T[] =>
+  kind ? articles.filter((article) => sizesOfKind(article.sizes, kind).length > 0) : [...articles];
 
 /** What kind of upper a card is, under its colour: "RAGZINE UPPER · SILAI". */
 export const upperKind = (material: MachineProgramMaterial): string =>

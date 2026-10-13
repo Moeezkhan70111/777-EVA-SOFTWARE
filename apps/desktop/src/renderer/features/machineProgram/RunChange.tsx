@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { isFixRun } from "@erp/domain";
 import type { MachineProgramRunRecord } from "../../types/desktopApi";
 import { Modal } from "../../components/shared/Modal";
 import { copy } from "../../config/copy";
@@ -25,6 +26,7 @@ export const RunChangeDialog: React.FC<RunChangeDialogProps> = ({ run, writes, o
   >
     <RunBuilder
       initialDraft={draftFromRun(run)}
+      kind={isFixRun(run) ? "FIX" : "UPPER"}
       onExit={onClose}
       complete={(draft, back) => <SaveRunChange run={run} draft={draft} writes={writes} onBack={back} onDone={onClose} />}
     />

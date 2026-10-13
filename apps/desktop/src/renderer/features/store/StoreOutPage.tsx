@@ -6,6 +6,7 @@ import { HandMovePanel } from "./HandMovePanel";
 import { ProgramLookupField } from "./programOut/ProgramLookupField";
 import { ProgramOutPanel } from "./programOut/ProgramOutPanel";
 import { useProgramOut } from "./programOut/useProgramOut";
+import { useProgramCloseFor } from "./programClose/useProgramClose";
 import { ScanInIcon, StockIcon } from "./StoreIcons";
 
 // STORE OUT — one page for everything that leaves the store.
@@ -58,6 +59,7 @@ export const StoreOutPage: React.FC<StoreOutPageProps> = ({
   // required: a session that has been closed must never stop a committed movement.
   const [sessionId, setSessionId] = useState<string | null>(null);
   const programOut = useProgramOut({ token, sessionId });
+  const programClose = useProgramCloseFor(programOut);
   const openedFor = useRef<string | null>(null);
   const { open: openProgram } = programOut;
   // Read through a ref: App hands this down as an inline arrow, and depending on it would
@@ -75,7 +77,7 @@ export const StoreOutPage: React.FC<StoreOutPageProps> = ({
   if (programOut.program) {
     return (
       <div className="si-page mo-page mo-page--program">
-        <ProgramOutPanel state={programOut} onClose={programOut.close} onChangeJob={onBack} />
+        <ProgramOutPanel state={programOut} onClose={programOut.close} onChangeJob={onBack} close={programClose} />
       </div>
     );
   }

@@ -22,7 +22,7 @@ import {
   type TransactionContext,
 } from "@erp/application";
 import type { MutableTransactionContext } from "./shared.js";
-import { attributeKey, buildQrId, cartonsExpectedFromUppers, roundQuantity } from "@erp/domain";
+import { B_CARTON_COLOUR, CARTON_GRADE, attributeKey, bConversionProblem, buildQrId, cartonsExpectedFromUppers, roundQuantity, type CartonGrade } from "@erp/domain";
 import { COLOUR_SQL, LINE_CONSUMED_SQL } from "./machineProgramSql.js";
 import type { GeneratedQrBatch } from "./qrCodes.js";
 
@@ -38,6 +38,12 @@ export interface MachineProgramCartonLabel {
   cartonCount: number;
   /** How many of the WHOLE run's cartons have come back and been stored in so far. */
   receivedInRun: number;
+  /** How many of the run's labels are void — on a FIX run, the ones converted to B cartons. */
+  voidedInRun: number;
+  /** The colour the run's labels carry — MIX on a B run. */
+  colour: string;
+  /** "B" on a run of B carton labels (migration 074), null on an ordinary run. */
+  grade: CartonGrade | null;
   printedBy: string | null;
   printedAt: string;
 }
@@ -113,6 +119,23 @@ const RECEIVED_IN_RUN_SQL = `(SELECT COUNT(*) FROM qr_codes qc
                   WHERE pe.qr_id = qc.id AND pe.event_type = 'MOVED'
                     AND json_extract(pe.metadata_json, '$.eventType') = 'STORE_ENTRY'))`;
 
+// How many of a printed run's labels are void — on a FIX run, the ones turned into B cartons.
+const VOIDED_IN_RUN_SQL = `(SELECT COUNT(*) FROM qr_codes qv
+    WHERE l.qr_batch_id IS NOT NULL AND qv.batch_id = l.qr_batch_id AND qv.status = 'VOID')`;
+
+// A FIX run's labels that were printed and have NOT come back — the only ones that can become B
+// cartons. Never produced (no qr_master row: Carton In produces and stores in together), not
+// void, not converted already, and on an ordinary run (a B label is not converted again). The
+// highest serials first, so converting fewer than all of them takes the last labels printed.
+const CONVERTIBLE_FIX_LABELS_SQL = `
+  SELECT qc.id FROM machine_program_fix_carton_labels l
+  JOIN qr_batches qb ON qb.id = l.qr_batch_id AND qb.grade IS NULL
+  JOIN qr_codes qc ON qc.batch_id = qb.id
+  WHERE l.program_id = ? AND l.run_id = ? AND qc.status <> 'VOID'
+    AND NOT EXISTS (SELECT 1 FROM qr_master qm WHERE qm.qr_id = qc.id)
+    AND NOT EXISTS (SELECT 1 FROM machine_program_b_conversions c WHERE c.original_qr_id = qc.id)
+  ORDER BY qc.sequence DESC`;
+
 // Every upper issued against the program — through Machine Move Out or the generic store
 // scanner, both of which stamp the program line on the event. A packet that has since come back
 // to the store (a STORE_ENTRY carrying the same line stamp) owes no cartons, unless they were
@@ -122,7 +145,8 @@ const CARTON_PACKETS_SQL = `
          u.code AS unit_code, mpr.sole_colour, ${COLOUR_SQL} AS upper_colour,
          asz.id AS article_size_id, asz.article, asz.size,
          l.qr_batch_id, l.carton_count AS labelled_cartons, l.printed_by, l.created_at AS labelled_at,
-         qb.article AS qb_article, qb.color AS qb_color, qb.size AS qb_size, qb.start_sequence, qb.end_sequence,
+         qb.article AS qb_article, qb.color AS qb_color, qb.size AS qb_size, qb.start_sequence, qb.end_sequence, qb.grade AS qb_grade,
+         ${VOIDED_IN_RUN_SQL} AS voided_in_run,
          ${RECEIVED_IN_RUN_SQL} AS received_in_run
   FROM raw_material_qr_events rme
   JOIN machine_program_upper_lines mul ON mul.id = rme.machine_program_upper_line_id
@@ -146,20 +170,23 @@ const CARTON_PACKETS_SQL = `
 const FIX_CARTON_RUNS_SQL = `
   SELECT mpr.id AS run_id, mpr.sole_colour, mpr.inner_sole_colour, mpr.quantity,
          u.code AS unit_code, asz.id AS article_size_id, asz.article, asz.size,
+         -- B runs REPLACE labels already printed, so they never count toward the plan (migration 074).
          (SELECT COALESCE(SUM(l.carton_count), 0) FROM machine_program_fix_carton_labels l
+           JOIN qr_batches qb ON qb.id = l.qr_batch_id AND qb.grade IS NULL
            WHERE l.run_id = mpr.id) AS printed_cartons
   FROM machine_program_runs mpr
   LEFT JOIN inventory_units u ON u.id = mpr.unit_id
   LEFT JOIN article_sizes asz ON asz.id = mpr.article_size_id AND asz.deleted_at IS NULL
   WHERE mpr.program_id = ? AND mpr.inner_sole_colour IS NOT NULL
-  ORDER BY mpr.injector_no, mpr.run_no`;
+  ORDER BY mpr.injector_no IS NULL, mpr.injector_no, mpr.run_no`;
 
 // The printed runs of one fix run, with how many of each run's cartons are back in the store.
 const FIX_CARTON_LABELS_SQL = `
   SELECT l.run_id, l.qr_batch_id, l.carton_count AS labelled_cartons, l.printed_by,
          l.created_at AS labelled_at,
          qb.article AS qb_article, qb.color AS qb_color, qb.size AS qb_size,
-         qb.start_sequence, qb.end_sequence,
+         qb.start_sequence, qb.end_sequence, qb.grade AS qb_grade,
+         ${VOIDED_IN_RUN_SQL} AS voided_in_run,
          ${RECEIVED_IN_RUN_SQL} AS received_in_run
   FROM machine_program_fix_carton_labels l
   JOIN qr_batches qb ON qb.id = l.qr_batch_id
@@ -175,6 +202,9 @@ const labelOf = (row: Record<string, unknown>): MachineProgramCartonLabel | null
     lastQrId: buildQrId({ ...identity, sequence: Number(row.end_sequence ?? 0) }),
     cartonCount: Number(row.labelled_cartons ?? 0),
     receivedInRun: Number(row.received_in_run ?? 0),
+    voidedInRun: Number(row.voided_in_run ?? 0),
+    colour: identity.color,
+    grade: text(row.qb_grade) === CARTON_GRADE.B ? CARTON_GRADE.B : null,
     printedBy: row.printed_by ? text(row.printed_by) : null,
     printedAt: text(row.labelled_at),
   };
@@ -456,6 +486,89 @@ export const machineProgramCartonsMethods = {
     } catch (error) {
       try { this.db.exec("ROLLBACK"); } catch { /* ignore missing transaction state */ }
       throw error;
+    }
+  },
+
+  /** How many of a FIX run's printed labels have not come back — the most that can become B. */
+  countConvertibleFixLabels(this: SqliteDatabase, programId: string, runId: string): number {
+    return (this.db.prepare(CONVERTIBLE_FIX_LABELS_SQL).all(text(programId).trim(), text(runId).trim()) as unknown[]).length;
+  },
+
+  /**
+   * Turns `count` of a FIX run's labels that did not come back into B cartons (migration 074):
+   *
+   *   the labels not back are VOIDED  →  as many new labels, MIX, grade B, are generated for the
+   *   same article and size and linked to the same run  →  Store In scans THOSE back
+   *
+   * ONE transaction under the write lock: the voids, the new run, its link to the program and the
+   * record of which label became B all land together or not at all. The labels converted are
+   * chosen HERE from the database — never sent by the screen — and the conversion record's
+   * primary key refuses a label converted twice, whichever terminal asks.
+   */
+  convertFixCartonsToB(
+    this: SqliteDatabase,
+    input: { programId: string; runId: string; count: number; convertedBy: string | null; deviceId: string }
+  ): PrintedMachineProgramCartons & { voidedQrIds: string[] } {
+    const programId = text(input.programId).trim();
+    const runId = text(input.runId).trim();
+    this.db.exec("BEGIN IMMEDIATE TRANSACTION");
+    try {
+      const { code, articleSizeId } = this.fixRunForBConversion(programId, runId);
+      const convertible = (this.db.prepare(CONVERTIBLE_FIX_LABELS_SQL).all(programId, runId) as Array<{ id: string }>).map((row) => row.id);
+      const problem = bConversionProblem(Number(input.count), convertible.length);
+      if (problem) throw new Error(problem);
+
+      const voidedQrIds = convertible.slice(0, Number(input.count));
+      for (const qrId of voidedQrIds) {
+        this.voidQrCode({ qrId, reason: `Converted to a B carton (${code})`, actor: input.convertedBy });
+      }
+      const generated = this.reserveQrBatchInTransaction({
+        articleSizeId,
+        color: B_CARTON_COLOUR,
+        quantity: voidedQrIds.length,
+        createdBy: input.convertedBy ?? undefined,
+        requestedBy: code,
+        grade: CARTON_GRADE.B,
+      });
+      this.recordBConversion({ ...input, programId, runId, batchId: generated.batch.id, createdAt: generated.batch.createdAt, voidedQrIds });
+      this.db.exec("COMMIT");
+      return { ...generated, eventIds: [], voidedQrIds };
+    } catch (error) {
+      try { this.db.exec("ROLLBACK"); } catch { /* ignore missing transaction state */ }
+      throw error;
+    }
+  },
+
+  /** @internal The program and FIX run a B conversion is for, refused unless both are open. */
+  fixRunForBConversion(this: SqliteDatabase, programId: string, runId: string): { code: string; articleSizeId: string } {
+    const program = this.db.prepare("SELECT program_number FROM machine_programs WHERE id = ? LIMIT 1").get(programId) as
+      | { program_number: number }
+      | undefined;
+    if (!program) throw new Error("This machine program no longer exists.");
+    const code = formatMachineProgramCodeNumber(Number(program.program_number));
+    if (this.isMachineProgramClosed(programId)) throw new Error(`${code} is closed — no more cartons are labelled for it.`);
+    const run = this.listMachineProgramFixCartonRuns(programId).find((candidate) => candidate.runId === runId);
+    if (!run || !run.articleSizeId) throw new Error("That article is no longer on this program. Reload the program and try again.");
+    return { code, articleSizeId: run.articleSizeId };
+  },
+
+  /** @internal Links a B run to its program and FIX run, and records which label became B. */
+  recordBConversion(
+    this: SqliteDatabase,
+    input: { programId: string; runId: string; batchId: string; voidedQrIds: string[]; convertedBy: string | null; deviceId: string; createdAt: string }
+  ): void {
+    this.db
+      .prepare(
+        `INSERT INTO machine_program_fix_carton_labels (run_id, qr_batch_id, program_id, carton_count, printed_by, device_id, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`
+      )
+      .run(input.runId, input.batchId, input.programId, input.voidedQrIds.length, input.convertedBy, input.deviceId, input.createdAt);
+    const record = this.db.prepare(
+      `INSERT INTO machine_program_b_conversions (original_qr_id, b_qr_batch_id, program_id, run_id, converted_by, device_id, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`
+    );
+    for (const qrId of input.voidedQrIds) {
+      record.run(qrId, input.batchId, input.programId, input.runId, input.convertedBy, input.deviceId, input.createdAt);
     }
   },
 

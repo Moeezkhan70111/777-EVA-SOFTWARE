@@ -95,12 +95,14 @@ interface UseProgramOutInput {
  * Opens the print window for one carton run's labels — the first print and every reprint alike,
  * so a reprinted label can never look different from the one it replaces.
  */
-const openCartonRunLabels = (
+export const openCartonRunLabels = (
   what: string,
   codes: Pick<QrCodeRow, "id" | "article" | "color" | "size">[],
   programCode: string,
   /** A FIX article's second sole, so the sticker names both. Null for an ordinary carton. */
-  innerColor: string | null = null
+  innerColor: string | null = null,
+  /** "B" for a run of B carton labels: a B in the corner, COLOUR MIX (migration 074). */
+  grade: "B" | null = null
 ): boolean => {
   const ids = codes.map((code) => code.id);
   const range = ids.length === 1 ? ids[0] : `${ids[0]} → ${ids[ids.length - 1]}`;
@@ -108,7 +110,7 @@ const openCartonRunLabels = (
     title: `Carton QR — ${what}`,
     heading: what,
     subheading: `${range} · ${copy.programOut.cartonCount(ids.length)} · ${programCode}`,
-    identity: { article: codes[0].article, color: codes[0].color, size: codes[0].size, innerColor },
+    identity: { article: codes[0].article, color: codes[0].color, size: codes[0].size, innerColor, grade },
     ids,
   });
 };
@@ -325,11 +327,12 @@ export const useProgramOut = ({ token, sessionId }: UseProgramOutInput): Program
           push("error", copy.programOut.cartonFailedTitle, copy.programOut.cartonReprintNone);
           return;
         }
-        // Which fix run this batch was printed for, so a reprint says the same two soles.
-        const innerSole =
-          fixCartons.find((candidate) => candidate.labels.some((label) => label.qrBatchId === run.qrBatchId))
-            ?.innerSoleColour ?? null;
-        const opened = openCartonRunLabels(run.label, codes, program.code, innerSole);
+        // Which fix run this batch was printed for, so a reprint says the same two soles — or, for
+        // a B run, the same B and MIX (a B carton has mixed colours, so no inner sole is named).
+        const fixRun = fixCartons.find((candidate) => candidate.labels.some((label) => label.qrBatchId === run.qrBatchId));
+        const grade = run.grade === "B" ? "B" : null;
+        const innerSole = grade ? null : (fixRun?.innerSoleColour ?? null);
+        const opened = openCartonRunLabels(run.label, codes, program.code, innerSole, grade);
         if (!opened) push("error", copy.toast.popupBlocked, copy.programOut.cartonBlocked);
         else push("success", copy.programOut.cartonReprintedTitle, copy.programOut.cartonReprintedBody(codes.length, run.label));
       } catch (caught) {

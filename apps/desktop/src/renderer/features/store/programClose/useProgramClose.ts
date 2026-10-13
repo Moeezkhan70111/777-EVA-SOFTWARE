@@ -3,6 +3,7 @@ import { useDesktopApi } from "../../../hooks/useDesktopApi";
 import { useNotifications } from "../../../state/NotificationsContext";
 import { copy } from "../../../config/copy";
 import type { MachineProgramReconciliation, ReconciliationEntryInput } from "../../../types/desktopApi";
+import type { ProgramOutState } from "../programOut/useProgramOut";
 
 // COMPLETE PROGRAM — closing a machine program against the cartons that came back.
 //
@@ -80,3 +81,21 @@ export const useProgramClose = ({ token, programId, onClosed }: UseProgramCloseI
 
   return { reconciliation, loading, error, load, complete };
 };
+
+/**
+ * The close state of whatever program a Store page has open — ONE per page, shared by everything
+ * on it that needs to know whether the program is closed (the program view, and Store In's Carton
+ * In station on the right). Every carton stored in changes how the program stands, so it counts
+ * afresh whenever the carton figures move.
+ */
+export const useProgramCloseFor = (state: Pick<ProgramOutState, "token" | "program" | "reload" | "cartonProgress">): ProgramCloseState => {
+  const close = useProgramClose({ token: state.token, programId: state.program?.id ?? "", onClosed: state.reload });
+  const { load } = close;
+  useEffect(() => {
+    void load();
+  }, [state.cartonProgress, load]);
+  return close;
+};
+
+/** Closed is final: nothing more is issued, printed or stored in against the program. */
+export const isProgramClosed = (close: ProgramCloseState): boolean => Boolean(close.reconciliation?.closure);

@@ -36,7 +36,6 @@ export interface SaveMachineProgramFixRunInput extends MachineProgramActor {
   /** The program's calendar day, YYYY-MM-DD. */
   programDate: string;
   shift?: { startMinute: number; endMinute: number } | null;
-  injectorNo: number;
   /** The run being changed, or null to add one. */
   runId?: string | null;
   /** The sole the article is moulded in. */
@@ -50,9 +49,9 @@ export interface SaveMachineProgramFixRunInput extends MachineProgramActor {
 /**
  * Saves one FIX run: two soles, an article + size, and how many are to be made.
  *
- * Adding the same article + size to an injector again CHANGES the run that is already there
- * rather than making a rival one — the same rule a repeated article follows for uppers, and for
- * the same reason: one injector makes one article one way at a time.
+ * A fix run belongs to the PROGRAM, not to an injector — EVR FIX is not moulded on the injectors
+ * (owner, 2026-10-12; migration 073). It is saved with no injector, and adding the same article +
+ * size again CHANGES the program's run for it rather than making a rival one.
  */
 export class SaveMachineProgramFixRunUseCase {
   constructor(private readonly deps: MachineProgramDeps) {}
@@ -93,11 +92,11 @@ export class SaveMachineProgramFixRunUseCase {
       const quantity = roundQuantity(input.quantity);
       const unitId = await this.deps.repo.defaultProgramUnitId(tx);
 
-      // One run per article + size on an injector: a second save of the same one changes it.
+      // One fix run per article + size on the program: a second save of the same one changes it.
       const existingId =
         (input.runId ? String(input.runId).trim() : "") ||
         (await this.deps.repo.findMachineProgramFixRun(
-          { programId: program.id, injectorNo: input.injectorNo, articleSizeId: header.articleSizeId },
+          { programId: program.id, articleSizeId: header.articleSizeId },
           tx
         )) ||
         "";
@@ -118,8 +117,8 @@ export class SaveMachineProgramFixRunUseCase {
         {
           id,
           programId: program.id,
-          injectorNo: input.injectorNo,
-          runNo: await this.deps.repo.nextMachineProgramRunNo(program.id, input.injectorNo, tx),
+          // No injector: the fix runs are numbered among themselves.
+          runNo: await this.deps.repo.nextMachineProgramRunNo(program.id, null, tx),
           soleColour: header.soleColour,
           innerSoleColour,
           articleSizeId: header.articleSizeId,
