@@ -78,6 +78,8 @@ const ACCOUNTS_SQL = `
 // stored in is production for the program's counts but never work on a contractor's ledger.
 const CARTONS_SQL = `
   WITH program_batches AS (
+    SELECT program_id, qr_batch_id FROM machine_program_line_carton_labels
+    UNION
     SELECT program_id, qr_batch_id FROM machine_program_carton_labels
     UNION
     SELECT program_id, qr_batch_id FROM machine_program_fix_carton_labels

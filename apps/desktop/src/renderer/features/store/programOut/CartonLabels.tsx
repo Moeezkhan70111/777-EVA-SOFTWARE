@@ -1,7 +1,7 @@
 import React from "react";
 import { copy } from "../../../config/copy";
 import { ColorSwatch } from "../../../components/shared/ColorSwatch";
-import type { MachineProgramCartonPacket, MachineProgramFixCartonRun } from "../../../types/desktopApi";
+import type { MachineProgramFixCartonRun, MachineProgramLineCartonRun } from "../../../types/desktopApi";
 import { cartonLabelTotals, cartonRunLabel, type CartonRun, type PrintedCartonRun } from "./programOut";
 
 // CARTONS TO LABEL — a job to do, said as one.
@@ -37,7 +37,7 @@ interface CartonRunListProps {
   /** The program is closed: no new labels are printed for it (a reprint creates nothing, so it stays). */
   locked?: boolean;
   /** Packets whose cartons the main process could not work out, with its reason. */
-  blocked: MachineProgramCartonPacket[];
+  blocked: MachineProgramLineCartonRun[];
   /** FIX runs whose cartons could not be worked out — same refusals, no packet to name. */
   blockedFix?: MachineProgramFixCartonRun[];
 }
@@ -199,8 +199,8 @@ export const CartonRunList: React.FC<CartonRunListProps> = ({ runs, printed, pri
 
     {blocked.length > 0 || blockedFix.length > 0 ? (
       <ul className="mpo-carton-blocked">
-        {blocked.map((packet) => (
-          <li key={packet.eventId} role="alert">⚠ {packet.cartonNote}</li>
+        {blocked.map((line) => (
+          <li key={line.lineId} role="alert">⚠ {line.cartonNote}</li>
         ))}
         {blockedFix.map((run) => (
           <li key={run.runId} role="alert">⚠ {run.cartonNote}</li>

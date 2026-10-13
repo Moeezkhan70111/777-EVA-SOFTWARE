@@ -312,11 +312,11 @@ export function registerStoreHandlers(ctx: IpcContext): void {
     if (!auth.ok) return { accepted: false, reason: auth.reason, rows: [], progress: [], fixRuns: [] };
     try {
       const id = String(programId ?? "");
-      // The packets owed labels, per upper line the cartons due back and how many are back, and
-      // the FIX runs, whose cartons are owed by the plan because no packet ever leaves for them.
+      // Every upper LINE with the cartons its plan owes, the FIX runs with theirs, and per line
+      // the cartons due back and how many are back. One rule for both kinds since migration 076.
       return {
         accepted: true,
-        rows: db.listMachineProgramCartonPackets(id),
+        rows: db.listMachineProgramCartonLines(id),
         progress: db.listMachineProgramCartonProgress(id),
         fixRuns: db.listMachineProgramFixCartonRuns(id),
       };
@@ -339,17 +339,21 @@ export function registerStoreHandlers(ctx: IpcContext): void {
       return { accepted: false, reason: "Your account does not have QR Generator access, so it cannot print carton QR labels." };
     }
     try {
-      // One print button, two kinds of carton: an upper's are owed to the packets that left the
-      // store, a FIX article's to the run itself, which never issues anything.
+      // One print button, three ways in: an upper LINE's cartons come from its plan (076), a FIX
+      // article's from its run, and eventIds is the old packet route, kept for a terminal that
+      // still asks that way.
       const runId = asOptionalString(payload.runId) ?? "";
+      const lineId = asOptionalString(payload.lineId) ?? "";
       const printed = runId
         ? db.printMachineProgramFixCartons({ programId: asString(payload.programId), runId, printedBy: auth.username, deviceId })
-        : db.printMachineProgramCartons({
-            programId: asString(payload.programId),
-            eventIds: asStringArray(payload.eventIds),
-            printedBy: auth.username,
-            deviceId,
-          });
+        : lineId
+          ? db.printMachineProgramLineCartons({ programId: asString(payload.programId), lineId, printedBy: auth.username, deviceId })
+          : db.printMachineProgramCartons({
+              programId: asString(payload.programId),
+              eventIds: asStringArray(payload.eventIds),
+              printedBy: auth.username,
+              deviceId,
+            });
       logger.log({
         module: "machine-program-store-out", severity: "INFO", operation: "print-cartons", deviceId,
         message: JSON.stringify({ programId: asString(payload.programId), qrBatchId: printed.batch.id, cartons: printed.qrCodes.length }),

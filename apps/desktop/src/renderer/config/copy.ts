@@ -1403,7 +1403,9 @@ export const copy = {
     cartonTitle: "Cartons to label",
     // True of both kinds now: an upper issued, and a FIX article that issues nothing at all.
     cartonNote: "1 DOZEN is 2 cartons of 6 pairs.",
-    cartonEmpty: "Scan a packet out and its cartons appear here.",
+    // Cartons come from the program's own plan now, so they are here before anything is scanned:
+    // this is only read when every line has been labelled, or none of them can be.
+    cartonEmpty: "No cartons to label on this program.",
     cartonEmptyTitle: "Nothing to label yet",
     cartonCount: (cartons: number) => `${cartons} carton${cartons === 1 ? "" : "s"}`,
     // The banner on top of Cartons to label: it says what to DO, in the state the program is in.

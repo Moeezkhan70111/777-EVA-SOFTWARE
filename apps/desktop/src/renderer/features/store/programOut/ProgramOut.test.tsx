@@ -7,7 +7,7 @@ import { StoreOutPage } from "../StoreOutPage";
 import { NotificationsProvider } from "../../../state/NotificationsContext";
 import { notificationTarget } from "../../users/notificationTarget";
 import type {
-  MachineProgramCartonPacket,
+  MachineProgramLineCartonRun,
   MachineProgramFixCartonRun,
   MachineProgramRecord,
 } from "../../../types/desktopApi";
@@ -139,19 +139,26 @@ const PACKETS: Record<string, { itemId: string; colour: string }> = {
   RM_6_44_1: { itemId: "u-green", colour: "GREEN" },
 };
 
-/** A packet out for the program as the carton list reads it back from the events. */
-const cartonPacket = (qrId: string, colour: string, eventId = `ev-${qrId}`): MachineProgramCartonPacket => ({
-  eventId,
-  qrId,
+/**
+ * One upper LINE's cartons as the list reads them back: the PLAN, two to the dozen (migration
+ * 076). The packets the store issued do not come into it — 50 DOZEN planned is 100 cartons from
+ * the moment the line is on the program.
+ */
+const cartonLine = (lineId: string, colour: string, quantity: number): MachineProgramLineCartonRun => ({
+  lineId,
+  runId: "run-1",
+  articleSizeId: "as-sk6-710",
+  article: "SK6",
+  size: "7/10",
+  soleColour: "BLACK",
+  upperColour: colour,
   itemDisplayName: `UPPER — SK6 — ${colour || "—"} — 7/10`,
-  quantity: 2,
+  quantity,
   unitCode: "DOZEN",
-  issuedAt: `${TODAY}T07:00:00.000Z`,
-  cartons: colour
-    ? { articleSizeId: "as-sk6-710", article: "SK6", size: "7/10", soleColour: "BLACK", colour, count: 4 }
-    : null,
+  cartonsPlanned: colour ? quantity * 2 : null,
+  cartonsToPrint: colour ? quantity * 2 : 0,
   cartonNote: colour ? null : "UPPER — SK6 — — — 7/10 has no colour on it, and a carton QR needs one.",
-  label: null,
+  labels: [],
 });
 
 function installApi(
@@ -159,7 +166,8 @@ function installApi(
     openRefusal?: { outcome: string; reason: string };
     /** The program exists but may not be issued against: the backend refuses AND returns it. */
     fullyIssued?: boolean;
-    earlierPackets?: MachineProgramCartonPacket[];
+    /** Carton lines to start from, instead of the program's own two. */
+    cartonLines?: MachineProgramLineCartonRun[];
     /** A FIX article on the program: no upper, two soles, and cartons owed by its PLAN. */
     fixRuns?: MachineProgramFixCartonRun[];
     /** The program Store Out opens — an EVR FIX one, say. Defaults to the SK6 upper program. */
@@ -171,7 +179,7 @@ function installApi(
     black: 0,
     red: 0,
     sequence: 0,
-    cartonPackets: [...(options.earlierPackets ?? [])],
+    cartonLines: options.cartonLines ?? [cartonLine("line-black", "BLACK", 100), cartonLine("line-red", "RED", 50)],
     fixRuns: [...(options.fixRuns ?? [])],
   };
   const api = {
@@ -219,7 +227,6 @@ function installApi(
 
       if (packet.itemId === "u-black") state.black += 2;
       else state.red += 2;
-      state.cartonPackets.push(cartonPacket(qrId, packet.colour));
       state.program = program({ black: state.black, red: state.red });
       return {
         accepted: true,
@@ -261,7 +268,7 @@ function installApi(
     listQrCodesForBatch: vi.fn(async (_batchId: string): Promise<Array<{ id: string; batchId: string; article: string; color: string; size: string; sequence: number; status: string }>> => []),
     listMachineProgramCartonPackets: vi.fn(async () => ({
       accepted: true,
-      rows: state.cartonPackets.map((packet) => ({ ...packet })),
+      rows: state.cartonLines.map((line) => ({ ...line })),
       fixRuns: state.fixRuns.map((run) => ({ ...run })),
     })),
     // Dana Issue: the store holds two BLACK Danas, which is exactly the case a colour
@@ -277,7 +284,7 @@ function installApi(
     issueMachineProgramDana: vi.fn(async (): Promise<{ accepted: boolean; outcome: string; reason?: string; quantity?: number; unitCode?: string }> => ({ accepted: true, outcome: "MOVED", quantity: 50, unitCode: "KILOGRAM" })),
     listMachineProgramDanaIssues: vi.fn(async () => ({ accepted: true, rows: [] })),
     // The backend's print: the count comes from the packets, and each packet is labelled once.
-    printMachineProgramCartons: vi.fn(async (input: { programId: string; eventIds?: string[]; runId?: string }) => {
+    printMachineProgramCartons: vi.fn(async (input: { programId: string; lineId?: string; eventIds?: string[]; runId?: string }) => {
       // A FIX run is labelled by its own id: it has no packet to be owed to.
       if (input.runId) {
         const run = state.fixRuns.find((candidate) => candidate.runId === input.runId);
@@ -299,20 +306,27 @@ function installApi(
           })),
         };
       }
-      const chosen = state.cartonPackets.filter((packet) => (input.eventIds ?? []).includes(packet.eventId));
-      if (chosen.some((packet) => packet.label)) return { accepted: false, reason: "The cartons for this upper were already printed." };
-      const color = chosen[0].cartons!.colour;
-      const quantity = chosen.reduce((total, packet) => total + packet.cartons!.count, 0);
+      const chosen = state.cartonLines.filter((line) => line.lineId === input.lineId);
+      if (chosen.length === 0 || chosen[0].cartonsToPrint <= 0) {
+        return { accepted: false, reason: "Every carton this upper plans has already been labelled." };
+      }
+      const color = chosen[0].upperColour;
+      const quantity = chosen[0].cartonsToPrint;
       const ids = Array.from({ length: quantity }, () => {
         state.sequence += 1;
         return `SK6_${color}_7/10_${String(state.sequence).padStart(6, "0")}`;
       });
       const batchId = `qrb-${state.sequence}`;
-      for (const packet of chosen) {
-        packet.label = {
-          qrBatchId: batchId, firstQrId: ids[0], lastQrId: ids[ids.length - 1],
-          cartonCount: packet.cartons!.count, receivedInRun: 0, voidedInRun: 0, colour: "BLACK", grade: null, printedBy: "aslam", printedAt: `${TODAY}T08:00:00.000Z`,
-        };
+      for (const line of chosen) {
+        line.labels = [
+          ...line.labels,
+          {
+            qrBatchId: batchId, firstQrId: ids[0], lastQrId: ids[ids.length - 1],
+            cartonCount: quantity, receivedInRun: 0, voidedInRun: 0, colour: line.upperColour,
+            grade: null, printedBy: "aslam", printedAt: `${TODAY}T08:00:00.000Z`,
+          },
+        ];
+        line.cartonsToPrint = 0;
       }
       return {
         accepted: true,
@@ -461,7 +475,7 @@ describe("Machine Move Out — opening a program", () => {
   });
 
   it("still opens a fully issued program to read it and print its cartons, but never to scan", async () => {
-    const api = installApi({ fullyIssued: true, earlierPackets: [cartonPacket("RM_6_42_1", "BLACK")] });
+    const api = installApi({ fullyIssued: true });
     renderPage();
 
     await userEvent.type(lookupBox(), "MP-000001");
@@ -474,7 +488,7 @@ describe("Machine Move Out — opening a program", () => {
     expect(screen.getByRole("button", { name: /Start Scan|Resume Scan/ })).toBeDisabled();
 
     // The cartons it is owed can still be printed.
-    await userEvent.click(within(cartonSection()).getByRole("button", { name: "Print 4 carton QR labels for SK6 / 7/10 / BLACK" }));
+    await userEvent.click(within(cartonSection()).getByRole("button", { name: "Print 200 carton QR labels for SK6 / 7/10 / BLACK" }));
     await waitFor(() => expect(api.printMachineProgramCartons).toHaveBeenCalledTimes(1));
     expect(api.machineProgramStoreOutSaveBatch).not.toHaveBeenCalled();
   });
@@ -518,7 +532,8 @@ describe("Machine Move Out — one scan, one movement", () => {
     await scan("RM_6_44_1");
     expect(await screen.findByTestId("scan-status")).toHaveTextContent("NOT ON THIS PROGRAM");
     expect(await row("BLACK")).toHaveTextContent("BLACK1000100");
-    expect(within(cartonSection()).getByText("Scan a packet out and its cartons appear here.")).toBeInTheDocument();
+    // The carton list is the program's plan, so a refused scan neither adds to it nor takes away.
+    expect(within(cartonSection()).getByRole("button", { name: "Print 200 carton QR labels for SK6 / 7/10 / BLACK" })).toBeInTheDocument();
 
     // A refusal did not end the session: the very next packet goes out.
     await scan("RM_6_42_1");
@@ -526,93 +541,95 @@ describe("Machine Move Out — one scan, one movement", () => {
     expect(api.machineProgramStoreOutSaveBatch).toHaveBeenCalledTimes(2);
   });
 
-  it("offers the cartons the machine owes back, and generates exactly that many QR codes", async () => {
+  it("offers each upper the cartons its PLAN owes, whatever the store issued", async () => {
     const api = installApi();
     renderPage();
     await open();
 
-    await scan("RM_6_42_1");
-    // 2 DOZEN out is 4 cartons coming back.
-    expect(await within(cartonSection()).findByRole("button", { name: "Print 4 carton QR labels for SK6 / 7/10 / BLACK" })).toBeInTheDocument();
+    // Nothing scanned yet: the plan already says 200 cartons for BLACK (100 DOZEN) and 100 for
+    // RED (50 DOZEN). Uppers leave in whole packets, so the packets could never decide this.
+    expect(
+      await within(cartonSection()).findByRole("button", { name: "Print 200 carton QR labels for SK6 / 7/10 / BLACK" })
+    ).toBeInTheDocument();
     expect(within(cartonSection()).getByText("SK6 / 7/10 / BLACK")).toBeInTheDocument();
+    expect(within(cartonSection()).getByRole("button", { name: "Print 100 carton QR labels for SK6 / 7/10 / RED" })).toBeInTheDocument();
 
-    // A second packet of the same upper is the same carton run, not a second one.
+    // A packet going out changes nothing about the count — this is what used to turn 9 into 12.
+    await scan("RM_6_42_1");
     await scan("RM_6_42_2");
-    expect(await within(cartonSection()).findByRole("button", { name: "Print 8 carton QR labels for SK6 / 7/10 / BLACK" })).toBeInTheDocument();
+    expect(
+      await within(cartonSection()).findByRole("button", { name: "Print 200 carton QR labels for SK6 / 7/10 / BLACK" })
+    ).toBeInTheDocument();
 
-    // A different upper is its own run.
-    await scan("RM_6_43_1");
-    expect(await within(cartonSection()).findByText("SK6 / 7/10 / RED")).toBeInTheDocument();
+    await userEvent.click(within(cartonSection()).getByRole("button", { name: "Print 200 carton QR labels for SK6 / 7/10 / BLACK" }));
 
-    await userEvent.click(within(cartonSection()).getByRole("button", { name: "Print 8 carton QR labels for SK6 / 7/10 / BLACK" }));
-
-    // The screen names the packets; the count is the backend's to work out from them.
+    // Printed against the LINE, and the count is the backend's to work out from its plan.
     await waitFor(() =>
       expect(api.printMachineProgramCartons).toHaveBeenCalledWith(
-        { programId: "prog-1", eventIds: ["ev-RM_6_42_1", "ev-RM_6_42_2"] },
+        { programId: "prog-1", lineId: "line-black" },
         { token: "t-1" }
       )
     );
     expect(printWindow).toHaveBeenCalledTimes(1);
-    expect(printWindow.mock.calls[0][0].ids).toHaveLength(8);
+    expect(printWindow.mock.calls[0][0].ids).toHaveLength(200);
 
     // Printed once and not offered again, with the range it reserved on the record.
     await waitFor(() => expect(within(cartonSection()).queryByRole("button", { name: /^Print \d+ carton QR labels for SK6 \/ 7\/10 \/ BLACK/ })).not.toBeInTheDocument());
-    expect(within(cartonSection()).getByText(/SK6_BLACK_7\/10_000001 → SK6_BLACK_7\/10_000008/)).toBeInTheDocument();
-    // The RED run is untouched by printing the BLACK one.
-    expect(within(cartonSection()).getByRole("button", { name: "Print 4 carton QR labels for SK6 / 7/10 / RED" })).toBeInTheDocument();
+    expect(within(cartonSection()).getByText(/SK6_BLACK_7\/10_000001 → SK6_BLACK_7\/10_000200/)).toBeInTheDocument();
+    // The RED line is untouched by printing the BLACK one.
+    expect(within(cartonSection()).getByRole("button", { name: "Print 100 carton QR labels for SK6 / 7/10 / RED" })).toBeInTheDocument();
   });
 
   it("says why cartons cannot be labelled instead of printing a guessed identity", async () => {
-    const api = installApi();
+    // The upper on the line carries no colour, so no carton identity can be built for it.
+    const api = installApi({ cartonLines: [cartonLine("line-black", "", 100)] });
     renderPage();
     await open();
 
-    await scan("RM_6_45_1");
-
-    expect(await screen.findByTestId("scan-status")).toHaveTextContent("MOVED OUT OF STORE");
     expect(await within(cartonSection()).findByText(/has no colour on it/)).toBeInTheDocument();
     expect(within(cartonSection()).queryByRole("button", { name: /Print/ })).not.toBeInTheDocument();
     expect(api.printMachineProgramCartons).not.toHaveBeenCalled();
   });
 
-  it("offers cartons owed from an earlier sitting without opening the scanner, and never twice", async () => {
-    // 2 DOZEN went out yesterday and its labels were never printed; another packet was.
-    const printed = cartonPacket("RM_6_43_1", "RED");
-    printed.label = {
-      qrBatchId: "qrb-old", firstQrId: "SK6_RED_7/10_000001", lastQrId: "SK6_RED_7/10_000004",
-      cartonCount: 4, receivedInRun: 0, voidedInRun: 0, colour: "BLACK", grade: null, printedBy: "aslam", printedAt: `${TODAY}T06:30:00.000Z`,
-    };
-    const api = installApi({ earlierPackets: [cartonPacket("RM_6_42_1", "BLACK"), printed] });
+  it("offers a line's cartons without opening the scanner, and never a line already labelled", async () => {
+    // RED's whole plan was labelled in an earlier sitting; BLACK's was not.
+    const printedLine = cartonLine("line-red", "RED", 50);
+    printedLine.cartonsToPrint = 0;
+    printedLine.labels = [{
+      qrBatchId: "qrb-old", firstQrId: "SK6_RED_7/10_000001", lastQrId: "SK6_RED_7/10_000100",
+      cartonCount: 100, receivedInRun: 0, voidedInRun: 0, colour: "RED", grade: null, printedBy: "aslam", printedAt: `${TODAY}T06:30:00.000Z`,
+    }];
+    const api = installApi({ cartonLines: [cartonLine("line-black", "BLACK", 100), printedLine] });
     renderPage();
     await open();
 
-    // No Start Scan: the list is on the program itself. 2 DOZEN is 4 carton labels.
-    expect(await within(cartonSection()).findByRole("button", { name: "Print 4 carton QR labels for SK6 / 7/10 / BLACK" })).toBeInTheDocument();
-    expect(within(cartonSection()).getByText(/SK6_RED_7\/10_000001 → SK6_RED_7\/10_000004/)).toBeInTheDocument();
+    // No Start Scan: the list is the program's own plan.
+    expect(await within(cartonSection()).findByRole("button", { name: "Print 200 carton QR labels for SK6 / 7/10 / BLACK" })).toBeInTheDocument();
+    expect(within(cartonSection()).getByText(/SK6_RED_7\/10_000001 → SK6_RED_7\/10_000100/)).toBeInTheDocument();
     expect(within(cartonSection()).queryByRole("button", { name: /^Print .*RED/ })).not.toBeInTheDocument();
 
-    await userEvent.click(within(cartonSection()).getByRole("button", { name: "Print 4 carton QR labels for SK6 / 7/10 / BLACK" }));
+    await userEvent.click(within(cartonSection()).getByRole("button", { name: "Print 200 carton QR labels for SK6 / 7/10 / BLACK" }));
     await waitFor(() => expect(printWindow).toHaveBeenCalledTimes(1));
-    expect(printWindow.mock.calls[0][0].ids).toHaveLength(4);
+    expect(printWindow.mock.calls[0][0].ids).toHaveLength(200);
     expect(api.printMachineProgramCartons).toHaveBeenCalledWith(
-      { programId: "prog-1", eventIds: ["ev-RM_6_42_1"] },
+      { programId: "prog-1", lineId: "line-black" },
       { token: "t-1" }
     );
 
     // Printed, recorded, and gone from the owed list.
-    await waitFor(() => expect(within(cartonSection()).queryByRole("button", { name: /Print 4/ })).not.toBeInTheDocument());
-    expect(within(cartonSection()).getByText(/SK6_BLACK_7\/10_000001 → SK6_BLACK_7\/10_000004/)).toBeInTheDocument();
+    await waitFor(() => expect(within(cartonSection()).queryByRole("button", { name: /^Print 200 carton/ })).not.toBeInTheDocument());
+    expect(within(cartonSection()).getByText(/SK6_BLACK_7\/10_000001 → SK6_BLACK_7\/10_000200/)).toBeInTheDocument();
   });
 
   it("reprints a printed run with the SAME codes, and never generates or records anything new", async () => {
     // RED's 4 labels were printed earlier; one has since been voided in QR Management.
-    const printed = cartonPacket("RM_6_43_1", "RED");
-    printed.label = {
+    const printed = cartonLine("line-red", "RED", 2);
+    printed.cartonsToPrint = 0;
+    printed.labels = [{
       qrBatchId: "qrb-old", firstQrId: "SK6_RED_7/10_000001", lastQrId: "SK6_RED_7/10_000004",
-      cartonCount: 4, receivedInRun: 1, voidedInRun: 0, colour: "BLACK", grade: null, printedBy: "aslam", printedAt: `${TODAY}T06:30:00.000Z`,
-    };
-    const api = installApi({ earlierPackets: [printed] });
+      cartonCount: 4, receivedInRun: 1, voidedInRun: 0, colour: "RED", grade: null, printedBy: "aslam", printedAt: `${TODAY}T06:30:00.000Z`,
+    }];
+    const api = installApi({ cartonLines: [printed] });
     api.listQrCodesForBatch.mockResolvedValue(
       [1, 2, 3, 4].map((sequence) => ({
         id: `SK6_RED_7/10_00000${sequence}`, batchId: "qrb-old", article: "SK6", color: "RED", size: "7/10",
@@ -799,7 +816,7 @@ describe("Machine Move Out — a FIX article's cartons", () => {
   };
 
   it("offers a fix article its whole plan in cartons, with nothing issued", async () => {
-    const api = installApi({ fixRuns: [fixRun()] });
+    const api = installApi({ fixRuns: [fixRun()], cartonLines: [] });
     renderPage();
     await open();
 
@@ -827,6 +844,7 @@ describe("Machine Move Out — a FIX article's cartons", () => {
 
   it("offers nothing once the whole plan is labelled, and shows what was printed", async () => {
     const api = installApi({
+      cartonLines: [],
       fixRuns: [
         fixRun({
           cartonsToPrint: 0,
@@ -877,7 +895,7 @@ describe("Machine Move Out — a FIX article's cartons", () => {
   };
 
   it("an EVR FIX program shows no upper sections: no Upper Out, no 'no uppers', no '(Upper)' on the total", async () => {
-    installApi({ program: fixOnlyProgram(), fixRuns: [fixRun()] });
+    installApi({ program: fixOnlyProgram(), cartonLines: [], fixRuns: [fixRun()] });
     renderPage();
     await open();
 
@@ -891,7 +909,7 @@ describe("Machine Move Out — a FIX article's cartons", () => {
   });
 
   it("a program with uppers keeps every upper section, even with a fix article beside them", async () => {
-    installApi({ fixRuns: [fixRun()] });
+    installApi({ fixRuns: [fixRun()], cartonLines: [] });
     renderPage();
     await open();
 
@@ -901,7 +919,7 @@ describe("Machine Move Out — a FIX article's cartons", () => {
   });
 
   it("asks for the carton labels to be printed, as a job — not as a line of text", async () => {
-    installApi({ program: fixOnlyProgram(), fixRuns: [fixRun()] });
+    installApi({ program: fixOnlyProgram(), cartonLines: [], fixRuns: [fixRun()] });
     renderPage();
     await open();
 
@@ -922,6 +940,7 @@ describe("Machine Move Out — a FIX article's cartons", () => {
   it("turns the banner green once every label is printed, and says how many cartons are back", async () => {
     installApi({
       program: fixOnlyProgram(),
+      cartonLines: [],
       fixRuns: [
         fixRun({
           cartonsToPrint: 0,
@@ -945,6 +964,7 @@ describe("Machine Move Out — a FIX article's cartons", () => {
 
   it("says why a fix article cannot be labelled instead of rounding its cartons", async () => {
     installApi({
+      cartonLines: [],
       fixRuns: [
         fixRun({
           quantity: 32.25,

@@ -1414,19 +1414,21 @@ export interface DesktopApi {
   ): Promise<{
     accepted: boolean;
     reason?: string;
-    rows: MachineProgramCartonPacket[];
+    /** The upper lines, each with the cartons its plan owes (migration 076). */
+    rows: MachineProgramLineCartonRun[];
     progress: MachineProgramLineCartons[];
-    /** FIX articles: their cartons are owed by the plan, since no packet ever leaves for them. */
+    /** FIX articles: their cartons are owed by the plan too, and never had a packet at all. */
     fixRuns?: MachineProgramFixCartonRun[];
   }>;
   /**
    * Generates carton QR labels and records the print, exactly once.
    *
-   * `eventIds` labels the cartons owed to issued packets of uppers; `runId` labels what a FIX
-   * article's run plans, which has no packet to be owed to. One or the other, never both.
+   * `lineId` labels what an upper LINE plans (migration 076), `runId` what a FIX article's run
+   * plans. `eventIds` is the old packet route, kept for a terminal that still asks that way.
+   * One of the three, never two.
    */
   printMachineProgramCartons(
-    input: { programId: string; eventIds?: string[]; runId?: string },
+    input: { programId: string; lineId?: string; eventIds?: string[]; runId?: string },
     opts?: { token?: string }
   ): Promise<{ accepted: boolean; reason?: string; batch?: QrBatchRow; qrCodes?: QrCodeRow[] }>;
   /**
@@ -2789,6 +2791,35 @@ export interface MachineProgramLineCartons {
   cartonsDue: number | null;
   /** Cartons of this line's printed labels that have been stored in. */
   cartonsBack: number;
+}
+
+/**
+ * One UPPER LINE of a program, and the cartons its PLAN owes (migration 076).
+ *
+ * Uppers leave the store in whole packets, so what is issued can never add up to a plan of
+ * 4.5 DOZEN: the program says 9 cartons either way, and that is what the floor is offered
+ * (owner, 2026-10-14). The same rule a FIX article's cartons have always followed.
+ */
+export interface MachineProgramLineCartonRun {
+  lineId: string;
+  runId: string;
+  articleSizeId: string;
+  article: string;
+  size: string;
+  /** The sole the run is moulded in. */
+  soleColour: string;
+  /** The upper's own colour — what the carton QR identity carries. */
+  upperColour: string;
+  itemDisplayName: string;
+  quantity: number;
+  unitCode: string | null;
+  /** The whole plan's cartons, or null when no carton figure can be said. */
+  cartonsPlanned: number | null;
+  /** Still to label: the plan minus what is already printed for this line. */
+  cartonsToPrint: number;
+  /** Why these cartons cannot be labelled here. Set only when cartonsPlanned is null. */
+  cartonNote: string | null;
+  labels: MachineProgramCartonLabel[];
 }
 
 /** One packet of uppers out for a program, and the cartons it is owed back (1 DOZEN = 2 cartons). */

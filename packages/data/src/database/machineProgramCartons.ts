@@ -48,6 +48,38 @@ export interface MachineProgramCartonLabel {
   printedAt: string;
 }
 
+/**
+ * One UPPER LINE of a program and the cartons its plan owes (migration 076).
+ *
+ * The plan is the authority, not the packets: uppers leave in whole packets, so what is issued
+ * can never add up to a plan of 4.5 DOZEN, and the floor was being offered 12 cartons for two
+ * packets or 6 for one when the program said 9 either way (owner, 2026-10-14). Shaped like
+ * MachineProgramFixCartonRun, because the two kinds of run now follow the one rule.
+ */
+export interface MachineProgramLineCartonRun {
+  lineId: string;
+  runId: string;
+  articleSizeId: string;
+  article: string;
+  size: string;
+  /** The sole the run is moulded in — what the floor knows the run by. */
+  soleColour: string;
+  /** The upper's own colour: two uppers on one sole are two different cartons. */
+  upperColour: string;
+  itemDisplayName: string;
+  /** What the line plans, in its own unit. */
+  quantity: number;
+  unitCode: string | null;
+  /** The whole plan's cartons — 4.5 DOZEN is 9. Null when no carton figure can be said. */
+  cartonsPlanned: number | null;
+  /** Still to label: the plan minus what has already been printed for this line. */
+  cartonsToPrint: number;
+  /** Why these cartons cannot be labelled here. Set only when cartonsPlanned is null. */
+  cartonNote: string | null;
+  /** The carton runs already printed for this line, newest last. */
+  labels: MachineProgramCartonLabel[];
+}
+
 /** One packet of uppers that left for a program, and the cartons it is owed back. */
 export interface MachineProgramCartonPacket {
   /** The STORE_EXIT event — the issuance, which is what a carton label is owed to. */
@@ -163,6 +195,57 @@ const CARTON_PACKETS_SQL = `
         AND back.machine_program_upper_line_id = rme.machine_program_upper_line_id
         AND back.rowid > rme.rowid))
   ORDER BY rme.event_ts_local ASC, rme.rowid ASC`;
+
+// Every UPPER LINE of a program, with the cartons its PLAN owes and whatever has been printed
+// against it so far (migration 076). Packets do not come into it: the line plans 4.5 DOZEN, so
+// it is owed 9 cartons whether one packet of 3 went out, two of 3, or none yet.
+//
+// Both label tables count: 076's rows, keyed on the line, and 068's older rows, which resolve to
+// their line through the STORE_EXIT event they were printed for. Without the older ones a program
+// labelled before this change would be offered its cartons a second time.
+const LINE_CARTON_RUNS_SQL = `
+  SELECT mul.id AS line_id, mpr.id AS run_id, mpr.sole_colour, ${COLOUR_SQL} AS upper_colour,
+         ii.display_name AS item_display_name, mul.quantity, u.code AS unit_code,
+         asz.id AS article_size_id, asz.article, asz.size,
+         (SELECT COALESCE(SUM(l.carton_count), 0) FROM machine_program_line_carton_labels l
+           JOIN qr_batches qb ON qb.id = l.qr_batch_id AND qb.grade IS NULL
+           WHERE l.upper_line_id = mul.id) AS printed_on_line,
+         (SELECT COALESCE(SUM(o.carton_count), 0) FROM machine_program_carton_labels o
+           JOIN raw_material_qr_events rme ON rme.id = o.store_exit_event_id
+           JOIN qr_batches qb ON qb.id = o.qr_batch_id AND qb.grade IS NULL
+           WHERE rme.machine_program_upper_line_id = mul.id) AS printed_on_packets
+  FROM machine_program_upper_lines mul
+  JOIN machine_program_runs mpr ON mpr.id = mul.run_id
+  JOIN inventory_items ii ON ii.id = mul.item_id
+  LEFT JOIN inventory_units u ON u.id = mul.unit_id
+  LEFT JOIN article_sizes asz ON asz.id = mpr.article_size_id AND asz.deleted_at IS NULL
+  WHERE mpr.program_id = ? AND mpr.inner_sole_colour IS NULL
+  ORDER BY mpr.injector_no IS NULL, mpr.injector_no, mpr.run_no, mul.line_no`;
+
+// The printed runs of one upper line, with how many of each run's cartons are back in the store.
+// Both tables again, oldest first, so a line's history reads as one list.
+const LINE_CARTON_LABELS_SQL = `
+  SELECT l.upper_line_id AS line_id, l.qr_batch_id, l.carton_count AS labelled_cartons, l.printed_by,
+         l.created_at AS labelled_at,
+         qb.article AS qb_article, qb.color AS qb_color, qb.size AS qb_size,
+         qb.start_sequence, qb.end_sequence, qb.grade AS qb_grade,
+         ${VOIDED_IN_RUN_SQL} AS voided_in_run,
+         ${RECEIVED_IN_RUN_SQL} AS received_in_run
+  FROM machine_program_line_carton_labels l
+  JOIN qr_batches qb ON qb.id = l.qr_batch_id
+  WHERE l.program_id = ?
+  UNION ALL
+  SELECT rme.machine_program_upper_line_id AS line_id, l.qr_batch_id, l.carton_count AS labelled_cartons,
+         l.printed_by, l.created_at AS labelled_at,
+         qb.article AS qb_article, qb.color AS qb_color, qb.size AS qb_size,
+         qb.start_sequence, qb.end_sequence, qb.grade AS qb_grade,
+         ${VOIDED_IN_RUN_SQL} AS voided_in_run,
+         ${RECEIVED_IN_RUN_SQL} AS received_in_run
+  FROM machine_program_carton_labels l
+  JOIN raw_material_qr_events rme ON rme.id = l.store_exit_event_id
+  JOIN qr_batches qb ON qb.id = l.qr_batch_id
+  WHERE l.program_id = ?
+  ORDER BY labelled_at, qr_batch_id`;
 
 // Every FIX run of a program, with the cartons its plan owes and whatever has been printed
 // against it so far. A fix run is marked by its inner sole (migration 067) — the article has no
@@ -314,40 +397,41 @@ const fixCartonNote = (run: {
 
 export const machineProgramCartonsMethods = {
   /**
-   * Store In's figures for a program, per upper line: the cartons owed back for what has been
-   * issued, and how many of them are back in the store.
+   * Store In's figures for a program, per upper line: the cartons owed back and how many of them
+   * are back in the store.
+   *
+   * Owed back is what has been LABELLED for the line, because a carton exists only once its label
+   * does — those are the identities Store In can scan, and the ones a close has to account for.
+   * How many labels there are follows the line's plan (migration 076): 4.5 DOZEN is 9. A line with
+   * nothing printed yet owes nothing back, and the figure never exceeds what was printed, so a
+   * program can still close COMPLETE when the store issued less than the plan.
    */
   listMachineProgramCartonProgress(this: SqliteDatabase, programId: string): MachineProgramLineCartons[] {
     const id = text(programId).trim();
     const lines = this.db
       .prepare(
-        `SELECT mul.id, u.code AS unit_code, ${LINE_CONSUMED_SQL} AS consumed
+        `SELECT mul.id
            FROM machine_program_upper_lines mul
            JOIN machine_program_runs mpr ON mpr.id = mul.run_id
-           LEFT JOIN inventory_units u ON u.id = mul.unit_id
           WHERE mpr.program_id = ?`
       )
       .all(id) as Array<Record<string, unknown>>;
-    // Every label row of the program, in the order it was printed, with its run's stored-in count.
-    const labels = this.db
-      .prepare(
-        `SELECT l.qr_batch_id, l.carton_count, rme.machine_program_upper_line_id AS line_id,
-                ${RECEIVED_IN_RUN_SQL} AS received_in_run
-           FROM machine_program_carton_labels l
-           JOIN raw_material_qr_events rme ON rme.id = l.store_exit_event_id
-          WHERE l.program_id = ?
-          ORDER BY l.rowid`
-      )
-      .all(id) as Array<Record<string, unknown>>;
+    // Every label row of the program, oldest first, with its run's stored-in count — the line's
+    // own runs and anything printed against its packets before this rule.
+    const labels: Array<Record<string, unknown>> = (
+      this.db.prepare(LINE_CARTON_LABELS_SQL).all(id, id) as Array<Record<string, unknown>>
+    ).map((row) => ({ ...row, carton_count: row.labelled_cartons }));
     const back = backByLine(labels);
-    return lines.map((line) => {
-      const consumed = roundQuantity(Math.max(0, Number(line.consumed ?? 0)));
-      return {
-        lineId: text(line.id),
-        cartonsDue: consumed > 0 ? cartonsExpectedFromUppers(consumed, line.unit_code ? text(line.unit_code) : null) : 0,
-        cartonsBack: back.get(text(line.id)) ?? 0,
-      };
-    });
+    const printed = new Map<string, number>();
+    for (const label of labels) {
+      const lineId = text(label.line_id);
+      printed.set(lineId, (printed.get(lineId) ?? 0) + Number(label.carton_count ?? 0));
+    }
+    return lines.map((line) => ({
+      lineId: text(line.id),
+      cartonsDue: printed.get(text(line.id)) ?? 0,
+      cartonsBack: back.get(text(line.id)) ?? 0,
+    }));
   },
 
 
@@ -361,14 +445,17 @@ export const machineProgramCartonsMethods = {
     qrId: string,
     tx: TransactionContext
   ): Promise<MachineProgramCartonOrigin | null> {
-    // Both label tables: an upper's cartons hang off its issued packet (068) and a FIX
-    // article's off its run (071), and a carton coming back is the same carton either way.
+    // Every label table: an upper's cartons hang off its LINE (076) or, before that rule, off
+    // the packet it was issued in (068), and a FIX article's off its run (071). A carton coming
+    // back is the same carton whichever row justified printing it.
     const row = (tx as MutableTransactionContext).db
       .prepare(
         `SELECT mp.id, mp.program_number,
                 EXISTS (SELECT 1 FROM machine_program_closures c WHERE c.program_id = mp.id) AS closed
          FROM qr_codes qc
          JOIN machine_programs mp ON mp.id = (
+           SELECT n.program_id FROM machine_program_line_carton_labels n WHERE n.qr_batch_id = qc.batch_id
+           UNION ALL
            SELECT l.program_id FROM machine_program_carton_labels l WHERE l.qr_batch_id = qc.batch_id
            UNION ALL
            SELECT f.program_id FROM machine_program_fix_carton_labels f WHERE f.qr_batch_id = qc.batch_id
@@ -378,6 +465,130 @@ export const machineProgramCartonsMethods = {
       )
       .get(text(qrId).trim()) as { id: string; program_number: number; closed: number } | undefined;
     return row ? { programId: row.id, programNumber: Number(row.program_number), closed: Boolean(row.closed) } : null;
+  },
+
+  /**
+   * Every UPPER LINE of a program and the cartons its plan owes (migration 076).
+   *
+   * The figure is the PLAN: a line of 4.5 DOZEN is owed 9 cartons from the moment it is on the
+   * program, whether the store has issued one packet, two or none. What has already been printed
+   * for the line is taken off — counting BOTH the line's own runs and anything printed against
+   * its packets before this rule — so raising the quantity later offers only the difference and a
+   * line printed in full offers nothing.
+   *
+   * Lines whose figure cannot be said (no product left in the master, no upper colour, or a unit
+   * that is not whole cartons of DOZEN) come back with `cartonNote` and nothing to print, exactly
+   * as a packet did.
+   */
+  listMachineProgramCartonLines(this: SqliteDatabase, programId: string): MachineProgramLineCartonRun[] {
+    const id = text(programId).trim();
+    const rows = this.db.prepare(LINE_CARTON_RUNS_SQL).all(id) as Array<Record<string, unknown>>;
+    if (rows.length === 0) return [];
+
+    const labelRows = this.db.prepare(LINE_CARTON_LABELS_SQL).all(id, id) as Array<Record<string, unknown>>;
+    const labelsByLine = new Map<string, MachineProgramCartonLabel[]>();
+    for (const row of labelRows) {
+      const label = labelOf(row);
+      if (!label) continue;
+      const lineId = text(row.line_id);
+      labelsByLine.set(lineId, [...(labelsByLine.get(lineId) ?? []), label]);
+    }
+
+    return rows.map((row) => {
+      const quantity = roundQuantity(Number(row.quantity ?? 0));
+      const unitCode = row.unit_code ? text(row.unit_code) : null;
+      const article = text(row.article);
+      const size = text(row.size);
+      const upperColour = attributeKey(text(row.upper_colour));
+      const articleSizeId = text(row.article_size_id);
+      // The same dozens-to-cartons rule every other carton on the program follows.
+      const plan = cartonPlanFor({
+        name: text(row.item_display_name),
+        target: articleSizeId
+          ? { articleSizeId, article, size, soleColour: attributeKey(text(row.sole_colour)), upperColour }
+          : null,
+        cartonCount: cartonsExpectedFromUppers(quantity, unitCode),
+      });
+      const planned = plan.cartons ? plan.cartons.count : null;
+      const printed = Number(row.printed_on_line ?? 0) + Number(row.printed_on_packets ?? 0);
+      return {
+        lineId: text(row.line_id),
+        runId: text(row.run_id),
+        articleSizeId,
+        article,
+        size,
+        soleColour: attributeKey(text(row.sole_colour)),
+        upperColour,
+        itemDisplayName: text(row.item_display_name),
+        quantity,
+        unitCode,
+        cartonsPlanned: planned,
+        cartonsToPrint: planned == null ? 0 : Math.max(0, planned - printed),
+        cartonNote: plan.cartonNote,
+        labels: labelsByLine.get(text(row.line_id)) ?? [],
+      };
+    });
+  },
+
+  /**
+   * Generates the carton QR labels one UPPER LINE still owes, and records the print — in ONE
+   * transaction, so carton identities never exist without the row that says which line justified
+   * them (migration 076).
+   *
+   * The count is worked out here, inside the write lock, from the line's plan minus what is
+   * already printed. Nothing comes from the screen but which line to print, so two terminals
+   * asking at the same moment cannot between them print more cartons than the line plans.
+   */
+  printMachineProgramLineCartons(
+    this: SqliteDatabase,
+    input: { programId: string; lineId: string; printedBy: string | null; deviceId: string }
+  ): PrintedMachineProgramCartons {
+    const programId = text(input.programId).trim();
+    const lineId = text(input.lineId).trim();
+    if (!lineId) throw new Error("Choose the upper to print cartons for.");
+
+    this.db.exec("BEGIN IMMEDIATE TRANSACTION");
+    try {
+      const program = this.db.prepare("SELECT program_number FROM machine_programs WHERE id = ? LIMIT 1").get(programId) as
+        | { program_number: number }
+        | undefined;
+      if (!program) throw new Error("This machine program no longer exists.");
+      if (this.isMachineProgramClosed(programId)) {
+        throw new Error(`${formatMachineProgramCodeNumber(Number(program.program_number))} is closed — no more carton labels are printed for it.`);
+      }
+
+      const line = this.listMachineProgramCartonLines(programId).find((candidate) => candidate.lineId === lineId);
+      if (!line) throw new Error("That upper is no longer on this program. Reload the program and try again.");
+      if (line.cartonNote) throw new Error(line.cartonNote);
+      if (line.cartonsToPrint <= 0) {
+        throw new Error(
+          `Every carton ${line.article} ${line.size} ${line.upperColour} plans has already been labelled. Reprint them from QR Management.`
+        );
+      }
+
+      const generated = this.reserveQrBatchInTransaction({
+        articleSizeId: line.articleSizeId,
+        // The UPPER's colour, not the sole's: two uppers on one sole are two different cartons.
+        color: line.upperColour,
+        quantity: line.cartonsToPrint,
+        createdBy: input.printedBy ?? undefined,
+        requestedBy: formatMachineProgramCodeNumber(Number(program.program_number)),
+      });
+
+      this.db
+        .prepare(
+          `INSERT INTO machine_program_line_carton_labels
+             (upper_line_id, qr_batch_id, program_id, carton_count, printed_by, device_id, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?)`
+        )
+        .run(lineId, generated.batch.id, programId, line.cartonsToPrint, input.printedBy, input.deviceId, generated.batch.createdAt);
+
+      this.db.exec("COMMIT");
+      return { ...generated, eventIds: [] };
+    } catch (error) {
+      try { this.db.exec("ROLLBACK"); } catch { /* ignore missing transaction state */ }
+      throw error;
+    }
   },
 
   /**

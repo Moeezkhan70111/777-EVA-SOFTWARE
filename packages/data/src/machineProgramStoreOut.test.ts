@@ -865,6 +865,134 @@ test("cartons that cannot be worked out, or two products at once, are refused wi
   });
 });
 
+// ─── The cartons a line is owed come from its PLAN ───────────────────────────
+//
+// Uppers leave the store in whole packets, so what is issued can never add up to a plan of
+// 4.5 DOZEN: two packets made 6 DOZEN and the floor was offered 12 cartons, one packet made 3 and
+// it was offered 6, while the program said 9 either way (owner, 2026-10-14). The plan is the
+// authority now, exactly as it always has been for a FIX article.
+
+test("an upper line is owed the cartons its PLAN says, whatever the store issued", async () => {
+  await withFixture(async (f) => {
+    await f.assignBoth(f.machine1.id, f.contractorA, f.contractorB);
+    const blackQrs = await f.stockIn(f.black, 40);
+    const saved = await f.program({ itemId: f.black, quantity: 4.5 });
+    assert.equal(saved.outcome, "SAVED");
+    const programId = saved.programId!;
+
+    // Nothing issued yet, and the 9 cartons are already owed: the plan does not wait on a scan.
+    const beforeAnyIssue = f.db.listMachineProgramCartonLines(programId);
+    assert.equal(beforeAnyIssue.length, 1);
+    assert.equal(beforeAnyIssue[0].quantity, 4.5);
+    assert.equal(beforeAnyIssue[0].cartonsPlanned, 9);
+    assert.equal(beforeAnyIssue[0].cartonsToPrint, 9);
+    assert.equal(beforeAnyIssue[0].upperColour, "BLACK");
+    assert.equal(beforeAnyIssue[0].cartonNote, null);
+
+    // One packet of 5 DOZEN goes out — MORE than the plan. Still 9 cartons, not 10.
+    await f.saveBatch({ programId, qrIds: [blackQrs[0]] });
+    const afterIssue = f.db.listMachineProgramCartonLines(programId);
+    assert.equal(afterIssue[0].cartonsToPrint, 9, "the packet does not decide the count");
+
+    const printed = f.db.printMachineProgramLineCartons({
+      programId, lineId: afterIssue[0].lineId, printedBy: ACTOR, deviceId: "device-1",
+    });
+    assert.equal(printed.qrCodes.length, 9);
+    assert.equal(printed.batch.color, "BLACK");
+    assert.equal(printed.batch.requestedBy, "MP-000001");
+
+    const after = f.db.listMachineProgramCartonLines(programId)[0];
+    assert.equal(after.cartonsToPrint, 0);
+    assert.equal(after.labels.length, 1);
+    assert.equal(after.labels[0].cartonCount, 9);
+
+    // A second print — another terminal, a double click — is refused and reserves nothing.
+    const codesBefore = Number(f.raw.prepare("SELECT COUNT(*) AS n FROM qr_codes").get().n);
+    assert.throws(
+      () => f.db.printMachineProgramLineCartons({ programId, lineId: after.lineId, printedBy: ACTOR, deviceId: "device-1" }),
+      /already been labelled/
+    );
+    assert.equal(Number(f.raw.prepare("SELECT COUNT(*) AS n FROM qr_codes").get().n), codesBefore);
+  });
+});
+
+test("raising the plan afterwards owes only the difference", async () => {
+  await withFixture(async (f) => {
+    await f.assignBoth(f.machine1.id, f.contractorA, f.contractorB);
+    await f.stockIn(f.black, 40);
+    const saved = await f.program({ itemId: f.black, quantity: 4.5 });
+    const programId = saved.programId!;
+    const line = f.db.listMachineProgramCartonLines(programId)[0];
+    f.db.printMachineProgramLineCartons({ programId, lineId: line.lineId, printedBy: ACTOR, deviceId: "device-1" });
+
+    // The plan is raised to 6 DOZEN on the line itself: 12 cartons, of which 9 are done.
+    const raisedSave = await f.saveLine.execute({
+      machineId: f.machine1.id,
+      programDate: TODAY,
+      injectorNo: 1,
+      run: { soleColour: "BLACK", articleSizeId: f.sk6_710 },
+      runId: line.runId,
+      lineId: line.lineId,
+      itemId: f.black,
+      quantity: 6,
+      actor: ACTOR,
+    });
+    assert.equal(raisedSave.outcome, "SAVED", raisedSave.reason);
+    const raised = f.db.listMachineProgramCartonLines(programId)[0];
+    assert.equal(raised.cartonsPlanned, 12);
+    assert.equal(raised.cartonsToPrint, 3);
+
+    const printed = f.db.printMachineProgramLineCartons({ programId, lineId: raised.lineId, printedBy: ACTOR, deviceId: "device-1" });
+    assert.equal(printed.qrCodes.length, 3);
+    assert.equal(f.db.listMachineProgramCartonLines(programId)[0].cartonsToPrint, 0);
+  });
+});
+
+test("cartons printed against a packet before this rule still count against the line's plan", async () => {
+  await withFixture(async (f) => {
+    const { programId, blackQrs } = await readyProgram(f);
+    await f.saveBatch({ programId, qrIds: [blackQrs[0]] });
+
+    // The old route: printed for the packet, 5 DOZEN out is 10 cartons.
+    const packet = f.db.listMachineProgramCartonPackets(programId)[0];
+    const old = f.db.printMachineProgramCartons({
+      programId, eventIds: [packet.eventId], printedBy: ACTOR, deviceId: "device-1",
+    });
+    assert.equal(old.qrCodes.length, 10);
+
+    // The line plans 100 DOZEN = 200 cartons, and those 10 are already done, so 190 are left —
+    // not 200, which would label the same cartons twice.
+    const line = f.db.listMachineProgramCartonLines(programId).find((row) => row.upperColour === "BLACK")!;
+    assert.equal(line.cartonsPlanned, 200);
+    assert.equal(line.cartonsToPrint, 190);
+    assert.equal(line.labels.length, 1, "the old print shows in the line's history");
+    assert.equal(line.labels[0].cartonCount, 10);
+  });
+});
+
+test("Store In owes back exactly the cartons that were labelled, which the plan decides", async () => {
+  await withFixture(async (f) => {
+    await f.assignBoth(f.machine1.id, f.contractorA, f.contractorB);
+    const blackQrs = await f.stockIn(f.black, 40);
+    const saved = await f.program({ itemId: f.black, quantity: 4.5 });
+    const programId = saved.programId!;
+    await f.saveBatch({ programId, qrIds: [blackQrs[0]] });
+
+    // A packet is out but nothing is labelled yet, so no carton exists to come back.
+    const beforePrint = f.db.listMachineProgramCartonProgress(programId);
+    assert.equal(beforePrint.length, 1);
+    assert.deepEqual({ due: beforePrint[0].cartonsDue, back: beforePrint[0].cartonsBack }, { due: 0, back: 0 });
+
+    // The plan says 9 cartons, so 9 labels are printed and exactly those 9 are owed back —
+    // not the 10 the 5-DOZEN packet would once have asked for.
+    const line = f.db.listMachineProgramCartonLines(programId)[0];
+    const printed = f.db.printMachineProgramLineCartons({ programId, lineId: line.lineId, printedBy: ACTOR, deviceId: "device-1" });
+    assert.equal(printed.qrCodes.length, 9);
+    const afterPrint = f.db.listMachineProgramCartonProgress(programId);
+    assert.deepEqual({ due: afterPrint[0].cartonsDue, back: afterPrint[0].cartonsBack }, { due: 9, back: 0 });
+  });
+});
+
 // ─── Store In: the program's cartons coming back ──────────────────────────────
 // Each printed carton label is scanned in Store In against the program it was printed for: the
 // carton is produced AND stored in, in one transaction, through the same production and Store

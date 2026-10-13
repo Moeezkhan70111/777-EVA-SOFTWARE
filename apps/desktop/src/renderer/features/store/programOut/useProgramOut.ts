@@ -6,7 +6,7 @@ import { playScanSound } from "../../../utils/playScanSound";
 import { openCartonLabelPrintWindow } from "../../../utils/qrLabels";
 import type {
   IssuedProgramPacket,
-  MachineProgramCartonPacket,
+  MachineProgramLineCartonRun,
   MachineProgramFixCartonRun,
   MachineProgramIssueBatchRow,
   MachineProgramLineCartons,
@@ -17,7 +17,7 @@ import type {
 import type { ScanStationFeedback } from "../../scanStation/scanStation";
 import {
   IDLE_FEEDBACK,
-  blockedCartonPackets,
+  blockedCartonLines,
   blockedFixCartonRuns,
   cartonRunLabel,
   fixCartonRuns,
@@ -65,7 +65,7 @@ export interface ProgramOutState {
   /** Carton runs already generated for the program, for the record on screen. */
   printedRuns: PrintedCartonRun[];
   /** Unlabelled packets whose cartons cannot be worked out, with the reason. */
-  blockedCartons: MachineProgramCartonPacket[];
+  blockedCartons: MachineProgramLineCartonRun[];
   /** FIX runs whose cartons cannot be worked out, with the reason. */
   blockedFixCartons: MachineProgramFixCartonRun[];
   /** Per upper line: cartons due back for what was issued, and how many are back (Store In). */
@@ -126,7 +126,7 @@ export const useProgramOut = ({ token, sessionId }: UseProgramOutInput): Program
   const [issuing, setIssuing] = useState(false);
   const [feedback, setFeedback] = useState<ScanStationFeedback>(IDLE_FEEDBACK);
   const [issued, setIssued] = useState<IssuedProgramPacket[]>([]);
-  const [cartonPackets, setCartonPackets] = useState<MachineProgramCartonPacket[]>([]);
+  const [cartonLines, setCartonLines] = useState<MachineProgramLineCartonRun[]>([]);
   // A FIX article issues nothing, so its cartons are owed by the plan rather than by a packet
   // and arrive as their own list (migration 071).
   const [fixCartons, setFixCartons] = useState<MachineProgramFixCartonRun[]>([]);
@@ -148,7 +148,7 @@ export const useProgramOut = ({ token, sessionId }: UseProgramOutInput): Program
         api.listMachineProgramCartonPackets(programId, { token }),
       ]);
       setHistory(batches.accepted ? batches.rows : []);
-      setCartonPackets(cartons.accepted ? cartons.rows : []);
+      setCartonLines(cartons.accepted ? cartons.rows : []);
       setCartonProgress(cartons.accepted ? (cartons.progress ?? []) : []);
       setFixCartons(cartons.accepted ? (cartons.fixRuns ?? []) : []);
       if (!cartons.accepted) setError(cartons.reason ?? copy.states.loadFailedBody);
@@ -174,7 +174,7 @@ export const useProgramOut = ({ token, sessionId }: UseProgramOutInput): Program
         setProgram(result.program);
         setIssueBlockedReason(result.accepted ? null : (result.reason ?? null));
         setIssued([]);
-        setCartonPackets([]);
+        setCartonLines([]);
         setCartonProgress([]);
         setFixCartons([]);
         setFeedback(IDLE_FEEDBACK);
@@ -206,7 +206,7 @@ export const useProgramOut = ({ token, sessionId }: UseProgramOutInput): Program
     setProgram(null);
     setIssueBlockedReason(null);
     setIssued([]);
-    setCartonPackets([]);
+    setCartonLines([]);
     setCartonProgress([]);
     setFixCartons([]);
     setError(null);
@@ -282,7 +282,7 @@ export const useProgramOut = ({ token, sessionId }: UseProgramOutInput): Program
         const result = await api.printMachineProgramCartons(
           run.source.kind === "FIX_RUN"
             ? { programId: program.id, runId: run.source.runId }
-            : { programId: program.id, eventIds: run.source.eventIds },
+            : { programId: program.id, lineId: run.source.lineId },
           { token }
         );
         if (!result.accepted || !result.batch || !result.qrCodes || result.qrCodes.length === 0) {
@@ -347,14 +347,14 @@ export const useProgramOut = ({ token, sessionId }: UseProgramOutInput): Program
   // Both kinds of carton stand in one list, because the operator is printing cartons for a
   // program and should not have to know which of its articles has an upper.
   const cartonRuns = useMemo(
-    () => [...pendingCartonRuns(cartonPackets), ...fixCartonRuns(fixCartons)],
-    [cartonPackets, fixCartons]
+    () => [...pendingCartonRuns(cartonLines), ...fixCartonRuns(fixCartons)],
+    [cartonLines, fixCartons]
   );
   const printedRuns = useMemo(
-    () => [...printedCartonRuns(cartonPackets), ...printedFixCartonRuns(fixCartons)],
-    [cartonPackets, fixCartons]
+    () => [...printedCartonRuns(cartonLines), ...printedFixCartonRuns(fixCartons)],
+    [cartonLines, fixCartons]
   );
-  const blockedCartons = useMemo(() => blockedCartonPackets(cartonPackets), [cartonPackets]);
+  const blockedCartons = useMemo(() => blockedCartonLines(cartonLines), [cartonLines]);
   const blockedFixCartons = useMemo(() => blockedFixCartonRuns(fixCartons), [fixCartons]);
 
   // A packet that left is worth announcing once, in words, for an operator watching the toast

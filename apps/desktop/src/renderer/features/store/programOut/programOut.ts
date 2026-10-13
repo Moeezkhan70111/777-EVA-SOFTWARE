@@ -2,6 +2,7 @@ import { MACHINE_PROGRAM_DISPLAY_STATUS, cartonsExpectedFromUppers, formatShiftR
 import type {
   MachineProgramCartonPacket,
   MachineProgramFixCartonRun,
+  MachineProgramLineCartonRun,
   MachineProgramLineCartons,
   MachineProgramRecord,
   MachineProgramScanVerdict,
@@ -227,10 +228,11 @@ export interface CartonRun {
   /**
    * What the cartons are owed to, which is also what the print is recorded against.
    *
-   * An ordinary article's are owed to the PACKETS of uppers that left the store. A FIX article
-   * has no upper and issues nothing, so its are owed to the RUN itself — its plan.
+   * An ordinary article's are owed to the upper LINE and come from its plan (migration 076); a
+   * FIX article's to the RUN itself, which has no upper at all. The plan is the authority either
+   * way — the packets the store issued no longer decide the count.
    */
-  source: { kind: "PACKETS"; eventIds: string[] } | { kind: "FIX_RUN"; runId: string };
+  source: { kind: "UPPER_LINE"; lineId: string } | { kind: "FIX_RUN"; runId: string };
 }
 
 /** `SK12 / 7/10 / BLACK RED` — one carton run in the words the labels will carry. */
@@ -238,37 +240,27 @@ export const cartonRunLabel = (run: Pick<CartonRun, "article" | "size" | "colour
   `${run.article} / ${run.size} / ${run.colour}`;
 
 /**
- * The carton runs still waiting to be labelled, from every packet the program has taken out.
+ * The carton runs still waiting to be labelled: one per upper LINE, from what it PLANS.
  *
- * The packets and their carton counts come from the main process, read from the events, so this
- * list is the same whoever opens the program and whenever. Packets whose cartons cannot be worked
- * out are left out here and reported by blockedCartonPackets instead.
+ * A line of 4.5 DOZEN is 9 cartons, offered from the moment the line is on the program and
+ * whether the store has issued one packet, two or none — uppers leave in whole packets, so what
+ * was issued could never add up to the plan (owner, 2026-10-14). The figures come from the main
+ * process, so the list is the same whoever opens the program and whenever. A line whose cartons
+ * cannot be worked out is left out here and reported by blockedCartonLines instead.
  */
-export const pendingCartonRuns = (packets: readonly MachineProgramCartonPacket[]): CartonRun[] => {
-  const runs = new Map<string, CartonRun>();
-  for (const packet of packets) {
-    if (!packet.cartons || packet.label) continue;
-    const { articleSizeId, article, size, soleColour, colour, count } = packet.cartons;
-    const key = `${articleSizeId}:${colour}`;
-    const existing = runs.get(key);
-    if (existing && existing.source.kind === "PACKETS") {
-      existing.cartons += count;
-      existing.source.eventIds.push(packet.eventId);
-    } else {
-      runs.set(key, {
-        key,
-        articleSizeId,
-        article,
-        size,
-        soleColour,
-        colour,
-        cartons: count,
-        source: { kind: "PACKETS", eventIds: [packet.eventId] },
-      });
-    }
-  }
-  return [...runs.values()];
-};
+export const pendingCartonRuns = (lines: readonly MachineProgramLineCartonRun[]): CartonRun[] =>
+  lines
+    .filter((line) => line.cartonNote == null && line.cartonsToPrint > 0)
+    .map((line) => ({
+      key: `line:${line.lineId}`,
+      articleSizeId: line.articleSizeId,
+      article: line.article,
+      size: line.size,
+      soleColour: line.soleColour,
+      colour: line.upperColour,
+      cartons: line.cartonsToPrint,
+      source: { kind: "UPPER_LINE", lineId: line.lineId },
+    }));
 
 /**
  * The carton runs a program's FIX articles still owe — one per run, from its plan.
@@ -343,38 +335,45 @@ export interface PrintedCartonRun {
   voided?: number;
 }
 
-/** Every carton run already printed for the program, newest first — one row per QR run. */
-export const printedCartonRuns = (packets: readonly MachineProgramCartonPacket[]): PrintedCartonRun[] => {
+/**
+ * Every carton run already printed for the program's uppers, newest first — one row per QR run.
+ *
+ * A run printed before migration 076 was recorded against a packet rather than the line; the
+ * main process resolves those to their line, so the history reads as one list either way.
+ */
+export const printedCartonRuns = (lines: readonly MachineProgramLineCartonRun[]): PrintedCartonRun[] => {
   const runs = new Map<string, PrintedCartonRun>();
-  for (const packet of packets) {
-    const label = packet.label;
-    if (!label) continue;
-    const existing = runs.get(label.qrBatchId);
-    if (existing) {
-      existing.cartons += label.cartonCount;
-      continue;
+  for (const line of lines) {
+    for (const label of line.labels) {
+      const existing = runs.get(label.qrBatchId);
+      if (existing) {
+        existing.cartons += label.cartonCount;
+        continue;
+      }
+      runs.set(label.qrBatchId, {
+        key: label.qrBatchId,
+        qrBatchId: label.qrBatchId,
+        label: cartonRunLabel({ article: line.article, size: line.size, colour: label.colour || line.upperColour }),
+        cartons: label.cartonCount,
+        range: label.firstQrId === label.lastQrId ? label.firstQrId : `${label.firstQrId} → ${label.lastQrId}`,
+        received: label.receivedInRun,
+        at: label.printedAt,
+        grade: label.grade,
+        voided: label.voidedInRun,
+      });
     }
-    runs.set(label.qrBatchId, {
-      key: label.qrBatchId,
-      qrBatchId: label.qrBatchId,
-      label: packet.cartons ? cartonRunLabel(packet.cartons) : packet.itemDisplayName,
-      cartons: label.cartonCount,
-      range: label.firstQrId === label.lastQrId ? label.firstQrId : `${label.firstQrId} → ${label.lastQrId}`,
-      received: label.receivedInRun,
-      at: label.printedAt,
-    });
   }
   return [...runs.values()].sort((a, b) => b.at.localeCompare(a.at));
 };
 
 /**
- * Unlabelled packets whose cartons cannot be worked out, one per upper: twenty packets of the
- * same colourless upper are one thing to fix, not twenty warnings to read.
+ * Lines whose cartons cannot be worked out, one per upper: the same colourless upper on three
+ * runs is one thing to fix, not three warnings to read.
  */
-export const blockedCartonPackets = (packets: readonly MachineProgramCartonPacket[]): MachineProgramCartonPacket[] => {
-  const byItem = new Map<string, MachineProgramCartonPacket>();
-  for (const packet of packets) {
-    if (!packet.cartons && !packet.label && !byItem.has(packet.itemDisplayName)) byItem.set(packet.itemDisplayName, packet);
+export const blockedCartonLines = (lines: readonly MachineProgramLineCartonRun[]): MachineProgramLineCartonRun[] => {
+  const byItem = new Map<string, MachineProgramLineCartonRun>();
+  for (const line of lines) {
+    if (line.cartonNote != null && !byItem.has(line.itemDisplayName)) byItem.set(line.itemDisplayName, line);
   }
   return [...byItem.values()];
 };

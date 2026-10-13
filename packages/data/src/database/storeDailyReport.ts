@@ -51,6 +51,8 @@ const CARTON_EVENT: Record<StoreDirection, string> = { IN: "STORE_ENTRY", OUT: "
 const CARTON_PROGRAM_SQL = `(
   SELECT mp.program_number FROM qr_codes qc
   JOIN machine_programs mp ON mp.id = (
+    SELECT n.program_id FROM machine_program_line_carton_labels n WHERE n.qr_batch_id = qc.batch_id
+    UNION ALL
     SELECT l.program_id FROM machine_program_carton_labels l WHERE l.qr_batch_id = qc.batch_id
     UNION ALL
     SELECT f.program_id FROM machine_program_fix_carton_labels f WHERE f.qr_batch_id = qc.batch_id

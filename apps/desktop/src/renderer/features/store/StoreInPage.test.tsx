@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { StoreInPage } from "./StoreInPage";
 import type { StoreInTab } from "./storeOperators";
 import { NotificationsProvider } from "../../state/NotificationsContext";
-import type { MachineProgramCartonPacket, MachineProgramReconciliation, MachineProgramRecord } from "../../types/desktopApi";
+import type { MachineProgramLineCartonRun, MachineProgramReconciliation, MachineProgramRecord } from "../../types/desktopApi";
 
 // STORE IN — the machine program lookup.
 //
@@ -61,25 +61,38 @@ const finishedProgram: MachineProgramRecord = {
   articleRates: [],
 };
 
-/** 2 DOZEN went out and its 4 carton labels were printed; one has come back so far. */
-const printedPacket: MachineProgramCartonPacket = {
-  eventId: "ev-0", qrId: "RM_6_41_1", itemDisplayName: "UPPER — SK6 — BLACK — 7/10", quantity: 2, unitCode: "DOZEN",
-  issuedAt: `${TODAY}T07:00:00.000Z`,
-  cartons: { articleSizeId: "as-sk6-710", article: "SK6", size: "7/10", soleColour: "BLACK", colour: "BLACK", count: 4 },
+/** The BLACK upper line of MP-000001: 2 DOZEN planned, so 4 cartons (migration 076). */
+const cartonLine = (over: Partial<MachineProgramLineCartonRun> = {}): MachineProgramLineCartonRun => ({
+  lineId: "line-black",
+  runId: "run-1",
+  articleSizeId: "as-sk6-710",
+  article: "SK6",
+  size: "7/10",
+  soleColour: "BLACK",
+  upperColour: "BLACK",
+  itemDisplayName: "UPPER — SK6 — BLACK — 7/10",
+  quantity: 2,
+  unitCode: "DOZEN",
+  cartonsPlanned: 4,
+  cartonsToPrint: 4,
   cartonNote: null,
-  label: {
-    qrBatchId: "qrb-0", firstQrId: "SK6_BLACK_7/10_000001", lastQrId: "SK6_BLACK_7/10_000004",
-    cartonCount: 4, receivedInRun: 1, voidedInRun: 0, colour: "BLACK", grade: null, printedBy: "aslam", printedAt: `${TODAY}T07:30:00.000Z`,
-  },
-};
+  labels: [],
+  ...over,
+});
 
-/** 2 DOZEN went out and its 4 carton labels were never printed. */
-const owedPacket: MachineProgramCartonPacket = {
-  eventId: "ev-1", qrId: "RM_6_42_1", itemDisplayName: "UPPER — SK6 — BLACK — 7/10", quantity: 2, unitCode: "DOZEN",
-  issuedAt: `${TODAY}T08:00:00.000Z`,
-  cartons: { articleSizeId: "as-sk6-710", article: "SK6", size: "7/10", soleColour: "BLACK", colour: "BLACK", count: 4 },
-  cartonNote: null, label: null,
-};
+/** Its 4 labels printed, one carton back so far. */
+const printedLine: MachineProgramLineCartonRun = cartonLine({
+  cartonsToPrint: 0,
+  labels: [
+    {
+      qrBatchId: "qrb-0", firstQrId: "SK6_BLACK_7/10_000001", lastQrId: "SK6_BLACK_7/10_000004",
+      cartonCount: 4, receivedInRun: 1, voidedInRun: 0, colour: "BLACK", grade: null, printedBy: "aslam", printedAt: `${TODAY}T07:30:00.000Z`,
+    },
+  ],
+});
+
+/** Its 4 labels never printed. */
+const owedLine: MachineProgramLineCartonRun = cartonLine();
 
 /** MP-000001 standing against its cartons: BLACK GREY had 8 due and `back` came back. */
 const standing = (back: number): MachineProgramReconciliation => ({
@@ -103,7 +116,7 @@ const standing = (back: number): MachineProgramReconciliation => ({
 });
 
 function installApi(
-  packets: MachineProgramCartonPacket[] = [owedPacket],
+  lines: MachineProgramLineCartonRun[] = [owedLine],
   progress: Array<{ lineId: string; cartonsDue: number | null; cartonsBack: number }> = [],
   reconciliation: MachineProgramReconciliation = standing(8),
   /** FIX runs: their cartons come from the plan, with no packet ever issued (migration 071). */
@@ -120,7 +133,7 @@ function installApi(
         : { accepted: false, outcome: "PROGRAM_NOT_FOUND", reason: `${lookup} does not exist.`, program: null }
     ),
     listMachineProgramIssueBatches: vi.fn(async () => ({ accepted: true, rows: [] })),
-    listMachineProgramCartonPackets: vi.fn(async () => ({ accepted: true, rows: packets, progress, fixRuns })),
+    listMachineProgramCartonPackets: vi.fn(async () => ({ accepted: true, rows: lines, progress, fixRuns })),
     getMachineProgramReconciliation: vi.fn(async () => ({ accepted: true, reconciliation: close.view })),
     // The backend closes it and says how; the screen then re-reads and shows it closed.
     completeMachineProgramProduction: vi.fn(async (input: { programId: string; entries: unknown[] }) => {
@@ -216,7 +229,7 @@ describe("Store In — machine program lookup", () => {
     expect(screen.getByTestId("rm-input-station")).toBeInTheDocument();
   });
 
-  it("prints the cartons a program is owed: 2 DOZEN out is 4 labels", async () => {
+  it("prints the cartons a program plans: 2 DOZEN on the line is 4 labels", async () => {
     const api = installApi();
     renderPage();
     await openProgram("MP-000001");
@@ -224,8 +237,9 @@ describe("Store In — machine program lookup", () => {
     const cartons = await screen.findByRole("region", { name: "Cartons to label" });
     await userEvent.click(within(cartons).getByRole("button", { name: "Print 4 carton QR labels for SK6 / 7/10 / BLACK" }));
 
+    // Printed against the LINE, whose plan decides the count (migration 076).
     await waitFor(() =>
-      expect(api.printMachineProgramCartons).toHaveBeenCalledWith({ programId: "prog-1", eventIds: ["ev-1"] }, { token: "t-1" })
+      expect(api.printMachineProgramCartons).toHaveBeenCalledWith({ programId: "prog-1", lineId: "line-black" }, { token: "t-1" })
     );
     expect(printWindow.mock.calls[0][0].ids).toHaveLength(4);
     expect(api.machineProgramStoreOutSaveBatch).not.toHaveBeenCalled();
@@ -254,7 +268,7 @@ describe("Store In — machine program lookup", () => {
   });
 
   it("scans the program's carton labels back in, and refuses another program's by name", async () => {
-    const api = installApi([printedPacket]);
+    const api = installApi([printedLine]);
     renderPage();
     await openProgram("MP-000001");
 
@@ -278,7 +292,7 @@ describe("Store In — machine program lookup", () => {
   });
 
   it("keeps Carton In closed until the program has printed carton labels", async () => {
-    installApi([owedPacket]);
+    installApi([owedLine]);
     renderPage();
     await openProgram("MP-000001");
 
@@ -312,7 +326,7 @@ describe("Store In — machine program lookup", () => {
 
   it("reads the program in CARTONS coming back: due for what was issued, back, and still to come", async () => {
     // 20 DOZEN of BLACK went out, so 40 cartons are due; 6 of them are back.
-    installApi([printedPacket], [{ lineId: "line-black", cartonsDue: 40, cartonsBack: 6 }]);
+    installApi([printedLine], [{ lineId: "line-black", cartonsDue: 40, cartonsBack: 6 }]);
     renderPage();
     await openProgram("MP-000001");
     await screen.findByRole("heading", { name: "Machine Program" });
@@ -417,7 +431,7 @@ describe("Store In — machine program lookup", () => {
   });
 
   it("completes a program when every carton is back, after a confirmation", async () => {
-    const api = installApi([printedPacket], [], standing(8));
+    const api = installApi([printedLine], [], standing(8));
     renderPage();
     await openProgram("MP-000001");
 
@@ -438,7 +452,7 @@ describe("Store In — machine program lookup", () => {
   });
 
   it("short cartons open the reconciliation: every missing upper accounted for, claims with their party and reason", async () => {
-    const api = installApi([printedPacket], [], standing(7));
+    const api = installApi([printedLine], [], standing(7));
     renderPage();
     await openProgram("MP-000001");
 
