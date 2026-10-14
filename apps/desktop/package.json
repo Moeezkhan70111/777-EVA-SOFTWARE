@@ -11,8 +11,8 @@
     "dev": "node ./scripts/dev.mjs",
     "test": "vitest run",
     "lint": "echo 'no lint configured yet'",
-    "package": "node ./scripts/write-build-info.mjs --strict && electron-builder --win --config electron-builder.yml",
-    "package:dir": "node ./scripts/write-build-info.mjs --strict && electron-builder --dir --config electron-builder.yml",
+    "package": "npm run build && node ./scripts/write-build-info.mjs --strict && electron-builder --win --config electron-builder.yml",
+    "package:dir": "npm run build && node ./scripts/write-build-info.mjs --strict && electron-builder --dir --config electron-builder.yml",
     "verify:signatures": "node ./scripts/verify-signatures.mjs"
   },
   "dependencies": {
