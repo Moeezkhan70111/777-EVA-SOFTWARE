@@ -25,7 +25,7 @@ const programRef = (overrides: Partial<ReconcilableProgram> = {}): ReconcilableP
 const reconciliation = (overrides: Partial<ProgramReconciliation> = {}): ProgramReconciliation => ({
   program: { ...programRef(), contractorName: "ASLAM", packingContractorName: "BABAR" },
   upperOut: { packets: 4, quantities: [{ unitCode: "DOZEN", quantity: 20 }] },
-  productionReceived: { cartons: 23, bCartons: 2 },
+  productionReceived: { cartons: 23, bCartons: 2, manualCartons: 0 },
   comparison: { upperDozens: 20, otherUpper: [], receivedDozens: 11.5, comparable: true, differenceDozens: 8.5 },
   ...overrides,
 });

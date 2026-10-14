@@ -1,7 +1,7 @@
 import React from "react";
 import { formatQuantityInDozens } from "@erp/domain";
 import { copy } from "../../config/copy";
-import type { ProductionReceiptPage, ProductionReceiptSummaryLine } from "../../types/desktopApi";
+import type { ProductionReceiptSummaryLine } from "../../types/desktopApi";
 
 // SUMMARY — today's received production added up per article, size and colour:
 //
@@ -11,16 +11,24 @@ import type { ProductionReceiptPage, ProductionReceiptSummaryLine } from "../../
 //   Total                         60    30 DZN
 //
 // The whole day, not one page of the details. Every figure is counted by the database
-// (listProductionReceipts); the dozens are the one carton rule (formatQuantityInDozens).
+// (listProductionReceipts, listManualProduction); the dozens are the one carton rule
+// (formatQuantityInDozens). Shared by Receive Production and Manual Production.
 
 const text = copy.receiveProduction;
 
 const lineKey = (line: ProductionReceiptSummaryLine) => `${line.article}|${line.size}|${line.color}|${line.grade ?? ""}`;
 
-export const ReceiptSummary: React.FC<{ page: ProductionReceiptPage }> = ({ page }) => (
+interface ReceiptSummaryProps {
+  lines: ProductionReceiptSummaryLine[];
+  totalCartons: number;
+  /** What the table is, for a screen reader. */
+  caption?: string;
+}
+
+export const ReceiptSummary: React.FC<ReceiptSummaryProps> = ({ lines, totalCartons, caption = text.summaryCaption }) => (
   <div className="rp-table-wrap">
     <table className="data-table rp-table rp-summary">
-      <caption className="sr-only">{text.summaryCaption}</caption>
+      <caption className="sr-only">{caption}</caption>
       <thead>
         <tr>
           <th scope="col">{text.colArticle}</th>
@@ -31,7 +39,7 @@ export const ReceiptSummary: React.FC<{ page: ProductionReceiptPage }> = ({ page
         </tr>
       </thead>
       <tbody>
-        {page.summary.map((line) => (
+        {lines.map((line) => (
           <tr key={lineKey(line)}>
             <td><strong>{line.article}</strong></td>
             <td>{line.size}</td>
@@ -47,8 +55,8 @@ export const ReceiptSummary: React.FC<{ page: ProductionReceiptPage }> = ({ page
       <tfoot>
         <tr className="rp-total">
           <th scope="row" colSpan={3}>{text.total}</th>
-          <td className="rp-num">{page.totalCartons.toLocaleString()}</td>
-          <td className="rp-num rp-dozens">{formatQuantityInDozens(page.totalCartons)}</td>
+          <td className="rp-num">{totalCartons.toLocaleString()}</td>
+          <td className="rp-num rp-dozens">{formatQuantityInDozens(totalCartons)}</td>
         </tr>
       </tfoot>
     </table>

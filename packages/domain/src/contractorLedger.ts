@@ -91,7 +91,15 @@ export interface ContractorWorkCarton {
   /** Per DOZEN, in paisa. Null when neither the program nor the product has a rate for this job. */
   ratePaisa: number | null;
   rateSource: RateSource | null;
+  /**
+   * How many cartons this row stands for: 1 for a carton QR (the default), the entry's cartons for
+   * Manual Production, which records a quantity with no QR per carton.
+   */
+  cartons?: number;
 }
+
+/** How many cartons a work row stands for. */
+const cartonCount = (carton: ContractorWorkCarton): number => carton.cartons ?? 1;
 
 /** One program's work on one article, for one job, on one day. */
 export interface ContractorWorkLine {
@@ -130,12 +138,12 @@ const linesOf = (cartons: readonly ContractorWorkCarton[]): ContractorWorkLine[]
   for (const carton of cartons) {
     const key = lineKey(carton);
     const entry = counted.get(key);
-    if (entry) entry.count += 1;
-    else counted.set(key, { carton, count: 1 });
+    if (entry) entry.count += cartonCount(carton);
+    else counted.set(key, { carton, count: cartonCount(carton) });
   }
   return [...counted.values()].map(({ carton, count }) => {
     const dozens = cartonsToDozens(count);
-    const { receivedAt: _receivedAt, ...identity } = carton;
+    const { receivedAt: _receivedAt, cartons: _cartons, ...identity } = carton;
     return { ...identity, cartons: count, dozens, amountPaisa: carton.ratePaisa == null ? 0 : jobChargePaisa(carton.ratePaisa, dozens) };
   });
 };
@@ -154,10 +162,11 @@ export const groupContractorWork = (cartons: readonly ContractorWorkCarton[]): C
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([date, dayCartons]) => {
       const lines = linesOf(dayCartons).sort(byProgramThenArticle);
+      const cartons = dayCartons.reduce((total, carton) => total + cartonCount(carton), 0);
       return {
         date,
-        cartons: dayCartons.length,
-        dozens: cartonsToDozens(dayCartons.length),
+        cartons,
+        dozens: cartonsToDozens(cartons),
         amountPaisa: lines.reduce((sum, line) => sum + line.amountPaisa, 0),
         unpricedDozens: lines.filter((line) => line.ratePaisa == null).reduce((sum, line) => sum + line.dozens, 0),
         lines,

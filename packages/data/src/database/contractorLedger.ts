@@ -76,6 +76,10 @@ const ACCOUNTS_SQL = `
 // `?1` is the contractor's party id, or the printing account (every program's printing work).
 // B CARTONS ARE LEFT OUT: no contractor is paid for a B carton (owner, 2026-10-12), so a B label
 // stored in is production for the program's counts but never work on a contractor's ledger.
+//
+// MANUAL PRODUCTION (migration 080) is work too: an entry is cartons produced on a machine's program
+// and stocked the moment it is saved, so it is dated by when it was saved and paid at the same program
+// or product rate. It is one row standing for its `cartons` — a carton QR row stands for 1.
 const CARTONS_SQL = `
   WITH program_batches AS (
     SELECT program_id, qr_batch_id FROM machine_program_carton_labels
@@ -91,7 +95,8 @@ const CARTONS_SQL = `
                AND json_extract(pe.metadata_json, '$.eventType') = 'STORE_ENTRY') AS received_at,
            r.id AS program_rate_id,
            r.machine_rate_paisa AS program_machine, r.packing_rate_paisa AS program_packing, r.printing_rate_paisa AS program_printing,
-           asz.machine_rate_paisa AS standard_machine, asz.packing_rate_paisa AS standard_packing, asz.printing_rate_paisa AS standard_printing
+           asz.machine_rate_paisa AS standard_machine, asz.packing_rate_paisa AS standard_packing, asz.printing_rate_paisa AS standard_printing,
+           1 AS cartons
     FROM program_batches pb
     JOIN machine_programs mp ON mp.id = pb.program_id
     JOIN qr_batches qb ON qb.id = pb.qr_batch_id
@@ -102,6 +107,18 @@ const CARTONS_SQL = `
     -- B cartons (qr_batches.grade = 'B', migration 074) are NOT paid to any contractor (owner, 2026-10-12).
     WHERE qb.grade IS NULL
       AND (?1 = '${PRINTING_CONTRACTOR_ACCOUNT_ID}' OR mp.contractor_party_id = ?1 OR mp.packing_contractor_party_id = ?1)
+    UNION ALL
+    SELECT mp.id, mp.program_number, COALESCE(m.name, ''), mp.contractor_party_id, mp.packing_contractor_party_id,
+           me.article_size_id, me.article, me.size, me.entry_ts,
+           r.id, r.machine_rate_paisa, r.packing_rate_paisa, r.printing_rate_paisa,
+           asz.machine_rate_paisa, asz.packing_rate_paisa, asz.printing_rate_paisa,
+           me.cartons
+    FROM manual_production_entries me
+    JOIN machine_programs mp ON mp.id = me.machine_program_id
+    LEFT JOIN machines m ON m.id = mp.machine_id
+    LEFT JOIN machine_program_article_rates r ON r.program_id = mp.id AND r.article_size_id = me.article_size_id
+    LEFT JOIN article_sizes asz ON asz.id = me.article_size_id
+    WHERE (?1 = '${PRINTING_CONTRACTOR_ACCOUNT_ID}' OR mp.contractor_party_id = ?1 OR mp.packing_contractor_party_id = ?1)
   ) WHERE received_at IS NOT NULL`;
 
 // Every active cash voucher that names the contractor, on its header or on one of its lines.
@@ -161,6 +178,7 @@ const workCartonsOf = (rows: Array<Record<string, unknown>>, accountId: string):
       articleSizeId: text(row.article_size_id),
       article: text(row.article),
       size: text(row.size),
+      cartons: Number(row.cartons ?? 1),
       ...rateFor(row, role),
     }))
   );

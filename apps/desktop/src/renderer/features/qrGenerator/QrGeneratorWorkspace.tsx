@@ -10,12 +10,13 @@ import { MachineProgramPage } from "../machineProgram/MachineProgramPage";
 import { useMachines } from "../machineProgram/useCartonProgram";
 import { ReceiveProductionTab } from "../receiveProduction/ReceiveProductionTab";
 import { ReconciliationTab } from "../reconciliation/ReconciliationTab";
+import { ManualProductionTab } from "../manualProduction/ManualProductionTab";
 import { UpperMoveOutTab } from "../upperMoveOut/UpperMoveOutTab";
 
 // QR GENERATOR — carton QRs and B carton labels, for one machine:
 //
 //   QR Generator
-//   [ Machine Program ] [ Carton QR ] [ B-Carton Labels ] [ Receive Production ] [ Upper Move Out ] [ Reconciliation ]
+//   [ Machine Program ] [ Carton QR ] [ B-Carton Labels ] [ Receive Production ] [ Manual Production ] [ Upper Move Out ] [ Reconciliation ]
 //   ┌ MACHINE ─ The cartons are added to this machine's program for today. ───────┐
 //   │ [● MACHINE 1  ASLAM · BABAR] [  MACHINE 2  ASLAM · KHAN]                     │
 //   └──────────────────────────────────────────────────────────────────────────────┘
@@ -37,12 +38,16 @@ import { UpperMoveOutTab } from "../upperMoveOut/UpperMoveOutTab";
 // itself (every machine in service, not only those ready to generate), so the generators' picker is
 // not shown on it either. Offered to users who may use Raw Material Output.
 //
+// Manual Production records cartons typed in rather than scanned (owner, 2026-10-14): it uses the same
+// machine picker as the generators — each entry joins that machine's program for today — and is offered
+// with Receive Production, behind the same Live Production permission.
+//
 // The last, Reconciliation (Phase 4), sets a program's Upper Out against its Production Received. The
 // program is chosen there, or brought by Start Reconciliation on a Machine Program card; Receive
 // Production's Start Reconciliation opens it to choose one. The choice is kept here, so leaving the tab
 // and coming back keeps it. Offered with the Machine Program, whose permission its reads sit behind.
 
-export type QrWorkspaceTab = "program" | "cartons" | "b-cartons" | "receive" | "upper" | "reconcile";
+export type QrWorkspaceTab = "program" | "cartons" | "b-cartons" | "receive" | "manual" | "upper" | "reconcile";
 
 const text = copy.qrWorkspace;
 
@@ -68,6 +73,7 @@ export const QrGeneratorWorkspace: React.FC<QrGeneratorWorkspaceProps> = ({ user
     { id: "cartons", label: text.tabCartons },
     { id: "b-cartons", label: text.tabBCartons },
     ...(canReceiveProduction ? [{ id: "receive" as const, label: text.tabReceive }] : []),
+    ...(canReceiveProduction ? [{ id: "manual" as const, label: text.tabManual }] : []),
     ...(canUpperMoveOut ? [{ id: "upper" as const, label: text.tabUpperOut }] : []),
     ...(canMachineProgram ? [{ id: "reconcile" as const, label: text.tabReconcile }] : []),
   ];
@@ -82,7 +88,8 @@ export const QrGeneratorWorkspace: React.FC<QrGeneratorWorkspaceProps> = ({ user
         setTab("reconcile");
       }
     : undefined;
-  const generating = tab === "cartons" || tab === "b-cartons";
+  // The tabs that record against a machine's program for today, so ask which machine first.
+  const needsMachine = tab === "cartons" || tab === "b-cartons" || tab === "manual";
 
   return (
     <div className="page qrw-page">
@@ -90,7 +97,7 @@ export const QrGeneratorWorkspace: React.FC<QrGeneratorWorkspaceProps> = ({ user
         <h1>{text.title}</h1>
       </div>
       <TabStrip items={tabs} active={tab} onSelect={setTab} label={text.tabsLabel} />
-      {!generating ? null : (
+      {!needsMachine ? null : (
         <MachinePicker machines={machines} selectedId={machine?.id ?? null} onSelect={setMachine} onSetUpMachines={onSetUpMachines} />
       )}
       <div role="tabpanel" aria-labelledby={`tab-${tab}`} className="qrw-panel">
@@ -103,6 +110,7 @@ export const QrGeneratorWorkspace: React.FC<QrGeneratorWorkspaceProps> = ({ user
           />
         ) : null}
         {tab === "receive" ? <ReceiveProductionTab onStartReconciliation={startReconciliation ? () => startReconciliation(null) : undefined} /> : null}
+        {tab === "manual" ? <ManualProductionTab machine={machine} /> : null}
         {tab === "reconcile" ? <ReconciliationTab programId={reconcileId} onProgramChange={setReconcileId} /> : null}
         {tab === "upper" ? <UpperMoveOutTab /> : null}
         {tab === "b-cartons" ? <BCartonGeneratorPage username={username} machine={machine} embedded /> : null}

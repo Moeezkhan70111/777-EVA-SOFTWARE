@@ -16,3 +16,4 @@ export * from "./storeDailyReport.js";
 export * from "./productionReceipt.js";
 export * from "./upperMoveOut.js";
 export * from "./productionReconciliation.js";
+export * from "./manualProduction.js";

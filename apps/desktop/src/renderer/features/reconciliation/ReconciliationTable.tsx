@@ -55,6 +55,7 @@ export const ReconciliationTable: React.FC<{ reconciliation: ProgramReconciliati
               <td className="rp-num">
                 {text.cartons(productionReceived.cartons)}
                 {productionReceived.bCartons > 0 ? <small className="cp-voided">{text.ofWhichB(productionReceived.bCartons)}</small> : null}
+                {productionReceived.manualCartons > 0 ? <small className="cp-voided">{text.ofWhichManual(productionReceived.manualCartons)}</small> : null}
               </td>
             </tr>
             {comparison.otherUpper.length > 0 ? (

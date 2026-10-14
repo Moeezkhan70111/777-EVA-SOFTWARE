@@ -53,7 +53,7 @@ export const ReceiptsPanel: React.FC<{ receipts: ProductionReceiptsState }> = ({
     if (receipts.loading && !page) return <StateView kind="loading" compact message={text.loading} />;
     if (receipts.error && !page) return <StateView kind="error" compact message={receipts.error} onRetry={() => void receipts.reload()} />;
     if (!page || page.totalCartons === 0) return <StateView kind="empty" compact title={text.emptyTitle} hint={text.emptyHint} />;
-    if (section === "summary") return <ReceiptSummary page={page} />;
+    if (section === "summary") return <ReceiptSummary lines={page.summary} totalCartons={page.totalCartons} />;
     const pages = Math.max(1, Math.ceil(page.totalCartons / page.pageSize));
     return (
       <>

@@ -291,7 +291,7 @@ describe("Receive Production in the QR Generator", () => {
         <QrGeneratorWorkspace username="admin" onNavigate={vi.fn()} canReceiveProduction />
       </NotificationsProvider>
     );
-    expect(screen.getAllByRole("tab").map((tab) => tab.textContent)).toEqual(["Carton QR", "B-Carton Labels", "Receive Production"]);
+    expect(screen.getAllByRole("tab").map((tab) => tab.textContent)).toEqual(["Carton QR", "B-Carton Labels", "Receive Production", "Manual Production"]);
     await userEvent.click(screen.getByRole("tab", { name: "Receive Production" }));
     expect(await screen.findByRole("heading", { name: "Receive Production" })).toBeInTheDocument();
     expect(screen.queryByRole("radiogroup", { name: "Machine" })).not.toBeInTheDocument();

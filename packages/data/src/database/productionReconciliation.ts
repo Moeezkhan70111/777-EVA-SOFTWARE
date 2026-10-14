@@ -13,6 +13,8 @@
 //                          * labels the retired workflow printed for it (068 / 071 / 076 link tables)
 //                        Counted as DISTINCT cartons — a carton is produced once (qr_master.qr_id is its
 //                        PRIMARY KEY), and a repeated scan was refused, so it left no second event.
+//                        PLUS the cartons Manual Production recorded for the program (migration 080),
+//                        which have no QR — their entries' cartons, added in and also shown on their own.
 //
 // A program is one machine on one business day (Phase 1.1), so the day is the program's own
 // program_date, read through businessDayStartIso (Asia/Karachi). The comparison itself is the
@@ -99,8 +101,11 @@ export const productionReconciliationMethods = {
     };
   },
 
-  /** @internal The program's cartons recorded as produced — each carton once. */
-  programProductionReceived(this: SqliteDatabase, programId: string): { cartons: number; bCartons: number } {
+  /**
+   * @internal The program's cartons recorded as produced — each carton QR once — and the cartons
+   * Manual Production recorded for it, which have no QR to count.
+   */
+  programProductionReceived(this: SqliteDatabase, programId: string): { cartons: number; bCartons: number; manualCartons: number } {
     const row = this.db
       .prepare(
         `SELECT COUNT(DISTINCT pe.qr_id) AS cartons,
@@ -111,7 +116,8 @@ export const productionReconciliationMethods = {
          WHERE pe.event_type = 'PRODUCED' AND ${PROGRAM_BATCHES_SQL}`
       )
       .get(CARTON_GRADE.B, programId, programId, programId, programId) as Row;
-    return { cartons: Number(row.cartons ?? 0), bCartons: Number(row.b_cartons ?? 0) };
+    const manualCartons = this.programManualCartons(programId);
+    return { cartons: Number(row.cartons ?? 0) + manualCartons, bCartons: Number(row.b_cartons ?? 0), manualCartons };
   },
 };
 

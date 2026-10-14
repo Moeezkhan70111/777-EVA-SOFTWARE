@@ -51,6 +51,7 @@ import { cartonProgramMethods, type CartonProgramMethods } from "./database/cart
 import { productionReceiptsMethods, type ProductionReceiptsMethods } from "./database/productionReceipts.js";
 import { upperMoveOutMethods, type UpperMoveOutMethods } from "./database/upperMoveOut.js";
 import { productionReconciliationMethods, type ProductionReconciliationMethods } from "./database/productionReconciliation.js";
+import { manualProductionMethods, type ManualProductionMethods } from "./database/manualProduction.js";
 import type { BackupRecord, HealthSnapshot, MoneyDriftSummary, MoneyDriftViolation, SqliteDatabaseOptions } from "./database/types.js";
 
 // The data layer's public record shapes and constants live in ./database/types.ts and are
@@ -817,7 +818,8 @@ export interface SqliteDatabase
     CartonProgramMethods,
     ProductionReceiptsMethods,
     UpperMoveOutMethods,
-    ProductionReconciliationMethods {}
+    ProductionReconciliationMethods,
+    ManualProductionMethods {}
 
 Object.assign(
   SqliteDatabase.prototype,
@@ -857,5 +859,6 @@ Object.assign(
   cartonProgramMethods,
   productionReceiptsMethods,
   upperMoveOutMethods,
-  productionReconciliationMethods
+  productionReconciliationMethods,
+  manualProductionMethods
 );

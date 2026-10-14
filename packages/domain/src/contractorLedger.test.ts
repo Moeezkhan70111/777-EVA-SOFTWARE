@@ -130,3 +130,16 @@ test("a claim for damaged uppers is deducted from what is owed, and is not count
   assert.equal(ledger.paidPaisa, toPaisa(100));
   assert.equal(ledger.claimedPaisa, toPaisa(50));
 });
+
+test("a Manual Production row stands for its cartons, and adds up with carton QRs on the same line", () => {
+  const [day] = groupContractorWork([
+    ...cartons(4, "2026-10-12T06:00:00.000Z"),
+    carton("2026-10-12T07:00:00.000Z", { cartons: 16 }),
+  ]);
+  assert.equal(day.cartons, 20);
+  assert.equal(day.dozens, 10);
+  assert.equal(day.lines.length, 1, "same program, job and article: one line");
+  assert.equal(day.lines[0].cartons, 20);
+  assert.equal(day.amountPaisa, toPaisa(700));
+  assert.equal("receivedAt" in day.lines[0], false);
+});

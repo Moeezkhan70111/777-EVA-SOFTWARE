@@ -115,7 +115,7 @@ test("one program: uppers issued to its machine on its day against its cartons r
     assert.equal(result.program.machineName, "MACHINE 1");
     assert.match(result.program.code, /^MP-\d{6}$/);
     assert.deepEqual(result.upperOut, { packets: 4, quantities: [{ unitCode: "DOZEN", quantity: 20 }] });
-    assert.deepEqual(result.productionReceived, { cartons: 23, bCartons: 0 });
+    assert.deepEqual(result.productionReceived, { cartons: 23, bCartons: 0, manualCartons: 0 });
     assert.deepEqual(result.comparison, { upperDozens: 20, otherUpper: [], receivedDozens: 11.5, comparable: true, differenceDozens: 8.5 });
   });
 });
@@ -150,7 +150,7 @@ test("either side empty is zero, not missing", async () => {
     f.db.generateQrBatch({ articleSizeId: f.product("SK6", "7/10"), color: "RED", quantity: 4, machineId: m1 });
     const result = f.db.getProgramReconciliation(f.programOf(m1).programId)!;
     assert.deepEqual(result.upperOut, { packets: 0, quantities: [] });
-    assert.deepEqual(result.productionReceived, { cartons: 0, bCartons: 0 });
+    assert.deepEqual(result.productionReceived, { cartons: 0, bCartons: 0, manualCartons: 0 });
     assert.equal(result.comparison.differenceDozens, 0);
     assert.equal(f.db.getProgramReconciliation("no-such-program"), null);
   });
@@ -184,7 +184,7 @@ test("repeated scans count once, and B cartons are received production of the pr
     assert.equal(again.outcome, "ALREADY_ISSUED");
 
     const result = f.db.getProgramReconciliation(f.programOf(m1).programId)!;
-    assert.deepEqual(result.productionReceived, { cartons: 6, bCartons: 2 });
+    assert.deepEqual(result.productionReceived, { cartons: 6, bCartons: 2, manualCartons: 0 });
     assert.equal(result.upperOut.packets, 1);
     assert.equal(result.comparison.receivedDozens, 3);
   });

@@ -138,7 +138,7 @@ describe("Machine Program as the first tab", () => {
     setupDesktop(api);
     renderWorkspace({ canMachineProgram: true, canReceiveProduction: true, canUpperMoveOut: true });
     expect(screen.getAllByRole("tab").map((tab) => tab.textContent)).toEqual([
-      "Machine Program", "Carton QR", "B-Carton Labels", "Receive Production", "Upper Move Out", "Reconciliation",
+      "Machine Program", "Carton QR", "B-Carton Labels", "Receive Production", "Manual Production", "Upper Move Out", "Reconciliation",
     ]);
     expect(screen.getByRole("tab", { name: "Machine Program" })).toHaveAttribute("aria-selected", "true");
     expect(screen.getByRole("heading", { level: 2, name: "Machine Program" })).toBeInTheDocument();

@@ -217,7 +217,7 @@ describe("Upper Move Out in the QR Generator", () => {
     generateQrBatch: vi.fn(),
   });
 
-  it("is the fourth tab, after Receive Production, and shows its own machine choice", async () => {
+  it("comes after Receive Production and Manual Production, and shows its own machine choice", async () => {
     const api = workspaceApi();
     setupDesktop(api);
     render(
@@ -225,7 +225,7 @@ describe("Upper Move Out in the QR Generator", () => {
         <QrGeneratorWorkspace username="admin" onNavigate={vi.fn()} canReceiveProduction canUpperMoveOut />
       </NotificationsProvider>
     );
-    expect(screen.getAllByRole("tab").slice(0, 4).map((tab) => tab.textContent)).toEqual(["Carton QR", "B-Carton Labels", "Receive Production", "Upper Move Out"]);
+    expect(screen.getAllByRole("tab").slice(0, 5).map((tab) => tab.textContent)).toEqual(["Carton QR", "B-Carton Labels", "Receive Production", "Manual Production", "Upper Move Out"]);
     await userEvent.click(screen.getByRole("tab", { name: "Upper Move Out" }));
     expect(await screen.findByRole("heading", { name: "Upper Move Out" })).toBeInTheDocument();
     expect(screen.queryByRole("radiogroup", { name: "Machine" })).not.toBeInTheDocument();

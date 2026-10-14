@@ -216,6 +216,42 @@ export interface ProductionReceiptPage {
   summary: ProductionReceiptSummaryLine[];
 }
 
+/** One Manual Production entry: cartons typed in, with no carton QR. */
+export interface ManualProductionEntry {
+  id: string;
+  /** MAN-000001 */
+  code: string;
+  article: string;
+  size: string;
+  color: string;
+  cartons: number;
+  equivalentDozens: number;
+  programCode: string;
+  machineName: string;
+  enteredAt: string;
+  enteredBy: string | null;
+}
+
+/** One business day of Manual Production, a page at a time, with the whole day added up. */
+export interface ManualProductionPage {
+  date: string;
+  rows: ManualProductionEntry[];
+  page: number;
+  pageSize: number;
+  totalEntries: number;
+  totalCartons: number;
+  equivalentDozens: number;
+  summary: ProductionReceiptSummaryLine[];
+}
+
+/** What a Save came to, decided by the main process. A retried Save returns the entry already made. */
+export interface ManualProductionResult {
+  accepted: boolean;
+  entry: ManualProductionEntry | null;
+  duplicate?: boolean;
+  reason?: string;
+}
+
 /** One line of a day's receipt summary: SK6 7/10 RED — 20 cartons, 10 dozen. */
 export interface ProductionReceiptSummaryLine {
   article: string;
@@ -302,7 +338,8 @@ export interface ReconcilableProgram {
 export interface ProgramReconciliation {
   program: ReconcilableProgram & { contractorName: string | null; packingContractorName: string | null };
   upperOut: UpperIssueTotals;
-  productionReceived: { cartons: number; bCartons: number };
+  /** Cartons recorded as produced — carton QRs once each, plus Manual Production's, which are also given alone. */
+  productionReceived: { cartons: number; bCartons: number; manualCartons: number };
   comparison: UpperProductionComparison;
 }
 
@@ -1878,6 +1915,10 @@ export interface DesktopApi {
   }): Promise<{ accepted: boolean; page: ProductionReceiptPage | null; reason?: string }>;
   /** Whether a carton is recorded as produced, as the database says — for an uncertain outcome. */
   findProductionReceipt(qrId: string): Promise<{ accepted: boolean; receipt: ProductionReceipt | null; reason?: string }>;
+  /** Manual Production: cartons typed in (in dozens) for a machine — its program today, store stock, the ledgers. */
+  recordManualProduction(input: { requestId: string; machineId: string; articleSizeId: string; color: string; dozens: string }): Promise<ManualProductionResult>;
+  /** One business day's Manual Production (YYYY-MM-DD), newest first, a page at a time. */
+  listManualProduction(query: { date: string; page?: number; pageSize?: number }): Promise<{ accepted: boolean; page: ManualProductionPage | null; reason?: string }>;
   /** Upper Move Out: one upper packet issued out of the store to the named machine. */
   issueUpperToMachine(rawScan: string, machineId: string): Promise<UpperIssueResult>;
   /** One business day's issues to one machine, newest first, a page at a time. */

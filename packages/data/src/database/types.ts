@@ -1289,8 +1289,44 @@ export interface ProgramReconciliation {
     cartons: number;
     /** Of those, B cartons. */
     bCartons: number;
+    /** Cartons recorded through Manual Production for the program (no QR) — counted in `cartons`. */
+    manualCartons: number;
   };
   comparison: UpperProductionComparison;
+}
+
+/** One Manual Production entry (migration 080): cartons typed in, with no carton QR. */
+export interface ManualProductionEntry {
+  id: string;
+  /** MAN-000001 */
+  code: string;
+  article: string;
+  size: string;
+  color: string;
+  cartons: number;
+  equivalentDozens: number;
+  programCode: string;
+  machineName: string;
+  enteredAt: string;
+  enteredBy: string | null;
+}
+
+/** One business day of Manual Production, a page of entries at a time, with the whole day added up. */
+export interface ManualProductionPage {
+  date: string;
+  rows: ManualProductionEntry[];
+  page: number;
+  pageSize: number;
+  totalEntries: number;
+  totalCartons: number;
+  equivalentDozens: number;
+  summary: ProductionReceiptSummaryLine[];
+}
+
+/** What saving an entry did: a new entry, or (for a retried Save) the one already made. */
+export interface ManualProductionResult {
+  entry: ManualProductionEntry;
+  duplicate: boolean;
 }
 
 export interface HistoryQuery {
