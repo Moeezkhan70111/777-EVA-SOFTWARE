@@ -80,11 +80,33 @@ const ACCOUNTS_SQL = `
 // MANUAL PRODUCTION (migration 080) is work too: an entry is cartons produced on a machine's program
 // and stocked the moment it is saved, so it is dated by when it was saved and paid at the same program
 // or product rate. It is one row standing for its `cartons` — a carton QR row stands for 1.
+//
+// WHICH PROGRAM A CARTON RUN BELONGS TO — three sources, and a run is only ever in ONE of them:
+//
+//   qr_batches.machine_program_id      the QR Generator and the B Carton tab (migration 078). The
+//                                      machine's first run of the day opens its program and every
+//                                      later run joins it, stamped on the run itself.
+//   machine_program_carton_labels      the retired planning workflow's issued upper packets (068)
+//   machine_program_fix_carton_labels  the same workflow's FIX runs (071)
+//
+// The two label tables were the only sources until now, so a carton the QR Generator made was in
+// no program here and earned nobody anything — the defect this third branch closes. It cannot
+// double-charge: the three label prints all call reserveQrBatchInTransaction WITHOUT a
+// machineProgramId, so their runs carry NULL there and no run can match two branches. UNION
+// (never UNION ALL) is the second guard, and a carton is still one row per qr_codes row dated by
+// its FIRST STORE_ENTRY, so neither a re-scan nor a retry can pay for it twice.
+//
+// A run with neither a machine_program_id nor a label row is in no program and is paid by nobody:
+// a SCAN_ADOPTED code Live Production took in from outside the system, and every run generated
+// before Phase 1.1 asked which machine it was for.
 const CARTONS_SQL = `
   WITH program_batches AS (
     SELECT program_id, qr_batch_id FROM machine_program_carton_labels
     UNION
     SELECT program_id, qr_batch_id FROM machine_program_fix_carton_labels
+    UNION
+    SELECT machine_program_id AS program_id, id AS qr_batch_id FROM qr_batches
+      WHERE machine_program_id IS NOT NULL
   )
   SELECT * FROM (
     SELECT mp.id AS program_id, mp.program_number, COALESCE(m.name, '') AS machine_name,
