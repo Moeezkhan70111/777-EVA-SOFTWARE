@@ -92,6 +92,9 @@ export const IPC = {
   listCartonProgramBatches: "erp:list-carton-program-batches",
   addMachine: "erp:add-machine",
   assignMachineContractor: "erp:assign-machine-contractor",
+  // Reconciliation (Phase 4): Upper Out against Production Received for one machine program.
+  listReconcilablePrograms: "erp:list-reconcilable-programs",
+  getProgramReconciliation: "erp:get-program-reconciliation",
   // Store Out through one open Machine Program: look it up, judge one scan, save the batch.
   openMachineProgramStoreOut: "erp:open-machine-program-store-out",
   machineProgramStoreOutCheckScan: "erp:machine-program-store-out-check-scan",

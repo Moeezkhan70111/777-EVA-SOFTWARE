@@ -23,11 +23,10 @@ export const cartonsToPairs = (cartons: number): number => cartons * PAIRS_PER_C
  * cartons — they say "ten dozen". Every screen that shows a gatepass quantity goes through
  * here so the conversion lives in one place and a half-dozen never silently becomes a whole.
  */
-export const formatQuantityInDozens = (cartons: number): string => {
-  const dozens = cartonsToDozens(cartons);
-  const text = Number.isInteger(dozens) ? String(dozens) : dozens.toFixed(1);
-  return text + " DZN";
-};
+export const formatQuantityInDozens = (cartons: number): string => formatDozens(cartonsToDozens(cartons));
+
+/** A quantity already in dozens, written the same way: at most one decimal, with the unit. */
+export const formatDozens = (dozens: number): string => (Number.isInteger(dozens) ? String(dozens) : dozens.toFixed(1)) + " DZN";
 export const pairsToCartons = (pairs: number): number => pairs / PAIRS_PER_CARTON;
 
 /**

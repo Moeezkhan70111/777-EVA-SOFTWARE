@@ -1,4 +1,4 @@
-import type { ClaimPartyRole, ContractorLedger, ContractorRole, ReceiveProductionOutcome, StoreDailyReport, StoreDirection, UpperIssueOutcome, UpperReconciliation } from "@erp/domain";
+import type { ClaimPartyRole, ContractorLedger, ContractorRole, ReceiveProductionOutcome, StoreDailyReport, StoreDirection, UpperIssueOutcome, UpperProductionComparison, UpperReconciliation } from "@erp/domain";
 
 export type SortOrder = "ASC" | "DESC";
 
@@ -287,6 +287,23 @@ export interface UpperStockRow {
   unitCode: string;
   packetsInStore: number;
   packName: string | null;
+}
+
+/** A machine program that can be reconciled: one machine on one business day. */
+export interface ReconcilableProgram {
+  programId: string;
+  code: string;
+  programDate: string;
+  machineId: string;
+  machineName: string;
+}
+
+/** Upper Out against Production Received for one machine program, counted by the main process. */
+export interface ProgramReconciliation {
+  program: ReconcilableProgram & { contractorName: string | null; packingContractorName: string | null };
+  upperOut: UpperIssueTotals;
+  productionReceived: { cartons: number; bCartons: number };
+  comparison: UpperProductionComparison;
 }
 
 /** What one Upper Move Out scan came to, decided by the main process. */
@@ -1535,6 +1552,10 @@ export interface DesktopApi {
     contractorPartyId: string;
     packingContractorPartyId: string;
   }): Promise<MachineProgramWriteResult & { machineId?: string }>;
+  /** Reconciliation: every machine program of one business date. */
+  listReconcilablePrograms(programDate: string): Promise<{ accepted: boolean; rows: ReconcilableProgram[]; reason?: string }>;
+  /** Reconciliation: Upper Out against Production Received for one machine program. */
+  getProgramReconciliation(programId: string): Promise<{ accepted: boolean; reconciliation: ProgramReconciliation | null; reason?: string }>;
   /** Changes one of a machine's two contractors; it stays until changed again. */
   assignMachineContractor(input: {
     machineId: string;

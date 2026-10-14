@@ -2,7 +2,7 @@
 // \@erp/data\ keeps the same exports; feature modules import from here to avoid cycles.
 
 import type { GatepassStatus } from "@erp/application";
-import type { CartonGrade, DiscountSource, PriceType } from "@erp/domain";
+import type { CartonGrade, DiscountSource, PriceType, UpperProductionComparison } from "@erp/domain";
 
 export interface SqliteDatabaseOptions {
   dbPath: string;
@@ -1268,6 +1268,29 @@ export interface UpperStockRow {
   /** Labelled packets of it in the store now. */
   packetsInStore: number;
   packName: string | null;
+}
+
+/** A machine program that can be reconciled: one machine on one business day. */
+export interface ReconcilableProgram {
+  programId: string;
+  /** MP-000123 */
+  code: string;
+  programDate: string;
+  machineId: string;
+  machineName: string;
+}
+
+/** Upper Out against Production Received for one machine program (productionReconciliation.ts). */
+export interface ProgramReconciliation {
+  program: ReconcilableProgram & { contractorName: string | null; packingContractorName: string | null };
+  upperOut: UpperIssueTotals;
+  productionReceived: {
+    /** Carton QRs of the program recorded as produced — each carton once. */
+    cartons: number;
+    /** Of those, B cartons. */
+    bCartons: number;
+  };
+  comparison: UpperProductionComparison;
 }
 
 export interface HistoryQuery {

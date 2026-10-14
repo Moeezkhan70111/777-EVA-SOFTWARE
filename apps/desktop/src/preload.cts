@@ -102,6 +102,8 @@ contextBridge.exposeInMainWorld("desktop", {
     listMachineDayPrograms: (programDate: string) => ipcRenderer.invoke(IPC.listMachineDayPrograms, programDate),
     addMachine: (input: Record<string, unknown>) => ipcRenderer.invoke(IPC.addMachine, input),
     assignMachineContractor: (input: Record<string, unknown>) => ipcRenderer.invoke(IPC.assignMachineContractor, input),
+    listReconcilablePrograms: (programDate: string) => ipcRenderer.invoke(IPC.listReconcilablePrograms, programDate),
+    getProgramReconciliation: (programId: string) => ipcRenderer.invoke(IPC.getProgramReconciliation, programId),
     listCartonProgramBatches: (input: Record<string, unknown>) => ipcRenderer.invoke(IPC.listCartonProgramBatches, input),
     openMachineProgramStoreOut: (lookup: string, opts?: Record<string, unknown>) =>
       ipcRenderer.invoke(IPC.openMachineProgramStoreOut, lookup, opts),

@@ -34,9 +34,15 @@ type Dialog = { kind: "add" } | { kind: "edit"; machine: MachineRecord } | null;
 interface MachineProgramPageProps {
   /** Opens the QR Generator from the empty state; absent when this user cannot open it. */
   onOpenQrGenerator?: () => void;
+  /** Shown as the QR Generator workspace's first tab: a tab-sized title instead of the page heading. */
+  embedded?: boolean;
+  /** A machine was added or its contractors changed — so a machine picker elsewhere can re-read. */
+  onMachinesChanged?: () => void;
+  /** Opens Reconciliation on one program; absent when this user cannot open it. */
+  onStartReconciliation?: (programId: string) => void;
 }
 
-export const MachineProgramPage: React.FC<MachineProgramPageProps> = ({ onOpenQrGenerator }) => {
+export const MachineProgramPage: React.FC<MachineProgramPageProps> = ({ onOpenQrGenerator, embedded = false, onMachinesChanged, onStartReconciliation }) => {
   const { push } = useNotifications();
   const [date, setDate] = useState(toIsoDate());
   const [dialog, setDialog] = useState<Dialog>(null);
@@ -47,13 +53,14 @@ export const MachineProgramPage: React.FC<MachineProgramPageProps> = ({ onOpenQr
     setDialog(null);
     push("success", title, body);
     void machines.reload();
+    onMachinesChanged?.();
   };
 
   return (
     <div className="page mp-page">
-      <div className="page-header mp-header">
+      <div className={embedded ? "mp-header mp-header--embedded" : "page-header mp-header"}>
         <div>
-          <h1>{text.title}</h1>
+          {embedded ? <h2 className="rp-title">{text.title}</h2> : <h1>{text.title}</h1>}
           <p className="mp-subtitle">{text.subtitle}</p>
         </div>
         <button type="button" className="btn btn-primary" onClick={() => setDialog({ kind: "add" })}>
@@ -71,7 +78,7 @@ export const MachineProgramPage: React.FC<MachineProgramPageProps> = ({ onOpenQr
           <h2 id="mp-programs-title" className="section-label">{text.programsTitle}</h2>
           <ReportDayPicker date={date} onChange={setDate} onRefresh={() => void programs.reload()} busy={programs.loading} />
         </div>
-        <DayPrograms programs={programs} onOpenQrGenerator={onOpenQrGenerator} />
+        <DayPrograms programs={programs} onOpenQrGenerator={onOpenQrGenerator} onStartReconciliation={onStartReconciliation} />
       </section>
 
       {dialog ? (

@@ -19,7 +19,7 @@ import type { LoadState } from "./useCartonProgram";
 
 const text = copy.cartonProgram;
 
-const ProgramCard: React.FC<{ program: MachineDayProgram }> = ({ program }) => (
+const ProgramCard: React.FC<{ program: MachineDayProgram; onStartReconciliation?: (programId: string) => void }> = ({ program, onStartReconciliation }) => (
   <article className="mp-program" aria-labelledby={`mp-program-${program.programId}`}>
     <header className="mp-program-head">
       <div className="mp-program-identity">
@@ -29,6 +29,16 @@ const ProgramCard: React.FC<{ program: MachineDayProgram }> = ({ program }) => (
       <div className="mp-program-totals">
         <strong>{text.programCartons(program.cartons)}</strong>
         <span>{formatQuantityInDozens(program.cartons)}</span>
+        {onStartReconciliation ? (
+          <button
+            type="button"
+            className="btn btn-secondary btn-sm mp-reconcile"
+            aria-label={text.startReconciliationFor(program.code)}
+            onClick={() => onStartReconciliation(program.programId)}
+          >
+            {text.startReconciliation}
+          </button>
+        ) : null}
       </div>
       <p className="mp-program-crew">
         <span>{text.machineContractor} <strong>{program.contractorName}</strong></span>
@@ -42,9 +52,11 @@ const ProgramCard: React.FC<{ program: MachineDayProgram }> = ({ program }) => (
 interface DayProgramsProps {
   programs: LoadState<MachineDayProgram>;
   onOpenQrGenerator?: () => void;
+  /** Opens Reconciliation on one program; absent when this user cannot open it. */
+  onStartReconciliation?: (programId: string) => void;
 }
 
-export const DayPrograms: React.FC<DayProgramsProps> = ({ programs, onOpenQrGenerator }) => {
+export const DayPrograms: React.FC<DayProgramsProps> = ({ programs, onOpenQrGenerator, onStartReconciliation }) => {
   if (programs.loading && programs.rows.length === 0) return <StateView kind="loading" message={text.programsLoading} />;
   if (programs.error) return <StateView kind="error" message={programs.error} onRetry={() => void programs.reload()} />;
   if (programs.rows.length === 0) {
@@ -61,7 +73,7 @@ export const DayPrograms: React.FC<DayProgramsProps> = ({ programs, onOpenQrGene
   return (
     <div className="mp-programs">
       {programs.rows.map((program) => (
-        <ProgramCard key={program.programId} program={program} />
+        <ProgramCard key={program.programId} program={program} onStartReconciliation={onStartReconciliation} />
       ))}
     </div>
   );

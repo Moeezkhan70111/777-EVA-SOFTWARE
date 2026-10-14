@@ -1141,6 +1141,8 @@ export const copy = {
     noProgramsTitle: "No programs on this day",
     noProgramsHint: "A machine's program opens when carton QRs are generated for it in the QR Generator.",
     openQrGenerator: "Open QR Generator",
+    startReconciliation: "Start Reconciliation",
+    startReconciliationFor: (code: string) => `Start reconciliation of ${code}`,
     programCartons: (cartons: number) => `${cartons.toLocaleString()} carton${cartons === 1 ? "" : "s"}`,
     // A program's lines
     tableCaption: (code: string) => `Carton QRs of ${code}`,
@@ -1182,10 +1184,12 @@ export const copy = {
   qrWorkspace: {
     title: "QR Generator",
     tabsLabel: "QR Generator sections",
+    tabProgram: "Machine Program",
     tabCartons: "Carton QR",
     tabBCartons: "B-Carton Labels",
     tabReceive: "Receive Production",
     tabUpperOut: "Upper Move Out",
+    tabReconcile: "Reconciliation",
     addedToProgram: (code: string, machine: string) => `Added to ${code} · ${machine}`,
   },
 
@@ -1194,6 +1198,7 @@ export const copy = {
   receiveProduction: {
     title: "Receive Production",
     subtitle: "Scan generated carton labels to record production received.",
+    startReconciliation: "Start Reconciliation",
     countLabel: "Received today",
     countCartons: (cartons: number) => `${cartons.toLocaleString()} carton${cartons === 1 ? "" : "s"}`,
     placeholder: "Enter or scan carton QR code",
@@ -1338,6 +1343,42 @@ export const copy = {
     stockEmptyTitle: "No upper stock in the store",
     stockEmptyHint: "Uppers appear here once they are received on Raw Material Input.",
     stockNoMatch: "No upper matches that search.",
+  },
+
+  // Reconciliation (Phase 4): Upper Out against Production Received for one machine program.
+  // Read-only — it shows the two figures and never adjusts anything.
+  reconciliation: {
+    title: "Reconciliation",
+    subtitle: "Uppers issued to a machine program against the production received from it.",
+    dayLabel: "Day",
+    programLabel: "Machine program",
+    chooseProgram: "Select machine program…",
+    programsLoading: "Loading machine programs…",
+    programsFailed: "The machine programs could not be loaded.",
+    noPrograms: "No machine programs on this day.",
+    chooseTitle: "Choose a machine program",
+    chooseHint: "Pick the day and the machine program to reconcile.",
+    loading: "Loading the reconciliation…",
+    failed: "The reconciliation could not be loaded.",
+    caption: (code: string) => `Reconciliation of ${code}`,
+    contractors: (machine: string | null, packing: string | null) =>
+      `Machine contractor ${machine ?? "—"} · Packing contractor ${packing ?? "—"}`,
+    colMeasure: "Measure",
+    colUpperOut: "Upper Out",
+    colReceived: "Production Received",
+    rowDozens: "Quantity (dozens)",
+    rowCount: "Count",
+    rowOther: "Other units (not compared)",
+    packets: (count: number) => `${count.toLocaleString()} packet${count === 1 ? "" : "s"}`,
+    cartons: (count: number) => `${count.toLocaleString()} carton${count === 1 ? "" : "s"}`,
+    ofWhichB: (count: number) => `incl. ${count.toLocaleString()} B`,
+    difference: "Difference (Upper Out − Production Received)",
+    notComparable: "Not shown — some uppers are counted in a unit with no rule that converts it to dozens.",
+    basisUpper: (machine: string, day: string) =>
+      `Upper Out: upper packets issued to ${machine} on ${day} (and any issued against this program's own upper lines).`,
+    basisReceived: "Production Received: this program's carton QRs recorded as produced, on any day.",
+    basisRule: "Compared in dozens: 1 dozen of uppers is 2 cartons of 6 pairs. The difference is a figure, not a shortage — uppers still at the machine, cartons not yet scanned and waste all sit inside it.",
+    offline: "Not updating — the last refresh failed. It will try again.",
   },
 
   // Store Station — the operator says which side of the store they work, then lands on it.

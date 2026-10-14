@@ -24,7 +24,12 @@ import { useReceiveProduction } from "./useReceiveProduction";
 
 const text = copy.receiveProduction;
 
-export const ReceiveProductionTab: React.FC = () => {
+interface ReceiveProductionTabProps {
+  /** Opens Reconciliation, to choose the program there; absent when this user cannot open it. */
+  onStartReconciliation?: () => void;
+}
+
+export const ReceiveProductionTab: React.FC<ReceiveProductionTabProps> = ({ onStartReconciliation }) => {
   const receipts = useProductionReceipts(text.failed);
   // Stable between renders, so the scan box's timers are not re-armed by every list refresh.
   const reloadReceipts = receipts.reload;
@@ -41,6 +46,11 @@ export const ReceiveProductionTab: React.FC = () => {
           <h2 className="rp-title">{text.title}</h2>
           <p className="rp-subtitle">{text.subtitle}</p>
         </div>
+        {onStartReconciliation ? (
+          <button type="button" className="btn btn-secondary rp-reconcile" onClick={onStartReconciliation}>
+            {text.startReconciliation}
+          </button>
+        ) : null}
         <div className="rp-count" aria-live="polite">
           <span className="rp-count-label">{text.countLabel}</span>
           <strong>{total === null ? "—" : text.countCartons(total)}</strong>

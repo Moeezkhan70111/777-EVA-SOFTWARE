@@ -119,6 +119,14 @@ export function registerMachineProgramHandlers(ctx: IpcContext): void {
     };
   });
 
+  // Reconciliation (Phase 4): Upper Out against Production Received for one program. Read-only.
+  read(IPC.listReconcilablePrograms, { rows: [] }, (programDate) => ({ rows: db.listReconcilablePrograms(asString(programDate)) }));
+  read<{ reconciliation: ReturnType<typeof db.getProgramReconciliation> }>(IPC.getProgramReconciliation, { reconciliation: null }, (programId) => {
+    const reconciliation = db.getProgramReconciliation(asString(programId));
+    if (!reconciliation) throw new Error("That machine program no longer exists.");
+    return { reconciliation };
+  });
+
   // + Add Machine: the machine and both of its contractors, in one audited transaction.
   write(IPC.addMachine, (input, actor) =>
     programs.addMachine.execute({

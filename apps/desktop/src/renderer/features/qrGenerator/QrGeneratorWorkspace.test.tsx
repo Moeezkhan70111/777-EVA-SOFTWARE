@@ -126,3 +126,44 @@ describe("QrGeneratorWorkspace", () => {
     expect(setUp).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("Machine Program as the first tab", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  const withPrograms = (overrides: Record<string, unknown> = {}) =>
+    baseApi({ listMachineDayPrograms: vi.fn().mockResolvedValue({ accepted: true, rows: [] }), ...overrides });
+
+  it("comes first, opens by default, and is the Machine Program page itself", async () => {
+    const api = withPrograms();
+    setupDesktop(api);
+    renderWorkspace({ canMachineProgram: true, canReceiveProduction: true, canUpperMoveOut: true });
+    expect(screen.getAllByRole("tab").map((tab) => tab.textContent)).toEqual([
+      "Machine Program", "Carton QR", "B-Carton Labels", "Receive Production", "Upper Move Out", "Reconciliation",
+    ]);
+    expect(screen.getByRole("tab", { name: "Machine Program" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("heading", { level: 2, name: "Machine Program" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /add machine/i })).toBeInTheDocument();
+    expect(await screen.findByRole("list", { name: "Machines" })).toBeInTheDocument();
+    expect(screen.queryByRole("radiogroup", { name: "Machine" }), "the generators' picker is not on it").not.toBeInTheDocument();
+    expect(api.generateQrBatch).not.toHaveBeenCalled();
+  });
+
+  it("its empty day goes to the Carton QR tab, and the B-Carton link still opens its own tab", async () => {
+    setupDesktop(withPrograms());
+    const { unmount } = renderWorkspace({ canMachineProgram: true });
+    await userEvent.click(await screen.findByRole("button", { name: "Open QR Generator" }));
+    expect(screen.getByRole("tab", { name: "Carton QR" })).toHaveAttribute("aria-selected", "true");
+    expect(await screen.findByRole("radiogroup", { name: "Machine" })).toBeInTheDocument();
+    unmount();
+
+    renderWorkspace({ canMachineProgram: true, initialTab: "b-cartons" });
+    expect(screen.getByRole("tab", { name: "B-Carton Labels" })).toHaveAttribute("aria-selected", "true");
+  });
+
+  it("is not offered to a user who may not open the Machine Program", () => {
+    setupDesktop(withPrograms());
+    renderWorkspace();
+    expect(screen.queryByRole("tab", { name: "Machine Program" })).not.toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Carton QR" })).toHaveAttribute("aria-selected", "true");
+  });
+});

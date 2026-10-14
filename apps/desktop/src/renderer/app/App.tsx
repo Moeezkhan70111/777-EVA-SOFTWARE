@@ -115,6 +115,12 @@ export const App = () => {
   const [rawMaterialItemId, setRawMaterialItemId] = useState<string | undefined>(undefined);
   /** The machine program Store Out was opened for (from a machine-program notification). */
   const [storeOutProgramId, setStoreOutProgramId] = useState<string | undefined>(undefined);
+  /** The machine program Reconciliation was opened for (Start Reconciliation on Machine Program). */
+  const [reconcileProgramId, setReconcileProgramId] = useState<string | null>(null);
+  // It is for that one visit: leaving the QR Generator lets the next visit open on its first tab.
+  React.useEffect(() => {
+    if (route !== "qr-generator") setReconcileProgramId(null);
+  }, [route]);
   const [appVersion, setAppVersion] = useState("");
 
   const auth = useAuthSession({ api, push, route, setRoute });
@@ -326,7 +332,16 @@ export const App = () => {
       // The machines with their two contractors, and each machine's program for a day. Programs
       // open from the QR Generator; the old shift-planning workflow was retired in Phase 1.
       case "machine-program":
-        return <MachineProgramPage onOpenQrGenerator={canOpenRoute(session, "qr-generator") ? () => setRoute("qr-generator") : undefined} />;
+        return (
+          <MachineProgramPage
+            onOpenQrGenerator={canOpenRoute(session, "qr-generator") ? () => setRoute("qr-generator") : undefined}
+            // Reconciliation lives in the QR Generator workspace; the program travels with the route.
+            onStartReconciliation={canOpenRoute(session, "qr-generator") ? (programId) => {
+              setReconcileProgramId(programId);
+              setRoute("qr-generator");
+            } : undefined}
+          />
+        );
       case "history":
       case "stock-history":
         return <HistoryPage />;
@@ -514,11 +529,13 @@ export const App = () => {
           <QrGeneratorWorkspace
             key={route}
             username={session.username}
-            initialTab={route === "b-carton-generator" ? "b-cartons" : "cartons"}
+            initialTab={route === "b-carton-generator" ? "b-cartons" : reconcileProgramId ? "reconcile" : undefined}
+            reconcileProgramId={reconcileProgramId}
             onNavigate={setRoute}
             onSetUpMachines={canOpenRoute(session, "machine-program") ? () => setRoute("machine-program") : undefined}
             canReceiveProduction={canOpenRoute(session, "live-production")}
             canUpperMoveOut={canOpenRoute(session, "raw-material-output")}
+            canMachineProgram={canOpenRoute(session, "machine-program")}
           />
         );
       case "qr-management":

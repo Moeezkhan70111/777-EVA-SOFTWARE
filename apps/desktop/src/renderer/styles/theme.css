@@ -8606,3 +8606,24 @@ tr.has-error .gp-qty-stepper input { color: var(--err); }
 /* A workspace tab with no machine picker above it still keeps its distance from the tab strip. */
 .qrw-page > .tab-strip + .qrw-panel { margin-top: var(--space-4); }
 .um-summary h2.section-label { font-size: 0.7rem; font-weight: 700; letter-spacing: 0.1em; color: var(--text-3); }
+/* Machine Program as the QR Generator's first tab: the page's header, tab-sized. */
+.mp-header--embedded { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-4); flex-wrap: wrap; margin-bottom: var(--space-5); }
+
+/* ── Reconciliation (features/reconciliation) ──────────────────────────────────
+   Upper Out against Production Received for one machine program. Tokens only. */
+.rc-choose { display: flex; align-items: center; justify-content: space-between; gap: var(--space-4); flex-wrap: wrap; }
+.rc-card { padding: 0; overflow: hidden; margin: 0; }
+.rc-program { display: grid; gap: var(--space-1); padding: var(--space-4); border-bottom: 1px solid var(--border); background: var(--surface-faint); }
+.qrw-page .rc-program-machine { margin: 0; font-size: 1.05rem; font-weight: 800; color: var(--text); }
+.rc-program-day { font-size: 0.85rem; font-weight: 600; color: var(--text-3); }
+.rc-program-crew { margin: 0; font-size: 0.8rem; color: var(--text-3); }
+.rc-table { margin: 0; }
+.rc-table th[scope="row"] { font-weight: 600; color: var(--text-3); text-align: left; }
+.rc-table .rp-num { font-variant-numeric: tabular-nums; }
+.rc-main td { font-size: 1.25rem; font-weight: 800; color: var(--text); }
+.rc-difference th,
+.rc-difference td { border-top: 2px solid var(--border-dark); background: var(--surface-2); font-weight: 800; color: var(--text); }
+.rc-not-comparable { font-size: 0.8rem; font-weight: 600; color: var(--warning-deep); }
+.rc-basis { margin: 0; padding: var(--space-3) var(--space-4) var(--space-4) var(--space-6); display: grid; gap: var(--space-1); font-size: 0.75rem; color: var(--text-3); }
+.mp-reconcile { margin-top: var(--space-2); }
+.rp-head .rp-reconcile { margin-left: auto; align-self: center; }
