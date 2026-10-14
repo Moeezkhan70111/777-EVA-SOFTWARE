@@ -13,6 +13,7 @@ import {
 } from "./main/runtimePaths";
 import { reportFatalStartupError, type StartupFailure } from "./main/startupFailure";
 import { resolveDeviceIdentity } from "./main/deviceIdentity";
+import { describeBuildInfo, readBuildInfo } from "./main/buildInfo";
 import { createIpcContext, registerIpcHandlers } from "./main/ipc";
 import type { UseCases } from "./main/ipc/context";
 
@@ -127,6 +128,17 @@ async function initializeServices({ paths, dataMigration }: Bootstrap): Promise<
     deviceId: identity.deviceId,
     message: JSON.stringify({ status: dataMigration.status, dataRoot: paths.dataRoot, legacyRoot: dataMigration.legacyRoot ?? null, copied: dataMigration.copied.length }),
     errorDetails: dataMigration.error,
+  });
+
+  // Which code this machine is running, in the log from the first line onward: a support call
+  // starts with "what is installed?", and a version alone could not answer it.
+  const build = readBuildInfo();
+  logger.log({
+    module: "runtime",
+    severity: build.dirty === true || build.commit === null ? "WARNING" : "INFO",
+    operation: "build-provenance",
+    deviceId: identity.deviceId,
+    message: describeBuildInfo(build),
   });
 
   db.ensureOperationalContext({ ...identity, appVersion: app.getVersion() });

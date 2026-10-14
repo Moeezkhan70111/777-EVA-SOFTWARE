@@ -102,3 +102,64 @@ test("a brand new database comes up with the same shape as an upgraded one", () 
     fs.rmSync(tempDir, { recursive: true, force: true });
   }
 });
+
+// ─── Migrating forward across the table rebuilds ─────────────────────────────
+//
+// Some migrations do not add to a table, they REBUILD it: create a replacement, copy the rows,
+// drop the original, rename. SQLite cannot change a CHECK in place, so 057, 067 and 073 all do
+// this to machine_program_runs, and 030 did it to the money columns.
+//
+// A rebuild is the riskiest shape of migration there is, because other tables reference the one
+// being dropped and the whole run happens with `foreign_keys = OFF`. Nothing asserted that a
+// database carrying real rows came out the other side sound, which is what this does: build one
+// at an older ceiling, carry it forward, then ask SQLite itself.
+
+/** A migrations folder holding only the files up to and including `ceiling`. */
+function migrationsUpTo(ceiling: number): string {
+  const source = path.resolve(process.cwd(), "../../migrations/sqlite");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), `erp-upgrade-${ceiling}-`));
+  for (const file of fs.readdirSync(source)) {
+    if (!file.endsWith(".up.sql")) continue;
+    const digits = /^(\d+)/.exec(file);
+    if (digits && Number(digits[1]) <= ceiling) fs.copyFileSync(path.join(source, file), path.join(dir, file));
+  }
+  return dir;
+}
+
+test("a database with real rows migrates forward across the table rebuilds and stays sound", () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "erp-upgrade-forward-"));
+  const dbPath = path.join(tempDir, "forward.db");
+  const migrations = path.resolve(process.cwd(), "../../migrations/sqlite");
+  const older = migrationsUpTo(66);
+  try {
+    // An older build, with business data in it: a product, a party and a machine.
+    const before = new SqliteDatabase({ dbPath, schemaPath: SCHEMA, migrationsDir: older });
+    before.createProduct({ article: "SK46", size: "4/6", sellingPrice: 600, status: "ACTIVE" });
+    const partyId = before.createParty({ partyName: "UPGRADE TRADERS", partyType: "CUSTOMER", city: "Lahore", status: "ACTIVE" });
+    before.createMachine({ name: "UPGRADE MACHINE" });
+    before.close();
+
+    // The current build opens the same file and carries it forward, 067 through 076 included.
+    const after = new SqliteDatabase({ dbPath, schemaPath: SCHEMA, migrationsDir: migrations });
+    try {
+      const raw = after.db;
+      const integrity = raw.prepare("PRAGMA integrity_check").get() as { integrity_check: string } | undefined;
+      assert.equal(integrity?.integrity_check, "ok", "the rebuilt tables left a sound database");
+      assert.equal(raw.prepare("PRAGMA foreign_key_check").all().length, 0, "no dangling reference survived the rebuilds");
+
+      // The data is still there, and still reachable the way the application reads it.
+      assert.equal(after.listProducts({ status: "ACTIVE", pageSize: 10 }).rows.length, 1, "the product survived");
+      assert.ok(after.getParty(partyId), "the party survived");
+      assert.equal(after.listMachines().length, 1, "the machine survived");
+
+      // And the rebuilt table has the shape the later migration gave it.
+      const runsSql = (raw.prepare("SELECT sql FROM sqlite_master WHERE name = 'machine_program_runs'").get() as { sql: string }).sql;
+      assert.match(runsSql, /inner_sole_colour IS NOT NULL AND injector_no IS NULL/, "073's CHECK is in place");
+    } finally {
+      after.close();
+    }
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+    fs.rmSync(older, { recursive: true, force: true });
+  }
+});
