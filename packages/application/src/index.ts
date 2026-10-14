@@ -2,6 +2,8 @@ export * from "./errors.js";
 export * from "./eventBus.js";
 export * from "./ports.js";
 export * from "./processScanUseCase.js";
+export * from "./receiveProductionUseCase.js";
+export * from "./upperMoveOutUseCase.js";
 export * from "./dispatchScanUseCase.js";
 export * from "./returnScanUseCase.js";
 export * from "./rawMaterialIssueUseCase.js";

@@ -50,7 +50,7 @@ describe("HomePage", () => {
     // The last word is the accent; the description is still read out.
     expect(card.querySelector(".feature-card-title-accent")).toHaveTextContent("Program");
     expect(card).toHaveAccessibleName("Machine Program");
-    expect(card).toHaveAccessibleDescription("Plan a machine's shift");
+    expect(card).toHaveAccessibleDescription("Carton QRs generated, per item");
     // The artwork is decoration: present, but not read twice.
     const art = card.querySelector("img");
     expect(art).toHaveAttribute("src", "./assets/machines/machine.png");

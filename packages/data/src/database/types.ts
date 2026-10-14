@@ -749,6 +749,71 @@ export interface QrCodeRecord {
  */
 export { MAX_QR_BATCH_QUANTITY } from "@erp/domain";
 
+/**
+ * One line of a machine's day program: every carton QR generated for one product in one colour
+ * (and grade) on that program (see cartonProgram.ts). Counts are of persisted codes, never of a request.
+ */
+export interface CartonProgramLine {
+  articleSizeId: string;
+  /** The canonical colour variant the codes were registered against. */
+  productVariantId: string | null;
+  article: string;
+  size: string;
+  color: string;
+  /** "B" for B carton labels (colour MIX), null for an ordinary carton. */
+  grade: CartonGrade | null;
+  /** Carton QRs registered and not voided — one per carton. */
+  cartons: number;
+  /** Codes of these runs voided in QR Management since; not counted in `cartons`. */
+  voidedCartons: number;
+  /** `cartons` in dozens, by the one conversion rule (@erp/domain units.ts). */
+  equivalentDozens: number;
+  /** How many generation runs the line is made of — each one stays listed on its own. */
+  batchCount: number;
+  lastGeneratedAt: string;
+}
+
+/**
+ * A machine's program for one business day: MP-000123, the machine and both of its contractors
+ * as they stood when the day's first run opened it, and the cartons generated for it.
+ */
+export interface MachineDayProgram {
+  programId: string;
+  programNumber: number;
+  /** MP-000123 */
+  code: string;
+  programDate: string;
+  machineId: string;
+  machineName: string;
+  contractorName: string;
+  packingContractorName: string | null;
+  cartons: number;
+  voidedCartons: number;
+  equivalentDozens: number;
+  lines: CartonProgramLine[];
+}
+
+/** The program a QR run was added to, as the generator reports it back. */
+export interface MachineDayProgramRef {
+  id: string;
+  code: string;
+  machineName: string;
+  programDate: string;
+}
+
+/** One generation run behind a program line, kept separate for traceability. */
+export interface CartonProgramBatch {
+  id: string;
+  firstQrId: string;
+  lastQrId: string;
+  cartons: number;
+  voidedCartons: number;
+  equivalentDozens: number;
+  createdAt: string;
+  createdBy: string | null;
+  requestedBy: string | null;
+}
+
 export interface RawMaterialQrBatchRecord {
   id: string;
   partyId: string;
@@ -1083,6 +1148,128 @@ export interface ProductListEntry {
   deleteBlockedReason: string | null;
 }
 
+/**
+ * One carton recorded as produced (Receive Production, Live Production or Store In's Carton In —
+ * one PRODUCED event each). The identity, product and program are read through the registry, so
+ * nothing here is re-typed or re-counted on the screen.
+ */
+export interface ProductionReceipt {
+  qrId: string;
+  article: string;
+  size: string;
+  color: string;
+  /** "B" for a B carton. */
+  grade: "B" | null;
+  /** When the carton was recorded as produced (UTC ISO). */
+  receivedAt: string;
+  /** The signed-in user who recorded it, when the station recorded one. */
+  receivedBy: string | null;
+  /** The station that recorded it (RECEIVE_PRODUCTION), or null for older stations. */
+  station: string | null;
+  /** Where the carton is now: PRODUCED, WAREHOUSE, DISPATCHED … (qr_master.current_status). */
+  stage: string;
+  /** The machine program its QR was generated for, when it was generated for one. */
+  programCode: string | null;
+  machineName: string | null;
+}
+
+/** A business day's receipts, newest first, a page at a time, with the day's totals. */
+export interface ProductionReceiptPage {
+  date: string;
+  rows: ProductionReceipt[];
+  page: number;
+  pageSize: number;
+  /** Cartons received on the day — every page, not just this one. */
+  totalCartons: number;
+  /** totalCartons in dozens, by the one conversion rule. */
+  equivalentDozens: number;
+  /** The whole day added up per article, size and colour — the Summary section. */
+  summary: ProductionReceiptSummaryLine[];
+}
+
+/** One line of a day's receipt summary: SK6 7/10 RED — 20 cartons, 10 dozen. */
+export interface ProductionReceiptSummaryLine {
+  article: string;
+  size: string;
+  color: string;
+  /** "B" for B cartons, which are their own line. */
+  grade: "B" | null;
+  cartons: number;
+  equivalentDozens: number;
+}
+
+/** An amount of upper in one stock unit — uppers are counted in their material's own unit. */
+export interface UpperQuantity {
+  unitCode: string;
+  quantity: number;
+}
+
+/** Packets and the quantity they carried, per unit. */
+export interface UpperIssueTotals {
+  packets: number;
+  quantities: UpperQuantity[];
+}
+
+/** One upper packet issued to a machine (a STORE_EXIT event with machine_id, migration 079). */
+export interface UpperIssueRow {
+  eventId: string;
+  qrId: string;
+  itemDisplayName: string;
+  article: string | null;
+  size: string | null;
+  colour: string | null;
+  quantity: number;
+  unitCode: string;
+  packName: string | null;
+  machineId: string;
+  machineName: string;
+  issuedAt: string;
+  issuedBy: string | null;
+  /** Where the packet is now (raw_material_qrs.current_status): ISSUED, or IN_STORE if it came back. */
+  status: string;
+}
+
+/** One business day's issues to one machine, newest first, a page at a time, with the day's totals. */
+export interface UpperIssuePage {
+  machineId: string;
+  date: string;
+  rows: UpperIssueRow[];
+  page: number;
+  pageSize: number;
+  totals: UpperIssueTotals;
+}
+
+/** The three different measures the Move Out summary keeps apart. */
+export interface UpperIssueSummary {
+  machineId: string;
+  machineName: string;
+  /** This device's open issue session (Raw Material Output's), to this machine. */
+  session: UpperIssueTotals & { sessionNumber: number | null };
+  /** The business day, to this machine. */
+  day: UpperIssueTotals & { date: string };
+  /** Upper stock in the store now, every upper material. */
+  stock: UpperIssueTotals;
+}
+
+/** One upper material in the store. */
+export interface UpperStockRow {
+  itemId: string;
+  itemCode: string;
+  displayName: string;
+  /** The sub-category it sits in (RAGZINE UPPER …), or UPPER itself. */
+  categoryName: string;
+  article: string | null;
+  size: string | null;
+  colour: string | null;
+  type: string | null;
+  /** The stock balance — the authoritative figure (inventory_stock_balances). */
+  onHand: number;
+  unitCode: string;
+  /** Labelled packets of it in the store now. */
+  packetsInStore: number;
+  packName: string | null;
+}
+
 export interface HistoryQuery {
   search?: string;
   fromDate?: string;
@@ -1262,6 +1449,8 @@ export interface RawMaterialMovementConfigRow {
 
 /** The live packet behind a scanned raw-material label, with everything a movement needs. */
 export interface RawMaterialMovementRecord {
+  /** The material's top-level category name, upper-cased — UPPER, DANA … (RAW_MATERIAL_KIND). */
+  kind?: string | null;
   qrId: string;
   itemId: string;
   itemCode: string;

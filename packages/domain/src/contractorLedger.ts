@@ -57,6 +57,25 @@ export const businessDateOf = (timestamp: string): string => {
   return `${pick("year")}-${pick("month")}-${pick("day")}`;
 };
 
+/**
+ * The UTC instant a business day (`YYYY-MM-DD`, Asia/Karachi) starts, `dayOffset` days on — the
+ * inverse of businessDateOf, for reading a day's window out of UTC timestamps. Null for a bad date.
+ * It does not depend on the computer's own timezone.
+ */
+export const businessDayStartIso = (ymd: string, dayOffset = 0): string | null => {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(ymd ?? "").trim());
+  if (!match) return null;
+  const utcMidnight = Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]) + dayOffset);
+  if (Number.isNaN(utcMidnight)) return null;
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: APP_TIMEZONE, hourCycle: "h23", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit",
+  }).formatToParts(new Date(utcMidnight));
+  const pick = (type: string) => Number(parts.find((part) => part.type === type)?.value ?? 0);
+  // How far the zone's clock is ahead of UTC at that moment, then midnight on the zone's clock.
+  const zoneClockAsUtc = Date.UTC(pick("year"), pick("month") - 1, pick("day"), pick("hour"), pick("minute"), pick("second"));
+  return new Date(utcMidnight - (zoneClockAsUtc - utcMidnight)).toISOString();
+};
+
 // ─── Work: cartons → dated days ──────────────────────────────────────────────
 
 /** One produced carton, for one job on it, as the data layer reads it. */
@@ -153,6 +172,8 @@ export const CONTRACTOR_PAYMENT_KIND = {
   PAYMENT: "PAYMENT",
   /** Money received FROM the contractor (an advance returned) — adds back to what is owed. */
   RECEIPT: "RECEIPT",
+  /** A claim for uppers damaged or lost in their work — deducted from what is owed. */
+  CLAIM: "CLAIM",
 } as const;
 export type ContractorPaymentKind = (typeof CONTRACTOR_PAYMENT_KIND)[keyof typeof CONTRACTOR_PAYMENT_KIND];
 
@@ -179,6 +200,8 @@ export interface ContractorLedger {
   earnedPaisa: number;
   /** Paid to the contractor in the period, less anything they returned. */
   paidPaisa: number;
+  /** Claimed from the contractor in the period for damaged or lost uppers. */
+  claimedPaisa: number;
   /** The Cr and Dr columns summed, for the ledger's total row (work + money returned; payments). */
   totalCreditPaisa: number;
   totalDebitPaisa: number;
@@ -191,13 +214,16 @@ type Unbalanced = Omit<Extract<ContractorLedgerEntry, { kind: "WORK" }>, "balanc
 
 const workEntry = (work: ContractorWorkDay): Unbalanced => ({ kind: "WORK", date: work.date, creditPaisa: work.amountPaisa, debitPaisa: 0, work });
 
+/** A payment and a claim both reduce what is owed; only money handed back adds to it. */
 const paymentEntry = (payment: ContractorPayment): Unbalanced =>
-  payment.kind === CONTRACTOR_PAYMENT_KIND.PAYMENT
-    ? { kind: payment.kind, date: payment.date, creditPaisa: 0, debitPaisa: payment.amountPaisa, payment }
-    : { kind: payment.kind, date: payment.date, creditPaisa: payment.amountPaisa, debitPaisa: 0, payment };
+  payment.kind === CONTRACTOR_PAYMENT_KIND.RECEIPT
+    ? { kind: payment.kind, date: payment.date, creditPaisa: payment.amountPaisa, debitPaisa: 0, payment }
+    : { kind: payment.kind, date: payment.date, creditPaisa: 0, debitPaisa: payment.amountPaisa, payment };
 
-/** Within a day, the work comes before what was paid against it. */
-const ENTRY_ORDER: Record<ContractorLedgerEntry["kind"], number> = { WORK: 0, PAYMENT: 1, RECEIPT: 2 };
+/** Within a day, the work comes before what was paid or claimed against it. */
+const ENTRY_ORDER: Record<ContractorLedgerEntry["kind"], number> = { WORK: 0, PAYMENT: 1, RECEIPT: 2, CLAIM: 3 };
+
+const isMoney = (entry: Unbalanced): boolean => entry.kind === CONTRACTOR_PAYMENT_KIND.PAYMENT || entry.kind === CONTRACTOR_PAYMENT_KIND.RECEIPT;
 
 /**
  * The ledger for `fromDate`…`toDate` (inclusive, `YYYY-MM-DD`), given ALL of the contractor's
@@ -227,7 +253,8 @@ export const buildContractorLedger = (input: {
     openingBalancePaisa,
     closingBalancePaisa: running,
     earnedPaisa: workDays.reduce((sum, day) => sum + day.amountPaisa, 0),
-    paidPaisa: during.reduce((sum, entry) => (entry.kind === "WORK" ? sum : sum + entry.debitPaisa - entry.creditPaisa), 0),
+    paidPaisa: during.reduce((sum, entry) => (isMoney(entry) ? sum + entry.debitPaisa - entry.creditPaisa : sum), 0),
+    claimedPaisa: during.reduce((sum, entry) => (entry.kind === CONTRACTOR_PAYMENT_KIND.CLAIM ? sum + entry.debitPaisa : sum), 0),
     totalCreditPaisa: during.reduce((sum, entry) => sum + entry.creditPaisa, 0),
     totalDebitPaisa: during.reduce((sum, entry) => sum + entry.debitPaisa, 0),
     dozens: workDays.reduce((sum, day) => sum + day.dozens, 0),

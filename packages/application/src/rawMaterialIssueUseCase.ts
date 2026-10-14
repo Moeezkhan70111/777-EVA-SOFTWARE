@@ -73,7 +73,13 @@ export interface RawMaterialIssueInput {
  */
 export type IssueProgramBinding =
   | { mode: "AUTO" }
-  | { mode: "PROGRAM"; programId: string; batchId: string | null };
+  | { mode: "PROGRAM"; programId: string; batchId: string | null }
+  /**
+   * Upper Move Out (Phase 3): the operator named the MACHINE the packet goes to. No program
+   * allocation is consumed — the retired programs' reservations are not this screen's to keep —
+   * and the machine is stamped on the STORE_EXIT event (migration 079).
+   */
+  | { mode: "MACHINE"; machineId: string };
 
 /** The generic store scanner: the packet finds its own program, or none. */
 export const AUTO_PROGRAM_BINDING: IssueProgramBinding = { mode: "AUTO" };
@@ -266,7 +272,9 @@ export const issueRawMaterialPacket = async (
   // one, because the operator named it and that is a stronger instruction than date order.
   let reservation: OutstandingProgramLine | null;
   let cartonTarget: MachineProgramCartonTarget | null = null;
-  if (input.binding.mode === "PROGRAM") {
+  if (input.binding.mode === "MACHINE") {
+    reservation = null;
+  } else if (input.binding.mode === "PROGRAM") {
     const found = await repo.findOutstandingMachineProgramLineOfProgram(
       { programId: input.binding.programId, itemId: unit.itemId },
       tx
@@ -338,6 +346,8 @@ export const issueRawMaterialPacket = async (
       machineProgramLineId: reservation?.lineId ?? null,
       // Which Save Batch committed it. Null for the generic scanner, which has no batch.
       machineProgramBatchId: input.binding.mode === "PROGRAM" ? input.binding.batchId : null,
+      // Upper Move Out's machine — written once, with the event, never moved afterwards.
+      machineId: input.binding.mode === "MACHINE" ? input.binding.machineId : null,
     },
     tx
   );

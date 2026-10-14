@@ -2,20 +2,22 @@ import { cartonsToPairs } from "./units.js";
 
 // RECONCILIATION — closing a machine program against the cartons that came back.
 //
-//   4 DOZEN of uppers issued  →  8 cartons due back  (1 DOZEN = 2 cartons)
-//   8 back                    →  the program closes, complete
-//   7 back                    →  1 carton short = 6 uppers to account for, and every one of them
-//                                is either:
+//   6 DOZEN of uppers issued   →  12 cartons due back  (1 DOZEN = 2 cartons, 6 pairs a carton)
+//   6 cartons back             →  6 cartons = 36 pairs still to account for. Each is one of:
 //
-//     CUT SIZE   it came back to the store (e.g. 4 of the 6)
-//     WASTAGE    it was damaged          → claim to the upper's SUPPLIER
-//     LOST       it was lost on the floor → claim to the MACHINE or the PACKING contractor
+//     RETURN UPPER     a sealed packet scanned back into the store          (before closing)
+//     B CARTON         came off the machine in mixed colours: MIX labels    (before closing)
+//     CUT SIZE UPPER   loose uppers from an opened packet, back in the store (on closing)
+//     CUT SIZE PAIRS   slippers made but never packed in a carton           (on closing)
+//     CLAIM            damaged or lost — claimed, at an amount, to the upper's SUPPLIER or the
+//                      MACHINE or PACKING contractor, and deducted on their ledger (on closing)
 //
-// Counted in UPPERS (pairs), never in dozens: 4 uppers is a third of a dozen, which a two-decimal
-// dozen cannot hold exactly, and a reconciliation that does not add up to the last upper is not
-// one. Every claim carries the reason it was made (owner, 2026-10-11).
+// A returned packet and a B carton change the cartons themselves (fewer due, more back), so they
+// are done first and the shortfall shrinks; what is left is accounted for when the program closes,
+// and the ways must add up to it EXACTLY. Counted in PAIRS, never in dozens: 5 pairs is not a
+// two-decimal dozen, and a reconciliation that does not add up to the last pair is not one.
 
-/** Who a LOST upper is claimed against. */
+/** Who a LOST upper was claimed against, on programs closed before priced claims (legacy rows). */
 export const RECONCILIATION_LOSS_PARTY = {
   /** Lost in production — the machine contractor. */
   MACHINE: "MACHINE",
@@ -37,41 +39,91 @@ export type MachineProgramCloseOutcome = (typeof MACHINE_PROGRAM_CLOSE_OUTCOME)[
 export const shortfallUppers = (cartonsDue: number, cartonsBack: number): number =>
   cartonsToPairs(Math.max(0, cartonsDue - cartonsBack));
 
-/** What the store says became of one upper line's missing uppers. */
-export interface ReconciliationEntry {
-  cutSize: number;
-  wastage: number;
-  /** The upper's supplier the wastage is claimed against. Required when there is wastage. */
-  wastagePartyId: string | null;
-  wastageReason: string;
-  lost: number;
-  /** Which contractor the loss is claimed against. Required when there is a loss. */
-  lostParty: ReconciliationLossParty | null;
-  lostReason: string;
+/** Who a claim for damaged or lost uppers is made against. */
+export const CLAIM_PARTY_ROLE = {
+  /** The supplier of the upper — it was damaged as it came. */
+  SUPPLIER: "SUPPLIER",
+  /** The machine contractor — damaged or lost in production. */
+  MACHINE: "MACHINE",
+  /** The packing contractor — damaged or lost in packing. */
+  PACKING: "PACKING",
+} as const;
+export type ClaimPartyRole = (typeof CLAIM_PARTY_ROLE)[keyof typeof CLAIM_PARTY_ROLE];
+
+/** A posted claim stands on the party's ledger; a reversed one no longer does. */
+export const PARTY_CLAIM_STATUS = { POSTED: "POSTED", REVERSED: "REVERSED" } as const;
+export type PartyClaimStatus = (typeof PARTY_CLAIM_STATUS)[keyof typeof PARTY_CLAIM_STATUS];
+
+/** One claim for damaged or lost pairs: who, how many, at what amount a pair, and why. */
+export interface UpperClaim {
+  role: ClaimPartyRole;
+  /** The supplier claimed against. Contractors are the program's own, so they are not chosen here. */
+  supplierPartyId: string | null;
+  pairs: number;
+  /** The amount claimed for ONE pair, in integer paisa. */
+  ratePaisa: number;
+  reason: string;
 }
 
-const isUpperCount = (value: number): boolean => Number.isInteger(value) && value >= 0;
+/** What the store says became of one upper line's remaining pairs when the program closes. */
+export interface UpperReconciliation {
+  /** Loose uppers from an opened packet, back in the store. */
+  cutSizeUppers: number;
+  /** Slippers made but never packed in a carton, back in the store. */
+  cutSizePairs: number;
+  claims: UpperClaim[];
+}
+
+/** What one claim deducts from the party: pairs × the amount a pair — exact, in paisa. */
+export const claimAmountPaisa = (claim: Pick<UpperClaim, "pairs" | "ratePaisa">): number => claim.pairs * claim.ratePaisa;
+
+/** How many of the remaining pairs a reconciliation accounts for. */
+export const accountedPairs = (entry: UpperReconciliation): number =>
+  entry.cutSizeUppers + entry.cutSizePairs + entry.claims.reduce((total, claim) => total + claim.pairs, 0);
+
+const isPairCount = (value: number): boolean => Number.isInteger(value) && value >= 0;
+
+/** Why one claim cannot be made, or null. */
+const claimProblem = (claim: UpperClaim): string | null => {
+  if (!Number.isInteger(claim.pairs) || claim.pairs < 1) return "A claim is for whole pairs, at least 1.";
+  if (!Object.values(CLAIM_PARTY_ROLE).includes(claim.role)) return "Choose who the claim is against.";
+  if (claim.role === CLAIM_PARTY_ROLE.SUPPLIER && !claim.supplierPartyId) return "Choose the supplier the claim is against.";
+  if (!Number.isInteger(claim.ratePaisa) || claim.ratePaisa < 1) return "Type the amount claimed for one pair — more than 0.";
+  if (!claim.reason.trim()) return "Say why the pairs are claimed — the claim needs a reason.";
+  return null;
+};
 
 /**
- * Why one line's reconciliation cannot be saved, or null when it accounts for every missing upper.
+ * Why one line's reconciliation cannot be saved, or null when it accounts for every remaining pair.
  *
- * The three ways must add up to the shortfall EXACTLY — fewer leaves uppers nobody answered for,
- * more claims uppers that were never missing. A claim needs its party and its reason.
+ * The ways must add up to the remaining pairs EXACTLY — fewer leaves pairs nobody answered for,
+ * more would claim or return pairs that were never missing. Every claim needs its party, its
+ * amount and its reason.
  */
-export const reconciliationEntryProblem = (shortfall: number, entry: ReconciliationEntry): string | null => {
-  if (![entry.cutSize, entry.wastage, entry.lost].every(isUpperCount)) {
-    return "Count uppers in whole numbers, 0 or more.";
+export const upperReconciliationProblem = (remainingPairs: number, entry: UpperReconciliation): string | null => {
+  if (![entry.cutSizeUppers, entry.cutSizePairs].every(isPairCount)) return "Count pairs in whole numbers, 0 or more.";
+  for (const claim of entry.claims) {
+    const problem = claimProblem(claim);
+    if (problem) return problem;
   }
-  const accounted = entry.cutSize + entry.wastage + entry.lost;
-  if (accounted !== shortfall) {
-    return accounted < shortfall
-      ? `${shortfall - accounted} of the ${shortfall} missing uppers are not accounted for yet.`
-      : `That accounts for ${accounted} uppers, but only ${shortfall} are missing.`;
+  const accounted = accountedPairs(entry);
+  if (accounted === remainingPairs) return null;
+  return accounted < remainingPairs
+    ? `${remainingPairs - accounted} of the ${remainingPairs} remaining pairs are not accounted for yet.`
+    : `That accounts for ${accounted} pairs, but only ${remainingPairs} remain.`;
+};
+
+/**
+ * Why `count` of an upper line's missing cartons cannot become B cartons, or null. A B carton is
+ * a whole carton that physically came back, so it can stand for at most the cartons still missing.
+ */
+export const upperBConversionProblem = (count: number, missingCartons: number): string | null => {
+  if (!Number.isInteger(count) || count < 1) return "Type how many B cartons — a whole number, at least 1.";
+  if (count > missingCartons) {
+    return missingCartons === 0
+      ? "No carton of this upper is missing, so there is nothing to make B."
+      : `Only ${missingCartons} carton${missingCartons === 1 ? " is" : "s are"} missing, so at most ${missingCartons} can be B cartons.`;
   }
-  if (entry.wastage > 0 && !entry.wastagePartyId) return "Choose the supplier the wastage is claimed against.";
-  if (entry.wastage > 0 && !entry.wastageReason.trim()) return "Say why the uppers were wasted — the claim needs a reason.";
-  if (entry.lost > 0 && !entry.lostParty) return "Choose who lost the uppers: the machine or the packing contractor.";
-  if (entry.lost > 0 && !entry.lostReason.trim()) return "Say how the uppers were lost — the claim needs a reason.";
   return null;
 };
 

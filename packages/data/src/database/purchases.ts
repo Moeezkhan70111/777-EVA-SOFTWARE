@@ -225,7 +225,7 @@ export const purchasesMethods = {
 
   getSupplierLedger(this: SqliteDatabase, partyId: string, query: { fromDate?: string; toDate?: string } = {}): {
     partyId: string; partyName: string; openingBalance: number; closingBalance: number;
-    entries: Array<{ voucherId: string; voucherNumber: string; voucherDate: string; voucherType: "PURCHASE" | "CASH_PAYMENT" | "CASH_RECEIPT"; description: string; modeOfTransfer?: string; debitAmount: number; creditAmount: number; balance: number }>;
+    entries: Array<{ voucherId: string; voucherNumber: string; voucherDate: string; voucherType: "PURCHASE" | "CASH_PAYMENT" | "CASH_RECEIPT" | "CLAIM"; description: string; modeOfTransfer?: string; debitAmount: number; creditAmount: number; balance: number }>;
   } {
     const party = this.getParty(partyId);
     if (!party) return { partyId, partyName: "", openingBalance: 0, closingBalance: 0, entries: [] };
@@ -235,9 +235,12 @@ export const purchasesMethods = {
     // Summed in paisa (exact integer arithmetic); converted back to rupees once, below.
     const openingPurchases = this.db.prepare("SELECT COALESCE(SUM(total_amount_paisa),0) as t FROM purchase_vouchers WHERE party_id = ? AND voucher_date < ? AND status != 'CANCELLED' AND deleted_at IS NULL").get(partyId, fromDate) as { t: number };
     const openingPayments = this.db.prepare("SELECT COALESCE(SUM(payment_amount_paisa),0) as t FROM cash_vouchers WHERE party_id = ? AND voucher_date < ? AND status = 'ACTIVE' AND deleted_at IS NULL").get(partyId, fromDate) as { t: number };
-    const openingBalance = fromPaisa(openingPurchases.t - openingPayments.t); // positive = we owe supplier
+    // A claim against the supplier (damaged uppers, migration 076) is a deduction from what we owe.
+    const claims = this.listPartyClaims(partyId);
+    const openingClaims = claims.filter((claim) => claim.claimDate < fromDate).reduce((total, claim) => total + claim.amountPaisa, 0);
+    const openingBalance = fromPaisa(openingPurchases.t - openingPayments.t - openingClaims); // positive = we owe supplier
 
-    const transactions: Array<{ id: string; number: string; date: string; type: "PURCHASE" | "CASH_PAYMENT" | "CASH_RECEIPT"; description: string; modeOfTransfer?: string; amount: number }> = [];
+    const transactions: Array<{ id: string; number: string; date: string; type: "PURCHASE" | "CASH_PAYMENT" | "CASH_RECEIPT" | "CLAIM"; description: string; modeOfTransfer?: string; amount: number }> = [];
 
     const purchases = this.db.prepare("SELECT id, voucher_number, voucher_date, total_amount_paisa, COALESCE(remarks,'') as remarks, COALESCE(reference_no,'') as ref FROM purchase_vouchers WHERE party_id = ? AND voucher_date BETWEEN ? AND ? AND status != 'CANCELLED' AND deleted_at IS NULL ORDER BY voucher_date ASC, created_at ASC").all(partyId, fromDate, toDate) as Array<Record<string, unknown>>;
     for (const p of purchases) {
@@ -254,7 +257,12 @@ export const purchasesMethods = {
       if (receiptAmount > 0) transactions.push({ id: String(cv.id), number: String(cv.voucher_number), date: String(cv.voucher_date), type: "CASH_RECEIPT", description: String(cv.description), modeOfTransfer: cv.mode_of_transfer == null ? undefined : String(cv.mode_of_transfer), amount: receiptAmount });
     }
 
-    transactions.sort((a, b) => (a.date !== b.date ? a.date.localeCompare(b.date) : ({ PURCHASE: 1, CASH_PAYMENT: 2, CASH_RECEIPT: 3 } as Record<string, number>)[a.type] - ({ PURCHASE: 1, CASH_PAYMENT: 2, CASH_RECEIPT: 3 } as Record<string, number>)[b.type]));
+    for (const claim of claims.filter((entry) => entry.claimDate >= fromDate && entry.claimDate <= toDate)) {
+      transactions.push({ id: claim.claimId, number: claim.claimNumber, date: claim.claimDate, type: "CLAIM", description: claim.description, amount: fromPaisa(claim.amountPaisa) });
+    }
+
+    const order: Record<string, number> = { PURCHASE: 1, CASH_PAYMENT: 2, CASH_RECEIPT: 3, CLAIM: 4 };
+    transactions.sort((a, b) => (a.date !== b.date ? a.date.localeCompare(b.date) : order[a.type] - order[b.type]));
 
     let running = openingBalance;
     const entries = transactions.map((tx) => {
@@ -279,7 +287,8 @@ export const purchasesMethods = {
            (SELECT COALESCE(SUM(pv.total_amount_paisa),0) FROM purchase_vouchers pv WHERE pv.party_id = p.id AND pv.deleted_at IS NULL AND pv.status != 'CANCELLED' AND pv.voucher_date <= ?) AS total_purchases_paisa,
            (SELECT COALESCE(SUM(cv.payment_amount_paisa),0) FROM cash_vouchers cv WHERE cv.party_id = p.id AND cv.deleted_at IS NULL AND cv.status = 'ACTIVE' AND cv.voucher_date <= ?) AS total_payments_paisa,
            (SELECT COALESCE(SUM(pv.total_amount_paisa),0) FROM purchase_vouchers pv WHERE pv.party_id = p.id AND pv.deleted_at IS NULL AND pv.status != 'CANCELLED' AND pv.voucher_date <= ?)
-           - (SELECT COALESCE(SUM(cv.payment_amount_paisa),0) FROM cash_vouchers cv WHERE cv.party_id = p.id AND cv.deleted_at IS NULL AND cv.status = 'ACTIVE' AND cv.voucher_date <= ?) AS balance_paisa,
+           - (SELECT COALESCE(SUM(cv.payment_amount_paisa),0) FROM cash_vouchers cv WHERE cv.party_id = p.id AND cv.deleted_at IS NULL AND cv.status = 'ACTIVE' AND cv.voucher_date <= ?)
+           - (SELECT COALESCE(SUM(pc.amount_paisa),0) FROM party_claims pc WHERE pc.party_id = p.id AND pc.status = 'POSTED' AND pc.claim_date <= ?) AS balance_paisa,
            (SELECT MAX(dt) FROM (
               SELECT pv.voucher_date AS dt FROM purchase_vouchers pv WHERE pv.party_id = p.id AND pv.deleted_at IS NULL AND pv.status != 'CANCELLED' AND pv.voucher_date <= ?
               UNION ALL
@@ -289,7 +298,7 @@ export const purchasesMethods = {
          WHERE p.deleted_at IS NULL AND p.party_type = 'SUPPLIER' AND p.status = 'ACTIVE'
          ORDER BY balance_paisa DESC, p.party_name ASC`
       )
-      .all(asOfDate, asOfDate, asOfDate, asOfDate, asOfDate, asOfDate) as Array<Record<string, unknown>>;
+      .all(asOfDate, asOfDate, asOfDate, asOfDate, asOfDate, asOfDate, asOfDate) as Array<Record<string, unknown>>;
     return {
       rows: rows.map((row) => ({
         partyId: String(row.party_id ?? ""),

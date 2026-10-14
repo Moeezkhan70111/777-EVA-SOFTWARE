@@ -1076,7 +1076,6 @@ const programWithCartonsBack = async (f: Fixture, back: number) => {
   return { programId, cartons, blackLine: f.lineFor(programId, f.black).id };
 };
 
-const noClaim = { wastage: 0, wastagePartyId: null, wastageReason: "", lost: 0, lostParty: null, lostReason: "" };
 
 test("every carton back: the program closes COMPLETE, and what was never issued is released", async () => {
   await withFixture(async (f) => {
@@ -1102,40 +1101,44 @@ test("every carton back: the program closes COMPLETE, and what was never issued 
   });
 });
 
-test("cartons short: every missing upper is accounted for, claims carry reasons, and the admins are told", async () => {
+test("cartons short: every missing pair is accounted for, claims carry amounts and reasons, and the admins are told", async () => {
   await withFixture(async (f) => {
     f.db.bootstrapFirstAdmin("owner", "Password123");
     const { programId, blackLine, cartons } = await programWithCartonsBack(f, 9);
     const line = f.db.getMachineProgramReconciliation(programId)!.lines.find((row) => row.lineId === blackLine)!;
-    assert.equal(line.shortfallUppers, 6, "1 carton short is 6 uppers");
+    assert.equal(line.shortfallUppers, 6, "1 carton short is 6 pairs");
     assert.deepEqual(line.suppliers.map((supplier) => supplier.name), ["ABC UPPER"]);
 
+    const claim = (overrides: Record<string, unknown>) => ({ role: "SUPPLIER", supplierPartyId: f.supplierA, pairs: 1, ratePaisa: 5_000, reason: "torn upper", ...overrides });
     const close = (entry: Record<string, unknown>) =>
-      f.db.completeMachineProgramProduction({ programId, entries: [{ lineId: blackLine, ...noClaim, cutSize: 0, ...entry }], closedBy: ACTOR, deviceId: "device-1" });
-    assert.throws(() => f.db.completeMachineProgramProduction({ programId, entries: [], closedBy: ACTOR, deviceId: "device-1" }), /Account for the 6 missing uppers/);
-    assert.throws(() => close({ cutSize: 4 }), /2 of the 6 missing uppers/);
-    assert.throws(() => close({ cutSize: 4, wastage: 2, wastagePartyId: f.supplierA }), /needs a reason/);
-    assert.throws(() => close({ cutSize: 4, wastage: 2, wastagePartyId: f.contractorA, wastageReason: "torn" }), /supplier whose uppers went out/);
+      f.db.completeMachineProgramProduction({
+        programId, entries: [{ lineId: blackLine, cutSizeUppers: 0, cutSizePairs: 0, claims: [], ...entry }], closedBy: ACTOR, deviceId: "device-1",
+      } as Parameters<typeof f.db.completeMachineProgramProduction>[0]);
+    assert.throws(() => f.db.completeMachineProgramProduction({ programId, entries: [], closedBy: ACTOR, deviceId: "device-1" }), /Account for the 6 remaining pairs/);
+    assert.throws(() => close({ cutSizeUppers: 4 }), /2 of the 6 remaining pairs/);
+    assert.throws(() => close({ cutSizeUppers: 4, claims: [claim({ pairs: 2, reason: "" })] }), /needs a reason/);
+    assert.throws(() => close({ cutSizeUppers: 4, claims: [claim({ pairs: 2, supplierPartyId: f.contractorA })] }), /supplier whose uppers went out/);
     assert.equal(f.db.isMachineProgramClosed(programId), false, "a refused close writes nothing");
 
     const closed = close({
-      cutSize: 4,
-      wastage: 1, wastagePartyId: f.supplierA, wastageReason: "torn upper",
-      lost: 1, lostParty: "PACKING", lostReason: "not found at packing",
+      cutSizeUppers: 4,
+      claims: [claim({}), claim({ role: "PACKING", supplierPartyId: null, reason: "not found at packing", ratePaisa: 4_000 })],
     });
     assert.equal(closed.outcome, "RECONCILED");
     const saved = f.db.getMachineProgramReconciliation(programId)!.lines.find((row) => row.lineId === blackLine)!.saved!;
+    assert.equal(saved.cutSizeUppers, 4);
     assert.deepEqual(
-      { cut: saved.cutSize, wastage: saved.wastage, supplier: saved.wastagePartyName, lost: saved.lost, to: saved.lostPartyName },
-      { cut: 4, wastage: 1, supplier: "ABC UPPER", lost: 1, to: "CONTRACTOR B" }
+      saved.claims.map((entry) => [entry.claimNumber, entry.partyName, entry.pairs, entry.amountPaisa]),
+      [["CL-000001", "ABC UPPER", 1, 5_000], ["CL-000002", "CONTRACTOR B", 1, 4_000]]
     );
     const notice = f.raw.prepare("SELECT title, message FROM user_notifications WHERE kind = 'MACHINE_PROGRAM_RECONCILED'").get() as { title: string; message: string };
     assert.equal(notice.title, "Uppers claimed on MP-000001");
-    assert.match(notice.message, /claimed to ABC UPPER — "torn upper"/);
-    assert.match(notice.message, /claimed to CONTRACTOR B — "not found at packing"/);
+    assert.match(notice.message, /claimed to ABC UPPER for Rs 50.00 — "torn upper"/);
+    assert.match(notice.message, /claimed to CONTRACTOR B for Rs 40.00 — "not found at packing"/);
 
-    // Closed means final: the last carton can no longer be stored in against it.
+    // Closed means final: the last carton's label is void, and nothing is stored in against it.
     const late = await cartonIn(f).execute({ programId, rawScan: cartons[9], context: CONTEXT, actor: ACTOR });
-    assert.equal(late.outcome, "PROGRAM_CLOSED");
+    assert.equal(late.accepted, false);
+    assert.ok(["PROGRAM_CLOSED", "VOIDED"].includes(late.outcome), late.outcome);
   });
 });

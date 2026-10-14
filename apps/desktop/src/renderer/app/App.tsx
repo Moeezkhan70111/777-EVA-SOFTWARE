@@ -35,8 +35,7 @@ import { CustomerLedgerPage } from "../pages/CustomerLedgerPage";
 import { CustomerBalancePage } from "../pages/CustomerBalancePage";
 import { ProductListPage } from "../pages/ProductListPage";
 import { ProductFormPage } from "../pages/ProductFormPage";
-import { QrGeneratorPage } from "../pages/QrGeneratorPage";
-import { BCartonGeneratorPage } from "../pages/BCartonGeneratorPage";
+import { QrGeneratorWorkspace } from "../features/qrGenerator/QrGeneratorWorkspace";
 import { QrManagementPage } from "../pages/QrManagementPage";
 import { ProductListsPage } from "../pages/ProductListsPage";
 import { DiscountPolicyPage } from "../pages/DiscountPolicyPage";
@@ -324,15 +323,10 @@ export const App = () => {
             onNavigate={canOpenRawMaterial ? setRoute : undefined}
           />
         );
-      // Planning a machine's shift against raw material in the store. It reserves bags; the
-      // bags themselves leave through the Raw Material Output scanner.
+      // The machines with their two contractors, and each machine's program for a day. Programs
+      // open from the QR Generator; the old shift-planning workflow was retired in Phase 1.
       case "machine-program":
-        return (
-          <MachineProgramPage
-            username={session.username}
-            canAddMachine={hasPermission(session, PERMISSION.STOCK)}
-          />
-        );
+        return <MachineProgramPage onOpenQrGenerator={canOpenRoute(session, "qr-generator") ? () => setRoute("qr-generator") : undefined} />;
       case "history":
       case "stock-history":
         return <HistoryPage />;
@@ -512,10 +506,21 @@ export const App = () => {
         );
       case "product-lists":
         return <ProductListsPage username={session.username} />;
+      // Carton QRs and B-Carton Labels: two tabs of one workspace, each run for a chosen machine.
+      // b-carton-generator is a deep link onto the B tab, so its permission keeps gating it.
       case "qr-generator":
-        return <QrGeneratorPage onNavigate={setRoute} username={session.username} />;
       case "b-carton-generator":
-        return <BCartonGeneratorPage username={session.username} />;
+        return (
+          <QrGeneratorWorkspace
+            key={route}
+            username={session.username}
+            initialTab={route === "b-carton-generator" ? "b-cartons" : "cartons"}
+            onNavigate={setRoute}
+            onSetUpMachines={canOpenRoute(session, "machine-program") ? () => setRoute("machine-program") : undefined}
+            canReceiveProduction={canOpenRoute(session, "live-production")}
+            canUpperMoveOut={canOpenRoute(session, "raw-material-output")}
+          />
+        );
       case "qr-management":
         return <QrManagementPage username={session.username} />;
       case "qr-journey":

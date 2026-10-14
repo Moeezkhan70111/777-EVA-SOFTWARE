@@ -17,7 +17,7 @@ const ledgerFor = (overrides: Partial<ContractorLedgerReport> = {}): ContractorL
   openingBalancePaisa: 0,
   closingBalancePaisa: 20000,
   earnedPaisa: 70000,
-  paidPaisa: 50000,
+  claimedPaisa: 0, paidPaisa: 50000,
   totalCreditPaisa: 70000,
   totalDebitPaisa: 50000,
   dozens: 10,

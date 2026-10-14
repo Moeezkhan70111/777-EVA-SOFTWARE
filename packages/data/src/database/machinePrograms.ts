@@ -235,8 +235,15 @@ export const machineProgramsMethods = {
    */
   setMachineStatus(this: SqliteDatabase, machineId: string, status: "ACTIVE" | "INACTIVE"): void {
     if (status === "INACTIVE") {
+      // Only a program with runs reserves stock. A day program opened by the QR Generator (Phase
+      // 1.1) holds carton QRs, not a reservation, so it never keeps a machine from being retired.
       const live = this.db
-        .prepare("SELECT id FROM machine_programs WHERE machine_id = ? AND status = ? LIMIT 1")
+        .prepare(
+          `SELECT mp.id FROM machine_programs mp
+           WHERE mp.machine_id = ? AND mp.status = ?
+             AND EXISTS (SELECT 1 FROM machine_program_runs r WHERE r.program_id = mp.id)
+           LIMIT 1`
+        )
         .get(text(machineId), MACHINE_PROGRAM_STATUS.PROGRAMMED);
       if (live) throw new Error("This machine still has a live program. Delete or finish it before retiring the machine.");
     }

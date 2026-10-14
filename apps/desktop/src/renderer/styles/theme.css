@@ -8268,3 +8268,341 @@ tr.has-error .gp-qty-stepper input { color: var(--err); }
   .sdr-day-name { margin-left: 0; width: 100%; }
   .sdr-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
+
+/* ── UPPER RECONCILIATION ─────────────────────────────────────────────────────
+   Store In, Complete Program, when cartons are short: Return Upper, then one card per short upper
+   with every way its pairs can go side by side, and its balance. Mobile first: the actions stack,
+   and sit beside the balance from a desk-width screen up. */
+.mur { margin-top: 14px; display: flex; flex-direction: column; gap: 12px; }
+.mur-head { display: flex; flex-direction: column; gap: 2px; }
+.mur-title { margin: 0; font-size: 1rem; font-weight: 800; color: var(--foreground); }
+.mur-lead { margin: 0; font-size: .82rem; color: var(--text-3); }
+
+.mur-return { padding: 12px 14px; border: 1px solid var(--line-soft); border-radius: var(--radius-lg); background: var(--surface); }
+.mur-return-head { margin-bottom: 8px; }
+.mur-return-form { display: flex; gap: 8px; }
+.mur-return-form .form-input { flex: 1; min-width: 0; min-height: 44px; }
+.mur-return-form .btn { min-height: 44px; }
+.mur-return-log { margin: 8px 0 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 4px; font-size: .8rem; }
+.mur-return-log .is-ok { color: var(--success-deep); font-weight: 700; }
+.mur-return-log .is-refused { color: var(--warning-deep); font-weight: 700; }
+
+.mur-line { display: flex; flex-direction: column; gap: 12px; padding: 14px; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface); }
+.mur-line-title { margin: 0; font-size: .95rem; font-weight: 800; color: var(--foreground); }
+
+.mur-figs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin: 0; }
+.mur-fig { padding: 8px 10px; border: 1px solid var(--line-soft); border-radius: var(--radius-md); background: var(--bg-soft); }
+.mur-fig dt { font-size: .64rem; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: var(--text-3); }
+.mur-fig dd { margin: 2px 0 0; display: flex; flex-direction: column; font-variant-numeric: tabular-nums; }
+.mur-fig dd b { font-size: .95rem; color: var(--foreground); }
+.mur-fig dd small { font-size: .74rem; color: var(--text-3); }
+.mur-fig--remaining { border-color: var(--warning); background: var(--warn-bg); }
+
+.mur-line-body { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; }
+.mur-actions { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; }
+.mur-action { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border: 1px solid var(--line-soft); border-radius: var(--radius-md); }
+.mur-action-label { display: flex; flex-direction: column; gap: 1px; }
+.mur-action-title { font-size: .84rem; font-weight: 800; color: var(--foreground); }
+.mur-action-hint { font-size: .74rem; color: var(--text-3); }
+.mur-action-row { display: flex; align-items: center; gap: 8px; }
+.mur-count { width: 96px; min-height: 44px; text-align: right; font-variant-numeric: tabular-nums; }
+.mur-money { width: 120px; min-height: 44px; text-align: right; font-variant-numeric: tabular-nums; }
+.mur-unit { font-size: .8rem; color: var(--text-3); }
+.mur-field-problem { margin: 0; font-size: .78rem; font-weight: 700; color: var(--warning-deep); }
+
+.mur-claims { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 10px; }
+.mur-claim { position: relative; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; padding: 10px 40px 10px 10px; border-radius: var(--radius-md); background: var(--bg-soft); }
+.mur-claim-field { display: flex; flex-direction: column; gap: 3px; font-size: .74rem; font-weight: 700; color: var(--text-2); }
+.mur-claim-field .form-input { min-height: 44px; }
+.mur-claim-field--wide, .mur-claim-field--reason { grid-column: 1 / -1; }
+.mur-claim-total b { min-height: 44px; display: flex; align-items: center; font-size: .95rem; font-variant-numeric: tabular-nums; color: var(--foreground); }
+.mur-claim-remove {
+  position: absolute; top: 6px; right: 6px; width: 32px; height: 32px; cursor: pointer;
+  border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--surface);
+  font: inherit; font-size: 1rem; color: var(--text-3);
+}
+.mur-claim-remove:hover { border-color: var(--err); color: var(--err); }
+.mur-claim .mur-field-problem { grid-column: 1 / -1; }
+.mur-add-claim { align-self: flex-start; min-height: 36px; }
+
+.mur-balance { display: flex; flex-direction: column; gap: 8px; }
+.mur-balance-table { width: 100%; border-collapse: collapse; font-size: .82rem; }
+.mur-balance-table th { padding: 6px 0; text-align: left; font-weight: 600; color: var(--text-2); }
+.mur-balance-table td { padding: 6px 0; text-align: right; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--foreground); }
+.mur-balance-table tr + tr th, .mur-balance-table tr + tr td { border-top: 1px solid var(--line-soft); }
+.mur-balance-total th, .mur-balance-total td { font-weight: 800; }
+.mur-balance-unresolved th, .mur-balance-unresolved td { font-weight: 800; }
+.mur-line-status { margin: 0; font-size: .82rem; font-weight: 700; color: var(--warning-deep); }
+.mur-line-status.is-ok { color: var(--success-deep); }
+
+.mur-submit { display: flex; justify-content: flex-end; }
+
+@media (min-width: 768px) {
+  .mur-figs { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+  .mur-actions { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .mur-action--claims { grid-column: 1 / -1; }
+  .mur-claim { grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr); }
+}
+@media (min-width: 1280px) {
+  .mur-line-body { grid-template-columns: minmax(0, 1fr) 260px; align-items: start; }
+}
+
+/* ── Machine Program, Machine picker, QR Generator workspace ──────────────────
+   features/machineProgram + features/qrGenerator. Tokens only: surfaces, borders, radii, spacing,
+   text and the primary blue come from :root, so the chrome's colours drive these too. */
+
+/* Page */
+.mp-header { align-items: flex-start; gap: var(--space-4); }
+.mp-subtitle { margin: var(--space-1) 0 0; color: var(--text-3); font-size: 0.85rem; }
+.mp-section { margin-bottom: var(--space-6); }
+.mp-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  margin-bottom: var(--space-3);
+}
+.mp-section-head .section-label { margin: 0; }
+
+/* Machines */
+.mp-machine-grid {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--space-3);
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+}
+.mp-machine-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+}
+.mp-machine-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-2); }
+.mp-page .mp-machine-name { margin: 0; font-size: 1rem; font-weight: 800; color: var(--text); letter-spacing: 0.01em; }
+.mp-machine-code { font-family: var(--font-mono); font-size: 0.72rem; color: var(--text-3); }
+.mp-machine-roles { margin: 0; display: grid; gap: var(--space-2); }
+.mp-machine-role { display: grid; gap: 2px; }
+.mp-machine-role dt { font-size: 0.66rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-3); }
+.mp-machine-role dd { margin: 0; font-size: 0.9rem; font-weight: 600; color: var(--text); }
+.mp-machine-role dd.mp-machine-unset { color: var(--warning-deep); }
+.mp-machine-edit { align-self: flex-start; min-height: var(--touch-target); }
+
+/* The machine dialog */
+.mp-name-input { width: 100%; text-transform: uppercase; }
+.mp-name-input::placeholder { text-transform: none; }
+.mp-dialog-problem { margin: var(--space-2) 0 0; color: var(--danger-strong); font-size: 0.85rem; font-weight: 600; }
+
+/* A day's programs */
+.mp-programs { display: grid; gap: var(--space-4); }
+.mp-program {
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+}
+.mp-program-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--space-1) var(--space-4);
+  padding: var(--space-4);
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-faint);
+}
+.mp-program-identity { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; }
+.mp-program-code {
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  font-weight: 700;
+  padding: 2px var(--space-2);
+  border-radius: var(--radius-sm);
+  background: var(--primary-blue);
+  color: var(--white);
+}
+.mp-page .mp-program-machine { margin: 0; font-size: 1.05rem; font-weight: 800; color: var(--text); }
+.mp-program-totals { display: flex; flex-direction: column; align-items: flex-end; font-variant-numeric: tabular-nums; }
+.mp-program-totals strong { font-size: 1.05rem; color: var(--text); }
+.mp-program-totals span { font-size: 0.8rem; color: var(--text-3); font-weight: 600; }
+.mp-program-crew {
+  grid-column: 1 / -1;
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-5);
+  font-size: 0.8rem;
+  color: var(--text-3);
+}
+.mp-program-crew strong { color: var(--text); font-weight: 700; }
+
+/* A program's lines */
+.cp-table-wrap { overflow-x: auto; }
+.cp-table { margin: 0; }
+.cp-table .cp-num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.cp-table td:first-child { white-space: nowrap; }
+.cp-table .cp-when { color: var(--text-3); white-space: nowrap; }
+.cp-cartons strong { font-size: 1rem; color: var(--text); }
+.cp-voided { display: block; color: var(--text-3); font-size: 0.72rem; font-weight: 600; }
+.cp-grade { margin-left: var(--space-2); font-size: 0.66rem; padding: 1px 6px; }
+/* The row's disclosure: a plain chevron, with the full touch target around it (R19). */
+.cp-table .cp-toggle {
+  min-width: var(--touch-target);
+  min-height: var(--touch-target);
+  margin: calc(var(--space-2) * -1) var(--space-1) calc(var(--space-2) * -1) calc(var(--space-2) * -1);
+  padding: 0;
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-3);
+  font-size: 1rem;
+  vertical-align: middle;
+}
+.cp-table .cp-toggle:hover { color: var(--primary-blue); background: var(--surface-2); }
+.cp-row.is-open td { background: var(--surface-2); }
+.cp-runs-row td { background: var(--surface-faint); }
+.cp-runs { list-style: none; margin: 0; padding: var(--space-2) 0; display: grid; gap: var(--space-2); }
+.cp-run {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1.4fr);
+  gap: var(--space-3);
+  align-items: center;
+  font-size: 0.8rem;
+}
+.cp-run-range { display: inline-flex; gap: var(--space-2); align-items: center; flex-wrap: wrap; font-family: var(--font-mono); }
+.cp-run-count { font-weight: 700; color: var(--text); }
+.cp-run-when { color: var(--text-3); }
+
+/* Machine picker (QR Generator) */
+.mpk-card { padding: var(--space-4); margin: var(--space-4) 0; }
+.mpk-head { display: flex; align-items: baseline; gap: var(--space-3); flex-wrap: wrap; margin-bottom: var(--space-3); }
+.qrw-page .mpk-label { margin: 0; font-size: 0.7rem; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--text-3); }
+.mpk-hint { font-size: 0.8rem; color: var(--text-3); }
+.mpk-hint--required { color: var(--warning-deep); font-weight: 600; }
+.mpk-options { display: grid; gap: var(--space-2); grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); }
+.mpk-option {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: var(--touch-target);
+  padding: var(--space-3);
+  text-align: left;
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  color: var(--text);
+  cursor: pointer;
+}
+.mpk-option:hover:not(:disabled) { border-color: var(--primary-blue-light); }
+.mpk-option:focus-visible { outline: 2px solid var(--primary-blue-light); outline-offset: 1px; }
+.mpk-option.is-selected { border-color: var(--primary-blue); background: var(--accent-tint); box-shadow: inset 0 0 0 1px var(--primary-blue); }
+.mpk-option:disabled { cursor: not-allowed; opacity: 0.6; background: var(--surface-2); }
+.mpk-radio {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 2px solid var(--border-dark);
+  background: var(--surface-1);
+}
+.mpk-option.is-selected .mpk-radio { border-color: var(--primary-blue); box-shadow: inset 0 0 0 3px var(--surface-1); background: var(--primary-blue); }
+.mpk-text { display: grid; gap: 2px; min-width: 0; }
+.mpk-text strong { font-size: 0.9rem; }
+.mpk-text small { font-size: 0.75rem; color: var(--text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+
+@media (max-width: 760px) {
+  .cp-run { grid-template-columns: 1fr; gap: var(--space-1); }
+  .mp-program-head { grid-template-columns: 1fr; }
+  .mp-program-totals { align-items: flex-start; flex-direction: row; gap: var(--space-2); }
+}
+
+/* ── Receive Production (features/receiveProduction) ───────────────────────────
+   The QR Generator's third tab: the scan station beside today's receipts. Tokens only; the scan
+   station itself keeps its own stylesheet (features/scanStation). */
+.rp-tab { display: grid; gap: var(--space-4); }
+.rp-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+}
+.qrw-page .rp-title { margin: 0; font-size: 1.15rem; font-weight: 800; color: var(--text); }
+.rp-subtitle { margin: var(--space-1) 0 0; color: var(--text-3); font-size: 0.85rem; }
+.rp-count {
+  display: grid;
+  justify-items: end;
+  gap: 2px;
+  padding: var(--space-2) var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface-1);
+  box-shadow: var(--shadow-sm);
+  font-variant-numeric: tabular-nums;
+}
+.rp-count-label { font-size: 0.66rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-3); }
+.rp-count strong { font-size: 1.25rem; color: var(--text); }
+.rp-count-dozens { font-size: 0.8rem; font-weight: 600; color: var(--text-3); }
+.rp-body { display: grid; gap: var(--space-4); grid-template-columns: minmax(0, 1fr); align-items: start; }
+.rp-station { height: auto; border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow-sm); }
+.rp-busy { margin: 0; font-size: 0.8rem; color: var(--text-3); }
+.rp-activity { padding: var(--space-4); margin: 0; }
+.rp-activity-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-3); margin-bottom: var(--space-3); }
+.rp-activity-note { font-size: 0.75rem; color: var(--text-3); }
+.rp-stale { margin: 0 0 var(--space-3); font-size: 0.8rem; font-weight: 600; color: var(--warning-deep); }
+.rp-table-wrap { overflow-x: auto; }
+.rp-table th, .rp-table td { padding: var(--space-2) var(--space-3); white-space: nowrap; font-size: 0.8rem; }
+.rp-qr code { font-family: var(--font-mono); font-size: 0.72rem; }
+.rp-grade { margin-left: var(--space-2); font-size: 0.66rem; padding: 1px 6px; }
+.rp-time { color: var(--text-3); font-variant-numeric: tabular-nums; }
+/* The newest receipt: tinted, with an accent on its leading edge (and "Latest" for screen readers). */
+.rp-row.is-latest td { background: var(--accent-tint); }
+.rp-row.is-latest td:first-child { box-shadow: inset 3px 0 0 var(--primary-blue); }
+.rp-section { margin-top: var(--space-3); }
+.rp-num,
+.rp-table th.rp-num { text-align: right; font-variant-numeric: tabular-nums; }
+.rp-summary .rp-dozens { font-weight: 700; color: var(--text); }
+.rp-summary tfoot th,
+.rp-summary tfoot td { border-top: 2px solid var(--border-dark); background: var(--surface-2); font-weight: 800; color: var(--text); }
+.rp-summary tfoot th { text-align: left; text-transform: uppercase; letter-spacing: 0.06em; font-size: 0.75rem; }
+.station-pager { display: flex; align-items: center; justify-content: flex-end; gap: var(--space-3); margin-top: var(--space-3); font-size: 0.8rem; color: var(--text-3); }
+/* The station keeps a fixed width beside the list; its state pill gives way to the Enter button. */
+.rp-station .ssn-dock-row .ssn-dock-state,
+.rp-station .ssn-dock-row:focus-within .ssn-dock-state { display: none; }
+@media (min-width: 1100px) {
+  .rp-body { grid-template-columns: 380px minmax(0, 1fr); }
+}
+
+/* ── Upper Move Out (features/upperMoveOut) ────────────────────────────────────
+   The QR Generator's fourth tab. Shares the station layout (rp-body, rp-station, rp-activity) with
+   Receive Production; these are only what it adds. Tokens only. */
+.um-tab .tab-strip { justify-self: start; }
+.um-move-out { display: grid; gap: var(--space-4); }
+.um-machine-bar { display: flex; align-items: center; gap: var(--space-4); flex-wrap: wrap; }
+.um-machine { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; }
+.um-machine-label { font-size: 0.7rem; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--text-3); }
+.um-machine-select { min-width: 220px; min-height: var(--touch-target); font-weight: 700; }
+.um-machine-status { font-size: 0.8rem; color: var(--text-3); }
+.um-issuing-to { font-size: 0.75rem; padding: var(--space-1) var(--space-3); }
+.um-left { display: grid; gap: var(--space-4); align-content: start; }
+.um-summary { padding: var(--space-4); margin: 0; }
+.um-summary .section-label { margin-bottom: var(--space-3); }
+.um-measures { margin: 0; display: grid; gap: var(--space-3); grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.um-measure { display: grid; gap: var(--space-1); padding-left: var(--space-3); border-left: 2px solid var(--border); }
+.um-measure dt { font-size: 0.66rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-3); }
+.um-measure dd { margin: 0; display: grid; gap: 2px; font-variant-numeric: tabular-nums; }
+.um-measure dd strong { font-size: 0.95rem; color: var(--text); }
+.um-measure dd span { font-size: 0.8rem; font-weight: 600; color: var(--text-3); }
+.um-stock-search { width: 100%; max-width: 360px; margin-bottom: var(--space-3); }
+@media (max-width: 640px) {
+  .um-measures { grid-template-columns: 1fr; }
+}
+/* A workspace tab with no machine picker above it still keeps its distance from the tab strip. */
+.qrw-page > .tab-strip + .qrw-panel { margin-top: var(--space-4); }
+.um-summary h2.section-label { font-size: 0.7rem; font-weight: 700; letter-spacing: 0.1em; color: var(--text-3); }

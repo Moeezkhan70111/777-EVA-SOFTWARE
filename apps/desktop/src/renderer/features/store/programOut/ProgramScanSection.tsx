@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { copy } from "../../../config/copy";
 import { ScanPanel, type ScanStationFeedback } from "../../scanStation/scanStation";
-import { useScanBox } from "./useScanBox";
+import { useScanBox } from "../../scanStation/useScanBox";
 
 // One scanner section on a machine program — Upper Out (Store Out) and Carton In (Store In):
 //

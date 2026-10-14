@@ -11,7 +11,7 @@ export type AppRoute =
   | "raw-material-qr-generator"
   | "raw-material-input"
   | "raw-material-output"
-  // Machine Program: planning a machine's shift against raw material store stock.
+  // Machine Program: the carton QRs the QR Generator has made, per item (B-Carton Labels is its second tab).
   | "machine-program"
   | "history"
   | "stock-history"

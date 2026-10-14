@@ -1,4 +1,4 @@
-import type { ContractorLedger, ContractorRole, StoreDailyReport, StoreDirection } from "@erp/domain";
+import type { ClaimPartyRole, ContractorLedger, ContractorRole, ReceiveProductionOutcome, StoreDailyReport, StoreDirection, UpperIssueOutcome, UpperReconciliation } from "@erp/domain";
 
 export type SortOrder = "ASC" | "DESC";
 
@@ -138,6 +138,189 @@ export interface QrBatchRow {
   requestedBy: string | null;
   /** "B" for a run of B carton labels — MIX, with a B on the sticker. Null for an ordinary run. */
   grade: "B" | null;
+}
+
+/**
+ * One line of a machine's day program: every carton QR generated for one product in one colour
+ * (and grade). Worked out by the main process from persisted codes — nothing here is added up.
+ */
+export interface CartonProgramLine {
+  articleSizeId: string;
+  productVariantId: string | null;
+  article: string;
+  size: string;
+  color: string;
+  /** "B" for B carton labels (colour MIX). */
+  grade: "B" | null;
+  /** Carton QRs registered and not voided — one per carton. */
+  cartons: number;
+  /** Codes voided in QR Management since; not in `cartons`. */
+  voidedCartons: number;
+  /** `cartons` in dozens (2 cartons to the dozen). */
+  equivalentDozens: number;
+  batchCount: number;
+  lastGeneratedAt: string;
+}
+
+/** A machine's program for one business day — MP-000123 — with its contractors as opened. */
+export interface MachineDayProgram {
+  programId: string;
+  programNumber: number;
+  code: string;
+  programDate: string;
+  machineId: string;
+  machineName: string;
+  contractorName: string;
+  packingContractorName: string | null;
+  cartons: number;
+  voidedCartons: number;
+  equivalentDozens: number;
+  lines: CartonProgramLine[];
+}
+
+/** The program a QR run joined, as the generator reports it back. */
+export interface MachineDayProgramRef {
+  id: string;
+  code: string;
+  machineName: string;
+  programDate: string;
+}
+
+/** One carton recorded as produced — a PRODUCED event, read through the registry. */
+export interface ProductionReceipt {
+  qrId: string;
+  article: string;
+  size: string;
+  color: string;
+  grade: "B" | null;
+  /** UTC ISO. */
+  receivedAt: string;
+  receivedBy: string | null;
+  /** RECEIVE_PRODUCTION, or null for a station that did not record one. */
+  station: string | null;
+  /** Where the carton is now (qr_master.current_status). */
+  stage: string;
+  programCode: string | null;
+  machineName: string | null;
+}
+
+/** A business day's receipts, a page at a time, with the whole day's totals. */
+export interface ProductionReceiptPage {
+  date: string;
+  rows: ProductionReceipt[];
+  page: number;
+  pageSize: number;
+  totalCartons: number;
+  equivalentDozens: number;
+  /** The whole day added up per article, size and colour (B cartons on their own line). */
+  summary: ProductionReceiptSummaryLine[];
+}
+
+/** One line of a day's receipt summary: SK6 7/10 RED — 20 cartons, 10 dozen. */
+export interface ProductionReceiptSummaryLine {
+  article: string;
+  size: string;
+  color: string;
+  grade: "B" | null;
+  cartons: number;
+  equivalentDozens: number;
+}
+
+/** An amount of upper in one stock unit — uppers are counted in their material's own unit. */
+export interface UpperQuantity {
+  unitCode: string;
+  quantity: number;
+}
+
+export interface UpperIssueTotals {
+  packets: number;
+  quantities: UpperQuantity[];
+}
+
+/** One upper packet issued to a machine. */
+export interface UpperIssueRow {
+  eventId: string;
+  qrId: string;
+  itemDisplayName: string;
+  article: string | null;
+  size: string | null;
+  colour: string | null;
+  quantity: number;
+  unitCode: string;
+  packName: string | null;
+  machineId: string;
+  machineName: string;
+  issuedAt: string;
+  issuedBy: string | null;
+  /** Where the packet is now: ISSUED, or IN_STORE if it came back. */
+  status: string;
+}
+
+export interface UpperIssuePage {
+  machineId: string;
+  date: string;
+  rows: UpperIssueRow[];
+  page: number;
+  pageSize: number;
+  totals: UpperIssueTotals;
+}
+
+/** The three measures the Move Out summary keeps apart. */
+export interface UpperIssueSummary {
+  machineId: string;
+  machineName: string;
+  session: UpperIssueTotals & { sessionNumber: number | null };
+  day: UpperIssueTotals & { date: string };
+  stock: UpperIssueTotals;
+}
+
+export interface UpperStockRow {
+  itemId: string;
+  itemCode: string;
+  displayName: string;
+  categoryName: string;
+  article: string | null;
+  size: string | null;
+  colour: string | null;
+  type: string | null;
+  onHand: number;
+  unitCode: string;
+  packetsInStore: number;
+  packName: string | null;
+}
+
+/** What one Upper Move Out scan came to, decided by the main process. */
+export interface UpperIssueResult {
+  accepted: boolean;
+  outcome: UpperIssueOutcome;
+  qrId?: string;
+  reason?: string;
+  eventId?: string;
+  /** The issue as the database holds it — for ALREADY_ISSUED, the earlier one. */
+  issue?: UpperIssueRow | null;
+}
+
+/** What one Receive Production scan came to, decided by the main process. */
+export interface ReceiveProductionResult {
+  accepted: boolean;
+  outcome: ReceiveProductionOutcome;
+  qrId?: string;
+  reason?: string;
+  /** The carton's receipt as the database holds it — for ALREADY_RECEIVED, the earlier one. */
+  receipt?: ProductionReceipt | null;
+}
+
+/** One generation run behind a program line. */
+export interface CartonProgramBatch {
+  id: string;
+  firstQrId: string;
+  lastQrId: string;
+  cartons: number;
+  voidedCartons: number;
+  equivalentDozens: number;
+  createdAt: string;
+  createdBy: string | null;
+  requestedBy: string | null;
 }
 
 export interface RawMaterialQrBatchRow {
@@ -1328,66 +1511,35 @@ export interface DesktopApi {
   ): Promise<RawMaterialIssueResult>;
   createWorkSection(name: string): Promise<{ accepted: boolean; section?: WorkSection; reason?: string }>;
 
-  // ─── Machine Program ────────────────────────────────────────────────────────
-  // What each machine's two injectors make on a date, and the uppers that reserves. Every read
-  // comes from the data layer and every write goes through a use case, which re-checks it inside
-  // the write lock — the screen's figures are never trusted.
+  // ─── Machines and the Machine Program ───────────────────────────────────────
+  // The machines are master data (Raw Material → Setup). The Machine Program is read-only: the
+  // carton QRs the QR Generator registered, per product and colour, derived in the main process.
   listMachines(includeInactive?: boolean): Promise<MachineRecord[]>;
   createMachine(input: { name: string; sectionId?: string }): Promise<{ accepted: boolean; machine?: MachineRecord; reason?: string }>;
   setMachineStatus(machineId: string, status: "ACTIVE" | "INACTIVE"): Promise<{ accepted: boolean; reason?: string }>;
+  /** Dana for a sole colour — Store Out's Dana issue for programs still open. */
+  listMachineProgramDana(colour: string): Promise<{ accepted: boolean; rows: MachineProgramMaterial[]; reason?: string }>;
+  setProductSubGroupHasNoUpper(id: string, hasNoUpper: boolean): Promise<{ accepted: boolean; reason?: string }>;
+  /** Every machine's program for one business date (YYYY-MM-DD). */
+  listMachineDayPrograms(programDate: string): Promise<{ accepted: boolean; rows: MachineDayProgram[]; reason?: string }>;
+  /** The runs behind one program line, each kept on its own. */
+  listCartonProgramBatches(input: {
+    programId: string;
+    articleSizeId: string;
+    color: string;
+    grade: "B" | null;
+  }): Promise<{ accepted: boolean; rows: CartonProgramBatch[]; reason?: string }>;
+  /** + Add Machine: the machine and both of its contractors, in one step. */
+  addMachine(input: {
+    name: string;
+    contractorPartyId: string;
+    packingContractorPartyId: string;
+  }): Promise<MachineProgramWriteResult & { machineId?: string }>;
+  /** Changes one of a machine's two contractors; it stays until changed again. */
   assignMachineContractor(input: {
     machineId: string;
-    /** Which of the machine's two contractors is being set. Defaults to the machine contractor. */
-    role?: MachineContractorRole;
+    role: MachineContractorRole;
     contractorPartyId: string;
-  }): Promise<MachineProgramWriteResult>;
-  listMachineProgramBoard(programDate: string): Promise<{ accepted: boolean; rows: MachineProgramBoardRow[]; reason?: string }>;
-  getMachineProgramForDate(
-    machineId: string,
-    programDate: string
-  ): Promise<{ accepted: boolean; program: MachineProgramRecord | null; reason?: string }>;
-  listSoleColourOptions(): Promise<{ accepted: boolean; rows: SoleColourOption[]; reason?: string }>;
-  listMachineProgramDana(colour: string): Promise<{ accepted: boolean; rows: MachineProgramMaterial[]; reason?: string }>;
-  listMachineProgramArticles(): Promise<{ accepted: boolean; rows: MachineProgramArticle[]; reason?: string }>;
-  listMachineProgramUppers(
-    machineId: string,
-    articleSizeId: string
-  ): Promise<{ accepted: boolean; rows: MachineProgramMaterial[]; reason?: string }>;
-  saveMachineProgramLine(input: SaveMachineProgramLineInput): Promise<MachineProgramWriteResult>;
-  saveMachineProgramRun(input: MachineProgramRunHeader & { runId: string }): Promise<MachineProgramWriteResult>;
-  /** A FIX article: two sole colours and a quantity, with no upper. */
-  saveMachineProgramFixRun(input: {
-    machineId: string;
-    programDate: string;
-    shift?: MachineShift | null;
-    runId?: string | null;
-    soleColour: string;
-    innerSoleColour: string;
-    articleSizeId: string;
-    quantity: number;
-  }): Promise<MachineProgramWriteResult>;
-  setProductSubGroupHasNoUpper(id: string, hasNoUpper: boolean): Promise<{ accepted: boolean; reason?: string }>;
-  /**
-   * Prices one article's work on one program. The three rates are PER DOZEN, in rupees as the
-   * operator typed them — the main process converts them to paisa and validates them.
-   */
-  saveMachineProgramArticleRates(input: {
-    programId: string;
-    articleSizeId: string;
-    machineRate: number;
-    packingRate: number;
-    printingRate: number;
-  }): Promise<MachineProgramWriteResult>;
-  removeMachineProgramLine(input: { lineId: string }): Promise<MachineProgramWriteResult>;
-  removeMachineProgramRun(input: { runId: string }): Promise<MachineProgramWriteResult>;
-  deleteMachineProgram(input: { programId: string; reason?: string | null }): Promise<MachineProgramWriteResult>;
-  setMachineProgramShift(input: { programId: string; shift: MachineShift }): Promise<MachineProgramWriteResult>;
-  /** Times one sole colour on one injector. A null slot clears it: the colour runs the whole shift. */
-  setMachineProgramSoleSlot(input: {
-    programId: string;
-    injectorNo: number;
-    soleColour: string;
-    slot: MachineShift | null;
   }): Promise<MachineProgramWriteResult>;
   // ── Store Out through one open Machine Program ───────────────────────────────
   /** Resolves what the operator typed, scanned or clicked through from a notification. */
@@ -1447,11 +1599,24 @@ export interface DesktopApi {
     programId: string,
     opts?: { token?: string }
   ): Promise<{ accepted: boolean; reason?: string; reconciliation?: MachineProgramReconciliation }>;
-  /** Complete Program: COMPLETE when every carton is back, otherwise RECONCILED with every missing upper accounted for. */
+  /** Complete Program: COMPLETE when every carton is back, otherwise RECONCILED with every remaining pair accounted for. */
   completeMachineProgramProduction(
     input: { programId: string; entries: ReconciliationEntryInput[] },
     opts?: { token?: string }
   ): Promise<{ accepted: boolean; reason?: string; closure?: MachineProgramClosure }>;
+  /** Return Upper: a sealed packet that went out for the program, scanned back to the store. Moves stock. */
+  returnMachineProgramUpper(
+    input: { programId: string; rawScan: string },
+    opts?: { token?: string }
+  ): Promise<UpperReturnResult>;
+  /**
+   * B cartons of an upper line: `count` MIX labels, grade B, are generated, and every original label
+   * of the line that is not back is voided.
+   */
+  convertMachineProgramUpperCartonsToB(
+    input: { programId: string; lineId: string; count: number },
+    opts?: { token?: string }
+  ): Promise<{ accepted: boolean; reason?: string; batch?: QrBatchRow; qrCodes?: QrCodeRow[]; voidedQrIds?: string[] }>;
   /** Every Dana the store holds in a sole colour this program runs. */
   listMachineProgramDanaOptions(
     programId: string,
@@ -1625,7 +1790,9 @@ export interface DesktopApi {
     requestedBy?: string;
     /** "B" registers the run as B carton labels — MIX, with a B on the sticker (migration 074). */
     grade?: "B";
-  }): Promise<{ accepted: boolean; batch?: QrBatchRow; qrCodes?: QrCodeRow[]; reason?: string }>;
+    /** The machine the cartons are for; the run joins its program for the day. Required. */
+    machineId: string;
+  }): Promise<{ accepted: boolean; batch?: QrBatchRow; qrCodes?: QrCodeRow[]; program?: MachineDayProgramRef | null; reason?: string }>;
   listQrBatches(
     input?: number | { limit?: number; sinceIso?: string },
   ): Promise<QrBatchRow[]>;
@@ -1680,6 +1847,26 @@ export interface DesktopApi {
     /** The identity had never been generated and was registered by this scan. */
     registeredOnScan?: boolean;
   }>;
+  /** Receive Production: one scanned or typed carton QR recorded as produced, exactly once. */
+  receiveProduction(rawScan: string): Promise<ReceiveProductionResult>;
+  /** One business day's receipts (YYYY-MM-DD), newest first, a page at a time. */
+  listProductionReceipts(query: {
+    date: string;
+    page?: number;
+    pageSize?: number;
+  }): Promise<{ accepted: boolean; page: ProductionReceiptPage | null; reason?: string }>;
+  /** Whether a carton is recorded as produced, as the database says — for an uncertain outcome. */
+  findProductionReceipt(qrId: string): Promise<{ accepted: boolean; receipt: ProductionReceipt | null; reason?: string }>;
+  /** Upper Move Out: one upper packet issued out of the store to the named machine. */
+  issueUpperToMachine(rawScan: string, machineId: string): Promise<UpperIssueResult>;
+  /** One business day's issues to one machine, newest first, a page at a time. */
+  listUpperIssues(query: { machineId: string; date: string; page?: number; pageSize?: number }): Promise<{ accepted: boolean; page: UpperIssuePage | null; reason?: string }>;
+  /** This session / this day to one machine, and the upper stock in the store. */
+  getUpperIssueSummary(query: { machineId: string; date: string }): Promise<{ accepted: boolean; summary: UpperIssueSummary | null; reason?: string }>;
+  /** Every upper material with stock in the store; `search` matches name, article, size, colour. */
+  listUpperStock(query: { search?: string }): Promise<{ accepted: boolean; rows: UpperStockRow[]; reason?: string }>;
+  /** Whether a packet was issued to a machine, as the database says — for an uncertain outcome. */
+  findUpperIssue(qrId: string): Promise<{ accepted: boolean; issue: UpperIssueRow | null; reason?: string }>;
   dispatchScan(
     rawScan: string,
     sessionId?: string,
@@ -2685,19 +2872,41 @@ export interface MachineProgramCartonLabel {
 /** Who a LOST upper is claimed against: the machine contractor, or the packing contractor. */
 export type ReconciliationLossParty = "MACHINE" | "PACKING";
 
-/** What the store says became of one upper line's missing uppers — counted in UPPERS (pairs). */
-export interface ReconciliationEntryInput {
-  lineId: string;
-  /** Came back to the store. */
-  cutSize: number;
-  /** Damaged — claimed to the upper's supplier. */
-  wastage: number;
-  wastagePartyId: string | null;
-  wastageReason: string;
-  /** Lost on the floor — claimed to the machine or the packing contractor. */
-  lost: number;
-  lostParty: ReconciliationLossParty | null;
-  lostReason: string;
+/**
+ * What the store says became of one upper line's remaining pairs when the program closes: cut size
+ * uppers, cut size pairs and priced claims. The rule they must meet is @erp/domain's.
+ */
+export type ReconciliationEntryInput = UpperReconciliation & { lineId: string };
+
+/** A claim as a closed program shows it. Claims from before priced claims carry no number or amount. */
+export interface SavedReconciliationClaim {
+  claimNumber: string | null;
+  role: ClaimPartyRole;
+  partyName: string;
+  pairs: number;
+  amountPaisa: number | null;
+  reason: string;
+}
+
+/** What was recorded for one upper line when its program closed. */
+export interface SavedUpperReconciliation {
+  cutSizeUppers: number;
+  cutSizePairs: number;
+  returnedUpperPairs: number;
+  bCartons: number;
+  claims: SavedReconciliationClaim[];
+}
+
+/** Return Upper's answer: the packet received back, or why it was refused. */
+export interface UpperReturnResult {
+  accepted: boolean;
+  outcome: string;
+  reason?: string;
+  qrId?: string;
+  itemDisplayName?: string;
+  packingQuantity?: number;
+  packingUnitCode?: string | null;
+  packName?: string | null;
 }
 
 export interface ReconciliationParty {
@@ -2714,17 +2923,25 @@ export interface ReconciliationLine {
   size: string;
   soleColour: string;
   upperColour: string;
+  /** Cartons for everything that went out for the line, before any packet came back. Null when not whole. */
+  issuedCartons: number | null;
+  /** Sealed packets scanned back to the store, as cartons. Null when not whole. */
+  returnedUpperCartons: number | null;
   /** Null when the upper is not counted in whole cartons of DOZEN. */
   cartonsDue: number | null;
+  /** Stored in — B cartons included. */
   cartonsBack: number;
-  /** The missing cartons, as uppers: 1 carton = 6. */
+  /** B carton labels printed for the line, and how many are stored in. */
+  bCartons: number;
+  bBack: number;
+  /** Cartons still missing: due, less back, less B labels not yet scanned in. */
+  missingCartons: number;
+  /** The pairs to account for on closing: 1 carton = 6. */
   shortfallUppers: number;
   /** Suppliers whose packets of this upper went out for the program. */
   suppliers: ReconciliationParty[];
   /** What was recorded at closing, or null while open. */
-  saved:
-    | (Omit<ReconciliationEntryInput, "lineId"> & { wastagePartyName: string | null; lostPartyName: string | null })
-    | null;
+  saved: SavedUpperReconciliation | null;
 }
 
 export interface MachineProgramClosure {
@@ -2787,8 +3004,11 @@ export interface MachineProgramLineCartons {
   lineId: string;
   /** Cartons owed for what has been issued of this upper (3 DOZEN out = 6), or null when not in whole cartons. */
   cartonsDue: number | null;
-  /** Cartons of this line's printed labels that have been stored in. */
+  /** Cartons of this line's printed labels that have been stored in — B cartons included. */
   cartonsBack: number;
+  /** B carton labels printed for this line, and how many are stored in. */
+  bCartons: number;
+  bBack: number;
 }
 
 /** One packet of uppers out for a program, and the cartons it is owed back (1 DOZEN = 2 cartons). */

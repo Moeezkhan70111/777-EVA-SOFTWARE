@@ -45,6 +45,11 @@ import { cashMethods, type CashMethods } from "./database/cash.js";
 import { purchasesMethods, type PurchasesMethods } from "./database/purchases.js";
 import { contractorLedgerMethods, type ContractorLedgerMethods } from "./database/contractorLedger.js";
 import { storeDailyReportMethods, type StoreDailyReportMethods } from "./database/storeDailyReport.js";
+import { machineProgramUpperReconciliationMethods, type MachineProgramUpperReconciliationMethods } from "./database/machineProgramUpperReconciliation.js";
+import { partyClaimsMethods, type PartyClaimsMethods } from "./database/partyClaims.js";
+import { cartonProgramMethods, type CartonProgramMethods } from "./database/cartonProgram.js";
+import { productionReceiptsMethods, type ProductionReceiptsMethods } from "./database/productionReceipts.js";
+import { upperMoveOutMethods, type UpperMoveOutMethods } from "./database/upperMoveOut.js";
 import type { BackupRecord, HealthSnapshot, MoneyDriftSummary, MoneyDriftViolation, SqliteDatabaseOptions } from "./database/types.js";
 
 // The data layer's public record shapes and constants live in ./database/types.ts and are
@@ -805,7 +810,12 @@ export interface SqliteDatabase
     CashMethods,
     PurchasesMethods,
     ContractorLedgerMethods,
-    StoreDailyReportMethods {}
+    StoreDailyReportMethods,
+    MachineProgramUpperReconciliationMethods,
+    PartyClaimsMethods,
+    CartonProgramMethods,
+    ProductionReceiptsMethods,
+    UpperMoveOutMethods {}
 
 Object.assign(
   SqliteDatabase.prototype,
@@ -839,5 +849,10 @@ Object.assign(
   cashMethods,
   purchasesMethods,
   contractorLedgerMethods,
-  storeDailyReportMethods
+  storeDailyReportMethods,
+  machineProgramUpperReconciliationMethods,
+  partyClaimsMethods,
+  cartonProgramMethods,
+  productionReceiptsMethods,
+  upperMoveOutMethods
 );

@@ -76,6 +76,11 @@ export interface ProductionEventsRepository {
     workstationId: string;
     deviceId: string;
     operatorId?: string;
+    /**
+     * Who recorded it and at which station, kept in the event's metadata. operator_id cannot
+     * hold an app user (it references the operators table), so the signed-in user goes here.
+     */
+    receivedBy?: { actor: string | null; station: string } | null;
   }, tx: TransactionContext): Promise<void>;
 }
 

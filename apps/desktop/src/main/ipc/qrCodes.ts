@@ -15,6 +15,10 @@ export function registerQrCodesHandlers(ctx: IpcContext): void {
   ipcMain.handle(IPC.generateQrBatch, (event, input?: Record<string, unknown>) => {
     try {
       authorizer.requirePermission(event, PERMISSION.QR_GENERATOR);
+      // Every carton run is generated FOR a machine (Phase 1.1): it joins that machine's program
+      // for the day. The data layer refuses a machine that is retired or missing a contractor.
+      const machineId = typeof input?.machineId === "string" ? input.machineId.trim() : "";
+      if (!machineId) return { accepted: false, reason: "Choose the machine these cartons are for, then generate." };
       return {
         accepted: true,
         ...db.generateQrBatch({
@@ -26,6 +30,7 @@ export function registerQrCodesHandlers(ctx: IpcContext): void {
           // "B" is the only grade there is, and anything else is an ordinary run — the renderer
           // never decides what the registry accepts (R25).
           grade: input?.grade === CARTON_GRADE.B ? CARTON_GRADE.B : null,
+          machineId,
         }),
       };
     } catch (error) {

@@ -6,13 +6,13 @@
 import { ipcMain } from "electron";
 import { IPC } from "../../shared/ipcChannels";
 import type { IpcContext } from "./context";
-import { PERMISSION, QR_STATUS } from "@erp/domain";
+import { PERMISSION, QR_STATUS, RECEIVE_PRODUCTION_OUTCOME, asRecord, asString } from "@erp/domain";
 import { historyQuery } from "./context";
 import { rejection } from "../authorize";
 
 export function registerScanningHandlers(ctx: IpcContext): void {
   const { db, logger, authorizer, scanContext, deviceId, useCases } = ctx;
-  const { processScanUseCase, dispatchScanUseCase, returnScanUseCase } = useCases;
+  const { processScanUseCase, receiveProductionUseCase, dispatchScanUseCase, returnScanUseCase } = useCases;
 
   // Scanner stations: the operator's permission is checked here, at the process boundary,
   // and the answer keeps the `{ accepted, reason }` shape the scan screens display.
@@ -58,6 +58,58 @@ export function registerScanningHandlers(ctx: IpcContext): void {
     });
 
     return result;
+  });
+
+  // ─── Receive Production (Phase 2) ──────────────────────────────────────────
+  // A generated carton QR recorded as produced, exactly once. Production is production whichever
+  // screen records it, so these sit behind the same Live Production permission. The scanner and
+  // the typed code arrive here alike — there is one path, and the use case decides everything.
+
+  ipcMain.handle(IPC.receiveProduction, async (event, rawScan?: unknown) => {
+    const operator = scanOperator(event, PERMISSION.LIVE_PRODUCTION);
+    if (!operator.ok) return { accepted: false, outcome: RECEIVE_PRODUCTION_OUTCOME.ERROR, reason: operator.reason };
+    try {
+      const result = await receiveProductionUseCase.execute({
+        rawScan: typeof rawScan === "string" ? rawScan : "",
+        context: scanContext,
+        actor: operator.user.username,
+      });
+      logger.log({
+        module: "receive-production",
+        severity: result.accepted ? "INFO" : "WARNING",
+        operation: "receive",
+        deviceId,
+        userId: operator.user.id,
+        message: JSON.stringify({ outcome: result.outcome, qrId: result.qrId ?? null }),
+      });
+      // The receipt as the database now holds it — for a duplicate, the earlier one.
+      return { ...result, receipt: result.qrId ? db.findProductionReceipt(result.qrId) : null };
+    } catch (error) {
+      logger.log({
+        module: "receive-production",
+        severity: "ERROR",
+        operation: "receive-error",
+        deviceId,
+        userId: operator.user.id,
+        message: error instanceof Error ? `${error.message}\n${error.stack ?? ""}` : String(error),
+      });
+      return { accepted: false, outcome: RECEIVE_PRODUCTION_OUTCOME.ERROR, reason: "The carton could not be recorded. Nothing was saved — scan it again." };
+    }
+  });
+
+  ipcMain.handle(IPC.listProductionReceipts, (event, query?: unknown) => {
+    const operator = scanOperator(event, PERMISSION.LIVE_PRODUCTION);
+    if (!operator.ok) return { accepted: false, reason: operator.reason, page: null };
+    const input = asRecord(query);
+    const page = db.listProductionReceipts({ date: asString(input.date), page: Number(input.page), pageSize: Number(input.pageSize) });
+    return page ? { accepted: true, page } : { accepted: false, reason: "Choose a valid day.", page: null };
+  });
+
+  // Resolves an uncertain outcome: is this carton recorded or not, according to the database?
+  ipcMain.handle(IPC.findProductionReceipt, (event, qrId?: unknown) => {
+    const operator = scanOperator(event, PERMISSION.LIVE_PRODUCTION);
+    if (!operator.ok) return { accepted: false, reason: operator.reason, receipt: null };
+    return { accepted: true, receipt: db.findProductionReceipt(asString(qrId)) };
   });
 
   ipcMain.handle(IPC.dispatchScan, async (event, rawScan?: string, sessionId?: string, gatepassId?: string) => {

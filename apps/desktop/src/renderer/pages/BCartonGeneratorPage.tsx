@@ -7,7 +7,7 @@ import { StateView } from "../components/shared/StateView";
 import { StepHeading } from "../components/shared/StepHeading";
 import { openCartonLabelPrintWindow } from "../utils/qrLabels";
 import { copy } from "../config/copy";
-import type { ProductRow, QrBatchRow, QrCodeRow, QrSequenceState } from "../types/desktopApi";
+import type { MachineRecord, ProductRow, QrBatchRow, QrCodeRow, QrSequenceState } from "../types/desktopApi";
 import {
   bCartonQuantityProblem,
   bCartonRange,
@@ -34,12 +34,16 @@ import {
 interface BCartonGeneratorPageProps {
   /** The logged-in operator; recorded as who generated each run. */
   username?: string;
+  /** Shown as a tab of the QR Generator workspace, whose tab already names it: the heading is left out. */
+  embedded?: boolean;
+  /** The machine chosen above the tabs (QrGeneratorWorkspace). Nothing is generated without one. */
+  machine: MachineRecord | null;
 }
 
 /** The recent B runs this page shows, newest first. */
 const RECENT_LIMIT = 8;
 
-export const BCartonGeneratorPage: React.FC<BCartonGeneratorPageProps> = ({ username }) => {
+export const BCartonGeneratorPage: React.FC<BCartonGeneratorPageProps> = ({ username, embedded = false, machine }) => {
   const api = useDesktopApi();
   const { push } = useNotifications();
 
@@ -116,7 +120,7 @@ export const BCartonGeneratorPage: React.FC<BCartonGeneratorPageProps> = ({ user
 
   const problem = bCartonQuantityProblem(quantity);
   const range: BCartonRange | null = bCartonRange(sequence, quantity);
-  const canGenerate = Boolean(articleSizeId) && range !== null && !generating;
+  const canGenerate = Boolean(machine) && Boolean(articleSizeId) && range !== null && !generating;
 
   const printRun = (batch: QrBatchRow, qrCodes: QrCodeRow[]): void => {
     const opened = openCartonLabelPrintWindow({
@@ -131,7 +135,7 @@ export const BCartonGeneratorPage: React.FC<BCartonGeneratorPageProps> = ({ user
   };
 
   const generate = async () => {
-    if (!canGenerate || !range) return;
+    if (!canGenerate || !range || !machine) return;
     setGenerating(true);
     try {
       const result = await api.generateQrBatch({
@@ -140,13 +144,20 @@ export const BCartonGeneratorPage: React.FC<BCartonGeneratorPageProps> = ({ user
         quantity: range.quantity,
         createdBy: username?.trim() || undefined,
         grade: CARTON_GRADE.B,
+        machineId: machine.id,
       });
       if (!result.accepted || !result.batch || !result.qrCodes) {
         push("error", copy.bCartons.failedTitle, result.reason ?? copy.states.loadFailedBody);
         return;
       }
       setLastRun({ batch: result.batch, qrCodes: result.qrCodes });
-      push("success", copy.bCartons.doneTitle, copy.bCartons.doneBody(result.qrCodes.length, result.batch.article, result.batch.size));
+      const program = result.program ?? null;
+      push(
+        "success",
+        copy.bCartons.doneTitle,
+        copy.bCartons.doneBody(result.qrCodes.length, result.batch.article, result.batch.size) +
+          (program ? ` · ${copy.qrWorkspace.addedToProgram(program.code, program.machineName)}` : "")
+      );
       setQuantity("");
       printRun(result.batch, result.qrCodes);
       void loadRecent();
@@ -172,9 +183,11 @@ export const BCartonGeneratorPage: React.FC<BCartonGeneratorPageProps> = ({ user
 
   return (
     <div className="page qr-generator-page">
-      <div className="page-header">
-        <h1>{copy.bCartons.title}</h1>
-      </div>
+      {embedded ? null : (
+        <div className="page-header">
+          <h1>{copy.bCartons.title}</h1>
+        </div>
+      )}
 
       <form
         className="card qr-generate-card"

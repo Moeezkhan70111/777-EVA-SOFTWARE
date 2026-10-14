@@ -1,4 +1,7 @@
 export type PartyType = 'CUSTOMER' | 'SUPPLIER' | 'CONTRACTOR' | 'DISTRIBUTOR' | 'DEALER' | 'TRANSPORTER';
+
+/** The party type a machine's two contractors must have (machine contractor, packing contractor). */
+export const CONTRACTOR_PARTY_TYPE: PartyType = 'CONTRACTOR';
 export type PartyStatus = 'ACTIVE' | 'INACTIVE';
 
 export interface PartyGroup {

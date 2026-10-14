@@ -42,6 +42,9 @@ export type MachineProgramOutcome =
   | "REMOVED"
   | "CANCELLED"
   | "ASSIGNED"
+  | "ADDED"
+  | "NAME_REQUIRED"
+  | "MACHINE_EXISTS"
   | "INVALID_DATE"
   | "INVALID_SHIFT"
   | "INVALID_INJECTOR"
@@ -78,6 +81,8 @@ export interface MachineProgramWriteResult {
   outcome: MachineProgramOutcome;
   reason?: string;
   programId?: string;
+  /** On ADDED: the machine just set up. */
+  machineId?: string;
   runId?: string;
   lineId?: string;
   /** On NOT_ENOUGH_STOCK: what IS free right now, so the screen can offer it. */
@@ -151,6 +156,10 @@ export interface MachineProgramRepository {
     partyId: string,
     tx: TransactionContext
   ): Promise<{ id: string; partyName: string; partyType: string; status: string } | null>;
+  /** A machine with this exact (upper-case) name, retired or not. */
+  findMachineByName(name: string, tx: TransactionContext): Promise<{ id: string; status: string } | null>;
+  /** Writes one new machine, in the floor's default section. */
+  insertMachineForProgram(name: string, tx: TransactionContext): Promise<{ id: string; name: string }>;
   setMachineContractor(
     input: { machineId: string; role: MachineContractorRole; contractorPartyId: string; nowIso: string },
     tx: TransactionContext

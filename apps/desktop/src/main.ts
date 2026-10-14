@@ -164,6 +164,7 @@ function composeUseCases(db: SqliteDatabase, dataModule: DataModule, application
     const deps = { txManager: db, repo: db, eventPublisher: eventPublisher(), idGenerator: idGenerator() };
     return {
       assignContractor: new applicationModule.AssignMachineContractorUseCase(deps),
+      addMachine: new applicationModule.AddMachineUseCase(deps),
       saveLine: new applicationModule.SaveMachineProgramLineUseCase(deps),
       saveRun: new applicationModule.SaveMachineProgramRunUseCase(deps),
       saveFixRun: new applicationModule.SaveMachineProgramFixRunUseCase(deps),
@@ -178,6 +179,19 @@ function composeUseCases(db: SqliteDatabase, dataModule: DataModule, application
 
   return {
     processScanUseCase: new applicationModule.ProcessScanUseCase({
+      txManager: db,
+      duplicateChecker: db,
+      qrRegistry: db,
+      productCatalog: db,
+      qrMasterRepo: db,
+      productionEventsRepo: db,
+      stockProjectionRepo: db,
+      outboxRepo: db,
+      eventPublisher: eventPublisher(),
+      idGenerator: idGenerator(),
+    }),
+    // Receive Production (Phase 2): the same production step, for generated carton QRs only.
+    receiveProductionUseCase: new applicationModule.ReceiveProductionUseCase({
       txManager: db,
       duplicateChecker: db,
       qrRegistry: db,
@@ -228,6 +242,13 @@ function composeUseCases(db: SqliteDatabase, dataModule: DataModule, application
     // Raw Material Output: the mirror of Input. Where a packet goes is read from its
     // material, so the operator only scans.
     issueRawMaterialScanUseCase: new applicationModule.IssueRawMaterialScanUseCase({
+      txManager: db,
+      repo: db,
+      eventPublisher: eventPublisher(),
+      idGenerator: idGenerator(),
+    }),
+    // Upper Move Out (Phase 3): the same packet issue, uppers only, to a named machine.
+    upperMoveOutUseCase: new applicationModule.UpperMoveOutUseCase({
       txManager: db,
       repo: db,
       eventPublisher: eventPublisher(),
@@ -287,6 +308,14 @@ function composeUseCases(db: SqliteDatabase, dataModule: DataModule, application
       gatepassRepo: db,
       storeEntryEventsRepo: db,
       cartonOriginRepo: db,
+      eventPublisher: eventPublisher(),
+      idGenerator: idGenerator(),
+    }),
+    // Return Upper in a program's reconciliation: the same packet receipt Raw Material Input
+    // runs, with the program's checks in place of the supplier session's.
+    machineProgramUpperReturn: new applicationModule.ReturnMachineProgramUpperUseCase({
+      txManager: db,
+      repo: db,
       eventPublisher: eventPublisher(),
       idGenerator: idGenerator(),
     }),

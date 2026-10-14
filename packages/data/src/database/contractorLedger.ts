@@ -204,13 +204,29 @@ export const contractorLedgerMethods = {
 
     const cartonRows = this.db.prepare(CARTONS_SQL).all(id) as Array<Record<string, unknown>>;
     const work = groupContractorWork(workCartonsOf(cartonRows, id));
-    // The printing ledger is not a party, so no voucher can name it yet.
+    // The printing ledger is not a party, so no voucher or claim can name it yet.
     const payments =
       id === PRINTING_CONTRACTOR_ACCOUNT_ID
         ? []
-        : (this.db.prepare(VOUCHERS_SQL).all(id) as Array<Record<string, unknown>>).flatMap(paymentsOf);
+        : [
+            ...(this.db.prepare(VOUCHERS_SQL).all(id) as Array<Record<string, unknown>>).flatMap(paymentsOf),
+            ...this.contractorClaimsOf(id),
+          ];
 
     return { account, ...period, ...buildContractorLedger({ work, payments, ...period }) };
+  },
+
+  /** @internal Claims for uppers damaged or lost in a contractor's work, deducted on their ledger. */
+  contractorClaimsOf(this: SqliteDatabase, partyId: string): ContractorPayment[] {
+    return this.listPartyClaims(partyId).map((claim) => ({
+      date: claim.claimDate,
+      voucherId: claim.claimId,
+      voucherNumber: claim.claimNumber,
+      description: claim.description,
+      modeOfTransfer: null,
+      kind: CONTRACTOR_PAYMENT_KIND.CLAIM,
+      amountPaisa: claim.amountPaisa,
+    }));
   },
 
   /** @internal The account behind an id: a contractor party, or the printing ledger. */

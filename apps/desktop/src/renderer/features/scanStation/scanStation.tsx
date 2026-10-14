@@ -157,6 +157,9 @@ export const SCAN_STATION_CSS = `
    the auto-refocus logic, is nearly always). */
 .ssn-dock { flex-shrink: 0; padding: 14px 20px; border-top: 1px solid var(--line-2); background: var(--surface); }
 .ssn-dock-row { position: relative; display: flex; align-items: center; gap: 12px; height: 54px; padding: 0 10px 0 8px; background: var(--canvas); border: 1.5px solid var(--line); border-radius: var(--r-md); cursor: text; transition: border-color .15s ease, box-shadow .15s ease, background .15s ease; }
+/* The Enter button of a box that is also a manual entry field (Receive Production). */
+.ssn-dock-submit { flex: none; height: 36px; padding: 0 18px; background: var(--sky-600); border-color: var(--sky-600); color: var(--white); }
+.ssn-dock-submit:hover:not(:disabled) { background: var(--sky-700); border-color: var(--sky-700); color: var(--white); }
 .ssn-dock-row:focus-within { border-color: var(--sky-500); background: var(--surface); box-shadow: 0 0 0 4px rgba(34, 153, 216, .14), 0 6px 18px rgba(24, 127, 187, .10); }
 .ssn-dock-row--disabled { cursor: not-allowed; background: var(--line-2); }
 
@@ -382,7 +385,16 @@ export const ScanPanel: React.FC<{
   disabled: boolean;
   /** Placeholder when the station cannot accept scans yet. */
   disabledHint?: string;
-}> = ({ feedback, inputRef, inputVal, onInputChange, onKeyDown, onFocusScanner, disabled, disabledHint }) => {
+  /**
+   * A station where the box is also a manual entry field (Receive Production) gets an Enter button
+   * that sends what is typed. Left out, the box is scanner-first, as on every other station.
+   */
+  onSubmit?: () => void;
+  submitLabel?: string;
+  /** Placeholder while armed, and the line under the box, for such a station. */
+  placeholder?: string;
+  dockHint?: string;
+}> = ({ feedback, inputRef, inputVal, onInputChange, onKeyDown, onFocusScanner, disabled, disabledHint, onSubmit, submitLabel, placeholder, dockHint }) => {
   const r = feedback.result;
   const isIdle = feedback.tone === "idle";
   return (
@@ -453,7 +465,7 @@ export const ScanPanel: React.FC<{
             value={inputVal}
             onChange={(e) => onInputChange(e.target.value)}
             onKeyDown={onKeyDown}
-            placeholder={disabled ? (disabledHint ?? "Session not ready") : "Waiting for scan…"}
+            placeholder={disabled ? (disabledHint ?? "Session not ready") : (placeholder ?? "Waiting for scan…")}
             aria-label={copy.scanning.scannerInput}
             autoComplete="off"
             autoCorrect="off"
@@ -461,6 +473,16 @@ export const ScanPanel: React.FC<{
             spellCheck={false}
             disabled={disabled}
           />
+          {onSubmit ? (
+            <button
+              type="button"
+              className="ssn-btn ssn-dock-submit"
+              onClick={onSubmit}
+              disabled={disabled || inputVal.trim() === ""}
+            >
+              {submitLabel ?? "Enter"}
+            </button>
+          ) : null}
           {/* Exactly one of these is visible, chosen by CSS from focus / disabled state. */}
           <span className="ssn-dock-state ssn-dock-state--armed" aria-hidden="true">
             <span className="ssn-dock-state-dot" />
@@ -477,7 +499,7 @@ export const ScanPanel: React.FC<{
         </div>
         <div className="ssn-dock-foot">
           <span className="ssn-dock-hint">
-            Auto-submits on scan · <kbd>Esc</kbd> clears
+            {dockHint ?? "Auto-submits on scan"} · <kbd>Esc</kbd> clears
           </span>
           <button
             type="button"

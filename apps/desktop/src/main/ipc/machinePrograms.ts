@@ -1,5 +1,5 @@
-// Machine Program: the machines and their contractors, the masters a program is cut from, the
-// stock it is cut against, and the program itself.
+// Machine Program: the machines on the floor with their two contractors, and each machine's
+// program for the day — the carton QRs generated for it in the QR Generator and B-Carton Labels.
 //
 // IPC handlers are registered per feature; every write is authorised through ctx.authorizer
 // (see ../authorize.ts) and every channel name comes from shared/ipcChannels.ts.
@@ -11,21 +11,15 @@
 import { ipcMain, type IpcMainInvokeEvent } from "electron";
 import { IPC } from "../../shared/ipcChannels";
 import type { IpcContext } from "./context";
-import { PERMISSION, asOptionalString, asRecord, asString, isMachineContractorRole, type MachineShift } from "@erp/domain";
+import { CARTON_GRADE, PERMISSION, asRecord, asString, isMachineContractorRole } from "@erp/domain";
 import { rejection } from "../authorize";
 
-/** What every program write returns when it never reached the use case. */
+/** What every write returns when it never reached the use case. */
 interface WriteRefusal {
   accepted: false;
   outcome: string;
   reason?: string;
 }
-
-/**
- * A number exactly as the renderer sent it. Deliberately NOT coerced — "30abc" or an empty box must
- * reach the use case as something it refuses, never silently become 30 or 0.
- */
-const rawNumber = (value: unknown): number => (typeof value === "number" ? value : Number.NaN);
 
 export function registerMachineProgramHandlers(ctx: IpcContext): void {
   const { db, logger, authorizer, deviceId, useCases } = ctx;
@@ -58,7 +52,7 @@ export function registerMachineProgramHandlers(ctx: IpcContext): void {
         user = authorizer.requirePermission(event, PERMISSION.MACHINE_PROGRAM);
       } catch (error) {
         log("WARNING", `${channel}-denied`, error instanceof Error ? error.message : String(error));
-        return { ...rejection(error, "You cannot change machine programs."), accepted: false, outcome: "NOT_AUTHORIZED" };
+        return { ...rejection(error, "You cannot change machines."), accepted: false, outcome: "NOT_AUTHORIZED" };
       }
       try {
         const result = await work(asRecord(rawInput), { actor: user.username, actorUserId: user.id, deviceId });
@@ -103,21 +97,40 @@ export function registerMachineProgramHandlers(ctx: IpcContext): void {
 
   // ─── Reads ──────────────────────────────────────────────────────────────────
 
-  read(IPC.listMachineProgramBoard, { rows: [] }, (date) => ({ rows: db.listMachineProgramBoard(asString(date)) }));
-  read(IPC.getMachineProgramForDate, { program: null }, (machineId, date) => ({
-    program: db.getMachineProgramForDate(asString(machineId), asString(date)),
-  }));
-  read(IPC.listSoleColourOptions, { rows: [] }, () => ({ rows: db.listSoleColourOptions() }));
+  // Dana for a program's sole colour — Store Out's Dana issue reads it for programs still open.
   read(IPC.listMachineProgramDana, { rows: [] }, (colour) => ({ rows: db.listMachineProgramDana(asString(colour)) }));
-  read(IPC.listMachineProgramArticles, { rows: [] }, () => ({ rows: db.listMachineProgramArticles() }));
-  read(IPC.listMachineProgramUppers, { rows: [] }, (machineId, articleSizeId) => ({
-    rows: db.listMachineProgramUppers(asString(machineId), asString(articleSizeId)),
-  }));
 
-  // ─── Writes ─────────────────────────────────────────────────────────────────
+  // ─── The Machine Program: one program per machine per day ───────────────────
+  //
+  // A program is opened by the machine's first QR run of the day (data/database/cartonProgram.ts),
+  // so nothing here creates one. The planning workflow that used to live here — injectors, soles,
+  // runs, uppers and their writes — was retired in Phase 1 and its channels are not registered.
 
-  // The role is validated here rather than trusted: anything that is not a known role is sent
-  // as null, and the use case treats that as the MACHINE contractor it always meant.
+  read(IPC.listMachineDayPrograms, { rows: [] }, (programDate) => ({ rows: db.listMachineDayPrograms(asString(programDate)) }));
+  read(IPC.listCartonProgramBatches, { rows: [] }, (input) => {
+    const line = asRecord(input);
+    return {
+      rows: db.listCartonProgramBatches({
+        programId: asString(line.programId),
+        articleSizeId: asString(line.articleSizeId),
+        color: asString(line.color),
+        grade: line.grade === CARTON_GRADE.B ? CARTON_GRADE.B : null,
+      }),
+    };
+  });
+
+  // + Add Machine: the machine and both of its contractors, in one audited transaction.
+  write(IPC.addMachine, (input, actor) =>
+    programs.addMachine.execute({
+      name: asString(input.name),
+      contractorPartyId: asString(input.contractorPartyId),
+      packingContractorPartyId: asString(input.packingContractorPartyId),
+      ...actor,
+    })
+  );
+
+  // Changing one of a machine's two contractors. It stays until changed again; a program already
+  // opened keeps the pair it was opened with. The role is validated here rather than trusted.
   write(IPC.assignMachineContractor, (input, actor) =>
     programs.assignContractor.execute({
       machineId: asString(input.machineId),
@@ -126,97 +139,4 @@ export function registerMachineProgramHandlers(ctx: IpcContext): void {
       ...actor,
     })
   );
-
-  write(IPC.saveMachineProgramLine, (input, actor) => {
-    const run = input.run == null ? null : asRecord(input.run);
-    return programs.saveLine.execute({
-      machineId: asString(input.machineId),
-      programDate: asString(input.programDate),
-      shift: readShift(input.shift),
-      injectorNo: rawNumber(input.injectorNo),
-      runId: asOptionalString(input.runId) ?? null,
-      run: run ? { soleColour: asString(run.soleColour), articleSizeId: asString(run.articleSizeId) } : null,
-      lineId: asOptionalString(input.lineId) ?? null,
-      itemId: asString(input.itemId),
-      quantity: rawNumber(input.quantity),
-      ...actor,
-    });
-  });
-
-  write(IPC.saveMachineProgramRun, (input, actor) =>
-    programs.saveRun.execute({
-      runId: asString(input.runId),
-      soleColour: asString(input.soleColour),
-      articleSizeId: asString(input.articleSizeId),
-      ...actor,
-    })
-  );
-
-  // Contractor pricing. The rates arrive as the operator typed them, in rupees, and are
-  // converted to paisa inside the use case — the renderer never does money arithmetic. A rate
-  // the screen got wrong must reach the use case as something it refuses, so the numbers are
-  // read raw rather than coerced to 0.
-  write(IPC.saveMachineProgramArticleRates, (input, actor) =>
-    programs.saveArticleRates.execute({
-      programId: asString(input.programId),
-      articleSizeId: asString(input.articleSizeId),
-      machineRate: rawNumber(input.machineRate),
-      packingRate: rawNumber(input.packingRate),
-      printingRate: rawNumber(input.printingRate),
-      ...actor,
-    })
-  );
-
-  // A FIX article has no upper: two sole colours and a quantity typed on the run itself. The
-  // numbers are NOT coerced, so an empty box reaches the use case as something it refuses.
-  write(IPC.saveMachineProgramFixRun, (input, actor) =>
-    programs.saveFixRun.execute({
-      machineId: asString(input.machineId),
-      programDate: asString(input.programDate),
-      shift: readShift(input.shift),
-      runId: asOptionalString(input.runId) ?? null,
-      soleColour: asString(input.soleColour),
-      innerSoleColour: asString(input.innerSoleColour),
-      articleSizeId: asString(input.articleSizeId),
-      quantity: rawNumber(input.quantity),
-      ...actor,
-    })
-  );
-
-  write(IPC.removeMachineProgramLine, (input, actor) => programs.removeLine.execute({ lineId: asString(input.lineId), ...actor }));
-  write(IPC.removeMachineProgramRun, (input, actor) => programs.removeRun.execute({ runId: asString(input.runId), ...actor }));
-  write(IPC.deleteMachineProgram, (input, actor) =>
-    programs.deleteProgram.execute({ programId: asString(input.programId), reason: asOptionalString(input.reason) ?? null, ...actor })
-  );
-
-  write(IPC.setMachineProgramShift, (input, actor) =>
-    programs.setShift.execute({
-      programId: asString(input.programId),
-      shift: readShift(input.shift) ?? { startMinute: Number.NaN, endMinute: Number.NaN },
-      ...actor,
-    })
-  );
-
-  write(IPC.setMachineProgramSoleSlot, (input, actor) =>
-    programs.setSoleSlot.execute({
-      programId: asString(input.programId),
-      injectorNo: rawNumber(input.injectorNo),
-      soleColour: asString(input.soleColour),
-      // No slot means the colour runs the whole shift, so null travels as null.
-      slot: readShift(input.slot),
-      ...actor,
-    })
-  );
 }
-
-/**
- * A shift exactly as the renderer sent it, or null when it sent none.
- *
- * The minutes are deliberately NOT coerced: a shift the screen got wrong must reach the use
- * case as something checkMachineShift refuses, never silently become 0.
- */
-const readShift = (value: unknown): MachineShift | null => {
-  if (value == null) return null;
-  const shift = asRecord(value);
-  return { startMinute: rawNumber(shift.startMinute), endMinute: rawNumber(shift.endMinute) };
-};

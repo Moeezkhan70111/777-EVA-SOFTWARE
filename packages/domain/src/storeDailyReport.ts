@@ -32,6 +32,8 @@ export const STORE_MOVEMENT_SOURCE = {
   MANUAL: "MANUAL",
   /** Dana typed out of the store for a machine program. */
   DANA: "DANA",
+  /** Cut size uppers or pairs returned when a machine program was reconciled. */
+  CUT_SIZE: "CUT_SIZE",
   /** The opening stock given when the material was created or imported. */
   OPENING: "OPENING",
   /** An administrator-approved stock correction. */
@@ -51,6 +53,7 @@ export const STORE_MOVEMENT_SOURCE_ORDER: readonly StoreMovementSource[] = [
   STORE_MOVEMENT_SOURCE.SCAN,
   STORE_MOVEMENT_SOURCE.MANUAL,
   STORE_MOVEMENT_SOURCE.DANA,
+  STORE_MOVEMENT_SOURCE.CUT_SIZE,
   STORE_MOVEMENT_SOURCE.CARTON,
   STORE_MOVEMENT_SOURCE.GATE_RETURN,
   STORE_MOVEMENT_SOURCE.OPENING,
@@ -68,6 +71,7 @@ export const STOCK_EVENT_NOTE = {
   MANUAL_IN: "Manual move in",
   MANUAL_OUT: "Manual move out",
   OPENING: "Initial stock",
+  CUT_SIZE: "Cut size returned",
 } as const;
 
 /** Never more rows than this go to a screen; the summary always counts the whole day. */
@@ -109,6 +113,7 @@ export const stockEventSource = (event: { eventType: string; note: string | null
     return STORE_MOVEMENT_SOURCE.MANUAL;
   }
   if (startsWithNote(event.note, STOCK_EVENT_NOTE.OPENING)) return STORE_MOVEMENT_SOURCE.OPENING;
+  if (startsWithNote(event.note, STOCK_EVENT_NOTE.CUT_SIZE)) return STORE_MOVEMENT_SOURCE.CUT_SIZE;
   return STORE_MOVEMENT_SOURCE.OTHER;
 };
 

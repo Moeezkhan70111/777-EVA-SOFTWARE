@@ -27,7 +27,7 @@ const workParticulars = (entry: Extract<ContractorLedgerEntry, { kind: "WORK" }>
 /** "Payment · CV-000045 · Cash · Weekly payment" */
 const paymentParticulars = (entry: Exclude<ContractorLedgerEntry, { kind: "WORK" }>): string => {
   const { payment } = entry;
-  const label = entry.kind === "PAYMENT" ? text.payment : text.receipt;
+  const label = { PAYMENT: text.payment, RECEIPT: text.receipt, CLAIM: text.claim }[entry.kind];
   return [label, payment.voucherNumber, payment.modeOfTransfer, payment.description].filter(Boolean).join(" · ");
 };
 

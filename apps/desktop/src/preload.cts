@@ -96,27 +96,13 @@ contextBridge.exposeInMainWorld("desktop", {
     createMachine: (input: Record<string, unknown>) => ipcRenderer.invoke(IPC.createMachine, input),
     setMachineStatus: (machineId: string, status: "ACTIVE" | "INACTIVE") =>
       ipcRenderer.invoke(IPC.setMachineStatus, machineId, status),
-    assignMachineContractor: (input: Record<string, unknown>) => ipcRenderer.invoke(IPC.assignMachineContractor, input),
-    listMachineProgramBoard: (programDate: string) => ipcRenderer.invoke(IPC.listMachineProgramBoard, programDate),
-    getMachineProgramForDate: (machineId: string, programDate: string) =>
-      ipcRenderer.invoke(IPC.getMachineProgramForDate, machineId, programDate),
-    listSoleColourOptions: () => ipcRenderer.invoke(IPC.listSoleColourOptions),
     listMachineProgramDana: (colour: string) => ipcRenderer.invoke(IPC.listMachineProgramDana, colour),
-    listMachineProgramArticles: () => ipcRenderer.invoke(IPC.listMachineProgramArticles),
-    listMachineProgramUppers: (machineId: string, articleSizeId: string) =>
-      ipcRenderer.invoke(IPC.listMachineProgramUppers, machineId, articleSizeId),
-    saveMachineProgramLine: (input: Record<string, unknown>) => ipcRenderer.invoke(IPC.saveMachineProgramLine, input),
-    saveMachineProgramRun: (input: Record<string, unknown>) => ipcRenderer.invoke(IPC.saveMachineProgramRun, input),
-    saveMachineProgramFixRun: (input: Record<string, unknown>) => ipcRenderer.invoke(IPC.saveMachineProgramFixRun, input),
     setProductSubGroupHasNoUpper: (id: string, hasNoUpper: boolean) =>
       ipcRenderer.invoke(IPC.setProductSubGroupHasNoUpper, id, hasNoUpper),
-    saveMachineProgramArticleRates: (input: Record<string, unknown>) =>
-      ipcRenderer.invoke(IPC.saveMachineProgramArticleRates, input),
-    removeMachineProgramLine: (input: Record<string, unknown>) => ipcRenderer.invoke(IPC.removeMachineProgramLine, input),
-    removeMachineProgramRun: (input: Record<string, unknown>) => ipcRenderer.invoke(IPC.removeMachineProgramRun, input),
-    deleteMachineProgram: (input: Record<string, unknown>) => ipcRenderer.invoke(IPC.deleteMachineProgram, input),
-    setMachineProgramShift: (input: Record<string, unknown>) => ipcRenderer.invoke(IPC.setMachineProgramShift, input),
-    setMachineProgramSoleSlot: (input: Record<string, unknown>) => ipcRenderer.invoke(IPC.setMachineProgramSoleSlot, input),
+    listMachineDayPrograms: (programDate: string) => ipcRenderer.invoke(IPC.listMachineDayPrograms, programDate),
+    addMachine: (input: Record<string, unknown>) => ipcRenderer.invoke(IPC.addMachine, input),
+    assignMachineContractor: (input: Record<string, unknown>) => ipcRenderer.invoke(IPC.assignMachineContractor, input),
+    listCartonProgramBatches: (input: Record<string, unknown>) => ipcRenderer.invoke(IPC.listCartonProgramBatches, input),
     openMachineProgramStoreOut: (lookup: string, opts?: Record<string, unknown>) =>
       ipcRenderer.invoke(IPC.openMachineProgramStoreOut, lookup, opts),
     machineProgramStoreOutCheckScan: (input: Record<string, unknown>, opts?: Record<string, unknown>) =>
@@ -137,6 +123,10 @@ contextBridge.exposeInMainWorld("desktop", {
       ipcRenderer.invoke(IPC.getMachineProgramReconciliation, programId, opts),
     completeMachineProgramProduction: (input: Record<string, unknown>, opts?: Record<string, unknown>) =>
       ipcRenderer.invoke(IPC.completeMachineProgramProduction, input, opts),
+    returnMachineProgramUpper: (input: Record<string, unknown>, opts?: Record<string, unknown>) =>
+      ipcRenderer.invoke(IPC.returnMachineProgramUpper, input, opts),
+    convertMachineProgramUpperCartonsToB: (input: Record<string, unknown>, opts?: Record<string, unknown>) =>
+      ipcRenderer.invoke(IPC.convertMachineProgramUpperCartonsToB, input, opts),
     listMachineProgramDanaOptions: (programId: string, opts?: Record<string, unknown>) =>
       ipcRenderer.invoke(IPC.listMachineProgramDanaOptions, programId, opts),
     issueMachineProgramDana: (input: Record<string, unknown>, opts?: Record<string, unknown>) =>
@@ -265,6 +255,14 @@ contextBridge.exposeInMainWorld("desktop", {
     getDispatchSession: (sessionId: string) => ipcRenderer.invoke(IPC.getDispatchSession, sessionId),
     getReport: (query: Record<string, unknown>) => ipcRenderer.invoke(IPC.getReport, query),
     processScan: (rawScan: string) => ipcRenderer.invoke(IPC.processScan, rawScan),
+    receiveProduction: (rawScan: string) => ipcRenderer.invoke(IPC.receiveProduction, rawScan),
+    listProductionReceipts: (query: Record<string, unknown>) => ipcRenderer.invoke(IPC.listProductionReceipts, query),
+    findProductionReceipt: (qrId: string) => ipcRenderer.invoke(IPC.findProductionReceipt, qrId),
+    issueUpperToMachine: (rawScan: string, machineId: string) => ipcRenderer.invoke(IPC.issueUpperToMachine, rawScan, machineId),
+    listUpperIssues: (query: Record<string, unknown>) => ipcRenderer.invoke(IPC.listUpperIssues, query),
+    getUpperIssueSummary: (query: Record<string, unknown>) => ipcRenderer.invoke(IPC.getUpperIssueSummary, query),
+    listUpperStock: (query: Record<string, unknown>) => ipcRenderer.invoke(IPC.listUpperStock, query),
+    findUpperIssue: (qrId: string) => ipcRenderer.invoke(IPC.findUpperIssue, { qrId }),
     dispatchScan: (rawScan: string, sessionId?: string, gatepassId?: string) => ipcRenderer.invoke(IPC.dispatchScan, rawScan, sessionId, gatepassId),
     returnLookup: (rawScan: string) => ipcRenderer.invoke(IPC.returnLookup, rawScan),
     returnScan: (rawScan: string) => ipcRenderer.invoke(IPC.returnScan, rawScan),

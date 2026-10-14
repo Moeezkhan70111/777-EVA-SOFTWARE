@@ -69,6 +69,7 @@ export const productionMethods = {
       workstationId: string;
       deviceId: string;
       operatorId?: string;
+      receivedBy?: { actor: string | null; station: string } | null;
     },
     tx: TransactionContext
   ): Promise<void> {
@@ -100,7 +101,13 @@ export const productionMethods = {
         payload.color,
         payload.size,
         payload.serial,
-        JSON.stringify({ parserVersion: payload.parserVersion }),
+        // Who recorded it and at which station (Receive Production). Older events carry only the
+        // parser version; readers treat a missing actor or station as not recorded.
+        JSON.stringify(
+          payload.receivedBy
+            ? { parserVersion: payload.parserVersion, actor: payload.receivedBy.actor, station: payload.receivedBy.station }
+            : { parserVersion: payload.parserVersion }
+        ),
         context.nowIso
       );
 

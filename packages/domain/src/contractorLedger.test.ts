@@ -117,3 +117,16 @@ test("the ledger: work is a credit, a payment a debit, with a running balance an
   assert.equal(ledger.totalDebitPaisa, toPaisa(700));
   assert.equal(ledger.dozens, 15);
 });
+
+test("a claim for damaged uppers is deducted from what is owed, and is not counted as paid", () => {
+  const claim = { date: "2026-10-15", voucherId: "c1", voucherNumber: "CL-000001", description: "1 pair torn", modeOfTransfer: null, kind: CONTRACTOR_PAYMENT_KIND.CLAIM, amountPaisa: toPaisa(50) };
+  const pay = { ...claim, voucherId: "p1", voucherNumber: "CV-1", kind: CONTRACTOR_PAYMENT_KIND.PAYMENT, amountPaisa: toPaisa(100), date: "2026-10-15" };
+  const ledger = buildContractorLedger({ work: [], payments: [claim, pay], fromDate: "2026-10-01", toDate: "2026-10-31" });
+
+  assert.deepEqual(ledger.entries.map((entry) => [entry.kind, entry.debitPaisa, entry.balancePaisa]), [
+    ["PAYMENT", toPaisa(100), toPaisa(-100)],
+    ["CLAIM", toPaisa(50), toPaisa(-150)],
+  ]);
+  assert.equal(ledger.paidPaisa, toPaisa(100));
+  assert.equal(ledger.claimedPaisa, toPaisa(50));
+});

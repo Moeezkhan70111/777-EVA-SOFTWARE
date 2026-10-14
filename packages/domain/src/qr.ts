@@ -139,6 +139,23 @@ export const QR_SERIAL_WIDTH = 6;
  */
 export const MAX_QR_BATCH_QUANTITY = 10000;
 
+/**
+ * Where a run of carton QR identities came from (`qr_batches.source`, migration 077). Every run
+ * is written by exactly one of these, and the Machine Program counts only QR_GENERATOR runs:
+ *
+ *   QR_GENERATOR     the QR Generator page — the cartons a program is made of
+ *   B_CARTON         the B Carton Labels page (grade B, colour MIX)
+ *   MACHINE_PROGRAM  labels printed by the retired machine-program workflow (Store Out, B conversions)
+ *   SCAN_ADOPTED     an identity Live Production registered because it was printed outside the system
+ */
+export const QR_BATCH_SOURCE = {
+  QR_GENERATOR: "QR_GENERATOR",
+  B_CARTON: "B_CARTON",
+  MACHINE_PROGRAM: "MACHINE_PROGRAM",
+  SCAN_ADOPTED: "SCAN_ADOPTED",
+} as const;
+export type QrBatchSource = (typeof QR_BATCH_SOURCE)[keyof typeof QR_BATCH_SOURCE];
+
 const QR_ARTICLE_PATTERN = /^[A-Z0-9]+$/;
 const QR_COLOR_PATTERN = /^[A-Z0-9]+$/;
 const QR_SIZE_PATTERN = /^[0-9]+\/[0-9]+$/;

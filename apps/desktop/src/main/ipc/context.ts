@@ -2,11 +2,14 @@ import type {
   CancelGatepassUseCase,
   CreateGatepassUseCase,
   AssignMachineContractorUseCase,
+  AddMachineUseCase,
   DeleteMachineProgramUseCase,
   SetMachineProgramShiftUseCase,
   SetMachineProgramSoleSlotUseCase,
   DispatchScanUseCase,
   ProcessScanUseCase,
+  ReceiveProductionUseCase,
+  UpperMoveOutUseCase,
   ReturnScanUseCase,
   IssueRawMaterialScanUseCase,
   OpenMachineProgramForStoreOutUseCase,
@@ -14,6 +17,7 @@ import type {
   SaveMachineProgramBatchUseCase,
   ReceiveMachineProgramCartonUseCase,
   ReceiveRawMaterialScanUseCase,
+  ReturnMachineProgramUpperUseCase,
   RemoveMachineProgramLineUseCase,
   RemoveMachineProgramRunUseCase,
   SaveMachineProgramArticleRatesUseCase,
@@ -40,6 +44,10 @@ export interface ScanContext {
 
 export interface UseCases {
   processScanUseCase: ProcessScanUseCase;
+  /** Receive Production: a generated carton QR recorded as produced, exactly once. */
+  receiveProductionUseCase: ReceiveProductionUseCase;
+  /** Upper Move Out: an upper packet issued out of the store to a named machine. */
+  upperMoveOutUseCase: UpperMoveOutUseCase;
   dispatchScanUseCase: DispatchScanUseCase;
   returnScanUseCase: ReturnScanUseCase;
   storeEntryScanUseCase: StoreEntryScanUseCase;
@@ -50,6 +58,8 @@ export interface UseCases {
   cancelGatepassUseCase: CancelGatepassUseCase;
   machineProgram: {
     assignContractor: AssignMachineContractorUseCase;
+    /** The Machine Program's + Add Machine: a machine with both of its contractors, in one step. */
+    addMachine: AddMachineUseCase;
     saveLine: SaveMachineProgramLineUseCase;
     saveRun: SaveMachineProgramRunUseCase;
     /** FIX articles: no upper, two soles (migration 067). */
@@ -71,6 +81,8 @@ export interface UseCases {
   };
   /** Store In receiving one machine program's carton labels: produced + stored in, one scan. */
   machineProgramCartonIn: ReceiveMachineProgramCartonUseCase;
+  /** Return Upper: a sealed packet that went out for a program, scanned back in its reconciliation. */
+  machineProgramUpperReturn: ReturnMachineProgramUpperUseCase;
 }
 
 export interface IpcContext {

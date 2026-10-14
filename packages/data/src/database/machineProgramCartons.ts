@@ -22,7 +22,7 @@ import {
   type TransactionContext,
 } from "@erp/application";
 import type { MutableTransactionContext } from "./shared.js";
-import { B_CARTON_COLOUR, CARTON_GRADE, attributeKey, bConversionProblem, buildQrId, cartonsExpectedFromUppers, roundQuantity, type CartonGrade } from "@erp/domain";
+import { B_CARTON_COLOUR, CARTON_GRADE, QR_BATCH_SOURCE, attributeKey, bConversionProblem, buildQrId, cartonsExpectedFromUppers, roundQuantity, type CartonGrade } from "@erp/domain";
 import { COLOUR_SQL, LINE_CONSUMED_SQL } from "./machineProgramSql.js";
 import type { GeneratedQrBatch } from "./qrCodes.js";
 
@@ -102,8 +102,11 @@ export interface MachineProgramLineCartons {
    * when the upper is not counted in whole cartons of DOZEN, so no carton figure can be said.
    */
   cartonsDue: number | null;
-  /** Cartons of this line's printed labels that have been stored in. */
+  /** Cartons of this line's printed labels that have been stored in — B cartons included. */
   cartonsBack: number;
+  /** B carton labels printed for this line in its reconciliation, and how many are stored in. */
+  bCartons: number;
+  bBack: number;
 }
 
 export interface PrintedMachineProgramCartons extends GeneratedQrBatch {
@@ -118,6 +121,13 @@ const RECEIVED_IN_RUN_SQL = `(SELECT COUNT(*) FROM qr_codes qc
       AND EXISTS (SELECT 1 FROM production_events pe
                   WHERE pe.qr_id = qc.id AND pe.event_type = 'MOVED'
                     AND json_extract(pe.metadata_json, '$.eventType') = 'STORE_ENTRY'))`;
+
+// An upper line's B carton runs (migration 076), each with how many of its cartons are stored in.
+const UPPER_B_LABELS_SQL = `
+  SELECT l.qr_batch_id, l.carton_count, l.upper_line_id AS line_id, ${RECEIVED_IN_RUN_SQL} AS received_in_run
+  FROM machine_program_upper_b_labels l
+  WHERE l.program_id = ?
+  ORDER BY l.created_at, l.rowid`;
 
 // How many of a printed run's labels are void — on a FIX run, the ones turned into B cartons.
 const VOIDED_IN_RUN_SQL = `(SELECT COUNT(*) FROM qr_codes qv
@@ -276,7 +286,7 @@ const cartonRunOf = (
  * carton comes off the machine, so there is no carton-to-packet fact to read — this fixed order is
  * the rule, and it can never count one carton twice or more cartons than a packet was owed.
  */
-const backByLine = (rows: Array<Record<string, unknown>>): Map<string, number> => {
+const backBy = (rows: Array<Record<string, unknown>>, column: "line_id" | "event_id"): Map<string, number> => {
   const left = new Map<string, number>();
   const back = new Map<string, number>();
   for (const row of rows) {
@@ -284,11 +294,20 @@ const backByLine = (rows: Array<Record<string, unknown>>): Map<string, number> =
     if (!left.has(batch)) left.set(batch, Number(row.received_in_run ?? 0));
     const take = Math.min(left.get(batch)!, Number(row.carton_count ?? 0));
     left.set(batch, left.get(batch)! - take);
-    const line = text(row.line_id);
-    back.set(line, (back.get(line) ?? 0) + take);
+    const key = text(row[column]);
+    back.set(key, (back.get(key) ?? 0) + take);
   }
   return back;
 };
+
+// Every label row of a program, in the order it was printed, with its run's stored-in count.
+const PROGRAM_LABEL_ROWS_SQL = `
+  SELECT l.qr_batch_id, l.carton_count, l.store_exit_event_id AS event_id,
+         rme.machine_program_upper_line_id AS line_id, ${RECEIVED_IN_RUN_SQL} AS received_in_run
+    FROM machine_program_carton_labels l
+    JOIN raw_material_qr_events rme ON rme.id = l.store_exit_event_id
+   WHERE l.program_id = ?
+   ORDER BY l.rowid`;
 
 /**
  * Why a FIX run's cartons cannot be labelled here, or null.
@@ -317,6 +336,25 @@ export const machineProgramCartonsMethods = {
    * Store In's figures for a program, per upper line: the cartons owed back for what has been
    * issued, and how many of them are back in the store.
    */
+  /**
+   * How many of the cartons printed for a packet's last issue are already stored in — by the same
+   * print-order rule the line figures use. 0 for a packet whose cartons were never printed.
+   */
+  cartonsBackOfIssuedPacket(this: SqliteDatabase, qrId: string, tx: TransactionContext): number {
+    const db = (tx as MutableTransactionContext).db;
+    const label = db
+      .prepare(
+        `SELECT l.program_id, l.store_exit_event_id FROM machine_program_carton_labels l
+          WHERE l.store_exit_event_id = (SELECT rme.id FROM raw_material_qr_events rme
+                                          WHERE rme.qr_id = ? AND rme.event_type = 'STORE_EXIT'
+                                          ORDER BY rme.event_ts_local DESC, rme.created_at DESC LIMIT 1)`
+      )
+      .get(text(qrId).trim().toUpperCase()) as { program_id: string; store_exit_event_id: string } | undefined;
+    if (!label) return 0;
+    const rows = db.prepare(PROGRAM_LABEL_ROWS_SQL).all(label.program_id) as Array<Record<string, unknown>>;
+    return backBy(rows, "event_id").get(label.store_exit_event_id) ?? 0;
+  },
+
   listMachineProgramCartonProgress(this: SqliteDatabase, programId: string): MachineProgramLineCartons[] {
     const id = text(programId).trim();
     const lines = this.db
@@ -328,24 +366,22 @@ export const machineProgramCartonsMethods = {
           WHERE mpr.program_id = ?`
       )
       .all(id) as Array<Record<string, unknown>>;
-    // Every label row of the program, in the order it was printed, with its run's stored-in count.
-    const labels = this.db
-      .prepare(
-        `SELECT l.qr_batch_id, l.carton_count, rme.machine_program_upper_line_id AS line_id,
-                ${RECEIVED_IN_RUN_SQL} AS received_in_run
-           FROM machine_program_carton_labels l
-           JOIN raw_material_qr_events rme ON rme.id = l.store_exit_event_id
-          WHERE l.program_id = ?
-          ORDER BY l.rowid`
-      )
-      .all(id) as Array<Record<string, unknown>>;
-    const back = backByLine(labels);
+    const labels = this.db.prepare(PROGRAM_LABEL_ROWS_SQL).all(id) as Array<Record<string, unknown>>;
+    const back = backBy(labels, "line_id");
+    // A B carton is one of the line's cartons, labelled again as MIX: once stored in, it is back.
+    const bRuns = this.db.prepare(UPPER_B_LABELS_SQL).all(id) as Array<Record<string, unknown>>;
+    const sumFor = (lineId: string, column: string): number =>
+      bRuns.filter((row) => text(row.line_id) === lineId).reduce((total, row) => total + Number(row[column] ?? 0), 0);
     return lines.map((line) => {
+      const lineId = text(line.id);
       const consumed = roundQuantity(Math.max(0, Number(line.consumed ?? 0)));
+      const bBack = sumFor(lineId, "received_in_run");
       return {
-        lineId: text(line.id),
+        lineId,
         cartonsDue: consumed > 0 ? cartonsExpectedFromUppers(consumed, line.unit_code ? text(line.unit_code) : null) : 0,
-        cartonsBack: back.get(text(line.id)) ?? 0,
+        cartonsBack: (back.get(lineId) ?? 0) + bBack,
+        bCartons: sumFor(lineId, "carton_count"),
+        bBack,
       };
     });
   },
@@ -361,8 +397,9 @@ export const machineProgramCartonsMethods = {
     qrId: string,
     tx: TransactionContext
   ): Promise<MachineProgramCartonOrigin | null> {
-    // Both label tables: an upper's cartons hang off its issued packet (068) and a FIX
-    // article's off its run (071), and a carton coming back is the same carton either way.
+    // Every label table: an upper's cartons hang off its issued packet (068), a FIX article's off
+    // its run (071), and an upper line's B cartons off the line (076) — a carton coming back is
+    // the same carton whichever printed it.
     const row = (tx as MutableTransactionContext).db
       .prepare(
         `SELECT mp.id, mp.program_number,
@@ -372,6 +409,8 @@ export const machineProgramCartonsMethods = {
            SELECT l.program_id FROM machine_program_carton_labels l WHERE l.qr_batch_id = qc.batch_id
            UNION ALL
            SELECT f.program_id FROM machine_program_fix_carton_labels f WHERE f.qr_batch_id = qc.batch_id
+           UNION ALL
+           SELECT b.program_id FROM machine_program_upper_b_labels b WHERE b.qr_batch_id = qc.batch_id
            LIMIT 1
          )
          WHERE qc.id = ? LIMIT 1`
@@ -471,6 +510,7 @@ export const machineProgramCartonsMethods = {
         quantity: run.cartonsToPrint,
         createdBy: input.printedBy ?? undefined,
         requestedBy: formatMachineProgramCodeNumber(Number(program.program_number)),
+        source: QR_BATCH_SOURCE.MACHINE_PROGRAM,
       });
 
       this.db
@@ -529,6 +569,7 @@ export const machineProgramCartonsMethods = {
         createdBy: input.convertedBy ?? undefined,
         requestedBy: code,
         grade: CARTON_GRADE.B,
+        source: QR_BATCH_SOURCE.MACHINE_PROGRAM,
       });
       this.recordBConversion({ ...input, programId, runId, batchId: generated.batch.id, createdAt: generated.batch.createdAt, voidedQrIds });
       this.db.exec("COMMIT");
@@ -612,6 +653,7 @@ export const machineProgramCartonsMethods = {
         quantity: run.packets.reduce((total, packet) => total + packet.cartons!.count, 0),
         createdBy: input.printedBy ?? undefined,
         requestedBy: formatMachineProgramCodeNumber(Number(program.program_number)),
+        source: QR_BATCH_SOURCE.MACHINE_PROGRAM,
       });
 
       const insertLabel = this.db.prepare(

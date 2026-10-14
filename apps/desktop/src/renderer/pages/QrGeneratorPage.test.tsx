@@ -50,10 +50,25 @@ function baseApi(overrides: Record<string, unknown> = {}) {
   };
 }
 
+/** The machine chosen above the tabs — every run is generated for one (Phase 1.1). */
+const MACHINE = {
+  id: "m-1",
+  machineCode: "M-001",
+  name: "MACHINE 1",
+  sectionId: "ws-1",
+  sectionName: "PACKING",
+  sortOrder: 1,
+  status: "ACTIVE",
+  contractorPartyId: "p-aslam",
+  contractorName: "ASLAM",
+  packingContractorPartyId: "p-babar",
+  packingContractorName: "BABAR",
+};
+
 const renderPage = () =>
   render(
     <NotificationsProvider>
-      <QrGeneratorPage />
+      <QrGeneratorPage machine={MACHINE} />
     </NotificationsProvider>,
   );
 
@@ -169,6 +184,7 @@ describe("QR Generator", () => {
 
     await waitFor(() =>
       expect(generateQrBatch).toHaveBeenCalledWith({
+        machineId: "m-1",
         articleSizeId: "as-sk6",
         color: "RED",
         quantity: 3,
@@ -214,7 +230,7 @@ describe("QR Generator", () => {
     setupDesktop(baseApi({ generateQrBatch }));
     render(
       <NotificationsProvider>
-        <QrGeneratorPage username="Moeezkhan123" />
+        <QrGeneratorPage machine={MACHINE} username="Moeezkhan123" />
       </NotificationsProvider>,
     );
 
@@ -226,6 +242,7 @@ describe("QR Generator", () => {
 
     await waitFor(() =>
       expect(generateQrBatch).toHaveBeenCalledWith({
+        machineId: "m-1",
         articleSizeId: "as-sk6",
         color: "RED",
         quantity: 2,
@@ -267,6 +284,7 @@ describe("QR Generator", () => {
 
     await waitFor(() =>
       expect(generateQrBatch).toHaveBeenCalledWith({
+        machineId: "m-1",
         articleSizeId: "as-sk6",
         color: "GREEN",
         quantity: 2,
@@ -452,7 +470,7 @@ describe("QR Generator", () => {
       setupDesktop(baseApi({ listQrBatches: vi.fn().mockResolvedValue(batches) }));
       render(
         <NotificationsProvider>
-          <QrGeneratorPage onNavigate={onNavigate} />
+          <QrGeneratorPage machine={MACHINE} onNavigate={onNavigate} />
         </NotificationsProvider>,
       );
 

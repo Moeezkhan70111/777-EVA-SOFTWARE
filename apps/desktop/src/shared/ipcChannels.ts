@@ -84,24 +84,14 @@ export const IPC = {
   listMachines: "erp:list-machines",
   createMachine: "erp:create-machine",
   setMachineStatus: "erp:set-machine-status",
-  assignMachineContractor: "erp:assign-machine-contractor",
-  listMachineProgramBoard: "erp:list-machine-program-board",
-  getMachineProgramForDate: "erp:get-machine-program-for-date",
-  listSoleColourOptions: "erp:list-sole-colour-options",
   listMachineProgramDana: "erp:list-machine-program-dana",
-  listMachineProgramArticles: "erp:list-machine-program-articles",
-  listMachineProgramUppers: "erp:list-machine-program-uppers",
-  saveMachineProgramLine: "erp:save-machine-program-line",
-  saveMachineProgramRun: "erp:save-machine-program-run",
-  // FIX articles: no upper, two soles (migration 067).
-  saveMachineProgramFixRun: "erp:save-machine-program-fix-run",
   setProductSubGroupHasNoUpper: "erp:set-product-sub-group-has-no-upper",
-  saveMachineProgramArticleRates: "erp:save-machine-program-article-rates",
-  removeMachineProgramLine: "erp:remove-machine-program-line",
-  removeMachineProgramRun: "erp:remove-machine-program-run",
-  deleteMachineProgram: "erp:delete-machine-program",
-  setMachineProgramShift: "erp:set-machine-program-shift",
-  setMachineProgramSoleSlot: "erp:set-machine-program-sole-slot",
+  // The Machine Program: one program per machine per day, opened by the day's first QR run, and
+  // the machines it is made for with their two contractors.
+  listMachineDayPrograms: "erp:list-machine-day-programs",
+  listCartonProgramBatches: "erp:list-carton-program-batches",
+  addMachine: "erp:add-machine",
+  assignMachineContractor: "erp:assign-machine-contractor",
   // Store Out through one open Machine Program: look it up, judge one scan, save the batch.
   openMachineProgramStoreOut: "erp:open-machine-program-store-out",
   machineProgramStoreOutCheckScan: "erp:machine-program-store-out-check-scan",
@@ -116,6 +106,8 @@ export const IPC = {
   // Store In closing a program: how it stands against the cartons back, and Complete Program.
   getMachineProgramReconciliation: "erp:get-machine-program-reconciliation",
   completeMachineProgramProduction: "erp:complete-machine-program-production",
+  returnMachineProgramUpper: "erp:return-machine-program-upper",
+  convertMachineProgramUpperCartonsToB: "erp:convert-machine-program-upper-cartons-to-b",
   // Dana issued out of the store FOR a program (Machine Program Issue screen).
   listMachineProgramDanaOptions: "erp:list-machine-program-dana-options",
   issueMachineProgramDana: "erp:issue-machine-program-dana",
@@ -249,6 +241,16 @@ export const IPC = {
 
   // Scanning
   processScan: "erp:process-scan",
+  // Receive Production (Phase 2): a generated carton QR recorded as produced, and the day's receipts.
+  receiveProduction: "erp:receive-production",
+  listProductionReceipts: "erp:list-production-receipts",
+  findProductionReceipt: "erp:find-production-receipt",
+  // Upper Move Out (Phase 3): upper packets issued to a named machine, and upper stock.
+  issueUpperToMachine: "erp:issue-upper-to-machine",
+  listUpperIssues: "erp:list-upper-issues",
+  getUpperIssueSummary: "erp:get-upper-issue-summary",
+  listUpperStock: "erp:list-upper-stock",
+  findUpperIssue: "erp:find-upper-issue",
   dispatchScan: "erp:dispatch-scan",
   /** Read-only: who a scanned carton went out to, shown before the operator confirms. */
   returnLookup: "erp:return-lookup",

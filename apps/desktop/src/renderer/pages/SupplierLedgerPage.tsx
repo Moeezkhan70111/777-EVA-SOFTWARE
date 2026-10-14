@@ -9,7 +9,7 @@ import { downloadCsv } from "../utils/exportFile";
 
 interface SupplierLedgerPageProps { onNavigate: (route: AppRoute, id?: string) => void; }
 
-type SupplierLedgerType = "PURCHASE" | "CASH_PAYMENT" | "CASH_RECEIPT";
+type SupplierLedgerType = "PURCHASE" | "CASH_PAYMENT" | "CASH_RECEIPT" | "CLAIM";
 interface SupplierLedgerEntry {
   voucherId: string;
   voucherNumber: string;
@@ -24,7 +24,8 @@ interface SupplierLedgerEntry {
 
 const fmtDate = (value: string) => formatDate(value, value);
 const fmtNum = formatWholeMoney;
-const typeLabel = (type: SupplierLedgerType) => type === "PURCHASE" ? "Purchase" : type === "CASH_PAYMENT" ? "Payment" : "Receipt";
+const TYPE_LABEL: Record<SupplierLedgerType, string> = { PURCHASE: "Purchase", CASH_PAYMENT: "Payment", CASH_RECEIPT: "Receipt", CLAIM: copy.contractorLedger.claim };
+const typeLabel = (type: SupplierLedgerType) => TYPE_LABEL[type];
 
 export const SupplierLedgerPage: React.FC<SupplierLedgerPageProps> = ({ onNavigate }) => {
   const api = useDesktopApi();
@@ -95,6 +96,7 @@ export const SupplierLedgerPage: React.FC<SupplierLedgerPageProps> = ({ onNaviga
             <option value="PURCHASE">Purchase</option>
             <option value="CASH_PAYMENT">Payment</option>
             <option value="CASH_RECEIPT">Receipt</option>
+            <option value="CLAIM">{copy.contractorLedger.claim}</option>
           </select>
           <button type="button" className="customer-ledger-action" onClick={exportCsv} disabled={!selectedPartyId}>⇩ <span>{copy.actions.export}</span></button>
         </div>

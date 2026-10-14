@@ -1,5 +1,5 @@
 import { InvalidQrError, parseQrCode } from "@erp/domain";
-import { DuplicateQrError, UnregisteredQrError } from "./errors.js";
+import { DuplicateQrError, UnregisteredQrError, VoidedQrError } from "./errors.js";
 import type {
   QrRegistryRepository,
   DuplicateChecker,
@@ -123,6 +123,8 @@ export async function recordProductionInTransaction(
      * refused as it always was.
      */
     registerIfUnknown?: { actor: string | null; station: string };
+    /** Who recorded the carton and where, written into the PRODUCED event's metadata. */
+    receivedBy?: { actor: string | null; station: string } | null;
   },
   tx: TransactionContext
 ): Promise<{ eventId: string; productVariantId: string; registeredOnScan: boolean }> {
@@ -154,7 +156,7 @@ export async function recordProductionInTransaction(
     ));
   const registeredOnScan = existing === null;
   if (registered.status === "VOID") {
-    throw new UnregisteredQrError(
+    throw new VoidedQrError(
       "This QR was voided in QR Management and cannot be produced. Restore it there first if this was a mistake."
     );
   }
@@ -187,6 +189,7 @@ export async function recordProductionInTransaction(
     workstationId: input.context.workstationId,
     deviceId: input.context.deviceId,
     operatorId: input.context.operatorId,
+    receivedBy: input.receivedBy ?? null,
   }, tx);
 
   await deps.stockProjectionRepo.incrementProduced(

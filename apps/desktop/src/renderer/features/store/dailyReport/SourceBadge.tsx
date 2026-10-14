@@ -9,6 +9,7 @@ const TONE: Record<StoreMovementSource, string> = {
   [STORE_MOVEMENT_SOURCE.SCAN]: "badge-info",
   [STORE_MOVEMENT_SOURCE.MANUAL]: "badge-warn",
   [STORE_MOVEMENT_SOURCE.DANA]: "badge-warn",
+  [STORE_MOVEMENT_SOURCE.CUT_SIZE]: "badge-muted",
   [STORE_MOVEMENT_SOURCE.CARTON]: "badge-ok",
   [STORE_MOVEMENT_SOURCE.GATE_RETURN]: "badge-muted",
   [STORE_MOVEMENT_SOURCE.OPENING]: "badge-muted",

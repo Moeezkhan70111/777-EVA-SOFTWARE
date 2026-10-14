@@ -71,6 +71,19 @@ export const machineProgramWritesMethods = {
       : null;
   },
 
+  async findMachineByName(this: SqliteDatabase, name: string, tx: TransactionContext): Promise<{ id: string; status: string } | null> {
+    const row = dbOf(tx).prepare("SELECT id, status FROM machines WHERE name = ? LIMIT 1").get(text(name).trim().toUpperCase()) as
+      | Record<string, unknown>
+      | undefined;
+    return row ? { id: text(row.id), status: text(row.status) || "ACTIVE" } : null;
+  },
+
+  /** A new machine in the floor's default section — the same write Raw Material → Setup makes. */
+  async insertMachineForProgram(this: SqliteDatabase, name: string, _tx: TransactionContext): Promise<{ id: string; name: string }> {
+    const machine = this.insertMachine(text(name).trim().toUpperCase(), this.defaultMachineSectionId());
+    return { id: machine.id, name: machine.name };
+  },
+
   /**
    * Assigns one of the machine's two contractors. The role picks the pair of columns, so the
    * machine contractor and the packing contractor can never overwrite one another.

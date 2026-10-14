@@ -96,7 +96,8 @@ const standing = (back: number): MachineProgramReconciliation => ({
   lines: [
     {
       lineId: "line-black", itemId: "u-black", upperName: "UPPER — SK6 — BLACK — 7/10", article: "SK6", size: "7/10",
-      soleColour: "BLACK", upperColour: "GREY", cartonsDue: 8, cartonsBack: back, shortfallUppers: (8 - back) * 6,
+      soleColour: "BLACK", upperColour: "GREY", issuedCartons: 8, returnedUpperCartons: 0, cartonsDue: 8, cartonsBack: back,
+      bCartons: 0, bBack: 0, missingCartons: 8 - back, shortfallUppers: (8 - back) * 6,
       suppliers: [{ partyId: "s-1", name: "ABC UPPER" }], saved: null,
     },
   ],
@@ -129,6 +130,17 @@ function installApi(
       close.view = { ...close.view, closure };
       return { accepted: true, closure };
     }),
+    // Return Upper and B cartons of an upper line: the backend's verdicts, verbatim.
+    returnMachineProgramUpper: vi.fn(async (input: { programId: string; rawScan: string }) =>
+      input.rawScan === "RM_6_41_2"
+        ? { accepted: true, outcome: "RECEIVED", qrId: input.rawScan, itemDisplayName: "UPPER — SK6 — GREY — 7/10", packingQuantity: 2, packingUnitCode: "DOZEN" }
+        : { accepted: false, outcome: "ALREADY_IN_STORE", qrId: input.rawScan, reason: "This packet has already been received." }
+    ),
+    convertMachineProgramUpperCartonsToB: vi.fn(async () => ({
+      accepted: true,
+      voidedQrIds: ["SK6_BLACKGREY_7/10_000008"],
+      qrCodes: [{ id: "SK6_MIX_7/10_000001", batchId: "qrb-b", article: "SK6", color: "MIX", size: "7/10", sequence: 1, status: "GENERATED" }],
+    })),
     // The backend's verdict on one scanned carton label, verbatim.
     machineProgramCartonIn: vi.fn(async (input: { programId: string; rawScan: string }) =>
       input.rawScan === "SK6_BLACK_7/10_000002"
@@ -437,33 +449,37 @@ describe("Store In — machine program lookup", () => {
     expect(within(station).queryByLabelText("Scanner input")).not.toBeInTheDocument();
   });
 
-  it("short cartons open the reconciliation: every missing upper accounted for, claims with their party and reason", async () => {
+  it("short cartons open the Reconciliation: cut size and a priced claim account for every pair, then it completes", async () => {
     const api = installApi([printedPacket], [], standing(7));
     renderPage();
     await openProgram("MP-000001");
 
     const section = await screen.findByRole("region", { name: "Complete Program" });
-    expect(await within(section).findByText("1 carton short — 6 uppers to account for")).toBeInTheDocument();
-    await userEvent.click(within(section).getByRole("button", { name: "Complete Program" }));
-
-    const dialog = await screen.findByRole("dialog", { name: "Reconcile MP-000001" });
-    const submit = within(dialog).getByRole("button", { name: "Reconcile & Complete" });
+    expect(await within(section).findByText("1 carton short — 6 pairs to account for")).toBeInTheDocument();
+    // Short uppers are completed from the workspace, not from a header button.
+    expect(within(section).queryByRole("button", { name: "Complete Program" })).not.toBeInTheDocument();
+    const workspace = within(section).getByRole("region", { name: "Reconciliation" });
+    const line = within(workspace).getByRole("region", { name: "SK6 7/10 · BLACK / GREY" });
+    const submit = within(workspace).getByRole("button", { name: "Reconcile & Complete" });
     expect(submit).toBeDisabled();
 
-    await userEvent.type(within(dialog).getByLabelText("Cut size uppers of SK6 7/10 GREY"), "4");
-    expect(within(dialog).getByRole("status")).toHaveTextContent("2 of the 6 missing uppers are not accounted for yet.");
-    await userEvent.type(within(dialog).getByLabelText("Wastage uppers of SK6 7/10 GREY"), "1");
-    await userEvent.type(within(dialog).getByLabelText("Lost uppers of SK6 7/10 GREY"), "1");
+    await userEvent.type(within(line).getByLabelText("Cut Size Upper — pairs of SK6 7/10 · BLACK / GREY"), "4");
+    expect(within(line).getByRole("status")).toHaveTextContent("2 of the 6 remaining pairs are not accounted for yet.");
+    await userEvent.type(within(line).getByLabelText("Cut Size Pairs — pairs of SK6 7/10 · BLACK / GREY"), "1");
 
-    // The only supplier is already named; the reasons and the contractor are the store's to say.
-    expect(within(dialog).getByRole("button", { name: "ABC UPPER" })).toHaveAttribute("aria-pressed", "true");
-    await userEvent.type(within(dialog).getByLabelText("Why were they wasted?"), "torn upper");
-    await userEvent.click(within(dialog).getByRole("button", { name: "Packing — CONTRACTOR B" }));
+    // A claim: the only supplier is already named; the pairs, the amount and the reason are typed.
+    await userEvent.click(within(line).getByRole("button", { name: "+ Add claim" }));
+    expect(within(line).getByLabelText("Against")).toHaveValue("SUPPLIER:s-1");
+    await userEvent.type(within(line).getByLabelText("Pairs"), "1");
+    await userEvent.type(within(line).getByLabelText("Amount per pair (Rs)"), "50");
+    expect(within(line).getByText("Rs 50.00")).toBeInTheDocument();
     expect(submit).toBeDisabled();
-    await userEvent.type(within(dialog).getByLabelText("How were they lost?"), "not found at packing");
+    await userEvent.type(within(line).getByLabelText("Reason"), "torn upper");
 
-    expect(within(dialog).getByRole("status")).toHaveTextContent("6 of 6 accounted for");
+    expect(within(line).getByRole("status")).toHaveTextContent("All 6 pairs accounted for");
     await userEvent.click(submit);
+    const confirm = await screen.findByRole("dialog", { name: "Reconcile and complete MP-000001?" });
+    await userEvent.click(within(confirm).getByRole("button", { name: "Reconcile & Complete" }));
 
     await waitFor(() =>
       expect(api.completeMachineProgramProduction).toHaveBeenCalledWith(
@@ -471,9 +487,8 @@ describe("Store In — machine program lookup", () => {
           programId: "prog-1",
           entries: [
             {
-              lineId: "line-black", cutSize: 4,
-              wastage: 1, wastagePartyId: "s-1", wastageReason: "torn upper",
-              lost: 1, lostParty: "PACKING", lostReason: "not found at packing",
+              lineId: "line-black", cutSizeUppers: 4, cutSizePairs: 1,
+              claims: [{ role: "SUPPLIER", supplierPartyId: "s-1", pairs: 1, ratePaisa: 5000, reason: "torn upper" }],
             },
           ],
         },
@@ -481,6 +496,41 @@ describe("Store In — machine program lookup", () => {
       )
     );
     expect(await within(section).findByText(/Closed — reconciled/)).toBeInTheDocument();
+  });
+
+  it("Return Upper scans a sealed packet back, and says why another cannot come back", async () => {
+    const api = installApi([printedPacket], [], standing(7));
+    renderPage();
+    await openProgram("MP-000001");
+    const workspace = await screen.findByRole("region", { name: "Reconciliation" });
+    const box = within(workspace).getByLabelText("Scan or type the packet's QR");
+
+    await userEvent.type(box, "RM_6_41_2{Enter}");
+    expect(await within(workspace).findByText("2 DOZEN of UPPER — SK6 — GREY — 7/10 back in stock", { exact: false })).toBeInTheDocument();
+    expect(api.returnMachineProgramUpper).toHaveBeenCalledWith({ programId: "prog-1", rawScan: "RM_6_41_2" }, { token: "t-1" });
+    expect(box).toHaveValue("");
+
+    await userEvent.type(box, "RM_6_41_9{Enter}");
+    expect(await within(workspace).findByText("This packet has already been received.", { exact: false })).toBeInTheDocument();
+  });
+
+  it("B-Carton MIX makes B labels for an upper line after a confirmation", async () => {
+    const api = installApi([printedPacket], [], standing(7));
+    renderPage();
+    await openProgram("MP-000001");
+    const workspace = await screen.findByRole("region", { name: "Reconciliation" });
+
+    await userEvent.type(within(workspace).getByLabelText("B cartons of SK6 7/10 · BLACK / GREY"), "2");
+    expect(within(workspace).getByRole("alert")).toHaveTextContent("Only 1 carton is missing, so at most 1 can be B cartons.");
+    await userEvent.clear(within(workspace).getByLabelText("B cartons of SK6 7/10 · BLACK / GREY"));
+    await userEvent.type(within(workspace).getByLabelText("B cartons of SK6 7/10 · BLACK / GREY"), "1");
+    await userEvent.click(within(workspace).getByRole("button", { name: "Generate B labels" }));
+
+    const confirm = await screen.findByRole("dialog", { name: "Make 1 B carton?" });
+    await userEvent.click(within(confirm).getByRole("button", { name: "Generate B labels" }));
+    await waitFor(() =>
+      expect(api.convertMachineProgramUpperCartonsToB).toHaveBeenCalledWith({ programId: "prog-1", lineId: "line-black", count: 1 }, { token: "t-1" })
+    );
   });
 });
 

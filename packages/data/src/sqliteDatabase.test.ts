@@ -517,12 +517,15 @@ test("Live Production registers an identity the generator never issued, and prod
     // Its own one-code run says where it came from, so QR Management can tell the two apart.
     const run = rawGet(
       fixture.db,
-      "SELECT quantity, created_by, requested_by FROM qr_batches WHERE id = (SELECT batch_id FROM qr_codes WHERE id = ?)",
+      "SELECT quantity, created_by, requested_by, source, machine_program_id FROM qr_batches WHERE id = (SELECT batch_id FROM qr_codes WHERE id = ?)",
       "SK6_BLUE_7/10_000777"
     );
     assert.equal(run.quantity, 1);
     assert.equal(run.created_by, "babar");
     assert.equal(run.requested_by, "Live Production scan");
+    // Adopted, not generated: it belongs to no machine program.
+    assert.equal(run.source, "SCAN_ADOPTED");
+    assert.equal(run.machine_program_id, null);
 
     // The generator can never hand 000777 to a second carton: the sequence moved past it.
     const sequence = rawGet(fixture.db, "SELECT last_sequence FROM qr_sequences WHERE article = ? AND color = ? AND size = ?", "SK6", "BLUE", "7/10");

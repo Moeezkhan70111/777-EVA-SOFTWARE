@@ -7,7 +7,8 @@ import { ipcMain } from "electron";
 import { IPC } from "../../shared/ipcChannels";
 import type { IpcContext } from "./context";
 import { rejection } from "../authorize";
-import { ACCESS_STATUS, PERMISSION, RECONCILIATION_LOSS_PARTY, STORE_DIRECTION, USER_ROLE, asOptionalNumber, asOptionalString, asString, asStringArray, isRecord, optionalOneOf } from "@erp/domain";
+import { parseReconciliationEntries } from "./reconciliationInput";
+import { ACCESS_STATUS, PERMISSION, STORE_DIRECTION, USER_ROLE, asOptionalNumber, asOptionalString, asString, asStringArray, isRecord, optionalOneOf } from "@erp/domain";
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -444,17 +445,8 @@ export function registerStoreHandlers(ctx: IpcContext): void {
     const auth = resolveStoreOperator(opts?.token);
     if (!auth.ok) return { accepted: false, reason: auth.reason };
     const payload = isRecord(input) ? input : {};
-    const entries = (Array.isArray(payload.entries) ? payload.entries : []).filter(isRecord).map((entry) => ({
-      lineId: asString(entry.lineId),
-      // Deliberately NOT coerced: an empty box must reach the rule as something it refuses.
-      cutSize: typeof entry.cutSize === "number" ? entry.cutSize : Number.NaN,
-      wastage: typeof entry.wastage === "number" ? entry.wastage : Number.NaN,
-      wastagePartyId: asOptionalString(entry.wastagePartyId) ?? null,
-      wastageReason: asString(entry.wastageReason),
-      lost: typeof entry.lost === "number" ? entry.lost : Number.NaN,
-      lostParty: optionalOneOf(entry.lostParty, Object.values(RECONCILIATION_LOSS_PARTY)) ?? null,
-      lostReason: asString(entry.lostReason),
-    }));
+    const entries = parseReconciliationEntries(payload.entries);
+    if (typeof entries === "string") return { accepted: false, reason: entries };
     try {
       const closure = db.completeMachineProgramProduction({
         programId: asString(payload.programId), entries, closedBy: auth.username, deviceId,
@@ -467,6 +459,53 @@ export function registerStoreHandlers(ctx: IpcContext): void {
     } catch (error) {
       // The refusals are written for the operator: what is still unaccounted for, a missing reason.
       return { accepted: false, reason: error instanceof Error ? error.message : "The program could not be completed." };
+    }
+  });
+
+  // RETURN UPPER — a sealed packet scanned back in a program's reconciliation. The program and
+  // the packet's eligibility are judged by the use case, inside its transaction.
+  ipcMain.handle(IPC.returnMachineProgramUpper, async (_event, input?: unknown, opts?: { token?: string }) => {
+    const auth = resolveStoreOperator(opts?.token);
+    if (!auth.ok) return { accepted: false, outcome: "NOT_ELIGIBLE", reason: auth.reason };
+    const payload = isRecord(input) ? input : {};
+    try {
+      const result = await useCases.machineProgramUpperReturn.execute({
+        programId: asString(payload.programId), rawScan: asString(payload.rawScan), context: scanContext, actor: auth.username,
+      });
+      logger.log({
+        module: "machine-program-store-in", severity: result.accepted ? "INFO" : "WARNING", operation: "return-upper", deviceId,
+        message: JSON.stringify({ programId: asString(payload.programId), outcome: result.outcome, qrId: result.qrId }),
+      });
+      return result;
+    } catch (error) {
+      logger.log({ module: "machine-program-store-in", severity: "ERROR", operation: "return-upper", deviceId, message: error instanceof Error ? error.message : String(error) });
+      return { accepted: false, outcome: "ERROR", reason: "The packet could not be returned. Nothing was changed." };
+    }
+  });
+
+  // B cartons of an UPPER line: generating labels needs QR Generator access, as printing them does.
+  // Which labels are voided is chosen by the data layer inside its write lock.
+  ipcMain.handle(IPC.convertMachineProgramUpperCartonsToB, (event, input?: unknown, opts?: { token?: string }) => {
+    const auth = resolveStoreOperator(opts?.token);
+    if (!auth.ok) return { accepted: false, reason: auth.reason };
+    const payload = isRecord(input) ? input : {};
+    try {
+      authorizer.requirePermission(event, PERMISSION.QR_GENERATOR, opts?.token);
+    } catch {
+      return { accepted: false, reason: "Your account does not have QR Generator access, so it cannot generate B carton labels." };
+    }
+    try {
+      const converted = db.convertUpperCartonsToB({
+        programId: asString(payload.programId), lineId: asString(payload.lineId), count: asOptionalNumber(payload.count) ?? Number.NaN,
+        convertedBy: auth.username, deviceId,
+      });
+      logger.log({
+        module: "machine-program-store-in", severity: "WARNING", operation: "convert-upper-b-cartons", deviceId,
+        message: JSON.stringify({ programId: asString(payload.programId), lineId: asString(payload.lineId), qrBatchId: converted.batch.id, voided: converted.voidedQrIds }),
+      });
+      return { accepted: true, batch: converted.batch, qrCodes: converted.qrCodes, voidedQrIds: converted.voidedQrIds };
+    } catch (error) {
+      return { accepted: false, reason: error instanceof Error ? error.message : "The B carton labels could not be generated." };
     }
   });
 

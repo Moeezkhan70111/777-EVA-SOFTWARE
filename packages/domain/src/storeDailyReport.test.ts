@@ -71,6 +71,7 @@ test("each typed movement says what it was", () => {
   assert.equal(source("TRANSFER_OUT", "Dana for MP-000012 — 50 KG", "program-1"), STORE_MOVEMENT_SOURCE.DANA);
   assert.equal(source("ADJUST", "Counted wrong (SC-000001, approved by admin)"), STORE_MOVEMENT_SOURCE.CORRECTION);
   assert.equal(source("RECEIVE", STOCK_EVENT_NOTE.OPENING), STORE_MOVEMENT_SOURCE.OPENING);
+  assert.equal(source("RECEIVE", `${STOCK_EVENT_NOTE.CUT_SIZE} — MP-000012`), STORE_MOVEMENT_SOURCE.CUT_SIZE);
   assert.equal(source("RECEIVE", null), STORE_MOVEMENT_SOURCE.OTHER, "unknown is shown, not hidden");
 });
 

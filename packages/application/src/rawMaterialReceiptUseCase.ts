@@ -50,6 +50,8 @@ export interface RawMaterialMovementUnit {
   /** The hop it is due at next, or null once the route is finished. */
   nextSectionId: string | null;
   nextSectionName: string | null;
+  /** The material's top-level category name, upper-cased — UPPER, DANA … (RAW_MATERIAL_KIND). */
+  kind?: string | null;
 }
 
 export interface RawMaterialMovementRepository {
@@ -81,6 +83,8 @@ export interface RawMaterialMovementRepository {
       machineProgramLineId?: string | null;
       /** The saved Store Out batch that committed it, or null for the generic scanner. */
       machineProgramBatchId?: string | null;
+      /** Upper Move Out: the machine the operator issued the packet to (migration 079), or null. */
+      machineId?: string | null;
     },
     tx: TransactionContext
   ): void;
@@ -154,6 +158,12 @@ export interface RawMaterialMovementRepository {
 
   /** Puts a completed program back in service when a packet it consumed comes back to the store. */
   reopenMachineProgram(programId: string, nowIso: string, tx: TransactionContext): Promise<boolean>;
+
+  /** Whether a program has been closed (complete or reconciled). */
+  isMachineProgramClosed(programId: string): boolean;
+
+  /** Cartons printed for this packet's last issue that are already stored in — 0 for a sealed packet. */
+  cartonsBackOfIssuedPacket(qrId: string, tx: TransactionContext): number;
 }
 
 export type RawMaterialReceiptOutcome =
@@ -172,7 +182,13 @@ export type RawMaterialReceiptOutcome =
   /** The scanned text is not a raw material label at all. */
   | "INVALID_FORMAT"
   /** Another terminal moved this packet between our read and our write. */
-  | "STATUS_CHANGED";
+  | "STATUS_CHANGED"
+  /** Return Upper: the packet did not go out for the program it is being returned to. */
+  | "NOT_ON_PROGRAM"
+  /** Return Upper: the program is closed. */
+  | "PROGRAM_CLOSED"
+  /** Return Upper: some of the packet's cartons are already back, so it was opened. */
+  | "CARTONS_BACK";
 
 export interface RawMaterialReceiptInput {
   rawScan: string;
@@ -221,181 +237,260 @@ export interface RawMaterialReceiptDeps {
   idGenerator: IdGenerator;
 }
 
+/**
+ * Where a packet is being received from — the one thing the two ways of receiving differ in.
+ *
+ *   SESSION         a supplier's delivery: every packet must be that supplier's
+ *   PROGRAM_RETURN  a sealed packet coming home from a machine program it went out for, scanned
+ *                   in that program's reconciliation: it must have gone out for THAT program,
+ *                   the program must be open, and none of the packet's cartons may be back yet
+ */
+type ReceiptMode =
+  | { kind: "SESSION"; partyId: string; sessionId: string }
+  | { kind: "PROGRAM_RETURN"; programId: string };
+
+interface ReceiptRequest {
+  raw: string;
+  mode: ReceiptMode;
+  context: ScanOperationalContext;
+  actor: string | null;
+}
+
+type Identity = Partial<RawMaterialReceiptResult>;
+
+const identityOf = (unit: RawMaterialMovementUnit): Identity => ({
+  itemDisplayName: unit.displayName,
+  partyName: unit.partyName,
+  previousStatus: unit.currentStatus,
+  currentStatus: unit.currentStatus,
+});
+
+/** Refuses a scan that is not a readable raw material label, before anything is read. */
+const formatRefusal = (raw: string): RawMaterialReceiptResult | null => {
+  if (!isValidRawMaterialQrId(raw)) {
+    // A carton label scanned here is a real mistake worth naming, rather than a generic
+    // "bad code" — the operator is most likely on the wrong screen.
+    return {
+      accepted: false,
+      outcome: "INVALID_FORMAT",
+      reason: "This is not a raw material QR. Finished cartons are received on Store Move In.",
+    };
+  }
+  try {
+    parseRawMaterialQrId(raw);
+    return null;
+  } catch (error) {
+    if (error instanceof InvalidQrError) {
+      return { accepted: false, outcome: "INVALID_FORMAT", reason: "This label could not be read. Scan it again." };
+    }
+    throw error;
+  }
+};
+
+/** Refuses a packet that cannot come home for the program it is being returned to. */
+const checkProgramReturn = async (
+  repo: RawMaterialMovementRepository,
+  raw: string,
+  programId: string,
+  identity: Identity,
+  tx: TransactionContext
+): Promise<void> => {
+  const lineId = await repo.findMachineProgramLineOfLastStoreExit(raw, tx);
+  const program = lineId ? await repo.getMachineProgramOfLine(lineId, tx) : null;
+  if (!program || program.programId !== programId) {
+    throw new RawMaterialReceiptRejectedError("NOT_ON_PROGRAM", "This packet did not go out for this program, so it cannot be returned here.", identity);
+  }
+  if (repo.isMachineProgramClosed(programId)) {
+    throw new RawMaterialReceiptRejectedError("PROGRAM_CLOSED", "This program is closed — nothing more is returned against it.", identity);
+  }
+  const back = repo.cartonsBackOfIssuedPacket(raw, tx);
+  if (back > 0) {
+    const what = back === 1 ? "1 carton of this packet is" : `${back} cartons of this packet are`;
+    throw new RawMaterialReceiptRejectedError("CARTONS_BACK", `${what} already back, so it was opened. Record what is left as cut size instead.`, identity);
+  }
+};
+
+/** The packet, read and checked — everything that can refuse a receipt before anything is written. */
+const checkPacket = async (repo: RawMaterialMovementRepository, request: ReceiptRequest, tx: TransactionContext): Promise<RawMaterialMovementUnit> => {
+  const unit = repo.getRawMaterialQrForMovement(request.raw, tx);
+  if (!unit) throw new RawMaterialReceiptRejectedError("UNKNOWN_QR", "This QR is not registered.", {});
+  const identity = identityOf(unit);
+
+  // The supplier check is the whole point of a session.
+  if (request.mode.kind === "SESSION" && unit.partyId !== request.mode.partyId) {
+    throw new RawMaterialReceiptRejectedError("WRONG_PARTY", `This packet belongs to ${unit.partyName}. Close this session and start one for that supplier.`, identity);
+  }
+  if (unit.registryStatus === "VOID") throw new RawMaterialReceiptRejectedError("NOT_ELIGIBLE", "This QR was voided and has no packet to receive.", identity);
+  if (unit.itemStatus !== "ACTIVE") throw new RawMaterialReceiptRejectedError("NOT_ELIGIBLE", "This raw material is no longer active.", identity);
+  if (unit.currentStatus === RAW_MATERIAL_QR_STATUS.IN_STORE) {
+    throw new RawMaterialReceiptRejectedError("ALREADY_IN_STORE", "This packet has already been received.", identity);
+  }
+  // No packing means there is no defensible answer to "how much did that add", so the receipt
+  // is refused rather than guessed.
+  if (unit.packingQuantity == null || !unit.packingUnitId) {
+    throw new RawMaterialReceiptRejectedError("NOT_CONFIGURED", `Set how much one packet of ${unit.displayName} holds in Raw Material Packing before receiving it.`, identity);
+  }
+  if (request.mode.kind === "PROGRAM_RETURN") await checkProgramReturn(repo, request.raw, request.mode.programId, identity, tx);
+  return unit;
+};
+
+/**
+ * Receives one packet inside the caller's transaction: its status, its stock and its event, or a
+ * refusal having written nothing. Both ways of receiving run exactly this.
+ */
+const receivePacket = async (
+  deps: RawMaterialReceiptDeps,
+  request: ReceiptRequest,
+  tx: TransactionContext
+): Promise<{ eventId: string; receivedAt: string; unit: RawMaterialMovementUnit }> => {
+  const { repo } = deps;
+  const unit = await checkPacket(repo, request, tx);
+
+  const moved = repo.setRawMaterialQrStatus(
+    {
+      qrId: request.raw,
+      expectedStatus: unit.currentStatus,
+      nextStatus: RAW_MATERIAL_QR_STATUS.IN_STORE,
+      sectionId: null,
+      // A packet that has come home starts its route again from the beginning.
+      hopIndex: 0,
+      updatedAt: tx.nowIso,
+    },
+    tx
+  );
+  if (!moved) throw new RawMaterialReceiptRejectedError("STATUS_CHANGED", "Another terminal moved this packet. Scan it again.", identityOf(unit));
+
+  const applied = repo.applyRawMaterialStockChange(
+    {
+      itemId: unit.itemId,
+      quantity: unit.packingQuantity!,
+      unitId: unit.packingUnitId!,
+      direction: "IN",
+      note: `${STOCK_EVENT_NOTE.SCAN_IN} ${request.raw}`,
+      actor: request.actor,
+      nowIso: tx.nowIso,
+    },
+    tx
+  );
+
+  // A packet coming home undoes the Store exit that took it. If that exit was counted against a
+  // machine program, the same stamp goes on this entry so the bag returns to that program's
+  // outstanding quantity — the compensating record the carton gatepass uses, for the same reason:
+  // a bag back on the shelf is not a bag on the machine.
+  const machineProgramLineId = await repo.findMachineProgramLineOfLastStoreExit(request.raw, tx);
+  const releasedProgram = machineProgramLineId ? await repo.getMachineProgramOfLine(machineProgramLineId, tx) : null;
+
+  const eventId = deps.idGenerator.nextId();
+  repo.appendRawMaterialQrEvent(
+    {
+      eventId,
+      qrId: request.raw,
+      itemId: unit.itemId,
+      partyId: unit.partyId,
+      eventType: "STORE_ENTRY",
+      occurredAt: tx.nowIso,
+      factoryId: request.context.factoryId,
+      workstationId: request.context.workstationId,
+      deviceId: request.context.deviceId,
+      actor: request.actor,
+      sessionId: request.mode.kind === "SESSION" ? request.mode.sessionId : null,
+      quantity: applied.quantity,
+      unitId: applied.unitId,
+      previousStatus: unit.currentStatus,
+      newStatus: RAW_MATERIAL_QR_STATUS.IN_STORE,
+      sectionId: null,
+      itemDisplayName: unit.displayName,
+      machineProgramLineId,
+    },
+    tx
+  );
+
+  // A program that had been finished by this very packet is owed a bag again, so it goes back in
+  // service — unless its machine has since been given another program, in which case the
+  // completed one stays closed rather than fighting for the machine. A packet RETURNED in a
+  // reconciliation is the opposite case: the program is being closed, and owes nothing more.
+  if (request.mode.kind === "SESSION" && releasedProgram?.status === "COMPLETED") {
+    await repo.reopenMachineProgram(releasedProgram.programId, tx.nowIso, tx);
+  }
+
+  return { eventId, receivedAt: tx.nowIso, unit };
+};
+
+/** Runs one receipt end to end: its transaction, its event and its answer. */
+const runReceipt = async (deps: RawMaterialReceiptDeps, request: ReceiptRequest, sessionId: string | undefined): Promise<RawMaterialReceiptResult> => {
+  const refused = formatRefusal(request.raw);
+  if (refused) return refused;
+
+  try {
+    const committed = await deps.txManager.runInTransaction((tx) => receivePacket(deps, request, tx));
+    await deps.eventPublisher.publish("RawMaterialReceived.v1", { qrId: request.raw, occurredAt: committed.receivedAt, sessionId });
+    return {
+      accepted: true,
+      outcome: "RECEIVED",
+      qrId: request.raw,
+      itemDisplayName: committed.unit.displayName,
+      partyName: committed.unit.partyName,
+      packingQuantity: committed.unit.packingQuantity ?? undefined,
+      packingUnitCode: committed.unit.packingUnitCode,
+      packName: committed.unit.packName,
+      previousStatus: committed.unit.currentStatus,
+      currentStatus: RAW_MATERIAL_QR_STATUS.IN_STORE,
+      receivedAt: committed.receivedAt,
+      eventId: committed.eventId,
+      sessionId,
+    };
+  } catch (error) {
+    if (!(error instanceof RawMaterialReceiptRejectedError)) throw error;
+    return {
+      accepted: false,
+      outcome: error.outcome,
+      qrId: request.raw,
+      reason: error.message,
+      itemDisplayName: error.details.itemDisplayName,
+      partyName: error.details.partyName,
+      previousStatus: error.details.previousStatus ?? null,
+      currentStatus: error.details.currentStatus ?? null,
+      sessionId,
+    };
+  }
+};
+
 export class ReceiveRawMaterialScanUseCase {
   constructor(private readonly deps: RawMaterialReceiptDeps) {}
 
   async execute(input: RawMaterialReceiptInput): Promise<RawMaterialReceiptResult> {
     const raw = String(input.rawScan ?? "").trim().toUpperCase();
+    const mode: ReceiptMode = { kind: "SESSION", partyId: input.partyId, sessionId: input.sessionId };
+    return runReceipt(this.deps, { raw, mode, context: input.context, actor: input.actor ?? null }, input.sessionId);
+  }
+}
 
-    if (!isValidRawMaterialQrId(raw)) {
-      // A carton label scanned here is a real mistake worth naming, rather than a generic
-      // "bad code" — the operator is most likely on the wrong screen.
-      return {
-        accepted: false,
-        outcome: "INVALID_FORMAT",
-        reason: "This is not a raw material QR. Finished cartons are received on Store Move In.",
-      };
-    }
+export interface MachineProgramUpperReturnInput {
+  programId: string;
+  rawScan: string;
+  context: ScanOperationalContext;
+  actor?: string | null;
+}
 
-    try {
-      parseRawMaterialQrId(raw);
-    } catch (error) {
-      if (error instanceof InvalidQrError) {
-        return { accepted: false, outcome: "INVALID_FORMAT", reason: "This label could not be read. Scan it again." };
-      }
-      throw error;
-    }
+/**
+ * RETURN UPPER — a sealed packet of uppers that went out for a machine program comes back to the
+ * store unused, scanned in that program's reconciliation.
+ *
+ *   SK6 7/10 BLACK RED · 6 DOZEN out = 12 cartons due  →  a 2-DOZEN packet scanned back
+ *   →  stock + 2 DOZEN, and 8 cartons due
+ *
+ * It is the same receipt a supplier's delivery is — status, stock and event in one transaction,
+ * the guarded status move refusing a second scan — with the program's checks in place of the
+ * supplier's. Scanning the same packet twice credits it once: the second finds it in the store.
+ */
+export class ReturnMachineProgramUpperUseCase {
+  constructor(private readonly deps: RawMaterialReceiptDeps) {}
 
-    try {
-      const committed = await this.deps.txManager.runInTransaction(async (tx) => {
-        const unit = this.deps.repo.getRawMaterialQrForMovement(raw, tx);
-        if (!unit) {
-          throw new RawMaterialReceiptRejectedError("UNKNOWN_QR", "This QR is not registered.", {});
-        }
-
-        const identity = {
-          itemDisplayName: unit.displayName,
-          partyName: unit.partyName,
-          previousStatus: unit.currentStatus,
-          currentStatus: unit.currentStatus,
-        };
-
-        // The supplier check is the whole point of the session.
-        if (unit.partyId !== input.partyId) {
-          throw new RawMaterialReceiptRejectedError(
-            "WRONG_PARTY",
-            `This packet belongs to ${unit.partyName}. Close this session and start one for that supplier.`,
-            identity
-          );
-        }
-        if (unit.registryStatus === "VOID") {
-          throw new RawMaterialReceiptRejectedError("NOT_ELIGIBLE", "This QR was voided and has no packet to receive.", identity);
-        }
-        if (unit.itemStatus !== "ACTIVE") {
-          throw new RawMaterialReceiptRejectedError("NOT_ELIGIBLE", "This raw material is no longer active.", identity);
-        }
-        if (unit.currentStatus === RAW_MATERIAL_QR_STATUS.IN_STORE) {
-          throw new RawMaterialReceiptRejectedError("ALREADY_IN_STORE", "This packet has already been received.", identity);
-        }
-        // No packing means there is no defensible answer to "how much did that add", so the
-        // receipt is refused rather than guessed.
-        if (unit.packingQuantity == null || !unit.packingUnitId) {
-          throw new RawMaterialReceiptRejectedError(
-            "NOT_CONFIGURED",
-            `Set how much one packet of ${unit.displayName} holds in Raw Material Packing before receiving it.`,
-            identity
-          );
-        }
-
-        const moved = this.deps.repo.setRawMaterialQrStatus(
-          {
-            qrId: raw,
-            expectedStatus: unit.currentStatus,
-            nextStatus: RAW_MATERIAL_QR_STATUS.IN_STORE,
-            sectionId: null,
-            // A packet that has come home starts its route again from the beginning.
-            hopIndex: 0,
-            updatedAt: tx.nowIso,
-          },
-          tx
-        );
-        if (!moved) {
-          throw new RawMaterialReceiptRejectedError("STATUS_CHANGED", "Another terminal moved this packet. Scan it again.", identity);
-        }
-
-        const applied = this.deps.repo.applyRawMaterialStockChange(
-          {
-            itemId: unit.itemId,
-            quantity: unit.packingQuantity,
-            unitId: unit.packingUnitId,
-            direction: "IN",
-            note: `${STOCK_EVENT_NOTE.SCAN_IN} ${raw}`,
-            actor: input.actor ?? null,
-            nowIso: tx.nowIso,
-          },
-          tx
-        );
-
-        // A packet coming home undoes the Store exit that took it. If that exit was counted
-        // against a machine program, the same stamp goes on this entry so the bag returns to
-        // that program's outstanding quantity — the compensating record the carton gatepass
-        // uses, for the same reason: a bag back on the shelf is not a bag on the machine.
-        const machineProgramLineId = await this.deps.repo.findMachineProgramLineOfLastStoreExit(raw, tx);
-        const releasedProgram = machineProgramLineId
-          ? await this.deps.repo.getMachineProgramOfLine(machineProgramLineId, tx)
-          : null;
-
-        const eventId = this.deps.idGenerator.nextId();
-        this.deps.repo.appendRawMaterialQrEvent(
-          {
-            eventId,
-            qrId: raw,
-            itemId: unit.itemId,
-            partyId: unit.partyId,
-            eventType: "STORE_ENTRY",
-            occurredAt: tx.nowIso,
-            factoryId: input.context.factoryId,
-            workstationId: input.context.workstationId,
-            deviceId: input.context.deviceId,
-            actor: input.actor ?? null,
-            sessionId: input.sessionId,
-            quantity: applied.quantity,
-            unitId: applied.unitId,
-            previousStatus: unit.currentStatus,
-            newStatus: RAW_MATERIAL_QR_STATUS.IN_STORE,
-            sectionId: null,
-            itemDisplayName: unit.displayName,
-            machineProgramLineId,
-          },
-          tx
-        );
-
-        // A program that had been finished by this very packet is owed a bag again, so it goes
-        // back in service — unless its machine has since been given another program, in which
-        // case the completed one stays closed rather than fighting for the machine.
-        if (releasedProgram?.status === "COMPLETED") {
-          await this.deps.repo.reopenMachineProgram(releasedProgram.programId, tx.nowIso, tx);
-        }
-
-        return { eventId, receivedAt: tx.nowIso, unit };
-      });
-
-      await this.deps.eventPublisher.publish("RawMaterialReceived.v1", {
-        qrId: raw,
-        occurredAt: committed.receivedAt,
-        sessionId: input.sessionId,
-      });
-
-      return {
-        accepted: true,
-        outcome: "RECEIVED",
-        qrId: raw,
-        itemDisplayName: committed.unit.displayName,
-        partyName: committed.unit.partyName,
-        packingQuantity: committed.unit.packingQuantity ?? undefined,
-        packingUnitCode: committed.unit.packingUnitCode,
-        packName: committed.unit.packName,
-        previousStatus: committed.unit.currentStatus,
-        currentStatus: RAW_MATERIAL_QR_STATUS.IN_STORE,
-        receivedAt: committed.receivedAt,
-        eventId: committed.eventId,
-        sessionId: input.sessionId,
-      };
-    } catch (error) {
-      if (error instanceof RawMaterialReceiptRejectedError) {
-        return {
-          accepted: false,
-          outcome: error.outcome,
-          qrId: raw,
-          reason: error.message,
-          itemDisplayName: error.details.itemDisplayName,
-          partyName: error.details.partyName,
-          previousStatus: error.details.previousStatus ?? null,
-          currentStatus: error.details.currentStatus ?? null,
-          sessionId: input.sessionId,
-        };
-      }
-      throw error;
-    }
+  async execute(input: MachineProgramUpperReturnInput): Promise<RawMaterialReceiptResult> {
+    const raw = String(input.rawScan ?? "").trim().toUpperCase();
+    const programId = String(input.programId ?? "").trim();
+    if (!programId) return { accepted: false, outcome: "NOT_ON_PROGRAM", reason: "Open the program the packet is being returned to." };
+    const mode: ReceiptMode = { kind: "PROGRAM_RETURN", programId };
+    return runReceipt(this.deps, { raw, mode, context: input.context, actor: input.actor ?? null }, undefined);
   }
 }

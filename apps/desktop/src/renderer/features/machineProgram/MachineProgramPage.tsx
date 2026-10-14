@@ -1,157 +1,81 @@
 import React, { useState } from "react";
-import { DEFAULT_MACHINE_SHIFT, type MachineShift } from "@erp/domain";
-import type { MachineProgramBoardRow, MachineRecord } from "../../types/desktopApi";
-import { StateView } from "../../components/shared/StateView";
 import { copy } from "../../config/copy";
+import { useNotifications } from "../../state/NotificationsContext";
+import type { MachineRecord } from "../../types/desktopApi";
 import { toIsoDate } from "../../utils/dates";
-import { ContractorDialog } from "./ContractorDialog";
-import { InjectorWorkspace } from "./InjectorWorkspace";
-import { MachinesStrip } from "./MachinesStrip";
-import { ProgramSummaryRail } from "./ProgramSummaryRail";
-import { WorkspaceHeader } from "./WorkspaceHeader";
-import { hasContent, needsContractors, shiftOf } from "./machineProgram";
-import { printMachineProgram } from "./machineProgramPrint";
-import { useMachineBoard, useMachineProgram } from "./useMachineProgramData";
-import { useProgramWrites } from "./useProgramWrites";
+import { ReportDayPicker } from "../store/dailyReport/ReportDayPicker";
+import { DayPrograms } from "./DayPrograms";
+import { MachineCards } from "./MachineCards";
+import { MachineDialog } from "./MachineDialog";
+import { useDayPrograms, useMachines } from "./useCartonProgram";
+
+// MACHINE PROGRAM
 //
-// MACHINE PROGRAM — one workspace rather than a sequence of screens:
+//   Machine Program                                                   [ + Add Machine ]
+//   One program per machine per day, made of the carton QRs generated for it.
 //
-//   ⚙ Machine Program               SHIFT TIME   PROGRAM DATE   [ Print Program ]
-//   MACHINES  [▤ Machine 1] [▤ Machine 2] [▤ Machine 3]
-//   ┌──────────────────────────────────┬──────────────────┐
-//   │ INJECTOR 1 | INJECTOR 2          │ PROGRAM SUMMARY  │
-//   │  ┌ Injector 1 ────────────────┐  │  Injector 1 …    │
-//   │  │ ● Black Sole  ● Brown Sole │  │  Total Production│
-//   │  └────────────────────────────┘  │  Quick View      │
-//   │  ┌ Injector 2 ────────────────┐  │                  │
-//   │  │ No program added yet       │  │                  │
-//   └──┴────────────────────────────┴──┴──────────────────┘
+//   MACHINES
+//   ┌ MACHINE 1   M-001 ┐ ┌ MACHINE 2   M-002 ┐
+//   │ ASLAM · BABAR     │ │ ASLAM · KHAN      │
+//   └───────────────────┘ └───────────────────┘
 //
-// The shift and the date are the header, the machines are the strip under it, the left column is
-// the machine's two injectors, and the right column is what the machine adds up to and what can
-// be done with it. The left of the screen itself belongs to the application's navigation rail.
+//   PROGRAMS                                   [‹] [13/10/2026] [›] Today Refresh
+//   ┌ MP-000123  MACHINE 1                                40 cartons · 20 DZN ┐
+//   │ Article  Size  Colour  Carton QRs  Equivalent Dozens  Runs  Last generated │
+//   └────────────────────────────────────────────────────────────────────────────┘
 //
-// Nothing here calculates a business figure. Stock, totals and status all arrive already
-// computed from the data layer, every change is one saved transaction, and the program and the
-// board are re-read after each one rather than patched on screen.
+// Programs are never made here: a machine's program for the day opens with its first QR run in the
+// QR Generator (or its B-Carton Labels tab). This page sets up the machines and reads the programs.
+
+const text = copy.cartonProgram;
+
+type Dialog = { kind: "add" } | { kind: "edit"; machine: MachineRecord } | null;
 
 interface MachineProgramPageProps {
-  /** The signed-in operator, printed on the program sheet. */
-  username?: string;
-  /** Whether this user may add machines (master data, gated on Stock). Shows + Add Machine. */
-  canAddMachine?: boolean;
+  /** Opens the QR Generator from the empty state; absent when this user cannot open it. */
+  onOpenQrGenerator?: () => void;
 }
 
-export const MachineProgramPage: React.FC<MachineProgramPageProps> = ({ username, canAddMachine = false }) => {
-  const today = toIsoDate();
-  const [date, setDate] = useState(today);
-  const [machineId, setMachineId] = useState<string | null>(null);
-  const [askingContractorFor, setAskingContractorFor] = useState<MachineRecord | null>(null);
-  // The shift a program WOULD be made with. Once a program exists its own shift is what is
-  // shown, so this only ever decides the next one.
-  const [chosenShift, setChosenShift] = useState<MachineShift>(DEFAULT_MACHINE_SHIFT);
+export const MachineProgramPage: React.FC<MachineProgramPageProps> = ({ onOpenQrGenerator }) => {
+  const { push } = useNotifications();
+  const [date, setDate] = useState(toIsoDate());
+  const [dialog, setDialog] = useState<Dialog>(null);
+  const machines = useMachines(text.machinesFailed);
+  const programs = useDayPrograms(date, text.programsFailed);
 
-  const board = useMachineBoard(date);
-  const program = useMachineProgram(machineId, date);
-  const writes = useProgramWrites(() => {
-    void program.reload();
-    void board.reload();
-  });
-
-  const machine = board.value.find((row) => row.machine.id === machineId)?.machine ?? null;
-  const saved = machineId && hasContent(program.value) ? program.value : null;
-  // The shift belongs to the program ROW, which outlives its last upper line: removing every
-  // upper leaves the program behind, and to the operator that is "no program" — but its shift is
-  // still the one the next line will be made under, so it is read and written from the row.
-  const shift = shiftOf(machineId ? program.value : null, chosenShift);
-
-  /** A machine missing either of its two contractors is asked about before it can be programmed. */
-  const openMachine = (row: MachineProgramBoardRow) => {
-    if (needsContractors(row.machine)) setAskingContractorFor(row.machine);
-    else setMachineId(row.machine.id);
-  };
-
-  /**
-   * A machine just added joins the strip and opens the way any machine does — a new one has
-   * nobody on it yet, so it goes straight to "who works here?".
-   */
-  const machineAdded = async (added: MachineRecord) => {
-    await board.reload();
-    if (needsContractors(added)) setAskingContractorFor(added);
-    else setMachineId(added.id);
-  };
-
-  /** The board is the one source of the machine record, so it is re-read before the machine opens. */
-  const contractorSaved = async (assignedTo: string) => {
-    setAskingContractorFor(null);
-    setMachineId(assignedTo);
-    await board.reload();
-  };
-
-  /**
-   * Changing the shift on a program that exists is a write; on a date with no program yet it is
-   * only what the next one will be made with.
-   */
-  const changeShift = async (next: MachineShift) => {
-    setChosenShift(next);
-    if (machineId && program.value) await writes.setShift(program.value.id, next);
+  const saved = (title: string, body: string) => {
+    setDialog(null);
+    push("success", title, body);
+    void machines.reload();
   };
 
   return (
-    <div className="page mpx-page">
-      <WorkspaceHeader
-        date={date}
-        today={today}
-        shift={shift}
-        program={saved}
-        onShiftChange={(next) => void changeShift(next)}
-        onDateChange={setDate}
-        onPrint={() => saved && printMachineProgram(saved, username)}
-      />
-
-      <MachinesStrip
-        board={board}
-        selectedId={machineId}
-        onSelect={openMachine}
-        onMachineAdded={canAddMachine ? (added) => void machineAdded(added) : undefined}
-      />
-
-      <div className="mpx-grid">
-        <main className="mpx-main" aria-label={copy.machineProgram.title}>
-          {!machine ? (
-            <StateView kind="empty" title={copy.machineProgram.chooseMachineTitle} hint={copy.machineProgram.chooseMachineHint} />
-          ) : program.loading && program.value === null ? (
-            <StateView kind="loading" />
-          ) : program.error ? (
-            <StateView kind="error" message={program.error} onRetry={() => void program.reload()} />
-          ) : (
-            <InjectorWorkspace
-              key={`${machine.id}:${date}`}
-              machine={machine}
-              programDate={date}
-              shift={shift}
-              program={program.value}
-              writes={writes}
-            />
-          )}
-        </main>
-
-        <ProgramSummaryRail
-          program={saved}
-          machine={machine}
-          date={date}
-          shift={shift}
-          writes={writes}
-          onChangeContractor={() => machine && setAskingContractorFor(machine)}
-        />
+    <div className="page mp-page">
+      <div className="page-header mp-header">
+        <div>
+          <h1>{text.title}</h1>
+          <p className="mp-subtitle">{text.subtitle}</p>
+        </div>
+        <button type="button" className="btn btn-primary" onClick={() => setDialog({ kind: "add" })}>
+          <span aria-hidden="true">+</span> {text.addMachine}
+        </button>
       </div>
 
-      {askingContractorFor ? (
-        <ContractorDialog
-          machine={askingContractorFor}
-          onClose={() => setAskingContractorFor(null)}
-          onSaved={() => void contractorSaved(askingContractorFor.id)}
-        />
+      <section className="mp-section" aria-labelledby="mp-machines-title">
+        <h2 id="mp-machines-title" className="section-label">{text.machinesTitle}</h2>
+        <MachineCards machines={machines} onAdd={() => setDialog({ kind: "add" })} onEdit={(machine) => setDialog({ kind: "edit", machine })} />
+      </section>
+
+      <section className="mp-section" aria-labelledby="mp-programs-title">
+        <div className="mp-section-head">
+          <h2 id="mp-programs-title" className="section-label">{text.programsTitle}</h2>
+          <ReportDayPicker date={date} onChange={setDate} onRefresh={() => void programs.reload()} busy={programs.loading} />
+        </div>
+        <DayPrograms programs={programs} onOpenQrGenerator={onOpenQrGenerator} />
+      </section>
+
+      {dialog ? (
+        <MachineDialog machine={dialog.kind === "edit" ? dialog.machine : undefined} onClose={() => setDialog(null)} onSaved={saved} />
       ) : null}
     </div>
   );

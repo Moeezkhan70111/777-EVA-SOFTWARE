@@ -54,6 +54,8 @@ const CARTON_PROGRAM_SQL = `(
     SELECT l.program_id FROM machine_program_carton_labels l WHERE l.qr_batch_id = qc.batch_id
     UNION ALL
     SELECT f.program_id FROM machine_program_fix_carton_labels f WHERE f.qr_batch_id = qc.batch_id
+    UNION ALL
+    SELECT b.program_id FROM machine_program_upper_b_labels b WHERE b.qr_batch_id = qc.batch_id
     LIMIT 1
   )
   WHERE qc.id = pe.qr_id LIMIT 1)`;

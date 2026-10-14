@@ -3,7 +3,7 @@ import { useDesktopApi } from "../../hooks/useDesktopApi";
 import { useNotifications } from "../../state/NotificationsContext";
 import type { MachineRecord, WorkSection } from "../../types/desktopApi";
 import { copy } from "../../config/copy";
-import { useAddMachine } from "../machineProgram/useAddMachine";
+import { useAddMachine } from "./useAddMachine";
 
 // The machines on the floor, and the destination each one stands in.
 //

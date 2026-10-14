@@ -91,10 +91,25 @@ function baseApi(overrides: Record<string, unknown> = {}) {
   };
 }
 
+/** The machine chosen above the tabs — every run is generated for one (Phase 1.1). */
+const MACHINE = {
+  id: "m-1",
+  machineCode: "M-001",
+  name: "MACHINE 1",
+  sectionId: "ws-1",
+  sectionName: "PACKING",
+  sortOrder: 1,
+  status: "ACTIVE",
+  contractorPartyId: "p-aslam",
+  contractorName: "ASLAM",
+  packingContractorPartyId: "p-babar",
+  packingContractorName: "BABAR",
+};
+
 const renderPage = () =>
   render(
     <NotificationsProvider>
-      <BCartonGeneratorPage username="STORE" />
+      <BCartonGeneratorPage machine={MACHINE} username="STORE" />
     </NotificationsProvider>
   );
 
@@ -141,6 +156,7 @@ describe("B Carton Labels", () => {
 
     await waitFor(() => expect(api.generateQrBatch).toHaveBeenCalledTimes(1));
     expect(api.generateQrBatch).toHaveBeenCalledWith({
+      machineId: "m-1",
       articleSizeId: "as-evr9",
       color: "MIX",
       quantity: 3,

@@ -3,7 +3,7 @@ import { copy } from "../../../config/copy";
 import { StateView } from "../../../components/shared/StateView";
 import { ScanPanel } from "../../scanStation/scanStation";
 import { useCartonIn } from "./useCartonIn";
-import { useScanBox } from "./useScanBox";
+import { useScanBox } from "../../scanStation/useScanBox";
 
 // CARTON IN — Store In's scan station while a machine program is open.
 //

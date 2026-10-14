@@ -402,12 +402,15 @@ export const rawMaterialQrMethods = {
                 ii.display_name, ii.item_code, ii.status AS item_status,
                 q.current_hop_index,
                 NULL AS default_section_id, NULL AS default_section_name,
-                p.party_name,
+                p.party_name, ${KIND_SQL} AS kind,
                 -- Raw material routes were removed on 2026-10-07: a packet simply leaves the
                 -- store, and nothing records where it goes next.
                 NULL AS next_section_id, NULL AS next_section_name, 0 AS hop_count
          FROM raw_material_qrs q
          JOIN inventory_items ii ON ii.id = q.item_id
+         -- LEFT joins: the kind is extra information here, never a reason to lose a packet.
+         LEFT JOIN inventory_categories kind_cat ON kind_cat.id = ii.category_id
+         LEFT JOIN inventory_categories kind_parent ON kind_parent.id = kind_cat.parent_id
          JOIN parties p ON p.id = q.party_id
          LEFT JOIN inventory_units u ON u.id = COALESCE(q.packing_unit_id, ii.packing_unit_id)
          WHERE q.id = ? LIMIT 1`
@@ -437,6 +440,7 @@ export const rawMaterialQrMethods = {
       hopCount: Number(row.hop_count ?? 0),
       nextSectionId: row.next_section_id ? String(row.next_section_id) : null,
       nextSectionName: row.next_section_name ? String(row.next_section_name) : null,
+      kind: row.kind ? String(row.kind) : null,
     };
   },
 
@@ -578,6 +582,8 @@ export const rawMaterialQrMethods = {
        * a packet it issues carries the line stamp and nothing here.
        */
       machineProgramBatchId?: string | null;
+      /** Upper Move Out: the machine the packet was issued to (migration 079). Null otherwise. */
+      machineId?: string | null;
     },
     tx: TransactionContext
   ): void {
@@ -588,8 +594,8 @@ export const rawMaterialQrMethods = {
            (id, qr_id, item_id, party_id, event_type, event_ts_local, event_date,
             factory_id, workstation_id, device_id, actor, session_id,
             quantity, unit_id, previous_status, new_status, section_id, item_display_name,
-            machine_program_upper_line_id, machine_program_batch_id, metadata_json, created_at, sync_status, source_app)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING', 'desktop-store-scanner')`
+            machine_program_upper_line_id, machine_program_batch_id, machine_id, metadata_json, created_at, sync_status, source_app)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING', 'desktop-store-scanner')`
       )
       .run(
         payload.eventId,
@@ -612,6 +618,7 @@ export const rawMaterialQrMethods = {
         payload.itemDisplayName,
         payload.machineProgramLineId ?? null,
         payload.machineProgramBatchId ?? null,
+        payload.machineId ?? null,
         JSON.stringify({ eventType: payload.eventType, actor: payload.actor ?? null, sessionId: payload.sessionId ?? null }),
         payload.occurredAt
       );

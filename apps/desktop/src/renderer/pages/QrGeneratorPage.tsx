@@ -9,6 +9,8 @@ import { MAX_QR_BATCH_QUANTITY, buildQrId, formatQrSerial, normalizeQrColor } fr
 import type { AppRoute } from "../app/routes";
 import { useDesktopApi } from "../hooks/useDesktopApi";
 import type {
+  MachineDayProgramRef,
+  MachineRecord,
   QrBatchRow,
   QrCodeRow,
   QrSequenceState,
@@ -73,11 +75,15 @@ interface QrGeneratorPageProps {
   onNavigate?: (route: AppRoute) => void;
   /** The logged-in operator; recorded as who generated each run. */
   username?: string;
+  /** The machine chosen above the tabs (QrGeneratorWorkspace). Nothing is generated without one. */
+  machine: MachineRecord | null;
+  /** Shown as a tab of the QR Generator workspace, whose header already names it. */
+  embedded?: boolean;
 }
 
 const REQUESTED_BY_MAX = 120;
 
-export const QrGeneratorPage: React.FC<QrGeneratorPageProps> = ({ onNavigate, username }) => {
+export const QrGeneratorPage: React.FC<QrGeneratorPageProps> = ({ onNavigate, username, machine, embedded = false }) => {
   const api = useDesktopApi();
   const { push } = useNotifications();
 
@@ -107,6 +113,7 @@ export const QrGeneratorPage: React.FC<QrGeneratorPageProps> = ({ onNavigate, us
   const [lastResult, setLastResult] = useState<{
     batch: QrBatchRow;
     qrCodes: QrCodeRow[];
+    program: MachineDayProgramRef | null;
   } | null>(null);
   const [history, setHistory] = useState<QrBatchRow[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
@@ -264,6 +271,7 @@ export const QrGeneratorPage: React.FC<QrGeneratorPageProps> = ({ onNavigate, us
   }, [selectedProduct, sequence, colorError, quantityOk, quantityValue]);
 
   const canGenerate =
+    Boolean(machine) &&
     Boolean(articleSizeId) &&
     Boolean(effectiveColor) &&
     !colorError &&
@@ -347,12 +355,14 @@ export const QrGeneratorPage: React.FC<QrGeneratorPageProps> = ({ onNavigate, us
       push(
         "error",
         "Check the form",
-        colorError ??
+        (!machine ? copy.machinePicker.chooseFirst : null) ??
+          colorError ??
           quantityError ??
           "Select a product and colour, then enter a quantity",
       );
       return;
     }
+    if (!machine) return;
 
     setGenerating(true);
     try {
@@ -362,6 +372,7 @@ export const QrGeneratorPage: React.FC<QrGeneratorPageProps> = ({ onNavigate, us
         quantity: quantityValue,
         createdBy: username?.trim() || undefined,
         requestedBy: requestedBy.trim() || undefined,
+        machineId: machine.id,
       });
       if (!result.accepted || !result.batch || !result.qrCodes) {
         push(
@@ -371,12 +382,14 @@ export const QrGeneratorPage: React.FC<QrGeneratorPageProps> = ({ onNavigate, us
         );
         return;
       }
-      setLastResult({ batch: result.batch, qrCodes: result.qrCodes });
+      const program = result.program ?? null;
+      setLastResult({ batch: result.batch, qrCodes: result.qrCodes, program });
       setCopied(false);
       push(
         "success",
         "QR Generation Complete",
-        `${result.batch.quantity} codes for ${result.batch.article} / ${result.batch.size} / ${result.batch.color}`,
+        `${result.batch.quantity} codes for ${result.batch.article} / ${result.batch.size} / ${result.batch.color}` +
+          (program ? ` · ${copy.qrWorkspace.addedToProgram(program.code, program.machineName)}` : ""),
       );
       resetForm();
       void loadColors();
@@ -432,9 +445,11 @@ export const QrGeneratorPage: React.FC<QrGeneratorPageProps> = ({ onNavigate, us
 
   return (
     <div className="page qr-generator-page">
-      <div className="page-header">
-        <h1>QR Generator</h1>
-      </div>
+      {embedded ? null : (
+        <div className="page-header">
+          <h1>QR Generator</h1>
+        </div>
+      )}
 
       <form
         className="card qr-generate-card"
@@ -794,6 +809,12 @@ export const QrGeneratorPage: React.FC<QrGeneratorPageProps> = ({ onNavigate, us
               <div>
                 <span className="section-label">Requested by</span>
                 <strong>{lastResult.batch.requestedBy}</strong>
+              </div>
+            )}
+            {lastResult.program && (
+              <div>
+                <span className="section-label">{copy.cartonProgram.title}</span>
+                <strong>{copy.qrWorkspace.addedToProgram(lastResult.program.code, lastResult.program.machineName)}</strong>
               </div>
             )}
           </div>

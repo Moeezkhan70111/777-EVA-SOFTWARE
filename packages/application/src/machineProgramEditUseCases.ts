@@ -1,4 +1,5 @@
 import {
+  CONTRACTOR_PARTY_TYPE,
   MACHINE_PROGRAM_STATUS,
   attributeKey,
   checkMachineShift,
@@ -31,9 +32,24 @@ import {
 // lowered to what was taken, and the whole program can be deleted (which keeps every line and
 // only releases what was still owed), but its history is never erased.
 
-const CONTRACTOR_PARTY_TYPE = "CONTRACTOR";
-
 // ─── The machine's contractor ──────────────────────────────────────────────────
+
+/** The contractor a machine may be given: in the Party Master, a CONTRACTOR, and active. */
+const requireActiveContractor = async (
+  deps: MachineProgramDeps,
+  partyId: string,
+  tx: TransactionContext
+): Promise<{ id: string; partyName: string }> => {
+  const contractor = await deps.repo.getContractorForProgram(String(partyId ?? "").trim(), tx);
+  if (!contractor) throw new MachineProgramRejectedError("CONTRACTOR_NOT_FOUND", "This contractor is not in the Party Master.");
+  if (contractor.partyType !== CONTRACTOR_PARTY_TYPE) {
+    throw new MachineProgramRejectedError("NOT_A_CONTRACTOR", `${contractor.partyName} is not a contractor in the Party Master.`);
+  }
+  if (contractor.status !== "ACTIVE") {
+    throw new MachineProgramRejectedError("CONTRACTOR_INACTIVE", `${contractor.partyName} is inactive. Choose an active contractor.`);
+  }
+  return contractor;
+};
 
 export interface AssignMachineContractorInput extends MachineProgramActor {
   machineId: string;
@@ -60,14 +76,7 @@ export class AssignMachineContractorUseCase {
       if (!machine) throw new MachineProgramRejectedError("MACHINE_NOT_FOUND", "This machine is no longer set up.");
 
       const role: MachineContractorRole = isMachineContractorRole(input.role) ? input.role : "MACHINE";
-      const contractor = await this.deps.repo.getContractorForProgram(String(input.contractorPartyId ?? "").trim(), tx);
-      if (!contractor) throw new MachineProgramRejectedError("CONTRACTOR_NOT_FOUND", "This contractor is not in the Party Master.");
-      if (contractor.partyType !== CONTRACTOR_PARTY_TYPE) {
-        throw new MachineProgramRejectedError("NOT_A_CONTRACTOR", `${contractor.partyName} is not a contractor in the Party Master.`);
-      }
-      if (contractor.status !== "ACTIVE") {
-        throw new MachineProgramRejectedError("CONTRACTOR_INACTIVE", `${contractor.partyName} is inactive. Choose an active contractor.`);
-      }
+      const contractor = await requireActiveContractor(this.deps, input.contractorPartyId, tx);
 
       await this.deps.repo.setMachineContractor({ machineId: machine.id, role, contractorPartyId: contractor.id, nowIso: tx.nowIso }, tx);
       await auditProgramChange(
@@ -87,6 +96,60 @@ export class AssignMachineContractorUseCase {
         tx
       );
       return { accepted: true, outcome: "ASSIGNED" };
+    });
+  }
+}
+
+// ─── Adding a machine ──────────────────────────────────────────────────────────
+
+export interface AddMachineInput extends MachineProgramActor {
+  name: string;
+  contractorPartyId: string;
+  packingContractorPartyId: string;
+}
+
+/**
+ * Adds a machine together with the two contractors it is worked by — the Machine Program's
+ * "+ Add Machine". One transaction: the machine never exists without both of them.
+ *
+ * A name already in use is refused rather than returned: adding "MACHINE 1" twice must not
+ * quietly re-assign the contractors of the machine that already has that name.
+ */
+export class AddMachineUseCase {
+  constructor(private readonly deps: MachineProgramDeps) {}
+
+  async execute(input: AddMachineInput): Promise<MachineProgramWriteResult> {
+    if (!String(input.actor ?? "").trim()) throw new Error("Adding a machine requires the acting user.");
+    const name = String(input.name ?? "").trim().toUpperCase();
+    if (!name) return { accepted: false, outcome: "NAME_REQUIRED", reason: "Type the machine's name." };
+
+    return runProgramWrite(this.deps, async (tx) => {
+      const existing = await this.deps.repo.findMachineByName(name, tx);
+      if (existing) {
+        throw new MachineProgramRejectedError(
+          "MACHINE_EXISTS",
+          existing.status === "ACTIVE"
+            ? `${name} is already set up. Change its contractors instead.`
+            : `${name} already exists but is retired. Restore it under Raw Material → Setup → Machines.`
+        );
+      }
+      const contractor = await requireActiveContractor(this.deps, input.contractorPartyId, tx);
+      const packing = await requireActiveContractor(this.deps, input.packingContractorPartyId, tx);
+
+      const machine = await this.deps.repo.insertMachineForProgram(name, tx);
+      await this.deps.repo.setMachineContractor({ machineId: machine.id, role: "MACHINE", contractorPartyId: contractor.id, nowIso: tx.nowIso }, tx);
+      await this.deps.repo.setMachineContractor({ machineId: machine.id, role: "PACKING", contractorPartyId: packing.id, nowIso: tx.nowIso }, tx);
+      await auditProgramChange(
+        this.deps,
+        {
+          ...input,
+          eventType: "MACHINE_ADDED",
+          entityId: machine.id,
+          payload: { machineName: machine.name, contractorName: contractor.partyName, packingContractorName: packing.partyName },
+        },
+        tx
+      );
+      return { accepted: true, outcome: "ADDED", machineId: machine.id };
     });
   }
 }

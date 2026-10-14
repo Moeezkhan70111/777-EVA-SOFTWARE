@@ -5,11 +5,11 @@
 
 import type { SqliteDatabase } from "../sqliteDatabase.js";
 import { MAX_QR_BATCH_QUANTITY } from "./types.js";
-import type { QrBatchRecord, QrCodeRecord, PagedResult, QrBatchMemberRow, QrDetail, QrGenerationFilter, QrGenerationFilterOptions, QrGenerationOverview, QrJourney, QrJourneyStep, QrJourneyStepKind, QrPlace, QrSearchRow, QrStage, QrStageCounts } from "./types.js";
+import type { MachineDayProgramRef, QrBatchRecord, QrCodeRecord, PagedResult, QrBatchMemberRow, QrDetail, QrGenerationFilter, QrGenerationFilterOptions, QrGenerationOverview, QrJourney, QrJourneyStep, QrJourneyStepKind, QrPlace, QrSearchRow, QrStage, QrStageCounts } from "./types.js";
 import { GATE_LOCATION_TYPE, IN_STORE_LOCATION_TYPE, IN_STORE_STATUS, TO_GATE_STATUS } from "@erp/application";
 import type { TransactionContext } from "@erp/application";
 import type { MutableTransactionContext } from "./shared.js";
-import { CARTON_GRADE, buildQrId, formatQrSerial, fromPaisaOrNull, isValidRawMaterialQrId, normalizeQrArticle, normalizeQrColor, normalizeQrSize, type CartonGrade } from "@erp/domain";
+import { CARTON_GRADE, QR_BATCH_SOURCE, buildQrId, formatQrSerial, fromPaisaOrNull, isValidRawMaterialQrId, normalizeQrArticle, normalizeQrColor, normalizeQrSize, type CartonGrade, type QrBatchSource } from "@erp/domain";
 
 /**
  * SQL form of `qrStageOf` so grouped counts are derived by the database from the same two
@@ -29,11 +29,29 @@ export interface QrBatchRequest {
   requestedBy?: string;
   /** "B" for a run of B carton labels (migration 074). Left out, an ordinary run. */
   grade?: CartonGrade | null;
+  /**
+   * Which writer this run is (migration 077) — the Machine Program counts QR_GENERATOR runs and
+   * nothing else. generateQrBatch is the QR Generator's and the B Carton page's own entry, so left
+   * out there it follows the grade; reserveQrBatchInTransaction takes it as required.
+   */
+  source?: QrBatchSource;
+  /**
+   * The machine the run is generated for (Phase 1.1). Given, the run joins that machine's program
+   * for today, opened by this very run if it is the first (cartonProgram.ts, migration 078). The
+   * QR Generator and B-Carton Labels always send it; the IPC refuses a run without one.
+   */
+  machineId?: string | null;
 }
+
+/** The source of a run asked for through generateQrBatch: a B run is the B Carton page's. */
+const generatorSourceFor = (grade: CartonGrade | null | undefined): QrBatchSource =>
+  grade === CARTON_GRADE.B ? QR_BATCH_SOURCE.B_CARTON : QR_BATCH_SOURCE.QR_GENERATOR;
 
 export interface GeneratedQrBatch {
   batch: QrBatchRecord;
   qrCodes: QrCodeRecord[];
+  /** The machine program the run was added to, when it was generated for a machine. */
+  program?: MachineDayProgramRef | null;
 }
 
 export const qrCodesMethods = {
@@ -50,9 +68,17 @@ export const qrCodesMethods = {
   generateQrBatch(this: SqliteDatabase, input: QrBatchRequest): GeneratedQrBatch {
     this.db.exec("BEGIN IMMEDIATE TRANSACTION");
     try {
-      const generated = this.reserveQrBatchInTransaction(input);
+      // The program first: a machine that cannot carry one refuses the run before a serial is taken.
+      const program = input.machineId
+        ? this.openMachineDayProgramInTransaction({ machineId: input.machineId, createdBy: input.createdBy?.trim() || null, nowIso: new Date().toISOString() })
+        : null;
+      const generated = this.reserveQrBatchInTransaction({
+        ...input,
+        source: input.source ?? generatorSourceFor(input.grade),
+        machineProgramId: program?.id ?? null,
+      });
       this.db.exec("COMMIT");
-      return generated;
+      return { ...generated, program };
     } catch (error) {
       try { this.db.exec("ROLLBACK"); } catch { /* ignore missing transaction state */ }
       throw error;
@@ -65,8 +91,14 @@ export const qrCodesMethods = {
    * which must never exist without the packets they were printed for, or the other way round.
    *
    * Never call this outside BEGIN IMMEDIATE: the sequence read below relies on the lock.
+   *
+   * `source` is required here: every caller says which writer it is, so no run lands uncounted
+   * or counted as the QR Generator's by default.
    */
-  reserveQrBatchInTransaction(this: SqliteDatabase, input: QrBatchRequest): GeneratedQrBatch {
+  reserveQrBatchInTransaction(
+    this: SqliteDatabase,
+    input: QrBatchRequest & { source: QrBatchSource; machineProgramId?: string | null }
+  ): GeneratedQrBatch {
     const rawQuantity = Number(input.quantity);
     if (!Number.isFinite(rawQuantity) || !Number.isInteger(rawQuantity)) {
       throw new Error("Quantity must be a whole number.");
@@ -128,9 +160,9 @@ export const qrCodesMethods = {
 
     const batchId = crypto.randomUUID();
     this.db.prepare(
-      `INSERT INTO qr_batches (id, article_size_id, article, color, size, start_sequence, end_sequence, quantity, created_at, created_by, requested_by, grade)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-    ).run(batchId, product.id, article, color, size, startSequence, endSequence, quantity, now, createdBy, requestedBy, input.grade ?? null);
+      `INSERT INTO qr_batches (id, article_size_id, article, color, size, start_sequence, end_sequence, quantity, created_at, created_by, requested_by, grade, source, machine_program_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(batchId, product.id, article, color, size, startSequence, endSequence, quantity, now, createdBy, requestedBy, input.grade ?? null, input.source, input.machineProgramId ?? null);
 
     const insertQrCode = this.db.prepare(
       `INSERT INTO qr_codes (id, batch_id, article, color, size, sequence, status, created_at, updated_at, product_variant_id)
@@ -247,9 +279,9 @@ export const qrCodesMethods = {
     // Its own run, so the record says where this identity came from.
     const batchId = crypto.randomUUID();
     db.prepare(
-      `INSERT INTO qr_batches (id, article_size_id, article, color, size, start_sequence, end_sequence, quantity, created_at, created_by, requested_by, grade)
-       VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, NULL)`
-    ).run(batchId, product.id, article, color, size, sequence, sequence, now, origin.createdBy, origin.requestedBy);
+      `INSERT INTO qr_batches (id, article_size_id, article, color, size, start_sequence, end_sequence, quantity, created_at, created_by, requested_by, grade, source)
+       VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, NULL, ?)`
+    ).run(batchId, product.id, article, color, size, sequence, sequence, now, origin.createdBy, origin.requestedBy, QR_BATCH_SOURCE.SCAN_ADOPTED);
 
     db.prepare(
       `INSERT INTO qr_codes (id, batch_id, article, color, size, sequence, status, created_at, updated_at, product_variant_id)
