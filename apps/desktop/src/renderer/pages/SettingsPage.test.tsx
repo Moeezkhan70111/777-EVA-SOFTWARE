@@ -40,6 +40,13 @@ const UNCONFIGURED_BLOCK: NumberBlockStatus = {
   problem: "NOT_CONFIGURED",
   storedValue: null,
   adoption: { allowed: false, refusal: "NO_EXISTING_DATA", detail: "This is a new installation." },
+  // Blocks 2-5, as getNumberBlockStatus returns them while no range is recorded here.
+  assignable: [
+    { block: 2, lo: 100_000, hi: 199_999 },
+    { block: 3, lo: 200_000, hi: 299_999 },
+    { block: 4, lo: 300_000, hi: 399_999 },
+    { block: 5, lo: 400_000, hi: 499_999 },
+  ],
 };
 
 const api = {

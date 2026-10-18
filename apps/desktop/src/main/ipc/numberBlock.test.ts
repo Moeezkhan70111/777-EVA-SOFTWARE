@@ -40,6 +40,14 @@ const ADMIN: SessionUser = {
 };
 const CLERK: SessionUser = { ...ADMIN, id: "u-clerk", username: "babar", role: "USER" };
 
+/** assignableRanges(): rangeForBlock for blocks 2-5, exactly as getNumberBlockStatus returns them. */
+const ASSIGNABLE = [
+  { block: 2, lo: 100_000, hi: 199_999 },
+  { block: 3, lo: 200_000, hi: 299_999 },
+  { block: 4, lo: 300_000, hi: 399_999 },
+  { block: 5, lo: 400_000, hi: 499_999 },
+];
+
 const UNCONFIGURED: NumberBlockStatus = {
   block: null,
   range: null,
@@ -51,6 +59,8 @@ const UNCONFIGURED: NumberBlockStatus = {
     refusal: "NO_EXISTING_DATA",
     detail: "This is a new installation with no numbered documents.",
   },
+  // What the data layer offers while nothing is recorded here: blocks 2-5, never 1.
+  assignable: ASSIGNABLE,
 };
 
 const BLOCK_ONE: NumberBlockStatus = {
@@ -60,6 +70,8 @@ const BLOCK_ONE: NumberBlockStatus = {
   problem: null,
   storedValue: null,
   adoption: { allowed: false, refusal: "ALREADY_CONFIGURED", detail: "Already recorded." },
+  // Nothing is offered once a range is recorded here: a range is never reassigned.
+  assignable: [],
 };
 
 /** The refusal @erp/data throws. Rebuilt here because it arrives from a dynamically loaded module,
