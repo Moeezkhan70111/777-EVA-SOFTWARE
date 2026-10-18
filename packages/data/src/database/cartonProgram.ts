@@ -33,6 +33,7 @@ import {
   businessDateOf,
   cartonsToDozens,
 } from "@erp/domain";
+import { allocateNumberInRange } from "./numberRange.js";
 
 type Row = Record<string, unknown>;
 
@@ -97,7 +98,7 @@ export const cartonProgramMethods = {
       return { id: text(existing.id), code: formatMachineProgramCodeNumber(number), machineName: text(existing.machine_name_snapshot), programDate };
     }
 
-    const next = this.db.prepare("SELECT COALESCE(MAX(program_number), 0) + 1 AS n FROM machine_programs").get() as { n: number };
+    const next = { n: allocateNumberInRange(this, "machineProgram") };
     const id = crypto.randomUUID();
     this.db
       .prepare(

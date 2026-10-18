@@ -9,6 +9,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 const { DatabaseSync } = createRequire(import.meta.url)("node:sqlite") as typeof import("node:sqlite");
 import {
   APP_DATA_FOLDER,
+  assertDevelopmentDataDir,
   DATABASE_FILE_NAME,
   PACKAGED_RESOURCES_FOLDER,
   SESSION_FILE_NAME,
@@ -46,6 +47,74 @@ const readMarker = (file: string): string => {
     db.close();
   }
 };
+
+describe("assertDevelopmentDataDir", () => {
+  // Running from source must never inherit the live data folder. resolveRuntimePaths treats a
+  // missing or blank ERP_DATA_DIR as "not set" and quietly uses %LOCALAPPDATA%\777-erp, which
+  // from a checkout means opening, migrating and seeding the factory's real database with
+  // nothing on screen to say so. It has happened once here, which is why this guard exists.
+
+  const DEV = { isPackaged: false };
+
+  it("refuses a development launch that did not say where its data goes", () => {
+    for (const missing of [undefined, "", "   ", "\t\n"]) {
+      expect(
+        () => assertDevelopmentDataDir(makeEnv("C:\\u", { ...DEV, overrideDataDir: missing })),
+        `overrideDataDir ${JSON.stringify(missing)} must be refused`
+      ).toThrow(/ERP_DATA_DIR is not set/);
+    }
+  });
+
+  it("names the variable and shows how to set it, so the message is actionable", () => {
+    let message = "";
+    try {
+      assertDevelopmentDataDir(makeEnv("C:\\u", DEV));
+    } catch (error) {
+      message = error instanceof Error ? error.message : String(error);
+    }
+    expect(message).toContain("ERP_DATA_DIR");
+    expect(message).toContain("live business database");
+    expect(message).toContain("$env:ERP_DATA_DIR");
+  });
+
+  it("refuses a path that is not usable or not absolute", () => {
+    expect(() => assertDevelopmentDataDir(makeEnv("C:\\u", { ...DEV, overrideDataDir: "erp-devtest" }))).toThrow(
+      /must be an absolute path/
+    );
+    expect(() => assertDevelopmentDataDir(makeEnv("C:\\u", { ...DEV, overrideDataDir: ".\\data" }))).toThrow(
+      /must be an absolute path/
+    );
+    expect(() => assertDevelopmentDataDir(makeEnv("C:\\u", { ...DEV, overrideDataDir: "C:\\bad\0dir" }))).toThrow(
+      /not a usable path/
+    );
+  });
+
+  it("refuses the installed data folder itself, and anything inside it", () => {
+    const installed = path.join("C:\\u", "Local", APP_DATA_FOLDER);
+    for (const target of [installed, path.join(installed, "sub"), `${installed}\\`]) {
+      expect(
+        () => assertDevelopmentDataDir(makeEnv("C:\\u", { ...DEV, overrideDataDir: target })),
+        `${target} must be refused`
+      ).toThrow(/points at the installed data folder/);
+    }
+  });
+
+  it("accepts a disposable folder, including one that merely looks similar", () => {
+    for (const target of ["C:\\erp-devtest", "C:\\u\\Local\\777-erp-copy", "D:\\scratch\\erp"]) {
+      expect(
+        () => assertDevelopmentDataDir(makeEnv("C:\\u", { ...DEV, overrideDataDir: target })),
+        `${target} should be accepted`
+      ).not.toThrow();
+    }
+  });
+
+  it("leaves a packaged installation alone — it is SUPPOSED to use the real folder", () => {
+    expect(() => assertDevelopmentDataDir(makeEnv("C:\\u", { isPackaged: true }))).not.toThrow();
+    expect(() =>
+      assertDevelopmentDataDir(makeEnv("C:\\u", { isPackaged: true, overrideDataDir: "" }))
+    ).not.toThrow();
+  });
+});
 
 describe("resolveRuntimePaths", () => {
   it("uses the non-roaming local app-data folder on Windows and keeps disposable files in temp", () => {

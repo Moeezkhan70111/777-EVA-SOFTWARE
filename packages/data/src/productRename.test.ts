@@ -21,6 +21,7 @@ function createFixture() {
     dbPath: path.join(tempDir, "products.db"),
     schemaPath: path.resolve(process.cwd(), "src/local-schema.sql"),
   });
+  db.setNumberBlock(1, "test");
   const raw = (db as unknown as { db: import("node:sqlite").DatabaseSync }).db;
   const articleSizeId = (article: string, size: string): string | undefined =>
     (raw.prepare("SELECT id FROM article_sizes WHERE article = ? AND size = ?").get(article, size) as { id: string } | undefined)?.id;

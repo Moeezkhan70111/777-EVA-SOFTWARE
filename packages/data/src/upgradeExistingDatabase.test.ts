@@ -50,6 +50,7 @@ test("a database that already exists opens, migrates and keeps what it had", () 
 
     // The boot that used to throw "no such column: parent_id" before anyone could sign in.
     const db = new SqliteDatabase({ dbPath, schemaPath: SCHEMA });
+    db.setNumberBlock(1, "test");
 
     const categories = db.listInventoryCategories();
     assert.equal(categories.length, 1, "the category that was already there survived the rebuild");
@@ -74,11 +75,13 @@ test("re-opening the same database is a no-op, not a second migration", () => {
     seedOldDatabase(dbPath);
 
     const first = new SqliteDatabase({ dbPath, schemaPath: SCHEMA });
+    first.setNumberBlock(1, "test");
     const eva = first.createInventoryCategory({ name: "EVA", parentId: "cat-dana" });
     first.close();
 
     // Every boot after the first re-execs the schema file and skips applied migrations.
     const second = new SqliteDatabase({ dbPath, schemaPath: SCHEMA });
+    second.setNumberBlock(1, "test");
     const names = second.listInventoryCategories().map((row) => String(row.path_name));
     assert.deepEqual(names.sort(), ["DANA", "DANA — EVA"], "the sub-category is still a sub-category");
     assert.equal(second.categoryPathName(eva), "DANA — EVA");
@@ -92,6 +95,7 @@ test("a brand new database comes up with the same shape as an upgraded one", () 
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "erp-fresh-"));
   try {
     const db = new SqliteDatabase({ dbPath: path.join(tempDir, "fresh.db"), schemaPath: SCHEMA });
+    db.setNumberBlock(1, "test");
     const dana = db.createInventoryCategory({ name: "DANA" });
     db.createInventoryCategory({ name: "EVA", parentId: dana });
 
@@ -134,6 +138,7 @@ test("a database with real rows migrates forward across the table rebuilds and s
   try {
     // An older build, with business data in it: a product, a party and a machine.
     const before = new SqliteDatabase({ dbPath, schemaPath: SCHEMA, migrationsDir: older });
+    before.setNumberBlock(1, "test");
     before.createProduct({ article: "SK46", size: "4/6", sellingPrice: 600, status: "ACTIVE" });
     const partyId = before.createParty({ partyName: "UPGRADE TRADERS", partyType: "CUSTOMER", city: "Lahore", status: "ACTIVE" });
     before.createMachine({ name: "UPGRADE MACHINE" });
@@ -141,6 +146,7 @@ test("a database with real rows migrates forward across the table rebuilds and s
 
     // The current build opens the same file and carries it forward, 067 through 076 included.
     const after = new SqliteDatabase({ dbPath, schemaPath: SCHEMA, migrationsDir: migrations });
+    after.setNumberBlock(1, "test");
     try {
       const raw = after.db;
       const integrity = raw.prepare("PRAGMA integrity_check").get() as { integrity_check: string } | undefined;

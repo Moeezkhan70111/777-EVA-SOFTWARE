@@ -95,6 +95,63 @@ function resolveAppResources(env: RuntimeEnvironment): { schemaFile: string; mig
   };
 }
 
+/**
+ * Running from source must never fall through to the real data folder.
+ *
+ * `resolveRuntimePaths` treats a missing, blank or whitespace ERP_DATA_DIR as "not set" and
+ * quietly uses %LOCALAPPDATA%\777-erp — correct for an installed copy, and dangerous from a
+ * checkout. A developer who forgets the variable, or sets it in a different terminal from the
+ * one that launches, gets the factory's live database: opened, migrated to whatever the working
+ * tree ships, and seeded with default roles, with nothing on screen to say so. That has already
+ * happened once here.
+ *
+ * So a development launch has to say where its data goes. There is no default, because the only
+ * available default is the one thing that must not be chosen.
+ *
+ * A PACKAGED application is untouched: it has no ERP_DATA_DIR and is supposed to use the real
+ * folder.
+ */
+export function assertDevelopmentDataDir(env: RuntimeEnvironment): void {
+  if (env.isPackaged === true) return;
+
+  const given = env.overrideDataDir;
+  const named = typeof given === "string" ? given.trim() : "";
+  if (named === "") {
+    throw new Error(
+      `${DATA_DIR_ENV} is not set.\n\n` +
+        "Running from source will not fall back to the installed data folder, because that is " +
+        "the live business database. Set it to a disposable folder in the SAME terminal that " +
+        `starts the app, for example:\n\n  $env:${DATA_DIR_ENV} = "C:\\erp-devtest"\n\n` +
+        "A packaged installation does not need this."
+    );
+  }
+  if (named.includes("\0")) {
+    throw new Error(`${DATA_DIR_ENV} is not a usable path.`);
+  }
+  if (!path.isAbsolute(named)) {
+    throw new Error(
+      `${DATA_DIR_ENV} must be an absolute path, not "${named}".\n` +
+        "A relative path is resolved against whatever directory the launcher happened to run in."
+    );
+  }
+
+  // The one destination that is never acceptable from a checkout.
+  const installed = path.resolve(
+    path.join(env.platform === "win32" && env.localAppDataDir ? env.localAppDataDir : env.appDataDir, APP_DATA_FOLDER)
+  );
+  const chosen = path.resolve(named);
+  const within = (child: string, parent: string): boolean => {
+    const relative = path.relative(parent, child);
+    return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
+  };
+  if (within(chosen, installed)) {
+    throw new Error(
+      `${DATA_DIR_ENV} points at the installed data folder (${chosen}).\n` +
+        "That is the live business database. Choose a disposable folder instead."
+    );
+  }
+}
+
 export function resolveRuntimePaths(env: RuntimeEnvironment): RuntimePaths {
   const base =
     env.overrideDataDir?.trim() ||

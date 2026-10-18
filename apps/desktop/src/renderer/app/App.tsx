@@ -592,7 +592,7 @@ export const App = () => {
       case "contractor-ledger":
         return <ContractorLedgerPage onNavigate={navigateTo} />;
       case "settings":
-        return <SettingsPage />;
+        return <SettingsPage isAdmin={session.role === USER_ROLE.ADMIN} />;
       case "health":
         return <HealthPage />;
       case "logs":

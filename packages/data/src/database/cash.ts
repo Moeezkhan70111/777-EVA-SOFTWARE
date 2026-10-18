@@ -6,13 +6,11 @@
 import type { SqliteDatabase } from "../sqliteDatabase.js";
 import type { PagedResult, SaleVoucherLineRecord } from "./types.js";
 import { addMoney, fromPaisa, subtractMoney, toPaisa } from "@erp/domain";
+import { allocateNumberInRange } from "./numberRange.js";
 
 export const cashMethods = {
   getNextCashVoucherNumber(this: SqliteDatabase): number {
-    const row = this.db
-      .prepare("SELECT COALESCE(MAX(voucher_number), 0) + 1 AS next_number FROM cash_vouchers")
-      .get() as { next_number: number };
-    return row.next_number;
+    return allocateNumberInRange(this, "cashVoucher");
   },
 
   createCashVoucher(this: SqliteDatabase, input: {

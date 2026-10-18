@@ -9,6 +9,7 @@ import type { IpcContext } from "./context";
 import { app } from "electron";
 import { asOptionalString, oneOf } from "@erp/domain";
 import { resetLocalData } from "../runtimePaths";
+import { childProcessEnv } from "../cloudConfig";
 
 export function registerSystemHandlers(ctx: IpcContext): void {
   const { db, logger, authorizer, deviceId, paths, useCases } = ctx;
@@ -18,7 +19,19 @@ export function registerSystemHandlers(ctx: IpcContext): void {
 
   ipcMain.handle(IPC.saveSettings, (event, entries?: Record<string, string>) => {
     authorizer.requireUser(event);
-    db.setSettings(entries ?? {}, "desktop-ui");
+    // Writes everything except the keys that decide which document numbers this computer owns:
+    // the screen sends every setting back on save, and the range is written only by provisioning
+    // (see ./numberBlock.ts).
+    const { dropped } = db.setOperatorSettings(entries ?? {}, "desktop-ui");
+    if (dropped.length > 0) {
+      logger.log({
+        module: "settings",
+        severity: "WARNING",
+        operation: "save-settings",
+        deviceId,
+        message: `Ignored protected setting(s) sent from the renderer: ${dropped.join(", ")}`
+      });
+    }
     logger.log({
       module: "settings",
       severity: "INFO",
@@ -96,10 +109,14 @@ export function registerSystemHandlers(ctx: IpcContext): void {
         Write-Output $found
       `.trim();
 
+      // An explicit environment, not this process's. A spawned child inherits everything by
+      // default, which would hand a PnP device query the cloud device account's password; it
+      // has no use for it, and it would sit in that child's environment block for anything able
+      // to read it. childProcessEnv keeps every variable powershell.exe actually needs.
       const { stdout } = await execFileAsync(
         "powershell.exe",
         ["-NoProfile", "-NonInteractive", "-Command", ps],
-        { timeout: 5000, windowsHide: true }
+        { timeout: 5000, windowsHide: true, env: childProcessEnv() }
       );
 
       return stdout.trim().toLowerCase() === "true";

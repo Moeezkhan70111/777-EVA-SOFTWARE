@@ -26,6 +26,7 @@ import {
 import type { MutableTransactionContext } from "./shared.js";
 import { LINE_CONSUMED_SQL } from "./machineProgramSql.js";
 import { INJECTOR_LAYOUT } from "./machinePrograms.js";
+import { allocateNumberInRange } from "./numberRange.js";
 
 const text = (value: unknown): string => (value == null ? "" : String(value));
 const dbOf = (tx: TransactionContext) => (tx as MutableTransactionContext).db;
@@ -124,8 +125,8 @@ export const machineProgramWritesMethods = {
   },
 
   async allocateMachineProgramNumber(this: SqliteDatabase, tx: TransactionContext): Promise<number> {
-    const row = dbOf(tx).prepare("SELECT COALESCE(MAX(program_number), 0) + 1 AS n FROM machine_programs").get() as { n: number };
-    return Number(row.n);
+    void tx;
+    return allocateNumberInRange(this, "machineProgram");
   },
 
   async insertMachineProgram(

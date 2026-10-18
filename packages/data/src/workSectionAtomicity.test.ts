@@ -30,6 +30,7 @@ function createFixture(prefix: string) {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), `erp-${prefix}-`));
   const dbPath = path.join(tempDir, "x.db");
   const db = new SqliteDatabase({ dbPath, schemaPath: SCHEMA });
+  db.setNumberBlock(1, "test");
   return {
     db,
     raw: db.db,

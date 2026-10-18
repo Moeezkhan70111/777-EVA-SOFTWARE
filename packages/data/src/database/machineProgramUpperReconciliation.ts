@@ -22,6 +22,7 @@ import {
   type ClaimPartyRole,
 } from "@erp/domain";
 import type { GeneratedQrBatch } from "./qrCodes.js";
+import { allocateNumberInRange } from "./numberRange.js";
 
 const text = (value: unknown): string => (value == null ? "" : String(value));
 
@@ -218,9 +219,7 @@ export const machineProgramUpperReconciliationMethods = {
     this: SqliteDatabase,
     input: { partyId: string; role: ClaimPartyRole; programId: string; lineId: string; itemId: string; pairs: number; ratePaisa: number; reason: string; actor: string }
   ): string {
-    const next = this.db
-      .prepare("SELECT COALESCE(MAX(CAST(SUBSTR(claim_number, 4) AS INTEGER)), 0) + 1 AS n FROM party_claims")
-      .get() as { n: number };
+    const next = { n: allocateNumberInRange(this, "partyClaim") };
     const claimNumber = `CL-${String(next.n).padStart(6, "0")}`;
     this.db
       .prepare(

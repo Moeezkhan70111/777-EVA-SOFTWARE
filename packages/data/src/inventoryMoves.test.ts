@@ -20,6 +20,7 @@ function createFixture() {
     dbPath: path.join(tempDir, "moves.db"),
     schemaPath: path.resolve(process.cwd(), "src/local-schema.sql"),
   });
+  db.setNumberBlock(1, "test");
 
   db.createInventoryUnit({ code: "DZN", name: "Dozen" });
   const unitId = (db.listInventoryUnits() as Array<{ id: string; code: string }>).find((u) => u.code === "DZN")!.id;

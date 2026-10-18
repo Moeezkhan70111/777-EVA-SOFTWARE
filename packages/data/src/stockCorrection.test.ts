@@ -19,6 +19,7 @@ function createFixture() {
     dbPath: path.join(tempDir, "corrections.db"),
     schemaPath: path.resolve(process.cwd(), "src/local-schema.sql"),
   });
+  db.setNumberBlock(1, "test");
 
   const admin = db.bootstrapFirstAdmin("owner", "password1");
   const storekeeper = db.createUserAccount("aslam", "password1");

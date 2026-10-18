@@ -18,6 +18,7 @@ function createFixture() {
     dbPath: path.join(tempDir, "subcat.db"),
     schemaPath: path.resolve(process.cwd(), "src/local-schema.sql"),
   });
+  db.setNumberBlock(1, "test");
   db.createInventoryUnit({ code: "KG", name: "Kilogram" });
   const kg = (db.listInventoryUnits() as Array<{ id: string; code: string }>).find((u) => u.code === "KG")!.id;
   return {

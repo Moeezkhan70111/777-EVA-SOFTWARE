@@ -58,6 +58,8 @@ export interface QrMasterRepository {
     qrId: string;
     productVariantId: string;
     createdAt: string;
+    /** Present when the identity should also be queued for the other computers, in the same transaction. */
+    outboxId?: string;
   }, tx: TransactionContext): Promise<void>;
 }
 

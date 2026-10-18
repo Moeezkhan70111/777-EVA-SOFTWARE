@@ -23,6 +23,7 @@ function createFixture() {
     dbPath: path.join(tempDir, "erp.db"),
     schemaPath: path.resolve(process.cwd(), "src/local-schema.sql"),
   });
+  db.setNumberBlock(1, "test");
   const raw = (db as unknown as { db: import("node:sqlite").DatabaseSync }).db;
 
   const gents = db.createProductGroup({ groupName: "GENTS" });

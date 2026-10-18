@@ -408,6 +408,74 @@ export const copy = {
     failedTitle: "Backup failed",
   },
 
+  // The Cloud Sync panel in Settings (components/settings/CloudSyncSection).
+  //
+  // A pass is not read-only: it writes carton identities to a shared project and the cloud log
+  // is append-only. So the wording here says plainly what did and did not happen, and never
+  // implies a send that was refused.
+  sync: {
+    title: "Cloud Sync",
+    notConfiguredTitle: "Not set up on this computer",
+    notConfiguredHint:
+      "This computer works normally without cloud sync. Nothing is sent until it is set up.",
+    setUpOn: (host: string) => `Set up (${host})`,
+    runningNow: "A sync is running on this computer",
+    idle: "Idle",
+    never: "Never",
+
+    // Status rows. Labels only -- the values come from the queue summary.
+    readyToSend: "Ready To Send",
+    waitingToRetry: "Waiting To Retry",
+    noTransportYet: "No Transport Yet",
+    parked: "Parked (Dead Letter)",
+    sentSoFar: "Sent So Far",
+    lastSent: "Last Sent",
+    lastFailure: "Last Failure",
+    logReadTo: "Cloud Log Read To",
+    account: "Device Account",
+
+    appliedLabel: "Applied",
+    reasonLabel: "Reason",
+
+    // The last pass, as distinct from the queue rows above. Reusing "Sent So Far",
+    // "Waiting To Retry" and "Parked (Dead Letter)" here said three wrong things: the
+    // first is this pass not the total, the second is a pull deferral not a backoff, and
+    // the third had not been parked at all -- the cloud had just declined it once.
+    sentThisPass: "Sent This Pass",
+    deferredLabel: "Deferred",
+    refusedLabel: "Refused By The Cloud",
+
+    syncNow: "Sync Now",
+    syncing: "Syncing…",
+    doneTitle: "Cloud sync finished",
+    doneBody: (pushed: number, applied: number, duplicates: number) =>
+      `Sent ${String(pushed)}, applied ${String(applied)}, already here ${String(duplicates)}`,
+    failedTitle: "Cloud sync did not finish",
+    waitingFor: (reason: string) => `Waiting for something that has not arrived yet: ${reason}`,
+    refusedCount: (count: number) =>
+      count === 1 ? "1 event the cloud will not accept" : `${String(count)} events the cloud will not accept`,
+
+    // Parked events.
+    parkedTitle: "Parked Events",
+    parkedEmpty: "No parked events",
+    parkedEmptyHint: "Nothing has been refused often enough to stop being sent.",
+    parkedLoadFailed: "The parked events could not be read",
+    // Labels the refusal COUNT on a parked row. `parked` stays the queue status it
+    // always was -- every row in that table is already parked, so the column is
+    // about how often the cloud said no.
+    refusalsLabel: "Refusals",
+    attempts: (refusals: number) =>
+      refusals === 1 ? "1 refusal" : `${String(refusals)} refusals`,
+    putBack: "Put Back",
+    putBackTitle: "Put this event back in the queue?",
+    putBackExplain:
+      "It becomes eligible again and will be offered on the next sync an administrator runs. This does not send it now.",
+    putBackWarning: "Fix the reason it stopped first, or it will be refused again.",
+    putBackBusy: "Putting back…",
+    putBackDoneTitle: "Event put back in the queue",
+    putBackDoneBody: (aggregateId: string) => `${aggregateId} will go on the next sync`,
+  },
+
   billing: {
     // Bills made from a gatepass
     fromGatepass: (code: string) => `From Gatepass ${code}`,
@@ -1955,6 +2023,43 @@ export const copy = {
   },
 
   // The Munshi's station: the three jobs on the Munshi's own screen.
+  // This computer's document-number range, shown in Settings. "Range" rather than "block":
+  // the operator's written factory record says which numbers a computer owns, not which block.
+  numberBlock: {
+    title: "Document Number Range",
+    rangeLabel: "This computer's range",
+    computerLabel: "Computer",
+    stateLabel: "State",
+    configured: "Set",
+    notConfigured: "Not set",
+    invalid: "Not valid",
+    computer: (block: number) => `Computer ${block} of 5`,
+    numbers: (lo: number, hi: number) => `${lo.toLocaleString()} – ${hi.toLocaleString()}`,
+    storedValue: (value: string) => `Stored value: ${value}`,
+    notConfiguredBody:
+      "Documents cannot be created on this computer until it has been given its range. Scanning, production, dispatch, returns and every report work as normal.",
+    invalidBody:
+      "The range recorded on this computer is not one of the five ranges. Documents cannot be created until it is corrected.",
+    adoptAction: "Record This Computer As Computer 1",
+    adoptConfirm:
+      "Record this computer as Computer 1, the computer that already holds the company's numbered documents? It will then create documents numbered 1 to 99,999. This is recorded once and cannot be changed in the application.",
+    adoptDone: "Document number range recorded",
+    adoptRefused: "Range not recorded",
+    cannotAssignTitle: "This computer cannot be given a range here",
+    loadFailed: "The document number range could not be read.",
+    assignTitle: "This is a second computer",
+    assignBody:
+      "Give this computer the range written down for it. Each computer must have a different range. Nothing in the application can check which range another computer is using — that record is the factory's own.",
+    assignLabel: "Range for this computer",
+    assignChoose: "Choose a range",
+    assignAction: "Record This Range",
+    assignConfirm: (block: number, lo: number, hi: number) =>
+      `Record this computer as Computer ${block} of 5? It will then create documents numbered ${lo.toLocaleString()} to ${hi.toLocaleString()}. Check against the factory's record that no other computer has this range: it is recorded once and cannot be changed in the application.`,
+    assignDone: "Document number range recorded",
+    assignRefused: "Range not recorded",
+    assignNotChosen: "Choose a range first.",
+  },
+
   munshi: {
     title: "Munshi",
     role: "Gatepass Desk",

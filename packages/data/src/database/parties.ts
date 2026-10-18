@@ -7,6 +7,7 @@ import type { SqliteDatabase } from "../sqliteDatabase.js";
 import type { PagedResult, PartyListRow, PartyRecord } from "./types.js";
 import { orderBy } from "./shared.js";
 import { fromPaisaOrNull, toPaisaOrNull } from "@erp/domain";
+import { allocateNumberInRange } from "./numberRange.js";
 
 export const partiesMethods = {
   createPartyGroup(this: SqliteDatabase, input: { groupName: string; description?: string }): string {
@@ -122,17 +123,11 @@ export const partiesMethods = {
   },
 
   getNextPartyCode(this: SqliteDatabase): string {
-    const row = this.db.prepare(
-      `SELECT COALESCE(MAX(CAST(SUBSTR(party_code, 5) AS INTEGER)), 0) + 1 AS next_number FROM parties`
-    ).get() as { next_number: number };
-    return `PTY-${String(row.next_number).padStart(6, "0")}`;
+    return `PTY-${String(allocateNumberInRange(this, "partyCode")).padStart(6, "0")}`;
   },
 
   getNextProductCode(this: SqliteDatabase): string {
-    const row = this.db.prepare(
-      `SELECT COALESCE(MAX(CAST(SUBSTR(product_code, 5) AS INTEGER)), 0) + 1 AS next_number FROM article_sizes WHERE product_code IS NOT NULL`
-    ).get() as { next_number: number };
-    return `PRD-${String(row.next_number).padStart(6, "0")}`;
+    return `PRD-${String(allocateNumberInRange(this, "productCode")).padStart(6, "0")}`;
   },
 
   updateParty(this: SqliteDatabase, 

@@ -36,6 +36,7 @@ function createFixture() {
   const dbPath = path.join(tempDir, "delivery.db");
   const open = () => {
     const db = new SqliteDatabase({ dbPath, schemaPath: path.resolve(process.cwd(), "src/local-schema.sql") });
+    db.setNumberBlock(1, "test");
     db.ensureOperationalContext({
       factoryId: FACTORY, factoryCode: "777", factoryName: "777 Manufacturing",
       workstationId: "ws-prod-01", workstationCode: "PROD-01", workstationName: "Production Line 01",

@@ -10,6 +10,7 @@ import type { CanonicalQrPayload } from "@erp/domain";
 import { IN_STORE_STOCK_TOTAL_SQL, orderBy } from "./shared.js";
 import type { MutableTransactionContext } from "./shared.js";
 import type { ScanOperationalContext, TransactionContext } from "@erp/application";
+import { enqueueProductionProduced, enqueueQrMaster } from "./syncEvents.js";
 
 export const productionMethods = {
   async existsByQrId(this: SqliteDatabase, qrId: string, tx: TransactionContext): Promise<boolean> {
@@ -40,7 +41,7 @@ export const productionMethods = {
   },
 
   async insertProduced(this: SqliteDatabase, 
-    payload: { qrId: string; productVariantId: string; createdAt: string },
+    payload: { qrId: string; productVariantId: string; createdAt: string; outboxId?: string },
     tx: TransactionContext
   ): Promise<void> {
     const context = tx as MutableTransactionContext;
@@ -52,6 +53,17 @@ export const productionMethods = {
         ) VALUES (?, ?, 'PRODUCED', 'FACTORY', NULL, NULL, ?, ?, NULL, NULL, NULL)`
       )
       .run(payload.qrId, payload.productVariantId, payload.createdAt, payload.createdAt);
+
+    // The identity is queued for the other computers in the SAME transaction, so the row and the
+    // news of it commit together or not at all. Queueing cannot fail this write -- see
+    // enqueueSyncEvent: a queue that refuses must never cost the factory a carton.
+    if (payload.outboxId) {
+      enqueueQrMaster(
+        context.db,
+        { qrId: payload.qrId, productVariantId: payload.productVariantId, createdAt: payload.createdAt },
+        payload.outboxId
+      );
+    }
   },
 
   async appendProducedEvent(this: SqliteDatabase, 
@@ -161,32 +173,45 @@ export const productionMethods = {
     tx: TransactionContext
   ): Promise<void> {
     const context = tx as MutableTransactionContext;
-    const outboxPayload = {
-      eventId: payload.eventId,
-      qrId: payload.qrId,
-      parserVersion: payload.parserVersion,
-      factoryId: payload.factoryId,
-      workstationId: payload.workstationId,
-      deviceId: payload.deviceId,
-      createdAt: payload.createdAt,
-    };
-
-    context.db
+    // Read the row back rather than rebuild it from the arguments: event_date and event_hour
+    // were worked out from this computer's local clock, and recomputing them on a computer in
+    // another timezone would give a different hour.
+    const row = context.db
       .prepare(
-        `INSERT INTO sync_outbox (
-          id, aggregate_type, aggregate_id, operation, dedupe_key,
-          payload_json, status, lock_token, available_at, attempts, last_error, created_at, updated_at
-        ) VALUES (?, 'PRODUCTION_EVENT', ?, 'INSERT', ?, ?, 'PENDING', NULL, ?, 0, NULL, ?, ?)`
+        `SELECT product_variant_id, event_ts_local, event_date, event_hour, factory_id,
+                workstation_id, operator_id, device_id, article_snapshot, color_snapshot,
+                size_snapshot, serial_snapshot, metadata_json, created_at, source_app
+           FROM production_events WHERE id = ? LIMIT 1`
       )
-      .run(
-        payload.outboxId,
-        payload.eventId,
-        `PRODUCTION_EVENT:${payload.eventId}`,
-        JSON.stringify(outboxPayload),
-        payload.createdAt,
-        payload.createdAt,
-        payload.createdAt
-      );
+      .get(payload.eventId) as Record<string, unknown> | undefined;
+
+    // Nothing to send if the event is not there. That would be a programming error, and it must
+    // not take the scan down with it.
+    if (!row) return;
+
+    enqueueProductionProduced(
+      context.db,
+      {
+        eventId: payload.eventId,
+        qrId: payload.qrId,
+        productVariantId: String(row.product_variant_id),
+        occurredAt: String(row.event_ts_local),
+        eventDate: String(row.event_date),
+        eventHour: Number(row.event_hour),
+        factoryId: String(row.factory_id),
+        workstationId: String(row.workstation_id),
+        operatorId: row.operator_id === null || row.operator_id === undefined ? null : String(row.operator_id),
+        deviceId: String(row.device_id),
+        article: String(row.article_snapshot),
+        color: String(row.color_snapshot),
+        size: String(row.size_snapshot),
+        serial: String(row.serial_snapshot),
+        metadataJson: String(row.metadata_json ?? ""),
+        createdAt: String(row.created_at),
+        sourceApp: String(row.source_app),
+      },
+      payload.outboxId
+    );
   },
 
   getDashboardSnapshot(this: SqliteDatabase): DashboardSnapshot {

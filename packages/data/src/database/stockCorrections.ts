@@ -16,6 +16,7 @@
 import { NOTIFICATION_KIND, STOCK_CORRECTION_MIN_REASON, STOCK_CORRECTION_STATUS } from "@erp/domain";
 import type { SqliteDatabase } from "../sqliteDatabase.js";
 import type { StockCorrectionRequestRow } from "./types.js";
+import { allocateNumberInRange } from "./numberRange.js";
 
 const SELECT_REQUEST = `
   SELECT r.id, r.request_code, r.item_id, r.item_display_name, r.item_code, r.quantity,
@@ -101,9 +102,7 @@ export const stockCorrectionsMethods = {
     this.db.exec("BEGIN IMMEDIATE TRANSACTION");
     try {
       // Allocated inside the write lock, so the code that is read is the code that is inserted.
-      const next = this.db
-        .prepare("SELECT COALESCE(MAX(CAST(SUBSTR(request_code, 5) AS INTEGER)), 0) + 1 AS n FROM stock_correction_requests WHERE request_code LIKE 'SCR-%'")
-        .get() as { n: number };
+      const next = { n: allocateNumberInRange(this, "stockCorrection") };
       const requestCode = `SCR-${String(next.n).padStart(6, "0")}`;
 
       this.db

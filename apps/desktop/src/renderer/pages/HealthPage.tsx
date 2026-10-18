@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { useDesktopApi } from "../hooks/useDesktopApi";
-import type { HealthSnapshot } from "../types/desktopApi";
+import type { CloudSyncStatus, HealthSnapshot } from "../types/desktopApi";
 import { copy } from "../config/copy";
 
 const bytes = (n: number): string => {
@@ -36,14 +36,25 @@ const HealthItem = ({ label, value, tone = "default" }: HealthItemProps) => {
   );
 };
 
+/** Never "a moment ago" when nothing has happened: an absent timestamp says so plainly. */
+const when = (iso: string | null): string => (iso === null ? "Never" : new Date(iso).toLocaleString());
+
 export const HealthPage = () => {
   const api = useDesktopApi();
   const [health, setHealth] = useState<HealthSnapshot | null>(null);
+  const [sync, setSync] = useState<CloudSyncStatus | null>(null);
   const [loading, setLoading] = useState(true);
 
   const load = async () => {
     setLoading(true);
-    setHealth(await api.getHealth());
+    const [snapshot, cloud] = await Promise.all([
+      api.getHealth(),
+      // The queue counts are local facts and worth showing on a computer that is not set up for
+      // cloud sync at all. If the call fails, the rest of the page still renders.
+      api.getCloudSyncStatus().catch(() => null),
+    ]);
+    setHealth(snapshot);
+    setSync(cloud);
     setLoading(false);
   };
 
@@ -87,6 +98,34 @@ export const HealthPage = () => {
           <HealthItem label="Scanner Status"  value={health.scannerConnected ? "Connected" : "Disconnected"} tone={health.scannerConnected ? "ok" : "err"} />
         </div>
       </div>
+
+      {sync !== null && (
+        <div>
+          <div className="section-label mb-8">Cloud Sync</div>
+          <div className="health-grid">
+            <HealthItem
+              label="Cloud Sync"
+              value={sync.configured ? `Set up (${sync.host ?? ""})` : "Not set up on this computer"}
+              tone={sync.configured ? "ok" : "default"}
+            />
+            <HealthItem label="Ready To Send"  value={sync.queue.pushableNow}  tone={sync.queue.pushableNow > 0 ? "warn" : "ok"} />
+            <HealthItem label="Waiting To Retry" value={sync.queue.pushableWaiting} tone={sync.queue.pushableWaiting > 0 ? "warn" : "default"} />
+            <HealthItem label="No Transport Yet" value={sync.queue.notPushable} />
+            <HealthItem label="Parked (Dead Letter)" value={sync.queue.counts.DEAD_LETTER} tone={sync.queue.counts.DEAD_LETTER > 0 ? "err" : "ok"} />
+            <HealthItem label="Sent So Far"    value={sync.queue.counts.SYNCED} />
+            <HealthItem label="Last Sent"      value={when(sync.queue.lastSyncedAt)} />
+            <HealthItem label="Last Failure"   value={when(sync.queue.lastFailureAt)} tone={sync.queue.lastFailureAt === null ? "ok" : "warn"} />
+            <HealthItem label="Cloud Log Read To" value={sync.pullCursor} />
+            {sync.waitingFor !== undefined && (
+              <HealthItem
+                label="Pull Waiting At"
+                value={`position ${String(sync.waitingFor.seq)}, retry after ${when(sync.waitingFor.retryAfter)}`}
+                tone="warn"
+              />
+            )}
+          </div>
+        </div>
+      )}
 
       <div>
         <div className="section-label mb-8">Data Integrity</div>

@@ -36,6 +36,7 @@ function createFixture() {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "erp-sale-returns-"));
   const dbPath = path.join(tempDir, "returns.db");
   const db = new SqliteDatabase({ dbPath, schemaPath: path.resolve(process.cwd(), "src/local-schema.sql") });
+  db.setNumberBlock(1, "test");
   db.ensureOperationalContext({
     factoryId: FACTORY,
     factoryCode: "777",
@@ -663,6 +664,7 @@ test("migration 035 upgrades a database that predates ON_GATE without losing a s
 
     // The upgrade.
     const upgraded = new SqliteDatabase({ dbPath: f.dbPath, schemaPath: path.resolve(process.cwd(), "src/local-schema.sql") });
+    upgraded.setNumberBlock(1, "test");
     const raw = (upgraded as unknown as { db: Raw }).db;
 
     try {

@@ -10,6 +10,7 @@ import { SqliteDatabase } from "./sqliteDatabase.js";
 function createDbFixture() {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "erp-lists-"));
   const db = new SqliteDatabase({ dbPath: path.join(tempDir, "lists.db"), schemaPath: path.resolve(process.cwd(), "src/local-schema.sql") });
+  db.setNumberBlock(1, "test");
   db.ensureOperationalContext({
     factoryId: "factory-1", factoryCode: "F001", factoryName: "Factory",
     workstationId: "workstation-1", workstationCode: "WS001", workstationName: "WS",

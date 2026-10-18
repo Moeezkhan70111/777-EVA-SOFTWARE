@@ -9,6 +9,7 @@ function createFixture() {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "erp-raw-material-"));
   const dbPath = path.join(tempDir, "raw.db");
   const db = new SqliteDatabase({ dbPath, schemaPath: path.resolve(process.cwd(), "src/local-schema.sql") });
+  db.setNumberBlock(1, "test");
   return { db, dbPath, tempDir, cleanup: () => { db.close(); fs.rmSync(tempDir, { recursive: true, force: true }); } };
 }
 
@@ -123,6 +124,7 @@ test("dropdown options are normalized to uppercase, deduplicated case-insensitiv
     // Restart: close and reopen against the same database file.
     fixture.db.close();
     const reopened = new SqliteDatabase({ dbPath: fixture.dbPath, schemaPath: path.resolve(process.cwd(), "src/local-schema.sql") });
+    reopened.setNumberBlock(1, "test");
     const optionsAfter = (reopened.listInventoryCategories().find((c) => (c as { id: string }).id === categoryId) as { fields: Array<{ id: string; options: Array<{ option_value: string }> }> })
       .fields.find((f) => f.id === colorFieldId)!.options.map((o) => o.option_value);
     assert.deepEqual(optionsAfter.sort(), ["BLUE", "GREEN", "RED"]);

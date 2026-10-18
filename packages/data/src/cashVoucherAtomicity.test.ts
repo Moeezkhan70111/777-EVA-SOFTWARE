@@ -24,6 +24,7 @@ function createFixture() {
     dbPath: path.join(tempDir, "cash.db"),
     schemaPath: path.resolve(process.cwd(), "src/local-schema.sql"),
   });
+  db.setNumberBlock(1, "test");
   const partyId = db.createParty({ partyName: "ATOMIC TEST PARTY", partyType: "CUSTOMER", city: "Lahore", status: "ACTIVE" });
   return {
     db,

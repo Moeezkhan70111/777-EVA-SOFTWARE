@@ -9,6 +9,7 @@ import type { DiscountSource, PriceType } from "@erp/domain";
 import { formatGatepassCode } from "@erp/application";
 import { BillDoesNotMatchGatepassError, DiscountExceedsAllowedError, GatepassBillingError, PartyBalanceLimitExceededError } from "./types.js";
 import type { DeleteSaleVoucherResult, PagedResult, SaleVoucherListRow, SaleVoucherRecord } from "./types.js";
+import { allocateNumberInRange } from "./numberRange.js";
 
 const DISCOUNT_SOURCES = new Set<string>(Object.values(DISCOUNT_SOURCE));
 
@@ -411,19 +412,8 @@ export const salesMethods = {
     // office numbers its own bills and the ERP must never silently renumber one.
     let voucherNumber = input.voucherNumber;
     if (!voucherNumber || !voucherNumber.trim()) {
-      // Sequential, without relying on SQLite REGEXP support.
-      const lastVoucher = this.db
-        .prepare(
-          `SELECT voucher_number
-           FROM sale_vouchers
-           WHERE TRIM(COALESCE(voucher_number, '')) <> ''
-           ORDER BY CAST(COALESCE(NULLIF(TRIM(voucher_number), ''), '0') AS INTEGER) DESC
-           LIMIT 1`
-        )
-        .get() as Record<string, unknown> | undefined;
-
-      const numericValue = lastVoucher ? Number(lastVoucher.voucher_number ?? 0) : NaN;
-      voucherNumber = Number.isFinite(numericValue) ? String(numericValue + 1) : "1";
+      // Only the FALLBACK is ranged: a number typed from the paper book above always wins.
+      voucherNumber = String(allocateNumberInRange(this, "saleVoucher"));
     }
 
     this.db

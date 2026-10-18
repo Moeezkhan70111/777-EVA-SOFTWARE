@@ -20,6 +20,7 @@ function createFixture() {
     dbPath: path.join(tempDir, "ladder.db"),
     schemaPath: path.resolve(process.cwd(), "src/local-schema.sql"),
   });
+  db.setNumberBlock(1, "test");
 
   for (const [code, name] of [
     ["RULE", "Rule"],

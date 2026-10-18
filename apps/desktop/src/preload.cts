@@ -301,6 +301,19 @@ contextBridge.exposeInMainWorld("desktop", {
     listGatepasses: (query?: Record<string, unknown>, opts?: { token?: string }) => ipcRenderer.invoke(IPC.listGatepasses, query, opts),
     cancelGatepass: (input: Record<string, unknown>, opts?: { token?: string }) => ipcRenderer.invoke(IPC.cancelGatepass, input, opts),
     getItemStatus: (qrId: string) => ipcRenderer.invoke(IPC.getItemStatus, qrId),
+    // This computer's document-number range. The status is read-only; adopt takes no block
+    // number — it records block 1 for the installation that already holds the numbered
+    // documents, and the main process refuses every other case.
+    // Cloud sync. Status is read-only, and a pass runs only when an administrator asks for
+    // one -- there is no background loop. Neither returns a token or a key.
+    getCloudSyncStatus: () => ipcRenderer.invoke(IPC.getCloudSyncStatus),
+    runCloudSync: () => ipcRenderer.invoke(IPC.runCloudSync),
+    // Parked events. The requeue takes ONE id: there is no bulk recovery to invoke by mistake.
+    listDeadLetterEvents: () => ipcRenderer.invoke(IPC.listDeadLetterEvents),
+    requeueDeadLetterEvent: (outboxId: string) => ipcRenderer.invoke(IPC.requeueDeadLetterEvent, outboxId),
+    getNumberBlockStatus: () => ipcRenderer.invoke(IPC.getNumberBlockStatus),
+    adoptNumberBlock: () => ipcRenderer.invoke(IPC.adoptNumberBlock),
+    assignNumberBlock: (block: number) => ipcRenderer.invoke(IPC.assignNumberBlock, block),
     getSettings: () => ipcRenderer.invoke(IPC.getSettings),
     saveSettings: (entries: Record<string, string>) => ipcRenderer.invoke(IPC.saveSettings, entries),
     resetDatabase: () => ipcRenderer.invoke(IPC.resetDatabase),

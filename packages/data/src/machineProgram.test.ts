@@ -48,6 +48,7 @@ const TOMORROW = "2026-10-05";
 function createFixture(options: { withDana?: boolean } = {}) {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "erp-machine-program-"));
   const db = new SqliteDatabase({ dbPath: path.join(tempDir, "erp.db"), schemaPath: path.resolve(process.cwd(), "src/local-schema.sql") });
+  db.setNumberBlock(1, "test");
   db.ensureOperationalContext({
     factoryId: "factory-1", factoryCode: "F001", factoryName: "Factory",
     workstationId: "workstation-1", workstationCode: "WS001", workstationName: "WS",
@@ -824,7 +825,9 @@ test("every change is audited", async () => {
 
 function bareDatabase() {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "erp-machine-add-"));
-  return new SqliteDatabase({ dbPath: path.join(tempDir, "erp.db"), schemaPath: path.resolve(process.cwd(), "src/local-schema.sql") });
+  const db = new SqliteDatabase({ dbPath: path.join(tempDir, "erp.db"), schemaPath: path.resolve(process.cwd(), "src/local-schema.sql") });
+  db.setNumberBlock(1, "test");
+  return db;
 }
 
 test("a machine added by name alone goes in the floor's existing section", () => {

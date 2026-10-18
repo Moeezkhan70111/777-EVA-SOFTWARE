@@ -21,6 +21,7 @@ import type { SqliteDatabase } from "../sqliteDatabase.js";
 import type { ManualProductionEntry, ManualProductionPage, ManualProductionResult, ProductionReceiptSummaryLine } from "./types.js";
 import { IN_STORE_LOCATION_TYPE, formatMachineProgramCodeNumber } from "@erp/application";
 import { businessDayStartIso, cartonsToDozens, formatManualProductionCode, manualProductionCartons } from "@erp/domain";
+import { allocateNumberInRange } from "./numberRange.js";
 
 type Row = Record<string, unknown>;
 
@@ -132,7 +133,7 @@ export const manualProductionMethods = {
     this: SqliteDatabase,
     input: { requestId: string; variant: StockableVariant; cartons: number; programId: string; machineId: string; storeLocationId: string; createdBy: string | null; nowIso: string }
   ): string {
-    const next = this.db.prepare("SELECT COALESCE(MAX(entry_number), 0) + 1 AS n FROM manual_production_entries").get() as { n: number };
+    const next = { n: allocateNumberInRange(this, "manualProduction") };
     const id = crypto.randomUUID();
     const { variant } = input;
     this.db

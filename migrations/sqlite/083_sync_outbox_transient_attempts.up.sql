@@ -1,0 +1,22 @@
+-- A failure to REACH the service must not spend the budget for a failure to be ACCEPTED by it.
+--
+-- sync_outbox.attempts counted both, and the queue parked a row once it reached the limit. Five
+-- failed passes with the internet down -- about eight minutes with the default backoff -- moved
+-- every waiting carton to DEAD_LETTER, where nothing in the application brings it back. The
+-- carton was still in the local database, but it had silently stopped being sent.
+--
+-- Worse, the two budgets interfered: an hour offline left attempts far past the limit, so the
+-- first genuine refusal afterwards -- a product the cloud does not have yet, say -- parked the
+-- row immediately instead of giving the operator the retries they were meant to have.
+--
+-- So the counts are separated. `attempts` keeps its meaning: how many times the service looked
+-- at this event and refused it, which is bounded and ends in DEAD_LETTER. `transient_attempts`
+-- counts how many times the event could not be delivered at all, which is NOT bounded -- it only
+-- stretches the wait between tries, up to a cap, and never parks anything.
+--
+-- Additive and safe on a database that already has rows: every existing row starts at zero,
+-- which is exactly right, and nothing is rewritten.
+--
+-- (No semicolons in comments: the migration runner splits statements on them.)
+
+ALTER TABLE sync_outbox ADD COLUMN transient_attempts INTEGER NOT NULL DEFAULT 0;

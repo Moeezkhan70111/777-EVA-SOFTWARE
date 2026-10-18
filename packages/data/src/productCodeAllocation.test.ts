@@ -26,6 +26,7 @@ function createFixture(prefix: string) {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), `erp-${prefix}-`));
   const dbPath = path.join(tempDir, "products.db");
   const db = new SqliteDatabase({ dbPath, schemaPath: SCHEMA });
+  db.setNumberBlock(1, "test");
   return {
     db,
     raw: db.db,
@@ -118,6 +119,7 @@ test("a stale preview is not an allocation: two creates after one preview get tw
 test("two connections creating at once persist two distinct codes", async () => {
   const f = createFixture("prd-two-connections");
   const second = new SqliteDatabase({ dbPath: f.dbPath, schemaPath: SCHEMA });
+  second.setNumberBlock(1, "test");
   try {
     const [a, b] = await Promise.all([
       Promise.resolve().then(() => f.db.createProduct({ article: "SK6", size: "7/10", status: "ACTIVE" })),

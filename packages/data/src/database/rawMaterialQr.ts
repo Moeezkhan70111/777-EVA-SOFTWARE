@@ -34,6 +34,7 @@ import {
   buildRawMaterialQrId,
 } from "@erp/domain";
 import { KIND_JOINS, KIND_SQL } from "./machineProgramSql.js";
+import { allocateNumberInRange } from "./numberRange.js";
 
 export const rawMaterialQrMethods = {
   /**
@@ -1007,7 +1008,7 @@ export const rawMaterialQrMethods = {
         .prepare("UPDATE raw_material_receiving_sessions SET status = 'CLOSED', closed_at = ?, updated_at = ? WHERE device_id = ? AND status = 'OPEN'")
         .run(now, now, deviceId);
 
-      const next = this.scalarNumber("SELECT COALESCE(MAX(session_number), 0) + 1 AS n FROM raw_material_receiving_sessions", []);
+      const next = allocateNumberInRange(this, "rmReceivingSession");
       const id = crypto.randomUUID();
       this.db
         .prepare(
@@ -1200,7 +1201,7 @@ export const rawMaterialQrMethods = {
         .prepare("UPDATE raw_material_issue_sessions SET status = 'CLOSED', closed_at = ?, updated_at = ? WHERE device_id = ? AND status = 'OPEN'")
         .run(now, now, deviceId);
 
-      const next = this.scalarNumber("SELECT COALESCE(MAX(session_number), 0) + 1 AS n FROM raw_material_issue_sessions", []);
+      const next = allocateNumberInRange(this, "rmIssueSession");
       const id = crypto.randomUUID();
       this.db
         .prepare(

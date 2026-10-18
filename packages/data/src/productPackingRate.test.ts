@@ -16,6 +16,7 @@ import { SqliteDatabase } from "./sqliteDatabase.js";
 const withDb = (run: (db: SqliteDatabase) => void): void => {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "erp-packing-rate-"));
   const db = new SqliteDatabase({ dbPath: path.join(tempDir, "erp.db"), schemaPath: path.resolve(process.cwd(), "src/local-schema.sql") });
+  db.setNumberBlock(1, "test");
   try {
     run(db);
   } finally {

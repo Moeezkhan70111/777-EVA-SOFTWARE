@@ -19,6 +19,7 @@ function createFixture(stockUnit: "RULE" | "INCH") {
     dbPath: path.join(tempDir, "out.db"),
     schemaPath: path.resolve(process.cwd(), "src/local-schema.sql"),
   });
+  db.setNumberBlock(1, "test");
 
   for (const [code, name] of [
     ["RULE", "Rule"],

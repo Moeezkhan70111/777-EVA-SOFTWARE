@@ -168,11 +168,15 @@ export async function recordProductionInTransaction(
     : await deps.productCatalog.getOrCreateVariant(parsed.payload, tx);
   const eventId = deps.idGenerator.nextId();
   const outboxId = deps.idGenerator.nextId();
+  // A second queue entry: the carton identity travels as its own event, and the receiving
+  // computer needs it before the production event that references it.
+  const qrOutboxId = deps.idGenerator.nextId();
 
   await deps.qrMasterRepo.insertProduced({
     qrId: parsed.payload.qrId,
     productVariantId: productVariant.id,
     createdAt: tx.nowIso,
+    outboxId: qrOutboxId,
   }, tx);
 
   await deps.productionEventsRepo.appendProducedEvent({

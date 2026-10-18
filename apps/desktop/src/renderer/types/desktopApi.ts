@@ -2,6 +2,94 @@ import type { ClaimPartyRole, ContractorLedger, ContractorRole, ReceiveProductio
 
 export type SortOrder = "ASC" | "DESC";
 
+/** Why this computer may not record a document-number range for itself. Mirrors @erp/data. */
+export type NumberBlockAdoptRefusal = "ALREADY_CONFIGURED" | "NO_EXISTING_DATA" | "OUT_OF_RANGE";
+
+/**
+ * This computer's document-number range, as the Settings status view reads it. Mirrors
+ * NumberBlockStatus in @erp/data, declared here because this file states the shapes the bridge
+ * hands the renderer.
+ */
+export interface NumberBlockStatus {
+  /** The range this computer holds (1-5), or null when it holds none. */
+  block: number | null;
+  /** The first and last number this computer may allocate, or null when it holds no range. */
+  range: { block: number; lo: number; hi: number } | null;
+  /** True once a range was recorded here through provisioning. */
+  confirmed: boolean;
+  /** Why documents cannot be created here, or null when the configuration is usable. */
+  problem: "NOT_CONFIGURED" | "INVALID" | null;
+  /** What is stored, when it is not a usable range, so an administrator can see what to correct. */
+  storedValue: string | null;
+  /** Whether this computer may record block 1 for itself, and what it is told when it may not. */
+  adoption: { allowed: boolean; refusal: NumberBlockAdoptRefusal | null; detail: string };
+  /**
+   * The ranges a second computer may be given, in order, or empty when one is already recorded
+   * here. The numbers come from the data layer: no screen works a range out for itself.
+   */
+  assignable: Array<{ block: number; lo: number; hi: number }>;
+}
+
+/** This computer's cloud-sync situation. Read-only: asking for it syncs nothing. */
+export interface CloudSyncStatus {
+  configured: boolean;
+  host?: string;
+  email?: string;
+  problems?: readonly string[];
+  running: boolean;
+  /** The local queue, read two ways. See SyncQueueSummary. */
+  queue: SyncQueueSummary;
+  /** How far through the cloud log this computer has read. 0 = it has applied nothing. */
+  pullCursor: number;
+  /** Present only while a pull is waiting for something that has not arrived yet. */
+  waitingFor?: { seq: number; attempts: number; retryAfter: string };
+}
+
+/**
+ * The local sync queue, read two ways.
+ *
+ * `counts` partitions it by status. The three numbers after it partition the UNSENT rows
+ * (PENDING + FAILED) by whether anything can actually carry them, which the status alone cannot
+ * say: four of the six aggregate types have no transport yet.
+ *
+ * pushableNow + pushableWaiting + notPushable === counts.PENDING + counts.FAILED
+ */
+export interface SyncQueueSummary {
+  counts: { PENDING: number; IN_FLIGHT: number; FAILED: number; DEAD_LETTER: number; SYNCED: number };
+  /** Exactly what the next pass would claim. */
+  pushableNow: number;
+  /** Sendable, but waiting out a backoff. */
+  pushableWaiting: number;
+  /** Queued, and no transport can carry it yet. Waiting for a contract, not for the network. */
+  notPushable: number;
+  /** When a row was last SENT. Not when a pass last ran -- nothing records that. */
+  lastSyncedAt: string | null;
+  /** When a row last failed or was parked. */
+  lastFailureAt: string | null;
+}
+
+/**
+ * One sync event the service refused often enough to be parked, as Settings shows it.
+ *
+ * The payload is deliberately absent: a production scan's payload carries the operator, the
+ * station and every article snapshot, and none of that is needed to decide what to do. The
+ * aggregate id -- a carton QR or an event id -- is the identification, and nothing more.
+ */
+export interface DeadLetterEvent {
+  outboxId: string;
+  dedupeKey: string;
+  aggregateType: string;
+  aggregateId: string;
+  /** Refusals from the service. This is the count that parked it. */
+  attempts: number;
+  /** Failures to reach the service at all. These never park anything. */
+  transientAttempts: number;
+  error: string;
+  createdAt: string;
+  /** When it was parked. */
+  updatedAt: string;
+}
+
 export interface DashboardSnapshot {
   todaysProduction: number;
   todaysDispatched: number;
@@ -1974,6 +2062,62 @@ export interface DesktopApi {
   getGatepassJourney(gatepassId: string, opts?: { token?: string }): Promise<GatepassJourneyStep[] | null>;
   cancelGatepass(input: { gatepassId: string; reason: string }, opts?: { token?: string }): Promise<CancelGatepassResult>;
   getItemStatus(qrId: string): Promise<{ qrId: string; wasDispatched: boolean; wasReturned: boolean }>;
+  /**
+   * Cloud sync. Status is read-only. A pass runs only when an administrator asks for one --
+   * there is no background loop, and a computer without the four environment variables does
+   * nothing at all. Neither call ever returns a key, a token or a password.
+   */
+  getCloudSyncStatus(): Promise<CloudSyncStatus>;
+  runCloudSync(): Promise<{
+    accepted: boolean;
+    reason?: string;
+    pushed?: number;
+    fetched?: number;
+    applied?: number;
+    duplicates?: number;
+    refused?: Array<{ reason: string }>;
+    waitingFor?: string;
+    outbox?: Record<string, number>;
+  }>;
+  /**
+   * Parked sync events, and putting ONE back. Both are administrator-only, and neither sends
+   * anything: a requeued event waits for the next pass an administrator asks for. The entries
+   * carry no payload -- only what identifies the event and why it stopped.
+   */
+  listDeadLetterEvents(): Promise<{
+    accepted: boolean;
+    reason?: string;
+    entries?: DeadLetterEvent[];
+  }>;
+  requeueDeadLetterEvent(outboxId: string): Promise<{
+    accepted: boolean;
+    reason?: string;
+    entry?: DeadLetterEvent;
+  }>;
+  /** Read-only: which document-number range this computer holds, or why it holds none. */
+  getNumberBlockStatus(): Promise<NumberBlockStatus>;
+  /**
+   * Records block 1 for the installation that already holds the company's numbered documents.
+   * Takes no range: there is nothing to choose, and every other case is refused by the main
+   * process. Administrator only, and never a second time.
+   */
+  adoptNumberBlock(): Promise<{
+    accepted: boolean;
+    range?: { block: number; lo: number; hi: number };
+    reason?: string;
+    code?: string;
+  }>;
+  /**
+   * Records a range from 2 to 5 for a SECOND computer, read off the factory's own record of which
+   * machine holds which range. Administrator only, never a second time, and block 1 is refused --
+   * that one belongs to the installation holding the existing documents, which adopts it itself.
+   */
+  assignNumberBlock(block: number): Promise<{
+    accepted: boolean;
+    range?: { block: number; lo: number; hi: number };
+    reason?: string;
+    code?: string;
+  }>;
   getSettings(): Promise<Record<string, string>>;
   saveSettings(entries: Record<string, string>): Promise<void>;
   resetDatabase(): Promise<{ accepted: boolean }>;

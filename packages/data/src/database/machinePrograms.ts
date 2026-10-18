@@ -26,6 +26,7 @@ import type {
   MachineProgramUpperLineRecord,
   MachineRecord,
 } from "./types.js";
+import { allocateNumberInRange } from "./numberRange.js";
 
 const MACHINE_CODE_PREFIX = "M-";
 
@@ -210,12 +211,7 @@ export const machineProgramsMethods = {
 
   /** @internal Writes one new machine row. Call inside a transaction. */
   insertMachine(this: SqliteDatabase, name: string, sectionId: string): MachineRecord {
-    const next = this.db
-      .prepare(
-        `SELECT COALESCE(MAX(CAST(SUBSTR(machine_code, 3) AS INTEGER)), 0) + 1 AS n
-         FROM machines WHERE machine_code LIKE '${MACHINE_CODE_PREFIX}%'`
-      )
-      .get() as { n: number };
+    const next = { n: allocateNumberInRange(this, "machineCode") };
     const order = this.db.prepare("SELECT COALESCE(MAX(sort_order), 0) + 1 AS n FROM machines").get() as { n: number };
     const id = crypto.randomUUID();
     const now = new Date().toISOString();

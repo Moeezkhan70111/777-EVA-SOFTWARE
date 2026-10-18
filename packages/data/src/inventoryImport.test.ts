@@ -19,6 +19,7 @@ function createFixture() {
     dbPath: path.join(tempDir, "import.db"),
     schemaPath: path.resolve(process.cwd(), "src/local-schema.sql"),
   });
+  db.setNumberBlock(1, "test");
 
   db.createInventoryUnit({ code: "DZN", name: "Dozen" });
   db.createInventoryUnit({ code: "MTR", name: "Meter" });

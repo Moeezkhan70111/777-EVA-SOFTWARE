@@ -14,6 +14,7 @@ function createDbFixture() {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "erp-scanner-"));
   const dbPath = path.join(tempDir, "scanner.db");
   const db = new SqliteDatabase({ dbPath, schemaPath: path.resolve(process.cwd(), "src/local-schema.sql") });
+  db.setNumberBlock(1, "test");
 
   db.ensureOperationalContext({
     factoryId: "factory-1",
@@ -84,6 +85,12 @@ function scanDeps(db: SqliteDatabase, overrides: Partial<ProcessScanDeps> = {}):
 }
 
 const SCAN_CONTEXT = { factoryId: "factory-1", workstationId: "workstation-1", deviceId: "device-1" };
+
+/** The aggregate types queued for the other computers, sorted so a test can state them plainly. */
+const outboxTypes = (db: SqliteDatabase): string[] =>
+  (db.db.prepare("SELECT aggregate_type FROM sync_outbox").all() as Array<{ aggregate_type: string }>)
+    .map((row) => row.aggregate_type)
+    .sort();
 
 /** Direct schema access for assertions the public API has no getter for (test-only). */
 function rawGet(db: SqliteDatabase, sql: string, ...params: unknown[]): any {
@@ -238,6 +245,7 @@ test("legacy role schema is upgraded before auth is used", () => {
     legacyDb.close();
 
     const db = new SqliteDatabase({ dbPath, schemaPath: path.resolve(process.cwd(), "src/local-schema.sql") });
+    db.setNumberBlock(1, "test");
     const user = db.createUserAccount("legacy-user", "Password123");
     const auth = db.authenticateUser("legacy-user", "Password123");
     assert.ok(user.id);
@@ -402,7 +410,9 @@ test("scan inserts production event, stock projection, and outbox", async () => 
     assert.equal(result.accepted, true);
     assert.equal(fixture.db.getRowCount("qr_master"), 1);
     assert.equal(fixture.db.getRowCount("production_events"), 1);
-    assert.equal(fixture.db.getRowCount("sync_outbox"), 1);
+    // TWO queued events, not one: the carton identity travels separately from the scan, so a
+    // computer receiving the scan already has the row it refers to.
+    assert.deepEqual(outboxTypes(fixture.db), ["PRODUCTION_PRODUCED", "QR_MASTER"]);
 
     // Producing a carton does not make it Current Stock — Current Stock is what is In Store.
     const afterProduction = fixture.db.getDashboardSnapshot();
@@ -431,7 +441,8 @@ test("duplicate scan is rejected and does not increment stock", async () => {
 
     assert.equal(duplicateResult.accepted, false);
     assert.equal(fixture.db.getRowCount("production_events"), 1);
-    assert.equal(fixture.db.getRowCount("sync_outbox"), 1);
+    // The refused second scan queues nothing: still the one carton and the one scan.
+    assert.deepEqual(outboxTypes(fixture.db), ["PRODUCTION_PRODUCED", "QR_MASTER"]);
   } finally {
     fixture.cleanup();
   }
@@ -841,6 +852,7 @@ test("startup migration preserves an old product table and adds variant relation
   raw.close();
 
   const db = new SqliteDatabase({ dbPath, schemaPath: path.resolve(process.cwd(), "src/local-schema.sql") });
+  db.setNumberBlock(1, "test");
   try {
     const columns = (db as any).db.prepare("PRAGMA table_info(product_variants)").all() as Array<{ name: string }>;
     const names = columns.map((column) => column.name);
@@ -2183,9 +2195,14 @@ test("return scan writes a valid outbox aggregate type", async () => {
     ).execute({ rawScan: qrId, context: SCAN_CONTEXT });
 
     assert.equal(returnResult.accepted, true, returnResult.reason);
-    // One PRODUCTION_EVENT, one DISPATCH_EVENT, one RETURN_EVENT — each row's aggregate_type
-    // is CHECK-constrained, so a bad one would have thrown rather than counted.
-    assert.equal(fixture.db.getRowCount("sync_outbox"), 3);
+    // The carton identity, the production scan, the dispatch and the return. Each row's
+    // aggregate_type is CHECK-constrained, so a bad one would have thrown rather than counted.
+    assert.deepEqual(outboxTypes(fixture.db), [
+      "DISPATCH_EVENT",
+      "PRODUCTION_PRODUCED",
+      "QR_MASTER",
+      "RETURN_EVENT",
+    ]);
   } finally {
     fixture.cleanup();
   }

@@ -35,6 +35,7 @@ import {
 import type { DispatchAllowance, GatepassDeliveryProof, GatepassJourneyStep, GatepassListQuery, GatepassListRow, GatepassRecord, GatepassScanProgress, GatepassStockRow, PagedResult } from "./types.js";
 import { IN_STORE_STOCK_SQL, type MutableTransactionContext } from "./shared.js";
 import { createHash } from "node:crypto";
+import { allocateNumberInRange } from "./numberRange.js";
 
 // ─── The one derivation of "dispatched from store" ───────────────────────────
 // Per gatepass line, the cartons Store Move Out has actually taken for it: every STORE_EXIT
@@ -266,9 +267,8 @@ export const gatepassMethods = {
 
   /** MAX + 1 under the transaction's write lock, like store sessions; the UNIQUE index is the backstop. */
   async allocateGatepassNumber(this: SqliteDatabase, tx: TransactionContext): Promise<number> {
-    const context = tx as MutableTransactionContext;
-    const row = context.db.prepare("SELECT COALESCE(MAX(gatepass_number), 0) + 1 AS n FROM gatepasses").get() as { n: number };
-    return Number(row.n);
+    void tx;
+    return allocateNumberInRange(this, "gatepass");
   },
 
   async insertGatepass(this: SqliteDatabase, payload: GatepassHeaderPayload, tx: TransactionContext): Promise<void> {

@@ -282,6 +282,21 @@ export const IPC = {
   getGatepassDeliveryProof: "erp:get-gatepass-delivery-proof",
   cancelGatepass: "erp:cancel-gatepass",
 
+  // Cloud sync: read-only status, and one manual pass. No background loop exists.
+  getCloudSyncStatus: "erp:get-cloud-sync-status",
+  runCloudSync: "erp:run-cloud-sync",
+
+  // Parked sync events: what stopped, and putting ONE named event back. Admin-only, never
+  // automatic, and not a sync trigger -- see main/ipc/deadLetters.ts.
+  listDeadLetterEvents: "erp:list-dead-letter-events",
+  requeueDeadLetterEvent: "erp:requeue-dead-letter-event",
+
+  // This computer's document-number range: read-only status, the one-time adoption for the
+  // existing-data machine, and the one-time assignment for a second computer.
+  getNumberBlockStatus: "erp:get-number-block-status",
+  adoptNumberBlock: "erp:adopt-number-block",
+  assignNumberBlock: "erp:assign-number-block",
+
   // Settings, backup, health, logs
   getSettings: "erp:get-settings",
   saveSettings: "erp:save-settings",

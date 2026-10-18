@@ -6,16 +6,11 @@
 import type { SqliteDatabase } from "../sqliteDatabase.js";
 import type { PagedResult } from "./types.js";
 import { addMoney, fromPaisa, fromPaisaOrNull, multiplyMoney, subtractMoney, toPaisa } from "@erp/domain";
+import { allocateNumberInRange } from "./numberRange.js";
 
 export const purchasesMethods = {
   getNextPurchaseVoucherNumber(this: SqliteDatabase): string {
-    const row = this.db
-      .prepare(
-        `SELECT COALESCE(MAX(CAST(COALESCE(NULLIF(TRIM(voucher_number), ''), '0') AS INTEGER)), 0) + 1 AS n
-         FROM purchase_vouchers`
-      )
-      .get() as { n: number };
-    return String(row.n);
+    return String(allocateNumberInRange(this, "purchaseVoucher"));
   },
 
   createPurchaseVoucher(this: SqliteDatabase, input: {

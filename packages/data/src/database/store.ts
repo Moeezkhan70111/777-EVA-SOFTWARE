@@ -9,6 +9,7 @@ import type { ScanOperationalContext, StoreEntryEventPayload, StoreEntryQrRecord
 import { STORE_SESSION_TABLES } from "./shared.js";
 import type { MutableTransactionContext, StoreSessionKind } from "./shared.js";
 import type { StoreMoveOutSession, StoreMoveOutSessionSummary, StoreMovedOutRow, StoreReceivedRow, StoreReceivingSession, StoreReceivingSessionSummary } from "./types.js";
+import { allocateNumberInRange } from "./numberRange.js";
 
 export const storeMethods = {
   async getQrForStoreEntry(this: SqliteDatabase, qrId: string, tx: TransactionContext): Promise<StoreEntryQrRecord | null> {
@@ -506,7 +507,7 @@ export const storeMethods = {
         .prepare(`UPDATE ${table} SET status = 'CLOSED', closed_at = ?, updated_at = ? WHERE device_id = ? AND status = 'OPEN'`)
         .run(now, now, deviceId);
 
-      const next = this.scalarNumber(`SELECT COALESCE(MAX(session_number), 0) + 1 AS n FROM ${table}`, []);
+      const next = allocateNumberInRange(this, kind === "receiving" ? "storeReceivingSession" : "storeMoveOutSession");
       const id = crypto.randomUUID();
       this.db
         .prepare(

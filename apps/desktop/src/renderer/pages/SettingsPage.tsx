@@ -1,6 +1,8 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useDesktopApi } from "../hooks/useDesktopApi";
 import { useNotifications } from "../state/NotificationsContext";
+import { NumberBlockSection } from "../components/settings/NumberBlockSection";
+import { CloudSyncSection } from "../components/settings/CloudSyncSection";
 
 const SETTINGS_GROUPS = [
   {
@@ -17,7 +19,12 @@ const SETTINGS_GROUPS = [
   },
   {
     label: "System",
-    keys: ["logging.level", "sync.settings", "sound.enabled"],
+    // No sync control here. Cloud sync is configured by this computer's environment, not by a
+    // setting an operator can type into — and the `sync.settings` row this page used to show
+    // ("disabled-phase-2") is read by nothing, so editing it never did anything. A real sync
+    // status belongs here one day, backed by getCloudSyncStatus; a text box that pretends to
+    // switch sync on is worse than no control at all.
+    keys: ["logging.level", "sound.enabled"],
   },
 ];
 
@@ -32,12 +39,16 @@ const FRIENDLY_LABELS: Record<string, string> = {
   "backup.auto.enabled":  "Auto Backup Enabled",
   "backup.auto.time":     "Auto Backup Time",
   "logging.level":        "Logging Level",
-  "sync.settings":        "Sync Settings",
   "sound.enabled":        "Sound Enabled",
 };
 
+interface SettingsPageProps {
+  /** Only an administrator is offered the one-time document-number range assignment. */
+  isAdmin: boolean;
+}
+
 // SettingsPage no longer needs onThemeChange — theme is fixed to dark navy
-export const SettingsPage = () => {
+export const SettingsPage = ({ isAdmin }: SettingsPageProps) => {
   const api = useDesktopApi();
   const { push } = useNotifications();
   const [settings, setSettings] = useState<Record<string, string>>({});
@@ -70,6 +81,12 @@ export const SettingsPage = () => {
 
   return (
     <div className="stack">
+      <NumberBlockSection isAdmin={isAdmin} />
+      {/* Cloud sync: what this computer has sent, and the two actions an administrator has.
+          The panel shows its own status to anyone who can open Settings; the pass and the
+          requeue are offered only to an administrator, as the main process requires. */}
+      <CloudSyncSection isAdmin={isAdmin} />
+
       {SETTINGS_GROUPS.map((group) => (
         <div className="settings-section" key={group.label}>
           <div className="settings-section-title">{group.label}</div>

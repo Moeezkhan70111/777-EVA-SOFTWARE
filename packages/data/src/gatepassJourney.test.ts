@@ -35,6 +35,7 @@ function createFixture() {
     dbPath: path.join(tempDir, "journey.db"),
     schemaPath: path.resolve(process.cwd(), "src/local-schema.sql"),
   });
+  db.setNumberBlock(1, "test");
   db.ensureOperationalContext({
     factoryId: FACTORY, factoryCode: "777", factoryName: "777 Manufacturing",
     workstationId: "ws-prod-01", workstationCode: "PROD-01", workstationName: "Production Line 01",

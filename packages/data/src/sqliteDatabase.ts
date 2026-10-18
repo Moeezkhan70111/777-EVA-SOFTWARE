@@ -45,6 +45,8 @@ import { cashMethods, type CashMethods } from "./database/cash.js";
 import { purchasesMethods, type PurchasesMethods } from "./database/purchases.js";
 import { contractorLedgerMethods, type ContractorLedgerMethods } from "./database/contractorLedger.js";
 import { storeDailyReportMethods, type StoreDailyReportMethods } from "./database/storeDailyReport.js";
+import { numberRangeMethods, type NumberRangeMethods } from "./database/numberRange.js";
+import { productVariantSeedMethods, type ProductVariantSeedMethods } from "./database/productVariantSeed.js";
 import { machineProgramUpperReconciliationMethods, type MachineProgramUpperReconciliationMethods } from "./database/machineProgramUpperReconciliation.js";
 import { partyClaimsMethods, type PartyClaimsMethods } from "./database/partyClaims.js";
 import { cartonProgramMethods, type CartonProgramMethods } from "./database/cartonProgram.js";
@@ -60,6 +62,46 @@ export * from "./database/types.js";
 export { orderBy } from "./database/shared.js";
 export type { MutableTransactionContext } from "./database/shared.js";
 export type { ContractorLedgerAccount, ContractorLedgerReport } from "./database/contractorLedger.js";
+export {
+  NumberRangeError,
+  NUMBER_SITES,
+  NUMBER_BLOCK_SETTING_KEY,
+  NUMBER_BLOCK_CONFIRMED_KEY,
+  NUMBER_BLOCK_SIZE,
+  MAX_ASSIGNABLE_BLOCK,
+  rangeForBlock,
+  isAssignableBlock,
+  EXISTING_DATA_BLOCK,
+  PROTECTED_NUMBER_SETTING_KEYS,
+  checkExistingDataAdoption,
+} from "./database/numberRange.js";
+export type { NumberRange, NumberSiteKey, NumberBlockStatus, AdoptionCheck, AdoptRefusal } from "./database/numberRange.js";
+export {
+  SYNC_AGGREGATE,
+  QR_MASTER_OPENING_STATE,
+  qrMasterDedupeKey,
+  productionProducedDedupeKey,
+  readQrMasterPayload,
+  readProductionProducedPayload,
+  enqueueSyncEvent,
+  enqueueQrMaster,
+  enqueueProductionProduced,
+} from "./database/syncEvents.js";
+export type { SyncAggregateType, QrMasterPayload, ProductionProducedPayload } from "./database/syncEvents.js";
+export {
+  PRODUCT_VARIANT_SEED_FORMAT,
+  PRODUCT_VARIANT_SEED_VERSION,
+  SEED_TABLES,
+  readSeedFile,
+} from "./database/productVariantSeed.js";
+export type {
+  ProductVariantSeedFile,
+  SeedExportResult,
+  SeedImportResult,
+  SeedVerdict,
+  SeedOutcome,
+  SeedRow,
+} from "./database/productVariantSeed.js";
 
 /**
  * The migration number a file name or a recorded version starts with: both
@@ -898,6 +940,8 @@ export interface SqliteDatabase
     PurchasesMethods,
     ContractorLedgerMethods,
     StoreDailyReportMethods,
+    NumberRangeMethods,
+    ProductVariantSeedMethods,
     MachineProgramUpperReconciliationMethods,
     PartyClaimsMethods,
     CartonProgramMethods,
@@ -939,6 +983,8 @@ Object.assign(
   purchasesMethods,
   contractorLedgerMethods,
   storeDailyReportMethods,
+  numberRangeMethods,
+  productVariantSeedMethods,
   machineProgramUpperReconciliationMethods,
   partyClaimsMethods,
   cartonProgramMethods,

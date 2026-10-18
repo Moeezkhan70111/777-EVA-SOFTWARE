@@ -1,2 +1,4 @@
--- Baseline placeholder.
--- Populate from supabase/schema.sql when migration tooling is wired.
+-- Baseline placeholder. Applies nothing.
+--
+-- The baseline is supabase/schema.sql, applied by hand as step 1. See README.md in this folder
+-- for the apply order and for what has to be seeded afterwards.

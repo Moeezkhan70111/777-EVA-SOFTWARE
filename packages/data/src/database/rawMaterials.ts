@@ -9,6 +9,7 @@ import { EFFECTIVE_PACK_NAME_SQL, normalizeInventoryText, normalizePackName } fr
 import type { DatabaseSync } from "node:sqlite";
 import { STOCK_EVENT_NOTE, fromPaisaOrNull, packetsInStore as countPacketsInStore, toPaisaOrNull } from "@erp/domain";
 import type { InventoryStockEventRow, RawMaterialHop, RawMaterialMovementConfigRow, RawMaterialSetupTemplate, WorkSection } from "./types.js";
+import { allocateNumberInRange } from "./numberRange.js";
 
 function readWorkSectionByName(db: DatabaseSync, name: string): WorkSection | undefined {
   const row = db
@@ -467,7 +468,7 @@ export const rawMaterialsMethods = {
     const existing = this.db.prepare("SELECT id, item_code, display_name FROM inventory_items WHERE category_id = ? AND signature_hash = ? AND status = 'ACTIVE' LIMIT 1").get(input.categoryId, signature.hash) as { id: string; item_code: string; display_name: string } | undefined;
     if (existing) return { id: existing.id, code: existing.item_code, displayName: existing.display_name, duplicate: true };
     const displayName = this.buildInventoryDisplayName(this.categoryPathName(input.categoryId), fields, input.values);
-    const next = this.db.prepare("SELECT COALESCE(MAX(CAST(SUBSTR(item_code, 4) AS INTEGER)), 0) + 1 as n FROM inventory_items WHERE item_code LIKE 'RM-%'").get() as { n: number };
+    const next = { n: allocateNumberInRange(this, "inventoryItemCode") };
     const itemCode = `RM-${String(next.n).padStart(6, "0")}`;
     const id = crypto.randomUUID();
     const now = new Date().toISOString();
@@ -874,9 +875,7 @@ export const rawMaterialsMethods = {
         return existing;
       }
 
-      const next = this.db
-        .prepare("SELECT COALESCE(MAX(CAST(SUBSTR(section_code, 4) AS INTEGER)), 0) + 1 as n FROM work_sections WHERE section_code LIKE 'WS-%'")
-        .get() as { n: number };
+      const next = { n: allocateNumberInRange(this, "workSectionCode") };
       const sectionCode = `WS-${String(next.n).padStart(3, "0")}`;
       const id = crypto.randomUUID();
       const now = new Date().toISOString();

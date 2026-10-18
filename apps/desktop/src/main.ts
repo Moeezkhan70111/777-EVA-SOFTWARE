@@ -4,6 +4,7 @@ import type { SqliteDatabase, StructuredLogger } from "@erp/data";
 import {
   DATA_DIR_ENV,
   effectivePaths,
+  assertDevelopmentDataDir,
   ensureRuntimeDirectories,
   migrateLegacyData,
   missingRuntimeResources,
@@ -12,7 +13,8 @@ import {
   type RuntimePaths,
 } from "./main/runtimePaths";
 import { reportFatalStartupError, type StartupFailure } from "./main/startupFailure";
-import { resolveDeviceIdentity } from "./main/deviceIdentity";
+import { describeInstallation, resolveInstallation } from "./main/deviceIdentity";
+import { DeviceCredentialStore } from "./main/deviceCredentialStore";
 import { describeBuildInfo, readBuildInfo } from "./main/buildInfo";
 import { createIpcContext, registerIpcHandlers } from "./main/ipc";
 import type { UseCases } from "./main/ipc/context";
@@ -37,7 +39,7 @@ interface Bootstrap {
 }
 
 function bootstrapFilesystem(): Bootstrap {
-  const resolvedPaths = resolveRuntimePaths({
+  const environment = {
     platform: process.platform,
     appDataDir: app.getPath("appData"),
     localAppDataDir: process.env.LOCALAPPDATA,
@@ -46,7 +48,13 @@ function bootstrapFilesystem(): Bootstrap {
     overrideDataDir: process.env[DATA_DIR_ENV],
     isPackaged: app.isPackaged,
     resourcesPath: process.resourcesPath,
-  });
+  };
+
+  // FIRST, before any folder is created, any legacy data is copied, or any database is opened:
+  // a launch from source must name its own data folder rather than inherit the live one.
+  assertDevelopmentDataDir(environment);
+
+  const resolvedPaths = resolveRuntimePaths(environment);
   ensureRuntimeDirectories(resolvedPaths);
   const dataMigration = migrateLegacyData(resolvedPaths);
   const paths = effectivePaths(resolvedPaths, dataMigration);
@@ -114,12 +122,36 @@ async function initializeServices({ paths, dataMigration }: Bootstrap): Promise<
   });
   const logger = new dataModule.StructuredLogger(paths.logsDir);
 
+  // ELECTRON HAS TO BE READY BEFORE THE CREDENTIAL CAN BE READ.
+  //
+  // safeStorage is only usable once the app is ready; asked earlier it reports that encryption
+  // is unavailable, whatever the machine. This function starts at module scope so the slow part
+  // — opening the database and running its migrations — overlaps Electron's own startup, and
+  // that is worth keeping. But everything below needs the answer safeStorage gives, and asking
+  // too early turned every installation into "there is a credential here this computer cannot
+  // read" when the truth was "there is no credential". Worse, that reading REFUSES adoption, so
+  // a machine whose identity file was missing would have minted a fresh identity rather than
+  // keeping the one its own history refers to — a wrong outcome caused purely by call timing.
+  //
+  // No deadlock: whenReady() resolves on Electron's schedule, and the handler that awaits this
+  // promise runs after it. Nothing above this line moves, so the database is still opened early.
+  await app.whenReady();
+
   // Who this machine is. Decided once per installation and then stable — an existing database
   // keeps the workstation its own history already refers to. See main/deviceIdentity.ts.
-  const identity = resolveDeviceIdentity({
+  //
+  // The credential is READ, never written: it is the one artefact a copied data folder cannot
+  // use, so it is what decides whether this installation may adopt the workstation a database
+  // already names. With no credential anywhere — which is every installation until provisioning
+  // exists — this behaves exactly as it did before: the identity file wins, and a database
+  // alone is never adopted on trust.
+  const credentials = new DeviceCredentialStore(paths.dataRoot);
+  const installation = resolveInstallation({
     dataRoot: paths.dataRoot,
     findExistingWorkstation: () => db.findExistingWorkstation(),
+    credential: () => credentials.credentialState(),
   });
+  const identity = installation.identity;
 
   logger.log({
     module: "runtime",
@@ -128,6 +160,16 @@ async function initializeServices({ paths, dataMigration }: Bootstrap): Promise<
     deviceId: identity.deviceId,
     message: JSON.stringify({ status: dataMigration.status, dataRoot: paths.dataRoot, legacyRoot: dataMigration.legacyRoot ?? null, copied: dataMigration.copied.length }),
     errorDetails: dataMigration.error,
+  });
+
+  // Which computer this installation believes it is, and whether the cloud would accept it as
+  // that. Five non-secret facts — see describeInstallation, which exists to keep it that way.
+  logger.log({
+    module: "runtime",
+    severity: installation.enrolment.enrolled ? "INFO" : "WARNING",
+    operation: "device-identity",
+    deviceId: identity.deviceId,
+    message: JSON.stringify(describeInstallation(installation, credentials.canPersist())),
   });
 
   // Which code this machine is running, in the log from the first line onward: a support call

@@ -28,6 +28,7 @@
 import { NOTIFICATION_KIND, REMOVAL_STATUS, REMOVAL_TARGET } from "@erp/domain";
 import type { SqliteDatabase } from "../sqliteDatabase.js";
 import type { RemovalRequestRow } from "./types.js";
+import { allocateNumberInRange } from "./numberRange.js";
 
 const SELECT_REQUEST = `
   SELECT r.id, r.request_code, r.target_type, r.target_id, r.target_name, r.reason, r.status,
@@ -203,11 +204,7 @@ export const removalRequestsMethods = {
     this.db.exec("BEGIN IMMEDIATE TRANSACTION");
     try {
       // Allocated inside the write lock, so the code that is read is the code that is inserted.
-      const next = this.db
-        .prepare(
-          "SELECT COALESCE(MAX(CAST(SUBSTR(request_code, 5) AS INTEGER)), 0) + 1 AS n FROM removal_requests WHERE request_code LIKE 'DEL-%'"
-        )
-        .get() as { n: number };
+      const next = { n: allocateNumberInRange(this, "removalRequest") };
       const requestCode = `DEL-${String(next.n).padStart(6, "0")}`;
 
       this.db
@@ -288,11 +285,7 @@ export const removalRequestsMethods = {
     this.db.exec("BEGIN IMMEDIATE TRANSACTION");
     try {
       // Allocated inside the write lock, so the code that is read is the code that is inserted.
-      const next = this.db
-        .prepare(
-          "SELECT COALESCE(MAX(CAST(SUBSTR(request_code, 5) AS INTEGER)), 0) + 1 AS n FROM removal_requests WHERE request_code LIKE 'DEL-%'"
-        )
-        .get() as { n: number };
+      const next = { n: allocateNumberInRange(this, "removalRequest") };
       const requestCode = `DEL-${String(next.n).padStart(6, "0")}`;
 
       this.db

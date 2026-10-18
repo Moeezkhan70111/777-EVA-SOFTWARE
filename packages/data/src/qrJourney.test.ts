@@ -26,6 +26,7 @@ type Raw = import("node:sqlite").DatabaseSync;
 function createFixture() {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "erp-journey-"));
   const db = new SqliteDatabase({ dbPath: path.join(tempDir, "j.db"), schemaPath: path.resolve(process.cwd(), "src/local-schema.sql") });
+  db.setNumberBlock(1, "test");
   db.ensureOperationalContext({
     factoryId: FACTORY,
     factoryCode: "777",

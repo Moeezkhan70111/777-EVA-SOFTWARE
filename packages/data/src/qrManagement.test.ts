@@ -19,6 +19,7 @@ function createDbFixture() {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "erp-qrm-"));
   const dbPath = path.join(tempDir, "qrm.db");
   const db = new SqliteDatabase({ dbPath, schemaPath: path.resolve(process.cwd(), "src/local-schema.sql") });
+  db.setNumberBlock(1, "test");
   db.ensureOperationalContext({
     factoryId: "factory-1",
     factoryCode: "F001",

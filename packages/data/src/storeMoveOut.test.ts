@@ -27,6 +27,7 @@ type Raw = import("node:sqlite").DatabaseSync;
 
 function openDb(dbPath: string) {
   const db = new SqliteDatabase({ dbPath, schemaPath: path.resolve(process.cwd(), "src/local-schema.sql") });
+  db.setNumberBlock(1, "test");
   db.ensureOperationalContext({
     factoryId: FACTORY,
     factoryCode: "777",

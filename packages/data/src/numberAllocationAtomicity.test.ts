@@ -22,6 +22,7 @@ function createFixture(prefix: string) {
     dbPath: path.join(tempDir, "x.db"),
     schemaPath: path.resolve(process.cwd(), "src/local-schema.sql"),
   });
+  db.setNumberBlock(1, "test");
   return {
     db,
     raw: db.db,
