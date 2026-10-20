@@ -58,6 +58,30 @@ export const businessDateOf = (timestamp: string): string => {
 };
 
 /**
+ * The hour (0-23) of a timestamp in the business timezone (Asia/Karachi).
+ *
+ * WHY THIS EXISTS. `new Date(t).getHours()` is the HOST computer's hour, so two machines in
+ * different Windows timezones record different hours for the same instant and their hourly
+ * production breakdowns stop being comparable -- including after one pulls the other's events.
+ * The hour a factory means is the hour on its own clock, which is this.
+ *
+ * Zone-less input follows businessDateOf: a local timestamp is already business-local, so its
+ * own hour is used. An unparseable one yields NaN rather than a quietly wrong number, because
+ * a stored hour nobody can trust is worse than one that fails a check constraint loudly.
+ *
+ * hourCycle "h23" is required: with the default, midnight formats as 24 in some ICU builds,
+ * and 24 would fail the cloud's `check (event_hour between 0 and 23)`.
+ */
+export const businessHourOf = (timestamp: string): number => {
+  const zoned = /(?:Z|[+-]\d{2}:?\d{2})$/i.test(timestamp);
+  if (!zoned) return Number(String(timestamp).slice(11, 13));
+  const date = new Date(timestamp);
+  if (Number.isNaN(date.getTime())) return Number.NaN;
+  const parts = new Intl.DateTimeFormat("en-GB", { timeZone: APP_TIMEZONE, hourCycle: "h23", hour: "2-digit" }).formatToParts(date);
+  return Number(parts.find((part) => part.type === "hour")?.value ?? Number.NaN);
+};
+
+/**
  * The UTC instant a business day (`YYYY-MM-DD`, Asia/Karachi) starts, `dayOffset` days on — the
  * inverse of businessDateOf, for reading a day's window out of UTC timestamps. Null for a bad date.
  * It does not depend on the computer's own timezone.

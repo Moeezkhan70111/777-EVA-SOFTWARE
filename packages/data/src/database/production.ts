@@ -5,7 +5,7 @@
 
 import type { SqliteDatabase } from "../sqliteDatabase.js";
 import type { BreakdownRow, DashboardSnapshot, HistoryQuery, HistoryRow, PagedResult, ReportSummary } from "./types.js";
-import { fromPaisa, operationalDayBounds } from "@erp/domain";
+import { businessHourOf, fromPaisa, operationalDayBounds } from "@erp/domain";
 import type { CanonicalQrPayload } from "@erp/domain";
 import { IN_STORE_STOCK_TOTAL_SQL, orderBy } from "./shared.js";
 import type { MutableTransactionContext } from "./shared.js";
@@ -87,7 +87,7 @@ export const productionMethods = {
   ): Promise<void> {
     const context = tx as MutableTransactionContext;
     const eventDate = payload.occurredAt.slice(0, 10);
-    const eventHour = new Date(payload.occurredAt).getHours();
+    const eventHour = businessHourOf(payload.occurredAt);
 
     context.db
       .prepare(

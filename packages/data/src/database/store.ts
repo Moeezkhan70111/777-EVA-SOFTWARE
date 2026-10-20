@@ -6,6 +6,7 @@
 import type { SqliteDatabase } from "../sqliteDatabase.js";
 import { GATE_LOCATION_TYPE, IN_STORE_LOCATION_TYPE, IN_STORE_STATUS, StoreEntryRejectedError, StoreExitRejectedError, TO_GATE_STATUS } from "@erp/application";
 import type { ScanOperationalContext, StoreEntryEventPayload, StoreEntryQrRecord, StoreExitEventPayload, StoreExitQrRecord, TransactionContext } from "@erp/application";
+import { businessHourOf } from "@erp/domain";
 import { STORE_SESSION_TABLES } from "./shared.js";
 import type { MutableTransactionContext, StoreSessionKind } from "./shared.js";
 import type { StoreMoveOutSession, StoreMoveOutSessionSummary, StoreMovedOutRow, StoreReceivedRow, StoreReceivingSession, StoreReceivingSessionSummary } from "./types.js";
@@ -76,7 +77,7 @@ export const storeMethods = {
   async appendStoreEntryEvent(this: SqliteDatabase, payload: StoreEntryEventPayload, tx: TransactionContext): Promise<void> {
     const context = tx as MutableTransactionContext;
     const eventDate = payload.occurredAt.slice(0, 10);
-    const eventHour = new Date(payload.occurredAt).getHours();
+    const eventHour = businessHourOf(payload.occurredAt);
 
     // gatepass_id is set only for a bring-back from the gate: the compensating record for
     // the STORE_EXIT that took this carton out for that Gatepass (see database/gatepass.ts).
@@ -311,7 +312,7 @@ export const storeMethods = {
   async appendStoreExitEvent(this: SqliteDatabase, payload: StoreExitEventPayload, tx: TransactionContext): Promise<void> {
     const context = tx as MutableTransactionContext;
     const eventDate = payload.occurredAt.slice(0, 10);
-    const eventHour = new Date(payload.occurredAt).getHours();
+    const eventHour = businessHourOf(payload.occurredAt);
 
     // gatepass_id is the exact owner of this move-out (the Gatepass the operator selected),
     // the way dispatch_session_id owns a DISPATCHED event. It is what a Gatepass line's

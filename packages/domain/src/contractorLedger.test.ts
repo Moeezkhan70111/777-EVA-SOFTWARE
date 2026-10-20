@@ -5,6 +5,7 @@ import {
   CONTRACTOR_ROLE,
   RATE_SOURCE,
   businessDateOf,
+  businessHourOf,
   buildContractorLedger,
   groupContractorWork,
   toPaisa,
@@ -53,6 +54,34 @@ test("work is dated by the day in Pakistan, not the UTC date", () => {
   assert.equal(businessDateOf("2026-10-12T20:30:00.000Z"), "2026-10-13");
   assert.equal(businessDateOf("2026-10-12T18:30:00.000Z"), "2026-10-12");
   assert.equal(businessDateOf("2026-10-12T23:30:00.000"), "2026-10-12", "a zone-less timestamp is already local");
+});
+
+// THE HOUR A FACTORY MEANS is the hour on its own clock. Two computers in different Windows
+// timezones must record the same hour for the same instant, or their hourly production
+// breakdowns stop being comparable the moment one pulls the other's events.
+test("the business hour is Karachi's, either side of midnight", () => {
+  // 19:00 UTC is exactly midnight in Karachi (UTC+5), and 18:59:59 is the minute before.
+  assert.equal(businessHourOf("2026-10-19T18:59:59.000Z"), 23);
+  assert.equal(businessHourOf("2026-10-19T19:00:00.000Z"), 0, "midnight is 0, never 24");
+  assert.equal(businessHourOf("2026-10-19T19:00:13.479Z"), 0);
+  // And the stored event_date stays the UTC date at that same instant -- deliberately, because
+  // the day reports narrow on it as a UTC range and widen it with event_ts_local.
+  assert.equal("2026-10-19T19:00:00.000Z".slice(0, 10), "2026-10-19");
+});
+
+test("every hour of a day maps into 0-23", () => {
+  for (let hour = 0; hour < 24; hour += 1) {
+    const iso = `2026-10-19T${String(hour).padStart(2, "0")}:30:00.000Z`;
+    const value = businessHourOf(iso);
+    assert.ok(Number.isInteger(value), `${iso} gave a non-integer`);
+    assert.ok(value >= 0 && value <= 23, `${iso} gave ${value}, outside 0-23`);
+    assert.equal(value, (hour + 5) % 24, "Karachi is UTC+5 all year");
+  }
+});
+
+test("a zone-less timestamp is already business-local, and nonsense is not guessed at", () => {
+  assert.equal(businessHourOf("2026-10-19T23:30:00.000"), 23, "no offset: its own hour");
+  assert.ok(Number.isNaN(businessHourOf("not a timestamp")));
 });
 
 test("one line per program, job and article; days come oldest first", () => {

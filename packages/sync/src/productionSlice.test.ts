@@ -737,6 +737,72 @@ test("no stock counter is carried as a value, and the receiver's stock is left a
   }
 });
 
+// A REPLICA MUST NOT RECOMPUTE. An arriving event carries the hour the computer that made it
+// stored, and this computer writes that value verbatim -- it does not derive its own from
+// occurredAt. Two reasons. The log is append-only, so the receiver's copy has to be the
+// sender's row, not a re-derivation of it; and during a rollout an older computer still
+// sends host-local hours, which must arrive as the (wrong) value it actually recorded rather
+// than being silently corrected on one machine and not another.
+//
+// The numbers below are the real ones from the two-computer pilot: 19:00:13Z is midnight in
+// Karachi (hour 0), and the sending machine -- on UTC-7 -- stored 12.
+test("an applied event keeps the sender's event_hour, and never recomputes it", () => {
+  const fixture = createFixture("hour-verbatim");
+  try {
+    const occurredAt = "2026-10-19T19:00:13.479Z";
+    const senderHour = 12; // what a UTC-7 host recorded: not the business hour
+    const payload = {
+      eventId: "e-hour-1",
+      qrId: "SK9_BLACK_7/10_000042",
+      productVariantId: VARIANT_ID,
+      occurredAt,
+      eventDate: "2026-10-19",
+      eventHour: senderHour,
+      factoryId: FACTORY_ID,
+      workstationId: fixture.b.workstationId,
+      operatorId: null,
+      deviceId: "device-a",
+      article: "SK9",
+      color: "BLACK",
+      size: "7/10",
+      serial: "000042",
+      metadataJson: "{}",
+      createdAt: occurredAt,
+      sourceApp: "desktop-scanner",
+    };
+
+    // The carton has to be here first, exactly as the real ordering guarantees.
+    fixture.b.raw
+      .prepare(
+        `INSERT INTO qr_master (qr_id, product_variant_id, current_status, current_location_type,
+           current_location_id, first_event_id, created_at, updated_at)
+         VALUES (?, ?, 'PRODUCED', 'FACTORY', NULL, NULL, ?, ?)`
+      )
+      .run(payload.qrId, VARIANT_ID, occurredAt, occurredAt);
+
+    const outcome = applyEnvelope(fixture.b.sql, {
+      dedupeKey: productionProducedDedupeKey("e-hour-1"),
+      aggregateType: "PRODUCTION_PRODUCED",
+      aggregateId: "e-hour-1",
+      operation: "INSERT",
+      payload,
+      originDeviceId: "device-a",
+      createdAt: occurredAt,
+    });
+    assert.equal(outcome.status, "APPLIED");
+
+    const row = fixture.b.raw
+      .prepare("SELECT event_hour, event_date, event_ts_local FROM production_events WHERE id = ?")
+      .get("e-hour-1") as { event_hour: number; event_date: string; event_ts_local: string };
+    assert.equal(row.event_hour, senderHour, "the sender's hour is kept, not recalculated");
+    assert.notEqual(row.event_hour, 0, "recomputing in the business zone here would give 0");
+    assert.equal(row.event_date, "2026-10-19", "event_date is replicated verbatim too");
+    assert.equal(row.event_ts_local, occurredAt, "the absolute instant is what stays authoritative");
+  } finally {
+    fixture.cleanup();
+  }
+});
+
 test("the event types without a contract are still refused, and a broken payload is never patched up", () => {
   const fixture = createFixture("refusals");
   try {

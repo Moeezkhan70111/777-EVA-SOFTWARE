@@ -9,7 +9,7 @@ import { orderBy } from "./shared.js";
 import type { MutableTransactionContext } from "./shared.js";
 import { ON_GATE_LOCATION_TYPE, ON_GATE_STATUS, RETURNABLE_STATUS, ReturnRejectedError } from "@erp/application";
 import type { DispatchAttribution, ReturnEventPayload, ReturnQrRecord, ScanOperationalContext, StockLocationRef, TransactionContext } from "@erp/application";
-import { cartonReturnCredit, cartonsToPairs, dozensToCartons, dozensToPairs, fromPaisa } from "@erp/domain";
+import { businessHourOf, cartonReturnCredit, cartonsToPairs, dozensToCartons, dozensToPairs, fromPaisa } from "@erp/domain";
 
 export const dispatchMethods = {
   // A read must not mutate historical data. This used to also "self-heal" by reversing a
@@ -234,7 +234,7 @@ export const dispatchMethods = {
   ): Promise<void> {
     const context = tx as MutableTransactionContext;
     const eventDate = payload.occurredAt.slice(0, 10);
-    const eventHour = new Date(payload.occurredAt).getHours();
+    const eventHour = businessHourOf(payload.occurredAt);
 
     const insertResult = context.db
       .prepare(
@@ -370,7 +370,7 @@ export const dispatchMethods = {
   async appendReturnRecordedEvent(this: SqliteDatabase, payload: ReturnEventPayload, tx: TransactionContext): Promise<void> {
     const context = tx as MutableTransactionContext;
     const eventDate = payload.occurredAt.slice(0, 10);
-    const eventHour = new Date(payload.occurredAt).getHours();
+    const eventHour = businessHourOf(payload.occurredAt);
 
     const insertResult = context.db
       .prepare(
@@ -841,7 +841,7 @@ export const dispatchMethods = {
 
     const adjustmentId = crypto.randomUUID();
     const eventDate = input.nowIso.slice(0, 10);
-    const eventHour = new Date(input.nowIso).getHours();
+    const eventHour = businessHourOf(input.nowIso);
     this.db
       .prepare(
         `INSERT INTO production_events (

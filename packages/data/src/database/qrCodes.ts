@@ -9,7 +9,7 @@ import type { MachineDayProgramRef, QrBatchRecord, QrCodeRecord, PagedResult, Qr
 import { GATE_LOCATION_TYPE, IN_STORE_LOCATION_TYPE, IN_STORE_STATUS, TO_GATE_STATUS } from "@erp/application";
 import type { TransactionContext } from "@erp/application";
 import type { MutableTransactionContext } from "./shared.js";
-import { CARTON_GRADE, QR_BATCH_SOURCE, buildQrId, formatQrSerial, fromPaisaOrNull, isValidRawMaterialQrId, normalizeQrArticle, normalizeQrColor, normalizeQrSize, type CartonGrade, type QrBatchSource } from "@erp/domain";
+import { CARTON_GRADE, QR_BATCH_SOURCE, buildQrId, businessHourOf, formatQrSerial, fromPaisaOrNull, isValidRawMaterialQrId, normalizeQrArticle, normalizeQrColor, normalizeQrSize, type CartonGrade, type QrBatchSource } from "@erp/domain";
 
 /**
  * SQL form of `qrStageOf` so grouped counts are derived by the database from the same two
@@ -1221,7 +1221,7 @@ export const qrCodesMethods = {
           master.product_variant_id,
           now,
           now.slice(0, 10),
-          new Date(now).getHours(),
+          businessHourOf(now),
           input.context.factoryId,
           input.context.workstationId,
           input.context.deviceId,
