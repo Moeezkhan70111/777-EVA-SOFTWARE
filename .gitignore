@@ -65,3 +65,14 @@ data-migration.json
 # to a commit. Ignoring the folder keeps that gate meaningful without asking
 # anyone to move their reference pictures somewhere else first.
 REFERENCE PICS/
+
+# --- Local agent and MCP tooling -------------------------------------------
+# Per-machine, not project source. .claude/settings.local.json records which MCP
+# servers this machine has enabled and its permission allow-list; .mcp.json pins
+# the Supabase project ref. Both are configuration for whoever is sitting here,
+# and committing them would push one developer's tool setup onto everyone else.
+.claude/
+.mcp.json
+.agents/
+.kiro/
+skills-lock.json
