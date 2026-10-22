@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { PRODUCT_VARIANT_NAMESPACE, deriveProductVariantId } from "./productIdentity.js";
+import { PRODUCT_VARIANT_NAMESPACE, deriveProductVariantId } from "./database/productIdentity.js";
 
 // WHAT THESE PROVE. That one product is one id on every computer, that two products are never
 // one id, and that the id is the shape the column already holds. They do NOT prove anything

@@ -7,7 +7,6 @@ import type { SqliteDatabase } from "../sqliteDatabase.js";
 import type { InventoryRow, PagedResult, ProductListEntry, ProductListKind, ProductListQuery, ProductVariantRecord, SaleableVariant } from "./types.js";
 import {
   areValidPackingRateItems,
-  deriveProductVariantId,
   fromPaisa,
   fromPaisaOrNull,
   multiplyMoney,
@@ -17,6 +16,7 @@ import {
   toPaisaOrNull,
   type PackingRateItem,
 } from "@erp/domain";
+import { deriveProductVariantId } from "./productIdentity.js";
 import { IN_STORE_STOCK_SQL } from "./shared.js";
 
 /** One packing attribute as a caller sends it: a name and a price in rupees per DOZEN. */

@@ -1,5 +1,23 @@
 import crypto from "node:crypto";
 
+// WHY THIS IS IN @erp/data AND NOT @erp/domain.
+//
+// It was written in @erp/domain, beside the QR identity rules, which is where it belongs by
+// subject. That broke the release build: @erp/domain is bundled INTO THE RENDERER by esbuild,
+// and `node:crypto` cannot be resolved for a browser target --
+//
+//   X [ERROR] Could not resolve "node:crypto"
+//       ../../packages/domain/dist/productIdentity.js:1:19
+//
+// @erp/domain is isomorphic and must stay that way: every other file in it uses only Intl and
+// plain JavaScript, and domainIsIsomorphic.test.ts now fails if a `node:` import appears there
+// again.
+//
+// @erp/data is main-process only -- the renderer talks to it over IPC and never imports it --
+// so a node built-in is fine here. It is also where the only caller lives (products.ts), and
+// by the rule below an id is minted at exactly one point and never recomputed, so nothing in
+// the renderer could legitimately need this.
+//
 // A PRODUCT VARIANT'S ID IS DERIVED FROM WHAT THE PRODUCT IS.
 //
 // WHY. Until 2026-10-23 a new variant's id was crypto.randomUUID(). Every computer starts from
