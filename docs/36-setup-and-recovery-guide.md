@@ -505,6 +505,18 @@ nothing on this machine has ever contacted one. Every step below is yours to run
    whose cartons it will push. None of this synchronises; a computer meeting a carton for a
    product it does not have refuses it visibly rather than inventing one.
 
+   **PC 2 must receive its product variants from the cloud or from the seed
+   (`productVariantSeed.ts`) — never by creating them in the Product form.** The 36 variants on
+   the host were minted with `crypto.randomUUID()` before ids were derived (2026-10-23), so
+   re-creating one of those through the form produces a *different* id for the same product. The
+   cloud holds `product_variants` under `UNIQUE (article, color, size)`, so the second id is
+   refused `VARIANT_IDENTITY_CLASH` and every carton of that product is refused with it.
+
+   Products created *after* 2026-10-23 derive their id from article + colour + size, so two PCs
+   creating the same new product converge on their own and the form is safe for those. The rule
+   above exists for the 36 that predate it — and `VARIANT_IDENTITY_CLASH` is what tells you the
+   rule was broken, rather than letting it pass silently.
+
 ### 7.3 On each office PC
 
 9. **Set the four cloud variables** in the environment the app starts in:

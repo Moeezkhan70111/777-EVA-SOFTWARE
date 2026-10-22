@@ -451,6 +451,88 @@ test("duplicate scan is rejected and does not increment stock", async () => {
   }
 });
 
+test("two computers creating the same product arrive at the same variant id", () => {
+  const pc1 = createDbFixture();
+  const pc2 = createDbFixture();
+  try {
+    // Two separate databases, each starting empty, exactly as a new PC does -- docs/36 forbids
+    // copying the data folder between them. Before 2026-10-23 these two ids were independent
+    // random UUIDs, so the second computer's push was refused VARIANT_IDENTITY_CLASH and every
+    // carton of the product with it.
+    const onPc1 = registerQrIdentities(pc1.db, { article: "SK46", size: "4/6", color: "BLACK", quantity: 1 });
+    const onPc2 = registerQrIdentities(pc2.db, { article: "SK46", size: "4/6", color: "BLACK", quantity: 1 });
+    assert.equal(onPc1.length, 1);
+    assert.equal(onPc2.length, 1);
+
+    const variantOn = (fixture: ReturnType<typeof createDbFixture>): string => {
+      const rows = fixture.db.db
+        .prepare("SELECT id FROM product_variants WHERE article = ? AND color = ? AND size = ?")
+        .all("SK46", "BLACK", "4/6") as Array<{ id: string }>;
+      assert.equal(rows.length, 1, "one product, one row");
+      return String(rows[0]?.id);
+    };
+
+    assert.equal(variantOn(pc1), variantOn(pc2), "one product is one id, on both computers");
+
+    // And the carton identity each one minted refers to that same product, so a carton pushed
+    // from either computer names a product the other already has under the same id.
+    for (const fixture of [pc1, pc2]) {
+      const carton = fixture.db.db
+        .prepare("SELECT product_variant_id FROM qr_codes LIMIT 1")
+        .get() as { product_variant_id: string };
+      assert.equal(carton.product_variant_id, variantOn(pc1));
+    }
+  } finally {
+    pc1.cleanup();
+    pc2.cleanup();
+  }
+});
+
+test("a variant that already exists keeps the id it was created with, derived or not", () => {
+  const fixture = createDbFixture();
+  try {
+    // The 36 products on the host were minted with crypto.randomUUID() and mirrored to the cloud
+    // with those ids. Nothing may re-mint them: a dozen columns point at a variant id, and the
+    // cloud holds the same value.
+    const legacyId = "11111111-2222-4333-8444-555555555555";
+    const now = "2026-10-01T04:00:00.000Z";
+    fixture.db.db
+      .prepare(
+        `INSERT INTO product_variants (id, article, color, size, status, created_at, updated_at)
+         VALUES (?, 'SK46', 'BLACK', '4/6', 'ACTIVE', ?, ?)`
+      )
+      .run(legacyId, now, now);
+
+    // Creating "the same" product now finds it by its tuple and hands back the existing id.
+    registerQrIdentities(fixture.db, { article: "SK46", size: "4/6", color: "BLACK", quantity: 1 });
+
+    const rows = fixture.db.db
+      .prepare("SELECT id FROM product_variants WHERE article = ? AND color = ? AND size = ?")
+      .all("SK46", "BLACK", "4/6") as Array<{ id: string }>;
+    assert.equal(rows.length, 1, "no second row beside the legacy one");
+    assert.equal(rows[0]?.id, legacyId, "a random id already in use is never replaced");
+  } finally {
+    fixture.cleanup();
+  }
+});
+
+test("a size is stored upper case, so one size is not two products", () => {
+  const fixture = createDbFixture();
+  try {
+    // Sizes on this host are numeric ("4/6", "7/10"), where case cannot differ -- which is why
+    // this was safe to change. An alphabetic size typed in two cases would otherwise be two
+    // products with two ids, and the derived id would faithfully keep them apart.
+    fixture.db.createProduct({ article: "sk46", size: "xl", sellingPrice: 550, status: "ACTIVE" });
+
+    const row = fixture.db.db
+      .prepare("SELECT article, size FROM article_sizes WHERE deleted_at IS NULL LIMIT 1")
+      .get() as { article: string; size: string };
+    assert.deepEqual({ article: row.article, size: row.size }, { article: "SK46", size: "XL" });
+  } finally {
+    fixture.cleanup();
+  }
+});
+
 test("a product is queued once however many cartons of it are produced", async () => {
   const fixture = createDbFixture();
   try {

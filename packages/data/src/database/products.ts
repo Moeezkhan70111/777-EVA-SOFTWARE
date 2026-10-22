@@ -7,6 +7,7 @@ import type { SqliteDatabase } from "../sqliteDatabase.js";
 import type { InventoryRow, PagedResult, ProductListEntry, ProductListKind, ProductListQuery, ProductVariantRecord, SaleableVariant } from "./types.js";
 import {
   areValidPackingRateItems,
+  deriveProductVariantId,
   fromPaisa,
   fromPaisaOrNull,
   multiplyMoney,
@@ -446,7 +447,7 @@ export const productsMethods = {
     status?: "ACTIVE" | "DISABLED";
   }): string {
     const article = input.article.trim().toUpperCase();
-    const size = input.size.trim();
+    const size = input.size.trim().toUpperCase();
     const costPricePaisa = toPaisaOrNull(input.costPrice);
     const sellingPricePaisa = toPaisaOrNull(input.sellingPrice);
     const rates = contractorRatesInPaisa(input);
@@ -531,7 +532,7 @@ export const productsMethods = {
           articleSizeId,
           article: input.article.trim().toUpperCase(),
           color,
-          size: input.size.trim(),
+          size: input.size.trim().toUpperCase(),
           description: input.description ?? null,
           costPricePaisa,
           sellingPricePaisa,
@@ -605,7 +606,11 @@ export const productsMethods = {
       )
       .get(product.id) as Record<string, unknown> | undefined;
 
-    const variantId = crypto.randomUUID();
+    // Derived from the tuple, not minted at random, so a second computer creating this same
+    // colour computes this same id and the two converge without anybody merging anything.
+    // Passed exactly as the columns below receive them: `color` arrived through
+    // normalizeQrColor, and the article and size come off the article_sizes row.
+    const variantId = deriveProductVariantId(product.article, color, product.size);
     this.db
       .prepare(
         `INSERT INTO product_variants (
@@ -734,7 +739,9 @@ export const productsMethods = {
       return existing.id;
     }
 
-    const id = crypto.randomUUID();
+    // Derived, for the reason given at the other insert. The caller has already normalised
+    // these three, and they are the values written below.
+    const id = deriveProductVariantId(input.article, input.color, input.size);
     this.db
       .prepare(
         `INSERT INTO product_variants (id, article, color, size, description, cost_price_paisa, selling_price_paisa, main_group_id, product_group_id, article_series_id, product_type_id, product_sub_group_id, article_size_id, status, created_at, updated_at, deleted_at, deleted_by, delete_reason) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL)`

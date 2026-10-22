@@ -1,4 +1,5 @@
 export * from "./qr.js";
+export * from "./productIdentity.js";
 export * from "./rawMaterialQr.js";
 export * from "./party.js";
 export * from "./pricing.js";
