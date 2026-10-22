@@ -55,6 +55,8 @@ interface DrainResultStub {
   synced: number;
   counts: Record<string, number>;
   transportError?: string;
+  /** Optional on purpose: a drain that omits it must not crash the pass. */
+  refusals?: Array<{ aggregateType: string; aggregateId: string; reason: string; parked: boolean }>;
 }
 interface PullResultStub {
   fetched: number;
@@ -98,13 +100,23 @@ vi.mock("@erp/sync", () => {
     }
   }
   class SupabaseSyncTransport {
+    /** As in the real transport: the claim lives here, and only for as long as this object. */
+    claimed = false;
     constructor(options: unknown) {
       built.push({ what: "transport", options: options as Record<string, unknown> });
     }
     async claimDevice(request: Record<string, unknown>): Promise<Record<string, unknown>> {
       claimRequests.push(request);
       if (claimThrows !== null) throw claimThrows;
+      if (claimOutcome.ok === true) this.claimed = true;
       return claimOutcome;
+    }
+    async heartbeatDevice(): Promise<Record<string, unknown>> {
+      heartbeats += 1;
+      if (heartbeatThrows !== null) throw heartbeatThrows;
+      // The real one drops the claim on any refusal, so the caller takes a fresh one.
+      if (heartbeatOutcome.ok !== true) this.claimed = false;
+      return heartbeatOutcome;
     }
   }
   class OutboxDrain {
@@ -165,6 +177,10 @@ let summaryCalls: Array<Record<string, unknown>>;
 let claimOutcome: Record<string, unknown>;
 let claimThrows: Error | null;
 let claimRequests: Array<Record<string, unknown>>;
+/** What the stubbed heartbeat answers, and how many times it was asked. */
+let heartbeatOutcome: Record<string, unknown>;
+let heartbeatThrows: Error | null;
+let heartbeats: number;
 
 const windowEvent = { sender: { id: 1 } } as unknown as IpcMainInvokeEvent;
 
@@ -329,6 +345,9 @@ beforeEach(() => {
   claimOutcome = { ok: true, epoch: 4, holder: "holder-4" };
   claimThrows = null;
   claimRequests = [];
+  heartbeatOutcome = { ok: true, epoch: 4, holder: "holder-4" };
+  heartbeatThrows = null;
+  heartbeats = 0;
   drainResult = { synced: 2, counts: { PENDING: 0, SYNCED: 2 } };
   pullResult = { fetched: 3, applied: 2, duplicates: 1, refused: [] };
   setEnv(GOOD_ENV);
@@ -563,6 +582,9 @@ describe("cloud sync at the process boundary", () => {
       applied: 2,
       duplicates: 1,
       refused: [],
+      // Push verdicts travel back with the outcome now, so a refused push cannot look like
+      // having nothing to send. Empty here: this fake drain refused nothing.
+      pushRefusals: [],
       waitingFor: undefined,
       outbox: { PENDING: 0, SYNCED: 2 },
     });
@@ -622,6 +644,99 @@ describe("cloud sync at the process boundary", () => {
     // runs, so it must not exist until the claim has succeeded.
     const order = built.map((entry) => entry.what);
     expect(order.indexOf("drain")).toBeGreaterThan(order.indexOf("transport"));
+  });
+
+  it("a refused push names its cause, and is still not a failed pass", async () => {
+    drainResult = {
+      synced: 1,
+      counts: { PENDING: 1, FAILED: 1 },
+      refusals: [
+        { aggregateType: "PRODUCT_VARIANT", aggregateId: "variant-x", reason: "UNKNOWN_FUNCTION", parked: false },
+        { aggregateType: "QR_MASTER", aggregateId: "SK46_BLACK_4/6_000001", reason: "UNKNOWN_PRODUCT_VARIANT", parked: false },
+      ],
+    };
+
+    const answer = await run();
+
+    // ONE row went and one was refused, so this is not a failure — other rows got through, and
+    // calling it failed would send the scheduler into a backoff it has no reason for.
+    expect(answer.accepted).toBe(true);
+
+    // The cause is named, not just counted. "sent 0" with no reason is what hid this before.
+    expect(answer.pushRefusals).toEqual([
+      { aggregateType: "PRODUCT_VARIANT", aggregateId: "variant-x", reason: "UNKNOWN_FUNCTION", parked: false },
+      {
+        aggregateType: "QR_MASTER",
+        aggregateId: "SK46_BLACK_4/6_000001",
+        reason: "UNKNOWN_PRODUCT_VARIANT",
+        parked: false,
+      },
+    ]);
+
+    // And it reaches sync_runs, which is what the panel reads back as the newest verdict.
+    const run_ = syncRuns.at(-1);
+    expect(run_?.outcome).toBe("OK");
+    expect(String(run_?.reason)).toContain("UNKNOWN_FUNCTION");
+    expect(String(run_?.reason)).toContain("UNKNOWN_PRODUCT_VARIANT");
+
+    // The log says which rows, so Settings is not the only place the ids exist.
+    expect(JSON.stringify(logged)).toContain("SK46_BLACK_4/6_000001");
+  });
+
+  it("the same refusal twice over is named once, so the sentence stays readable", async () => {
+    drainResult = {
+      synced: 0,
+      counts: { PENDING: 3 },
+      refusals: [
+        { aggregateType: "QR_MASTER", aggregateId: "a", reason: "UNKNOWN_PRODUCT_VARIANT", parked: false },
+        { aggregateType: "QR_MASTER", aggregateId: "b", reason: "UNKNOWN_PRODUCT_VARIANT", parked: false },
+        { aggregateType: "QR_MASTER", aggregateId: "c", reason: "UNKNOWN_PRODUCT_VARIANT", parked: false },
+      ],
+    };
+
+    await run();
+
+    expect(syncRuns.at(-1)?.reason).toBe("UNKNOWN_PRODUCT_VARIANT");
+  });
+
+  it("a second pass confirms the claim it already holds instead of taking a new one", async () => {
+    await expect(run()).resolves.toMatchObject({ accepted: true });
+    await expect(run()).resolves.toMatchObject({ accepted: true });
+    await expect(run()).resolves.toMatchObject({ accepted: true });
+
+    // ONE claim for the life of the process, then a heartbeat per pass. claim_device bumps the
+    // epoch and writes two audit rows, so re-claiming every pass buried a genuine takeover in
+    // this computer's own noise and grew device_claim_events for ever.
+    expect(claimRequests).toHaveLength(1);
+    expect(heartbeats).toBe(2);
+
+    // And the transport is the same object across all three, which is what holds the claim.
+    expect(built.filter((entry) => entry.what === "transport")).toHaveLength(1);
+  });
+
+  it("a heartbeat refused because another computer took the enrolment claims again", async () => {
+    await expect(run()).resolves.toMatchObject({ accepted: true });
+    expect(claimRequests).toHaveLength(1);
+
+    heartbeatOutcome = { ok: false, reason: "CLAIM_SUPERSEDED" };
+    await expect(run()).resolves.toMatchObject({ accepted: true });
+
+    // The refusal dropped the claim, so this pass took a fresh one — which is exactly what a
+    // real takeover should look like from here, and the only time the epoch should move.
+    expect(claimRequests).toHaveLength(2);
+    expect(heartbeats).toBe(1);
+  });
+
+  it("a heartbeat refused and a claim refused is still a refused pass, not a silent one", async () => {
+    await expect(run()).resolves.toMatchObject({ accepted: true });
+
+    heartbeatOutcome = { ok: false, reason: "CLAIM_SUPERSEDED" };
+    claimOutcome = { ok: false, reason: "REVOKED" };
+    const answer = await run();
+
+    expect(answer.accepted).toBe(false);
+    expect(String(answer.reason)).toContain("REVOKED");
+    expect(JSON.stringify(logged)).toContain("REVOKED");
   });
 
   it("a refused claim builds no drain and changes nothing in the outbox", async () => {

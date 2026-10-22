@@ -25,6 +25,23 @@ import {
 import { SyncTransportError, type SyncTransport } from "./transport.js";
 import type { SyncSqlHandle } from "./sqlPort.js";
 
+/**
+ * One event the service gave a verdict on, named so an operator can be told WHICH event and WHY.
+ *
+ * Until this existed the reason reached `sync_outbox.last_error` and stopped there: the pass
+ * reported "sent 0" and the panel could not tell a refusal from having nothing to send. A refused
+ * push that looks like a quiet success is the exact failure the status indicator exists to
+ * prevent, so the verdict now travels back with the result.
+ */
+export interface OutboxRefusal {
+  readonly aggregateType: string;
+  readonly aggregateId: string;
+  /** The service's own reason, already scrubbed by the transport. */
+  readonly reason: string;
+  /** True when this refusal spent the last attempt and the event is now parked. */
+  readonly parked: boolean;
+}
+
 export interface DrainResult {
   readonly reclaimed: number;
   readonly leased: number;
@@ -33,6 +50,11 @@ export interface DrainResult {
   readonly deadLettered: number;
   /** Set when the batch did not reach the service at all. */
   readonly transportError?: string;
+  /**
+   * Events the service REFUSED this pass, with reasons. Empty on a transport failure: a batch
+   * that may never have arrived is not a verdict on anything in it.
+   */
+  readonly refusals: ReadonlyArray<OutboxRefusal>;
   readonly counts: OutboxCounts;
 }
 
@@ -85,7 +107,7 @@ export class OutboxDrain {
     });
 
     if (leased.length === 0) {
-      return { reclaimed, leased: 0, synced: 0, failed: 0, deadLettered: 0, counts: outboxCounts(this.sql) };
+      return { reclaimed, leased: 0, synced: 0, failed: 0, deadLettered: 0, refusals: [], counts: outboxCounts(this.sql) };
     }
 
     let acks;
@@ -132,6 +154,8 @@ export class OutboxDrain {
         failed,
         deadLettered,
         transportError: message,
+        // Not a verdict on any event: the batch may never have arrived.
+        refusals: [],
         counts: outboxCounts(this.sql),
       };
     }
@@ -140,6 +164,7 @@ export class OutboxDrain {
     let synced = 0;
     let failed = 0;
     let deadLettered = 0;
+    const refusals: OutboxRefusal[] = [];
     const settleIso = this.now();
 
     for (const event of leased) {
@@ -186,8 +211,15 @@ export class OutboxDrain {
       );
       if (status === "DEAD_LETTER") deadLettered += 1;
       else failed += 1;
+      // Only here. The NOT_ACKNOWLEDGED branch above is silence, not a verdict.
+      refusals.push({
+        aggregateType: event.envelope.aggregateType,
+        aggregateId: event.envelope.aggregateId,
+        reason: ack.reason ?? "REFUSED",
+        parked: status === "DEAD_LETTER",
+      });
     }
 
-    return { reclaimed, leased: leased.length, synced, failed, deadLettered, counts: outboxCounts(this.sql) };
+    return { reclaimed, leased: leased.length, synced, failed, deadLettered, refusals, counts: outboxCounts(this.sql) };
   }
 }

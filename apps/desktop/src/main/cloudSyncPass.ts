@@ -27,7 +27,7 @@
 
 import { app } from "electron";
 import type { SqliteDatabase, StructuredLogger, SyncRunOutcome, SyncRunTrigger } from "@erp/data";
-import type { SyncPassResult } from "@erp/sync";
+import type { SupabaseSyncTransport, SyncPassResult } from "@erp/sync";
 import { describeCloudSyncConfig, readCloudSyncConfig } from "./cloudConfig";
 import { DeviceCredentialStore } from "./deviceCredentialStore";
 
@@ -40,8 +40,17 @@ export interface CloudSyncPassOutcome extends SyncPassResult {
   applied?: number;
   /** Of those, already present — the normal result of a repeat. */
   duplicates?: number;
-  /** Events this computer can never apply, each with the reason. */
+  /** Events this computer can never apply, each with the reason. Comes from the PULL. */
   refusedEvents?: Array<{ reason: string }>;
+  /**
+   * Events the cloud REFUSED to accept from us, with reasons. From the PUSH.
+   *
+   * Reported separately from refusedEvents because the two mean opposite things: one is work
+   * arriving that this computer cannot apply, the other is this computer's own work being turned
+   * away. Until this existed the reason reached sync_outbox.last_error and nowhere else, so a
+   * refused push was indistinguishable from having nothing to send.
+   */
+  pushRefusals?: Array<{ aggregateType: string; aggregateId: string; reason: string; parked: boolean }>;
   /** Waiting on something that has not arrived yet, if the pull stopped early. */
   waitingFor?: string;
   /** Queue state afterwards, so an operator can see what is still unsent. */
@@ -57,6 +66,38 @@ export interface CloudSyncPassDeps {
   /** Who asked, when a person did. Absent for a scheduled pass. */
   readonly actor?: { id: string; username: string };
 }
+
+/**
+ * THE TRANSPORT IS KEPT BETWEEN PASSES, and the claim it holds with it.
+ *
+ * A new transport per pass meant a new `claimDevice` per pass, because the claim lives in the
+ * transport ("in memory only, and gone when the process is"). That bumped the epoch every five
+ * minutes and wrote two audit rows each time — see heartbeatDevice in supabaseTransport.ts for
+ * why that is worse than untidy.
+ *
+ * Held at module scope because there is one process, one device identity and one outbox. The
+ * configuration is read afresh on every pass, so a computer provisioned mid-session still picks
+ * it up; only the authenticated session and the claim are reused.
+ *
+ * THE IDENTITY BELOW IS EVERYTHING THAT DECIDES WHO THE TRANSPORT IS SIGNED IN AS. If any part
+ * of it changes the transport is rebuilt, because reusing one would mean carrying a session, and
+ * a claim, that belongs to somebody else:
+ *
+ *   url, email   — a different project or account entirely
+ *   anonKey      — a rotated key: the cached transport would keep sending the old one
+ *   deviceId     — the claim is per device, and so is the stored credential
+ *   dataRoot     — which credential file the session was restored from
+ */
+interface CachedTransport {
+  readonly transport: SupabaseSyncTransport;
+  readonly url: string;
+  readonly email: string;
+  readonly anonKey: string;
+  readonly deviceId: string;
+  readonly dataRoot: string;
+}
+
+let cachedTransport: CachedTransport | null = null;
 
 /** Whether this computer is set up to sync at all. Cheap, read-only, no network. */
 export function isCloudSyncConfigured(deps: Pick<CloudSyncPassDeps, "deviceId" | "dataRoot">): boolean {
@@ -152,11 +193,30 @@ export async function runCloudSyncPass(
       }
     );
 
-    const transport = new sync.SupabaseSyncTransport({
+    // Reused only when every part of the identity matches, so a re-provisioned computer can
+    // never keep signing in as whoever it used to be.
+    const identity = {
       url: settings.config.url,
+      email: settings.config.email ?? "",
       anonKey: settings.config.anonKey,
-      auth,
-    });
+      deviceId,
+      dataRoot,
+    };
+    const held = cachedTransport;
+    const sameTarget =
+      held !== null &&
+      held.url === identity.url &&
+      held.email === identity.email &&
+      held.anonKey === identity.anonKey &&
+      held.deviceId === identity.deviceId &&
+      held.dataRoot === identity.dataRoot;
+    const transport: SupabaseSyncTransport =
+      sameTarget && held !== null
+        ? held.transport
+        : new sync.SupabaseSyncTransport({ url: identity.url, anonKey: identity.anonKey, auth });
+    if (!sameTarget) {
+      cachedTransport = { transport, ...identity };
+    }
 
     const queueNow = () =>
       sync.outboxSummary(db.db, {
@@ -164,7 +224,16 @@ export async function runCloudSyncPass(
         nowIso: new Date().toISOString(),
       }).counts;
 
-    const claim = await transport.claimDevice({ deviceId, workstationId, appVersion: app.getVersion() });
+    // CLAIM ONCE, THEN CONFIRM. A held claim is heartbeaten rather than retaken, so the epoch
+    // increments only on a restart or a genuine eviction. A refused heartbeat drops the claim,
+    // and the fresh claim below is what a real takeover looks like from this side.
+    const beat = transport.claimed
+      ? await transport.heartbeatDevice()
+      : { ok: false as const, reason: "NOT_CLAIMED" };
+
+    const claim = beat.ok
+      ? { ok: true as const, reason: undefined }
+      : await transport.claimDevice({ deviceId, workstationId, appVersion: app.getVersion() });
     if (!claim.ok) {
       logger.log({
         module: "sync",
@@ -193,6 +262,11 @@ export async function runCloudSyncPass(
     const pull = new sync.SyncPull(db.db, transport);
     const pulled = await pull.runOnce();
 
+    // Read through a default. The drain always supplies this, but a pass must not be able to
+    // throw on the SHAPE of its own result -- that would turn a reported refusal into an
+    // unreported crash, which is the opposite of what the field is for.
+    const pushRefusals = pushed.refusals ?? [];
+
     logger.log({
       module: "sync",
       severity: "INFO",
@@ -202,12 +276,34 @@ export async function runCloudSyncPass(
       message:
         `Cloud sync (${trigger}${actor ? ` by ${actor.username}` : ""}): sent ${String(pushed.synced)}, ` +
         `read ${String(pulled.fetched)}, applied ${String(pulled.applied)}, ` +
-        `already here ${String(pulled.duplicates)}, refused ${String(pulled.refused.length)}`,
+        `already here ${String(pulled.duplicates)}, refused ${String(pulled.refused.length)}` +
+        // The push verdicts, named. "sent 0" on its own hid these entirely.
+        (pushRefusals.length === 0
+          ? ""
+          : `; cloud refused ${String(pushRefusals.length)}: ` +
+            pushRefusals.map((r) => `${r.aggregateType} ${r.aggregateId} (${r.reason})`).join(", ")),
     });
 
     const transportError = pushed.transportError ?? pulled.transportError;
+
+    // THE CAUSE, NOT JUST THE COUNT. `reason` is what sync_runs records and what the panel
+    // reads back as the newest verdict, so a refusal with no transport error has to put its
+    // cause here or the operator is told "would not accept 2 items" and nothing else.
+    //
+    // It does NOT make the pass a failure: the outcome below is decided by transportError
+    // alone, and rightly — other rows may well have gone through on the same pass.
+    //
+    // Distinct reasons only, and no payload: the aggregate ids are in the log line above and in
+    // Settings, and this sentence has to stay short enough to read.
+    const distinctReasons = [...new Set(pushRefusals.map((refusal) => refusal.reason))];
     const result = {
-      reason: transportError,
+      reason: transportError ?? (distinctReasons.length > 0 ? distinctReasons.join(", ") : undefined),
+      pushRefusals: pushRefusals.map((r) => ({
+        aggregateType: r.aggregateType,
+        aggregateId: r.aggregateId,
+        reason: r.reason,
+        parked: r.parked,
+      })),
       pushed: pushed.synced,
       fetched: pulled.fetched,
       applied: pulled.applied,

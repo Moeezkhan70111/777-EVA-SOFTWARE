@@ -42,12 +42,23 @@ export const SYNC_AGGREGATE = {
   QR_MASTER: "QR_MASTER",
   /** One production scan, with everything production_events needs to hold it. */
   PRODUCTION_PRODUCED: "PRODUCTION_PRODUCED",
+  /**
+   * One product variant's identity, so a carton of it is not refused as unknown.
+   *
+   * Insert-only and conflict-free: article, colour and size are fixed at creation and nothing
+   * edits them. Prices are deliberately NOT carried -- no contract needs them, and the cloud
+   * has no use for the company's pricing.
+   */
+  PRODUCT_VARIANT: "PRODUCT_VARIANT",
 } as const;
 
 export type SyncAggregateType = (typeof SYNC_AGGREGATE)[keyof typeof SYNC_AGGREGATE];
 
 /** One identity per QR, for all time. */
 export const qrMasterDedupeKey = (qrId: string): string => `${SYNC_AGGREGATE.QR_MASTER}:${qrId}`;
+/** One identity per variant, for all time. */
+export const productVariantDedupeKey = (variantId: string): string =>
+  `${SYNC_AGGREGATE.PRODUCT_VARIANT}:${variantId}`;
 /** One per production event id. */
 export const productionProducedDedupeKey = (eventId: string): string =>
   `${SYNC_AGGREGATE.PRODUCTION_PRODUCED}:${eventId}`;
@@ -72,6 +83,49 @@ export const QR_MASTER_OPENING_STATE = {
   currentLocationId: null,
   firstEventId: null,
 } as const;
+
+// ─── PRODUCT_VARIANT ───────────────────────────────────────────────────────
+
+/**
+ * A variant's identity, and nothing else.
+ *
+ * No price. `status` is not carried either: a variant arrives ACTIVE, and retirement is each
+ * computer's own record (a variant retired here is still a real product elsewhere). That makes
+ * the payload immutable in practice, which is what lets it be insert-only.
+ */
+export interface ProductVariantPayload {
+  readonly variantId: string;
+  readonly article: string;
+  readonly color: string;
+  readonly size: string;
+  readonly description: string | null;
+  readonly createdAt: string;
+}
+
+/** Reads a PRODUCT_VARIANT payload off the wire, or returns null. Nothing is defaulted (R25). */
+export function readProductVariantPayload(payload: Record<string, unknown>): ProductVariantPayload | null {
+  const text = (key: string): string | null => {
+    const value = payload[key];
+    return typeof value === "string" && value.trim() !== "" ? value : null;
+  };
+  const variantId = text("variantId");
+  const article = text("article");
+  const color = text("color");
+  const size = text("size");
+  const createdAt = text("createdAt");
+  if (variantId === null || article === null || color === null || size === null || createdAt === null) {
+    return null;
+  }
+  const description = payload.description;
+  return {
+    variantId,
+    article,
+    color,
+    size,
+    description: typeof description === "string" && description !== "" ? description : null,
+    createdAt,
+  };
+}
 
 // ─── PRODUCTION_PRODUCED ────────────────────────────────────────────────────
 
@@ -232,6 +286,23 @@ export function enqueueQrMaster(db: SyncWriteHandle, payload: QrMasterPayload, o
     aggregateType: SYNC_AGGREGATE.QR_MASTER,
     aggregateId: payload.qrId,
     dedupeKey: qrMasterDedupeKey(payload.qrId),
+    payload: { ...payload },
+    nowIso: payload.createdAt,
+  });
+}
+
+/**
+ * Queues one product variant's identity. Call inside the transaction that queues a carton of it.
+ *
+ * Idempotent by dedupe key, so queueing it on every carton costs one row per variant for all
+ * time rather than one per carton.
+ */
+export function enqueueProductVariant(db: SyncWriteHandle, payload: ProductVariantPayload, outboxId: string): boolean {
+  return enqueueSyncEvent(db, {
+    outboxId,
+    aggregateType: SYNC_AGGREGATE.PRODUCT_VARIANT,
+    aggregateId: payload.variantId,
+    dedupeKey: productVariantDedupeKey(payload.variantId),
     payload: { ...payload },
     nowIso: payload.createdAt,
   });

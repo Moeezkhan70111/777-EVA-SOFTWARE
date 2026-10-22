@@ -25,7 +25,12 @@
 // WHAT IS NEVER LOGGED OR RETURNED. The publishable key and the access token go out in headers
 // and come back in nothing. Failures carry the service's own message, scrubbed by redactSecrets.
 
-import { SYNC_AGGREGATE, readProductionProducedPayload, readQrMasterPayload } from "@erp/data";
+import {
+  SYNC_AGGREGATE,
+  readProductVariantPayload,
+  readProductionProducedPayload,
+  readQrMasterPayload,
+} from "@erp/data";
 import type { SyncEnvelope } from "./contract.js";
 import { HttpError, readServiceError, redactSecrets, requestJson } from "./httpJson.js";
 import type { FailureKind } from "./outboxQueue.js";
@@ -93,6 +98,7 @@ const CLAIM_REFUSALS = new Set([
  * claimed, so they wait as PENDING rather than being refused and parked.
  */
 export const SUPABASE_PUSHABLE_AGGREGATES: readonly string[] = [
+  SYNC_AGGREGATE.PRODUCT_VARIANT,
   SYNC_AGGREGATE.QR_MASTER,
   SYNC_AGGREGATE.PRODUCTION_PRODUCED,
 ];
@@ -167,6 +173,65 @@ export class SupabaseSyncTransport implements SyncTransport, SyncPullTransport {
     return this.held !== null;
   }
 
+  /**
+   * Confirms the claim this process already holds, WITHOUT taking a new one.
+   *
+   * WHY THIS EXISTS. Every pass used to call claimDevice, which bumps the epoch under a row lock
+   * and supersedes the previous holder — its own. Five passes produced epoch 5 and nine rows in
+   * device_claim_events, and two consequences followed:
+   *
+   *   The epoch stopped meaning anything. It is supposed to signal that SOMEBODY ELSE claimed
+   *   this enrolment, which is the eviction signal the whole design rests on. Churning it every
+   *   pass buries a real takeover in noise.
+   *
+   *   The audit grew about two rows per pass, forever, in an append-only table a client cannot
+   *   prune — roughly 576 rows a day per computer at a five-minute interval.
+   *
+   * heartbeat_device (migration 006) validates the held epoch and holder through
+   * claim_is_current and updates last_seen_at, bumping nothing. So a claim is taken ONCE per
+   * process, and afterwards only confirmed. The epoch then increments exactly when it should:
+   * on a restart, or on a genuine eviction.
+   *
+   * A refusal here clears the held claim so the caller re-claims. CLAIM_SUPERSEDED is the
+   * interesting one — it is another installation having taken this enrolment, which is precisely
+   * the case re-claiming is for.
+   */
+  async heartbeatDevice(): Promise<ClaimOutcome> {
+    const held = this.held;
+    if (held === null) return { ok: false, reason: "NOT_CLAIMED" };
+
+    let response;
+    try {
+      response = await this.authedRequest((headers) => ({
+        url: `${this.base()}/rest/v1/rpc/heartbeat_device`,
+        method: "POST",
+        headers,
+        body: JSON.stringify({ p_epoch: held.epoch, p_holder: held.holder }),
+        timeoutMs: this.options.timeoutMs,
+      }));
+    } catch (error) {
+      // Unreachable is not a verdict on the claim: keep holding it and let the pass fail as a
+      // transport error, exactly as any other call would.
+      throw asTransportError(error);
+    }
+
+    if (response.status < 200 || response.status >= 300) {
+      // claim_is_current raises with 42501 for every refusal it can give (NOT_ENROLLED, REVOKED,
+      // BINDING_INCOMPLETE, NOT_CLAIMED, CLAIM_SUPERSEDED). Any of them means this claim is no
+      // longer usable, so it is dropped and the caller takes a fresh one.
+      const error = readServiceError(response.status, response.text);
+      this.held = null;
+      return { ok: false, reason: error.message };
+    }
+
+    const answer = parseJsonObject(response.text, "the heartbeat answer was not readable");
+    if (answer.ok !== true) {
+      this.held = null;
+      return { ok: false, reason: typeof answer.reason === "string" ? answer.reason : "HEARTBEAT_REFUSED" };
+    }
+    return { ok: true, epoch: held.epoch, holder: held.holder };
+  }
+
   // ─── Push ─────────────────────────────────────────────────────────────────
 
   /**
@@ -192,11 +257,14 @@ export class SupabaseSyncTransport implements SyncTransport, SyncPullTransport {
     }
 
     const acks: SyncAck[] = [];
+    const variants: SyncEnvelope[] = [];
     const cartons: SyncEnvelope[] = [];
     const scans: SyncEnvelope[] = [];
 
     for (const envelope of envelopes) {
-      if (envelope.aggregateType === SYNC_AGGREGATE.QR_MASTER) {
+      if (envelope.aggregateType === SYNC_AGGREGATE.PRODUCT_VARIANT) {
+        variants.push(envelope);
+      } else if (envelope.aggregateType === SYNC_AGGREGATE.QR_MASTER) {
         cartons.push(envelope);
       } else if (envelope.aggregateType === SYNC_AGGREGATE.PRODUCTION_PRODUCED) {
         scans.push(envelope);
@@ -213,9 +281,48 @@ export class SupabaseSyncTransport implements SyncTransport, SyncPullTransport {
       }
     }
 
+    // PREREQUISITE ORDER WITHIN ONE CALL: a variant before a carton of it, a carton before a
+    // scan of it. The lease already sorts the batch this way (outboxQueue.ts), and this keeps
+    // the guarantee even if a caller hands the envelopes over in any order.
+    if (variants.length > 0) acks.push(...(await this.pushVariants(held, variants)));
     if (cartons.length > 0) acks.push(...(await this.pushCartons(held, cartons)));
     if (scans.length > 0) acks.push(...(await this.pushScans(held, scans)));
     return acks;
+  }
+
+  /**
+   * Product variants, through push_product_variant.
+   *
+   * Sent so a carton of a newly created product is not refused UNKNOWN_PRODUCT_VARIANT. Only the
+   * identity travels: migration 008 writes `status` itself and accepts no price at all, so a
+   * client cannot send the company's pricing even by mistake.
+   */
+  private async pushVariants(held: ClaimHeld, envelopes: readonly SyncEnvelope[]): Promise<SyncAck[]> {
+    const rows: Array<Record<string, unknown>> = [];
+    const byAggregate = new Map<string, SyncEnvelope>();
+
+    for (const envelope of envelopes) {
+      const variant = readProductVariantPayload(envelope.payload);
+      if (variant === null) {
+        byAggregate.set(`!payload:${envelope.dedupeKey}`, envelope);
+        continue;
+      }
+      byAggregate.set(variant.variantId, envelope);
+      rows.push({
+        id: variant.variantId,
+        article: variant.article,
+        color: variant.color,
+        size: variant.size,
+        description: variant.description,
+        created_at: variant.createdAt,
+      });
+    }
+
+    const acks = envelopesWithUnreadablePayloads(byAggregate);
+    if (rows.length === 0) return acks;
+
+    const results = await this.callPush("push_product_variant", held, rows);
+    return [...acks, ...matchResults(results, byAggregate, "id")];
   }
 
   /**

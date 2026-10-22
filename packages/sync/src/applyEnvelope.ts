@@ -24,6 +24,7 @@ import {
   QR_MASTER_OPENING_STATE,
   SYNC_AGGREGATE,
   readProductionProducedPayload,
+  readProductVariantPayload,
   readQrMasterPayload,
 } from "@erp/data";
 import type { SyncEnvelope } from "./contract.js";
@@ -65,6 +66,9 @@ export function applyEnvelope(sql: SyncSqlHandle, envelope: SyncEnvelope): Apply
   if (envelope.operation !== "INSERT") {
     return refuse(envelope.dedupeKey, `UNSUPPORTED_OPERATION:${envelope.operation}`, true);
   }
+  if (envelope.aggregateType === SYNC_AGGREGATE.PRODUCT_VARIANT) {
+    return applyProductVariant(sql, envelope);
+  }
   if (envelope.aggregateType === SYNC_AGGREGATE.QR_MASTER) {
     return applyQrMaster(sql, envelope);
   }
@@ -79,6 +83,52 @@ export function applyEnvelope(sql: SyncSqlHandle, envelope: SyncEnvelope): Apply
 }
 
 // ─── QR_MASTER ──────────────────────────────────────────────────────────────
+
+/**
+ * A product variant arriving from another computer.
+ *
+ * THIS IS WHAT TURNS UNKNOWN_PRODUCT_VARIANT FROM A DEAD END INTO A WAIT. applyQrMaster defers a
+ * carton whose product this computer has not got, on the reasoning that "the product arrives when
+ * the owner seeds it". Until now nothing carried the product, so that sentence described a manual
+ * step. Now the variant travels ahead of the carton and the deferral resolves itself.
+ *
+ * INSERT-ONLY, and the narrowest thing that works. article, colour and size are fixed at
+ * creation, so there is nothing to merge and no conflict rule to get wrong. Prices are not
+ * carried at all. `status` is written ACTIVE here rather than taken from the wire: a variant
+ * retired on the computer that sent it is still a real product here, and retirement is each
+ * computer's own record.
+ *
+ * ON CONFLICT DO NOTHING, so a variant that already exists -- seeded by hand, or carried by an
+ * earlier carton -- is a no-op rather than an overwrite. A local edit to a description is
+ * therefore never clobbered by a replay.
+ */
+function applyProductVariant(sql: SyncSqlHandle, envelope: SyncEnvelope): ApplyOutcome {
+  const variant = readProductVariantPayload(envelope.payload);
+  if (variant === null) return refuse(envelope.dedupeKey, "PAYLOAD_INCOMPLETE", true);
+  if (variant.variantId !== envelope.aggregateId) {
+    return refuse(envelope.dedupeKey, "AGGREGATE_ID_MISMATCH", true);
+  }
+
+  const result = sql
+    .prepare(
+      `INSERT INTO product_variants (
+         id, article, color, size, description, cost_price, selling_price,
+         status, created_at, updated_at, deleted_at, deleted_by, delete_reason
+       ) VALUES (?, ?, ?, ?, ?, NULL, NULL, 'ACTIVE', ?, ?, NULL, NULL, NULL)
+       ON CONFLICT(id) DO NOTHING`
+    )
+    .run(
+      variant.variantId,
+      variant.article,
+      variant.color,
+      variant.size,
+      variant.description,
+      variant.createdAt,
+      variant.createdAt
+    );
+
+  return { dedupeKey: envelope.dedupeKey, status: changedRows(result) > 0 ? "APPLIED" : "DUPLICATE" };
+}
 
 function applyQrMaster(sql: SyncSqlHandle, envelope: SyncEnvelope): ApplyOutcome {
   const identity = readQrMasterPayload(envelope.payload);

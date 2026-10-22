@@ -32,6 +32,15 @@ export interface SyncHealth {
   readonly waiting: number;
   /** Items that failed their attempts and stopped being retried. Needs a person. */
   readonly stuck: number;
+  /**
+   * Items the cloud REFUSED but which will be retried. A verdict, not a wait.
+   *
+   * Separate from `stuck` because the two need different words: refused-and-retrying can still
+   * come right once somebody fixes the cause, parked cannot without being put back by hand.
+   * Counted from the FAILED status, which migration 083 reserved for events the service actually
+   * answered no to -- an undeliverable event spends `transient_attempts` and stays PENDING.
+   */
+  readonly refusedPending: number;
   /** When a pass last completed, or null. */
   readonly lastSuccessAt: string | null;
   /** Set when the level is ATTENTION because the cloud refused this computer. */
@@ -53,6 +62,7 @@ export const deriveSyncHealth = (status: CloudSyncStatus | null | undefined): Sy
     busy: false,
     waiting: 0,
     stuck: 0,
+    refusedPending: 0,
     lastSuccessAt: null,
     refused: false,
   };
@@ -64,33 +74,37 @@ export const deriveSyncHealth = (status: CloudSyncStatus | null | undefined): Sy
   const queue = status.queue;
   const waiting = Math.max(0, (queue?.pushableNow ?? 0) + (queue?.pushableWaiting ?? 0));
   const stuck = Math.max(0, queue?.counts?.DEAD_LETTER ?? 0);
+  const refusedPending = Math.max(0, queue?.counts?.FAILED ?? 0);
   const lastSuccessAt = status.lastSuccess?.startedAt ?? null;
   const refused = status.lastAttempt?.outcome === "REFUSED";
   const busy = status.running === true;
 
   // Parked events, or a computer the cloud will not accept. Both need a person, and neither
   // gets better by waiting, so they outrank everything below.
-  if (stuck > 0 || refused) {
-    return { level: "ATTENTION", busy, waiting, stuck, lastSuccessAt, refused };
+  // A REFUSAL IS ATTENTION, even while it is still being retried. It is the cloud saying no to
+  // this computer's own work, and the cause -- an unknown product, a rejected enrolment -- never
+  // clears itself. Showing it as "Waiting To Send" is how a refused carton stayed invisible.
+  if (stuck > 0 || refused || refusedPending > 0) {
+    return { level: "ATTENTION", busy, waiting, stuck, refusedPending, lastSuccessAt, refused };
   }
 
   // Sending right now is good news, whatever is queued behind it.
-  if (busy) return { level: "WORKING", busy, waiting, stuck, lastSuccessAt, refused };
+  if (busy) return { level: "WORKING", busy, waiting, stuck, refusedPending, lastSuccessAt, refused };
 
   // Set up but never once succeeded: not an error — a computer provisioned ten minutes ago is
   // in exactly this state — but not "up to date" either, because nothing has been shared yet.
   if (lastSuccessAt === null) {
-    return { level: "WAITING", busy, waiting, stuck, lastSuccessAt, refused };
+    return { level: "WAITING", busy, waiting, stuck, refusedPending, lastSuccessAt, refused };
   }
 
   // Work queued, or the last attempt could not reach anybody.
   const lastFailed =
     status.lastAttempt?.outcome === "TRANSPORT_ERROR" || status.lastAttempt?.outcome === "FAILED";
   if (waiting > 0 || lastFailed) {
-    return { level: "WAITING", busy, waiting, stuck, lastSuccessAt, refused };
+    return { level: "WAITING", busy, waiting, stuck, refusedPending, lastSuccessAt, refused };
   }
 
-  return { level: "WORKING", busy, waiting, stuck, lastSuccessAt, refused };
+  return { level: "WORKING", busy, waiting, stuck, refusedPending, lastSuccessAt, refused };
 };
 
 /**

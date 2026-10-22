@@ -80,14 +80,22 @@ export {
   SYNC_AGGREGATE,
   QR_MASTER_OPENING_STATE,
   qrMasterDedupeKey,
+  productVariantDedupeKey,
   productionProducedDedupeKey,
   readQrMasterPayload,
+  readProductVariantPayload,
   readProductionProducedPayload,
   enqueueSyncEvent,
   enqueueQrMaster,
+  enqueueProductVariant,
   enqueueProductionProduced,
 } from "./database/syncEvents.js";
-export type { SyncAggregateType, QrMasterPayload, ProductionProducedPayload } from "./database/syncEvents.js";
+export type {
+  SyncAggregateType,
+  QrMasterPayload,
+  ProductVariantPayload,
+  ProductionProducedPayload,
+} from "./database/syncEvents.js";
 export {
   PRODUCT_VARIANT_SEED_FORMAT,
   PRODUCT_VARIANT_SEED_VERSION,

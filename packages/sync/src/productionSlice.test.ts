@@ -5,8 +5,14 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { enqueueProductionProduced, enqueueQrMaster, productionProducedDedupeKey } from "@erp/data";
-import type { ProductionProducedPayload } from "@erp/data";
+import {
+  enqueueProductVariant,
+  enqueueProductionProduced,
+  enqueueQrMaster,
+  productVariantDedupeKey,
+  productionProducedDedupeKey,
+} from "@erp/data";
+import type { ProductVariantPayload, ProductionProducedPayload } from "@erp/data";
 import { applyEnvelope } from "./applyEnvelope.js";
 import { qrMasterDedupeKey, type SyncEnvelope } from "./contract.js";
 import { OutboxDrain } from "./drain.js";
@@ -51,11 +57,17 @@ const MIGRATION_083 = path.resolve(
   import.meta.dirname,
   "../../../migrations/sqlite/083_sync_outbox_transient_attempts.up.sql"
 );
+const MIGRATION_086 = path.resolve(
+  import.meta.dirname,
+  "../../../migrations/sqlite/086_sync_outbox_product_variant.up.sql"
+);
 
 const FAST_RETRY: OutboxRetryPolicy = { maxAttempts: 4, baseBackoffMs: 1_000, maxBackoffMs: 60_000, staleInFlightMs: 60_000 };
 
 const FACTORY_ID = "factory-777";
 const VARIANT_ID = "variant-sk9-black-7-10";
+/** A product created on one computer that the other has never been given. */
+const NEW_VARIANT = "variant-sk46-black-4-6";
 const SEEDED_AT = "2026-10-01T04:00:00.000Z";
 
 interface Node {
@@ -80,6 +92,7 @@ function createNode(root: string, name: string): Node {
   raw.exec(fs.readFileSync(SCHEMA_PATH, "utf8"));
   runMigration(raw, MIGRATION_082);
   runMigration(raw, MIGRATION_083);
+  runMigration(raw, MIGRATION_086);
   raw.exec("PRAGMA foreign_keys = ON;");
 
   // The master data a computer is given when it is set up. None of it is synchronised by this
@@ -332,6 +345,76 @@ test("migration 082 adds the new type on a fresh database and keeps the queued r
           `INSERT INTO sync_outbox (id, aggregate_type, aggregate_id, operation, dedupe_key,
              payload_json, status, available_at, created_at, updated_at)
            VALUES ('bad', 'MADE_UP', 'e-3', 'INSERT', 'k2', '{}', 'PENDING', ?, ?, ?)`
+        )
+        .run(SEEDED_AT, SEEDED_AT, SEEDED_AT)
+    );
+  } finally {
+    raw.close();
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("migration 086 teaches the outbox the variant, and carries 083's column with it", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "erp-slice-migration-086-"));
+  const raw = new DatabaseSync(path.join(root, "m.db"));
+  try {
+    raw.exec(fs.readFileSync(SCHEMA_PATH, "utf8"));
+    runMigration(raw, MIGRATION_082);
+    runMigration(raw, MIGRATION_083);
+
+    // A row part-way through its retries, as an installation that has been offline would hold.
+    raw
+      .prepare(
+        `INSERT INTO sync_outbox (id, aggregate_type, aggregate_id, operation, dedupe_key,
+           payload_json, status, available_at, attempts, transient_attempts, last_error,
+           created_at, updated_at)
+         VALUES ('queued-1', 'PRODUCTION_PRODUCED', 'e-1', 'INSERT', 'PRODUCTION_PRODUCED:e-1',
+           '{}', 'FAILED', ?, 2, 7, 'service refused', ?, ?)`
+      )
+      .run(SEEDED_AT, SEEDED_AT, SEEDED_AT);
+
+    const insertVariant = () =>
+      raw
+        .prepare(
+          `INSERT INTO sync_outbox (id, aggregate_type, aggregate_id, operation, dedupe_key,
+             payload_json, status, available_at, created_at, updated_at)
+           VALUES ('v-1', 'PRODUCT_VARIANT', 'variant-x', 'INSERT', 'PRODUCT_VARIANT:variant-x',
+             '{}', 'PENDING', ?, ?, ?)`
+        )
+        .run(SEEDED_AT, SEEDED_AT, SEEDED_AT);
+
+    // Before: the type does not exist, so a variant cannot be queued at all.
+    assert.throws(insertVariant);
+
+    runMigration(raw, MIGRATION_086);
+
+    insertVariant();
+
+    // THE REBUILD CARRIED transient_attempts, which 083 added after 082 last rebuilt this table.
+    // A rebuild copied from 082 alone would have dropped it silently, and with it the separation
+    // between "the service refused this" and "this could not be delivered" -- which is what
+    // stops an hour offline parking every queued carton.
+    const kept = raw
+      .prepare("SELECT status, attempts, transient_attempts, last_error FROM sync_outbox WHERE id = 'queued-1'")
+      .get() as { status: string; attempts: number; transient_attempts: number; last_error: string };
+    assert.deepEqual(
+      { status: kept.status, attempts: kept.attempts, transient: kept.transient_attempts, last: kept.last_error },
+      { status: "FAILED", attempts: 2, transient: 7, last: "service refused" },
+      "a row part-way through its retries keeps its place exactly"
+    );
+
+    const index = raw
+      .prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'idx_sync_outbox_status_available_at'")
+      .get();
+    assert.ok(index, "the index is recreated after the rebuild");
+
+    // And an invented type is still refused: the CHECK was widened, not removed.
+    assert.throws(() =>
+      raw
+        .prepare(
+          `INSERT INTO sync_outbox (id, aggregate_type, aggregate_id, operation, dedupe_key,
+             payload_json, status, available_at, created_at, updated_at)
+           VALUES ('bad', 'MADE_UP', 'x', 'INSERT', 'k9', '{}', 'PENDING', ?, ?, ?)`
         )
         .run(SEEDED_AT, SEEDED_AT, SEEDED_AT)
     );
@@ -798,6 +881,140 @@ test("an applied event keeps the sender's event_hour, and never recomputes it", 
     assert.notEqual(row.event_hour, 0, "recomputing in the business zone here would give 0");
     assert.equal(row.event_date, "2026-10-19", "event_date is replicated verbatim too");
     assert.equal(row.event_ts_local, occurredAt, "the absolute instant is what stays authoritative");
+  } finally {
+    fixture.cleanup();
+  }
+});
+
+test("a variant arrives before the carton of it, and the receiver can then take both", () => {
+  const fixture = createFixture("variant-apply");
+  try {
+    const receiver = fixture.b;
+    const payload: ProductVariantPayload = {
+      variantId: NEW_VARIANT,
+      article: "SK46",
+      color: "BLACK",
+      size: "4/6",
+      description: "SK46 BLACK 4/6",
+      createdAt: "2026-10-22T12:26:22.000Z",
+    };
+    const cartonEnvelope: SyncEnvelope = {
+      dedupeKey: qrMasterDedupeKey("SK46_BLACK_4/6_000001"),
+      aggregateType: "QR_MASTER",
+      aggregateId: "SK46_BLACK_4/6_000001",
+      operation: "INSERT",
+      payload: {
+        qrId: "SK46_BLACK_4/6_000001",
+        productVariantId: NEW_VARIANT,
+        createdAt: "2026-10-22T12:26:32.000Z",
+      },
+      originDeviceId: fixture.a.deviceId,
+      createdAt: "2026-10-22T12:26:32.000Z",
+    };
+
+    // Before: a carton of this product cannot be applied, because the product is not here. This
+    // is the receiving half of the 2026-10-22 refusal.
+    const early = applyEnvelope(receiver.sql, cartonEnvelope);
+    assert.equal(early.status, "REJECTED", "an unknown product is refused, never an invented row");
+    assert.equal(early.permanent, false, "and refused retryably, so the variant can still rescue it");
+    assert.match(early.reason ?? "", /UNKNOWN_PRODUCT_VARIANT/);
+
+    const applied = applyEnvelope(receiver.sql, {
+      dedupeKey: productVariantDedupeKey(NEW_VARIANT),
+      aggregateType: "PRODUCT_VARIANT",
+      aggregateId: NEW_VARIANT,
+      operation: "INSERT",
+      payload: { ...payload },
+      originDeviceId: fixture.a.deviceId,
+      createdAt: payload.createdAt,
+    });
+    assert.equal(applied.status, "APPLIED");
+
+    const row = receiver.raw
+      .prepare(
+        `SELECT article, color, size, description, status, created_at, cost_price, selling_price
+         FROM product_variants WHERE id = ?`
+      )
+      .get(NEW_VARIANT) as {
+      article: string;
+      color: string;
+      size: string;
+      description: string;
+      status: string;
+      created_at: string;
+      cost_price: number | null;
+      selling_price: number | null;
+    };
+    assert.deepEqual(
+      {
+        article: row.article,
+        color: row.color,
+        size: row.size,
+        description: row.description,
+        status: row.status,
+        createdAt: row.created_at,
+      },
+      {
+        article: "SK46",
+        color: "BLACK",
+        size: "4/6",
+        description: "SK46 BLACK 4/6",
+        // The receiver writes the opening status itself. Nothing about it travelled.
+        status: "ACTIVE",
+        createdAt: "2026-10-22T12:26:22.000Z",
+      }
+    );
+
+    // NO PRICE REACHED THIS COMPUTER. The price columns exist locally and must still be unset:
+    // pricing is set where the product is sold, and a sync must never quietly carry it across.
+    // (In a migrated database these are the paisa columns migration 029 adds. Either way the
+    // payload has no field for a price, so there is nothing here to write.)
+    assert.deepEqual(
+      { cost: row.cost_price, selling: row.selling_price },
+      { cost: null, selling: null },
+      "a variant push carries identity only"
+    );
+
+    // And now the carton goes.
+    assert.equal(applyEnvelope(receiver.sql, cartonEnvelope).status, "APPLIED");
+  } finally {
+    fixture.cleanup();
+  }
+});
+
+test("the same variant delivered twice leaves one row, and never edits the one already here", () => {
+  const fixture = createFixture("variant-twice");
+  try {
+    const receiver = fixture.b;
+
+    // VARIANT_ID is seeded on every computer, so this is the ordinary case: the product is
+    // already here. INSERT-ONLY means the arriving copy must not overwrite it. An article is
+    // part of a product identity, and a sync that could rewrite it could rewrite history.
+    const outcome = applyEnvelope(receiver.sql, {
+      dedupeKey: productVariantDedupeKey(VARIANT_ID),
+      aggregateType: "PRODUCT_VARIANT",
+      aggregateId: VARIANT_ID,
+      operation: "INSERT",
+      payload: {
+        variantId: VARIANT_ID,
+        article: "WRONG",
+        color: "BLACK",
+        size: "7/10",
+        description: "renamed by the sender",
+        createdAt: "2026-10-22T12:26:22.000Z",
+      },
+      originDeviceId: fixture.a.deviceId,
+      createdAt: "2026-10-22T12:26:22.000Z",
+    });
+    // DUPLICATE, not APPLIED: it is here, which is what the sender needed to know, and nothing
+    // was written. Either way the row leaves the queue instead of retrying for ever.
+    assert.equal(outcome.status, "DUPLICATE");
+
+    const rows = receiver.raw
+      .prepare("SELECT article, description FROM product_variants WHERE id = ?")
+      .all(VARIANT_ID) as Array<{ article: string; description: string | null }>;
+    assert.equal(rows.length, 1, "one product, one row");
+    assert.equal(rows[0]?.article, "SK9", "the local row is left exactly as it was");
   } finally {
     fixture.cleanup();
   }
@@ -1338,6 +1555,63 @@ test("an unclassified thrown send is still never parked, however many times it f
 //
 // Two defences, and these tests pin both: identities are claimed first, and that particular
 // refusal is transient so an ordering miss costs a wait rather than the event.
+
+test("a variant is leased ahead of the carton of it, and the carton ahead of the scan", () => {
+  const fixture = createFixture("lease-order-variant");
+  try {
+    const sender = fixture.a;
+
+    // The 2026-10-22 order of events on the floor: the product is created, then a carton of it
+    // is registered, then it is scanned -- ten seconds apart, so by created_at the queue holds
+    // them variant, carton, scan. The lease must keep that order however they were written.
+    enqueueProductVariant(
+      sender.sql,
+      {
+        variantId: NEW_VARIANT,
+        article: "SK46",
+        color: "BLACK",
+        size: "4/6",
+        description: "SK46 BLACK 4/6",
+        createdAt: "2026-10-22T12:26:22.000Z",
+      },
+      crypto.randomUUID()
+    );
+    recordScan(sender, {
+      qrId: "SK46_BLACK_4/6_000001",
+      serial: "000001",
+      occurredAt: "2026-10-22T12:26:32.000Z",
+    });
+
+    const leased = leaseBatch(sender.sql, {
+      limit: 1,
+      nowIso: "2026-10-22T12:30:00.000Z",
+      lockToken: "lock-variant-1",
+      deviceId: sender.deviceId,
+      aggregateTypes: ["PRODUCT_VARIANT", "QR_MASTER", "PRODUCTION_PRODUCED"],
+    });
+    assert.deepEqual(
+      leased.map((event) => event.envelope.aggregateType),
+      ["PRODUCT_VARIANT"],
+      "a lease of one takes the product, because a carton of it cannot land without it"
+    );
+    for (const event of leased) markSynced(sender.sql, event.outboxId, "2026-10-22T12:30:01.000Z");
+
+    const rest = leaseBatch(sender.sql, {
+      limit: 5,
+      nowIso: "2026-10-22T12:30:02.000Z",
+      lockToken: "lock-variant-2",
+      deviceId: sender.deviceId,
+      aggregateTypes: ["PRODUCT_VARIANT", "QR_MASTER", "PRODUCTION_PRODUCED"],
+    });
+    assert.deepEqual(
+      rest.map((event) => event.envelope.aggregateType),
+      ["QR_MASTER", "PRODUCTION_PRODUCED"],
+      "then the carton, then the scan: each link only ever ahead of the next"
+    );
+  } finally {
+    fixture.cleanup();
+  }
+});
 
 test("a lease smaller than the queue still takes every carton identity before any scan", () => {
   const fixture = createFixture("lease-order");

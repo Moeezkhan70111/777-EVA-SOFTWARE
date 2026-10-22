@@ -125,8 +125,16 @@ export function leaseBatch(
     aggregateTypes?: readonly string[];
   }
 ): LeasedEvent[] {
-  // CARTON IDENTITIES ARE CLAIMED BEFORE ANYTHING ELSE, which is why the ORDER BY below sorts
-  // QR_MASTER ahead of created_at rather than after it.
+  // PREREQUISITES ARE CLAIMED BEFORE WHAT NEEDS THEM, which is why the ORDER BY below sorts by
+  // aggregate type ahead of created_at rather than after it. Three tiers:
+  //
+  //   0  PRODUCT_VARIANT  -- a carton of an unknown product is refused UNKNOWN_PRODUCT_VARIANT
+  //   1  QR_MASTER        -- a scan of an unregistered carton is refused QR_NOT_REGISTERED_YET
+  //   2  everything else
+  //
+  // So a variant travels in the same call as its carton, or an earlier one, and the carton in
+  // the same call as its scan, or an earlier one. The chain is variant -> carton -> scan, and
+  // each link is only ever ahead of the next.
   //
   // push_production_produced refuses a scan whose carton the cloud has not got yet
   // (QR_NOT_REGISTERED_YET). Within one call that cannot happen -- send() offers cartons first --
@@ -151,7 +159,7 @@ export function leaseBatch(
           SELECT id FROM sync_outbox
            WHERE status IN ('PENDING', 'FAILED')
              AND available_at <= ?${typeFilter}
-           ORDER BY CASE aggregate_type WHEN ? THEN 0 ELSE 1 END ASC,
+           ORDER BY CASE aggregate_type WHEN ? THEN 0 WHEN ? THEN 1 ELSE 2 END ASC,
                     created_at ASC, rowid ASC
            LIMIT ?
         )`
@@ -161,6 +169,7 @@ export function leaseBatch(
       options.nowIso,
       options.nowIso,
       ...typeValues,
+      SYNC_AGGREGATE.PRODUCT_VARIANT,
       SYNC_AGGREGATE.QR_MASTER,
       options.limit
     );

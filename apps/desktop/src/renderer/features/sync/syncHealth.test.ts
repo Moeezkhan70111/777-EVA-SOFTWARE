@@ -99,6 +99,43 @@ describe("waiting", () => {
   });
 });
 
+describe("a refused push is attention, not waiting", () => {
+  // THE BUG THIS PINS. A carton refused with UNKNOWN_PRODUCT_VARIANT sat in FAILED, which the
+  // rail counted under pushableWaiting and reported as "Waiting To Send" -- indistinguishable
+  // from a healthy queue. The cloud had said no, and nothing on screen said so.
+  it("is ATTENTION when the cloud refused our own events, even while retrying", () => {
+    const health = deriveSyncHealth(
+      STATUS({ queue: QUEUE({ counts: { ...QUEUE().counts, FAILED: 2 }, pushableWaiting: 2 }) })
+    );
+    expect(health.level).toBe("ATTENTION");
+    expect(health.refusedPending).toBe(2);
+  });
+
+  it("outranks a merely queued item", () => {
+    const health = deriveSyncHealth(
+      STATUS({ queue: QUEUE({ counts: { ...QUEUE().counts, FAILED: 1 }, pushableNow: 9 }) })
+    );
+    expect(health.level).toBe("ATTENTION");
+    // waiting counts the sendable buckets only; the refused one is reported separately.
+    expect(health.waiting).toBe(9);
+    expect(health.refusedPending).toBe(1);
+  });
+
+  it("keeps refused and parked as separate numbers", () => {
+    // They need different words: refused-and-retrying can still come right once somebody fixes
+    // the cause; parked cannot without being put back by hand.
+    const health = deriveSyncHealth(
+      STATUS({ queue: QUEUE({ counts: { ...QUEUE().counts, FAILED: 3, DEAD_LETTER: 1 } }) })
+    );
+    expect(health.refusedPending).toBe(3);
+    expect(health.stuck).toBe(1);
+  });
+
+  it("reports zero refusals on a healthy queue", () => {
+    expect(deriveSyncHealth(STATUS()).refusedPending).toBe(0);
+  });
+});
+
 describe("needs attention — the states that do not fix themselves", () => {
   it("is ATTENTION when events have stopped being retried", () => {
     const health = deriveSyncHealth(STATUS({ queue: QUEUE({ counts: { ...QUEUE().counts, DEAD_LETTER: 2 } }) }));

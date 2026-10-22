@@ -35,11 +35,14 @@ export {
   qrMasterDedupeKey,
   productionProducedDedupeKey,
   readQrMasterPayload,
+  readProductVariantPayload,
   readProductionProducedPayload,
+  productVariantDedupeKey,
 } from "@erp/data";
-export type { SyncAggregateType, QrMasterPayload, ProductionProducedPayload } from "@erp/data";
+export type { SyncAggregateType, QrMasterPayload, ProductVariantPayload, ProductionProducedPayload } from "@erp/data";
 
 export const SUPPORTED_AGGREGATE_TYPES = [
+  SYNC_AGGREGATE.PRODUCT_VARIANT,
   SYNC_AGGREGATE.QR_MASTER,
   SYNC_AGGREGATE.PRODUCTION_PRODUCED,
 ] as const;

@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import http from "node:http";
 import type { AddressInfo } from "node:net";
-import { qrMasterDedupeKey } from "@erp/data";
+import { productVariantDedupeKey, qrMasterDedupeKey } from "@erp/data";
 import type { SyncEnvelope } from "./contract.js";
 import { redactSecrets } from "./httpJson.js";
 import { SupabaseAuthError, SupabaseDeviceAuth } from "./supabaseAuth.js";
@@ -40,8 +40,11 @@ interface Fake {
   close(): Promise<void>;
 }
 
-/** The one product the fake service has been given. Anything else is refused, as 006 does. */
+/** The one product the fake service starts with. Anything else is refused, as 006 does. */
 const KNOWN_VARIANT = "variant-sk9-black-7-10";
+
+/** A product this computer has just created, which the cloud has never been told about. */
+const NEW_VARIANT = "variant-sk46-black-4-6";
 
 async function startFakeSupabase(): Promise<Fake> {
   const calls: Call[] = [];
@@ -49,6 +52,8 @@ async function startFakeSupabase(): Promise<Fake> {
   const log: Array<{ seq: number; row: Record<string, unknown> }> = [];
   // The claim the service currently recognises. A second claim supersedes the first.
   let epoch = 0;
+  // The products the service knows. push_product_variant is how a new one gets in (008).
+  const knownVariants = new Set<string>([KNOWN_VARIANT]);
 
   const server = http.createServer((request, response) => {
     let body = "";
@@ -87,6 +92,41 @@ async function startFakeSupabase(): Promise<Fake> {
         return;
       }
 
+      // Migration 006: heartbeat_device confirms the claim this computer already holds and
+      // updates last_seen_at. It bumps no epoch and writes no claim event.
+      if (path === "/rest/v1/rpc/heartbeat_device" && request.method === "POST") {
+        const args = JSON.parse(body) as { p_epoch: number; p_holder: string };
+        if (args.p_epoch !== epoch || args.p_holder !== `holder-${String(epoch)}`) {
+          response
+            .writeHead(403, { "content-type": "application/json" })
+            .end(JSON.stringify({ code: "42501", message: "CLAIM_SUPERSEDED" }));
+          return;
+        }
+        response.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ ok: true }));
+        return;
+      }
+
+      // Migration 008: a product variant is inserted, and the service then knows the product.
+      if (path === "/rest/v1/rpc/push_product_variant" && request.method === "POST") {
+        const args = JSON.parse(body) as { p_epoch: number; p_holder: string; p_rows: Array<Record<string, unknown>> };
+        if (args.p_epoch !== epoch || args.p_holder !== `holder-${String(epoch)}`) {
+          response
+            .writeHead(403, { "content-type": "application/json" })
+            .end(JSON.stringify({ code: "42501", message: "CLAIM_SUPERSEDED" }));
+          return;
+        }
+        const results = args.p_rows.map((row) => {
+          const id = String(row.id);
+          if (knownVariants.has(id)) return { id: row.id, outcome: "DUPLICATE" };
+          knownVariants.add(id);
+          return { id: row.id, outcome: "INSERTED" };
+        });
+        response
+          .writeHead(200, { "content-type": "application/json" })
+          .end(JSON.stringify({ ok: true, epoch, results }));
+        return;
+      }
+
       if (path === "/rest/v1/rpc/push_qr_master" && request.method === "POST") {
         const args = JSON.parse(body) as { p_epoch: number; p_holder: string; p_rows: Array<Record<string, unknown>> };
         if (args.p_epoch !== epoch || args.p_holder !== `holder-${String(epoch)}`) {
@@ -96,7 +136,7 @@ async function startFakeSupabase(): Promise<Fake> {
           return;
         }
         const results = args.p_rows.map((row) => {
-          if (row.product_variant_id !== KNOWN_VARIANT) {
+          if (!knownVariants.has(String(row.product_variant_id))) {
             return { qr_id: row.qr_id, outcome: "REFUSED", reason: "UNKNOWN_PRODUCT_VARIANT" };
           }
           const dedupeKey = `QR_MASTER:${String(row.qr_id)}`;
@@ -203,6 +243,24 @@ const carton = (
   payload: { qrId, productVariantId, createdAt },
   originDeviceId: "device-pc1",
   createdAt,
+});
+
+/** A product variant, with every field readProductVariantPayload insists on. */
+const variant = (variantId: string): SyncEnvelope => ({
+  dedupeKey: productVariantDedupeKey(variantId),
+  aggregateType: "PRODUCT_VARIANT",
+  aggregateId: variantId,
+  operation: "INSERT",
+  payload: {
+    variantId,
+    article: "SK46",
+    color: "BLACK",
+    size: "4/6",
+    description: "SK46 BLACK 4/6",
+    createdAt: "2026-10-16T07:59:00.000Z",
+  },
+  originDeviceId: "device-pc1",
+  createdAt: "2026-10-16T07:59:00.000Z",
 });
 
 /** A production scan, with every field readProductionProducedPayload insists on. */
@@ -521,7 +579,157 @@ test("a refused claim is an answer about the computer, and sends nothing", async
   }
 });
 
+// ─── the heartbeat ──────────────────────────────────────────────────────────
+
+test("a computer that already holds the claim confirms it, and never claims a second time", async () => {
+  const fake = await startFakeSupabase();
+  try {
+    const transport = await claimed(fake);
+
+    const first = await transport.heartbeatDevice();
+    const second = await transport.heartbeatDevice();
+
+    // The epoch it reports is the one it has held all along, not a new one.
+    assert.deepEqual(first, { ok: true, epoch: 1, holder: "holder-1" });
+    assert.deepEqual(second, { ok: true, epoch: 1, holder: "holder-1" });
+    assert.equal(transport.claimed, true);
+
+    // ONE claim for the life of the process. This is the whole point: claim_device bumps the
+    // epoch and writes two audit rows, so a pass that re-claimed buried a real takeover in its
+    // own noise and grew device_claim_events for ever.
+    assert.equal(fake.calls.filter((entry) => entry.path === "/rest/v1/rpc/claim_device").length, 1);
+
+    const beats = fake.calls.filter((entry) => entry.path === "/rest/v1/rpc/heartbeat_device");
+    assert.equal(beats.length, 2);
+    assert.deepEqual(JSON.parse(beats[0]?.body ?? "{}"), { p_epoch: 1, p_holder: "holder-1" });
+  } finally {
+    await fake.close();
+  }
+});
+
+test("a heartbeat with no claim to confirm says so, and sends nothing", async () => {
+  const fake = await startFakeSupabase();
+  try {
+    const { transport } = build(fake);
+
+    assert.deepEqual(await transport.heartbeatDevice(), { ok: false, reason: "NOT_CLAIMED" });
+    assert.equal(fake.calls.filter((entry) => entry.path.includes("heartbeat_device")).length, 0);
+  } finally {
+    await fake.close();
+  }
+});
+
+test("a heartbeat refused because another computer took the enrolment drops the claim", async () => {
+  const fake = await startFakeSupabase();
+  try {
+    const transport = await claimed(fake);
+    fake.supersede(); // another installation claims the same enrolment
+
+    const outcome = await transport.heartbeatDevice();
+    assert.equal(outcome.ok, false);
+    assert.match(outcome.ok ? "" : outcome.reason, /CLAIM_SUPERSEDED/);
+
+    // The claim is dropped, which is what makes the caller take a fresh one rather than push
+    // against an epoch the service has stopped recognising.
+    assert.equal(transport.claimed, false);
+  } finally {
+    await fake.close();
+  }
+});
+
+test("a heartbeat the service never answered keeps the claim: unreachable is not a verdict", async () => {
+  const fake = await startFakeSupabase();
+  const transport = await claimed(fake);
+  await fake.close();
+
+  await assert.rejects(() => transport.heartbeatDevice(), SyncTransportError);
+  // An hour of bad internet must not cost this computer its identity.
+  assert.equal(transport.claimed, true);
+});
+
 // ─── push ───────────────────────────────────────────────────────────────────
+
+test("a variant travels ahead of its carton, so a new product's first carton is accepted", async () => {
+  const fake = await startFakeSupabase();
+  try {
+    const transport = await claimed(fake);
+
+    // Handed over carton-first on purpose. This is the failure of 2026-10-22: SK46 BLACK 4/6 was
+    // created at 17:26:22 and scanned at 17:26:32, and the carton was refused
+    // UNKNOWN_PRODUCT_VARIANT because the cloud had never been told about the product.
+    const acks = await transport.send([carton("SK46_BLACK_4/6_000001", undefined, NEW_VARIANT), variant(NEW_VARIANT)]);
+
+    assert.equal(acks.length, 2);
+    for (const ack of acks) assert.equal(ack.accepted, true, ack.reason ?? "both must be accepted");
+
+    // The order on the wire is the prerequisite order, whatever order the caller used.
+    const paths = fake.calls.map((entry) => entry.path);
+    assert.ok(
+      paths.indexOf("/rest/v1/rpc/push_product_variant") < paths.indexOf("/rest/v1/rpc/push_qr_master"),
+      "the product must reach the cloud before a carton of it"
+    );
+  } finally {
+    await fake.close();
+  }
+});
+
+test("a variant carries its identity and NO price: the client cannot send the company's pricing", async () => {
+  const fake = await startFakeSupabase();
+  try {
+    const transport = await claimed(fake);
+    await transport.send([variant(NEW_VARIANT)]);
+
+    const call = fake.calls.find((entry) => entry.path === "/rest/v1/rpc/push_product_variant");
+    const args = JSON.parse(call?.body ?? "{}") as { p_rows: Array<Record<string, unknown>> };
+    assert.deepEqual(args.p_rows, [
+      {
+        id: NEW_VARIANT,
+        article: "SK46",
+        color: "BLACK",
+        size: "4/6",
+        description: "SK46 BLACK 4/6",
+        created_at: "2026-10-16T07:59:00.000Z",
+      },
+    ]);
+    // Identity only. Migration 008 writes `status` itself and declares no price argument at all,
+    // so there is no field through which a sale price could travel even by mistake.
+    const sent = JSON.stringify(args.p_rows);
+    for (const forbidden of ["price", "cost", "paisa", "status"]) {
+      assert.ok(!sent.includes(forbidden), `a variant push must not carry ${forbidden}`);
+    }
+  } finally {
+    await fake.close();
+  }
+});
+
+test("a variant the cloud already holds is accepted again and lands once", async () => {
+  const fake = await startFakeSupabase();
+  try {
+    const transport = await claimed(fake);
+    assert.equal((await transport.send([variant(NEW_VARIANT)]))[0]?.accepted, true);
+    // DUPLICATE is still "it is in the cloud", so the row leaves the queue rather than retrying.
+    assert.equal((await transport.send([variant(NEW_VARIANT)]))[0]?.accepted, true);
+
+    // A variant is not a business event, so it is not in the log either way.
+    assert.equal((await transport.fetchChanges(0, 50)).length, 0);
+  } finally {
+    await fake.close();
+  }
+});
+
+test("a variant whose payload is unreadable is refused and never sent", async () => {
+  const fake = await startFakeSupabase();
+  try {
+    const transport = await claimed(fake);
+    const broken: SyncEnvelope = { ...variant(NEW_VARIANT), payload: { variantId: NEW_VARIANT, article: "SK46" } };
+
+    const acks = await transport.send([broken]);
+    assert.equal(acks[0]?.accepted, false);
+    assert.equal(fake.calls.filter((entry) => entry.path.includes("push_product_variant")).length, 0);
+  } finally {
+    await fake.close();
+  }
+});
 
 test("a carton is pushed through the RPC, carrying the claim and only the contract fields", async () => {
   const fake = await startFakeSupabase();
@@ -742,9 +950,13 @@ test("an event type with no contract at all is refused without being parked", as
     assert.equal(acks[0]?.accepted, false);
     assert.equal(acks[0]?.failure, "TRANSIENT", "it is a good event this transport cannot carry yet");
     assert.match(acks[0]?.reason ?? "", /NOT_SENDABLE_YET/);
-    // The two types that HAVE contracts are claimed; the four that do not are left alone.
-    // Carton identities first, which is also the order leaseBatch claims them in.
-    assert.deepEqual([...SUPABASE_PUSHABLE_AGGREGATES], ["QR_MASTER", "PRODUCTION_PRODUCED"]);
+    // The three types that HAVE contracts are claimed; the four that do not are left alone.
+    // Order matters and is the order leaseBatch claims them in: a variant before a carton of it,
+    // a carton before a scan of it. Each link is only ever ahead of the next.
+    assert.deepEqual(
+      [...SUPABASE_PUSHABLE_AGGREGATES],
+      ["PRODUCT_VARIANT", "QR_MASTER", "PRODUCTION_PRODUCED"]
+    );
     for (const absent of ["PRODUCTION_EVENT", "DISPATCH_EVENT", "RETURN_EVENT", "PROJECTION"]) {
       assert.ok(!SUPABASE_PUSHABLE_AGGREGATES.includes(absent), `${absent} has no contract and must not be claimed`);
     }

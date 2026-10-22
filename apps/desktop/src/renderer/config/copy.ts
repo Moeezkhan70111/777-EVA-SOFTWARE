@@ -455,6 +455,11 @@ export const copy = {
     waitingBody: (count: number) =>
       `${String(count)} ${count === 1 ? "item is" : "items are"} waiting to reach the other computers. 777 ERP will keep trying — nothing is lost, and you can carry on working.`,
     waitingBodyNoCount: "777 ERP cannot reach the other computers right now. It will keep trying — nothing is lost, and you can carry on working.",
+    // A refusal that is still being retried. Named separately from "stuck" because the cause
+    // never clears itself, but the event is not parked yet either.
+    refusedPendingBody: (count: number, reason: string) =>
+      `The other computers would not accept ${String(count)} ${count === 1 ? "item" : "items"} from this computer${reason ? ` (${reason})` : ""}. 777 ERP keeps retrying, but this will not fix itself — someone needs to look at it in Settings.`,
+    refusedCount: "Refused",
     stuckBody: (count: number) =>
       `${String(count)} ${count === 1 ? "item" : "items"} could not be sent and ${count === 1 ? "has" : "have"} stopped being retried. Someone needs to look at ${count === 1 ? "it" : "them"} in Settings.`,
     refusedBody: "The other computers would not accept this one. An administrator needs to check this computer's setup in Settings.",

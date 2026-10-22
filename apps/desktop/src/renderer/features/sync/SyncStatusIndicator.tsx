@@ -82,6 +82,8 @@ export const SyncStatusIndicator: React.FC<SyncStatusIndicatorProps> = ({ onOpen
 
   const { value: status, reload } = usePolledRead(read, { intervalMs: POLL_INTERVAL_MS, failed: "" });
   const health = deriveSyncHealth(status);
+  // The newest push verdict, so the panel can name the cause rather than only count it.
+  const refusalReason = status?.lastAttempt?.reason ?? "";
 
   const sendNow = useCallback(async () => {
     if (bridge === null) return;
@@ -116,7 +118,7 @@ export const SyncStatusIndicator: React.FC<SyncStatusIndicatorProps> = ({ onOpen
             ? copy.syncStatus.workingBusy
             : copy.syncStatus.working;
 
-  const body = bodyFor(health);
+  const body = bodyFor(health, refusalReason);
   const age = describeAge(health.lastSuccessAt);
 
   return (
@@ -144,6 +146,7 @@ export const SyncStatusIndicator: React.FC<SyncStatusIndicatorProps> = ({ onOpen
               age={age}
               waiting={health.waiting}
               stuck={health.stuck}
+              refusedPending={health.refusedPending}
               showActions={health.level !== "OFF"}
               sending={sending}
               sendError={sendError}
@@ -161,10 +164,15 @@ export const SyncStatusIndicator: React.FC<SyncStatusIndicatorProps> = ({ onOpen
 };
 
 /** The sentence under the headline. One state, one explanation, no jargon. */
-function bodyFor(health: ReturnType<typeof deriveSyncHealth>): string {
+function bodyFor(health: ReturnType<typeof deriveSyncHealth>, refusalReason: string): string {
   if (health.level === "OFF") return copy.syncStatus.offBody;
   if (health.refused) return copy.syncStatus.refusedBody;
   if (health.stuck > 0) return copy.syncStatus.stuckBody(health.stuck);
+  // Refused but still retrying. Said before "waiting", because it is a verdict and the operator
+  // needs to know it will not come right on its own.
+  if (health.refusedPending > 0) {
+    return copy.syncStatus.refusedPendingBody(health.refusedPending, refusalReason);
+  }
   if (health.level === "WAITING") {
     return health.waiting > 0 ? copy.syncStatus.waitingBody(health.waiting) : copy.syncStatus.waitingBodyNoCount;
   }
@@ -179,6 +187,7 @@ interface SyncDetailPanelProps {
   age: string | null;
   waiting: number;
   stuck: number;
+  refusedPending: number;
   showActions: boolean;
   sending: boolean;
   sendError: string | null;
@@ -201,6 +210,7 @@ const SyncDetailPanel: React.FC<SyncDetailPanelProps> = ({
   age,
   waiting,
   stuck,
+  refusedPending,
   showActions,
   sending,
   sendError,
@@ -226,6 +236,12 @@ const SyncDetailPanel: React.FC<SyncDetailPanelProps> = ({
         <dt>{copy.syncStatus.waitingCount}</dt>
         <dd>{waiting.toLocaleString()}</dd>
       </div>
+      {refusedPending > 0 && (
+        <div>
+          <dt>{copy.syncStatus.refusedCount}</dt>
+          <dd className="sync-detail-stuck">{refusedPending.toLocaleString()}</dd>
+        </div>
+      )}
       {stuck > 0 && (
         <div>
           <dt>{copy.syncStatus.stuckCount}</dt>

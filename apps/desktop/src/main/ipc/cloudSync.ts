@@ -31,8 +31,10 @@ export interface CloudSyncOutcome {
   applied?: number;
   /** Of those, already present — the normal result of a repeat. */
   duplicates?: number;
-  /** Events this computer can never apply, each with the reason. */
+  /** Events this computer can never apply, each with the reason. From the pull. */
   refused?: Array<{ reason: string }>;
+  /** Our own events the cloud turned away, with reasons. From the push. */
+  pushRefusals?: Array<{ aggregateType: string; aggregateId: string; reason: string; parked: boolean }>;
   /** Waiting on something that has not arrived yet, if the pass stopped early. */
   waitingFor?: string;
   /** Queue state afterwards, so an operator can see what is still unsent. */
@@ -173,6 +175,7 @@ export function registerCloudSyncHandlers(ctx: IpcContext): void {
       applied: pass.applied,
       duplicates: pass.duplicates,
       refused: pass.refusedEvents,
+      pushRefusals: pass.pushRefusals,
       waitingFor: pass.waitingFor,
       outbox: pass.outbox,
     };

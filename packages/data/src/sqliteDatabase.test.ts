@@ -410,9 +410,10 @@ test("scan inserts production event, stock projection, and outbox", async () => 
     assert.equal(result.accepted, true);
     assert.equal(fixture.db.getRowCount("qr_master"), 1);
     assert.equal(fixture.db.getRowCount("production_events"), 1);
-    // TWO queued events, not one: the carton identity travels separately from the scan, so a
-    // computer receiving the scan already has the row it refers to.
-    assert.deepEqual(outboxTypes(fixture.db), ["PRODUCTION_PRODUCED", "QR_MASTER"]);
+    // THREE queued events, not one. Each link in the chain travels separately, so a computer
+    // receiving the scan already has everything the scan refers to: the product, then a carton
+    // of that product, then the scan of that carton.
+    assert.deepEqual(outboxTypes(fixture.db), ["PRODUCTION_PRODUCED", "PRODUCT_VARIANT", "QR_MASTER"]);
 
     // Producing a carton does not make it Current Stock — Current Stock is what is In Store.
     const afterProduction = fixture.db.getDashboardSnapshot();
@@ -441,8 +442,49 @@ test("duplicate scan is rejected and does not increment stock", async () => {
 
     assert.equal(duplicateResult.accepted, false);
     assert.equal(fixture.db.getRowCount("production_events"), 1);
-    // The refused second scan queues nothing: still the one carton and the one scan.
-    assert.deepEqual(outboxTypes(fixture.db), ["PRODUCTION_PRODUCED", "QR_MASTER"]);
+    // The refused second scan queues nothing: still the one product, one carton and one scan.
+    // The product is queued once for its own sake and not once per carton — the dedupe key is
+    // the variant, so a thousand cartons of SK6 BLUE 7/10 still queue it exactly once.
+    assert.deepEqual(outboxTypes(fixture.db), ["PRODUCTION_PRODUCED", "PRODUCT_VARIANT", "QR_MASTER"]);
+  } finally {
+    fixture.cleanup();
+  }
+});
+
+test("a product is queued once however many cartons of it are produced", async () => {
+  const fixture = createDbFixture();
+  try {
+    // Three cartons of the SAME product, which is what a real print run is.
+    const ids = registerQrIdentities(fixture.db, { article: "SK6", size: "7/10", color: "BLUE", quantity: 3 });
+    assert.equal(ids.length, 3);
+
+    // Registering identities queues nothing: a label nobody has produced against is not news.
+    assert.deepEqual(outboxTypes(fixture.db), []);
+
+    const useCase = new ProcessScanUseCase(scanDeps(fixture.db));
+    for (const qrId of ids) {
+      const result = await useCase.execute({ rawScan: qrId, context: SCAN_CONTEXT });
+      assert.equal(result.accepted, true, result.reason);
+    }
+
+    const rows = fixture.db.db
+      .prepare("SELECT aggregate_type, aggregate_id FROM sync_outbox ORDER BY aggregate_type, rowid")
+      .all() as Array<{ aggregate_type: string; aggregate_id: string }>;
+    const variants = rows.filter((row) => row.aggregate_type === "PRODUCT_VARIANT");
+    const cartons = rows.filter((row) => row.aggregate_type === "QR_MASTER");
+
+    // ONE product, THREE cartons. The variant dedupe key is the variant itself, so the second
+    // and third cartons add nothing. Without that the outbox would carry a redundant product
+    // row per carton for ever, and nothing prunes sync_outbox.
+    assert.equal(variants.length, 1, "the product travels once, not once per carton");
+    assert.equal(cartons.length, 3, "every carton identity still travels");
+
+    // And the queued product is the one those cartons actually belong to.
+    const belongsTo = fixture.db.db
+      .prepare("SELECT DISTINCT product_variant_id AS id FROM qr_master")
+      .all() as Array<{ id: string }>;
+    assert.equal(belongsTo.length, 1);
+    assert.equal(variants[0]?.aggregate_id, belongsTo[0]?.id);
   } finally {
     fixture.cleanup();
   }
@@ -2195,11 +2237,13 @@ test("return scan writes a valid outbox aggregate type", async () => {
     ).execute({ rawScan: qrId, context: SCAN_CONTEXT });
 
     assert.equal(returnResult.accepted, true, returnResult.reason);
-    // The carton identity, the production scan, the dispatch and the return. Each row's
-    // aggregate_type is CHECK-constrained, so a bad one would have thrown rather than counted.
+    // The product, the carton identity, the production scan, the dispatch and the return. Each
+    // row's aggregate_type is CHECK-constrained, so a bad one would have thrown rather than
+    // counted.
     assert.deepEqual(outboxTypes(fixture.db), [
       "DISPATCH_EVENT",
       "PRODUCTION_PRODUCED",
+      "PRODUCT_VARIANT",
       "QR_MASTER",
       "RETURN_EVENT",
     ]);

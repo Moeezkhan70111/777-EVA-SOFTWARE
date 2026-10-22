@@ -10,7 +10,7 @@ import type { CanonicalQrPayload } from "@erp/domain";
 import { IN_STORE_STOCK_TOTAL_SQL, orderBy } from "./shared.js";
 import type { MutableTransactionContext } from "./shared.js";
 import type { ScanOperationalContext, TransactionContext } from "@erp/application";
-import { enqueueProductionProduced, enqueueQrMaster } from "./syncEvents.js";
+import { enqueueProductVariant, enqueueProductionProduced, enqueueQrMaster } from "./syncEvents.js";
 
 export const productionMethods = {
   async existsByQrId(this: SqliteDatabase, qrId: string, tx: TransactionContext): Promise<boolean> {
@@ -58,6 +58,38 @@ export const productionMethods = {
     // news of it commit together or not at all. Queueing cannot fail this write -- see
     // enqueueSyncEvent: a queue that refuses must never cost the factory a carton.
     if (payload.outboxId) {
+      // THE PRODUCT GOES FIRST. push_qr_master refuses a carton whose variant the cloud has not
+      // been given (UNKNOWN_PRODUCT_VARIANT), and until this existed the only cure was somebody
+      // inserting the variant by hand -- which every new product, colour or size needed again.
+      //
+      // Queued here rather than where variants are created because this is the moment one is
+      // KNOWN to be needed elsewhere: a variant nothing has ever labelled does not have to
+      // travel at all. Idempotent by dedupe key, so this costs one row per variant for all time,
+      // not one per carton. Its own outbox id, because it is its own event.
+      //
+      // Read from the row rather than taken on trust: a payload is three ids, and the article,
+      // colour and size the cloud needs are in product_variants.
+      const variant = context.db
+        .prepare(`SELECT id, article, color, size, description, created_at
+                    FROM product_variants WHERE id = ? LIMIT 1`)
+        .get(payload.productVariantId) as
+        | { id: string; article: string; color: string; size: string; description: string | null; created_at: string }
+        | undefined;
+      if (variant) {
+        enqueueProductVariant(
+          context.db,
+          {
+            variantId: String(variant.id),
+            article: String(variant.article),
+            color: String(variant.color),
+            size: String(variant.size),
+            description: variant.description === null ? null : String(variant.description),
+            createdAt: String(variant.created_at),
+          },
+          crypto.randomUUID()
+        );
+      }
+
       enqueueQrMaster(
         context.db,
         { qrId: payload.qrId, productVariantId: payload.productVariantId, createdAt: payload.createdAt },
