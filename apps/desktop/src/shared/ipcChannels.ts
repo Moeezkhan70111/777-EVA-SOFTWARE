@@ -363,6 +363,15 @@ export const IPC = {
   listContractorLedgerAccounts: "erp:list-contractor-ledger-accounts",
   getContractorLedger: "erp:get-contractor-ledger",
   getStoreDailyReport: "erp:get-store-daily-report",
+
+  // Automatic updates. Read-only status for the prompt, plus the two things an operator can do.
+  // Polled, not pushed: the bridge is invoke-only — see main/updater.ts.
+  getUpdateStatus: "erp:get-update-status",
+  checkForUpdates: "erp:check-for-updates",
+  installUpdate: "erp:install-update",
+  // Throws away a downloaded update so it cannot install on quit. Admin-only: unlike installing,
+  // this changes what OTHER people's restarts will do.
+  discardUpdate: "erp:discard-update",
 } as const;
 
 export type IpcChannel = (typeof IPC)[keyof typeof IPC];

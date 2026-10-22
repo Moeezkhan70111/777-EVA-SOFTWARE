@@ -14,7 +14,8 @@
     "start": "npm run build && npm run --workspace @erp/desktop dev",
     "package:win": "npm run build && npm run --workspace @erp/desktop package",
     "package:dir": "npm run build && npm run --workspace @erp/desktop package:dir",
-    "seed:demo": "node scripts/seed-demo.mjs"
+    "seed:demo": "node scripts/seed-demo.mjs",
+  "release": "node scripts/release.mjs"
   },
 "devDependencies": {
   "@types/node": "^22.15.24",

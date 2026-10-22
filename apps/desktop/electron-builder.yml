@@ -18,6 +18,28 @@ appId: com.tttraders.erp777
 productName: 777 ERP
 copyright: Copyright © T&T Traders
 
+# ── Where releases are published, and where the office PCs look for them ─────
+#
+# NO TOKEN HERE, DELIBERATELY. electron-builder bakes this block into
+# resources/app-update.yml inside the installer, so a token written here would ship to every
+# machine and sit in a readable file on each one. The owner and repo are not secret; the
+# credential is.
+#
+#   publishing (dev PC)   scripts/release.mjs passes GH_TOKEN from the release operator's
+#                         environment. It never reaches the artifact.
+#   downloading (office)  each PC reads ERP_UPDATE_TOKEN from its own environment at runtime
+#                         and hands it to the feed (apps/desktop/src/main/updater.ts). A PC
+#                         without one simply does not update, and says so.
+#
+# `releaseType: release` so a published build is live immediately — there is no staging step
+# and nobody to press "publish" a second time.
+publish:
+  - provider: github
+    owner: Moeezkhan70111
+    repo: 777-EVA-SOFTWARE
+    private: true
+    releaseType: release
+
 directories:
   output: release
   buildResources: build

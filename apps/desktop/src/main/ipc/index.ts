@@ -23,6 +23,7 @@ import { registerPrintingHandlers } from "./printing";
 import { registerContractorLedgerHandlers } from "./contractorLedger";
 import { registerUpperMoveOutHandlers } from "./upperMoveOut";
 import { registerManualProductionHandlers } from "./manualProduction";
+import { registerUpdateHandlers } from "./updates";
 
 export type { IpcContext } from "./context";
 export { createIpcContext } from "./context";
@@ -53,4 +54,5 @@ export function registerIpcHandlers(ctx: IpcContext): void {
   registerContractorLedgerHandlers(ctx);
   registerUpperMoveOutHandlers(ctx);
   registerManualProductionHandlers(ctx);
+  registerUpdateHandlers(ctx);
 }

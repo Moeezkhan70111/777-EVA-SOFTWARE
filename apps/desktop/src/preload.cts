@@ -390,5 +390,10 @@ contextBridge.exposeInMainWorld("desktop", {
     listContractorLedgerAccounts: () => ipcRenderer.invoke(IPC.listContractorLedgerAccounts),
     getContractorLedger: (accountId: string, query: { fromDate: string; toDate: string }) => ipcRenderer.invoke(IPC.getContractorLedger, accountId, query),
     getStoreDailyReport: (query: { date: string; direction: "IN" | "OUT"; token?: string }) => ipcRenderer.invoke(IPC.getStoreDailyReport, query),
+    // Automatic updates. Polled by the update prompt — see renderer/hooks/useAppUpdate.ts.
+    getUpdateStatus: () => ipcRenderer.invoke(IPC.getUpdateStatus),
+    checkForUpdates: () => ipcRenderer.invoke(IPC.checkForUpdates),
+    installUpdate: () => ipcRenderer.invoke(IPC.installUpdate),
+    discardUpdate: () => ipcRenderer.invoke(IPC.discardUpdate),
   },
 });

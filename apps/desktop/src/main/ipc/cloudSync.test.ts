@@ -196,6 +196,8 @@ let signedIn: SessionUser | null;
 let logged: Array<{ severity: string; operation: string; message: string; userId?: string }>;
 /** Every SQL statement any handler prepared or executed, in order. */
 let prepared: string[];
+/** Every sync run opened during a test, with how it was closed. */
+let syncRuns: Array<Record<string, unknown>>;
 
 const setEnv = (values: Partial<typeof GOOD_ENV>): void => {
   for (const key of Object.keys(GOOD_ENV) as Array<keyof typeof GOOD_ENV>) {
@@ -223,7 +225,25 @@ const buildContext = (): IpcContext => {
     },
   };
   return {
-    db: { db: recordingSql },
+    db: {
+      db: recordingSql,
+      // SYNC RUN BOOKKEEPING (migration 085). A pass opens a row before it touches the network
+      // and closes it on every path out, so these are exercised by every test below. Recorded
+      // here rather than stubbed silently, so a pass that forgot to close its run would show up
+      // as an unfinished entry.
+      startSyncRun: (trigger: string) => {
+        syncRuns.push({ trigger });
+        return `run-${String(syncRuns.length)}`;
+      },
+      finishSyncRun: (id: string, outcome: string, counts: unknown, reason?: string) => {
+        const index = Number(id.replace("run-", "")) - 1;
+        if (syncRuns[index]) Object.assign(syncRuns[index], { outcome, counts, reason });
+      },
+      syncRunSummary: () => ({ lastAttempt: null, lastSuccess: null }),
+    },
+    // No background loop in these tests: the manual button then calls the pass directly, which
+    // is exactly the path being exercised.
+    syncScheduler: null,
     logger: {
       log: (entry: { severity: string; operation: string; message: string; userId?: string }) =>
         logged.push(entry),
@@ -299,6 +319,7 @@ beforeEach(() => {
   logged = [];
   built = [];
   prepared = [];
+  syncRuns = [];
   deferral = null;
   summaryCalls = [];
   drainThrows = null;
@@ -357,6 +378,12 @@ describe("cloud sync at the process boundary", () => {
       queue: QUEUE,
       pullCursor: 7,
       waitingFor: undefined,
+      // Added with the background loop (Phase 4). `schedule` is absent because this context has
+      // no scheduler; the two run records come from sync_runs (migration 085) and are null here
+      // because the fixture's database has no history.
+      schedule: undefined,
+      lastAttempt: null,
+      lastSuccess: null,
     });
   });
 

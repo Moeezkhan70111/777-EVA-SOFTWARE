@@ -43,6 +43,27 @@ export interface CloudSyncStatus {
   pullCursor: number;
   /** Present only while a pull is waiting for something that has not arrived yet. */
   waitingFor?: { seq: number; attempts: number; retryAfter: string };
+  /** The background loop's state. Absent on a computer with no scheduler. */
+  schedule?: { nextPassInMs: number | null; consecutiveFailures: number };
+  /** The most recent pass attempted, from sync_runs. Null if none has ever run here. */
+  lastAttempt?: SyncRunSummary | null;
+  /** The most recent pass that completed. Null if none ever has. */
+  lastSuccess?: SyncRunSummary | null;
+}
+
+/** One recorded pass, as the renderer sees it. Mirrors SyncRunRecord in @erp/data. */
+export interface SyncRunSummary {
+  id: string;
+  startedAt: string;
+  finishedAt: string | null;
+  trigger: "STARTUP" | "TIMER" | "RECONNECT" | "MANUAL";
+  outcome: "OK" | "REFUSED" | "TRANSPORT_ERROR" | "FAILED" | null;
+  pushed: number | null;
+  fetched: number | null;
+  applied: number | null;
+  duplicates: number | null;
+  refused: number | null;
+  reason: string | null;
 }
 
 /**
@@ -1273,6 +1294,36 @@ export interface ReportSummary {
   topProducts: Array<{ key: string; quantity: number }>;
 }
 
+/**
+ * What the main process reports about automatic updates.
+ *
+ * Mirrors UpdateStatus in main/updater.ts. The two are deliberately separate declarations: this
+ * side of the bridge validates what arrives rather than trusting the shape (R25), and a shared
+ * type would make that validation look unnecessary.
+ */
+export type AppUpdatePhase =
+  | "DISABLED"
+  | "IDLE"
+  | "CHECKING"
+  | "UP_TO_DATE"
+  | "DOWNLOADING"
+  | "READY"
+  | "ERROR";
+
+export interface AppUpdateStatus {
+  phase: AppUpdatePhase;
+  currentVersion: string;
+  availableVersion?: string;
+  percent?: number;
+  reason?: string;
+  lastCheckedAt?: string;
+  /** When a check last succeeded, across restarts. */
+  lastSuccessAt?: string;
+  /** This computer has gone too long without reaching the release feed — see main/updater.ts. */
+  stalled?: boolean;
+  stalledDays?: number;
+}
+
 export interface BackupRecord {
   id: string;
   backupType: string;
@@ -2283,6 +2334,13 @@ export interface DesktopApi {
    * with the day's totals. The shapes and the counting are @erp/domain storeDailyReport.ts.
    */
   getStoreDailyReport(query: { date: string; direction: StoreDirection; token?: string }): Promise<{ accepted: boolean; reason?: string; report?: StoreDailyReport }>;
+
+  // ─── Automatic updates ────────────────────────────────────────────────────
+  getUpdateStatus(): Promise<AppUpdateStatus>;
+  checkForUpdates(): Promise<AppUpdateStatus>;
+  installUpdate(): Promise<{ accepted: boolean; reason?: string }>;
+  /** Admin-only: throws away a downloaded update so it cannot install on quit. */
+  discardUpdate(): Promise<{ accepted: boolean; reason?: string }>;
 }
 
 // ─── Contractor Ledger ───────────────────────────────────────────────────────

@@ -1,31 +1,24 @@
-// Running one cloud sync pass, by hand.
+// The renderer's two cloud-sync channels: what this computer's sync situation is, and one pass
+// started by hand.
 //
-// There is NO BACKGROUND LOOP. Nothing syncs on launch, on a timer, or after a scan. A pass only
-// happens when an administrator asks for one, and only on a computer whose four environment
-// variables are set. An installation without them is the local-only ERP it is today, and nothing
-// about its behaviour changes.
+// THERE IS NOW A BACKGROUND LOOP. Passes happen on their own -- at startup, on an interval, and
+// when the machine comes back online -- driven by the SyncScheduler in main.ts. This file no
+// longer contains a pass: the one implementation lives in main/cloudSyncPass.ts and is what both
+// the scheduler and the button below call. Two copies of "claim, drain, pull" would be two
+// competing implementations of the most consequential operation here (CLAUDE.md section 2).
 //
-// That is deliberate for a first slice: a sync that starts itself would be writing to a shared
-// project before anyone has watched it work on two computers once.
+// WHY THE BUTTON STILL EXISTS. "Sync now" answers a question a timer cannot: did THIS change
+// reach the other computers. It goes through the scheduler rather than around it, so it shares
+// the single-flight guard -- two passes on one outbox would lease the same rows twice.
 //
-// WHAT A PASS DOES
-//
-//   sign in   as this computer's device account, holding the token in memory only
-//   push      carton identities (QR_MASTER) from the local outbox, oldest first
-//   pull      everything in the cloud log after this computer's cursor, and apply it
-//
-// Only QR_MASTER is pushed. The drain is told to claim nothing else, so a PRODUCTION_PRODUCED
-// event sits in the outbox as PENDING and is neither sent, refused, nor parked.
-//
-// WHAT THE RENDERER GETS BACK: counts and, when something went wrong, the service's own reason.
-// Never a token, never the key, never the password.
+// WHAT THE RENDERER GETS BACK: counts, queue state, and the service's own already-scrubbed
+// reason. Never a token, never the key, never the password.
 
-import { app, ipcMain } from "electron";
+import { ipcMain } from "electron";
 import { IPC } from "../../shared/ipcChannels";
 import type { IpcContext } from "./context";
 import { rejection } from "../authorize";
-import { describeCloudSyncConfig, readCloudSyncConfig } from "../cloudConfig";
-import { DeviceCredentialStore } from "../deviceCredentialStore";
+import { describeCloudSync, isCloudSyncConfigured, runCloudSyncPass } from "../cloudSyncPass";
 
 export interface CloudSyncOutcome {
   accepted: boolean;
@@ -46,18 +39,19 @@ export interface CloudSyncOutcome {
   outbox?: Record<string, number>;
 }
 
-/** One pass at a time. A second request while one is running is refused rather than queued. */
-let running = false;
+const ALREADY_RUNNING = "A cloud sync is already running on this computer.";
+
+/**
+ * Single-flight guard for the fallback path only — when there is no scheduler to own it.
+ *
+ * Module scope because there is one main process and one outbox. With a scheduler present this
+ * is never touched; the scheduler's own guard is the one in force, and the two can never both
+ * be live because the handler takes exactly one branch.
+ */
+let manualPassRunning = false;
 
 export function registerCloudSyncHandlers(ctx: IpcContext): void {
   const { db, logger, authorizer, deviceId, scanContext } = ctx;
-  // THIS COMPUTER'S CLOUD CREDENTIAL, encrypted against the signed-in Windows user by
-  // Electron's safeStorage. See main/deviceCredentialStore.ts for why this and not a file the
-  // application writes itself: it is the one artefact a copied data folder cannot use.
-  //
-  // Reading it is what makes a restart resume without the password; writing it is what makes the
-  // password a first-run input rather than a permanent setting.
-  const credentials = new DeviceCredentialStore(ctx.paths.dataRoot);
 
   // WHAT THIS COMPUTER'S SYNC SITUATION IS. Read-only in every sense: pure SELECTs against the
   // local queue, no network, no pass started, nothing in the outbox touched.
@@ -67,9 +61,11 @@ export function registerCloudSyncHandlers(ctx: IpcContext): void {
   // types have no transport yet: without that split, "14 pending" cannot tell an operator
   // whether anything would actually move.
   //
-  // The two timestamps are read off rows that exist, never manufactured. lastSyncedAt is when a
-  // row was last SENT, not when a pass last ran -- a pass that pushed nothing leaves no trace,
-  // and this does not pretend otherwise. There is no last-attempt timestamp anywhere to report.
+  // ATTEMPTS ARE NOW RECORDED, not inferred. This used to report when a row was last SENT, so a
+  // pass that carried nothing left no trace and the panel said "never" on a computer that had
+  // been syncing all day. sync_runs (migration 085) holds one row per pass, so lastAttempt and
+  // lastSuccess are read off attempts that actually happened -- which is the only way to tell a
+  // working background loop from a broken one.
   //
   // @erp/sync is loaded here too, so a computer that never syncs still loads it to look at its
   // own queue. That is the price of the split, and it is a few kilobytes of pure JavaScript with
@@ -78,14 +74,25 @@ export function registerCloudSyncHandlers(ctx: IpcContext): void {
     authorizer.requireUser(event);
     const sync = await import("@erp/sync");
     const deferral = sync.readPullDeferral(db.db);
+    // Read once: two calls to state() could disagree if a pass started between them.
+    const schedulerState = ctx.syncScheduler?.state() ?? null;
     return {
       // Asked with the same credential question a pass asks, so the panel cannot call this
       // computer unconfigured while a pass would in fact run: once a credential is stored here,
       // the device password is genuinely no longer needed.
-      ...describeCloudSyncConfig(
-        readCloudSyncConfig(process.env, { hasStoredCredential: credentials.matchesDevice(deviceId) })
-      ),
-      running,
+      ...describeCloudSync({ deviceId, dataRoot: ctx.paths.dataRoot }),
+      // From the scheduler, which owns the single-flight guard, so "running" here is the same
+      // fact the manual press is refused on.
+      // The scheduler's view when there is one, the fallback guard's when there is not — the
+      // same fact a manual press is refused on either way.
+      running: schedulerState?.running ?? manualPassRunning,
+      // What the background loop is doing: when the next pass is due, and how many transport
+      // failures it has backed off over. Absent on a computer with no scheduler.
+      schedule: schedulerState === null
+        ? undefined
+        : { nextPassInMs: schedulerState.nextPassInMs, consecutiveFailures: schedulerState.consecutiveFailures },
+      // The last attempt and the last one that completed, from sync_runs.
+      ...db.syncRunSummary(),
       queue: sync.outboxSummary(db.db, {
         pushableTypes: sync.SUPABASE_PUSHABLE_AGGREGATES,
         nowIso: new Date().toISOString(),
@@ -112,140 +119,62 @@ export function registerCloudSyncHandlers(ctx: IpcContext): void {
       return rejection(error, "The cloud sync could not be started.");
     }
 
-    // The stored credential decides whether a password is still required at all.
-    const stored = credentials.load();
-    const usable = stored !== null && stored.deviceId === deviceId;
-    const settings = readCloudSyncConfig(process.env, { hasStoredCredential: usable });
-    if (!settings.configured) {
-      return { accepted: false, reason: `This computer is not set up for cloud sync: ${settings.problems.join("; ")}` };
-    }
-    if (running) return { accepted: false, reason: "A cloud sync is already running on this computer." };
-
-    running = true;
-    try {
-      // Loaded here rather than at startup: a computer that never syncs never loads it, exactly
-      // as main.ts already loads @erp/data on demand.
-      const sync = await import("@erp/sync");
-      // The refresh token travels in the config, never the credential file's own shape: the auth
-      // layer knows nothing about safeStorage, and the store knows nothing about Supabase.
-      const auth = new sync.SupabaseDeviceAuth(
-        { ...settings.config, refreshToken: usable ? stored.refreshToken : undefined },
-        () => Date.now(),
-        (session) => {
-          // FIRST-RUN PROVISIONING, and every rotation after it. A refresh token that cannot be
-          // stored must not fail the pass -- the sync itself is fine, and the cost is only that
-          // the next start needs the password again -- so the outcome is logged, never thrown.
-          const outcome = credentials.save({
-            authUserId: session.userId ?? stored?.authUserId ?? "",
-            deviceId,
-            refreshToken: session.refreshToken,
-            provisionedAt: new Date().toISOString(),
-          });
-          if (outcome !== "SAVED") {
-            logger.log({
-              module: "sync",
-              severity: "WARNING",
-              operation: "device-credential",
-              deviceId,
-              message: `This computer's cloud credential was not stored (${outcome}). Sync is unaffected; the device password will be needed again after a restart.`,
-            });
-            return;
-          }
-          if (!usable) {
-            logger.log({
-              module: "sync",
-              severity: "INFO",
-              operation: "device-credential",
-              deviceId,
-              message: "This computer's cloud credential was stored. The device password is no longer needed to sync here.",
-            });
-          }
-        }
-      );
-      const transport = new sync.SupabaseSyncTransport({
-        url: settings.config.url,
-        anonKey: settings.config.anonKey,
-        auth,
-      });
-
-      // THE CLAIM COMES FIRST, AND NOTHING IS TOUCHED UNTIL IT SUCCEEDS.
-      //
-      // Migration 006 binds this account to one device and one workstation and hands back an
-      // epoch that every write must present; a second computer claiming the same enrolment
-      // evicts this one. The claim happens BEFORE the drain exists because a drain reclaims
-      // stale rows and leases a batch the moment it runs -- both of which mutate the outbox.
-      // A device that may not write must not have its queue disturbed for finding out.
-      const claim = await transport.claimDevice({
-        deviceId,
-        workstationId: scanContext.workstationId,
-        appVersion: app.getVersion(),
-      });
-      if (!claim.ok) {
-        logger.log({
-          module: "sync",
-          severity: "WARNING",
-          operation: "cloud-sync",
-          deviceId,
-          userId: admin.id,
-          message: `Cloud sync refused for ${admin.username}: the cloud did not accept this computer (${claim.reason})`,
-        });
-        return {
-          accepted: false,
-          reason: `The cloud did not accept this computer: ${claim.reason}. Nothing was sent, and nothing in the queue changed.`,
-          outbox: sync.outboxSummary(db.db, {
-            pushableTypes: sync.SUPABASE_PUSHABLE_AGGREGATES,
-            nowIso: new Date().toISOString(),
-          }).counts,
-        };
-      }
-
-      const drain = new sync.OutboxDrain(db.db, transport, {
-        deviceId,
-        aggregateTypes: sync.SUPABASE_PUSHABLE_AGGREGATES,
-      });
-      const pushed = await drain.runOnce();
-
-      const pull = new sync.SyncPull(db.db, transport);
-      const pulled = await pull.runOnce();
-
-      logger.log({
-        module: "sync",
-        severity: "INFO",
-        operation: "cloud-sync",
-        deviceId,
-        userId: admin.id,
-        message:
-          `Cloud sync by ${admin.username}: sent ${String(pushed.synced)}, ` +
-          `read ${String(pulled.fetched)}, applied ${String(pulled.applied)}, ` +
-          `already here ${String(pulled.duplicates)}, refused ${String(pulled.refused.length)}`,
-      });
-
-      const failure = pushed.transportError ?? pulled.transportError;
+    if (!isCloudSyncConfigured({ deviceId, dataRoot: ctx.paths.dataRoot })) {
+      // `problems` is present precisely when `configured` is false, which is the branch this is,
+      // but the type does not say so — so it is read defensively rather than asserted.
+      const settings = describeCloudSync({ deviceId, dataRoot: ctx.paths.dataRoot });
+      const problems = settings.problems ?? [];
       return {
-        accepted: failure === undefined,
-        reason: failure,
-        pushed: pushed.synced,
-        fetched: pulled.fetched,
-        applied: pulled.applied,
-        duplicates: pulled.duplicates,
-        refused: pulled.refused.map((problem) => ({ reason: problem.reason })),
-        waitingFor: pulled.waitingFor?.reason,
-        outbox: pushed.counts,
+        accepted: false,
+        reason:
+          problems.length > 0
+            ? `This computer is not set up for cloud sync: ${problems.join("; ")}`
+            : "This computer is not set up for cloud sync.",
       };
-    } catch (error) {
-      // The message is the transport's, already scrubbed of anything secret.
-      const reason = error instanceof Error ? error.message : "The cloud could not be reached.";
-      logger.log({
-        module: "sync",
-        severity: "ERROR",
-        operation: "cloud-sync",
-        deviceId,
-        userId: admin.id,
-        message: `Cloud sync failed: ${reason}`,
-      });
-      return { accepted: false, reason };
-    } finally {
-      running = false;
     }
+
+    // THROUGH THE SCHEDULER, not past it. It owns the single-flight guard, so a manual press
+    // while a timed pass is running is declined rather than overlapping it — two passes on one
+    // outbox is how rows get leased twice.
+    // Nullish, not `=== null`: a context assembled without a scheduler leaves it undefined, and
+    // treating that as "has a scheduler" would call runNow on nothing.
+    const scheduler = ctx.syncScheduler ?? null;
+
+    // ONE PASS AT A TIME, WHICHEVER PATH IS TAKEN.
+    //
+    // The scheduler owns the guard when there is one. When there is not — a computer whose
+    // background loop failed to start — this handler still has to enforce it: two passes on one
+    // outbox lease the same rows twice, and "the scheduler is missing" must not quietly remove
+    // the protection along with the loop.
+    let result;
+    if (scheduler !== null) {
+      result = await scheduler.runNow("MANUAL");
+    } else {
+      if (manualPassRunning) return { accepted: false, reason: ALREADY_RUNNING };
+      manualPassRunning = true;
+      try {
+        result = await runCloudSyncPass(
+          { db, logger, deviceId, workstationId: scanContext.workstationId, dataRoot: ctx.paths.dataRoot, actor: admin },
+          "MANUAL"
+        );
+      } finally {
+        manualPassRunning = false;
+      }
+    }
+
+    if (result === null) return { accepted: false, reason: ALREADY_RUNNING };
+
+    const pass = result as Awaited<ReturnType<typeof runCloudSyncPass>>;
+    return {
+      accepted: pass.outcome === "OK",
+      reason: pass.reason,
+      pushed: pass.pushed,
+      fetched: pass.fetched,
+      applied: pass.applied,
+      duplicates: pass.duplicates,
+      refused: pass.refusedEvents,
+      waitingFor: pass.waitingFor,
+      outbox: pass.outbox,
+    };
   });
 }

@@ -1,4 +1,5 @@
-import { app, BrowserWindow } from "electron";
+import { app, BrowserWindow, net } from "electron";
+import fs from "node:fs";
 import path from "node:path";
 import type { SqliteDatabase, StructuredLogger } from "@erp/data";
 import {
@@ -18,6 +19,17 @@ import { DeviceCredentialStore } from "./main/deviceCredentialStore";
 import { describeBuildInfo, readBuildInfo } from "./main/buildInfo";
 import { createIpcContext, registerIpcHandlers } from "./main/ipc";
 import type { UseCases } from "./main/ipc/context";
+// updater.ts defers `electron-updater` itself (loadElectronUpdater), so importing this module
+// costs a development run nothing.
+import {
+  LAST_UPDATE_SUCCESS_SETTING,
+  UPDATE_TOKEN_ENV,
+  UpdateService,
+  loadElectronUpdater,
+  type AutoUpdaterPort,
+} from "./main/updater";
+import { isCloudSyncConfigured, runCloudSyncPass } from "./main/cloudSyncPass";
+import type { SyncScheduler } from "@erp/sync";
 
 // Electron main process: filesystem locations, application-service composition, IPC
 // registration and window lifecycle. The IPC handlers themselves live under ./main/ipc,
@@ -89,6 +101,239 @@ interface DesktopServices {
   db: SqliteDatabase;
   logger: StructuredLogger;
   useCases: UseCases;
+  /** Null when automatic updates could not be arranged on this computer. */
+  updates: UpdateService | null;
+  /** Null when this computer has no background sync loop. */
+  syncScheduler: SyncScheduler | null;
+}
+
+/**
+ * The private repository the Windows installers are published to.
+ *
+ * Here rather than in electron-builder.yml's publish block because the token that goes with it
+ * must NOT be baked into the installer: the owner/repo are not secret, the credential is, and it
+ * is read per machine from ERP_UPDATE_TOKEN at runtime. See main/updater.ts.
+ */
+const RELEASE_REPOSITORY = { owner: "Moeezkhan70111", repo: "777-EVA-SOFTWARE" } as const;
+
+/**
+ * Starts the update service, or returns null with the reason logged.
+ *
+ * NEVER THROWS. An ERP that refuses to open because it could not reach GitHub would be a far
+ * worse failure than an ERP running last month's build.
+ */
+async function startUpdateService(
+  logger: StructuredLogger,
+  deviceId: string,
+  db: SqliteDatabase
+): Promise<UpdateService | null> {
+  try {
+    const token = process.env[UPDATE_TOKEN_ENV];
+    // In development electron-updater is never even loaded: it reads app-update.yml at import
+    // time, which a source run does not have.
+    const service = new UpdateService({
+      logger,
+      deviceId,
+      currentVersion: app.getVersion(),
+      isPackaged: app.isPackaged,
+      token,
+      repository: RELEASE_REPOSITORY,
+      updater: app.isPackaged ? await loadElectronUpdater() : stubUpdater(),
+      // SURVIVES A RESTART, which is the whole point: a failure count would reset every morning
+      // and could never show that this computer has not updated for a fortnight.
+      history: {
+        readLastSuccessAt: () => db.getSettings()[LAST_UPDATE_SUCCESS_SETTING] ?? null,
+        writeLastSuccessAt: (iso) => db.setSettings({ [LAST_UPDATE_SUCCESS_SETTING]: iso }, "updater"),
+      },
+      removeStagedDownload: () => removeStagedDownload(logger, deviceId),
+    });
+    service.start();
+    return service;
+  } catch (error) {
+    logger.log({
+      module: "update",
+      severity: "WARNING",
+      operation: "auto-update",
+      deviceId,
+      message: "Automatic updates are not available on this computer. 777 ERP is unaffected and will keep running this version.",
+      errorDetails: error instanceof Error ? error.message : String(error),
+    });
+    return null;
+  }
+}
+
+// ─── Background cloud sync ────────────────────────────────────────────────────
+
+/** How long after launch the first sync pass waits, so it never competes with the first scan. */
+const SYNC_STARTUP_DELAY_MS = 120_000;
+/** Then every five minutes: often enough that three computers feel current to each other. */
+const SYNC_INTERVAL_MS = 5 * 60 * 1000;
+/**
+ * After a transport failure, doubling to the cap.
+ *
+ * THE CAP IS DELIBERATELY LOW — sixty seconds, not ten minutes — and that is because of what
+ * `net.isOnline()` can and cannot tell us. See the comment on the connectivity poll below: in
+ * the factory's most likely outage (the LAN is fine, the internet is not) the machine never
+ * looks offline, so the offline-to-online transition never happens and the RECONNECT trigger
+ * never fires. Recovery then depends entirely on the next backoff slot.
+ *
+ * A ten-minute cap meant up to ten minutes of three computers not seeing each other's work
+ * after the internet came back, with nothing on screen to explain the wait. A sixty-second cap
+ * bounds that at a minute, and the thing it is retrying costs one HTTP request that fails fast.
+ * Retrying a dead WAN once a minute is not load worth optimising away.
+ */
+const SYNC_MIN_BACKOFF_MS = 15_000;
+const SYNC_MAX_BACKOFF_MS = 60_000;
+/**
+ * How often Chromium's online/offline state is read.
+ *
+ * Twenty seconds: fast enough that a reconnection is noticed while somebody is still standing
+ * there, cheap enough to ignore — it is a synchronous read of a flag, and the scheduler does
+ * nothing at all unless the answer has changed from offline to online.
+ */
+const CONNECTIVITY_POLL_MS = 20_000;
+
+/**
+ * Starts the background sync loop, or returns null with the reason logged.
+ *
+ * NEVER THROWS, for the same reason startUpdateService does not: local work must not depend on
+ * the cloud being reachable, or even on this code being correct.
+ *
+ * The scheduler itself is in @erp/sync and knows nothing about Electron, Supabase or the ERP —
+ * it is given a function that runs one pass. That function is main/cloudSyncPass.ts, which is
+ * also what the Sync Now button calls.
+ */
+async function startSyncScheduler(deps: {
+  db: SqliteDatabase;
+  logger: StructuredLogger;
+  paths: RuntimePaths;
+  scanContext: { workstationId: string; deviceId: string };
+}): Promise<SyncScheduler | null> {
+  const { db, logger, paths, scanContext } = deps;
+  try {
+    const sync = await import("@erp/sync");
+    const passDeps = {
+      db,
+      logger,
+      deviceId: scanContext.deviceId,
+      workstationId: scanContext.workstationId,
+      dataRoot: paths.dataRoot,
+    };
+
+    const scheduler = new sync.SyncScheduler({
+      runPass: (trigger) => runCloudSyncPass(passDeps, trigger),
+      // Asked before every pass rather than cached: a computer provisioned at lunchtime must
+      // start syncing without a restart.
+      isConfigured: () => isCloudSyncConfigured({ deviceId: scanContext.deviceId, dataRoot: paths.dataRoot }),
+      // Chromium's own view, used ONLY as a negative signal.
+      //
+      // Electron's own documentation is explicit that a `true` here is inconclusive: it means
+      // some link is up, not that any particular remote host can be reached. A `false` is the
+      // reliable half — no interface at all, so a pass would certainly fail.
+      //
+      // So this saves pointless passes when the cable is out or wifi is off, and says nothing
+      // useful when the LAN is up and the internet is down. The pass itself is the only real
+      // test of reachability, which is why the backoff cap above is what actually bounds
+      // recovery time.
+      isOnline: () => net.isOnline(),
+      startupDelayMs: SYNC_STARTUP_DELAY_MS,
+      intervalMs: SYNC_INTERVAL_MS,
+      minBackoffMs: SYNC_MIN_BACKOFF_MS,
+      maxBackoffMs: SYNC_MAX_BACKOFF_MS,
+      setTimer: (handler, ms) => setTimeout(handler, ms),
+      clearTimer: (timer) => clearTimeout(timer),
+    });
+
+    scheduler.start();
+
+    // THE MOMENT A WAITING QUEUE CAN DRAIN. The office internet is unreliable, so a computer
+    // that has been offline for an hour must not sit out the rest of its backoff once the
+    // connection returns.
+    //
+    // POLLED, because Electron's main process has no connectivity event — `online`/`offline`
+    // are renderer (DOM) events, and routing them through IPC would make the background loop
+    // depend on a window being open. `net.isOnline()` is a cheap synchronous read of
+    // Chromium's own state.
+    //
+    // WHAT THIS DOES NOT CATCH, stated plainly: the LAN up / WAN down case. The interface stays
+    // up, so `isOnline()` stays true, so there is no offline-to-online transition and this
+    // trigger never fires for the outage the factory is most likely to have. It catches the
+    // cable-unplugged and wifi-off cases, which are real but rarer.
+    //
+    // A reachability probe against the Supabase host would catch both — and is deliberately not
+    // here, because the low backoff cap already bounds recovery at a minute and a probe is a
+    // second network path to maintain for the same outcome. Revisit if a minute proves too long.
+    const connectivityTimer = setInterval(() => scheduler.connectivityChanged(), CONNECTIVITY_POLL_MS);
+    // Let the process exit without waiting for this timer.
+    connectivityTimer.unref?.();
+
+    logger.log({
+      module: "sync",
+      severity: "INFO",
+      operation: "sync-scheduler",
+      deviceId: scanContext.deviceId,
+      message: `Background cloud sync is on: first pass in ${String(Math.round(SYNC_STARTUP_DELAY_MS / 1000))}s, then every ${String(Math.round(SYNC_INTERVAL_MS / 60000))} minutes.`,
+    });
+    return scheduler;
+  } catch (error) {
+    logger.log({
+      module: "sync",
+      severity: "WARNING",
+      operation: "sync-scheduler",
+      deviceId: scanContext.deviceId,
+      message: "Background cloud sync could not be started. 777 ERP works normally; nothing will be exchanged with the other computers until this is fixed.",
+      errorDetails: error instanceof Error ? error.message : String(error),
+    });
+    return null;
+  }
+}
+
+/**
+ * Deletes the installer electron-updater has already staged, so it cannot install on quit.
+ *
+ * The folder is electron-updater's own, named by `updaterCacheDirName` in the packaged
+ * app-update.yml (`@erpdesktop-updater`). Only the staged download lives there — no business
+ * data — and electron-updater recreates it as needed, so removing it is safe.
+ *
+ * Never throws: discarding an update is a convenience, and failing it must not take anything
+ * else down. The caller reports the outcome.
+ */
+function removeStagedDownload(logger: StructuredLogger, deviceId: string): void {
+  // %LOCALAPPDATA%, the same source bootstrapFilesystem reads. Electron's getPath has no name
+  // for it, and app.setPath("userData") has already been pointed at the ERP data folder, so
+  // neither would find electron-updater's cache.
+  const localAppData = process.env.LOCALAPPDATA;
+  if (!localAppData) return;
+  const pending = path.join(localAppData, "@erpdesktop-updater", "pending");
+  try {
+    fs.rmSync(pending, { recursive: true, force: true });
+  } catch (error) {
+    logger.log({
+      module: "update",
+      severity: "WARNING",
+      operation: "discard-update",
+      deviceId,
+      message: `The staged update folder could not be removed (${pending}).`,
+      errorDetails: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
+/**
+ * Stands in for electron-updater in a development run, where it cannot work at all.
+ *
+ * UpdateService reports DISABLED before touching it, so nothing here is ever called — it exists
+ * so a source run does not have to load the real module to construct the service.
+ */
+function stubUpdater(): AutoUpdaterPort {
+  return {
+    autoDownload: false,
+    autoInstallOnAppQuit: false,
+    setFeedURL: () => undefined,
+    checkForUpdates: () => Promise.resolve(undefined),
+    quitAndInstall: () => undefined,
+    on: () => undefined,
+  };
 }
 
 const servicesPromise = bootstrap
@@ -153,6 +398,29 @@ async function initializeServices({ paths, dataMigration }: Bootstrap): Promise<
   });
   const identity = installation.identity;
 
+  // THE BACKUP TAKEN BEFORE THIS BUILD MIGRATED THE DATABASE, if it migrated one at all.
+  //
+  // Logged first among the startup facts because it is the only one that matters retroactively:
+  // if an upgrade turns out to have been wrong, this line is where the way back is named. On an
+  // ordinary launch nothing was pending and there is nothing to say.
+  const safetyCopy = db.preMigrationBackup;
+  if (safetyCopy !== null) {
+    logger.log({
+      module: "runtime",
+      severity: safetyCopy.recorded ? "INFO" : "WARNING",
+      operation: "database-backup",
+      deviceId: identity.deviceId,
+      message: JSON.stringify({
+        backupPath: safetyCopy.backupPath,
+        fromVersion: safetyCopy.fromVersion,
+        toVersion: safetyCopy.toVersion,
+        migrationsApplied: safetyCopy.pending,
+        listedInSettings: safetyCopy.recorded,
+      }),
+      errorDetails: safetyCopy.recordError,
+    });
+  }
+
   logger.log({
     module: "runtime",
     severity: dataMigration.status === "FAILED" ? "CRITICAL" : "INFO",
@@ -192,11 +460,23 @@ async function initializeServices({ paths, dataMigration }: Bootstrap): Promise<
     deviceId: identity.deviceId,
   };
 
+  // AUTOMATIC UPDATES. Arranged last, and allowed to fail: a computer that cannot update is a
+  // computer that runs the version it has. Nothing above this line depends on it, and the window
+  // opens either way — so every failure here is logged and swallowed, never thrown.
+  const updates = await startUpdateService(logger, identity.deviceId, db);
+
+  // THE BACKGROUND SYNC LOOP. Allowed to be absent for exactly the same reason updates are: an
+  // ERP that will not open because it cannot reach Supabase would be a far worse failure than
+  // three computers whose events are a few minutes apart.
+  const syncScheduler = await startSyncScheduler({ db, logger, paths, scanContext });
+
   registerIpcHandlers(
-    createIpcContext({ db, logger, scanContext, paths, dbPath: paths.databaseFile, dataMigration, useCases })
+    createIpcContext({
+      db, logger, scanContext, paths, dbPath: paths.databaseFile, dataMigration, useCases, updates, syncScheduler,
+    })
   );
 
-  return { db, logger, useCases };
+  return { db, logger, useCases, updates, syncScheduler };
 }
 
 type DataModule = typeof import("@erp/data");
@@ -434,5 +714,11 @@ app.on("window-all-closed", () => {
 app.on("before-quit", async () => {
   // A startup failure already exited; there is no database handle to close in that case.
   const services = await servicesPromise.catch(() => null);
+  // Before the database: a check firing into a closing process has nothing useful to do, and an
+  // update that lands here installs on quit through electron-updater, not through this timer.
+  services?.updates?.stop();
+  // Before the database closes: a pass firing into a closing connection would fail for a reason
+  // that has nothing to do with the cloud, and record it as though it did.
+  services?.syncScheduler?.stop();
   services?.db.close();
 });

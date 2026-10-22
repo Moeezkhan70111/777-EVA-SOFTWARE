@@ -32,6 +32,8 @@ import { PERMISSION, asOptionalString, asString, isRecord, oneOf } from "@erp/do
 import { Authorizer } from "../authorize";
 import type { MigrationReport, RuntimePaths } from "../runtimePaths";
 import { SessionStore } from "../sessionStore";
+import type { UpdateService } from "../updater";
+import type { SyncScheduler } from "@erp/sync";
 
 // Everything an IPC handler module needs, built once in main.ts and handed to each
 // register*Handlers(ctx) function. Handlers never reach for globals.
@@ -96,6 +98,21 @@ export interface IpcContext {
   dbPath: string;
   dataMigration: MigrationReport;
   useCases: UseCases;
+  /**
+   * Automatic updates, or null on a computer where they could not be arranged.
+   *
+   * Nullable on purpose: an update service is the one part of startup that is allowed to be
+   * absent. The ERP must open and work without it (see main/updater.ts).
+   */
+  updates: UpdateService | null;
+  /**
+   * The background cloud-sync loop, or null when this computer has none.
+   *
+   * Nullable for the same reason `updates` is: a computer that cannot sync is a computer that
+   * works locally, which is the whole architecture. The manual Sync Now button goes through this
+   * when it exists so the two share one single-flight guard.
+   */
+  syncScheduler: SyncScheduler | null;
 }
 
 // Legacy parent-module permission codes ("inventory", "scanning", "masters", "billing")

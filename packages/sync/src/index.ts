@@ -16,3 +16,4 @@ export * from "./supabaseAuth.js";
 export * from "./supabaseTransport.js";
 export * from "./testOnlyBackend.js";
 export * from "./outboxSync.js";
+export * from "./scheduler.js";
