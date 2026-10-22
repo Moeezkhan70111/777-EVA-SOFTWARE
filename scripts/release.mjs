@@ -12,7 +12,9 @@
 //   3. commits that bump and tags it
 //   4. pushes the commit and the tag
 //   5. builds every workspace, then the signed-or-unsigned Windows installer
-//   6. publishes the installer to GitHub Releases, where the office PCs look for it
+//   6. creates the GitHub release, ONCE -- see the note at step 6 on why that matters
+//   7. publishes the installer to GitHub Releases, where the office PCs look for it
+//   8. reads the release back and warns if it is not what it should be
 //
 // WHY THE TREE MUST BE CLEAN FIRST. electron-builder copies `migrations/sqlite` out of the
 // WORKING TREE, so a build from a dirty tree can ship a migration that exists in no commit --
@@ -190,9 +192,83 @@ try {
   );
 }
 
-// ─── 6. Publish ──────────────────────────────────────────────────────────────
+// ─── 6. Create the GitHub release, once ──────────────────────────────────────
+//
+// WHY THIS EXISTS. electron-builder publishes each artifact through its own publisher, and they
+// run concurrently. Every release so far produced TWO GitHub releases for one tag, because both
+// publishers checked, both saw "release doesn't exist", and both created one. The log said so
+// twice and nobody read it twice:
+//
+//   • creating GitHub release  reason=release doesn't exist tag=v0.3.3
+//   • creating GitHub release  reason=release doesn't exist tag=v0.3.3
+//
+// The artifacts then split across the two. Verified on the published releases:
+//
+//   id=421101297  v0.3.3  777-ERP-Setup-0.3.3.exe.blockmap
+//   id=421101299  v0.3.3  777-ERP-Setup-0.3.3.exe, latest.yml
+//
+// TWO CONSEQUENCES. The blockmap is orphaned on a release of its own, so electron-updater never
+// finds it beside the installer and every update is a full download instead of a delta. Worse,
+// which duplicate GitHub calls "latest" decides whether `latest.yml` is reachable at all -- and
+// an update check that lands on the blockmap-only release finds no feed and silently does
+// nothing. 0.3.2 and 0.3.3 both happened to pick the right one. That is luck, and the whole
+// update mechanism was resting on it.
+//
+// Creating the release here, before electron-builder runs, removes the race: both publishers
+// find an existing release and upload into it.
 
-step(6, "Publishing the installer to GitHub Releases");
+const releaseApi = (() => {
+  const yml = fs.readFileSync(path.join(repoRoot, "apps", "desktop", "electron-builder.yml"), "utf8");
+  const owner = /^\s*owner:\s*(\S+)\s*$/m.exec(yml)?.[1];
+  const repo = /^\s*repo:\s*(\S+)\s*$/m.exec(yml)?.[1];
+  if (!owner || !repo) {
+    refuse("the publish target could not be read from electron-builder.yml, so nothing was published.");
+  }
+  return { owner, repo, base: `https://api.github.com/repos/${owner}/${repo}` };
+})();
+
+/** GitHub REST, with the token in the header and never in a URL or a log line. */
+const github = async (method, pathname, body) => {
+  const response = await fetch(`${releaseApi.base}${pathname}`, {
+    method,
+    headers: {
+      authorization: `Bearer ${process.env.GH_TOKEN}`,
+      accept: "application/vnd.github+json",
+      "user-agent": "777-erp-release",
+      ...(body === undefined ? {} : { "content-type": "application/json" }),
+    },
+    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+  });
+  return { status: response.status, text: await response.text() };
+};
+
+step(6, `Creating the GitHub release for ${tag}`);
+try {
+  const existing = await github("GET", `/releases/tags/${tag}`);
+  if (existing.status === 200) {
+    console.log(`  a release for ${tag} already exists — electron-builder will upload into it.`);
+  } else if (existing.status === 404) {
+    const created = await github("POST", "/releases", {
+      tag_name: tag,
+      name: `777 ERP ${nextVersion}`,
+      draft: false,
+      prerelease: false,
+    });
+    if (created.status < 200 || created.status >= 300) {
+      // The message is GitHub's and carries no credential; the token only ever goes in a header.
+      refuse("the GitHub release could not be created, so nothing was published.", created.text);
+    }
+    console.log(`  created, and it is the only release for ${tag}.`);
+  } else {
+    refuse("GitHub would not say whether a release exists, so nothing was published.", existing.text);
+  }
+} catch (error) {
+  refuse("the GitHub release could not be created, so nothing was published.", String(error));
+}
+
+// ─── 7. Publish ──────────────────────────────────────────────────────────────
+
+step(7, "Publishing the installer to GitHub Releases");
 try {
   runVisible(
     "npx",
@@ -205,6 +281,39 @@ try {
     `Publish it by hand from apps/desktop/release, or re-run electron-builder with --publish always.\n` +
       `The release commit ${tag} is already pushed.`
   );
+}
+
+// ─── 8. Confirm what actually landed ─────────────────────────────────────────
+//
+// Not decoration. The two failures this release path has actually had were both SILENT: a tag
+// pushed with nothing behind it, and artifacts split across duplicate releases. Both would have
+// been caught here in a second.
+
+step(8, "Confirming the published release");
+try {
+  const all = await github("GET", "/releases?per_page=100");
+  const releases = JSON.parse(all.text).filter((release) => release.tag_name === tag);
+
+  if (releases.length !== 1) {
+    console.warn(`\n  WARNING: ${String(releases.length)} releases exist for ${tag}, expected 1.`);
+    console.warn("  Artifacts may be split across them, which breaks the update feed. Merge them by hand.");
+  }
+
+  const names = releases.flatMap((release) => release.assets.map((asset) => asset.name));
+  const missing = ["latest.yml"].filter((needed) => !names.includes(needed));
+  if (missing.length > 0) {
+    console.warn(`\n  WARNING: ${missing.join(", ")} is not on the release.`);
+    console.warn("  Without latest.yml no computer can see this version. Upload it from apps/desktop/release.");
+  }
+  if (!names.some((name) => name.endsWith(".blockmap"))) {
+    console.warn("\n  NOTE: no .blockmap was uploaded, so updates are full downloads rather than deltas.");
+  }
+  if (releases.length === 1 && missing.length === 0) {
+    console.log(`  one release for ${tag}, carrying: ${names.join(", ")}`);
+  }
+} catch (error) {
+  console.warn(`\n  WARNING: could not confirm the release: ${String(error)}`);
+  console.warn("  Check it by hand before telling anyone the update has shipped.");
 }
 
 console.log(`\n777 ERP ${nextVersion} is published.`);
