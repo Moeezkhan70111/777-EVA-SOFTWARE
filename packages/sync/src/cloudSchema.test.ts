@@ -756,6 +756,7 @@ test("the cursor still advances over the gaps scoping leaves behind", () => {
 const CLAIMS = read("migrations/supabase/006_device_claims.up.sql");
 const CLAIMS_DOWN = read("migrations/supabase/006_device_claims.down.sql");
 const MIGRATION_README = read("migrations/supabase/README.md");
+const VARIANT_PUSH = read("migrations/supabase/008_push_product_variant.up.sql");
 
 /** The body of one `create or replace function public.<name>(...)` block, comments stripped. */
 function functionBody(sql: string, name: string): string {
@@ -1018,6 +1019,78 @@ test("carton identities stay global, and their opening state is not the caller's
   // The opening state is written here, so there is no parameter through which to ask for another.
   assert.match(body, /'PRODUCED', 'FACTORY', null/);
   assert.ok(body.includes("UNKNOWN_PRODUCT_VARIANT"), "the product must exist, as 004 required");
+});
+
+// ─── migration 008: a computer may send the products its cartons belong to ──
+//
+// Static, like everything above: these read the SQL. Only applying 008 and pushing the same new
+// product from two computers proves the server behaves this way.
+
+test("a variant push accepts no price at all, and writes the opening status itself", () => {
+  const body = functionBody(VARIANT_PUSH, "push_product_variant");
+
+  // No parameter can carry money, so the company's pricing cannot leave the building by mistake.
+  assert.match(
+    VARIANT_PUSH,
+    /create or replace function public\.push_product_variant\(p_epoch bigint, p_holder uuid, p_rows jsonb\)/
+  );
+  for (const money of ["cost_price'", "selling_price'"]) {
+    assert.ok(!body.includes(money), `a variant push must not read ${money} from the payload`);
+  }
+  // The columns are named in the insert only to write null into them.
+  assert.match(body, /item->>'description', null, null,/);
+  // ACTIVE is written here rather than accepted, as push_qr_master writes PRODUCED.
+  assert.match(body, /'ACTIVE', \(item->>'created_at'\)::timestamptz/);
+
+  // Insert-only: nothing about an arriving copy may rewrite a product already here.
+  assert.ok(!/do update/i.test(body), "a variant push must never update an existing row");
+  assert.match(body, /on conflict \(id\) do nothing/);
+
+  // The claim is validated in the same transaction as the write, exactly as the other pushes do.
+  assert.match(body, /account := public\.claim_is_current\(p_epoch, p_holder\)/);
+
+  // Products belong to no factory, by the decision of 2026-10-17 recorded in 005.
+  assert.ok(!body.includes("factory_id"), "a product is not scoped by factory");
+});
+
+test("the (article, color, size) clash is refused by name, and can never raise out of the loop", () => {
+  const body = functionBody(VARIANT_PUSH, "push_product_variant");
+
+  // product_variants carries UNIQUE (article, color, size) as well as its primary key, and
+  // variant ids are generated wherever the product was created. Two computers creating SK46
+  // BLACK 4/6 therefore hold the same product under different ids, and `on conflict (id)` does
+  // not cover that constraint. Unhandled it raises, the drain calls the whole batch transient,
+  // and transient attempts are unbounded -- so it would stall the outbox, not park one row.
+  assert.match(body, /existing\.id is distinct from item->>'id'/);
+  assert.match(body, /when unique_violation then/, "the race the pre-check cannot win is caught");
+
+  // REFUSED, not DUPLICATE: calling it a duplicate would retire the queued row while the id the
+  // cloud holds is still not the id this computer's cartons name, so every carton of that
+  // product would then be refused with nothing left in the queue to explain why.
+  const clashes = body.match(/VARIANT_IDENTITY_CLASH/g) ?? [];
+  assert.equal(clashes.length, 2, "both the pre-check and the backstop answer with the reason");
+  assert.ok(!/'DUPLICATE'[^;]*unique_violation/s.test(body));
+});
+
+test("the direct insert on product_variants is not reopened, and execute is granted on purpose", () => {
+  // PostgreSQL grants EXECUTE to PUBLIC on a new function, and Supabase adds anon and
+  // authenticated, so it has to be revoked by name before anything is given back.
+  assert.match(
+    VARIANT_PUSH,
+    /revoke all on function public\.push_product_variant\(bigint, uuid, jsonb\) from public, anon, authenticated/
+  );
+  assert.match(
+    VARIANT_PUSH,
+    /grant execute on function public\.push_product_variant\(bigint, uuid, jsonb\) to authenticated/
+  );
+  // This RPC is the only way a client may add a product: 004 revoked the direct insert and
+  // nothing here restores it.
+  assert.ok(
+    !/grant insert on (table )?(public\.)?product_variants/i.test(VARIANT_PUSH),
+    "the direct insert stays closed"
+  );
+  // A security definer function bypasses RLS, so it must pin an empty search path.
+  assert.match(VARIANT_PUSH, /security definer\s+set search_path = ''/);
 });
 
 test("every security definer function pins an empty search path and is granted on purpose", () => {

@@ -717,6 +717,30 @@ test("a variant the cloud already holds is accepted again and lands once", async
   }
 });
 
+test("the same product under another id is a bounded refusal, and never stalls the queue", async () => {
+  const fake = await startFakeSupabase();
+  try {
+    const transport = await claimed(fake);
+    // What 008 answers when another computer already created this product under its own id:
+    // product_variants carries UNIQUE (article, color, size) as well as its primary key.
+    fake.reply("/rest/v1/rpc/push_product_variant", 200, {
+      ok: true,
+      epoch: 1,
+      results: [{ id: NEW_VARIANT, outcome: "REFUSED", reason: "VARIANT_IDENTITY_CLASH" }],
+    });
+
+    const acks = await transport.send([variant(NEW_VARIANT)]);
+
+    assert.equal(acks[0]?.accepted, false);
+    assert.match(acks[0]?.reason ?? "", /VARIANT_IDENTITY_CLASH/);
+    // REFUSED, not TRANSIENT. Transient attempts are unbounded, so classifying a clash that way
+    // would retry a thing no retry can fix for ever and the queue behind it would never move.
+    assert.equal(acks[0]?.failure, "REFUSED", "a clash must spend the bounded budget and park");
+  } finally {
+    await fake.close();
+  }
+});
+
 test("a variant whose payload is unreadable is refused and never sent", async () => {
   const fake = await startFakeSupabase();
   try {
