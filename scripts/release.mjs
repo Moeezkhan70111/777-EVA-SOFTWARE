@@ -41,6 +41,25 @@ const desktopPackageJson = path.join(repoRoot, "apps", "desktop", "package.json"
 
 const args = process.argv.slice(2);
 const dryRun = args.includes("--dry-run");
+
+// TWO HALVES, SEPARABLE, because the machine that decides a version is no longer the machine
+// that can build one. Smart App Control blocks the NSIS build here (docs/36 section 9a), so
+// releases are built in CI -- but the version bump, the commit and the tag stay a deliberate
+// local act by a person.
+//
+//   --prepare-only   preflight, bump, commit, tag, push. No build, no publish. Run locally.
+//   --publish-only   create the release once, package, GATE, upload, verify. Run by CI,
+//                    against a tag that already exists. Never bumps, commits, tags or pushes.
+//
+// With neither flag the script behaves exactly as before: the whole thing end to end.
+const prepareOnly = args.includes("--prepare-only");
+const publishOnly = args.includes("--publish-only");
+
+if (prepareOnly && publishOnly) {
+  console.error("\nRELEASE STOPPED: --prepare-only and --publish-only are opposite halves. Pass one.");
+  process.exit(1);
+}
+
 const bumpKind = args.find((arg) => !arg.startsWith("--")) ?? "patch";
 
 const BUMPS = new Set(["patch", "minor", "major"]);
@@ -59,7 +78,8 @@ const run = (command, commandArgs, options = {}) =>
 const runVisible = (command, commandArgs, options = {}) =>
   execFileSync(command, commandArgs, { cwd: repoRoot, stdio: "inherit", ...options });
 
-const step = (number, text) => console.log(`\n[${String(number)}/6] ${text}`);
+const TOTAL_STEPS = 10;
+const step = (number, text) => console.log(`\n[${String(number)}/${String(TOTAL_STEPS)}] ${text}`);
 
 // ─── 1. Preflight ────────────────────────────────────────────────────────────
 
@@ -87,7 +107,8 @@ if (status.length > 0) {
   );
 }
 
-if (!dryRun && !process.env.GH_TOKEN) {
+// --prepare-only publishes nothing, so it must not demand a publishing credential.
+if (!dryRun && !prepareOnly && !process.env.GH_TOKEN) {
   refuse(
     "GH_TOKEN is not set, so the installer could not be published.",
     "Set it to a GitHub token with write access to the releases of\n" +
@@ -106,21 +127,42 @@ if (!parts) {
 }
 
 const [major, minor, patch] = parts.slice(1).map(Number);
-const nextVersion =
+const bumpedVersion =
   bumpKind === "major"
     ? `${String(major + 1)}.0.0`
     : bumpKind === "minor"
       ? `${String(major)}.${String(minor + 1)}.0`
       : `${String(major)}.${String(minor)}.${String(patch + 1)}`;
+
+// PUBLISH-ONLY PUBLISHES WHAT IS ALREADY COMMITTED. It must not invent a new version: the tag
+// was pushed by --prepare-only and CI is checked out at it, so the version in package.json IS
+// the release. Bumping here would publish a version no tag describes.
+const nextVersion = publishOnly ? currentVersion : bumpedVersion;
 const tag = `v${nextVersion}`;
 
-if (run("git", ["tag", "--list", tag]).length > 0) {
+// The tag check inverts between the halves, and getting it backwards is how you either
+// re-release a shipped version or publish one nothing points at.
+const tagExists = run("git", ["tag", "--list", tag]).length > 0;
+if (publishOnly) {
+  if (!tagExists) {
+    refuse(
+      `the tag ${tag} does not exist, so there is nothing to publish.`,
+      "--publish-only publishes an already-tagged version. Run --prepare-only first, or check\n" +
+        "that this checkout has the tag (CI needs the tag fetched, not just the branch)."
+    );
+  }
+} else if (tagExists) {
   refuse(`the tag ${tag} already exists.`, "That version has been released. Nothing has been changed.");
 }
 
-console.log(`777 ERP release${dryRun ? " (DRY RUN — nothing will be changed or published)" : ""}`);
+const mode = prepareOnly ? " (PREPARE ONLY — bump, commit, tag, push; no build, no publish)"
+  : publishOnly ? " (PUBLISH ONLY — build, gate, upload; no bump, no commit, no tag, no push)"
+  : "";
+console.log(`777 ERP release${dryRun ? " (DRY RUN — nothing will be changed or published)" : mode}`);
 console.log(`  branch        ${branch}`);
-console.log(`  version       ${currentVersion} -> ${nextVersion}`);
+console.log(
+  publishOnly ? `  version       ${currentVersion} (already tagged)` : `  version       ${currentVersion} -> ${nextVersion}`
+);
 console.log(`  tag           ${tag}`);
 console.log(`  publishing to github.com/Moeezkhan70111/777-EVA-SOFTWARE (private)`);
 
@@ -133,6 +175,24 @@ if (dryRun) {
 
 // ─── 2. Bump ─────────────────────────────────────────────────────────────────
 
+// Owner and repo come from electron-builder.yml rather than being written here a second time.
+// Resolved before the steps because both halves need it: --prepare-only prints the workflow URL,
+// --publish-only talks to the API.
+const releaseApi = (() => {
+  const yml = fs.readFileSync(path.join(repoRoot, "apps", "desktop", "electron-builder.yml"), "utf8");
+  const owner = /^\s*owner:\s*(\S+)\s*$/m.exec(yml)?.[1];
+  const repo = /^\s*repo:\s*(\S+)\s*$/m.exec(yml)?.[1];
+  if (!owner || !repo) {
+    refuse("the publish target could not be read from electron-builder.yml, so nothing was published.");
+  }
+  return { owner, repo, base: `https://api.github.com/repos/${owner}/${repo}` };
+})();
+
+// Steps 2 to 4 change the repository. --publish-only skips all three: CI is checked out at a
+// tag somebody else pushed and must never write history.
+let revertBump = () => {};
+
+if (!publishOnly) {
 step(2, `Bumping apps/desktop/package.json to ${nextVersion}`);
 // Rewritten rather than regenerated, so key order and formatting survive and the release commit
 // is a one-line diff somebody can read.
@@ -144,7 +204,7 @@ if (bumped === original) {
 fs.writeFileSync(desktopPackageJson, bumped, "utf-8");
 
 /** Puts the version back when a later step fails, so a stopped release leaves nothing behind. */
-const revertBump = () => {
+revertBump = () => {
   try {
     fs.writeFileSync(desktopPackageJson, original, "utf-8");
     console.error("The version bump has been undone.");
@@ -177,6 +237,17 @@ try {
     `The release commit and tag exist locally. Push them yourself and re-run, or remove them:\n\n` +
       `  git tag -d ${tag}\n  git reset --hard HEAD~1\n\n${String(error)}`
   );
+}
+}
+
+if (prepareOnly) {
+  console.log(`\n777 ERP ${nextVersion} is prepared: ${tag} is committed and pushed.`);
+  console.log("\nNothing was built and nothing was published. CI does that half, because Smart App");
+  console.log("Control blocks the NSIS build on this machine (docs/36 section 9a).");
+  console.log("\nNext: run the \"Release Windows installer\" workflow against this tag:");
+  console.log(`  https://github.com/${releaseApi.owner}/${releaseApi.repo}/actions/workflows/release-windows.yml`);
+  console.log(`  tag: ${tag}`);
+  process.exit(0);
 }
 
 // ─── 5. Build ────────────────────────────────────────────────────────────────
@@ -217,16 +288,6 @@ try {
 // Creating the release here, before electron-builder runs, removes the race: both publishers
 // find an existing release and upload into it.
 
-const releaseApi = (() => {
-  const yml = fs.readFileSync(path.join(repoRoot, "apps", "desktop", "electron-builder.yml"), "utf8");
-  const owner = /^\s*owner:\s*(\S+)\s*$/m.exec(yml)?.[1];
-  const repo = /^\s*repo:\s*(\S+)\s*$/m.exec(yml)?.[1];
-  if (!owner || !repo) {
-    refuse("the publish target could not be read from electron-builder.yml, so nothing was published.");
-  }
-  return { owner, repo, base: `https://api.github.com/repos/${owner}/${repo}` };
-})();
-
 /** GitHub REST, with the token in the header and never in a URL or a log line. */
 const github = async (method, pathname, body) => {
   const response = await fetch(`${releaseApi.base}${pathname}`, {
@@ -243,10 +304,12 @@ const github = async (method, pathname, body) => {
 };
 
 step(6, `Creating the GitHub release for ${tag}`);
+let releaseId = null;
 try {
   const existing = await github("GET", `/releases/tags/${tag}`);
   if (existing.status === 200) {
-    console.log(`  a release for ${tag} already exists — electron-builder will upload into it.`);
+    releaseId = JSON.parse(existing.text).id;
+    console.log(`  a release for ${tag} already exists (id ${String(releaseId)}) — uploading into it.`);
   } else if (existing.status === 404) {
     const created = await github("POST", "/releases", {
       tag_name: tag,
@@ -258,38 +321,134 @@ try {
       // The message is GitHub's and carries no credential; the token only ever goes in a header.
       refuse("the GitHub release could not be created, so nothing was published.", created.text);
     }
-    console.log(`  created, and it is the only release for ${tag}.`);
+    releaseId = JSON.parse(created.text).id;
+    console.log(`  created (id ${String(releaseId)}), and it is the only release for ${tag}.`);
   } else {
     refuse("GitHub would not say whether a release exists, so nothing was published.", existing.text);
   }
 } catch (error) {
   refuse("the GitHub release could not be created, so nothing was published.", String(error));
 }
+if (releaseId == null) {
+  refuse("GitHub did not return a release id, so the assets could not be uploaded anywhere.");
+}
 
-// ─── 7. Publish ──────────────────────────────────────────────────────────────
+// ─── 7. Package, WITHOUT publishing ──────────────────────────────────────────
+//
+// NOTHING IS UPLOADED UNTIL IT HAS BEEN CHECKED. electron-builder used to package and publish in
+// one call, which meant the first thing to see the artifacts was GitHub. Two consequences of
+// that order already bit:
+//
+//   * a failed build left a 0.15 MB stub, and only a human noticed;
+//   * electron-builder's concurrent publishers each created a release for the same tag, and the
+//     assets split across the two -- the blockmap on one, latest.yml on the other.
+//
+// So: package with --publish never, run the gate, and upload the exact files the gate approved.
+// electron-builder never publishes, which removes the duplicate-publisher race at the root
+// rather than working around it.
+//
+// GH_TOKEN is deliberately NOT passed to this step. It does not need one, and electron-builder
+// publishes implicitly in CI when it finds a token and no explicit policy.
+const desktopDir = path.join(repoRoot, "apps", "desktop");
+const { GH_TOKEN: _withheldFromPackaging, ...packagingEnv } = process.env;
 
-step(7, "Publishing the installer to GitHub Releases");
+step(7, "Packaging the installer (publishing nothing)");
 try {
-  runVisible(
-    "npx",
-    ["electron-builder", "--win", "--config", "electron-builder.yml", "--publish", "always"],
-    { cwd: path.join(repoRoot, "apps", "desktop"), shell: true, env: { ...process.env, GH_TOKEN: process.env.GH_TOKEN } }
-  );
+  runVisible("npx", ["electron-builder", "--win", "--config", "electron-builder.yml", "--publish", "never"], {
+    cwd: desktopDir,
+    shell: true,
+    env: packagingEnv,
+  });
 } catch {
   refuse(
-    "the installer was built but could not be published.",
-    `Publish it by hand from apps/desktop/release, or re-run electron-builder with --publish always.\n` +
-      `The release commit ${tag} is already pushed.`
+    "the installer could not be built, so nothing was published.",
+    `The release commit ${tag} is already pushed. Fix the build and release the next patch --\n` +
+      `do not rewrite a pushed tag.`
   );
 }
 
-// ─── 8. Confirm what actually landed ─────────────────────────────────────────
+// ─── 8. Gate: is it a whole installer that matches its own feed? ─────────────
+
+step(8, "Verifying the artifacts before anything is uploaded");
+try {
+  runVisible("node", ["./scripts/verify-artifacts.mjs"], { cwd: desktopDir, shell: true });
+} catch {
+  refuse(
+    "the built artifacts did not pass verification, so NOTHING was uploaded.",
+    `The release ${tag} exists on GitHub with no assets. Fix the build and release the next\n` +
+      `patch -- do not rewrite a pushed tag. The failed artifacts are in apps/desktop/release.`
+  );
+}
+
+// ─── 9. Upload exactly what was verified ─────────────────────────────────────
+//
+// Asset names come from latest.yml, not from the filenames on disk: electron-builder replaces
+// spaces for the upload ("777 ERP Setup 0.3.5.exe" becomes "777-ERP-Setup-0.3.5.exe"), and
+// latest.yml is what every computer reads to decide what to fetch. Upload under the on-disk name
+// and electron-updater would ask GitHub for a file that is not there.
+
+step(9, "Uploading the verified assets");
+const releaseDir = path.join(desktopDir, "release");
+const latestYml = fs.readFileSync(path.join(releaseDir, "latest.yml"), "utf-8");
+const feedName = /^\s*path:\s*'?"?([^\s'"]+)'?"?\s*$/m.exec(latestYml)?.[1];
+const feedSize = Number(/^\s*size:\s*(\d+)\s*$/m.exec(latestYml)?.[1] ?? "0");
+if (!feedName || !feedSize) {
+  refuse("latest.yml does not name the installer, so the assets could not be uploaded correctly.");
+}
+
+const installerOnDisk = fs
+  .readdirSync(releaseDir)
+  .filter((name) => name.toLowerCase().endsWith(".exe") && !name.includes("__uninstaller"))
+  .map((name) => ({ name, full: path.join(releaseDir, name), size: fs.statSync(path.join(releaseDir, name)).size }))
+  .find((candidate) => candidate.size === feedSize);
+if (!installerOnDisk) {
+  refuse("the installer latest.yml describes is not on disk, so there is nothing to upload.");
+}
+
+const uploads = [
+  { as: feedName, from: installerOnDisk.full, type: "application/octet-stream" },
+  { as: `${feedName}.blockmap`, from: `${installerOnDisk.full}.blockmap`, type: "application/octet-stream" },
+  { as: "latest.yml", from: path.join(releaseDir, "latest.yml"), type: "text/yaml" },
+];
+
+for (const upload of uploads) {
+  if (!fs.existsSync(upload.from)) {
+    refuse(`${path.basename(upload.from)} is missing, so the release would be incomplete.`);
+  }
+  const body = fs.readFileSync(upload.from);
+  let response;
+  try {
+    response = await fetch(
+      `https://uploads.github.com/repos/${releaseApi.owner}/${releaseApi.repo}/releases/${String(releaseId)}/assets?name=${encodeURIComponent(upload.as)}`,
+      {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${process.env.GH_TOKEN}`,
+          accept: "application/vnd.github+json",
+          "user-agent": "777-erp-release",
+          "content-type": upload.type,
+          "content-length": String(body.byteLength),
+        },
+        body,
+      }
+    );
+  } catch (error) {
+    refuse(`${upload.as} could not be uploaded.`, String(error));
+  }
+  if (response.status < 200 || response.status >= 300) {
+    const detail = await response.text();
+    refuse(`${upload.as} was refused by GitHub (${String(response.status)}).`, detail);
+  }
+  console.log(`  uploaded ${upload.as} (${(body.byteLength / (1024 * 1024)).toFixed(2)} MB)`);
+}
+
+// ─── 10. Confirm what actually landed ────────────────────────────────────────
 //
 // Not decoration. The two failures this release path has actually had were both SILENT: a tag
 // pushed with nothing behind it, and artifacts split across duplicate releases. Both would have
 // been caught here in a second.
 
-step(8, "Confirming the published release");
+step(10, "Confirming the published release");
 try {
   const all = await github("GET", "/releases?per_page=100");
   const releases = JSON.parse(all.text).filter((release) => release.tag_name === tag);

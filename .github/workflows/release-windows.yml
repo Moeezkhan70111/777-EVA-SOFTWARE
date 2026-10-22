@@ -1,0 +1,136 @@
+# Publish a Windows release from CI, because this is the only place that can build one.
+#
+# WHY CI AND NOT THE DEVELOPER MACHINE. Smart App Control is enforced there and blocks
+# electron-builder's NSIS build: the uninstaller can only be produced by RUNNING a throwaway
+# installer, and that throwaway is unsigned at the moment it runs. A certificate would not change
+# that -- signing happens after the execution, never before it. See docs/36 section 9a.
+#
+# THE TWO HALVES. `npm run release -- --prepare-only` is run BY A PERSON, locally: it bumps the
+# version, commits, tags and pushes, and builds nothing. This workflow is the other half:
+# `--publish-only` builds the tag that was pushed and publishes it. CI never bumps, commits, tags
+# or pushes -- it cannot, with the permissions below.
+#
+# DISPATCH, NOT TAG-PUSH, deliberately. A `push: tags:` trigger would publish on any tag reaching
+# the remote, including one pushed by mistake. Publishing is irreversible enough to be worth one
+# extra click. Switch to tag-push later if that proves tiresome, but only once this path is
+# routine.
+#
+# WHAT THE PUBLISH STEP DOES, in release.mjs, in this order:
+#   6  create the GitHub release ONCE, before electron-builder runs -- two concurrent publishers
+#      each created a release for v0.3.2 and v0.3.3, splitting the assets across them
+#   7  package with --publish never, so electron-builder uploads nothing at all
+#   8  GATE: verify-artifacts.mjs proves the installer is whole and latest.yml describes it
+#   9  upload only the files the gate approved, named as latest.yml declares them
+#  10  read the release back and warn if it is not exactly one release with the right assets
+#
+# UNSIGNED. The installer this publishes is unsigned, so Windows will warn on install and a
+# machine with Smart App Control enforced may refuse it outright. That is the certificate's job
+# (docs/25-code-signing.md), not this workflow's, and no amount of CI changes it.
+
+name: Release Windows installer
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to publish, exactly as pushed (e.g. v0.3.5). Create it with: npm run release -- --prepare-only'
+        required: true
+        type: string
+
+# Enough to create a release and upload assets to it, and nothing else. No packages, no
+# id-token, no actions scope.
+permissions:
+  contents: write
+
+defaults:
+  run:
+    shell: pwsh
+
+jobs:
+  publish:
+    runs-on: windows-latest
+    timeout-minutes: 60
+
+    steps:
+      # The TAG is checked out, not a branch, so what gets published is what was tagged.
+      # fetch-depth: 0 because release.mjs asks `git tag --list` whether the tag exists -- a
+      # shallow checkout of a commit does not reliably bring the tag ref with it, and that check
+      # is what stops a version being published that nothing points at.
+      - name: Check out the tag
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag }}
+          fetch-depth: 0
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      # The dispatched tag and the version committed at that tag must agree. release.mjs derives
+      # the tag from package.json, so a mismatch would otherwise fail later with a confusing
+      # "tag does not exist" rather than naming the real problem here.
+      - name: Check the tag matches the committed version
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $version = (Get-Content -LiteralPath 'apps/desktop/package.json' -Raw | ConvertFrom-Json).version
+          $expected = "v$version"
+          if ($env:INPUT_TAG -ne $expected) {
+            Write-Host "::error::dispatched tag '$($env:INPUT_TAG)' but apps/desktop/package.json at that commit says $version, so the tag should be '$expected'. Nothing was published."
+            exit 1
+          }
+          Write-Host "tag $($env:INPUT_TAG) matches the committed version $version"
+
+      - name: Install dependencies from the lockfile
+        run: npm ci
+
+      # release.mjs --publish-only runs the workspace build itself (step 5), then 6 to 10 above.
+      # GH_TOKEN is scoped to this step alone -- no other step needs a credential, and
+      # electron-builder publishes implicitly in CI when it finds a token with no explicit policy.
+      - name: Build, verify and publish
+        id: publish
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node scripts/release.mjs --publish-only
+
+      # Kept for inspection: the same files that were published, retrievable without touching the
+      # release. Short retention because artifact storage does not reset monthly the way minutes do.
+      - name: Upload a copy of what was published
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: published-installer-${{ inputs.tag }}
+          path: |
+            apps/desktop/release/*.exe
+            apps/desktop/release/*.blockmap
+            apps/desktop/release/latest.yml
+          if-no-files-found: warn
+          retention-days: 14
+          compression-level: 0
+
+      - name: Summarise what was published
+        if: always()
+        env:
+          PUBLISH_OUTCOME: ${{ steps.publish.outcome }}
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $lines = @()
+          $lines += "## Release $($env:INPUT_TAG)"
+          $lines += ''
+          $lines += 'Published from CI. The order was: create the release once, package without'
+          $lines += 'publishing, verify the artifacts, then upload only what passed.'
+          $lines += ''
+          $lines += '### UNSIGNED'
+          $lines += ''
+          $lines += 'This installer is not code-signed. Windows will warn on install, and a machine'
+          $lines += 'with Smart App Control enforced may refuse it. Smart App Control compatibility'
+          $lines += 'is NOT established by this run and cannot be until a signed build has been'
+          $lines += 'installed on a machine where it is enforced. See docs/25-code-signing.md.'
+          if ($env:GITHUB_STEP_SUMMARY) {
+            $lines -join "`n" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+          }
+          foreach ($line in $lines) { Write-Host $line }

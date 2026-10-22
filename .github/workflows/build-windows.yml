@@ -106,137 +106,16 @@ jobs:
         id: packaging
         run: npm run --workspace @erp/desktop package -- --publish never
 
-      # THE COMPLETENESS GATE.
+      # THE COMPLETENESS GATE, shared with the release workflow.
       #
       # A zero exit code from electron-builder is not evidence. The 0.3.4 failure left a 0.15 MB
-      # stub installer behind and still wrote an artifact, so "a file exists" is not evidence
-      # either. This checks the artifacts themselves and FAILS CLOSED: anything it cannot
-      # positively confirm, including its own inability to parse latest.yml, is a failure.
+      # stub installer behind, so "a file exists" is not evidence either. The gate lives in
+      # apps/desktop/scripts/verify-artifacts.mjs rather than inline here, so this workflow and
+      # release-windows.yml check the same things in the same way -- and so it can be run by hand
+      # against a local build. It fails closed.
       - name: Verify the artifacts are complete
         id: completeness
-        run: |
-          $ErrorActionPreference = 'Stop'
-
-          $releaseDir = 'apps/desktop/release'
-          $minimumMegabytes = 50
-
-          function Fail([string] $message) {
-            Write-Host "::error::$message"
-            $script:failed = $true
-          }
-          $script:failed = $false
-
-          if (-not (Test-Path -LiteralPath $releaseDir)) {
-            Write-Host "::error::no release directory at $releaseDir -- packaging produced nothing"
-            exit 1
-          }
-
-          # --- exactly one installer -------------------------------------------------------
-          # The uninstaller is unlinked by electron-builder after the second makensis pass, so a
-          # leftover __uninstaller is excluded rather than counted as a second installer.
-          $installers = @(
-            Get-ChildItem -LiteralPath $releaseDir -Filter '*.exe' -File |
-              Where-Object { $_.Name -notlike '*__uninstaller*' }
-          )
-          if ($installers.Count -ne 1) {
-            Write-Host "::error::expected exactly 1 installer in $releaseDir, found $($installers.Count)"
-            foreach ($candidate in $installers) { Write-Host "  found: $($candidate.Name)" }
-            exit 1
-          }
-          $installer = $installers[0]
-          Write-Host "installer : $($installer.Name)"
-          Write-Host "size      : $([math]::Round($installer.Length / 1MB, 2)) MB"
-
-          # --- not the stub ----------------------------------------------------------------
-          # The failed 0.3.4 build left 0.15 MB. A complete installer is ~100 MB. The floor is
-          # deliberately generous so an ordinary size change does not trip it, while sitting far
-          # above anything the uninstaller pass can produce.
-          if ($installer.Length -lt ($minimumMegabytes * 1MB)) {
-            Fail "installer is $([math]::Round($installer.Length / 1MB, 2)) MB, below the $minimumMegabytes MB floor -- this is the uninstaller-pass stub, not a complete installer"
-          }
-
-          # --- latest.yml, and does it describe THIS file ----------------------------------
-          $latestYml = Join-Path $releaseDir 'latest.yml'
-          if (-not (Test-Path -LiteralPath $latestYml)) {
-            Fail "latest.yml is missing -- no computer could see this version"
-          }
-          else {
-            $yaml = Get-Content -LiteralPath $latestYml -Raw
-
-            # latest.yml is written by electron-builder and is flat enough to read with regexes;
-            # there is no YAML parser available without adding a dependency. If the shape is not
-            # what is expected, that is a failure rather than something to guess at.
-            $shaMatches = [regex]::Matches($yaml, '(?m)^\s*sha512:\s*(\S+)\s*$')
-            $sizeMatches = [regex]::Matches($yaml, '(?m)^\s*size:\s*(\d+)\s*$')
-
-            if ($shaMatches.Count -lt 1) {
-              Fail "latest.yml declares no sha512 -- cannot confirm it describes the built installer"
-            }
-            if ($sizeMatches.Count -lt 1) {
-              Fail "latest.yml declares no size -- cannot confirm it describes the built installer"
-            }
-
-            if ($shaMatches.Count -ge 1 -and $sizeMatches.Count -ge 1) {
-              # SHA-512 in latest.yml is base64, not hex, so compute it as bytes and convert.
-              $sha = [System.Security.Cryptography.SHA512]::Create()
-              try {
-                $stream = [System.IO.File]::OpenRead($installer.FullName)
-                try { $digest = $sha.ComputeHash($stream) } finally { $stream.Dispose() }
-              }
-              finally { $sha.Dispose() }
-              $actualSha512 = [Convert]::ToBase64String($digest)
-
-              foreach ($match in $shaMatches) {
-                $declared = $match.Groups[1].Value
-                if ($declared -ne $actualSha512) {
-                  Fail "latest.yml sha512 does not match the installer. declared=$declared actual=$actualSha512"
-                }
-              }
-
-              foreach ($match in $sizeMatches) {
-                $declaredSize = [int64] $match.Groups[1].Value
-                if ($declaredSize -ne $installer.Length) {
-                  Fail "latest.yml size $declaredSize does not match the installer's $($installer.Length) bytes"
-                }
-              }
-
-              # The version in the feed must be the version that was built, or computers would be
-              # offered something other than this file.
-              $builtVersion = (Get-Content -LiteralPath 'apps/desktop/package.json' -Raw | ConvertFrom-Json).version
-              $versionMatch = [regex]::Match($yaml, '(?m)^\s*version:\s*(\S+)\s*$')
-              if (-not $versionMatch.Success) {
-                Fail "latest.yml declares no version"
-              }
-              elseif ($versionMatch.Groups[1].Value.Trim("'`"") -ne $builtVersion) {
-                Fail "latest.yml version $($versionMatch.Groups[1].Value) is not the built version $builtVersion"
-              }
-              else {
-                Write-Host "version   : $builtVersion (latest.yml agrees)"
-              }
-            }
-          }
-
-          # --- the blockmap, beside the installer ------------------------------------------
-          # Its absence is not fatal to installing, but it is what makes updates differential, and
-          # it went missing from the 0.3.3 release without anything noticing.
-          $blockmap = "$($installer.FullName).blockmap"
-          if (-not (Test-Path -LiteralPath $blockmap)) {
-            Fail "no .blockmap beside the installer -- every update would be a full download"
-          }
-
-          # --- the application itself ------------------------------------------------------
-          $appExe = Join-Path $releaseDir 'win-unpacked/777 ERP.exe'
-          if (-not (Test-Path -LiteralPath $appExe)) {
-            Fail "win-unpacked/777 ERP.exe is missing -- the application was not packaged"
-          }
-
-          if ($script:failed) {
-            Write-Host "::error::the build produced artifacts that are incomplete or inconsistent"
-            exit 1
-          }
-
-          Write-Host 'Every artifact is present and latest.yml matches the installer byte for byte.'
-          Write-Host 'UNSIGNED: this says nothing about Smart App Control.'
+        run: node ./apps/desktop/scripts/verify-artifacts.mjs
 
       # Workflow storage only. This is NOT a GitHub Release, and there is no credential here that
       # could make one. Retention is short because an Electron installer is ~100 MB and artifact
