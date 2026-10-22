@@ -32,8 +32,10 @@ class FakeUpdater implements AutoUpdaterPort {
     this.checks += 1;
     return this.checkRejectsWith ? Promise.reject(this.checkRejectsWith) : Promise.resolve(undefined);
   }
-  quitAndInstall(): void {
+  quitAndInstallArgs: Array<{ isSilent: boolean; isForceRunAfter: boolean }> = [];
+  quitAndInstall(isSilent: boolean, isForceRunAfter: boolean): void {
     this.quitAndInstallCalls += 1;
+    this.quitAndInstallArgs.push({ isSilent, isForceRunAfter });
   }
   on(event: string, listener: (payload: never) => void): void {
     this.listeners.set(event, listener);
@@ -165,6 +167,24 @@ describe("the happy path an office PC walks", () => {
     updater.emit("update-downloaded", { version: "0.3.2" });
     expect(service.installNow()).toMatchObject({ accepted: true });
     expect(updater.quitAndInstallCalls).toBe(1);
+  });
+
+  it("installs without asking anything, and starts the new version afterwards", () => {
+    const { service, updater } = createService();
+    service.start();
+    updater.emit("update-downloaded", { version: "0.3.3" });
+
+    expect(service.installNow()).toMatchObject({ accepted: true });
+
+    // HOW 0.3.3 FAILED ON 2026-10-23. The defaults are (false, false): the installer shows its
+    // UI and nothing restarts the app. With the assisted installer that was configured then,
+    // that meant a wizard nobody could complete -- the app quit, a prompt appeared, and the
+    // install never happened. The log said "Restarting to install version 0.3.3" and the next
+    // startup reported v0.3.2.
+    //
+    // isSilent      no dialog, no wizard: nothing for an operator to answer.
+    // isForceRunAfter  777 ERP comes back by itself, instead of leaving a dark screen.
+    expect(updater.quitAndInstallArgs).toEqual([{ isSilent: true, isForceRunAfter: true }]);
   });
 
   it("reports UP_TO_DATE without inventing a version", async () => {

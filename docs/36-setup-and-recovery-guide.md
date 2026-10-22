@@ -581,3 +581,42 @@ Revisit it if a minute proves too long in practice, or if you want the indicator
 `GH_TOKEN` and an existing tag, and rehearses safely with `npm run release -- --dry-run`. See
 `scripts/release.mjs`. Until a code-signing certificate exists (`docs/25`), Windows warns before
 each update installs.
+
+### 9a. The installer must stay ONE-CLICK, or updates cannot install themselves
+
+`electron-builder.yml` sets `nsis.oneClick: true`. **Do not change it back**, and do not add
+`allowToChangeInstallationDirectory` (electron-builder refuses the combination outright:
+*"allowToChangeInstallationDirectory makes sense only for assisted installer"*).
+
+An **assisted** installer shows a wizard that somebody has to click through. `electron-updater`
+quits the app and launches the installer, but it cannot answer the wizard's pages — so the app
+closes, a prompt appears, and **nothing is installed**. It fails silently: the log says the
+update is installing, and the next startup reports the old version.
+
+That is exactly how 0.3.3 failed on this machine on 2026-10-23, with `oneClick: false`:
+
+```
+20:22:01Z  update   "Restarting to install version 0.3.3."
+20:22:07Z  update   "<user> restarted 777 ERP to install a downloaded update."
+20:23:15Z  runtime  build-provenance  v0.3.2        <- still the old version
+```
+
+Nothing was wrong with the download — the pending installer was on disk, intact, and reported
+version 0.3.3. Only the install could not complete without a person at the keyboard, which
+defeats the whole point of the updater.
+
+`updater.ts` calls `quitAndInstall(true, true)` to match: silent, and start the new version
+afterwards. The defaults are `(false, false)`, which show the installer's UI and leave the app
+closed. Both halves are needed, and both depend on the one-click installer.
+
+**What this gives up:** the install folder can no longer be chosen. It goes to
+`%LOCALAPPDATA%\Programs\777 ERP`. For four workstations installed once each, that is worth an
+update path that needs nobody present.
+
+**How to tell an install really happened** — never trust the prompt, check the version:
+
+* Settings shows the running version, or
+* the newest `build-provenance` line in `%LOCALAPPDATA%\777-erp\logs\app.log`, or
+* right-click `%LOCALAPPDATA%\Programs\777 ERP\777 ERP.exe` → Properties → Details.
+
+If the version did not change, the update did not install, whatever the app said.

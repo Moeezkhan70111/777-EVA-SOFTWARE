@@ -141,11 +141,33 @@ win:
   # forceCodeSigning: true
 
 nsis:
-  # An assisted installer: the operator sees a wizard and can choose the folder. Per-user, so
-  # installing needs no administrator rights on a factory workstation.
-  oneClick: false
+  # ONE-CLICK, BECAUSE AN ASSISTED INSTALLER CANNOT BE INSTALLED BY AN UPDATE.
+  #
+  # This was `oneClick: false` with allowToChangeInstallationDirectory, which gave the operator
+  # a wizard and a choice of folder. It also made automatic updates impossible, which was found
+  # the only way it could be -- by watching 0.3.3 fail on this machine on 2026-10-23:
+  #
+  #   20:22:01Z  "Restarting to install version 0.3.3."
+  #   20:23:15Z  app back up, build-provenance v0.3.2
+  #
+  # An assisted installer shows a wizard that somebody has to click through. electron-updater
+  # quits the app and launches it, but it cannot answer the pages -- so the app closed, a prompt
+  # appeared, and the install never completed. Nothing was wrong with the download: the pending
+  # 0.3.3 installer was on disk and intact.
+  #
+  # A one-click installer takes no decisions, so quitAndInstall(true, true) in updater.ts
+  # installs it and starts the new version on its own. That is the whole point of Goal 3: an
+  # office user must never think about any of this.
+  #
+  # perMachine stays false. A per-user install needs no administrator rights, so no elevation
+  # prompt appears on a factory workstation -- which also removes the "unknown publisher" dialog
+  # that an unsigned elevated installer raises today (docs/25 tracks the certificate).
+  #
+  # WHAT IS GIVEN UP: the install folder can no longer be chosen. It goes to
+  # %LOCALAPPDATA%\Programs\777 ERP, where it already is on this machine. For four workstations
+  # installed once each, that is worth an update path that needs nobody present.
+  oneClick: true
   perMachine: false
-  allowToChangeInstallationDirectory: true
   createDesktopShortcut: true
   createStartMenuShortcut: true
   shortcutName: 777 ERP

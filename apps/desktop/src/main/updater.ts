@@ -128,7 +128,7 @@ export interface AutoUpdaterPort {
   autoInstallOnAppQuit: boolean;
   setFeedURL(options: { provider: "github"; owner: string; repo: string; private: boolean; token: string }): void;
   checkForUpdates(): Promise<unknown>;
-  quitAndInstall(): void;
+  quitAndInstall(isSilent: boolean, isForceRunAfter: boolean): void;
   on(event: string, listener: (payload: never) => void): void;
 }
 
@@ -377,7 +377,14 @@ export class UpdateService {
     }
     this.log("INFO", `Restarting to install version ${this.availableVersion ?? "unknown"}.`);
     try {
-      this.options.updater.quitAndInstall();
+      // SILENT, AND RUN AFTERWARDS. The defaults are (false, false): the installer shows its
+      // UI and nothing restarts the app, so an operator sees 777 ERP vanish and has a dialog to
+      // answer -- or, with the assisted installer this used to build, a wizard to complete,
+      // which is how 0.3.3 failed to install at all on 2026-10-23.
+      //
+      // Both arguments depend on the one-click installer configured in electron-builder.yml.
+      // An assisted installer ignores silence and asks anyway.
+      this.options.updater.quitAndInstall(true, true);
       return { accepted: true };
     } catch (error) {
       const reason = describeUpdateError(error);
