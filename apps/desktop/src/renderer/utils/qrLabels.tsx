@@ -29,9 +29,17 @@ const QUIET_ZONE_MODULES = 4;
 const ARTWORK_WIDTH_IN = LABEL_WIDTH_IN - 2 * SAFE_MARGIN_IN;
 const ARTWORK_HEIGHT_IN = LABEL_HEIGHT_IN - 2 * SAFE_MARGIN_IN;
 /**
- * Printed side of the square symbol. A carton identity (ARTICLE_COLOR_SIZE_SERIAL) needs
- * 25–33 modules at error-correction level M, so 1.3in keeps every module at roughly 1mm —
- * comfortably above the ~0.33mm a handheld imager needs, even on a smudged thermal print.
+ * Printed side of the square symbol. A carton identity (ARTICLE_COLOR_SIZE_SERIAL) contains an
+ * underscore, which is outside QR's alphanumeric set, so it encodes in 8-bit byte mode: 26 bytes
+ * at version 2, 42 at version 3. Identities therefore need 25–33 modules at error-correction
+ * level M, and 1.3in keeps every module at roughly 1mm — comfortably above the ~0.33mm a
+ * handheld imager needs, even on a smudged thermal print.
+ *
+ * Seven-digit serials (computers 2-5 under the per-computer block scheme) add one byte, which
+ * mostly does not change the version at all and at worst steps 33 modules to 37 — about 0.89mm
+ * a module, still well clear. AUTO_TYPE_NUMBER below means the encoder absorbs it either way,
+ * so nothing here needs adjusting for serial width.
+ *
  * The rest of the height carries the two text lines: the plain-language name above and the
  * identity below.
  */

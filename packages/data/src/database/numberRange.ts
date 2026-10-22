@@ -35,6 +35,26 @@ export const NUMBER_BLOCK_SETTING_KEY = "numbering.block";
 export const NUMBER_BLOCK_CONFIRMED_KEY = "numbering.block.confirmed";
 
 export const NUMBER_BLOCK_SIZE = 100_000;
+
+/**
+ * Block size for QR SERIALS, which is ten times the document-number block.
+ *
+ *   computer 1   1 - 999,999          computer 4   3,000,000 - 3,999,999
+ *   computer 2   1,000,000 - 1,999,999 computer 5  4,000,000 - 4,999,999
+ *   computer 3   2,000,000 - 2,999,999 5,000,000+  reserved for future machines
+ *
+ * WHY ITS OWN SIZE. Serials are counted per article+colour+size, so the question is not "how
+ * many documents will this company ever write" but "how many cartons of ONE article in ONE
+ * colour in ONE size will ONE computer ever label". A million each is headroom nobody has to
+ * think about again; the highest serial in use when this was written was 113.
+ *
+ * WHY THE FORMAT DOES NOT CHANGE. `formatQrSerial` pads to six digits, which is a no-op for any
+ * value of 1,000,000 or more. So block 1 keeps printing six-digit serials exactly as it always
+ * has, blocks 2-5 come out seven digits naturally, and — the part that matters — no two serial
+ * STRINGS can ever denote the same number. Padding everything to seven would have made block
+ * 1's existing `000500` and a new `0000500` two different identities for serial 500.
+ */
+export const SERIAL_BLOCK_SIZE = 1_000_000;
 /** Blocks 1-5 are assignable today. 6+ (500,000 and above) is reserved for future machines. */
 export const MAX_ASSIGNABLE_BLOCK = 5;
 
@@ -70,6 +90,17 @@ export interface NumberRange {
 export function rangeForBlock(block: number): NumberRange {
   const base = (block - 1) * NUMBER_BLOCK_SIZE;
   return { block, lo: block === 1 ? 1 : base, hi: base + NUMBER_BLOCK_SIZE - 1 };
+}
+
+/**
+ * The QR-serial bounds of a block. Same shape as rangeForBlock, at SERIAL_BLOCK_SIZE.
+ *
+ * Block 1 starts at 1 rather than 0 for the same reason documents do — 0 is not a serial — and
+ * because every serial 777 has ever printed lives in block 1 and must stay exactly as printed.
+ */
+export function serialRangeForBlock(block: number): NumberRange {
+  const base = (block - 1) * SERIAL_BLOCK_SIZE;
+  return { block, lo: block === 1 ? 1 : base, hi: base + SERIAL_BLOCK_SIZE - 1 };
 }
 
 /** A block number this computer could legitimately be assigned. */
@@ -171,6 +202,9 @@ export class NumberRangeError extends Error {
 const NOT_CONFIGURED_MESSAGE =
   "This computer has not been given its document-number range. An administrator must set it in Settings before documents can be created here. Scanning and every other kind of work are unaffected.";
 
+const SERIAL_NOT_CONFIGURED_MESSAGE =
+  "This computer has not been given its number range, so it cannot print QR labels — two computers without ranges would print the same serials. An administrator must set it in Settings. Scanning, production, dispatch and store work are unaffected.";
+
 // ─── Reading and validating the configured block ────────────────────────────
 
 /** One setting as stored text, or null when it is absent or blank. */
@@ -210,6 +244,93 @@ export function requireNumberRange(db: SqliteDatabase): NumberRange {
     );
   }
   return rangeForBlock(block);
+}
+
+/**
+ * This computer's QR-SERIAL range, or a refusal.
+ *
+ * BEHAVIOUR CHANGE, STATED PLAINLY: until this existed, label generation worked on a computer
+ * with no block assigned. It no longer does. A computer that does not know which block it owns
+ * cannot know which serials are safe to print, and two computers printing the same serial is two
+ * physical cartons the system cannot tell apart — the one failure the whole scheme exists to
+ * prevent. So it refuses, exactly as a numbered document already does.
+ *
+ * Scanning, production, dispatch, returns and store movements are unaffected, as they are for
+ * documents. Only the PRINTING of new labels needs the block.
+ */
+export function requireSerialRange(db: SqliteDatabase): NumberRange {
+  const block = readNumberBlock(db);
+  if (block === null) throw new NumberRangeError("NOT_CONFIGURED", SERIAL_NOT_CONFIGURED_MESSAGE);
+  if (!isAssignableBlock(block)) {
+    throw new NumberRangeError(
+      "INVALID",
+      `The document-number range on this computer is not valid (found "${block}"). It must be a whole number from 1 to ${MAX_ASSIGNABLE_BLOCK}. QR labels cannot be generated until an administrator corrects it.`
+    );
+  }
+  return serialRangeForBlock(block);
+}
+
+/**
+ * This computer's serial range, or null when it has none — the non-throwing form.
+ *
+ * For callers that must not FAIL over a missing block, only behave differently. Adoption is the
+ * one: taking in a real carton that somebody scanned must never be refused because this computer
+ * has not been provisioned for printing.
+ */
+export function readSerialRangeIfConfigured(db: SqliteDatabase): NumberRange | null {
+  const block = readNumberBlock(db);
+  if (block === null || !isAssignableBlock(block)) return null;
+  return serialRangeForBlock(block);
+}
+
+/**
+ * Reserves `quantity` serials for one counter and returns the range handed out, or refuses.
+ *
+ * `currentLastSequence` is what the counter holds now, or null when the counter does not exist
+ * yet — a brand-new article/colour/size on this computer, which starts at the FLOOR OF ITS OWN
+ * BLOCK rather than at zero.
+ *
+ * CALL THIS INSIDE THE WRITE TRANSACTION. The value is only safe while the write lock is held,
+ * exactly as allocateNumberInRange is.
+ *
+ * REFUSES THE WHOLE RUN when it would not fit. Partially filling a request for 100 labels with
+ * 49 is worse than refusing: the operator asked for a number of stickers, and a short run that
+ * nobody noticed is a physical count that stops matching the system.
+ */
+export function reserveSerialRange(
+  range: NumberRange,
+  currentLastSequence: number | null,
+  quantity: number,
+  noun: string
+): { startSequence: number; endSequence: number } {
+  const current = currentLastSequence === null ? range.lo - 1 : currentLastSequence;
+  const startSequence = current + 1;
+  const endSequence = current + quantity;
+
+  if (endSequence > range.hi) {
+    const remaining = Math.max(0, range.hi - current);
+    throw new NumberRangeError(
+      "EXHAUSTED",
+      `The ${noun} for this computer are used up (range ${range.lo}-${range.hi}). ` +
+        `${String(remaining)} remain and ${String(quantity)} were asked for. Nothing has been saved. ` +
+        `Ask an administrator for a new range.`
+    );
+  }
+
+  return { startSequence, endSequence };
+}
+
+/**
+ * Whether an externally chosen serial belongs to this computer's own block.
+ *
+ * Used by adoption. A carton label printed outside the system carries whatever serial it
+ * carries, and the counter must only be pushed forward by one that this computer could itself
+ * have issued. A serial from another computer's block is still REGISTERED — refusing to take in
+ * a real carton would be worse — but it must not drag this computer's counter into that block,
+ * because the next generated serial would then collide with the computer that owns it.
+ */
+export function isWithinSerialRange(range: NumberRange, sequence: number): boolean {
+  return Number.isInteger(sequence) && sequence >= range.lo && sequence <= range.hi;
 }
 
 // ─── Counting what is already there ─────────────────────────────────────────
@@ -629,17 +750,33 @@ export const numberRangeMethods = {
 
 export type NumberRangeMethods = typeof numberRangeMethods;
 
-// ─── QR SERIALS ARE NOT COVERED HERE ────────────────────────────────────────
+// ─── QR SERIALS ARE COVERED TOO (2026-10-22) ────────────────────────────────
 //
 // Carton QR identities (qr_sequences, keyed by article/colour/size) and raw-material QR
-// identities (raw_material_qr_sequences, keyed by party/item) are allocated from their own
-// counter tables and are UNCHANGED by this phase, deliberately.
+// identities (raw_material_qr_sequences, keyed by party/item) use the SAME per-computer block
+// scheme, at SERIAL_BLOCK_SIZE. Every computer can print labels; none can print another's
+// serials. See requireSerialRange / reserveSerialRange above.
 //
-// Those serials are printed on physical labels and scanned at every station, so a duplicate is
-// two cartons the system cannot tell apart. Making them safe on several computers needs its own
-// design — the audit showed that counter seeding, restored backups and SCAN_ADOPTED (already the
-// largest source of batches) each defeat a naive per-computer scheme.
+// This replaces an earlier note here that said QR generation had to stay on one designated
+// workstation until a scheme was designed. It is designed, and this is it.
 //
-// UNTIL THAT IS SEPARATELY DESIGNED AND APPROVED, QR GENERATION MUST STAY ON THE ONE DESIGNATED
-// WORKSTATION. Every other computer can scan, produce, store, dispatch and return offline as it
-// does today; only the printing of new QR labels is restricted.
+// The three things that note warned would defeat a naive per-computer scheme, and what each
+// turned out to need:
+//
+//   COUNTER SEEDING — a counter for a combination this computer has not printed before used to
+//     start at 0. It now starts at the floor of this computer's own block
+//     (reserveSerialRange's `currentLastSequence === null` case). Migration 021's one-time
+//     historical seed is untouched: it produced the correct values on block 1, and a fresh
+//     computer has no history for it to read.
+//
+//   RESTORED BACKUPS — still a real hazard, and NOT solved here. Restoring a backup rolls the
+//     counter back, and the serials between then and now get issued a second time. The block
+//     scheme does not change that in either direction; it is the same risk as before, now
+//     confined to one computer's own block. Re-seeding a counter from what the cloud already
+//     knows is a later phase.
+//
+//   SCAN_ADOPTED — a label printed outside the system carries a serial nobody here chose.
+//     Adoption now advances the counter only when that serial falls in THIS computer's block
+//     (isWithinSerialRange); outside it the carton is still registered, but the counter is left
+//     alone. Measured 2026-10-22 against the verified backup: all 64 adopted serials lie between
+//     1 and 64, so every one of them is in block 1 and blocks 2-5 are unexposed.

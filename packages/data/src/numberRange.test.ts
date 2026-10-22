@@ -245,13 +245,21 @@ test("every audited site is covered, and the excluded ones stay excluded", () =>
   assert.deepEqual(external.sort(), ["purchaseVoucher", "saleVoucher"]);
 });
 
-test("QR serial allocation is untouched by ranges", () => {
+// CHANGED 2026-10-22. This test used to assert the opposite — that QR serials were NOT ranged,
+// because the scheme covered document numbers only and label printing was restricted to one
+// designated workstation. Every computer now prints labels, so serials are ranged too, at
+// SERIAL_BLOCK_SIZE. See the block comment at the foot of database/numberRange.ts, and
+// serialBlocks.test.ts for the scheme itself.
+test("QR serials are allocated inside this computer's block", () => {
   withFixture("range-qr", 3, ({ db, raw }) => {
-    // A carton QR still starts its own per-product series at 1, whatever block the computer has.
     db.createProduct({ article: "SK9", size: "7/10", sellingPrice: 500, status: "ACTIVE" });
     const articleSizeId = (raw.prepare("SELECT id FROM article_sizes WHERE article = 'SK9'").get() as { id: string }).id;
     const generated = db.generateQrBatch({ articleSizeId, color: "BLACK", quantity: 3 });
-    assert.equal(generated.batch.startSequence, 1, "QR serials are NOT ranged in this phase");
-    assert.match(generated.qrCodes[0].id, /^SK9_BLACK_7\/10_000001$/, "six-digit padded serial is unchanged");
+
+    // Computer 3 owns 2,000,000-2,999,999, so its first label for a new product is 2,000,000 —
+    // not 1, which belongs to computer 1 and is very probably already on a carton.
+    assert.equal(generated.batch.startSequence, 2_000_000);
+    assert.equal(generated.batch.endSequence, 2_000_002);
+    assert.match(generated.qrCodes[0].id, /^SK9_BLACK_7\/10_2000000$/, "seven digits above block 1, unpadded");
   });
 });

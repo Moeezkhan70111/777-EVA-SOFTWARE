@@ -9,6 +9,7 @@ import type { MachineDayProgramRef, QrBatchRecord, QrCodeRecord, PagedResult, Qr
 import { GATE_LOCATION_TYPE, IN_STORE_LOCATION_TYPE, IN_STORE_STATUS, TO_GATE_STATUS } from "@erp/application";
 import type { TransactionContext } from "@erp/application";
 import type { MutableTransactionContext } from "./shared.js";
+import { isWithinSerialRange, readSerialRangeIfConfigured, requireSerialRange, reserveSerialRange } from "./numberRange.js";
 import { CARTON_GRADE, QR_BATCH_SOURCE, buildQrId, businessHourOf, formatQrSerial, fromPaisaOrNull, isValidRawMaterialQrId, normalizeQrArticle, normalizeQrColor, normalizeQrSize, type CartonGrade, type QrBatchSource } from "@erp/domain";
 
 /**
@@ -136,27 +137,34 @@ export const qrCodesMethods = {
 
     const productVariantId = this.resolveVariantForColor(product, color, now);
 
-    // Atomic counter advance: the new last_sequence is computed by the database, not read
-    // into application code and written back.
+    // THIS COMPUTER'S SERIAL BLOCK. Refuses before anything is written when this machine has
+    // not been given a range — two machines without one would print the same serials.
+    const serialRange = requireSerialRange(this);
+
+    // Read, validate, then write, all inside the caller's BEGIN IMMEDIATE — the write lock is
+    // what makes this safe, and the read-back below already relied on it. The reservation has to
+    // be checked BEFORE the counter moves: advancing first and refusing afterwards would leave
+    // the counter sitting in the next computer's block.
+    const existing = this.db
+      .prepare("SELECT last_sequence FROM qr_sequences WHERE article = ? AND color = ? AND size = ?")
+      .get(article, color, size) as { last_sequence: number } | undefined;
+
+    const { startSequence, endSequence } = reserveSerialRange(
+      serialRange,
+      existing === undefined ? null : Number(existing.last_sequence),
+      quantity,
+      "carton QR serials"
+    );
+
     this.db
       .prepare(
         `INSERT INTO qr_sequences (id, article, color, size, last_sequence, updated_at)
          VALUES (?, ?, ?, ?, ?, ?)
          ON CONFLICT(article, color, size) DO UPDATE SET
-           last_sequence = qr_sequences.last_sequence + excluded.last_sequence,
+           last_sequence = excluded.last_sequence,
            updated_at = excluded.updated_at`
       )
-      .run(crypto.randomUUID(), article, color, size, quantity, now);
-
-    const reserved = this.db
-      .prepare("SELECT last_sequence FROM qr_sequences WHERE article = ? AND color = ? AND size = ?")
-      .get(article, color, size) as { last_sequence: number } | undefined;
-    if (!reserved) {
-      throw new Error("Could not reserve a QR sequence.");
-    }
-
-    const endSequence = Number(reserved.last_sequence);
-    const startSequence = endSequence - quantity + 1;
+      .run(crypto.randomUUID(), article, color, size, endSequence, now);
 
     const batchId = crypto.randomUUID();
     this.db.prepare(
@@ -288,14 +296,30 @@ export const qrCodesMethods = {
        VALUES (?, ?, ?, ?, ?, ?, 'GENERATED', ?, ?, ?)`
     ).run(payload.qrId, batchId, article, color, size, sequence, now, now, productVariantId);
 
-    // The generator must never issue this serial to a second carton.
-    db.prepare(
-      `INSERT INTO qr_sequences (id, article, color, size, last_sequence, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?)
-       ON CONFLICT(article, color, size) DO UPDATE SET
-         last_sequence = MAX(qr_sequences.last_sequence, excluded.last_sequence),
-         updated_at = excluded.updated_at`
-    ).run(crypto.randomUUID(), article, color, size, sequence, now);
+    // The generator must never issue this serial to a second carton — BUT ONLY IF THIS COMPUTER
+    // COULD HAVE ISSUED IT AT ALL.
+    //
+    // An adopted label was printed outside the system and carries a serial nobody here chose. If
+    // it belongs to another computer's block, pushing this counter up to it would move this
+    // machine's next generated serial into that machine's range, and the two would collide —
+    // trading a problem adoption cannot cause for one it can.
+    //
+    // Outside this block the carton is still registered above (refusing a real carton would be
+    // worse); only the counter is left alone. That is safe because this computer can never
+    // generate outside its block anyway, so there is nothing here to protect against.
+    //
+    // A computer with no block assigned adopts without touching any counter: it cannot generate
+    // labels at all, so it has no counter to defend.
+    const serialRange = readSerialRangeIfConfigured(this);
+    if (serialRange !== null && isWithinSerialRange(serialRange, sequence)) {
+      db.prepare(
+        `INSERT INTO qr_sequences (id, article, color, size, last_sequence, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?)
+         ON CONFLICT(article, color, size) DO UPDATE SET
+           last_sequence = MAX(qr_sequences.last_sequence, excluded.last_sequence),
+           updated_at = excluded.updated_at`
+      ).run(crypto.randomUUID(), article, color, size, sequence, now);
+    }
 
     return { productVariantId, article, color, size, status: "GENERATED" };
   },

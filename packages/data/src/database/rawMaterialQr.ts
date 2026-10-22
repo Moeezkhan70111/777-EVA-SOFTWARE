@@ -34,7 +34,7 @@ import {
   buildRawMaterialQrId,
 } from "@erp/domain";
 import { KIND_JOINS, KIND_SQL } from "./machineProgramSql.js";
-import { allocateNumberInRange } from "./numberRange.js";
+import { allocateNumberInRange, requireSerialRange, reserveSerialRange } from "./numberRange.js";
 
 export const rawMaterialQrMethods = {
   /**
@@ -123,27 +123,33 @@ export const rawMaterialQrMethods = {
 
     this.db.exec("BEGIN IMMEDIATE TRANSACTION");
     try {
-      // Atomic counter advance: the new last_sequence is computed by the database, not read
-      // into application code and written back.
+      // THIS COMPUTER'S SERIAL BLOCK, exactly as the carton generator uses it (qrCodes.ts).
+      // Raw-material packet labels are printed, scanned moving in and scanned moving out, so a
+      // duplicate serial is two packets the store cannot tell apart.
+      const serialRange = requireSerialRange(this);
+
+      // Read, validate, then write, inside the BEGIN IMMEDIATE above. Checked BEFORE the counter
+      // moves, so a refused run cannot leave it sitting in another computer's block.
+      const existing = this.db
+        .prepare("SELECT last_sequence FROM raw_material_qr_sequences WHERE party_id = ? AND item_id = ?")
+        .get(party.id, item.id) as { last_sequence: number } | undefined;
+
+      const { startSequence, endSequence } = reserveSerialRange(
+        serialRange,
+        existing === undefined ? null : Number(existing.last_sequence),
+        quantity,
+        "raw material QR serials"
+      );
+
       this.db
         .prepare(
           `INSERT INTO raw_material_qr_sequences (id, party_id, item_id, last_sequence, updated_at)
            VALUES (?, ?, ?, ?, ?)
            ON CONFLICT(party_id, item_id) DO UPDATE SET
-             last_sequence = raw_material_qr_sequences.last_sequence + excluded.last_sequence,
+             last_sequence = excluded.last_sequence,
              updated_at = excluded.updated_at`
         )
-        .run(crypto.randomUUID(), party.id, item.id, quantity, now);
-
-      const reserved = this.db
-        .prepare("SELECT last_sequence FROM raw_material_qr_sequences WHERE party_id = ? AND item_id = ?")
-        .get(party.id, item.id) as { last_sequence: number } | undefined;
-      if (!reserved) {
-        throw new Error("Could not reserve a QR sequence.");
-      }
-
-      const endSequence = Number(reserved.last_sequence);
-      const startSequence = endSequence - quantity + 1;
+        .run(crypto.randomUUID(), party.id, item.id, endSequence, now);
 
       const batchId = crypto.randomUUID();
       this.db

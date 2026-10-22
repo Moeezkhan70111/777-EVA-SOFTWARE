@@ -129,6 +129,21 @@ export function isValidQrCode(rawInput: string): boolean {
 // through these helpers. They are the exact inverse of QrParserV1 above: anything
 // buildQrId returns is guaranteed to parse back to the same article/color/size.
 
+/**
+ * Minimum printed width of a serial. SIX, not seven, and that is load-bearing.
+ *
+ * Serials are allocated from a per-computer block a million wide (SERIAL_BLOCK_SIZE in
+ * @erp/data's numberRange.ts): computer 1 owns 1-999,999, computer 2 owns 1,000,000-1,999,999,
+ * and so on. padStart(6) is a NO-OP for anything from 1,000,000 up, so computer 1 keeps printing
+ * the six-digit serials it always has and computers 2-5 come out seven digits naturally.
+ *
+ * DO NOT RAISE THIS TO 7. Padding everything to seven would make block 1's already-printed
+ * `000500` and a freshly generated `0000500` two different identity STRINGS for serial 500, and
+ * qr_codes.id / qr_master.qr_id are those strings. One number, two identities, is precisely the
+ * ambiguity the block scheme exists to prevent.
+ *
+ * QrParserV1 reads the serial as `([0-9]+)`, so width never mattered to scanning.
+ */
 export const QR_SERIAL_WIDTH = 6;
 
 /**
