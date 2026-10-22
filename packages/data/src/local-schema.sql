@@ -237,6 +237,27 @@ CREATE TABLE IF NOT EXISTS sync_outbox (
   CHECK (status IN ('PENDING','IN_FLIGHT','FAILED','DEAD_LETTER','SYNCED'))
 );
 
+-- One row per cloud-sync attempt: what started it, whether it completed, and what it carried.
+-- See migrations/sqlite/085_sync_runs.up.sql for why this is recorded rather than inferred.
+CREATE TABLE IF NOT EXISTS sync_runs (
+  id TEXT PRIMARY KEY,
+  started_at TEXT NOT NULL,
+  finished_at TEXT,
+  trigger TEXT NOT NULL,
+  outcome TEXT,
+  pushed INTEGER,
+  fetched INTEGER,
+  applied INTEGER,
+  duplicates INTEGER,
+  refused INTEGER,
+  reason TEXT,
+  CHECK (trigger IN ('STARTUP','TIMER','RECONNECT','MANUAL')),
+  CHECK (outcome IS NULL OR outcome IN ('OK','REFUSED','TRANSPORT_ERROR','FAILED'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_sync_runs_started ON sync_runs(started_at DESC);
+CREATE INDEX IF NOT EXISTS idx_sync_runs_outcome_started ON sync_runs(outcome, started_at DESC);
+
 CREATE TABLE IF NOT EXISTS app_settings (
   setting_key TEXT PRIMARY KEY,
   setting_value TEXT NOT NULL,
@@ -457,7 +478,7 @@ CREATE TABLE IF NOT EXISTS backup_history (
   verification_at TEXT,
   status TEXT NOT NULL,
   created_at TEXT NOT NULL,
-  CHECK (backup_type IN ('AUTO_DAILY','MANUAL')),
+  CHECK (backup_type IN ('AUTO_DAILY','MANUAL','PRE_MIGRATION')),
   CHECK (status IN ('CREATED','VERIFIED','FAILED','RESTORED'))
 );
 

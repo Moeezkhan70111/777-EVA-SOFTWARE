@@ -117,6 +117,52 @@ const highestMigrationNumber = (names: readonly string[]): number =>
     return digits ? Math.max(highest, Number(digits[1])) : highest;
   }, 0);
 
+/**
+ * The copy of the database taken before a migration run, as the desktop app reports it.
+ *
+ * `recorded` says whether the row in backup_history was written. The FILE is what protects the
+ * data, so a false here means the backup exists and its bookkeeping does not — worth saying out
+ * loud, and not a reason to have refused the upgrade.
+ */
+export interface PreMigrationBackup {
+  readonly backupPath: string;
+  /** Migration ceiling the database was on beforehand. 0 for one that predates versioning. */
+  readonly fromVersion: number;
+  /** Highest migration this run applied. */
+  readonly toVersion: number;
+  /** How many migration files were pending. */
+  readonly pending: number;
+  readonly recorded: boolean;
+  readonly recordError?: string;
+}
+
+/** What started a sync pass. Mirrors the CHECK on sync_runs.trigger. */
+export type SyncRunTrigger = "STARTUP" | "TIMER" | "RECONNECT" | "MANUAL";
+
+/** How a sync pass ended. Mirrors the CHECK on sync_runs.outcome. */
+export type SyncRunOutcome = "OK" | "REFUSED" | "TRANSPORT_ERROR" | "FAILED";
+
+/**
+ * One recorded sync attempt.
+ *
+ * Counts are null when the pass never got far enough to have any — a refused claim has no push
+ * or pull figures, and "none" is a different fact from "zero".
+ */
+export interface SyncRunRecord {
+  readonly id: string;
+  readonly startedAt: string;
+  /** Null while a pass is running, or forever if the process died mid-pass. */
+  readonly finishedAt: string | null;
+  readonly trigger: SyncRunTrigger;
+  readonly outcome: SyncRunOutcome | null;
+  readonly pushed: number | null;
+  readonly fetched: number | null;
+  readonly applied: number | null;
+  readonly duplicates: number | null;
+  readonly refused: number | null;
+  readonly reason: string | null;
+}
+
 const COUNTABLE_TABLES = new Set([
   "qr_master",
   "production_events",
@@ -170,6 +216,14 @@ export class SqliteDatabase
   private readonly schemaPath: string;
   private readonly migrationsDir: string;
   private readonly transactionRetries = 4;
+  /**
+   * The safety copy this boot took before migrating, or null when nothing was pending.
+   *
+   * Read by the desktop app at startup so the path reaches the log. This class has no logger of
+   * its own and must not grow one — it is the data layer, and inventing a second logging path
+   * here is exactly the kind of parallel mechanism CLAUDE.md §2 rules out.
+   */
+  preMigrationBackup: PreMigrationBackup | null = null;
 
   constructor(private readonly options: SqliteDatabaseOptions) {
     this.dbPath = options.dbPath;
@@ -177,9 +231,13 @@ export class SqliteDatabase
     // Repository layout by default (migrations/ sits three levels above the schema); the desktop
     // app overrides both so a packaged installation reads them from its resources folder.
     this.migrationsDir = options.migrationsDir ?? path.resolve(path.dirname(this.schemaPath), "../../..", "migrations", "sqlite");
+    // ASKED BEFORE THE CONNECTION IS OPENED, because opening one creates the file. A database
+    // that did not exist a moment ago holds nothing a migration could damage, and taking a
+    // "safety copy" of an empty file would only bury the real backups under meaningless ones.
+    const databaseExisted = fs.existsSync(this.dbPath);
     this.db = new DatabaseSync(this.dbPath);
     try {
-      this.bootConnection();
+      this.bootConnection(databaseExisted);
     } catch (error) {
       // Leave no open handle behind on a failed boot. The caller is about to report a fatal
       // startup error, and on Windows an open handle also keeps the file locked afterwards.
@@ -192,7 +250,7 @@ export class SqliteDatabase
     }
   }
 
-  private bootConnection(): void {
+  private bootConnection(databaseExisted = true): void {
     this.db.exec("PRAGMA journal_mode = WAL;");
     this.db.exec("PRAGMA foreign_keys = ON;");
     // FIRST, before anything writes. The base schema below is CREATE ... IF NOT EXISTS, which
@@ -200,10 +258,131 @@ export class SqliteDatabase
     // dropped an index or rebuilt a table this build's schema file still describes, and
     // re-running it would put them back. Nothing may touch a database this build cannot support.
     this.ensureDatabaseIsNotNewerThanThisBuild();
+
+    // THE WAY BACK, copied before a single statement is executed against the live file.
+    //
+    // An upgrade runs migrations unattended, against the company's inventory and accounting
+    // data, on a factory PC with nobody watching. The migration runner is transactional, so a
+    // migration that THROWS rolls back — but a migration that succeeds and is wrong does not,
+    // and `*.down.sql` files are never shipped or executed, so there is no rollback path in the
+    // application at all. A file-level copy is the only thing that can undo it.
+    //
+    // Placed above readSchema() on purpose: the copy is of the database as this build found it,
+    // before even the idempotent CREATE ... IF NOT EXISTS statements have run.
+    const safetyCopy = databaseExisted ? this.copyDatabaseBeforeMigrating() : null;
+
     this.db.exec(this.readSchema());
-    this.runMigrations();
+    try {
+      this.runMigrations();
+    } catch (error) {
+      // The copy is what makes this error recoverable, so the error has to say where it is.
+      // Without this the operator sees a failed upgrade and no indication that a way back
+      // exists — which is exactly the moment the path matters most.
+      if (safetyCopy === null) throw error;
+      const reason = error instanceof Error ? error.message : String(error);
+      throw new Error(
+        [
+          `The database could not be upgraded: ${reason}`,
+          "",
+          "Nothing was left half-migrated — the upgrade ran in one transaction and rolled back.",
+          "A copy of the database as it was BEFORE this attempt is here:",
+          "",
+          `  ${safetyCopy.backupPath}`,
+        ].join("\n"),
+        { cause: error }
+      );
+    }
+    // After the migrations, because this is the run that teaches backup_history the
+    // 'PRE_MIGRATION' type (migration 084). Recorded here, the row is always allowed.
+    if (safetyCopy !== null) this.recordSafetyCopy(safetyCopy);
+
     this.ensureSchemaCompatibility();
     this.ensureDefaultRoles();
+  }
+
+  /** Where the backups for this database live. One derivation, shared with seedDefaultSettings. */
+  private backupFolder(): string {
+    return path.join(path.dirname(this.dbPath), "backups");
+  }
+
+  /**
+   * Copies the database before any migration runs, and returns where it went.
+   *
+   * Returns null when there is nothing pending: an ordinary launch is the common case by far,
+   * and copying ~16 MB on every start would be both slow and useless.
+   *
+   * A FAILURE HERE STOPS THE APPLICATION, deliberately. The alternative is migrating the
+   * company's data with no way back because the disk was full — and a refusal to start is
+   * recoverable in a way a bad migration is not (CLAUDE.md §23: data integrity first).
+   */
+  private copyDatabaseBeforeMigrating(): { backupPath: string; fromVersion: number; toVersion: number; pending: number } | null {
+    const pending = this.pendingMigrationFiles();
+    if (pending.length === 0) return null;
+
+    const fromVersion = this.appliedMigrationCeiling();
+    const toVersion = highestMigrationNumber(pending);
+    const folder = this.backupFolder();
+    const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+    const backupPath = path.join(folder, `erp-premigration-${String(fromVersion)}-to-${String(toVersion)}-${stamp}.sqlite`);
+
+    try {
+      fs.mkdirSync(folder, { recursive: true });
+      // Never overwrite a backup. The stamp carries milliseconds so this is all but impossible,
+      // and if it ever happens the honest answer is to stop rather than destroy the older copy.
+      if (fs.existsSync(backupPath)) {
+        throw new Error(`a file is already there (${backupPath})`);
+      }
+      // WAL first: the checkpoint folds pending writes into the main file, so VACUUM INTO cannot
+      // produce a copy that is missing the most recent committed work.
+      this.db.exec("PRAGMA wal_checkpoint(FULL);");
+      this.db.exec(`VACUUM INTO '${backupPath.replace(/'/g, "''")}'`);
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      throw new Error(
+        [
+          `777 ERP must upgrade its database, but could not first save a backup: ${reason}`,
+          "",
+          `  Backup folder   : ${folder}`,
+          `  Database        : ${this.dbPath}`,
+          `  Upgrading from  : ${String(fromVersion)} to ${String(toVersion)}`,
+          "",
+          "The database has NOT been changed. Free some disk space on this computer and start",
+          "777 ERP again — it will take the backup and then upgrade.",
+        ].join("\n"),
+        { cause: error }
+      );
+    }
+
+    return { backupPath, fromVersion, toVersion, pending: pending.length };
+  }
+
+  /**
+   * Records the safety copy in backup_history, so it appears in Settings beside every other
+   * backup rather than only in a log the operator would have to be told to read.
+   *
+   * NEVER FATAL. The file on disk is the thing that protects the data; its bookkeeping row is a
+   * convenience. A failure is kept on `preMigrationBackup` for the desktop app to log, so it is
+   * surfaced rather than swallowed (R12).
+   */
+  private recordSafetyCopy(copy: { backupPath: string; fromVersion: number; toVersion: number; pending: number }): void {
+    try {
+      const now = new Date().toISOString();
+      this.db
+        .prepare(
+          `INSERT INTO backup_history (
+            id, backup_type, backup_path, checksum_sha256, size_bytes,
+            verified, verification_at, status, created_at
+          ) VALUES (?, 'PRE_MIGRATION', ?, ?, ?, 1, ?, 'VERIFIED', ?)`
+        )
+        .run(crypto.randomUUID(), copy.backupPath, this.fileSha256(copy.backupPath), fs.statSync(copy.backupPath).size, now, now);
+      this.preMigrationBackup = { ...copy, recorded: true };
+    } catch (error) {
+      this.preMigrationBackup = {
+        ...copy,
+        recorded: false,
+        recordError: error instanceof Error ? error.message : String(error),
+      };
+    }
   }
 
   /**
@@ -227,12 +406,40 @@ export class SqliteDatabase
    * recorded migration, so there is nothing this build could be behind.
    */
   private appliedMigrationCeiling(): number {
+    return highestMigrationNumber([...this.appliedMigrationVersions()]);
+  }
+
+  /**
+   * Every migration version recorded against this database, or an empty set when there is no
+   * record to read.
+   *
+   * The table is absent on a brand-new file and on a database old enough to predate versioned
+   * migrations — runMigrations creates it, and this may run before that.
+   */
+  private appliedMigrationVersions(): Set<string> {
     const tracked = this.db
       .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'schema_migrations' LIMIT 1")
       .get();
-    if (!tracked) return 0;
+    if (!tracked) return new Set();
     const rows = this.db.prepare("SELECT version FROM schema_migrations").all() as Array<{ version: string }>;
-    return highestMigrationNumber(rows.map((row) => row.version));
+    return new Set(rows.map((row) => row.version));
+  }
+
+  /**
+   * The `*.up.sql` file names this build ships and this database has not applied, in order.
+   *
+   * ONE DEFINITION, used twice: the safety copy above decides whether to run from it, and
+   * runMigrations applies exactly what it returns. Two separate notions of "pending" could
+   * disagree, and the one that decides whether to take a backup is not the one to get wrong.
+   */
+  private pendingMigrationFiles(): string[] {
+    if (!fs.existsSync(this.migrationsDir)) return [];
+    const applied = this.appliedMigrationVersions();
+    return fs
+      .readdirSync(this.migrationsDir)
+      .filter((file) => file.endsWith(".up.sql"))
+      .sort()
+      .filter((file) => !applied.has(file.replace(/\.up\.sql$/, "")));
   }
 
   /**
@@ -435,14 +642,7 @@ export class SqliteDatabase
       )
     `);
 
-    const applied = new Set(
-      (this.db.prepare("SELECT version FROM schema_migrations").all() as Array<{ version: string }>).map((row) => row.version)
-    );
-    const migrations = fs.readdirSync(migrationsDir)
-      .filter((file) => file.endsWith(".up.sql"))
-      .sort();
-
-    const pending = migrations.filter((file) => !applied.has(file.replace(/\.up\.sql$/, "")));
+    const pending = this.pendingMigrationFiles();
     // Disable FK enforcement for the whole migration run so table-rebuild migrations
     // (drop/rename of a referenced table, e.g. parties) can run. PRAGMA foreign_keys is a
     // no-op inside a transaction, so it must wrap the outer transaction.
@@ -695,10 +895,34 @@ export class SqliteDatabase
     };
   }
 
-  restoreBackup(backupPath: string): void {
+  /**
+   * Replaces the live database with a backup.
+   *
+   * THIS DOES NOT UNDO AN UPDATE, and the guard below exists because it looks as though it
+   * should. Restoring re-runs bootConnection(), which migrates whatever was restored — so on a
+   * newer build, a pre-upgrade backup is walked straight back up to the new schema. Pinned by
+   * preMigrationBackup.test.ts. A version rollback has to replace the APPLICATION first; see
+   * docs/36 §4.
+   *
+   * So the schema levels are compared before anything is copied:
+   *
+   *   equal        the ordinary data-recovery path — restore yesterday's data onto today's
+   *                build. Proceeds without ceremony.
+   *   backup older legitimate, but easy to attempt for the wrong reason. Refused unless the
+   *                caller passes `confirmSchemaRollback`, having been told what it does and
+   *                does not do.
+   *   backup newer refused outright, and not confirmable. This build cannot run that schema —
+   *                the same refusal ensureDatabaseIsNotNewerThanThisBuild makes at boot.
+   *
+   * There is deliberately no UI for this yet. When one is added it must be ADMIN-ONLY and must
+   * put the warning below in front of the operator, not a generic "are you sure?".
+   */
+  restoreBackup(backupPath: string, options: { confirmSchemaRollback?: boolean } = {}): void {
     if (!fs.existsSync(backupPath)) {
       throw new Error("Backup file does not exist.");
     }
+
+    this.assertBackupIsRestorable(backupPath, options.confirmSchemaRollback === true);
 
     this.close();
     fs.copyFileSync(backupPath, this.dbPath);
@@ -720,6 +944,152 @@ export class SqliteDatabase
         new Date().toISOString(),
         new Date().toISOString()
       );
+  }
+
+  /**
+   * Checks a backup can be restored onto THIS build, and refuses with a usable explanation when
+   * it cannot. Read-only: the candidate is opened read-only and the live database is not touched.
+   */
+  private assertBackupIsRestorable(backupPath: string, confirmed: boolean): void {
+    const shipped = this.shippedMigrationCeiling();
+    let inBackup: number;
+    try {
+      const candidate = new DatabaseSync(backupPath, { readOnly: true });
+      try {
+        // Refuse to copy an unusable file over the live database — the one outcome worse than
+        // refusing to restore at all.
+        const integrity = candidate.prepare("PRAGMA integrity_check").get() as { integrity_check?: string } | undefined;
+        const verdict = String(integrity?.integrity_check ?? "");
+        if (verdict !== "ok") {
+          throw new Error(`its integrity check reported "${verdict}" instead of "ok"`);
+        }
+        const tracked = candidate
+          .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'schema_migrations' LIMIT 1")
+          .get();
+        const rows = tracked
+          ? (candidate.prepare("SELECT version FROM schema_migrations").all() as Array<{ version: string }>)
+          : [];
+        inBackup = highestMigrationNumber(rows.map((row) => row.version));
+      } finally {
+        candidate.close();
+      }
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      throw new Error(
+        `That backup cannot be read as a 777 ERP database (${reason}). Nothing has been changed.\n\n  ${backupPath}`
+      );
+    }
+
+    if (inBackup === shipped) return;
+
+    if (inBackup > shipped) {
+      throw new Error(
+        [
+          "That backup was made by a NEWER version of 777 ERP than the one installed, so this",
+          "version cannot open it. Nothing has been changed.",
+          "",
+          `  Backup schema level   : ${String(inBackup)}`,
+          `  This version supports : ${String(shipped)}`,
+          "",
+          "Install that newer version of 777 ERP and restore the backup there.",
+        ].join("\n")
+      );
+    }
+
+    if (!confirmed) {
+      throw new Error(
+        [
+          "THIS WILL NOT UNDO AN UPDATE.",
+          "",
+          `That backup is from schema level ${String(inBackup)} and this version is at ${String(shipped)}.`,
+          "Restoring it does NOT take this computer back to the older version: 777 ERP will",
+          "migrate the restored data forward to the current schema as soon as it reopens.",
+          "",
+          "What restoring it DOES do is replace everything in the database now with what was in",
+          "the backup. That means losing every gatepass, bill, scan, production entry, voucher",
+          "and stock movement recorded since the backup was taken. There is no way back from it",
+          "except another backup.",
+          "",
+          "To go back to an older VERSION of 777 ERP, the application has to be replaced first.",
+          "That procedure is in docs/36 section 4 and cannot be done from inside the application.",
+          "",
+          "If replacing the data is genuinely what is wanted, confirm it deliberately.",
+        ].join("\n")
+      );
+    }
+  }
+
+  // ─── Cloud sync attempts ───────────────────────────────────────────────────
+  //
+  // Operational bookkeeping, beside backups and health rather than in a feature module: a sync
+  // run is not a business record, it is this computer saying what it tried to do. See
+  // migrations/sqlite/085_sync_runs.up.sql for why attempts are recorded instead of inferred
+  // from sync_outbox side effects.
+
+  /** Opens a run and returns its id. Call before the pass; finishSyncRun closes it. */
+  startSyncRun(trigger: SyncRunTrigger): string {
+    const id = crypto.randomUUID();
+    this.db
+      .prepare("INSERT INTO sync_runs (id, started_at, trigger) VALUES (?, ?, ?)")
+      .run(id, new Date().toISOString(), trigger);
+    return id;
+  }
+
+  /**
+   * Closes a run with what happened.
+   *
+   * A run left open is a pass that never came back — the process was killed mid-sync — and that
+   * is worth being able to see, so nothing here invents a finish for it.
+   */
+  finishSyncRun(
+    id: string,
+    outcome: SyncRunOutcome,
+    counts: { pushed?: number; fetched?: number; applied?: number; duplicates?: number; refused?: number } = {},
+    reason?: string
+  ): void {
+    this.db
+      .prepare(
+        `UPDATE sync_runs
+            SET finished_at = ?, outcome = ?, pushed = ?, fetched = ?, applied = ?,
+                duplicates = ?, refused = ?, reason = ?
+          WHERE id = ?`
+      )
+      .run(
+        new Date().toISOString(),
+        outcome,
+        counts.pushed ?? null,
+        counts.fetched ?? null,
+        counts.applied ?? null,
+        counts.duplicates ?? null,
+        counts.refused ?? null,
+        reason ?? null,
+        id
+      );
+  }
+
+  /** The most recent attempt, and the most recent one that completed. Either may be null. */
+  syncRunSummary(): { lastAttempt: SyncRunRecord | null; lastSuccess: SyncRunRecord | null } {
+    const read = (sql: string): SyncRunRecord | null => {
+      const row = this.db.prepare(sql).get() as Record<string, unknown> | undefined;
+      if (!row) return null;
+      return {
+        id: String(row.id ?? ""),
+        startedAt: String(row.started_at ?? ""),
+        finishedAt: row.finished_at === null || row.finished_at === undefined ? null : String(row.finished_at),
+        trigger: String(row.trigger ?? "") as SyncRunTrigger,
+        outcome: row.outcome === null || row.outcome === undefined ? null : (String(row.outcome) as SyncRunOutcome),
+        pushed: row.pushed === null || row.pushed === undefined ? null : Number(row.pushed),
+        fetched: row.fetched === null || row.fetched === undefined ? null : Number(row.fetched),
+        applied: row.applied === null || row.applied === undefined ? null : Number(row.applied),
+        duplicates: row.duplicates === null || row.duplicates === undefined ? null : Number(row.duplicates),
+        refused: row.refused === null || row.refused === undefined ? null : Number(row.refused),
+        reason: row.reason === null || row.reason === undefined ? null : String(row.reason),
+      };
+    };
+    return {
+      lastAttempt: read("SELECT * FROM sync_runs ORDER BY started_at DESC LIMIT 1"),
+      lastSuccess: read("SELECT * FROM sync_runs WHERE outcome = 'OK' ORDER BY started_at DESC LIMIT 1"),
+    };
   }
 
   listBackups(): BackupRecord[] {
