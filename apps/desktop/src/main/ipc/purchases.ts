@@ -4,6 +4,7 @@
 // (see ../authorize.ts) and every channel name comes from shared/ipcChannels.ts.
 
 import { ipcMain } from "electron";
+import { businessToday } from "@erp/domain";
 import { IPC } from "../../shared/ipcChannels";
 import type { IpcContext } from "./context";
 import { PERMISSION } from "@erp/domain";
@@ -30,7 +31,9 @@ export function registerPurchasesHandlers(ctx: IpcContext): void {
       })).filter((l) => l.itemId) : [];
       const result = db.createPurchaseVoucher({
         partyId,
-        voucherDate: typeof input?.voucherDate === "string" ? input.voucherDate : new Date().toISOString().split("T")[0],
+        // THE STAMP. A UTC default filed a purchase entered at 01:00 Karachi under the
+        // previous day, permanently, and the ledgers read it that way ever after.
+        voucherDate: typeof input?.voucherDate === "string" ? input.voucherDate : businessToday(),
         bookNo: typeof input?.bookNo === "string" ? input.bookNo : undefined,
         referenceNo: typeof input?.referenceNo === "string" ? input.referenceNo : undefined,
         remarks: typeof input?.remarks === "string" ? input.remarks : undefined,

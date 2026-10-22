@@ -4,6 +4,7 @@
 // (see ../authorize.ts) and every channel name comes from shared/ipcChannels.ts.
 
 import { ipcMain } from "electron";
+import { businessToday } from "@erp/domain";
 import { IPC } from "../../shared/ipcChannels";
 import type { IpcContext } from "./context";
 import { PERMISSION } from "@erp/domain";
@@ -164,7 +165,9 @@ export function registerSalesHandlers(ctx: IpcContext): void {
     try {
       authorizer.requirePermission(event, PERMISSION.SALE_VOUCHER_FORM);
       const partyId = typeof input?.partyId === "string" ? input.partyId : "";
-      const voucherDate = typeof input?.voucherDate === "string" ? input.voucherDate : new Date().toISOString().split('T')[0];
+      // THE STAMP -- see the purchase handler. A sale entered after midnight was dated the
+      // previous day, and that date is what the customer ledger and the bill carry.
+      const voucherDate = typeof input?.voucherDate === "string" ? input.voucherDate : businessToday();
       const bookNo = typeof input?.bookNo === "string" ? input.bookNo.trim() : "";
 
       if (!partyId) {

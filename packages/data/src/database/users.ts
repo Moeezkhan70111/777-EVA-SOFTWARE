@@ -8,6 +8,7 @@ import type { TransactionContext } from "@erp/application";
 import type { MutableTransactionContext } from "./shared.js";
 import type { UserNotificationRecord } from "./types.js";
 import { pbkdf2Sync, randomBytes } from "node:crypto";
+import { businessDateOf, businessToday } from "@erp/domain";
 
 export const usersMethods = {
   hashPassword(this: SqliteDatabase, password: string): { hash: string; salt: string } {
@@ -384,7 +385,9 @@ export const usersMethods = {
           `INSERT INTO user_sessions (id, user_id, token, created_at, last_seen_at, revoked_at, expires_at, login_date)
           VALUES (?, ?, ?, ?, ?, NULL, NULL, ?)`
       )
-        .run(sessionId, userId, token, now, now, now.slice(0, 10));
+        // businessDateOf(now), not now.slice(0, 10): `now` is a UTC instant and its first
+        // ten characters are the UTC date. Read back against businessToday() above.
+        .run(sessionId, userId, token, now, now, businessDateOf(now));
 
     return token;
   },
@@ -421,7 +424,11 @@ export const usersMethods = {
 
     if (!row) return null;
 
-    const today = new Date().toISOString().slice(0, 10);
+    // Karachi, not UTC, and the stored login_date below is written the same way --
+    // BOTH SIDES MOVE TOGETHER or the comparison breaks. While both were UTC the comparison
+    // agreed with itself but a "day" ended at 05:00 Karachi, so a daily-login user was signed
+    // out mid-shift instead of at midnight.
+    const today = businessToday();
     const requiresDailyLogin = row.role !== "ADMIN" && row.login_policy === "DAILY_LOGIN";
     if (requiresDailyLogin && row.login_date && row.login_date !== today) {
       return null;

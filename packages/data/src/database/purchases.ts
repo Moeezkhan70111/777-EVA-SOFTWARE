@@ -5,7 +5,7 @@
 
 import type { SqliteDatabase } from "../sqliteDatabase.js";
 import type { PagedResult } from "./types.js";
-import { addMoney, fromPaisa, fromPaisaOrNull, multiplyMoney, subtractMoney, toPaisa } from "@erp/domain";
+import { addMoney, businessToday, fromPaisa, fromPaisaOrNull, multiplyMoney, subtractMoney, toPaisa } from "@erp/domain";
 import { allocateNumberInRange } from "./numberRange.js";
 
 export const purchasesMethods = {
@@ -272,7 +272,11 @@ export const purchasesMethods = {
   },
 
   listSupplierBalances(this: SqliteDatabase, query: { asOfDate?: string } = {}): { rows: Array<{ partyId: string; partyName: string; city: string | null; balance: number; lastVoucherDate: string | null; totalPurchases: number; totalPayments: number }>; total: number } {
-    const asOfDate = query.asOfDate || new Date().toISOString().split("T")[0];
+    // The Karachi calendar date, not the UTC one. Every filter below is
+    // `voucher_date <= asOfDate`, so a UTC default silently dropped every voucher,
+    // payment and claim dated today for the five hours after local midnight -- a balance
+    // of 0 where the ledger said -50, with no error anywhere.
+    const asOfDate = query.asOfDate || businessToday();
     // Every SUM below is over a *_paisa column (exact integer arithmetic); converted back to
     // rupees once, in the row mapping below.
     const rows = this.db

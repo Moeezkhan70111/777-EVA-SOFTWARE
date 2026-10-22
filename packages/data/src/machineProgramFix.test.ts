@@ -12,6 +12,7 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
+import { businessDateOf, businessDayStartIso, businessHourOf } from "@erp/domain";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -553,10 +554,19 @@ test("EVR FIX: program -> carton labels -> scanned back -> produced -> in stock"
     assert.deepEqual(report.byColor.map((row) => [row.key, row.quantity]), [["WHITE", 1]]);
 
     // The page itself asks for ONE operational day (06:00 to 06:00), so ask the way it does.
+    // THE OPERATIONAL DATE OF NOW, worked out with the domain helpers rather than by hand.
+    //
+    // This used to mix local arithmetic with a UTC result -- setDate() on a local Date, then
+    // toISOString().slice(0, 10) -- so for the five hours after midnight in Karachi it landed
+    // TWO days back instead of one and this test failed every night. A suite that shifts at
+    // midnight is worthless at the hours the factory actually works.
     const operationalDate = (() => {
-      const now = new Date();
-      if (now.getHours() < 6) now.setDate(now.getDate() - 1);
-      return now.toISOString().slice(0, 10);
+      const nowIso = new Date().toISOString();
+      const today = businessDateOf(nowIso);
+      if (businessHourOf(nowIso) >= 6) return today;
+      const previous = businessDayStartIso(today, -1);
+      assert.ok(previous, "the previous business day must resolve");
+      return businessDateOf(previous);
     })();
     assert.equal(f.db.getReport("CUSTOM", operationalDate, operationalDate).totalProduction, 1);
 

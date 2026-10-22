@@ -4,7 +4,7 @@
 // `this` is the database instance; bodies are unchanged from the original class.
 
 import type { SqliteDatabase } from "../sqliteDatabase.js";
-import { DISCOUNT_SOURCE, PRICE_TYPE, addMoney, cartonsToDozens, dozensToPairs, fromPaisa, multiplyMoney, saleLineTotal, subtractMoney, toPaisa, toPaisaOrNull } from "@erp/domain";
+import { addMoney, businessToday, cartonsToDozens, DISCOUNT_SOURCE, dozensToPairs, fromPaisa, multiplyMoney, PRICE_TYPE, saleLineTotal, subtractMoney, toPaisa, toPaisaOrNull } from "@erp/domain";
 import type { DiscountSource, PriceType } from "@erp/domain";
 import { formatGatepassCode } from "@erp/application";
 import { BillDoesNotMatchGatepassError, DiscountExceedsAllowedError, GatepassBillingError, PartyBalanceLimitExceededError } from "./types.js";
@@ -1027,7 +1027,9 @@ export const salesMethods = {
       return { partyId, partyName: "", entries: [] };
     }
 
-    const toDate = query.toDate || new Date().toISOString().split("T")[0];
+    // Karachi, not UTC: a UTC default hid today's entries for the five hours after
+    // local midnight, so the newest rows simply were not in the ledger.
+    const toDate = query.toDate || businessToday();
     const fromDate = query.fromDate || "0000-01-01";
 
     const saleRows = this.db
@@ -1204,7 +1206,9 @@ export const salesMethods = {
     }>;
     total: number;
   } {
-    const asOfDate = query.asOfDate || new Date().toISOString().split("T")[0];
+    // Karachi, not UTC -- see the note in listSupplierBalances. A receivable dated
+    // today was excluded from the balance while sitting in the ledger.
+    const asOfDate = query.asOfDate || businessToday();
     // Every SUM below is over a *_paisa column so SQLite does exact integer arithmetic; each
     // total is converted back to rupees once, in the row mapping below — never summed as REAL.
     const rows = this.db

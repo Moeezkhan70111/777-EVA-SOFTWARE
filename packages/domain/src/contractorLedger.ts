@@ -58,6 +58,36 @@ export const businessDateOf = (timestamp: string): string => {
 };
 
 /**
+ * TODAY, as the company reckons it: the `YYYY-MM-DD` Karachi calendar date.
+ *
+ * USE THIS FOR EVERY DATE-ONLY DEFAULT. Never `new Date().toISOString().slice(0, 10)`, which is
+ * the UTC date -- and Karachi is UTC+5, so for the five hours after local midnight the UTC date
+ * is still YESTERDAY. The factory works those hours; the operational day runs 06:00 to 06:00.
+ *
+ * Six places got this wrong, found 2026-10-23 at 00:50 Karachi while the window was open:
+ *
+ *   * listSupplierBalances and listCustomerBalances defaulted `asOfDate` to the UTC date, and
+ *     every filter is `voucher_date <= asOfDate`. Between 00:00 and 05:00 every voucher, payment
+ *     and claim dated today was silently excluded -- a supplier balance read 0 where the ledger
+ *     said -50, with no error anywhere and both numbers looking real.
+ *
+ *   * getCustomerLedger defaulted its `toDate` the same way, so the newest entries vanished.
+ *
+ *   * The purchase and sale voucher handlers STAMPED a new voucher with it, filing work entered
+ *     at 01:00 under the previous day, permanently, and feeding the ledgers that way. Those two
+ *     wrote wrong data rather than merely showing it.
+ *
+ *   * The daily-login check compared a stored login_date against it.
+ *
+ * NOT THE OPERATIONAL DAY. This rolls at MIDNIGHT and answers "what would a person in Karachi
+ * write on this voucher". `operationalDayBounds` (units.ts) is the production shift, 06:00 to
+ * 06:00, and answers "which shift made this". A carton produced at 01:00 belongs to the shift
+ * that began the previous morning, but a voucher written at 01:00 is dated today. Mixing the two
+ * is how the above happened.
+ */
+export const businessToday = (): string => businessDateOf(new Date().toISOString());
+
+/**
  * The hour (0-23) of a timestamp in the business timezone (Asia/Karachi).
  *
  * WHY THIS EXISTS. `new Date(t).getHours()` is the HOST computer's hour, so two machines in
