@@ -339,7 +339,7 @@ named in the most recent `database-backup` log line.
 ## 6a. APPLIED SET — what is actually in the cloud project
 
 Project `wpkrhgqsizjjdaztijwv` (`https://wpkrhgqsizjjdaztijwv.supabase.co`), region ap-northeast-2.
-Verified by query, not assumed. **Last checked 2026-10-22.**
+Verified by query, not assumed. **Last checked 2026-10-23.**
 
 | File | Applied? | How |
 |---|---|---|
@@ -350,24 +350,35 @@ Verified by query, not assumed. **Last checked 2026-10-22.**
 | `005_sync_event_log_factory_scope.up.sql` | **YES** | by hand, Supabase SQL editor |
 | `006_device_claims.up.sql` | **YES** | by hand, Supabase SQL editor |
 | `007_close_leftover_grants.up.sql` | **YES** | by hand, Supabase SQL editor |
+| `008_push_product_variant.up.sql` | **YES** | agent, `apply_migration` → `erp_008_push_product_variant` |
 
 Only the baseline has a `supabase_migrations` row, because 002–006 were pasted in the editor
 rather than applied through the migration tool. **This table is therefore the only record of
 what is applied — keep it current.**
 
-**Why 002–006 were applied by hand.** Both Supabase MCP write tools — `apply_migration` and
+**Why 002–007 were applied by hand.** Both Supabase MCP write tools — `apply_migration` and
 `execute_sql` — refuse SQL containing destructive statements, returning `declined` from a
 server-side confirmation that a Claude Code permission allow-rule cannot pre-approve (tried; it
-made no difference). 002–006 cannot avoid such statements: 002 drops and re-adds 12 foreign keys
+made no difference). 002–007 cannot avoid such statements: 002 drops and re-adds 12 foreign keys
 in one transaction because a column's type cannot change while a key joins on it, and
-004/005/006 consist largely of `revoke`, which *is* the access model. Expect the same for 007,
-which is almost entirely `revoke`.
+004/005/006/007 consist largely of `revoke`, which *is* the access model.
 
-### Verified state, 2026-10-22
+**008 went through the tool.** It is one `create or replace function` plus a `revoke` on that new
+function by name, which the detector accepts. So a migration that only adds a function can be
+applied by the agent; one that changes the access model still cannot.
+
+### Verified state, 2026-10-23
 
 22 tables · RLS enabled on **22 of 22** · 10 policies (every one `TO authenticated`; none for
-`anon`) · 3 RPCs (`claim_device`, `push_qr_master`, `push_production_produced`) · seeded with
-1 factory, 1 workstation, 35 product variants, 0 operators, 0 enrolments.
+`anon`) · 6 RPCs (`claim_device`, `claim_is_current`, `heartbeat_device`, `push_qr_master`,
+`push_production_produced`, `push_product_variant`) · seeded with 1 factory, 1 workstation,
+35 product variants, 0 operators, 0 enrolments.
+
+`push_product_variant` checked after applying 008, by query rather than by the tool's own
+success: `SECURITY DEFINER`, `search_path=""`, and `EXECUTE` granted to `postgres` and
+`authenticated` only — not `anon`, not `PUBLIC`. The direct insert on `product_variants` is
+still closed (`authenticated` holds `SELECT` and nothing else), so the RPC remains the only way
+a client can add a product.
 
 Checks that passed, in the order they matter:
 
