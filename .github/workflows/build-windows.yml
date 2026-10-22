@@ -1,0 +1,309 @@
+# Build the Windows installer on CI, unsigned, and prove it is complete.
+#
+# WHY THIS EXISTS. Smart App Control is enforced on the development machine and blocks
+# electron-builder's NSIS build. NSIS cannot emit an uninstaller directly -- the only way to get
+# one is to RUN an installer containing WriteUninstaller -- so app-builder-lib builds a throwaway
+# installer and executes it (NsisTarget.computeScriptAndSignUninstaller). That throwaway is
+# unsigned at the moment it runs, and Code Integrity refuses it:
+#
+#   a process (node.exe) attempted to load ...\777 ERP Setup 0.3.4.exe
+#   did not meet the Enterprise signing level requirements
+#
+# A certificate would not fix this: electron-builder signs the uninstaller and the real installer
+# AFTER that execution, never the throwaway before it. So the build has to happen somewhere Smart
+# App Control is not enforced. windows-latest is Windows Server, where Smart App Control -- a
+# Windows 11 feature -- is not present. THE FIRST RUN OF THIS WORKFLOW IS THE TEST OF THAT.
+#
+# WHAT THIS PHASE PROVES, AND WHAT IT DOES NOT. It proves CI can produce a complete, non-stub
+# unsigned installer. It proves NOTHING about Smart App Control: the output is unsigned, and SAC
+# compatibility stays unverified until a SIGNED build has been installed on a machine where SAC is
+# enforced. See docs/25-code-signing.md.
+#
+# THIS WORKFLOW CANNOT PUBLISH. Three independent barriers, because one is not enough --
+# electron-builder publishes IMPLICITLY in CI unless told otherwise. From
+# app-builder-lib/out/publish/PublishManager.js:
+#
+#   if (publishOptions.publish === undefined) {
+#     if (npm_lifecycle_event === "release") -> "always"
+#     else if (getCiTag() != null)           -> "onTag"
+#     else if (isCI)                         -> "onTagOrDraft"      <-- this one applies here
+#   }
+#
+# So omitting the flag would attempt a publish. The barriers:
+#
+#   1. `--publish never` is passed explicitly to electron-builder.
+#   2. No GH_TOKEN or GITHUB_TOKEN is defined anywhere in this file, so the publisher has no
+#      credential even if it tried. GitHub does not inject one into the environment by itself.
+#   3. `permissions: contents: read` -- the job's token cannot create a release or a tag at all.
+#
+# There is no release step, no tag step, and no upload-release-asset action here. Artifacts leave
+# only through actions/upload-artifact, which is workflow storage, not a GitHub Release.
+
+name: Build Windows installer (unsigned)
+
+# Manual only. No push, pull_request or tag trigger -- nothing here should run by surprise, and a
+# tag trigger in particular would hand electron-builder the "onTag" policy above.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    # Explicit rather than relying on the runner default, because the completeness gate below is
+    # PowerShell and must not be interpreted by cmd.
+    shell: pwsh
+
+jobs:
+  build:
+    runs-on: windows-latest
+    # An Electron package is ~100 MB and private-repo Windows minutes are billed at a multiplier,
+    # so cap a hung run rather than letting it burn the allowance.
+    timeout-minutes: 60
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          # Matches the version the project is developed against (local: v22.22.0).
+          node-version: '22'
+          # Keyed on the root package-lock.json, which is the only lockfile -- npm workspaces.
+          cache: 'npm'
+
+      - name: Install dependencies from the lockfile
+        run: npm ci
+
+      # INFORMATIONAL, NOT A GATE, and deliberately so.
+      #
+      # The root `test` script chains the six workspaces with `&&`, and three of them carry
+      # documented pre-existing failures (@erp/application 1, @erp/data 7, @erp/desktop 27 as of
+      # 2026-10-23). A hard gate here would therefore fail every run and the packaging step --
+      # the entire point of this phase -- would never execute. The `&&` chain also means the run
+      # stops at the first failing workspace, so treat this output as indicative only.
+      #
+      # Making the suite gate-able is a separate piece of work; it is not a Phase A change.
+      - name: Run the test suite (INFORMATIONAL -- not a gate)
+        id: tests
+        continue-on-error: true
+        run: npm test
+
+      # Required before packaging: the desktop build reads the other workspaces from their dist
+      # folders (@erp/domain, @erp/application, @erp/scanner, @erp/data, @erp/sync), and the
+      # desktop package script only builds @erp/desktop itself.
+      - name: Build every workspace
+        run: npm run build
+
+      # `--publish never` is appended to the end of the package script, which ends with
+      # electron-builder, so it reaches electron-builder and not the earlier chained commands.
+      # The script also runs write-build-info.mjs --strict, which refuses a dirty or
+      # unidentifiable tree -- a fresh checkout satisfies it, and dist/ and release/ are
+      # gitignored so packaging does not dirty anything.
+      - name: Package the Windows installer (never publishes)
+        id: packaging
+        run: npm run --workspace @erp/desktop package -- --publish never
+
+      # THE COMPLETENESS GATE.
+      #
+      # A zero exit code from electron-builder is not evidence. The 0.3.4 failure left a 0.15 MB
+      # stub installer behind and still wrote an artifact, so "a file exists" is not evidence
+      # either. This checks the artifacts themselves and FAILS CLOSED: anything it cannot
+      # positively confirm, including its own inability to parse latest.yml, is a failure.
+      - name: Verify the artifacts are complete
+        id: completeness
+        run: |
+          $ErrorActionPreference = 'Stop'
+
+          $releaseDir = 'apps/desktop/release'
+          $minimumMegabytes = 50
+
+          function Fail([string] $message) {
+            Write-Host "::error::$message"
+            $script:failed = $true
+          }
+          $script:failed = $false
+
+          if (-not (Test-Path -LiteralPath $releaseDir)) {
+            Write-Host "::error::no release directory at $releaseDir -- packaging produced nothing"
+            exit 1
+          }
+
+          # --- exactly one installer -------------------------------------------------------
+          # The uninstaller is unlinked by electron-builder after the second makensis pass, so a
+          # leftover __uninstaller is excluded rather than counted as a second installer.
+          $installers = @(
+            Get-ChildItem -LiteralPath $releaseDir -Filter '*.exe' -File |
+              Where-Object { $_.Name -notlike '*__uninstaller*' }
+          )
+          if ($installers.Count -ne 1) {
+            Write-Host "::error::expected exactly 1 installer in $releaseDir, found $($installers.Count)"
+            foreach ($candidate in $installers) { Write-Host "  found: $($candidate.Name)" }
+            exit 1
+          }
+          $installer = $installers[0]
+          Write-Host "installer : $($installer.Name)"
+          Write-Host "size      : $([math]::Round($installer.Length / 1MB, 2)) MB"
+
+          # --- not the stub ----------------------------------------------------------------
+          # The failed 0.3.4 build left 0.15 MB. A complete installer is ~100 MB. The floor is
+          # deliberately generous so an ordinary size change does not trip it, while sitting far
+          # above anything the uninstaller pass can produce.
+          if ($installer.Length -lt ($minimumMegabytes * 1MB)) {
+            Fail "installer is $([math]::Round($installer.Length / 1MB, 2)) MB, below the $minimumMegabytes MB floor -- this is the uninstaller-pass stub, not a complete installer"
+          }
+
+          # --- latest.yml, and does it describe THIS file ----------------------------------
+          $latestYml = Join-Path $releaseDir 'latest.yml'
+          if (-not (Test-Path -LiteralPath $latestYml)) {
+            Fail "latest.yml is missing -- no computer could see this version"
+          }
+          else {
+            $yaml = Get-Content -LiteralPath $latestYml -Raw
+
+            # latest.yml is written by electron-builder and is flat enough to read with regexes;
+            # there is no YAML parser available without adding a dependency. If the shape is not
+            # what is expected, that is a failure rather than something to guess at.
+            $shaMatches = [regex]::Matches($yaml, '(?m)^\s*sha512:\s*(\S+)\s*$')
+            $sizeMatches = [regex]::Matches($yaml, '(?m)^\s*size:\s*(\d+)\s*$')
+
+            if ($shaMatches.Count -lt 1) {
+              Fail "latest.yml declares no sha512 -- cannot confirm it describes the built installer"
+            }
+            if ($sizeMatches.Count -lt 1) {
+              Fail "latest.yml declares no size -- cannot confirm it describes the built installer"
+            }
+
+            if ($shaMatches.Count -ge 1 -and $sizeMatches.Count -ge 1) {
+              # SHA-512 in latest.yml is base64, not hex, so compute it as bytes and convert.
+              $sha = [System.Security.Cryptography.SHA512]::Create()
+              try {
+                $stream = [System.IO.File]::OpenRead($installer.FullName)
+                try { $digest = $sha.ComputeHash($stream) } finally { $stream.Dispose() }
+              }
+              finally { $sha.Dispose() }
+              $actualSha512 = [Convert]::ToBase64String($digest)
+
+              foreach ($match in $shaMatches) {
+                $declared = $match.Groups[1].Value
+                if ($declared -ne $actualSha512) {
+                  Fail "latest.yml sha512 does not match the installer. declared=$declared actual=$actualSha512"
+                }
+              }
+
+              foreach ($match in $sizeMatches) {
+                $declaredSize = [int64] $match.Groups[1].Value
+                if ($declaredSize -ne $installer.Length) {
+                  Fail "latest.yml size $declaredSize does not match the installer's $($installer.Length) bytes"
+                }
+              }
+
+              # The version in the feed must be the version that was built, or computers would be
+              # offered something other than this file.
+              $builtVersion = (Get-Content -LiteralPath 'apps/desktop/package.json' -Raw | ConvertFrom-Json).version
+              $versionMatch = [regex]::Match($yaml, '(?m)^\s*version:\s*(\S+)\s*$')
+              if (-not $versionMatch.Success) {
+                Fail "latest.yml declares no version"
+              }
+              elseif ($versionMatch.Groups[1].Value.Trim("'`"") -ne $builtVersion) {
+                Fail "latest.yml version $($versionMatch.Groups[1].Value) is not the built version $builtVersion"
+              }
+              else {
+                Write-Host "version   : $builtVersion (latest.yml agrees)"
+              }
+            }
+          }
+
+          # --- the blockmap, beside the installer ------------------------------------------
+          # Its absence is not fatal to installing, but it is what makes updates differential, and
+          # it went missing from the 0.3.3 release without anything noticing.
+          $blockmap = "$($installer.FullName).blockmap"
+          if (-not (Test-Path -LiteralPath $blockmap)) {
+            Fail "no .blockmap beside the installer -- every update would be a full download"
+          }
+
+          # --- the application itself ------------------------------------------------------
+          $appExe = Join-Path $releaseDir 'win-unpacked/777 ERP.exe'
+          if (-not (Test-Path -LiteralPath $appExe)) {
+            Fail "win-unpacked/777 ERP.exe is missing -- the application was not packaged"
+          }
+
+          if ($script:failed) {
+            Write-Host "::error::the build produced artifacts that are incomplete or inconsistent"
+            exit 1
+          }
+
+          Write-Host 'Every artifact is present and latest.yml matches the installer byte for byte.'
+          Write-Host 'UNSIGNED: this says nothing about Smart App Control.'
+
+      # Workflow storage only. This is NOT a GitHub Release, and there is no credential here that
+      # could make one. Retention is short because an Electron installer is ~100 MB and artifact
+      # storage, unlike minutes, does not reset monthly.
+      - name: Upload the installer and update artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-installer-unsigned
+          path: |
+            apps/desktop/release/*.exe
+            apps/desktop/release/*.blockmap
+            apps/desktop/release/latest.yml
+          if-no-files-found: error
+          retention-days: 7
+          # The installer is already compressed; re-compressing costs minutes and saves nothing.
+          compression-level: 0
+
+      # TEST STATUS IS REPORTED SEPARATELY FROM PACKAGING STATUS, AND MUST BE.
+      #
+      # The test step is continue-on-error, so a FAILING suite still leaves this job green. Without
+      # this step a green tick would be read as "tests passed", which is the opposite of the truth.
+      # The outcomes are passed in through env rather than interpolated into the script body.
+      - name: Report test and packaging status separately
+        if: always()
+        env:
+          TESTS_OUTCOME: ${{ steps.tests.outcome }}
+          PACKAGING_OUTCOME: ${{ steps.packaging.outcome }}
+          GATE_OUTCOME: ${{ steps.completeness.outcome }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+
+          $tests = if ($env:TESTS_OUTCOME) { $env:TESTS_OUTCOME } else { 'did not run' }
+          $packaging = if ($env:PACKAGING_OUTCOME) { $env:PACKAGING_OUTCOME } else { 'did not run' }
+          $gate = if ($env:GATE_OUTCOME) { $env:GATE_OUTCOME } else { 'did not run' }
+
+          $lines = @()
+          $lines += '## Windows build validation (UNSIGNED)'
+          $lines += ''
+          $lines += '| Stage | Result | Does it gate this job? |'
+          $lines += '| --- | --- | --- |'
+          $lines += "| Test suite | ``$tests`` | **NO -- informational only** |"
+          $lines += "| Packaging | ``$packaging`` | YES |"
+          $lines += "| Artifact completeness gate | ``$gate`` | YES |"
+          $lines += ''
+          $lines += '### Read this before trusting a green tick'
+          $lines += ''
+          $lines += 'A passing job means **packaging and the completeness gate** passed. It does'
+          $lines += 'NOT mean the test suite passed. The suite is not a gate here because the root'
+          $lines += '`test` script chains six workspaces with `&&` and three carry documented'
+          $lines += 'pre-existing failures (@erp/application 1, @erp/data 7, @erp/desktop 27 as of'
+          $lines += '2026-10-23). The `&&` chain also stops at the first failing workspace, so the'
+          $lines += 'later suites never run. Treat the test result above as indicative only.'
+          $lines += ''
+          $lines += '### What this run does and does not prove'
+          $lines += ''
+          $lines += '* PROVES: CI can produce a complete, non-stub, unsigned Windows installer.'
+          $lines += '* PROVES NOTHING about Smart App Control. The output is unsigned. SAC'
+          $lines += '  compatibility stays unverified until a SIGNED build has been installed on a'
+          $lines += '  machine where SAC is enforced (docs/25-code-signing.md).'
+          $lines += '* Nothing was published. No GitHub Release, no tag, no credential in this job.'
+
+          if ($env:GITHUB_STEP_SUMMARY) {
+            $lines -join "`n" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+          }
+
+          # Also surface it in the log and as an annotation, because a job summary is easy to miss.
+          foreach ($line in $lines) { Write-Host $line }
+          if ($tests -ne 'success') {
+            Write-Host "::warning title=Test suite did not pass::The test suite result was '$tests'. This did NOT fail the job: tests are informational here. Packaging='$packaging', completeness gate='$gate'."
+          }
