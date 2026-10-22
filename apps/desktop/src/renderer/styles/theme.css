@@ -1919,6 +1919,51 @@ select {
 }
 .notice-dismiss:hover { background: white; color: var(--text); }
 
+/* ── Sync status indicator (rail) ──────────────────────────────────────────
+   Flat fills and a plain 1px border throughout: gradients, drop-shadow and inset shadows each
+   stall the GPU on first draw in this app, and this sits in the rail that paints first.
+   Colour never carries the meaning alone — every state also shows a mark and a word (R18). */
+.sync-indicator-wrap { display: flex; align-items: center; }
+.sync-indicator {
+  display: inline-flex; align-items: center; gap: 6px;
+  min-height: 32px; padding: 0 10px;
+  border: 1px solid var(--glass-90); border-radius: var(--radius-md);
+  background: transparent; color: var(--sidebar-ink);
+  font-size: 0.74rem; font-weight: 700; cursor: pointer; white-space: nowrap;
+}
+.sync-indicator:hover { background: var(--sidebar-hover); }
+.sync-indicator-mark { font-weight: 900; line-height: 1; }
+.sync-indicator-text { letter-spacing: .01em; }
+.sync-dot-working   .sync-indicator-mark { color: var(--ok); }
+.sync-dot-waiting   .sync-indicator-mark { color: var(--warn); }
+.sync-dot-attention .sync-indicator-mark { color: var(--err); }
+.sync-dot-off       .sync-indicator-mark { color: var(--text-3); }
+/* The one state worth catching an eye that is looking elsewhere. */
+.sync-dot-attention { border-color: var(--err); }
+
+/* Portalled out of the rail, which clips on both axes. Above the rail (400), below modals. */
+.sync-detail {
+  position: fixed; z-index: 450; width: min(320px, calc(100vw - 24px));
+  background: var(--chrome-bg); border: 1px solid var(--chrome-line);
+  border-radius: var(--radius-lg); padding: 14px 16px;
+  box-shadow: var(--shadow-xl);
+}
+.sync-detail-head { font-size: 0.9rem; font-weight: 800; color: var(--text); margin-bottom: 6px; }
+.sync-detail-body { font-size: 0.8rem; line-height: 1.45; color: var(--text-2); margin: 0 0 12px; }
+.sync-detail-facts { display: flex; flex-direction: column; gap: 6px; margin: 0 0 12px; }
+.sync-detail-facts > div { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+.sync-detail-facts dt { font-size: 0.74rem; color: var(--text-3); }
+.sync-detail-facts dd { margin: 0; font-size: 0.82rem; font-weight: 700; color: var(--text); }
+.sync-detail-stuck { color: var(--err); }
+/* A refused send, said beside the button that caused it rather than as a toast in the corner. */
+.sync-detail-error { margin: 0 0 10px; font-size: 0.78rem; line-height: 1.4; color: var(--err); }
+.sync-detail-actions { display: flex; gap: 8px; }
+.sync-detail-actions .btn { flex: 1; min-height: 40px; }
+/* Layout only, for a notice that asks for something rather than only reporting it
+   (e.g. "Restart Now"). The button itself is the ordinary .btn .btn-primary — a notice is not
+   a reason for a second button style. */
+.notice-actions { display: flex; gap: 8px; margin-top: 10px; }
+
 /* ════════════════════════════════════════════════════════ UTILITY ════════════════════════════════════════════════════════ */
 .stack     { display: flex; flex-direction: column; gap: 16px; }
 .row       { display: flex; align-items: center; gap: 8px; }
@@ -5993,7 +6038,7 @@ tr.has-error .gp-qty-stepper input { color: var(--err); }
 
 /* ═══════════════════════════════════════════════════════════════════════════
    TAB STRIP  ·  components/shared/TabStrip
-   One tab strip for the app. Flat fills and uniform borders only, per the
+   One tab strip for the app. Flat  fills and uniform borders only, per the
    paint-safety note on the product-detail block. */
 .tab-strip {
   display: inline-flex;

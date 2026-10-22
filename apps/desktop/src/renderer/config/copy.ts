@@ -413,6 +413,62 @@ export const copy = {
   // A pass is not read-only: it writes carton identities to a shared project and the cloud log
   // is append-only. So the wording here says plainly what did and did not happen, and never
   // implies a send that was refused.
+  // Automatic updates. Everything an operator can see about them, in one place — the whole
+  // feature is two sentences and a button, because on the factory floor it has to be.
+  update: {
+    readyTitle: "✓ Update Ready",
+    readyBody: (version: string) =>
+      `Version ${version} has been downloaded. Restart 777 ERP to finish installing it — your work is saved.`,
+    restartNow: "Restart Now",
+    installRefused: "The update could not be installed",
+    // Raised only after repeated failures over days, never for one missed check.
+    stalledTitle: "⚠ Not Receiving Updates",
+    stalledBody: (days: number, reason: string) =>
+      `This computer has not been able to check for updates for ${String(days)} ${days === 1 ? "day" : "days"}. ${reason} 777 ERP keeps working normally, but it will not receive new versions until this is fixed.`,
+  },
+
+  // Said at sign-in on a computer that cannot number documents or print labels, because the
+  // alternative is discovering it at the printer with a run of stickers to print.
+  numberRange: {
+    missingTitle: "⚠ This Computer Needs Its Number Range",
+    missingBody:
+      "An administrator must set this computer's number range in Settings before documents can be created or QR labels printed here. Scanning, production, dispatch and store work are unaffected.",
+    invalidTitle: "⚠ This Computer's Number Range Is Not Valid",
+    invalidBody: (stored: string) =>
+      `The stored range is "${stored}", which is not a usable block. An administrator must correct it in Settings. Documents cannot be created and QR labels cannot be printed here until then.`,
+  },
+
+  // THE RAIL INDICATOR. Every string here is read by somebody who does not know what a sync is
+  // and should not have to. No jargon, no counts without a noun, no "queue", no "outbox".
+  syncStatus: {
+    label: "Other Computers",
+    // The four things it can be. Said as a state of the work, not of the software.
+    working: "Up To Date",
+    workingBusy: "Sending…",
+    waiting: "Waiting To Send",
+    attention: "Needs Attention",
+    off: "Not Connected",
+
+    // One line under the state, explaining it.
+    workingBody: "This computer and the others are sharing their work.",
+    workingBusyBody: "Sending this computer's work to the others now.",
+    waitingBody: (count: number) =>
+      `${String(count)} ${count === 1 ? "item is" : "items are"} waiting to reach the other computers. 777 ERP will keep trying — nothing is lost, and you can carry on working.`,
+    waitingBodyNoCount: "777 ERP cannot reach the other computers right now. It will keep trying — nothing is lost, and you can carry on working.",
+    stuckBody: (count: number) =>
+      `${String(count)} ${count === 1 ? "item" : "items"} could not be sent and ${count === 1 ? "has" : "have"} stopped being retried. Someone needs to look at ${count === 1 ? "it" : "them"} in Settings.`,
+    refusedBody: "The other computers would not accept this one. An administrator needs to check this computer's setup in Settings.",
+    offBody: "This computer is not set up to share work with the others. It keeps working on its own.",
+
+    lastSuccess: "Last shared",
+    never: "Never",
+    waitingCount: "Waiting to send",
+    stuckCount: "Stuck",
+    syncNow: "Send Now",
+    sending: "Sending…",
+    openSettings: "Open Settings",
+  },
+
   sync: {
     title: "Cloud Sync",
     notConfiguredTitle: "Not set up on this computer",

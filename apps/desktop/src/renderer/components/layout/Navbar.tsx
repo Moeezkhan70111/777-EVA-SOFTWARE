@@ -5,6 +5,7 @@ import type { AuthUser } from "../../types/desktopApi";
 import { SidebarNav } from "../../features/navigation/SidebarNav";
 import type { StoreDirection } from "../../features/store/storeOperators";
 import { useDismissOnOutsideClick } from "../../hooks/useDismissOnOutsideClick";
+import { SyncStatusIndicator } from "../../features/sync/SyncStatusIndicator";
 
 /* ── Icon helpers ─────────────────────────────────────── */
 const ChevronDown = () => (
@@ -282,6 +283,10 @@ export const Navbar = ({
       {/* Right side */}
       <div className="navbar-right">
         <span className="navbar-version">{appVersion}</span>
+        {/* Whether this computer is sharing its work with the others, in four words. Its own
+            component: the answer is derived from eight numbers (features/sync/syncHealth.ts)
+            and this file is long enough already. */}
+        {user && <SyncStatusIndicator onOpenSettings={() => onSelect("settings")} />}
         {user && (
           <div className="notification-menu-wrap" ref={notificationsRef}>
             <button

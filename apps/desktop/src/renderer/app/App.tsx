@@ -2,6 +2,8 @@ import React, { useCallback, useMemo, useRef, useState } from "react";
 import { ACCESS_STATUS, PERMISSION, USER_ROLE } from "@erp/domain";
 import { Navbar } from "../components/layout/Navbar";
 import { NotificationCenter } from "../components/layout/NotificationCenter";
+import { useAppUpdate } from "../hooks/useAppUpdate";
+import { useNumberRangeWarning } from "../hooks/useNumberRangeWarning";
 import { DashboardPage } from "../pages/DashboardPage";
 import { StockPage } from "../pages/StockPage";
 import { RawMaterialInputPage } from "../pages/RawMaterialInputPage";
@@ -105,6 +107,9 @@ type WorkspaceTab = "messages" | "tasks" | "requests" | "notifications" | "activ
 export const App = () => {
   const api = useDesktopApi();
   const { push } = useNotifications();
+  // Automatic updates: silent until a downloaded version is waiting, then one "Restart Now"
+  // prompt. Mounted here because it belongs to the application, not to any one screen.
+  useAppUpdate();
   const [route, setRoute] = useState<AppRoute>(HOME_ROUTE);
   const [workspaceTab] = useState<WorkspaceTab>("tasks");
   const [selectedProductId, setSelectedProductId] = useState<string | undefined>(undefined);
@@ -128,6 +133,9 @@ export const App = () => {
   const storeJob = useStoreJob(route);
   const { session, sessionToken, savedProfiles, isAddingAccount, authView, authError, authSuccess, requestStatus, needsBootstrap } = auth;
   const admin = useAdminData({ api, push, session, sessionToken, setAuthError: auth.setAuthError });
+  // Said at sign-in, not at the printer: a computer with no number range can neither create a
+  // numbered document nor print a QR label, and both refuse far too late to be useful.
+  useNumberRangeWarning(session?.id ?? null);
 
   // App version for the navbar; settings are read once so the main process warms its cache.
   React.useEffect(() => {

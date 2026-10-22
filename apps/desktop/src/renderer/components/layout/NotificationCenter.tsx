@@ -20,6 +20,13 @@ export const NotificationCenter = () => {
             </button>
           </div>
           {n.message ? <div className="notice-body">{n.message}</div> : null}
+          {n.action ? (
+            <div className="notice-actions">
+              <button type="button" className="btn btn-primary" onClick={n.action.onClick}>
+                {n.action.label}
+              </button>
+            </div>
+          ) : null}
         </div>
       ))}
     </div>
