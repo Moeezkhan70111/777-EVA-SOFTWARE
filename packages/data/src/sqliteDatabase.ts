@@ -45,7 +45,7 @@ import { cashMethods, type CashMethods } from "./database/cash.js";
 import { purchasesMethods, type PurchasesMethods } from "./database/purchases.js";
 import { contractorLedgerMethods, type ContractorLedgerMethods } from "./database/contractorLedger.js";
 import { storeDailyReportMethods, type StoreDailyReportMethods } from "./database/storeDailyReport.js";
-import { numberRangeMethods, type NumberRangeMethods } from "./database/numberRange.js";
+import { DEVICE_ID_SETTING_KEY, numberRangeMethods, type NumberRangeMethods } from "./database/numberRange.js";
 import { productVariantSeedMethods, type ProductVariantSeedMethods } from "./database/productVariantSeed.js";
 import { machineProgramUpperReconciliationMethods, type MachineProgramUpperReconciliationMethods } from "./database/machineProgramUpperReconciliation.js";
 import { partyClaimsMethods, type PartyClaimsMethods } from "./database/partyClaims.js";
@@ -65,6 +65,7 @@ export type { ContractorLedgerAccount, ContractorLedgerReport } from "./database
 export {
   NumberRangeError,
   NUMBER_SITES,
+  DEVICE_ID_SETTING_KEY,
   NUMBER_BLOCK_SETTING_KEY,
   NUMBER_BLOCK_CONFIRMED_KEY,
   NUMBER_BLOCK_SIZE,
@@ -794,6 +795,23 @@ export class SqliteDatabase
         now,
         now
       );
+
+    // WHO AM I, recorded where the data layer can read it.
+    //
+    // countOutsideRange needs this computer's device id to ask "is there a number here that I
+    // issued outside my block" -- the question replication depends on (docs/37 section 0.1).
+    // Written on every startup so it cannot drift from device-identity.json, and seeded by
+    // migration 087 so it exists before the first start after upgrading.
+    //
+    // app_settings is on the replication exclusion list, which is exactly right for a fact about
+    // one machine. Replicating it would hand every computer the same identity.
+    this.db
+      .prepare(
+        `INSERT INTO app_settings (setting_key, setting_value, value_type, is_encrypted, updated_by, updated_at)
+         VALUES (?, ?, 'string', 0, 'operational-context', ?)
+         ON CONFLICT(setting_key) DO UPDATE SET setting_value = excluded.setting_value, updated_at = excluded.updated_at`
+      )
+      .run(DEVICE_ID_SETTING_KEY, context.deviceId, now);
 
     this.seedDefaultSettings({
       factoryId: context.factoryId,

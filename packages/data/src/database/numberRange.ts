@@ -34,6 +34,15 @@ export const NUMBER_BLOCK_SETTING_KEY = "numbering.block";
 /** Settings key recording that an administrator confirmed the block for THIS computer. */
 export const NUMBER_BLOCK_CONFIRMED_KEY = "numbering.block.confirmed";
 
+/**
+ * This computer's device id, as the data layer sees it.
+ *
+ * Written by ensureOperationalContext on every startup and seeded by migration 087, so the data
+ * layer can answer "who am I" without reading the filesystem. It is a statement about one
+ * machine, which is why app_settings is on the replication exclusion list (docs/37 section 0.2).
+ */
+export const DEVICE_ID_SETTING_KEY = "device.id";
+
 export const NUMBER_BLOCK_SIZE = 100_000;
 
 /**
@@ -142,6 +151,17 @@ export interface NumberSite {
   /** Human name used in operator-facing errors. */
   readonly noun: string;
   /**
+   * The column naming the computer that created the row -- the row's provenance.
+   *
+   * REQUIRED, because the out-of-range guard is meaningless without it under replication. The
+   * guard asks "is there a number here that I issued outside my block"; it cannot ask that of a
+   * table that does not record who issued what. See the note on countOutsideRange.
+   *
+   * The four session tables already had `device_id`, meaning the device that performed the
+   * session, and keep it. The other fourteen gained `origin_device_id` in migration 087.
+   */
+  readonly origin: string;
+  /**
    * True when the number normally comes from outside the ERP (a paper bill book, a supplier's
    * invoice). The range then applies ONLY to the automatic fallback, and the out-of-range guard
    * is skipped — a typed number may legitimately be any value at all.
@@ -150,24 +170,24 @@ export interface NumberSite {
 }
 
 export const NUMBER_SITES = {
-  cashVoucher: { table: "cash_vouchers", column: "voucher_number", parse: { kind: "INT" }, noun: "cash voucher numbers" },
-  saleVoucher: { table: "sale_vouchers", column: "voucher_number", parse: { kind: "INT" }, noun: "sale voucher numbers", external: true },
-  purchaseVoucher: { table: "purchase_vouchers", column: "voucher_number", parse: { kind: "INT" }, noun: "purchase voucher numbers", external: true },
-  gatepass: { table: "gatepasses", column: "gatepass_number", parse: { kind: "INT" }, noun: "gatepass numbers" },
-  machineProgram: { table: "machine_programs", column: "program_number", parse: { kind: "INT" }, noun: "machine program numbers" },
-  manualProduction: { table: "manual_production_entries", column: "entry_number", parse: { kind: "INT" }, noun: "manual production numbers" },
-  partyCode: { table: "parties", column: "party_code", parse: { kind: "SUFFIX", from: 5 }, noun: "party codes" },
-  productCode: { table: "article_sizes", column: "product_code", parse: { kind: "SUFFIX", from: 5 }, where: "product_code IS NOT NULL", noun: "product codes" },
-  rmReceivingSession: { table: "raw_material_receiving_sessions", column: "session_number", parse: { kind: "INT" }, noun: "raw material receiving numbers" },
-  rmIssueSession: { table: "raw_material_issue_sessions", column: "session_number", parse: { kind: "INT" }, noun: "raw material issue numbers" },
-  storeReceivingSession: { table: "store_receiving_sessions", column: "session_number", parse: { kind: "INT" }, noun: "store receiving numbers" },
-  storeMoveOutSession: { table: "store_move_out_sessions", column: "session_number", parse: { kind: "INT" }, noun: "store move out numbers" },
-  partyClaim: { table: "party_claims", column: "claim_number", parse: { kind: "SUFFIX", from: 4 }, noun: "claim numbers" },
-  removalRequest: { table: "removal_requests", column: "request_code", parse: { kind: "SUFFIX", from: 5 }, where: "request_code LIKE 'DEL-%'", noun: "removal request numbers" },
-  stockCorrection: { table: "stock_correction_requests", column: "request_code", parse: { kind: "SUFFIX", from: 5 }, where: "request_code LIKE 'SCR-%'", noun: "stock correction numbers" },
-  machineCode: { table: "machines", column: "machine_code", parse: { kind: "SUFFIX", from: 3 }, where: "machine_code LIKE 'M-%'", noun: "machine codes" },
-  inventoryItemCode: { table: "inventory_items", column: "item_code", parse: { kind: "SUFFIX", from: 4 }, where: "item_code LIKE 'RM-%'", noun: "raw material codes" },
-  workSectionCode: { table: "work_sections", column: "section_code", parse: { kind: "SUFFIX", from: 4 }, where: "section_code LIKE 'WS-%'", noun: "work section codes" },
+  cashVoucher: { table: "cash_vouchers", column: "voucher_number", parse: { kind: "INT" }, noun: "cash voucher numbers", origin: "origin_device_id" },
+  saleVoucher: { table: "sale_vouchers", column: "voucher_number", parse: { kind: "INT" }, noun: "sale voucher numbers", external: true, origin: "origin_device_id" },
+  purchaseVoucher: { table: "purchase_vouchers", column: "voucher_number", parse: { kind: "INT" }, noun: "purchase voucher numbers", external: true, origin: "origin_device_id" },
+  gatepass: { table: "gatepasses", column: "gatepass_number", parse: { kind: "INT" }, noun: "gatepass numbers", origin: "origin_device_id" },
+  machineProgram: { table: "machine_programs", column: "program_number", parse: { kind: "INT" }, noun: "machine program numbers", origin: "origin_device_id" },
+  manualProduction: { table: "manual_production_entries", column: "entry_number", parse: { kind: "INT" }, noun: "manual production numbers", origin: "origin_device_id" },
+  partyCode: { table: "parties", column: "party_code", parse: { kind: "SUFFIX", from: 5 }, noun: "party codes", origin: "origin_device_id" },
+  productCode: { table: "article_sizes", column: "product_code", parse: { kind: "SUFFIX", from: 5 }, where: "product_code IS NOT NULL", noun: "product codes", origin: "origin_device_id" },
+  rmReceivingSession: { table: "raw_material_receiving_sessions", column: "session_number", parse: { kind: "INT" }, noun: "raw material receiving numbers", origin: "device_id" },
+  rmIssueSession: { table: "raw_material_issue_sessions", column: "session_number", parse: { kind: "INT" }, noun: "raw material issue numbers", origin: "device_id" },
+  storeReceivingSession: { table: "store_receiving_sessions", column: "session_number", parse: { kind: "INT" }, noun: "store receiving numbers", origin: "device_id" },
+  storeMoveOutSession: { table: "store_move_out_sessions", column: "session_number", parse: { kind: "INT" }, noun: "store move out numbers", origin: "device_id" },
+  partyClaim: { table: "party_claims", column: "claim_number", parse: { kind: "SUFFIX", from: 4 }, noun: "claim numbers", origin: "origin_device_id" },
+  removalRequest: { table: "removal_requests", column: "request_code", parse: { kind: "SUFFIX", from: 5 }, where: "request_code LIKE 'DEL-%'", noun: "removal request numbers", origin: "origin_device_id" },
+  stockCorrection: { table: "stock_correction_requests", column: "request_code", parse: { kind: "SUFFIX", from: 5 }, where: "request_code LIKE 'SCR-%'", noun: "stock correction numbers", origin: "origin_device_id" },
+  machineCode: { table: "machines", column: "machine_code", parse: { kind: "SUFFIX", from: 3 }, where: "machine_code LIKE 'M-%'", noun: "machine codes", origin: "origin_device_id" },
+  inventoryItemCode: { table: "inventory_items", column: "item_code", parse: { kind: "SUFFIX", from: 4 }, where: "item_code LIKE 'RM-%'", noun: "raw material codes", origin: "origin_device_id" },
+  workSectionCode: { table: "work_sections", column: "section_code", parse: { kind: "SUFFIX", from: 4 }, where: "section_code LIKE 'WS-%'", noun: "work section codes", origin: "origin_device_id" },
 } as const satisfies Record<string, NumberSite>;
 
 export type NumberSiteKey = keyof typeof NUMBER_SITES;
@@ -208,6 +228,17 @@ const SERIAL_NOT_CONFIGURED_MESSAGE =
 // ─── Reading and validating the configured block ────────────────────────────
 
 /** One setting as stored text, or null when it is absent or blank. */
+/**
+ * This computer's device id, or null when it has never been recorded.
+ *
+ * Null is treated conservatively by countOutsideRange: with no identity, provenance cannot be
+ * used, and the guard falls back to its pre-replication behaviour rather than silently passing.
+ */
+export function readLocalDeviceId(db: SqliteDatabase): string | null {
+  const value = readSetting(db, DEVICE_ID_SETTING_KEY);
+  return value !== null && value.trim() !== "" ? value.trim() : null;
+}
+
 function readSetting(db: SqliteDatabase, key: string): string | null {
   const row = db.db
     .prepare("SELECT setting_value FROM app_settings WHERE setting_key = ? LIMIT 1")
@@ -336,24 +367,90 @@ export function isWithinSerialRange(range: NumberRange, sequence: number): boole
 // ─── Counting what is already there ─────────────────────────────────────────
 
 /**
- * Numbers at one site that the given range could not have produced, and the highest of them.
+ * Numbers THIS COMPUTER ISSUED at one site that the given range could not have produced.
  *
- * A computer whose existing documents sit outside its block was almost certainly given the wrong
+ * A computer whose own documents sit outside its block was almost certainly given the wrong
  * block, so both allocation and provisioning refuse on the strength of this.
+ *
+ * WHY THE PROVENANCE FILTER IS NOT OPTIONAL. This asked "is there any number here outside my
+ * block" until 2026-10-23. On a single installation that is the same question, because a
+ * computer only holds its own documents. Under replication it is a different question with a
+ * fatal answer: PC 1 holds PC 2's gatepasses, and PC 2's numbers are in block 2 BY DESIGN, so
+ * the count is never zero and every numbered document creation fails on every computer --
+ * no gatepass, no bill, no party, no product. See docs/37 section 0.1.
+ *
+ * `origin` is null only when this computer has no recorded device id. Then provenance cannot be
+ * used and the old, broader question is asked instead: it is the stricter of the two, and a
+ * machine with no identity is not yet replicating anything.
+ *
+ * A NULL ORIGIN ROW COUNTS AS MINE, and that choice carries the one invariant this fix rests on.
+ *
+ * The alternative -- counting only rows whose origin equals mine -- would have required all 27
+ * insert statements across the 14 numbered tables to stamp the column, and a single missed one
+ * would have silently stopped the guard from firing, on a single machine, with nothing to show
+ * it. Treating NULL as mine keeps today's protection exactly as it is: every row on this
+ * computer is either backfilled by migration 087 or newly written with no origin, and both are
+ * counted, so a wrong block is still caught the moment it is assigned.
+ *
+ * THE INVARIANT, in return: THE APPLIER MUST SET origin_device_id ON EVERY REPLICATED ROW. The
+ * envelope already carries originDeviceId, so this is one line in one place rather than 27, and
+ * it is the thing to test rather than hope for. If a peer's row ever lands with a NULL origin it
+ * will be counted as this computer's, and that computer will refuse to allocate -- loudly and
+ * wrongly. That failure is noisy and local, which is the right way round: a missed stamp in a
+ * writer would have been silent.
  */
+/**
+ * Whether a table has a column, cached per database.
+ *
+ * WHY THIS IS NEEDED. The origin columns arrive in migration 087, and code can meet a database
+ * that predates them -- the pre-migration backup path deliberately opens the copy taken BEFORE
+ * migrating, and queries it. Referencing origin_device_id there fails with "no such column" and
+ * takes the whole allocation down. So the guard asks first and falls back to its broader,
+ * stricter question when the column is not there yet.
+ *
+ * Cached because the schema cannot change while a connection is open, and the alternative is a
+ * pragma query per numbered site per document created.
+ */
+const columnCache = new WeakMap<object, Map<string, boolean>>();
+
+function hasColumn(db: SqliteDatabase, table: string, column: string): boolean {
+  let perDb = columnCache.get(db);
+  if (perDb === undefined) {
+    perDb = new Map<string, boolean>();
+    columnCache.set(db, perDb);
+  }
+  const key = `${table}.${column}`;
+  const cached = perDb.get(key);
+  if (cached !== undefined) return cached;
+
+  const rows = db.db.prepare("SELECT name FROM pragma_table_info(?)").all(table) as Array<{ name: string }>;
+  const present = rows.some((row) => String(row.name) === column);
+  perDb.set(key, present);
+  return present;
+}
+
 function countOutsideRange(
   db: SqliteDatabase,
   site: NumberSite,
-  range: NumberRange
+  range: NumberRange,
+  origin: string | null
 ): { count: number; highest: number | null } {
   const expression = numberExpression(site);
   const filter = site.where ? ` AND ${site.where}` : "";
+  // site.origin is a fixed column name from NUMBER_SITES, never caller input -- the same rule
+  // the rest of this file follows for table and column names. The VALUE is always bound.
+  // No identity, or a database that predates migration 087: ask the broader question. Both are
+  // the stricter of the two options, which is the right way to fail.
+  const scoped = origin !== null && hasColumn(db, site.table, site.origin);
+  const mine = scoped ? ` AND (${site.origin} = ? OR ${site.origin} IS NULL)` : "";
+  const params: Array<number | string> = [range.lo, range.hi];
+  if (scoped && origin !== null) params.push(origin);
   const row = db.db
     .prepare(
       `SELECT COUNT(*) AS n, MAX(${expression}) AS mx FROM ${site.table}
-        WHERE (${expression} < ? OR ${expression} > ?)${filter}`
+        WHERE (${expression} < ? OR ${expression} > ?)${filter}${mine}`
     )
-    .get(range.lo, range.hi) as { n: number; mx: number | null };
+    .get(...params) as { n: number; mx: number | null };
   return { count: Number(row.n), highest: row.mx === null ? null : Number(row.mx) };
 }
 
@@ -392,7 +489,7 @@ export function allocateNumberInRange(db: SqliteDatabase, key: NumberSiteKey): n
   // wrong block. Allocating anyway would interleave two computers' series, so refuse and say so.
   // Skipped for externally numbered documents, where a typed number may be any value at all.
   if (!site.external) {
-    const stray = countOutsideRange(db, site, range);
+    const stray = countOutsideRange(db, site, range, readLocalDeviceId(db));
     if (stray.count > 0) {
       throw new NumberRangeError(
         "OUT_OF_RANGE",
@@ -501,13 +598,14 @@ export function checkExistingDataAdoption(db: SqliteDatabase): AdoptionCheck {
   }
 
   const range = rangeForBlock(EXISTING_DATA_BLOCK);
+  const localDeviceId = readLocalDeviceId(db);
   const outside: string[] = [];
   let inside = 0;
 
   for (const key of Object.keys(NUMBER_SITES) as NumberSiteKey[]) {
     const site: NumberSite = NUMBER_SITES[key];
     if (site.external) continue;
-    const stray = countOutsideRange(db, site, range);
+    const stray = countOutsideRange(db, site, range, localDeviceId);
     if (stray.count > 0) outside.push(`${site.noun} (highest ${stray.highest})`);
     inside += countInsideRange(db, site, range);
   }
@@ -632,7 +730,7 @@ export const numberRangeMethods = {
       for (const key of Object.keys(NUMBER_SITES) as NumberSiteKey[]) {
         const site: NumberSite = NUMBER_SITES[key];
         if (site.external) continue;
-        const stray = countOutsideRange(this, site, range);
+        const stray = countOutsideRange(this, site, range, readLocalDeviceId(this));
         if (stray.count > 0) outside.push(`${site.noun} (highest ${String(stray.highest)})`);
       }
       if (outside.length > 0) {

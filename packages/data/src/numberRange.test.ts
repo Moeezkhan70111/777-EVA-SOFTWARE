@@ -154,6 +154,130 @@ test("data outside the assigned block refuses rather than renumbering it", () =>
   });
 });
 
+// ─── provenance: the prerequisite for replication (docs/37 section 0.1) ──────
+//
+// countOutsideRange used to ask "is there any number here outside my block". On one computer
+// that is the right question. Under replication it is fatal: PC 1 holds PC 2's gatepasses, and
+// PC 2's numbers are in block 2 BY DESIGN, so the answer is never zero and EVERY numbered
+// document creation fails on EVERY computer. These tests pin the narrowed question.
+
+/** Records this computer's identity the way ensureOperationalContext does. */
+const setDeviceId = (db: SqliteDatabase, deviceId: string) =>
+  db.setSettings({ "device.id": deviceId }, "test");
+
+test("another computer's numbers do not block this one — the replication hard stop", () => {
+  withFixture("range-peer", 1, ({ db, raw }) => {
+    setDeviceId(db, "pc-1");
+    party(db, "OURS");
+
+    // Exactly what replication delivers: PC 2's party, numbered in block 2, sitting in PC 1's
+    // database. Before this fix the next getNextPartyCode() threw OUT_OF_RANGE and PC 1 could
+    // never create another party.
+    raw
+      .prepare(
+        `INSERT INTO parties (id, party_name, party_type, party_code, status, origin_device_id, created_at, updated_at)
+         VALUES ('peer-1', 'THEIRS', 'CUSTOMER', 'PTY-100001', 'ACTIVE', 'pc-2', ?, ?)`
+      )
+      .run("2026-10-23T00:00:00.000Z", "2026-10-23T00:00:00.000Z");
+
+    const next = db.getNextPartyCode();
+    assert.match(next, /^PTY-0000\d\d$/, "allocation continues in this computer's own block");
+    assert.notEqual(next, "PTY-100002", "and never continues the other computer's series");
+  });
+});
+
+test("this computer's own stray numbers still refuse — the protection is not lost", () => {
+  withFixture("range-mine", 1, ({ db }) => {
+    setDeviceId(db, "pc-1");
+    party(db, "ONE");
+    // Re-assigned to block 3, where its OWN party code does not belong.
+    db.setNumberBlock(3, "test");
+    assert.throws(
+      () => db.getNextPartyCode(),
+      (error: unknown) => error instanceof NumberRangeError && error.reason === "OUT_OF_RANGE",
+      "a wrong block must still be caught"
+    );
+  });
+});
+
+test("an unattributed row counts as this computer's, so today's guard is unchanged", () => {
+  withFixture("range-null-origin", 1, ({ db, raw }) => {
+    setDeviceId(db, "pc-1");
+    // No origin: a row written before migration 087 stamped anything, or by a writer that does
+    // not set the column. It must still be counted, or a wrong block would go unnoticed.
+    raw
+      .prepare(
+        `INSERT INTO parties (id, party_name, party_type, party_code, status, origin_device_id, created_at, updated_at)
+         VALUES ('legacy-1', 'LEGACY', 'CUSTOMER', 'PTY-300001', 'ACTIVE', NULL, ?, ?)`
+      )
+      .run("2026-10-23T00:00:00.000Z", "2026-10-23T00:00:00.000Z");
+
+    assert.throws(
+      () => db.getNextPartyCode(),
+      (error: unknown) => error instanceof NumberRangeError && error.reason === "OUT_OF_RANGE",
+      "a row that cannot be attributed is treated as ours, not ignored"
+    );
+  });
+});
+
+test("a computer with no recorded identity falls back to the stricter question", () => {
+  withFixture("range-no-identity", 1, ({ db, raw }) => {
+    // Migration 087 SEEDS device.id, so every migrated database has an identity and this
+    // fallback is normally unreachable -- which is the point of seeding it. Blanked here on
+    // purpose to cover the path: with no identity, provenance cannot be used, so the old broader
+    // question is asked and a peer's row DOES block. That is the conservative direction, and
+    // such a machine is not replicating anything yet.
+    db.setSettings({ "device.id": "" }, "test");
+    raw
+      .prepare(
+        `INSERT INTO parties (id, party_name, party_type, party_code, status, origin_device_id, created_at, updated_at)
+         VALUES ('peer-2', 'THEIRS', 'CUSTOMER', 'PTY-200001', 'ACTIVE', 'pc-2', ?, ?)`
+      )
+      .run("2026-10-23T00:00:00.000Z", "2026-10-23T00:00:00.000Z");
+
+    assert.throws(
+      () => db.getNextPartyCode(),
+      (error: unknown) => error instanceof NumberRangeError && error.reason === "OUT_OF_RANGE"
+    );
+  });
+});
+
+test("block assignment is provenance-scoped too, not just allocation", () => {
+  withFixture("range-assign", 1, ({ db, raw }) => {
+    setDeviceId(db, "pc-1");
+    // A peer's block-2 party arrives. Re-recording this computer as block 1 must still be
+    // possible: the guard at assignment asks the same narrowed question as allocation.
+    raw
+      .prepare(
+        `INSERT INTO parties (id, party_name, party_type, party_code, status, origin_device_id, created_at, updated_at)
+         VALUES ('peer-3', 'THEIRS', 'CUSTOMER', 'PTY-100005', 'ACTIVE', 'pc-2', ?, ?)`
+      )
+      .run("2026-10-23T00:00:00.000Z", "2026-10-23T00:00:00.000Z");
+
+    assert.deepEqual(db.setNumberBlock(1, "admin"), { block: 1, lo: 1, hi: 99_999 });
+  });
+});
+
+test("every numbered site names the column that records who created the row", () => {
+  // Without this the narrowed question cannot be asked of that table at all, and the site would
+  // silently fall back to counting every row -- the replication hard stop, for one table.
+  const sessionTables = new Set([
+    "raw_material_receiving_sessions",
+    "raw_material_issue_sessions",
+    "store_receiving_sessions",
+    "store_move_out_sessions",
+  ]);
+  for (const key of Object.keys(NUMBER_SITES) as NumberSiteKey[]) {
+    const site = NUMBER_SITES[key];
+    assert.ok(site.origin, `${key} has no origin column`);
+    assert.equal(
+      site.origin,
+      sessionTables.has(site.table) ? "device_id" : "origin_device_id",
+      `${key} names the wrong origin column`
+    );
+  }
+});
+
 test("an exhausted block refuses and writes nothing", () => {
   withFixture("range-full", 1, ({ db, raw }) => {
     const id = party(db, "LAST");
