@@ -59,12 +59,21 @@ data-migration.json
 
 # --- Local reference material ------------------------------------------------
 # Photographs and scans kept beside the code for reference while building a
-# screen. They are not source, and an untracked one here is enough to make
+# screen. Most are not source, and an untracked one here is enough to make
 # scripts/write-build-info.mjs --strict refuse a release: it fails on ANY
 # `git status --porcelain` output, deliberately, so a build can always be tied
-# to a commit. Ignoring the folder keeps that gate meaningful without asking
-# anyone to move their reference pictures somewhere else first.
-REFERENCE PICS/
+# to a commit. So the folder stays a DROP ZONE -- anything new in it is ignored
+# and cannot break a release.
+#
+# A FEW ITEMS ARE BUSINESS REFERENCE AND MUST TRAVEL WITH THE REPO, so they are
+# allow-listed below rather than the whole folder being tracked. Keeping the
+# allow-list explicit means "this is reference material worth keeping" is a
+# deliberate act, and a casual screenshot dropped here still cannot stop a
+# release. Add a line when something graduates from scratch to reference.
+REFERENCE PICS/*
+!REFERENCE PICS/PRODUCT LIST 2.webp
+!REFERENCE PICS/PRODUCTS LIST.webp
+!REFERENCE PICS/qadri chappal.pdf
 
 # --- Local agent and MCP tooling -------------------------------------------
 # Per-machine, not project source. .claude/settings.local.json records which MCP
