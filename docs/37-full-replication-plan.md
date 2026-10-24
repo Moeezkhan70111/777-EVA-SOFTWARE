@@ -12,7 +12,10 @@
   follow (§4).
 - **Built:** §0.1 numbering (migration 087), §0.2 exclusion list (`replicationScope.ts`), the
   general applier (`packages/sync/src/applyEnvelope.ts` + `applyContract.ts`), and `replicated_at`
-  (migration 088, §0.3).
+  (migration 088, §0.3). On `feat/replication-phase-1`: the identity-conflict guard, the RM label-run
+  contracts on both sides (migrations 089–090), and, from stage 1, the project-keyed pull cursor
+  and **parking** (migration 091). A waiting event is now held locally and the cursor moves on, so
+  one waiting event can no longer stall the log.
 - `docs/34` (carton pilot) is still the live configuration. The two-PC carton test has not been
   recorded as passed.
 

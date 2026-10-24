@@ -1,5 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { SyncPull } from "./pull.js";
 import { PULL_CURSOR_SETTING_KEY, PULL_PROJECT_SETTING_KEY, pullProjectKey, readPullCursor, readPullDeferral, writePullDeferral } from "./pullCursor.js";
@@ -14,11 +16,17 @@ import type { SyncPullTransport } from "./transport.js";
 const TEST = "https://wpkrhgqsizjjdaztijwv.supabase.co";
 const PROD = "https://ykhvbmhmeefdtrzqeoxm.supabase.co";
 
+const MIGRATION_091 = path.resolve(import.meta.dirname, "../../../migrations/sqlite/091_sync_inbox_parked.up.sql");
+
+/** Settings plus the parked-event table (migration 091) -- all a pull touches without applying. */
 function settingsOnly(): { sql: SyncSqlHandle; raw: DatabaseSync } {
   const raw = new DatabaseSync(":memory:");
   raw.exec(`CREATE TABLE app_settings (
     setting_key TEXT PRIMARY KEY, setting_value TEXT, value_type TEXT, is_encrypted INTEGER,
     updated_by TEXT, updated_at TEXT)`);
+  for (const statement of fs.readFileSync(MIGRATION_091, "utf8").split(";")) {
+    if (statement.trim()) raw.exec(statement);
+  }
   return { sql: raw as unknown as SyncSqlHandle, raw };
 }
 

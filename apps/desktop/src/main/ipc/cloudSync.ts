@@ -75,7 +75,8 @@ export function registerCloudSyncHandlers(ctx: IpcContext): void {
   ipcMain.handle(IPC.getCloudSyncStatus, async (event) => {
     authorizer.requireUser(event);
     const sync = await import("@erp/sync");
-    const deferral = sync.readPullDeferral(db.db);
+    // Events pulled but not yet applicable, held so the cursor can move on (migration 091).
+    const parked = sync.parkedSummary(db.db);
     // Read once: two calls to state() could disagree if a pass started between them.
     const schedulerState = ctx.syncScheduler?.state() ?? null;
     return {
@@ -101,14 +102,17 @@ export function registerCloudSyncHandlers(ctx: IpcContext): void {
       }),
       // How far through the cloud log this computer has read. 0 means it has never applied one.
       pullCursor: sync.readPullCursor(db.db),
-      // Set only while a pull is waiting on something that has not arrived.
+      // Set only while something pulled is parked, waiting on something that has not arrived: how
+      // many, and the one at the earliest log position.
       waitingFor:
-        deferral === null
+        parked.oldest === null
           ? undefined
           : {
-              seq: deferral.seq,
-              attempts: deferral.attempts,
-              retryAfter: new Date(deferral.until).toISOString(),
+              seq: parked.oldest.seq,
+              attempts: parked.oldest.attempts,
+              retryAfter: new Date(parked.oldest.nextTryAt).toISOString(),
+              parked: parked.count,
+              reason: parked.oldest.reason,
             },
     };
   });

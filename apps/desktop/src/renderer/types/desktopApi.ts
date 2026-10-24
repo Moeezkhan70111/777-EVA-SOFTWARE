@@ -41,8 +41,11 @@ export interface CloudSyncStatus {
   queue: SyncQueueSummary;
   /** How far through the cloud log this computer has read. 0 = it has applied nothing. */
   pullCursor: number;
-  /** Present only while a pull is waiting for something that has not arrived yet. */
-  waitingFor?: { seq: number; attempts: number; retryAfter: string };
+  /**
+   * Present only while pulled events are parked, waiting for something that has not arrived yet:
+   * how many, and the one at the earliest log position with why and when it is next tried.
+   */
+  waitingFor?: { seq: number; attempts: number; retryAfter: string; parked: number; reason: string };
   /** The background loop's state. Absent on a computer with no scheduler. */
   schedule?: { nextPassInMs: number | null; consecutiveFailures: number };
   /** The most recent pass attempted, from sync_runs. Null if none has ever run here. */

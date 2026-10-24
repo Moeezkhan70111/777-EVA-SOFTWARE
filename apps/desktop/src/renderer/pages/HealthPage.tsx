@@ -119,7 +119,7 @@ export const HealthPage = () => {
             {sync.waitingFor !== undefined && (
               <HealthItem
                 label="Pull Waiting At"
-                value={`position ${String(sync.waitingFor.seq)}, retry after ${when(sync.waitingFor.retryAfter)}`}
+                value={`${String(sync.waitingFor.parked)} parked — oldest at position ${String(sync.waitingFor.seq)} (${sync.waitingFor.reason}), retry after ${when(sync.waitingFor.retryAfter)}`}
                 tone="warn"
               />
             )}

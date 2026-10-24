@@ -155,9 +155,9 @@ vi.mock("@erp/sync", () => {
       sql.prepare("SELECT setting_value FROM app_settings WHERE setting_key = ? LIMIT 1");
       return 7;
     },
-    readPullDeferral: (sql: { prepare: (text: string) => unknown }) => {
-      sql.prepare("SELECT setting_value FROM app_settings WHERE setting_key = ? LIMIT 1");
-      return deferral;
+    parkedSummary: (sql: { prepare: (text: string) => unknown }) => {
+      sql.prepare("SELECT COUNT(*) AS n FROM sync_inbox_parked");
+      return parked;
     },
   };
 });
@@ -171,7 +171,10 @@ const QUEUE = {
   lastSyncedAt: "2026-10-01T10:00:00.000Z",
   lastFailureAt: "2026-10-01T11:00:00.000Z",
 };
-let deferral: { seq: number; until: number; attempts: number } | null;
+let parked: {
+  count: number;
+  oldest: { seq: number; dedupeKey: string; reason: string; attempts: number; nextTryAt: number } | null;
+};
 let summaryCalls: Array<Record<string, unknown>>;
 /** What the stubbed claim answers, and what it was asked for. */
 let claimOutcome: Record<string, unknown>;
@@ -336,7 +339,7 @@ beforeEach(() => {
   built = [];
   prepared = [];
   syncRuns = [];
-  deferral = null;
+  parked = { count: 0, oldest: null };
   summaryCalls = [];
   drainThrows = null;
   drainGate = null;
@@ -485,14 +488,25 @@ describe("cloud sync at the process boundary", () => {
     expect(typeof summaryCalls[0]?.nowIso).toBe("string");
   });
 
-  it("reports what a pull is waiting at, and says nothing when it is not waiting", async () => {
+  it("reports what pulled events are parked waiting for, and says nothing when none is", async () => {
     expect((await status()).waitingFor).toBeUndefined();
 
-    deferral = { seq: 12, until: Date.parse("2026-10-01T12:30:00.000Z"), attempts: 3 };
+    parked = {
+      count: 2,
+      oldest: {
+        seq: 12,
+        dedupeKey: "QR_MASTER:q-1",
+        reason: "UNKNOWN_PRODUCT_VARIANT:v-1",
+        attempts: 3,
+        nextTryAt: Date.parse("2026-10-01T12:30:00.000Z"),
+      },
+    };
     expect((await status()).waitingFor).toEqual({
       seq: 12,
       attempts: 3,
       retryAfter: "2026-10-01T12:30:00.000Z",
+      parked: 2,
+      reason: "UNKNOWN_PRODUCT_VARIANT:v-1",
     });
   });
 

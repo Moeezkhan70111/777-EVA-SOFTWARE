@@ -7,17 +7,25 @@
 //
 //   read cursor  →  fetch what is after it  →  apply each, in order  →  advance the cursor
 //
-// THE CURSOR ONLY EVER MOVES OVER A SETTLED RUN OF EVENTS. Applied, already here, or permanently
-// refused all count as settled; an event waiting for a prerequisite does not. The cursor
-// therefore advances to the end of the settled run only, so nothing unsettled is ever claimed to
-// be dealt with.
+// EVERY FETCHED EVENT IS SETTLED BEFORE THE CURSOR PASSES IT. Applied, already here, permanently
+// refused -- or PARKED (parking.ts, migration 091) when its prerequisite has not arrived. A parked
+// event is held locally, exactly as it arrived, and retried until it applies or is refused for good,
+// so the cursor can pass it without it ever being skipped.
 //
-// WHY THE BATCH IS SWEPT MORE THAN ONCE. Stopping dead at the first waiting event would be
-// correct but can deadlock: if the log ever holds a scan before the carton identity it needs —
-// another computer pushed the identity later, or it was parked and re-queued — the run would stop
-// on the scan for ever and never reach the identity sitting behind it. So the sweep continues,
-// applies everything it can, and repeats while it is still making progress. Re-applying is free
-// (every apply is idempotent) and the loop is bounded by the number of events fetched.
+// It used to be the other way round: a waiting event held the cursor at its position, the same
+// batch was fetched on every pass, and once a batch's worth of events sat behind it nothing newer
+// was ever fetched. Raw material arrivals wait for their master data by decision (docs/37), so one
+// new material on another computer would in time have frozen all replication into this one.
+//
+// WHY THE BATCH IS SWEPT MORE THAN ONCE. If the log ever holds a scan before the carton identity it
+// needs -- another computer pushed the identity later, or a retry reordered them -- one pass would
+// park the scan although its identity sits a few positions further on. So the sweep repeats while
+// it is still making progress, and only what is STILL waiting at the end is parked. Re-applying is
+// free (every apply is idempotent) and the loop is bounded by the number of events fetched.
+//
+// PARKED EVENTS ARE RETRIED after each fetch: all of them when the run applied anything new -- it
+// may be exactly what one was waiting for -- and otherwise only those whose backoff has run out.
+// A fetch that fails still retries them, because that work needs no network.
 //
 // WHAT `seq > cursor` DEPENDS ON. Reading forward from a position is only safe if a position
 // that becomes visible can never be followed by an EARLIER one appearing later. A plain
@@ -41,15 +49,16 @@
 import { applyEnvelope, type ApplyOutcome } from "./applyEnvelope.js";
 import type { SyncEnvelope } from "./contract.js";
 import {
-  bindPullCursorToProject,
-  clearPullDeferral,
-  readPullCursor,
-  readPullDeferral,
-  writePullCursor,
-  writePullDeferral,
-} from "./pullCursor.js";
-import type { SyncSqlHandle } from "./sqlPort.js";
-import type { SyncPullTransport } from "./transport.js";
+  clearParkedEvents,
+  parkedEventsToTry,
+  parkedSummary,
+  parkEvent,
+  unparkEvent,
+  type ParkingBackoff,
+} from "./parking.js";
+import { bindPullCursorToProject, clearPullDeferral, readPullCursor, writePullCursor } from "./pullCursor.js";
+import { asRow, type SyncSqlHandle } from "./sqlPort.js";
+import type { SyncChange, SyncPullTransport } from "./transport.js";
 
 export interface PullProblem {
   readonly seq: number;
@@ -60,26 +69,27 @@ export interface PullProblem {
 export interface PullResult {
   /** Where the cursor stood before the run. */
   readonly from: number;
-  /** Where it stands now. Unchanged when the first event could not be settled. */
+  /** Where it stands now: past every event fetched, because each one was settled or parked. */
   readonly cursor: number;
   readonly fetched: number;
+  /** Applied for the first time this run, from the log or from the parked events. */
   readonly applied: number;
   readonly duplicates: number;
-  /** Permanently refused and stepped over. Each is reported, never silently dropped. */
+  /** Permanently refused. Each is reported, never silently dropped. */
   readonly refused: readonly PullProblem[];
-  /** Set when the run stopped on an event whose prerequisite has not arrived. */
+  /** How many events are parked after this run, waiting for something to arrive. */
+  readonly parked: number;
+  /** The parked event at the earliest log position, when any is parked. */
   readonly waitingFor?: PullProblem;
   /** Set when the service could not be reached. The cursor did not move. */
   readonly transportError?: string;
-  /** Set when the run did not even look, because a recorded wait has not elapsed. */
-  readonly deferredUntil?: number;
   /** Set when the cursor belonged to another project, or to none, and was started again from zero. */
   readonly restartedForProject?: boolean;
 }
 
 export interface SyncPullOptions {
   readonly batchSize?: number;
-  /** The first wait after a prerequisite is missing. It doubles per attempt, up to the cap. */
+  /** A parked event's first wait. It doubles per attempt, up to the cap. */
   readonly deferBaseMs?: number;
   readonly deferMaxMs?: number;
   /** Injected so a test can move time forward without waiting. */
@@ -91,10 +101,18 @@ export interface SyncPullOptions {
   readonly project?: string;
 }
 
+/** What one run did, gathered as it goes. */
+interface Tally {
+  applied: number;
+  duplicates: number;
+  refused: PullProblem[];
+  /** Parked by THIS run, so the retry at its end does not try them a second time. */
+  parkedNow: Set<string>;
+}
+
 export class SyncPull {
   private readonly batchSize: number;
-  private readonly deferBaseMs: number;
-  private readonly deferMaxMs: number;
+  private readonly backoff: ParkingBackoff;
   private readonly now: () => number;
   private readonly project: string | undefined;
 
@@ -104,101 +122,119 @@ export class SyncPull {
     options: SyncPullOptions = {}
   ) {
     this.batchSize = options.batchSize ?? 200;
-    this.deferBaseMs = options.deferBaseMs ?? 30_000;
-    this.deferMaxMs = options.deferMaxMs ?? 900_000;
+    this.backoff = { baseMs: options.deferBaseMs ?? 30_000, maxMs: options.deferMaxMs ?? 900_000 };
     this.now = options.now ?? (() => Date.now());
     this.project = options.project;
   }
 
   async runOnce(): Promise<PullResult> {
-    // Before the cursor is read: a position from another project must never be fetched from.
-    const restarted = this.project !== undefined && bindPullCursorToProject(this.sql, this.project);
-    const restartedForProject = restarted ? { restartedForProject: true } : {};
+    const restartedForProject = this.bindToProject() ? { restartedForProject: true } : {};
     const from = readPullCursor(this.sql);
-
-    // A recorded wait means the last run stopped on an event whose prerequisite had not
-    // arrived. Fetching the same batch again before the wait is out would just fail the same
-    // way, so the run does nothing and says when it is worth trying again. One row holds the
-    // whole wait, so a prerequisite that never arrives costs nothing but that row.
-    const deferral = readPullDeferral(this.sql);
-    if (deferral !== null && deferral.seq > from && this.now() < deferral.until) {
-      return {
-        from,
-        cursor: from,
-        fetched: 0,
-        applied: 0,
-        duplicates: 0,
-        refused: [],
-        deferredUntil: deferral.until,
-        ...restartedForProject,
-      };
-    }
-
-    let changes;
-    try {
-      changes = await this.transport.fetchChanges(from, this.batchSize);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "the service could not be reached";
-      return { from, cursor: from, fetched: 0, applied: 0, duplicates: 0, refused: [], transportError: message, ...restartedForProject };
-    }
-
-    let applied = 0;
-    let duplicates = 0;
-    const refused: PullProblem[] = [];
-    const settled = new Set<number>();
-    let waiting: PullProblem | undefined;
+    const tally: Tally = { applied: 0, duplicates: 0, refused: [], parkedNow: new Set() };
     // One arrival time for the whole run, from the injectable clock, so a test can fix it.
     const replicatedAt = new Date(this.now()).toISOString();
 
-    // Sweep while something is still waiting and the last sweep settled something new.
+    let changes: SyncChange[];
+    try {
+      changes = await this.transport.fetchChanges(from, this.batchSize);
+    } catch (error) {
+      this.retryParked(tally, false, replicatedAt);
+      const message = error instanceof Error ? error.message : "the service could not be reached";
+      return { ...this.result(from, from, 0, tally), transportError: message, ...restartedForProject };
+    }
+
+    this.applyBatch(changes, tally, replicatedAt);
+    // Every fetched event is now settled or parked, so the cursor passes the whole batch.
+    const cursor = changes.reduce((highest, change) => Math.max(highest, change.seq), from);
+    writePullCursor(this.sql, cursor);
+
+    this.retryParked(tally, tally.applied > 0, replicatedAt);
+    return { ...this.result(from, cursor, changes.length, tally), ...restartedForProject };
+  }
+
+  /**
+   * Makes the cursor this project's. On a move, parked events go too: they belong to the old log.
+   * The pull-level wait of earlier builds (sync.pull.deferred) is retired by parking and cleared.
+   */
+  private bindToProject(): boolean {
+    const restarted = this.project !== undefined && bindPullCursorToProject(this.sql, this.project);
+    if (restarted) clearParkedEvents(this.sql);
+    clearPullDeferral(this.sql);
+    return restarted;
+  }
+
+  /** Applies a fetched batch, sweeping while it makes progress, and parks what still waits. */
+  private applyBatch(changes: readonly SyncChange[], tally: Tally, replicatedAt: string): void {
+    const alreadyParked = this.parkedKeys();
+    const settled = new Set<number>();
+    const waiting = new Map<number, PullProblem>();
+
     for (let sweep = 0; sweep <= changes.length; sweep += 1) {
       const before = settled.size;
-      waiting = undefined;
-
+      waiting.clear();
       for (const change of changes) {
         if (settled.has(change.seq)) continue;
         const outcome = applyEnvelope(this.sql, change.envelope, replicatedAt);
-
-        if (outcome.status === "APPLIED") {
-          applied += 1;
-          settled.add(change.seq);
-        } else if (outcome.status === "DUPLICATE") {
-          duplicates += 1;
-          settled.add(change.seq);
-        } else if (outcome.permanent === true) {
-          refused.push(problem(change.seq, outcome));
-          settled.add(change.seq);
-        } else if (waiting === undefined) {
-          // Its prerequisite has not arrived. Remembered, and the sweep carries on in case what
-          // it needs is sitting further down the log.
-          waiting = problem(change.seq, outcome);
+        if (outcome.status === "REJECTED" && outcome.permanent !== true) {
+          waiting.set(change.seq, problem(change.seq, outcome));
+          continue;
         }
+        settled.add(change.seq);
+        this.count(outcome, change.seq, tally);
+        if (alreadyParked.has(change.envelope.dedupeKey)) unparkEvent(this.sql, change.envelope.dedupeKey);
       }
-
-      if (waiting === undefined || settled.size === before) break;
+      if (waiting.size === 0 || settled.size === before) break;
     }
 
-    // Only the unbroken run of settled events from the start counts, so nothing unsettled is
-    // ever left behind the cursor.
-    let cursor = from;
     for (const change of changes) {
-      if (!settled.has(change.seq)) break;
-      cursor = change.seq;
+      const waited = waiting.get(change.seq);
+      if (waited === undefined) continue;
+      parkEvent(this.sql, { seq: change.seq, envelope: change.envelope, reason: waited.reason, nowMs: this.now() }, this.backoff);
+      tally.parkedNow.add(change.envelope.dedupeKey);
     }
+  }
 
-    writePullCursor(this.sql, cursor);
-
-    // Record, or clear, the wait. The count only grows while the SAME position stays blocked, so
-    // a prerequisite that arrives resets the wait instead of inheriting someone else's backoff.
-    if (waiting === undefined) {
-      if (deferral !== null) clearPullDeferral(this.sql);
-    } else {
-      const attempts = deferral !== null && deferral.seq === waiting.seq ? deferral.attempts + 1 : 1;
-      const wait = Math.min(this.deferBaseMs * 2 ** (attempts - 1), this.deferMaxMs);
-      writePullDeferral(this.sql, { seq: waiting.seq, until: this.now() + wait, attempts });
+  /** Tries parked events again: all of them, or only those whose backoff has run out. */
+  private retryParked(tally: Tally, all: boolean, replicatedAt: string): void {
+    for (const parked of parkedEventsToTry(this.sql, this.now(), all)) {
+      if (tally.parkedNow.has(parked.envelope.dedupeKey)) continue;
+      const outcome = applyEnvelope(this.sql, parked.envelope, replicatedAt);
+      if (outcome.status === "REJECTED" && outcome.permanent !== true) {
+        // Still waiting: the row stays, with a wider backoff.
+        parkEvent(this.sql, { seq: parked.seq, envelope: parked.envelope, reason: outcome.reason ?? parked.reason, nowMs: this.now() }, this.backoff);
+        continue;
+      }
+      this.count(outcome, parked.seq, tally);
+      unparkEvent(this.sql, parked.envelope.dedupeKey);
     }
+  }
 
-    return { from, cursor, fetched: changes.length, applied, duplicates, refused, waitingFor: waiting, ...restartedForProject };
+  private count(outcome: ApplyOutcome, seq: number, tally: Tally): void {
+    if (outcome.status === "APPLIED") tally.applied += 1;
+    else if (outcome.status === "DUPLICATE") tally.duplicates += 1;
+    else tally.refused.push(problem(seq, outcome));
+  }
+
+  private parkedKeys(): Set<string> {
+    const rows = this.sql.prepare("SELECT dedupe_key FROM sync_inbox_parked").all().map(asRow);
+    return new Set(rows.flatMap((row) => (row === null ? [] : [String(row.dedupe_key)])));
+  }
+
+  private result(from: number, cursor: number, fetched: number, tally: Tally): PullResult {
+    const summary = parkedSummary(this.sql);
+    return {
+      from,
+      cursor,
+      fetched,
+      applied: tally.applied,
+      duplicates: tally.duplicates,
+      refused: tally.refused,
+      parked: summary.count,
+      waitingFor:
+        summary.oldest === null
+          ? undefined
+          : { seq: summary.oldest.seq, dedupeKey: summary.oldest.dedupeKey, reason: summary.oldest.reason },
+    };
   }
 }
 

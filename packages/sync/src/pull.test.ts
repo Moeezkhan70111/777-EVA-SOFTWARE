@@ -9,7 +9,7 @@ import { enqueueProductionProduced, enqueueQrMaster, productionProducedDedupeKey
 import type { ProductionProducedPayload } from "@erp/data";
 import { OutboxDrain } from "./drain.js";
 import { SyncPull } from "./pull.js";
-import { readPullCursor, readPullDeferral } from "./pullCursor.js";
+import { readPullCursor } from "./pullCursor.js";
 import type { OutboxRetryPolicy } from "./outboxQueue.js";
 import { HttpSyncTransport } from "./transport.js";
 import { startTestSyncBackend, type TestSyncBackend } from "./testOnlyBackend.js";
@@ -28,8 +28,8 @@ import type { SyncEnvelope } from "./contract.js";
 //   * a computer that has pulled holds the other computer's cartons and scans
 //   * pulling twice changes nothing — the cursor moves, repeats are no-ops
 //   * BOTH computers end up with BOTH computers' work
-//   * a pull stops at an event whose prerequisite has not arrived and resumes after it has,
-//     without skipping anything
+//   * an event whose prerequisite has not arrived is parked, not skipped, and applied once it has
+//     -- and it no longer holds up the events behind it
 //   * an event the receiving computer can never apply is stepped over and reported, not silently
 //     dropped and not retried for ever
 //   * a failure to reach the store leaves the cursor exactly where it was
@@ -44,6 +44,7 @@ const MIGRATION_083 = path.resolve(
   "../../../migrations/sqlite/083_sync_outbox_transient_attempts.up.sql"
 );
 const MIGRATION_088 = path.resolve(import.meta.dirname, "../../../migrations/sqlite/088_replicated_at.up.sql");
+const MIGRATION_091 = path.resolve(import.meta.dirname, "../../../migrations/sqlite/091_sync_inbox_parked.up.sql");
 
 const FAST_RETRY: OutboxRetryPolicy = { maxAttempts: 4, baseBackoffMs: 1_000, maxBackoffMs: 60_000, staleInFlightMs: 60_000 };
 
@@ -76,6 +77,7 @@ function createStore(root: string, name: string): Store {
   runMigration(raw, MIGRATION_082);
   runMigration(raw, MIGRATION_083);
   runMigration(raw, MIGRATION_088);
+  runMigration(raw, MIGRATION_091);
   raw.exec("PRAGMA foreign_keys = ON;");
   raw
     .prepare(
@@ -358,7 +360,7 @@ test("both computers end up holding both computers' work", async () => {
 
 // ─── order and prerequisites ────────────────────────────────────────────────
 
-test("a pull waits at a scan whose carton has not arrived, then finishes it later", async () => {
+test("a scan whose carton has not arrived is parked, and applied the moment the carton is", async () => {
   const fixture = await createFixture("waits");
   try {
     const time = clock("2026-10-01T09:45:00.000Z");
@@ -386,29 +388,27 @@ test("a pull waits at a scan whose carton has not arrived, then finishes it late
       .run(scanEnvelope.dedupeKey, JSON.stringify(scanEnvelope));
 
     const pull = puller(fixture.pc2, fixture.backend, time.nowMs);
-    const stalled = await pull.runOnce();
-    assert.equal(stalled.applied, 0);
-    assert.ok(stalled.waitingFor, "the run says what it is waiting for");
-    assert.match(stalled.waitingFor?.reason ?? "", /QR_NOT_REGISTERED_YET/);
-    assert.equal(stalled.cursor, 0, "and the cursor did not step over it");
-    assert.equal(readPullCursor(fixture.pc2.sql), 0);
+    const parked = await pull.runOnce();
+    assert.equal(parked.applied, 0);
+    assert.equal(parked.parked, 1, "held locally, not stepped over");
+    assert.match(parked.waitingFor?.reason ?? "", /QR_NOT_REGISTERED_YET/, "and the run says what for");
+    assert.ok(parked.cursor > 0, "the cursor passes it: nothing behind it has to wait");
 
-    // The identity arrives. Because the cursor stayed put, the scan is offered again -- once
-    // the recorded wait has elapsed, which is what stops a blocked pull spinning.
+    // The identity arrives. Applying it is something new, so every parked event is tried at once --
+    // no backoff to sit out, because what it was waiting for has just come.
     await pusher(fixture.pc1, fixture.backend, time.nowIso).runOnce();
-    time.advanceMs(10_000);
     const finished = await pull.runOnce();
 
+    assert.equal(finished.parked, 0);
     assert.equal(finished.waitingFor, undefined);
     assert.deepEqual(qrIds(fixture.pc2), ["SK9_BLACK_7/10_000001"]);
     assert.equal(eventSerials(fixture.pc2).length, 1, "and the scan landed exactly once");
-    assert.ok(readPullCursor(fixture.pc2.sql) > 0);
   } finally {
     await fixture.cleanup();
   }
 });
 
-test("a pull waits for a missing product instead of stepping over the carton", async () => {
+test("a carton for a product this computer lacks is parked until the product is there, never stepped over", async () => {
   const fixture = await createFixture("refused");
   try {
     const time = clock("2026-10-01T10:00:00.000Z");
@@ -435,22 +435,17 @@ test("a pull waits for a missing product instead of stepping over the carton", a
     await pusher(fixture.pc1, fixture.backend, time.nowIso).runOnce();
     const pulled = await puller(fixture.pc2, fixture.backend, time.nowMs).runOnce();
 
-    // WAITS at the carton it cannot place, and does not step over it. Stepping over meant the
-    // cursor moved on, so seeding the product afterwards healed nothing and that carton was
-    // missed for good -- the likeliest mistake while two computers are being set up.
+    // PARKED at the carton it cannot place -- never stepped over. Stepping over would mean that
+    // seeding the product afterwards healed nothing and the carton was missed for good.
     assert.deepEqual(pulled.refused, [], "a missing product is not a permanent refusal");
-    assert.ok(pulled.waitingFor, "the run says what it is waiting for");
+    assert.equal(pulled.parked, 1);
     assert.match(pulled.waitingFor?.reason ?? "", /UNKNOWN_PRODUCT_VARIANT/);
-    assert.equal(pulled.cursor, 0, "and the cursor stayed put");
-    // Later events are still applied -- applying is idempotent, so getting on with what it can is
-    // free. What must not happen is the CURSOR moving past the blocked one, which is what would
-    // lose it. The applied ones are simply offered again next time and recognised as duplicates.
-    assert.deepEqual(qrIds(fixture.pc2), ["SK9_BLACK_7/10_000002"], "it gets on with what it can");
+    assert.deepEqual(qrIds(fixture.pc2), ["SK9_BLACK_7/10_000002"], "it gets on with everything else");
 
-    // It does not spin: a wait is recorded, and a pull inside it does not even look.
+    // It does not spin: nothing new arrived and the backoff has not run out, so it is left alone.
     const tooSoon = await puller(fixture.pc2, fixture.backend, time.nowMs).runOnce();
-    assert.equal(tooSoon.fetched, 0, "no request is made while the wait is running");
-    assert.ok(tooSoon.deferredUntil, "and it says when it is worth trying again");
+    assert.equal(tooSoon.applied, 0);
+    assert.equal(tooSoon.parked, 1, "still held, still waiting");
 
     // The owner seeds the product on PC2. The SAME event applies, with no cursor reset by hand.
     fixture.pc2.raw
@@ -463,11 +458,61 @@ test("a pull waits for a missing product instead of stepping over the carton", a
     time.advanceMs(10_000);
     const healed = await puller(fixture.pc2, fixture.backend, time.nowMs).runOnce();
 
+    assert.equal(healed.applied, 1, "the parked carton, applied from parking");
+    assert.equal(healed.parked, 0);
     assert.equal(healed.waitingFor, undefined);
     assert.deepEqual(qrIds(fixture.pc2), ["SK46_GREY_6/9_000001", "SK9_BLACK_7/10_000002"]);
-    assert.ok(healed.cursor > 0, "and the cursor finally moves");
-    // The recorded wait is cleared once nothing is blocked.
-    assert.equal(readPullDeferral(fixture.pc2.sql), null);
+  } finally {
+    await fixture.cleanup();
+  }
+});
+
+test("a waiting event no longer holds up everything behind it", async () => {
+  const fixture = await createFixture("no-stall");
+  try {
+    const time = clock("2026-10-01T10:30:00.000Z");
+    // First in the log: a carton PC2 cannot place. Behind it, three ordinary scans.
+    fixture.pc1.raw
+      .prepare(
+        `INSERT INTO product_variants (id, article, color, size, status, created_at, updated_at)
+         VALUES ('variant-only-on-pc1', 'SK46', 'GREY', '6/9', 'ACTIVE', ?, ?)`
+      )
+      .run(SEEDED_AT, SEEDED_AT);
+    fixture.hub.raw
+      .prepare(
+        `INSERT INTO product_variants (id, article, color, size, status, created_at, updated_at)
+         VALUES ('variant-only-on-pc1', 'SK46', 'GREY', '6/9', 'ACTIVE', ?, ?)`
+      )
+      .run(SEEDED_AT, SEEDED_AT);
+    enqueueQrMaster(
+      fixture.pc1.sql,
+      { qrId: "SK46_GREY_6/9_000001", productVariantId: "variant-only-on-pc1", createdAt: time.nowIso() },
+      crypto.randomUUID()
+    );
+    for (const serial of ["000011", "000012", "000013"]) {
+      recordScan(fixture.pc1, { qrId: `SK9_BLACK_7/10_${serial}`, serial, occurredAt: time.nowIso() });
+    }
+    await pusher(fixture.pc1, fixture.backend, time.nowIso).runOnce();
+
+    // Two events per fetch. Before parking, the cursor could never pass the first one, so every
+    // run fetched those same two again and the scans behind them never arrived.
+    const pull = new SyncPull(fixture.pc2.sql, new HttpSyncTransport({ host: fixture.backend.host, port: fixture.backend.port }), {
+      batchSize: 2,
+      deferBaseMs: 1_000,
+      deferMaxMs: 8_000,
+      now: time.nowMs,
+    });
+    for (let run = 0; run < 6; run += 1) await pull.runOnce();
+
+    assert.deepEqual(
+      qrIds(fixture.pc2),
+      ["SK9_BLACK_7/10_000011", "SK9_BLACK_7/10_000012", "SK9_BLACK_7/10_000013"],
+      "everything behind the blocked carton arrived"
+    );
+    assert.equal(eventSerials(fixture.pc2).length, 3);
+    const last = await pull.runOnce();
+    assert.equal(last.fetched, 0, "the cursor reached the end of the log");
+    assert.equal(last.parked, 1, "and the carton it cannot place is still held, not lost");
   } finally {
     await fixture.cleanup();
   }

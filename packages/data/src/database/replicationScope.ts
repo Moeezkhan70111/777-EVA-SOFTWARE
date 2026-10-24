@@ -39,6 +39,10 @@ export const REPLICATION_EXCLUSIONS: ReadonlyArray<{ readonly table: string; rea
     why: "This computer's queue of what it still has to send. Replicating a queue would have every computer try to send every other computer's work.",
   },
   {
+    table: "sync_inbox_parked",
+    why: "Events this computer pulled but cannot apply yet. A statement about this computer's own progress through one project's log, like sync_outbox -- never shared.",
+  },
+  {
     table: "user_sessions",
     why: "Live sign-ins on this machine, including login_date. A session is not transferable.",
   },
