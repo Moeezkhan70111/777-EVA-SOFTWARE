@@ -24,7 +24,8 @@ import { materialPickerOption, formatQuantity, type InventoryItemRow } from "../
 // before it is sent.
 //
 // Receiving is supplier-at-a-time, the same rule a scanning session follows, so moving IN asks
-// who delivered it. Moving OUT does not: it is simply stock leaving.
+// who delivered it. Moving OUT does not — but it must say what the stock is going out for
+// (required since 0.3.6), because a hand move has no label or scan to say where it went.
 //
 // Nothing here decides anything. The arithmetic is the domain's (convertOnLadder), the units
 // are the material's own, and every refusal comes back from the data layer, which checks the
@@ -142,8 +143,12 @@ export const HandMovePanel: React.FC<HandMovePanelProps> = ({ direction, token, 
   // Only a move OUT is capped: the shelf cannot give what it does not hold.
   const tooMuch = !movingIn && inStockUnit != null && options != null && Number(inStockUnit.toFixed(3)) > options.quantityOnHand;
   const problem = problemOf({ options, typed, quantity, inStockUnit, tooMuch, stockUnit, words });
+  // Moving OUT must say what for; moving IN's reference stays optional. The data layer refuses a
+  // move out without it too, so this only saves the operator a round trip.
+  const noteRequired = !movingIn;
+  const purposeMissing = noteRequired && note.trim() === "";
   const ready = Boolean(
-    options && !options.blockedReason && unit && inStockUnit != null && !problem && !moving && (!movingIn || partyId)
+    options && !options.blockedReason && unit && inStockUnit != null && !problem && !moving && (!movingIn || partyId) && !purposeMissing
   );
 
   const move = async () => {
@@ -281,7 +286,12 @@ export const HandMovePanel: React.FC<HandMovePanelProps> = ({ direction, token, 
               <Equivalents steps={steps} units={options.units} unit={unit} typed={typed} stockUnit={stockUnit} inStockUnit={inStockUnit} />
 
               <label className="mo-field-label" htmlFor="mo-note">
-                {words.noteLabel} <span className="text-muted">{copy.moveOut.optional}</span>
+                {words.noteLabel}
+                {noteRequired ? (
+                  <span className="required-mark"> *</span>
+                ) : (
+                  <> <span className="text-muted">{copy.moveOut.optional}</span></>
+                )}
               </label>
               <input
                 id="mo-note"
@@ -289,9 +299,14 @@ export const HandMovePanel: React.FC<HandMovePanelProps> = ({ direction, token, 
                 value={note}
                 maxLength={160}
                 autoComplete="off"
+                required={noteRequired}
+                aria-required={noteRequired || undefined}
                 placeholder={words.notePlaceholder}
                 onChange={(event) => setNote(event.target.value)}
               />
+              {purposeMissing && inStockUnit != null ? (
+                <p className="field-help">{copy.moveOut.outWords.noteMissing}</p>
+              ) : null}
             </>
           )}
         </div>

@@ -85,9 +85,19 @@ export interface RawMaterialMovementRepository {
       machineProgramBatchId?: string | null;
       /** Upper Move Out: the machine the operator issued the packet to (migration 079), or null. */
       machineId?: string | null;
+      /**
+       * Scan Out: the party the packet was moved out TO (0.3.6). Kept in the event's metadata,
+       * not a column, because 0.3.6 ships no migration. Null for every other movement.
+       */
+      issuedToPartyId?: string | null;
     },
     tx: TransactionContext
   ): void;
+  /** A party as the Scan Out rule needs to judge it, or null when there is no such party. */
+  getRawMaterialIssueParty(
+    partyId: string,
+    tx: TransactionContext
+  ): { id: string; partyName: string; partyType: string; status: string } | null;
 
   // ─── Machine Program reconciliation ───────────────────────────────────────
   // A machine program reserves uppers for a machine on a date. The packet that satisfies one is

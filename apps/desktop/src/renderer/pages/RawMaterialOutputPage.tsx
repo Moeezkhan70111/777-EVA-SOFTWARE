@@ -1,6 +1,9 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useDesktopApi } from "../hooks/useDesktopApi";
-import type { RawMaterialIssueResult, RawMaterialIssueSession, RawMaterialIssueSessionSummary } from "../types/desktopApi";
+import type { Party, RawMaterialIssueResult, RawMaterialIssueSession, RawMaterialIssueSessionSummary } from "../types/desktopApi";
+import { SearchableCombobox } from "../components/shared/SearchableCombobox";
+import { StateView } from "../components/shared/StateView";
+import { StepHeading } from "../components/shared/StepHeading";
 import type { AppRoute } from "../app/routes";
 import { useNotifications } from "../state/NotificationsContext";
 import { playScanSound } from "../utils/playScanSound";
@@ -9,7 +12,7 @@ import { openPrintDocument } from "../platform/print";
 import { escapeHtml } from "../utils/html";
 import { formatDateTime } from "../utils/dates";
 import { isCompleteQr, sanitizeScanInput } from "../utils/qr";
-import { isMachineProgramCodeScan, isValidRawMaterialQrId } from "@erp/domain";
+import { isMachineProgramCodeScan, isRawMaterialIssuePartyType, isValidRawMaterialQrId } from "@erp/domain";
 import {
   LastScanCard,
   PlusIcon,
@@ -24,10 +27,14 @@ import type { ScanStationFeedback, StationScanRow } from "../features/scanStatio
 
 // Raw Material Output — issuing packets out of the store to the section that consumes them.
 //
-// The mirror of Raw Material Input, on the same station (features/scanStation). The one
-// thing that makes it simpler: there is nothing to choose. Where a packet goes is a
-// property of its material — rubber uppers to packing, ragzine to the upper maker — so the
-// storekeeper only scans, and the session is just this terminal's run.
+// The mirror of Raw Material Input, on the same station (features/scanStation). Since 0.3.6 the
+// storekeeper first chooses WHO the packets are going to — a supplier or a contractor — the way
+// Raw Material Input names its supplier, and every scan goes to that party until another is
+// chosen. The session still opens by itself: it is just this terminal's run.
+//
+// A packet scanned before a party is chosen is turned away here, without a call, and the main
+// process refuses it again if it ever arrives without one. The scan box itself stays live, so a
+// machine program sheet scanned into it still reaches the program lookup above.
 //
 // Finished cartons leave the store on Store Move Out; a carton scanned here is turned away.
 
@@ -45,6 +52,19 @@ const IDLE: ScanStationFeedback = {
 const packingLabel = (quantity?: number, unitCode?: string | null, packName?: string | null): string =>
   quantity == null ? "" : `1 ${(packName ?? "").trim() || "PACK"} (${quantity} ${unitCode ?? ""})`.trim();
 
+/** Where a packet went: the party chosen on Scan Out, else its material's section. */
+const destinationOf = (result: RawMaterialIssueResult): string | null =>
+  result.issuedToPartyName || result.sectionName || null;
+
+/** Shown when a packet is scanned before a party is chosen. Nothing was sent or moved. */
+const choosePartyFirst = (seq: number): ScanStationFeedback => ({
+  tone: "warn",
+  title: copy.moveOut.scanPartyFirstTitle,
+  message: copy.moveOut.scanPartyFirstBody,
+  result: null,
+  seq,
+});
+
 /** Turns the business layer's answer into what the operator reads. Text always, never colour alone. */
 const feedbackFor = (result: RawMaterialIssueResult, seq: number): ScanStationFeedback => {
   const packing = packingLabel(result.packingQuantity, result.packingUnitCode, result.packName);
@@ -54,12 +74,13 @@ const feedbackFor = (result: RawMaterialIssueResult, seq: number): ScanStationFe
       qrId: result.qrId,
       product: result.itemDisplayName,
       fromStatus: "In Store",
-      toStatus: result.sectionName ? `Issued to ${result.sectionName}` : "Issued",
+      toStatus: destinationOf(result) ? `Issued to ${destinationOf(result)}` : "Issued",
       currentStatusLabel:
         result.currentStatus === "IN_STORE" ? "In Store" : result.currentStatus === "ISSUED" ? "Issued" : (result.currentStatus ?? null),
       facts: [
         { label: "Raw material", value: result.itemDisplayName },
         { label: "One pack", value: packing },
+        { label: copy.moveOut.movedOutTo, value: result.issuedToPartyName },
         { label: "Goes to", value: result.sectionName },
         // Shown only when a machine program was waiting for this bag. The storekeeper chose no
         // program: the packet's own material and supplier found it (see IssueRawMaterialScanUseCase).
@@ -89,9 +110,11 @@ const feedbackFor = (result: RawMaterialIssueResult, seq: number): ScanStationFe
         message: program
           ? `${packing || "Pack"} → ${program.machineName} · ${program.lineConsumed} of ${program.lineQuantity}${program.unitCode ? ` ${program.unitCode}` : ""} taken` +
             (program.programCompleted ? " · program finished" : "")
-          : `${packing || "Pack"} sent to ${result.sectionName ?? "its section"}`,
+          : `${packing || "Pack"} sent to ${destinationOf(result) ?? "its section"}`,
       };
     }
+    case "NO_PARTY":
+      return { ...base, tone: "warn", title: copy.moveOut.scanPartyRefusedTitle, message: result.reason ?? copy.moveOut.scanPartyFirstBody };
     case "NOT_IN_STORE":
       return { ...base, tone: "error", title: "✕ NOT IN STORE", message: result.reason ?? "This packet is not in the store." };
     case "UNKNOWN_QR":
@@ -215,6 +238,11 @@ export const RawMaterialOutputPage: React.FC<RawMaterialOutputPageProps> = ({
   const [inputVal, setInputVal] = useState("");
   const [sessionError, setSessionError] = useState<string | null>(null);
   const [scannerConnected, setScannerConnected] = useState(false);
+  // Who the packets are going to. Kept for the life of the screen, so a run of scans to one
+  // party needs one choice, not one per packet.
+  const [parties, setParties] = useState<Party[]>([]);
+  const [partyId, setPartyId] = useState("");
+  const [partiesError, setPartiesError] = useState<string | null>(null);
 
   const seq = useRef(0);
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -254,6 +282,27 @@ export const RawMaterialOutputPage: React.FC<RawMaterialOutputPageProps> = ({
     void openSession(false);
   }, [openSession]);
 
+  // Only active suppliers and contractors may receive packets — the same domain rule the main
+  // process enforces, so the list cannot offer a party the scan would be refused for.
+  const loadParties = useCallback(async () => {
+    setPartiesError(null);
+    try {
+      const result = await api.listParties({ pageSize: 1000 });
+      setParties(result.rows.filter((party) => party.status === "ACTIVE" && isRawMaterialIssuePartyType(party.partyType)));
+    } catch (error) {
+      setPartiesError(error instanceof Error ? error.message : copy.states.loadFailedBody);
+    }
+  }, [api]);
+
+  useEffect(() => {
+    void loadParties();
+  }, [loadParties]);
+
+  const partyOptions = useMemo(
+    () => parties.map((party) => ({ value: party.id, label: `${party.partyCode} — ${party.partyName}` })),
+    [parties]
+  );
+
   // The session is a database row, not this component's state, so the page above is told
   // which one is open rather than being handed a copy of it.
   useEffect(() => {
@@ -290,12 +339,18 @@ export const RawMaterialOutputPage: React.FC<RawMaterialOutputPageProps> = ({
     async (code: string) => {
       if (!session || session.status !== "OPEN") return;
       seq.current += 1;
-      const result = await api.rawMaterialIssueScan(code, { token, sessionId: session.id });
+      // No party, no move: turned away here without a call. The main process refuses it too.
+      if (!partyId) {
+        setFeedback(choosePartyFirst(seq.current));
+        playScanSound("error");
+        return;
+      }
+      const result = await api.rawMaterialIssueScan(code, { token, sessionId: session.id, issuedToPartyId: partyId });
       setFeedback(feedbackFor(result, seq.current));
       playScanSound(result.accepted ? "success" : "error");
       if (result.accepted) await refreshSummary(session.id);
     },
-    [api, refreshSummary, session, token]
+    [api, partyId, refreshSummary, session, token]
   );
 
   // Scans are serialised: a wedge scanner can fire the next code before the last one has
@@ -425,6 +480,35 @@ export const RawMaterialOutputPage: React.FC<RawMaterialOutputPageProps> = ({
           </button>
         ) : null}
       </StationToolbar>
+
+      {!blocked && (
+        <section className="qr-step">
+          <StepHeading index={1} done={Boolean(partyId)} title={copy.moveOut.scanPartyStep} />
+          <div className="qr-step-body">
+            {partiesError ? (
+              <StateView kind="error" compact message={partiesError} onRetry={() => void loadParties()} />
+            ) : (
+              <>
+                <SearchableCombobox
+                  dropdown
+                  value={partyId}
+                  options={partyOptions}
+                  placeholder={partyOptions.length === 0 ? copy.moveOut.noScanParties : copy.moveOut.chooseScanParty}
+                  emptyLabel={copy.moveOut.noScanPartyMatch}
+                  ariaLabel={copy.moveOut.scanPartyStep}
+                  onChange={(next) => {
+                    setPartyId(next);
+                    setFeedback(IDLE);
+                    // Hand the keyboard straight back to the scanner once the party is chosen.
+                    setTimeout(focusScanner, 0);
+                  }}
+                />
+                <p className="field-help">{copy.moveOut.scanPartyHelp}</p>
+              </>
+            )}
+          </div>
+        </section>
+      )}
 
       <div className="ssn-workspace">
         {blocked ? (

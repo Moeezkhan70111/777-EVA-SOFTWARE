@@ -145,7 +145,7 @@ function createFixture() {
 
   /** A plain Raw Material Output scan — the storekeeper names no program (the generic station). */
   const plainIssue = (qrId: string) =>
-    useCases.issue.execute({ rawScan: qrId, sessionId: openSession().id, context: CONTEXT, actor: ACTOR });
+    useCases.issue.execute({ rawScan: qrId, sessionId: openSession().id, issuedToPartyId: supplierA, context: CONTEXT, actor: ACTOR });
 
   const saveBatch = (input: { programId: string; qrIds: string[]; batchKey?: string; sessionId?: string | null }) =>
     useCases.saveBatch.execute({
