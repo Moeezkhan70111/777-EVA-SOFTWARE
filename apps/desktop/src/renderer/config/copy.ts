@@ -1624,6 +1624,17 @@ export const copy = {
     chooseMaterialFirst: "Choose a raw material first.",
     inStore: "In store",
 
+    // SCAN OUT names who the packets are going to, before the first scan (0.3.6).
+    scanPartyStep: "Moving out to",
+    chooseScanParty: "Choose supplier or contractor…",
+    noScanParties: "No suppliers or contractors yet",
+    noScanPartyMatch: "No supplier or contractor found",
+    scanPartyHelp: "Every packet you scan goes out to this party, until you choose another.",
+    scanPartyFirstTitle: "⚠ CHOOSE A PARTY FIRST",
+    scanPartyFirstBody: "Choose who these packets are going to, then scan. Nothing was moved.",
+    scanPartyRefusedTitle: "✕ CHOOSE A PARTY",
+    movedOutTo: "Moved out to",
+
     // Moving IN asks who delivered it; moving OUT does not.
     stepSupplier: "Select Supplier",
     chooseSupplier: "Choose supplier…",
@@ -1644,6 +1655,8 @@ export const copy = {
       stepAmount: "How much is going out",
       noteLabel: "What for",
       notePlaceholder: "Where it went — e.g. cutting table",
+      /** Shown under the box while it is still empty: moving out has to say what for. */
+      noteMissing: "Say what this is going out for before moving it out.",
       action: "Move Out",
       moving: "Moving out…",
       movedTitle: "Moved out",

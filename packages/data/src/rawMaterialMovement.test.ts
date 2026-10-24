@@ -124,13 +124,15 @@ function createFixture() {
 
   const scanIn = (qrId: string) =>
     receive.execute({ rawScan: qrId, partyId: session.partyId, sessionId: session.id, context: CONTEXT, actor: "store-op" });
+  const scanOutTo = (qrId: string, issuedToPartyId: string) =>
+    issue.execute({ rawScan: qrId, sessionId: issueSession.id, issuedToPartyId, context: CONTEXT, actor: "store-op" });
   const scanOut = (qrId: string) =>
-    issue.execute({ rawScan: qrId, sessionId: issueSession.id, context: CONTEXT, actor: "store-op" });
+    issue.execute({ rawScan: qrId, sessionId: issueSession.id, issuedToPartyId: supplier, context: CONTEXT, actor: "store-op" });
 
   return {
     db, raw, unitId, packingSectionId: packing.id, makeItem, labelsFor,
     supplier, otherSupplier, cartonMoveIn,
-    stockOf, statusOf, journeyOf, countRows, scanIn, scanOut, issueSession,
+    stockOf, statusOf, journeyOf, countRows, scanIn, scanOut, scanOutTo, issueSession,
     get session() { return session; },
     openSessionFor: (partyId: string) => {
       session = db.startRawMaterialReceivingSession({ partyId, deviceId: "device-1", startedBy: "aslam" });
@@ -769,7 +771,7 @@ test("an issued packet's journey reads in the shared stage vocabulary", async ()
   }
 });
 
-test("the journey says the packet was issued, with no destination to name", async () => {
+test("the journey names the party the packet was moved out to, and no section", async () => {
   const f = createFixture();
   try {
     const upper = readyMaterial(f, "7/10", 2);
@@ -778,8 +780,9 @@ test("the journey says the packet was issued, with no destination to name", asyn
 
     const journey = f.db.getQrJourney(upper.labels[0]);
     assert.ok(journey);
-    // Nothing records where it went, so there is no place to add to the status.
-    assert.equal(journey.steps[2].toStatusLabel, null);
+    // Since 0.3.6 Scan Out records who it went to, and the exit hop says so. Sections were
+    // removed on 2026-10-07 and stay removed: the current-stage label still names none.
+    assert.equal(journey.steps[2].toStatusLabel, "Issued to SHEHZAD RUBBER TOPPING");
     assert.equal(journey.stageLabel, null);
     // A packet in the store is in a place the status already names, so no override.
     assert.equal(journey.steps[1].toStatusLabel, null);
@@ -791,7 +794,7 @@ test("the journey says the packet was issued, with no destination to name", asyn
   }
 });
 
-test("a second material is issued the same way — nothing names a destination", async () => {
+test("a second material is issued the same way — to its party, never to a section", async () => {
   const f = createFixture();
   try {
     const ragzine = f.makeItem("RAGZINE", "BLACK", "54/54");
@@ -802,8 +805,80 @@ test("a second material is issued the same way — nothing names a destination",
     await f.scanOut(label);
 
     const journey = f.db.getQrJourney(label);
-    assert.equal(journey?.steps[2].toStatusLabel, null);
+    assert.equal(journey?.steps[2].toStatusLabel, "Issued to SHEHZAD RUBBER TOPPING");
     assert.equal(journey?.stageLabel, null);
+  } finally {
+    f.cleanup();
+  }
+});
+
+// ─── Scan Out names who the packet goes to (0.3.6) ──────────────────────────────
+
+test("scan out without a party is refused, and the packet stays in the store", async () => {
+  const f = createFixture();
+  try {
+    const m = readyMaterial(f, "7/10", 2);
+    await f.scanIn(m.labels[0]);
+    const before = f.stockOf(m.itemId);
+
+    for (const partyId of ["", "   "]) {
+      const refused = await f.scanOutTo(m.labels[0], partyId);
+      assert.equal(refused.accepted, false);
+      assert.equal(refused.outcome, "NO_PARTY");
+    }
+    assert.equal(f.stockOf(m.itemId), before, "nothing came off the balance");
+    assert.equal(f.statusOf(m.labels[0])?.status, RAW_MATERIAL_QR_STATUS.IN_STORE);
+    assert.deepEqual(f.journeyOf(m.labels[0]), ["STORE_ENTRY:2:GENERATED->IN_STORE"], "no exit was recorded");
+  } finally {
+    f.cleanup();
+  }
+});
+
+test("only an active supplier or contractor can receive a packet", async () => {
+  const f = createFixture();
+  try {
+    const m = readyMaterial(f, "7/10", 2);
+    await f.scanIn(m.labels[0]);
+    const party = (partyName: string, partyType: string, status = "ACTIVE") =>
+      f.db.createParty({ partyName, partyType, city: "Lahore", mobileNumber: "0300-9999999", status });
+
+    const customer = party("WALK-IN CUSTOMER", "CUSTOMER");
+    const retired = party("OLD CONTRACTOR", "CONTRACTOR", "INACTIVE");
+    for (const refusedParty of [customer, retired, "party-nobody"]) {
+      const refused = await f.scanOutTo(m.labels[0], refusedParty);
+      assert.equal(refused.outcome, "NO_PARTY", `${refusedParty} must not receive raw material`);
+    }
+    assert.equal(f.statusOf(m.labels[0])?.status, RAW_MATERIAL_QR_STATUS.IN_STORE, "every refusal left it in the store");
+
+    const contractor = party("ASLAM UPPER MAKER", "CONTRACTOR");
+    const issued = await f.scanOutTo(m.labels[0], contractor);
+    assert.equal(issued.outcome, "ISSUED", issued.reason);
+    assert.equal(issued.issuedToPartyName, "ASLAM UPPER MAKER");
+  } finally {
+    f.cleanup();
+  }
+});
+
+test("the party is kept on the packet's exit and named in its journey", async () => {
+  const f = createFixture();
+  try {
+    const m = readyMaterial(f, "7/10", 2);
+    await f.scanIn(m.labels[0]);
+    const contractor = f.db.createParty({
+      partyName: "ASLAM UPPER MAKER", partyType: "CONTRACTOR", city: "Lahore", mobileNumber: "0300-8888888", status: "ACTIVE",
+    });
+
+    assert.equal((await f.scanOutTo(m.labels[0], contractor)).outcome, "ISSUED");
+
+    const exit = f.raw
+      .prepare("SELECT metadata_json FROM raw_material_qr_events WHERE qr_id = ? AND event_type = 'STORE_EXIT'")
+      .get(m.labels[0]) as { metadata_json: string };
+    assert.equal(JSON.parse(exit.metadata_json).issuedToPartyId, contractor, "kept with the exit, no migration needed");
+
+    const journey = f.db.getRawMaterialQrJourney(m.labels[0]);
+    const last = journey?.steps[journey.steps.length - 1];
+    assert.equal(last?.toStatusLabel, "Issued to ASLAM UPPER MAKER");
+    assert.match(last?.note ?? "", /issued to ASLAM UPPER MAKER/);
   } finally {
     f.cleanup();
   }

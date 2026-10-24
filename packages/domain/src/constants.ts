@@ -84,6 +84,14 @@ export const PERMISSION = {
 } as const;
 export type PermissionCode = (typeof PERMISSION)[keyof typeof PERMISSION];
 
+/**
+ * Who may generate and print CARTON QRs (Setup → QR Generator, B-Carton Labels, and the carton
+ * labels printed from Move Out): anyone given QR Generator, and every store operator (owner
+ * request, 0.3.6). One list, read by the main process that enforces it and the route guard that
+ * offers the page, so the two cannot disagree.
+ */
+export const QR_GENERATOR_ACCESS: readonly PermissionCode[] = [PERMISSION.QR_GENERATOR, PERMISSION.STORE_SCANNING];
+
 // ─── QR lifecycle ────────────────────────────────────────────────────────────
 
 export const QR_STATUS = {

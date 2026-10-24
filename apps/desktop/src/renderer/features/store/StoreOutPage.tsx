@@ -42,6 +42,11 @@ interface StoreOutPageProps {
   /** Opens Daily Report Store Out. */
   onOpenReport: () => void;
   /**
+   * Opens the carton QR Generator (Setup → QR Generator). Passed only when this user may open it;
+   * absent, the link is not shown.
+   */
+  onOpenQrGenerator?: () => void;
+  /**
    * A machine program to open on arrival, from a notification. The id is the program's stored
    * identifier — never its printed number — and is still resolved and judged in the main process.
    */
@@ -54,6 +59,7 @@ export const StoreOutPage: React.FC<StoreOutPageProps> = ({
   token,
   onBack,
   onOpenReport,
+  onOpenQrGenerator,
   initialProgramId,
   onInitialProgramConsumed,
 }) => {
@@ -95,6 +101,11 @@ export const StoreOutPage: React.FC<StoreOutPageProps> = ({
           <h1 className="si-title">{copy.moveOut.title}</h1>
           <p className="si-sub">{copy.moveOut.line}</p>
         </div>
+        {onOpenQrGenerator ? (
+          <button type="button" className="mo-back" onClick={onOpenQrGenerator}>
+            {copy.nav.items.qrGenerator.label}
+          </button>
+        ) : null}
         <button type="button" className="mo-back" onClick={onOpenReport}>
           {copy.storeDailyReport.openReport}
         </button>

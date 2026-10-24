@@ -8,7 +8,7 @@ import { IPC } from "../../shared/ipcChannels";
 import type { IpcContext } from "./context";
 import { rejection } from "../authorize";
 import { parseReconciliationEntries } from "./reconciliationInput";
-import { ACCESS_STATUS, PERMISSION, STORE_DIRECTION, USER_ROLE, asOptionalNumber, asOptionalString, asString, asStringArray, isRecord, optionalOneOf } from "@erp/domain";
+import { ACCESS_STATUS, PERMISSION, QR_GENERATOR_ACCESS, STORE_DIRECTION, USER_ROLE, asOptionalNumber, asOptionalString, asString, asStringArray, isRecord, optionalOneOf } from "@erp/domain";
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -153,7 +153,7 @@ export function registerStoreHandlers(ctx: IpcContext): void {
     db.getRawMaterialIssueSessionSummary(String(sessionId ?? ""))
   );
 
-  ipcMain.handle(IPC.rawMaterialIssueScan, async (_event, rawScan?: string, opts?: { token?: string; sessionId?: string }) => {
+  ipcMain.handle(IPC.rawMaterialIssueScan, async (_event, rawScan?: string, opts?: { token?: string; sessionId?: string; issuedToPartyId?: string }) => {
     const auth = resolveStoreOperator(opts?.token);
     if (!auth.ok) {
       logger.log({ module: "raw-material-output", severity: "WARNING", operation: "scan-denied", deviceId, message: auth.reason });
@@ -172,6 +172,8 @@ export function registerStoreHandlers(ctx: IpcContext): void {
       const result = await issueRawMaterialScanUseCase.execute({
         rawScan: normalized,
         sessionId: session.id,
+        // Judged by the use case, never trusted from the screen.
+        issuedToPartyId: typeof opts?.issuedToPartyId === "string" ? opts.issuedToPartyId : "",
         actor: auth.username,
         context: scanContext,
       });
@@ -335,7 +337,7 @@ export function registerStoreHandlers(ctx: IpcContext): void {
     if (!auth.ok) return { accepted: false, reason: auth.reason };
     const payload = isRecord(input) ? input : {};
     try {
-      authorizer.requirePermission(event, PERMISSION.QR_GENERATOR, opts?.token);
+      authorizer.requireAnyPermission(event, QR_GENERATOR_ACCESS, opts?.token);
     } catch {
       return { accepted: false, reason: "Your account does not have QR Generator access, so it cannot print carton QR labels." };
     }
@@ -370,7 +372,7 @@ export function registerStoreHandlers(ctx: IpcContext): void {
     if (!auth.ok) return { accepted: false, reason: auth.reason };
     const payload = isRecord(input) ? input : {};
     try {
-      authorizer.requirePermission(event, PERMISSION.QR_GENERATOR, opts?.token);
+      authorizer.requireAnyPermission(event, QR_GENERATOR_ACCESS, opts?.token);
     } catch {
       return { accepted: false, reason: "Your account does not have QR Generator access, so it cannot generate B carton labels." };
     }
@@ -490,7 +492,7 @@ export function registerStoreHandlers(ctx: IpcContext): void {
     if (!auth.ok) return { accepted: false, reason: auth.reason };
     const payload = isRecord(input) ? input : {};
     try {
-      authorizer.requirePermission(event, PERMISSION.QR_GENERATOR, opts?.token);
+      authorizer.requireAnyPermission(event, QR_GENERATOR_ACCESS, opts?.token);
     } catch {
       return { accepted: false, reason: "Your account does not have QR Generator access, so it cannot generate B carton labels." };
     }

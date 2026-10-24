@@ -2,6 +2,15 @@ export type PartyType = 'CUSTOMER' | 'SUPPLIER' | 'CONTRACTOR' | 'DISTRIBUTOR' |
 
 /** The party type a machine's two contractors must have (machine contractor, packing contractor). */
 export const CONTRACTOR_PARTY_TYPE: PartyType = 'CONTRACTOR';
+
+/**
+ * Who a packet may be moved out TO on the Scan Out station: suppliers and contractors (owner
+ * request, 0.3.6). One list, read by the use case that enforces it and the screen that offers it.
+ */
+export const RAW_MATERIAL_ISSUE_PARTY_TYPES: readonly PartyType[] = ['SUPPLIER', CONTRACTOR_PARTY_TYPE];
+
+export const isRawMaterialIssuePartyType = (partyType: string): boolean =>
+  (RAW_MATERIAL_ISSUE_PARTY_TYPES as readonly string[]).includes(partyType);
 export type PartyStatus = 'ACTIVE' | 'INACTIVE';
 
 export interface PartyGroup {

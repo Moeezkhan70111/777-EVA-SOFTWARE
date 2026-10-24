@@ -101,12 +101,15 @@ describe("Navbar sidebar", () => {
       expect(within(rail).getByRole("button", { name: "Move In" })).not.toHaveAttribute("aria-current");
     });
 
-    it("lists Move Out with its one page of its own, the daily report", () => {
+    it("lists Move Out with its pages: the daily report and the carton QR Generator", () => {
       const { onSelect, rail } = renderNavbar(storeOp, "store-out-operator", "out");
-      expect(rowNames(rail)).toEqual(["Select Job", "Move Out", "Daily Report Store Out"]);
+      expect(rowNames(rail)).toEqual(["Select Job", "Move Out", "Daily Report Store Out", "QR Generator"]);
 
       fireEvent.click(within(rail).getByRole("button", { name: "Daily Report Store Out" }));
       expect(onSelect).toHaveBeenCalledWith("store-out-daily-report");
+      // A store operator holds no QR Generator permission of their own: store scanning grants it.
+      fireEvent.click(within(rail).getByRole("button", { name: "QR Generator" }));
+      expect(onSelect).toHaveBeenCalledWith("qr-generator");
     });
   });
 

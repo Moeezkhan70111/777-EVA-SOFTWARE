@@ -69,7 +69,7 @@ function createFixture() {
     },
     issuePacket: async (qrId: string) => {
       const session = db.startOrResumeRawMaterialIssueSession({ deviceId: "device-1", startedBy: ACTOR });
-      const result = await new IssueRawMaterialScanUseCase(deps).execute({ rawScan: qrId, sessionId: session.id, context: CONTEXT, actor: ACTOR });
+      const result = await new IssueRawMaterialScanUseCase(deps).execute({ rawScan: qrId, sessionId: session.id, issuedToPartyId: supplier, context: CONTEXT, actor: ACTOR });
       assert.equal(result.accepted, true, result.reason);
     },
     cartons: async (count: number): Promise<string[]> => {
@@ -124,7 +124,7 @@ test("Store Out: a packet scanned out, loose stock typed out and a carton to the
   const f = createFixture();
   const [packet] = await f.receivePackets(2);
   await f.issuePacket(packet);
-  assert.equal(f.db.moveRawMaterialByHand({ itemId: f.nawaarId, direction: "OUT", quantity: 30, unitCode: "INCH", actor: ACTOR }).outcome, "MOVED");
+  assert.equal(f.db.moveRawMaterialByHand({ itemId: f.nawaarId, direction: "OUT", quantity: 30, unitCode: "INCH", note: "cutting table", actor: ACTOR }).outcome, "MOVED");
   const [carton] = await f.cartons(2);
   await f.moveCartonOut(carton);
 

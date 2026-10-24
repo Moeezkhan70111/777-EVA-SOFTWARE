@@ -149,7 +149,7 @@ function createFixture(options: { withDana?: boolean } = {}) {
   /** A plain Raw Material Output scan — the storekeeper names no program. */
   const issueOut = async (qrId: string) => {
     const session = db.startOrResumeRawMaterialIssueSession({ deviceId: "device-1", startedBy: ACTOR });
-    return useCases.issue.execute({ rawScan: qrId, sessionId: session.id, context: CONTEXT, actor: ACTOR });
+    return useCases.issue.execute({ rawScan: qrId, sessionId: session.id, issuedToPartyId: supplierA, context: CONTEXT, actor: ACTOR });
   };
 
   const bringBack = async (qrId: string, partyId: string) => {

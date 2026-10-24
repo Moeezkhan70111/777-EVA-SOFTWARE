@@ -411,6 +411,7 @@ export const App = () => {
             token={sessionToken ?? ""}
             onBack={() => setRoute("store-home")}
             onOpenReport={() => setRoute("store-out-daily-report")}
+            onOpenQrGenerator={canOpenRoute(session, "qr-generator") ? () => setRoute("qr-generator") : undefined}
             initialProgramId={storeOutProgramId}
             onInitialProgramConsumed={() => setStoreOutProgramId(undefined)}
           />

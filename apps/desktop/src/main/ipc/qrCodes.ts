@@ -6,7 +6,7 @@
 import { ipcMain } from "electron";
 import { IPC } from "../../shared/ipcChannels";
 import type { IpcContext } from "./context";
-import { CARTON_GRADE, PERMISSION } from "@erp/domain";
+import { CARTON_GRADE, PERMISSION, QR_GENERATOR_ACCESS } from "@erp/domain";
 
 export function registerQrCodesHandlers(ctx: IpcContext): void {
   const { db, logger, authorizer, scanContext, deviceId, useCases } = ctx;
@@ -14,7 +14,7 @@ export function registerQrCodesHandlers(ctx: IpcContext): void {
 
   ipcMain.handle(IPC.generateQrBatch, (event, input?: Record<string, unknown>) => {
     try {
-      authorizer.requirePermission(event, PERMISSION.QR_GENERATOR);
+      authorizer.requireAnyPermission(event, QR_GENERATOR_ACCESS);
       // Every carton run is generated FOR a machine (Phase 1.1): it joins that machine's program
       // for the day. The data layer refuses a machine that is retired or missing a contractor.
       const machineId = typeof input?.machineId === "string" ? input.machineId.trim() : "";

@@ -1700,7 +1700,8 @@ export interface DesktopApi {
   getRawMaterialIssueSessionSummary(sessionId: string): Promise<RawMaterialIssueSessionSummary | null>;
   rawMaterialIssueScan(
     rawScan: string,
-    opts?: { token?: string; sessionId?: string }
+    /** issuedToPartyId: who the packet is moved out to — required by the main process. */
+    opts?: { token?: string; sessionId?: string; issuedToPartyId?: string }
   ): Promise<RawMaterialIssueResult>;
   createWorkSection(name: string): Promise<{ accepted: boolean; section?: WorkSection; reason?: string }>;
 
@@ -2540,6 +2541,7 @@ export interface RawMaterialHandMoveResult {
     | "UNKNOWN_UNIT"
     | "INVALID_QUANTITY"
     | "NOT_ENOUGH_STOCK"
+    | "NO_PURPOSE"
     | "NOT_AUTHORIZED";
   reason?: string;
   direction?: HandMoveDirection;
@@ -2746,6 +2748,8 @@ export type RawMaterialIssueOutcome =
    * upper, or everything it asked for has already been issued. The packet stays in the store.
    */
   | "NOT_ON_PROGRAM"
+  /** Scan Out: no party chosen, or not an active supplier or contractor. Nothing was written. */
+  | "NO_PARTY"
   /** Main-process only: session missing or lacks the store-scanning permission. */
   | "NOT_AUTHORIZED"
   /** Main-process only: infrastructure failure; nothing was written. */
@@ -2777,6 +2781,8 @@ export interface RawMaterialIssueResult {
    * changed.
    */
   machineProgram?: MachineProgramConsumption;
+  /** Scan Out: who the packet was moved out to. */
+  issuedToPartyName?: string;
 }
 
 /** What a Raw Material Output scan did to a machine program. */

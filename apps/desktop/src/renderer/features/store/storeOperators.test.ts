@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { renderHook } from "@testing-library/react";
-import { MOVE_IN_PAGES, storeJobOfRoute } from "./storeOperators";
+import { MOVE_IN_PAGES, MOVE_OUT_PAGES, storeJobOfRoute } from "./storeOperators";
 import { useStoreJob } from "./useStoreJob";
 import type { AppRoute } from "../../app/routes";
 
@@ -9,6 +9,12 @@ describe("which store job a screen belongs to", () => {
     expect(storeJobOfRoute("store-in-operator")).toBe("in");
     for (const page of MOVE_IN_PAGES) expect(storeJobOfRoute(page.route)).toBe("in");
     expect(storeJobOfRoute("store-out-operator")).toBe("out");
+    for (const page of MOVE_OUT_PAGES) expect(storeJobOfRoute(page.route)).toBe("out");
+  });
+
+  it("counts the carton QR Generator as a Move Out page, so the job stays while it is open", () => {
+    expect(MOVE_OUT_PAGES.map((page) => page.route)).toContain("qr-generator");
+    expect(storeJobOfRoute("qr-generator")).toBe("out");
   });
 
   it("puts Store Station and every other screen in no job", () => {

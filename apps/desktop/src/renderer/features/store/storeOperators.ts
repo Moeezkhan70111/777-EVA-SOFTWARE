@@ -81,9 +81,16 @@ export const MOVE_IN_PAGES: readonly StoreJobPage[] = [
   { id: "scanner", route: "store-in-scanner", title: copy.store.scannerTitle, line: copy.store.scannerLine },
 ];
 
-/** The Move Out job's rows in the sidebar: everything else on Move Out is one page. */
+/**
+ * The Move Out job's rows in the sidebar: everything else on Move Out is one page.
+ *
+ * The carton QR Generator (Setup → QR Generator) is here too since 0.3.6, so a store operator
+ * working Move Out reaches it without leaving the job, and the sidebar keeps the job while they
+ * are on it. It is the same page as under Setup, not a copy.
+ */
 export const MOVE_OUT_PAGES: readonly StoreJobPage[] = [
   { id: "report", route: "store-out-daily-report", title: copy.storeDailyReport.outTitle, line: copy.storeDailyReport.outLine },
+  { id: "qr-generator", route: "qr-generator", title: copy.nav.items.qrGenerator.label, line: copy.nav.items.qrGenerator.line },
 ];
 
 /** Each job's pages. */

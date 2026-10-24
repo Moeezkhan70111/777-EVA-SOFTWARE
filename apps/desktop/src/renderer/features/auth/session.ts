@@ -1,4 +1,4 @@
-import { PERMISSION, USER_ROLE } from "@erp/domain";
+import { PERMISSION, QR_GENERATOR_ACCESS, USER_ROLE } from "@erp/domain";
 import type { PermissionCode, UserRole } from "@erp/domain";
 import type { AppRoute } from "../../app/routes";
 import type { AuthUser, DesktopApi } from "../../types/desktopApi";
@@ -158,9 +158,8 @@ export const routePermission: Partial<Record<AppRoute, PermissionCode>> = {
   "product-form": PERMISSION.PRODUCT_FORM,
   // Editing the dropdown values is editing Product Master, so it shares that permission.
   "product-lists": PERMISSION.PRODUCT_FORM,
-  "qr-generator": PERMISSION.QR_GENERATOR,
-  // B carton labels are carton labels: the same registry, the same permission.
-  "b-carton-generator": PERMISSION.QR_GENERATOR,
+  // qr-generator and b-carton-generator are in routeAnyPermission below: store operators may
+  // open them too (QR_GENERATOR_ACCESS).
   "qr-management": PERMISSION.QR_MANAGEMENT,
   // Tracing a code's path is a read over the same registry + event log QR Management
   // audits, so it shares that permission.
@@ -204,6 +203,10 @@ export const routeAnyPermission: Partial<Record<AppRoute, PermissionCode[]>> = {
   // them; the page's own permission offers them to someone who is not a store operator.
   "raw-material-input": [PERMISSION.STORE_SCANNING, PERMISSION.RAW_MATERIAL_INPUT],
   "raw-material-output": [PERMISSION.STORE_SCANNING, PERMISSION.RAW_MATERIAL_OUTPUT],
+  // Carton QRs: QR Generator, or any store operator (0.3.6). The main process enforces the same
+  // list on every generate and print call. B carton labels are carton labels, so they share it.
+  "qr-generator": [...QR_GENERATOR_ACCESS],
+  "b-carton-generator": [...QR_GENERATOR_ACCESS],
 };
 
 /**

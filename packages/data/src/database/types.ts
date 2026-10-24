@@ -1755,7 +1755,7 @@ export interface RawMaterialHandMoveInput {
   unitCode: string;
   /** Who delivered it. Required moving IN, ignored moving OUT. */
   partyId?: string | null;
-  /** Why it moved, kept on the stock event beside what was typed. */
+  /** Why it moved, kept on the stock event beside what was typed. Required moving OUT. */
   note?: string | null;
   actor?: string | null;
   /**
@@ -1775,7 +1775,8 @@ export interface RawMaterialHandMoveResult {
     | "NO_SUPPLIER"
     | "UNKNOWN_UNIT"
     | "INVALID_QUANTITY"
-    | "NOT_ENOUGH_STOCK";
+    | "NOT_ENOUGH_STOCK"
+    | "NO_PURPOSE";
   reason?: string;
   direction?: HandMoveDirection;
   /** What moved, in the unit stock is kept in. */
