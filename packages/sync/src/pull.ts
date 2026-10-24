@@ -133,6 +133,8 @@ export class SyncPull {
     const refused: PullProblem[] = [];
     const settled = new Set<number>();
     let waiting: PullProblem | undefined;
+    // One arrival time for the whole run, from the injectable clock, so a test can fix it.
+    const replicatedAt = new Date(this.now()).toISOString();
 
     // Sweep while something is still waiting and the last sweep settled something new.
     for (let sweep = 0; sweep <= changes.length; sweep += 1) {
@@ -141,7 +143,7 @@ export class SyncPull {
 
       for (const change of changes) {
         if (settled.has(change.seq)) continue;
-        const outcome = applyEnvelope(this.sql, change.envelope);
+        const outcome = applyEnvelope(this.sql, change.envelope, replicatedAt);
 
         if (outcome.status === "APPLIED") {
           applied += 1;

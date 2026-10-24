@@ -43,6 +43,7 @@ const MIGRATION_083 = path.resolve(
   import.meta.dirname,
   "../../../migrations/sqlite/083_sync_outbox_transient_attempts.up.sql"
 );
+const MIGRATION_088 = path.resolve(import.meta.dirname, "../../../migrations/sqlite/088_replicated_at.up.sql");
 
 const FAST_RETRY: OutboxRetryPolicy = { maxAttempts: 4, baseBackoffMs: 1_000, maxBackoffMs: 60_000, staleInFlightMs: 60_000 };
 
@@ -74,6 +75,7 @@ function createStore(root: string, name: string): Store {
   raw.exec(fs.readFileSync(SCHEMA_PATH, "utf8"));
   runMigration(raw, MIGRATION_082);
   runMigration(raw, MIGRATION_083);
+  runMigration(raw, MIGRATION_088);
   raw.exec("PRAGMA foreign_keys = ON;");
   raw
     .prepare(

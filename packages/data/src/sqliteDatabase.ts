@@ -86,6 +86,15 @@ export {
   readQrMasterPayload,
   readProductVariantPayload,
   readProductionProducedPayload,
+  RAW_MATERIAL_QR_OPENING_STATE,
+  rawMaterialQrBatchDedupeKey,
+  rawMaterialQrDedupeKey,
+  readRawMaterialQrBatchPayload,
+  readRawMaterialQrPayload,
+  enqueueRawMaterialQrBatch,
+  enqueueRawMaterialQr,
+  withdrawUnsentSyncEvents,
+  rawMaterialQrBatchDedupeKeys,
   enqueueSyncEvent,
   enqueueQrMaster,
   enqueueProductVariant,
@@ -96,7 +105,16 @@ export type {
   QrMasterPayload,
   ProductVariantPayload,
   ProductionProducedPayload,
+  RawMaterialQrBatchPayload,
+  RawMaterialQrPayload,
+  SyncQueueHandle,
+  WithdrawOutcome,
 } from "./database/syncEvents.js";
+export {
+  REPLICATION_EXCLUSIONS,
+  REPLICATION_EXCLUDED_TABLES,
+  isReplicationExcluded,
+} from "./database/replicationScope.js";
 export {
   PRODUCT_VARIANT_SEED_FORMAT,
   PRODUCT_VARIANT_SEED_VERSION,
