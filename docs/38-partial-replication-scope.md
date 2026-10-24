@@ -1,7 +1,20 @@
 # 38 — Partial replication: raw material, stock, cartons and production
 
-**Status: PLAN, NOTHING BUILT.** Written 2026-10-22. **Not final** — the owner's decision stands
-only after the two-PC carton test passes.
+**Status: NOT ADOPTED.** Written 2026-10-22. On 2026-10-23 the owner chose **full scope** under a
+**single-writer model** (`docs/37`, status and §W). This document is kept because three parts of
+it still bind:
+
+- **§2, logins stay local**: **superseded 2026-10-23** by cloud-authoritative logins with per-PC
+  caching (`docs/37 §U.2`), scheduled after the raw-material milestone. Its rule that **no
+  password hash replicates** is kept, and binding. Until §U.2 is built, §2 still describes how
+  the system works.
+- **§3, "must not be shown"**: the two UI guards (party ledger balances, and Reflected stock) apply
+  to any PC during the **staged rollout**, until the Sales & dispatch and Accounts domains
+  replicate. Until then a PC without the documents shows a confidently wrong number.
+- **§3, the `inventory_items` EAV risk** is resolved under full scope by the single-writer model,
+  not by the category-transition guard proposed there: master data has one writer.
+
+The scope tables and the effort estimate below are superseded by `docs/37 §W` and `§3.1`.
 
 The narrower of the two scopes in `docs/37`. Raw material, stock, carton identities and
 production replicate between PCs. **Documents stay local to the PC that made them. Logins stay
@@ -54,6 +67,11 @@ has to be derived from the events on each computer, never shipped as a value"* �
 ---
 
 ## 2. Logins stay local — owner decision, 2026-10-22
+
+> **Superseded 2026-10-23** by `docs/37 §U.2`: cloud-authoritative logins, per-PC verifier caches,
+> and a 7-day offline maximum. Both reasons below still hold, and the new design keeps both: no
+> password hash replicates, and no account change is resolved by last-write-wins. Kept for the
+> reasoning, and because it still describes the system until §U.2 is built.
 
 `app_users`, `user_role_assignments`, `user_additional_permissions` and `user_notifications` are
 **excluded from replication entirely**. Each PC keeps its own accounts.

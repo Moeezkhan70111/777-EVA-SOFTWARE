@@ -1,7 +1,20 @@
 # 37 — Full replication: every PC holds the whole database
 
-**Status: PLAN, NOTHING BUILT.** Written 2026-10-22. Supersedes nothing; `docs/34` (carton pilot)
-remains the current scope until the two-PC carton test passes.
+**Status: ADOPTED, PARTLY BUILT.** Written 2026-10-22. Updated 2026-10-23.
+
+- **Scope: full** — every domain replicates. Owner decision, 2026-10-23. `docs/38` (partial scope)
+  was not adopted; its §2 (logins stay local) still stands.
+- **Write model: single writer per domain** — owner decision, 2026-10-23. See §W. It replaces the
+  conflict rules originally proposed for Class D, and changes the estimate (§3).
+- **Priority: raw material first** — owner decision, 2026-10-23. Carton production is delayed, and
+  the raw material store is the immediate business need. Raw material replicates end to end first:
+  its events, its master data and its stock balances rebuilt from events. Cartons and production
+  follow (§4).
+- **Built:** §0.1 numbering (migration 087), §0.2 exclusion list (`replicationScope.ts`), the
+  general applier (`packages/sync/src/applyEnvelope.ts` + `applyContract.ts`), and `replicated_at`
+  (migration 088, §0.3).
+- `docs/34` (carton pilot) is still the live configuration. The two-PC carton test has not been
+  recorded as passed.
 
 **Goal, as stated by the owner:** every PC holds the complete database, all domains, kept in
 agreement through the cloud. Both machines see the same data, and either one keeps working with
@@ -66,6 +79,239 @@ about one machine, not shared facts.
 **This exclusion list does double duty** — it is also the scrub list for the snapshot backfill in
 §2.2. A restored snapshot that keeps `app_settings` hands the new PC block 1.
 
+### 0.3 Timestamps across computers — owner decision, 2026-10-23
+
+**A replicated row keeps the origin's `created_at`, unchanged.** That is the business time: when
+the carton was registered, when the packet moved. A receiving PC that rewrote it would make every
+report on that PC disagree with the same report on the origin.
+
+**The arrival time is a separate column, `replicated_at`, for diagnostics only.** `NULL` means
+the row was recorded on this PC. A timestamp means the applier wrote it here, at that UTC time.
+It is never updated, so a repeat arrival keeps the first one's time. The applier stamps it, so
+every contract gets it without asking (migration 088 adds it to the first three tables, and each
+later contract's migration adds it to its own).
+
+*Named `replicated_at`, not `received_at`:* in this codebase "received" already means raw material
+received into the store (`rawMaterialReceiptUseCase`, `RECEIVE` stock events). A `received_at`
+column on a raw-material table would be read as a business fact.
+
+**Clocks are verified at setup, never trusted at runtime.** Nothing compares two PCs' clocks to
+pick a winner, and the single-writer model (§W) removes the last place that would have: Class D
+last-write-wins. But a PC whose clock is wrong still writes wrong business times, and on
+2026-10-23 a freshly moved dev PC was found **22h 42m slow and set to Pacific time**, which also
+broke TLS to Supabase (`CERT_NOT_YET_VALID`). So every PC's setup includes, as written steps:
+
+1. **Time zone** is `Pakistan Standard Time`: `tzutil /g`.
+2. **NTP sync is on and recent**: `w32tm /query /status`. Expect a real `Source`, not
+   `Leap Indicator: 3(not synchronized)`, and a `Last Successful Sync Time` from today. To fix it,
+   run `w32tm /resync /force` in an admin shell.
+3. **Skew against the cloud is under a minute**: compare `Get-Date -AsUTC` (on Windows PowerShell
+   5.1, `(Get-Date).ToUniversalTime()`) with the `Date` header of
+   `curl -sI https://<project-ref>.supabase.co`.
+
+The steps are in each PC's provisioning checklist (`docs/34`, "Before you start"). A PC that fails
+any of them is not enrolled until it passes.
+
+---
+
+## W. Write model — single writer per domain (owner decision, 2026-10-23)
+
+**One holder of the write lease per domain; every other PC reads that domain. QR and carton flows
+stay multi-writer**, because their identities are deduplicated by construction (a carton or packet
+id is minted from a per-PC serial block, and every row is insert-only).
+
+This is what makes full scope tractable. The hard Class D problems in the original plan, and most
+of §1a, were all *two PCs editing the same thing offline*. With one writer per domain that case
+cannot arise for leased domains, so there is nothing to merge, no last-write-wins, and no
+divergence to surface. Replication of a leased domain becomes: the holder's revisions flow out
+and everyone else applies them.
+
+### W.1 The domains
+
+| Domain | Writer | Tables (headline) |
+|---|---|---|
+| **QR & carton flows** | **any PC** — no lease | `qr_master`, `qr_codes`, `qr_batches`, `production_events`, carton store movements, `store_receiving_sessions`, `store_move_out_sessions` |
+| **Raw material store** | lease holder | packet label runs (`raw_material_qr_batches`, `raw_material_qrs`), packet movements (`raw_material_qr_events`), stock movements (`inventory_stock_events`, including Dana hand moves and opening stock), `raw_material_receiving_sessions`, `raw_material_issue_sessions` |
+| **Master data** | lease holder | RM items and taxonomy (`inventory_items` + values, categories, fields, options, units, ladders, item unit steps), parties and party groups, machines, work sections, products and classification |
+| **Sales & dispatch** | lease holder | gatepasses, sale vouchers, dispatch sessions, sale returns. **One domain on purpose**: bill quantities are locked to the gatepass (`docs/23`), so they must share a writer. |
+| **Accounts** | lease holder | cash vouchers, purchase vouchers |
+| **Machine programs** | lease holder | `machine_programs` and its child tables, manual production entries |
+| **Approvals** | lease holder | stock corrections, removal requests, party claims, access and permission requests |
+
+**The raw material store is leased** (owner, 2026-10-23). An earlier draft treated RM packet scans
+as multi-writer QR flows, because packets are minted from per-PC serial blocks. That is now
+superseded: receiving, issuing, label runs and Dana moves have one writer. Carton QR flows stay
+multi-writer.
+
+**Phase-1 holder: one PC holds both Raw material store and Master data.** Parties are one table
+shared by suppliers (store) and customers (sales), so splitting their lease would mean leasing by
+`party_type`. That is avoidable while every document still lives on one PC. Revisit when Sales &
+dispatch replicates.
+
+**Logins are not a leased domain.** Under §U.2 accounts are cloud-authoritative: they are changed
+only by online cloud functions, never by a PC's local write. `app_users` itself, which holds the
+hashes, stays excluded from replication (`replicationScope.ts`). Until §U.2 is built, each PC
+keeps its own accounts, as before.
+
+### W.2 The lease
+
+- **Held by a PC, on behalf of a named person.** Logins are local, so the cloud cannot recognise a
+  person across PCs. It can recognise a device: device accounts and claims (migration 006). The
+  lease is bound to a device, and the grant records which person it was granted to.
+- **Same mechanism as the device claim** (migration 006): a per-domain row with a monotonic epoch
+  and a holder token, taken under a row lock. No timeout, and no clock to agree on.
+- **Enforced in the cloud, in the push RPC, in the same transaction as the write.** A push for a
+  leased domain from a PC that does not hold its current epoch is refused. This is the authority.
+- **Enforced locally in the data/application layer**, not the UI: a write use case for a leased
+  domain refuses unless this PC holds the lease, according to the last pull. The UI shows the
+  domain read-only. A hidden button is not an authorisation (CLAUDE.md R9).
+- **The holder may write offline.** The lease is checked when the writes are pushed, not when they
+  are made.
+
+### W.3 Handover — the one place this model can lose work
+
+| Path | Rule |
+|---|---|
+| **Release** (normal) | The holder drains its outbox for that domain, then releases. The release records the log position of the holder's last write. |
+| **Catch-up barrier** | The new holder may not write until it has pulled up to that position. Otherwise it would edit a stale copy of a document. |
+| **Forced takeover** (holder lost, or offline for good) | An owner action. The old holder's unpushed writes for that domain are refused at push and parked as visible dead letters, never silently dropped and never merged. |
+
+### W.4 What stays multi-writer, and the risk that comes with it
+
+Identity dedupe makes **registering** a carton or packet safe from any PC. It does not stop two
+PCs **acting on reservation state** in the same offline window:
+
+- **FIFO store move-out (§1a item 1) remains.** A plain Store Move Out scan is a carton flow
+  (multi-writer), but it auto-reconciles to the oldest open gatepass line, and gatepass lines
+  are in the Sales & dispatch domain. Two PCs scanning offline can still consume one reservation
+  twice. **Proposed rule, needs a business decision:** only the Sales & dispatch lease holder
+  auto-reconciles. Any other PC records the move-out unreconciled, and the holder reconciles it
+  on arrival.
+
+### W.5 Raw-material history that is rewritten — found 2026-10-23
+
+Class A assumes rows are never edited or deleted. Three raw-material operations do exactly that
+today. Each is a legitimate business correction, and each would leave readers silently wrong if
+only inserts replicated:
+
+| Operation | Where | What it rewrites | What a reader would show |
+|---|---|---|---|
+| **Erase a label run** (untouched runs only) | `deleteRawMaterialQrBatch` | Deletes the run and its packets, and **rewinds the serial counter**, so the same packet ids are printed again | The old packets, then a refused re-print (the identity-conflict guard catches it, but the reader is stuck) |
+| **Correct a material's unit** (no labels printed yet) | `rawMaterials.ts`, the unit-correction path | `UPDATE inventory_stock_events SET unit_id` for **every past movement** of the item | Stock computed in the old unit |
+| **Erase a material with its ledger** (approved removal request) | `eraseInventoryItemWithLedger` | **Deletes** the item's stock events and correction requests, and detaches its audit rows | A ghost material still holding stock |
+
+**Under single-writer, each replicates as an explicit correction event that readers re-apply.**
+This is safe only because the store and master data have one writer: no reader can have scanned
+the erased run, moved stock in the old unit, or touched the erased item. With concurrent writers
+none of the three would be safe to replicate. The cost is one contract per operation, applied in
+log order after the rows it corrects. Counted in §3.1.
+
+### W.6 Raw-material events that point at machine programs
+
+`raw_material_qr_events` (three machine-program columns) and `inventory_stock_events`
+(`machine_program_id`, Dana issues) link store-out movements to the program they were issued for.
+With raw material replicating **before** machine programs, a reader has the movement but not the
+program. If the event waits for the program, the reader's stock stays **overstated** until machine
+programs replicate, by every issue made to a program. That is confidently wrong stock, the outcome
+this plan exists to prevent.
+
+**Proposed, needs an owner decision:** a reader applies the movement without the machine-program
+link, keeping the origin's program ids in the event's metadata, so stock moves correctly at once.
+When machine programs replicate, the link is restored from the metadata. Only the holder can
+issue against a program, and the holder has the programs locally, so nothing is lost at the
+origin.
+
+---
+
+## U. People and machines — APPROVED 2026-10-23, scheduled after Milestone 1
+
+Two designs, both approved by the owner on 2026-10-23, and both built **after** the raw-material
+milestone, not before. The owner's words: *"I'd rather have the store replicating in 11–14 weeks
+than conveniences in 5."* Their order relative to Milestone 2 is not yet decided.
+
+### U.1 In-app machine enrolment — replaces the dashboard work
+
+**The gate moves into the app. It is not open signup.**
+
+1. **A new PC asks to join.** It signs in to the project **anonymously** (Supabase anonymous
+   sign-in), files a join request through a database function, and shows a 6-digit pairing code.
+   The request carries the PC's **existing** `deviceId` and `workstationId`; nothing is minted.
+   Requests expire after ~30 minutes, with one pending per PC and a cap on the total.
+2. **An admin approves inside the ERP** (Settings → Computers): checks the pairing code against
+   the new PC's screen, names the PC and assigns its document-number block. Approval is one
+   database function. It re-checks the code and the approver, creates the `workstations` and
+   `device_accounts` rows, and records who approved it and when.
+3. **The new PC picks up the approval** and stores its credential encrypted, as today.
+   `ERP_DEVICE_EMAIL` and `ERP_DEVICE_PASSWORD` are retired.
+4. **Revocation is on the same screen.** The claim mechanism (migration 006) refuses the revoked
+   PC's next upload.
+
+**Why it is safe.** An anonymous account can authenticate and still read and write nothing,
+because every policy requires `is_enrolled_device()`. That is already true of a dashboard-made
+account before enrolment. **No `service_role` key anywhere, and no edge function:** only database
+functions with fixed privileges, the pattern the claim and push functions already use.
+
+**What stays manual, once per project:** switching on anonymous sign-ins, pasting the migration
+(it contains `revoke`, which the MCP tools refuse), and enrolling the very first PC.
+
+**Approver identity.** Until U.2 exists, the cloud knows machines, not people, so approval means
+"an approver PC says its local admin approved". Only PC 1 is an approver PC. U.2 upgrades this to
+a real admin, verified by the cloud.
+
+**Until it is built:** enrolment stays as `docs/36 §7.6` B — the auth user created in the
+dashboard, and the `workstations` and `device_accounts` rows written through MCP from the identity
+read off the PC.
+
+### U.2 Cloud-authoritative logins with per-PC caching — replaces "logins stay local"
+
+This **supersedes the 2026-10-22 decision** that each PC keeps its own accounts (`docs/38 §2`).
+The decision's two reasons still hold, and the design keeps both:
+
+- **No password hash or verifier ever replicates.** Kept from the original decision, and
+  binding. `app_users` stays on the exclusion list (`replicationScope.ts`).
+- **No last-write-wins on accounts.** Every change to an account is made by a cloud function and
+  arrives on every PC in log order, as a new credential version.
+
+**Cloud:**
+
+- A people table holding a bcrypt verifier that no client can read (pgcrypto has no PBKDF2).
+- `verify_login`, callable only by enrolled PCs, with a per-person failed-attempt lockout. A
+  success returns a short-lived person token bound to that PC. Admin functions require it, which is
+  how U.1 gets a real approver.
+- **Online-only** functions for creating people, resetting passwords, revoking, and assigning
+  roles and permissions. User administration needs the internet. That is accepted: it is rare.
+
+**What replicates to every PC — non-secret only:** username, display name, status, roles,
+permissions, and a **credential version** that changes on every password change or revocation.
+
+**What each PC keeps:** a cached verifier only for people who have logged in **on that PC**,
+computed locally with a fresh salt at the moment of a successful online login.
+
+**Login rules:**
+
+| Situation | Rule |
+|---|---|
+| Cloud reachable | Verified by the cloud, every time. The cache is refreshed. **A cloud refusal is final:** never fall back to the cache after a "no". |
+| Cloud unreachable | The cache is accepted only if its credential version matches the latest this PC has synced, **and** it was last confirmed online within **7 days** (owner, 2026-10-23). |
+| On every sync | Cache entries whose version is stale, or whose person is revoked, are wiped. |
+| First login on a PC | **Needs the internet.** That PC has never seen the person, and pre-loading a verifier would be distributing hashes. Mitigations: the PC where an admin creates someone caches them at once, and the admin screen shows which PCs each person is ready on. |
+
+**The window that remains, stated plainly:** a PC offline since before a revocation still accepts
+that person until it syncs, or for at most 7 days. Any login that works offline has a window like
+this; the maximum age is what bounds it.
+
+**Existing accounts move without resets:** on each user's next online login on PC 1, the password
+is checked locally (PBKDF2), then sent once to set up the cloud verifier.
+
+### U.3 Effort
+
+| | Effort |
+|---|---|
+| U.1 in-app enrolment | **1.5–2 wk** |
+| U.2 cloud-authoritative logins | **3–4 wk** |
+
+Added to the plan in §3.1.
+
 ---
 
 ## 1. Part one — contracts, by replication class
@@ -129,6 +375,16 @@ See §0.2. `sync_outbox` (868), `app_settings` (13), `qr_sequences` (35),
 `metrics_counters`, `metrics_timeseries`.
 
 ### Class D — Mutable shared records: the actual work
+
+> **Superseded by §W (2026-10-23).** Every Class D table belongs to a leased domain, so it has one
+> writer. The conflict rules below (last-write-wins, divergence refusal, transitions-as-events)
+> were designed for concurrent writers and are **not being built**. What replaces them is simpler:
+> the holder's revision of a record or whole document replaces the receiver's copy, and a revision
+> from a PC that does not hold the lease is refused in the cloud. The analysis is kept because it
+> is the argument for the lease. Revisit it if a domain is ever opened to more than one writer.
+>
+> D4 is replaced by §U.2 (approved 2026-10-23): accounts become cloud-authoritative, with
+> non-secret facts replicated and per-PC verifier caches. Password hashes still never replicate.
 
 #### D1 — Master data: last-write-wins on `updated_at` is proportionate
 
@@ -205,6 +461,18 @@ This needs an explicit owner decision before it is built.
 ## 1a. Where two PCs editing offline genuinely lose data
 
 Seven, in descending order of how badly they fail.
+
+> **Status under the single-writer model (§W):**
+>
+> | Item | Status |
+> |---|---|
+> | 1. FIFO reservations | **Still open.** Carton move-out stays multi-writer. See §W.4 for the proposed rule, which needs a business decision. |
+> | 2. Gatepass ↔ bill lock | **Solved by construction.** Both are in one domain, with one writer. |
+> | 3. Multi-row documents | **Solved.** One writer; the whole document is replaced by revision. |
+> | 4. Child ordinals | **Solved.** One writer per parent. |
+> | 5. Machine program identity | **Solved.** One writer for the domain. |
+> | 6. `inventory_items` EAV | **Solved.** Master data has one writer. |
+> | 7. Users and permissions | **Designed in §U.2** (approved 2026-10-23). Every account change is a cloud function, arriving on every PC in log order, so no last-write-wins. |
 
 1. **Gatepass reservations and FIFO store move-out — the hardest problem here.**
    `Reflected = Current − Reserved`, and a plain Store Move Out scan is auto-reconciled to the
@@ -293,6 +561,52 @@ plus a short catch-up.
 
 ## 3. Rough effort
 
+### 3.1 Re-estimate: single writer, raw material first (2026-10-23)
+
+Dev-weeks of **remaining** work. Already done, and not counted: §0.1 numbering, §0.2 exclusion
+list, the general applier with `replicated_at` and the identity-conflict guard, and the receiving
+side of the RM label-run contracts.
+
+**Milestone 1 — raw material end to end**
+
+| Part | Scope | Effort |
+|---|---|---|
+| **Prerequisites, remaining** | **Parking:** a waiting event is held locally so the pull cursor moves past it. Today one waiting event stalls the cursor, and once 200 events queue behind it, nothing newer is fetched. Also: opening `sync_outbox.aggregate_type`, generalising the cloud `sync_event_log` beyond two types, and keying the pull cursor by project (`docs/36 §7.7`) | **1.5–2 wk** |
+| **Write lease (§W)**, two domains | Cloud lease and RPCs on the 006 claim pattern, the lease check inside the store and master-data push RPCs, the local gate on store and master-data write paths, read-only store and material screens, and release, catch-up and forced takeover | **2–3 wk** |
+| **Master data under lease** | `inventory_items` + values (EAV), categories, fields, options, units, ladders, item unit steps, parties and groups, work sections, machines: whole-record replacement by revision | **2–2.5 wk** |
+| **RM Class A** | Stock events, packet events, receiving and issue sessions, the label-run sender side, and cloud tables, push RPCs and log triggers for each | **1.5–2 wk** |
+| **§W.5 corrections** | Run erase, unit correction and item erase as replicated correction events | **1 wk** |
+| **RM Class B** | Balances and packet status rebuilt from events. **The rebuild must call the same balance calculation the live write uses**, which means extracting it from `applyRawMaterialStockChange` first, not writing a second one. | **1 wk** |
+| **§W.6 machine-program links** | Apply without the link, keep the ids in metadata, restore later | **0.5 wk** |
+| **RM backfill + ledger guard** | Push the existing raw-material history and master data to production, provision readers by snapshot (§2.2), and hide party ledger balances on PCs that do not hold vouchers (`docs/38 §3`), because parties now replicate months before vouchers do | **1.5–2 wk** |
+| | **Milestone 1** | **~11–14 wk** |
+
+**Milestone 2 — everything else**
+
+| Part | Effort |
+|---|---|
+| Carton Class A (`qr_codes`, `qr_batches`, the other production event types, carton labels) and carton Class B | **1–1.5 wk** |
+| The lease's read-only gating for the remaining domains | **0.5–1 wk** |
+| Documents and approvals under lease | **1–1.5 wk** |
+| §W.4 FIFO, after a business decision | **0.5–1 wk** |
+| Backfill for the remaining domains | **0.5–1 wk** |
+| **Milestone 2** | **~3.5–6 wk** |
+
+**People and machines (§U), after Milestone 1:** U.1 in-app enrolment **1.5–2 wk**, U.2
+cloud-authoritative logins **3–4 wk**, so **~4.5–6 wk**. Order relative to Milestone 2 is not yet
+decided.
+
+**Total remaining: ~19–26 weeks with §U.** Without §U it is ~14.5–20 weeks, against 12–16.5 for
+the carton-first order. About 1–1.5
+weeks of that is the reorder itself: the §W.6 interim, and building the lease gating and backfill
+in two passes. About 1 week is the §W.5 finding, which any order would have hit.
+
+**The store does not wait for this.** It already runs end to end on one PC today: receive,
+issue, labels, Dana, stock. Milestone 1 gives **other** PCs an accurate read-only view of it. It
+is not what makes the store usable.
+
+### 3.2 Original estimate (2026-10-22), before the write model
+
 Dev-weeks, assuming the business decisions in §1a are already made. They are not yet.
 
 | Part | Scope | Effort |
@@ -314,6 +628,35 @@ of this document.
 ---
 
 ## 4. Recommended sequencing
+
+> **Current order (2026-10-23): full scope, single writer, raw material first.**
+>
+> *Milestone 1 — raw material end to end:*
+>
+> 1. **Prerequisites:** parking, outbox types, the cloud log, and the project-keyed cursor.
+>    **Parking comes before any raw-material type is switched on for pull.**
+> 2. **Write lease** for Raw material store and Master data. It moves **ahead of** the events,
+>    because the store is a leased domain: the cloud has to refuse a store push from a non-holder
+>    from the first one.
+> 3. **Master data under lease**, before the store events that depend on it.
+> 4. **RM Class A, the §W.5 corrections and the §W.6 interim.**
+> 5. **RM Class B rebuild.**
+> 6. **RM backfill and the ledger guard.**
+>
+> *Milestone 2:* cartons and production (already piloting, so least risk), then documents,
+> approvals, FIFO, and the remaining backfill.
+>
+> *People and machines (§U), approved 2026-10-23, after Milestone 1:* in-app enrolment (U.1), then
+> cloud-authoritative logins (U.2). Order relative to Milestone 2 is undecided. Until U.1 lands,
+> PCs are enrolled by hand (`docs/36 §7.6`).
+>
+> Cloud migrations are written and reviewed in the repo, and applied to production only on the
+> owner's go-ahead.
+>
+> The two-PC carton test (step 1 below) is still unrecorded. It remains the cheapest proof that the
+> basic path works between two real machines.
+>
+> The original sequencing follows, unchanged.
 
 **The domains with the most data are the easiest, and the domains with the hardest conflicts have
 almost no data.** Gatepasses and bills — the two hardest problems in §1a — have **two rows each**

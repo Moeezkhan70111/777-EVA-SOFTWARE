@@ -4,7 +4,18 @@
 complete and were written against the code as it stands (ceiling 84, Phase 2). The setup sections
 §6–§8 are filled in at Phase 8, once sync is wired.
 
-Written 2026-10-22.
+Written 2026-10-22. Cloud sections updated 2026-10-23 for the move to a production project.
+
+**Two cloud projects exist. Office PCs use production. Nothing in daily use may point at test.**
+
+| | Production | Test |
+|---|---|---|
+| Project ref | `ykhvbmhmeefdtrzqeoxm` | `wpkrhgqsizjjdaztijwv` |
+| URL | `https://ykhvbmhmeefdtrzqeoxm.supabase.co` | `https://wpkrhgqsizjjdaztijwv.supabase.co` |
+| Region | ap-south-1 (Mumbai) | ap-northeast-2 (Seoul) |
+| Role | the live ERP's cloud, created 2026-10-23 | the former pilot project, demoted to test 2026-10-23 |
+| MCP server (`.mcp.json`) | `supabase-prod` | `supabase-test` |
+| Applied state | §6a.1 | §6a.2 |
 
 ---
 
@@ -272,7 +283,7 @@ still being there.
 | What | Where | Why it exists | Remove by |
 |---|---|---|---|
 | `mcp__supabase__apply_migration` in the permission allow-list | `.claude/settings.local.json` | Lets the schema be applied without a prompt per file | Deleting the `permissions.allow` entry |
-| Supabase MCP server **write access** | `.mcp.json`, OAuth session | Lets an agent create tables, policies and RPCs in the live project | Narrowing `features=` to `docs` only, or removing the server block, and revoking the OAuth grant in the Supabase dashboard |
+| Supabase MCP servers **`supabase-prod` and `supabase-test`**, each with `features=docs,database` (`execute_sql` and `apply_migration`, so **write** access) | `.mcp.json`, OAuth session | Lets an agent create tables, policies and RPCs in each project | Narrowing `features=` to `docs` only, or removing the server blocks, and revoking the OAuth grant in the Supabase dashboard. **`supabase-prod` first**: it is the one holding real data. |
 
 **Why this matters more than it looks.** The MCP grant is OAuth against the account, so it carries
 access to **every organization and project that account can reach**, not just this one. It is a
@@ -289,8 +300,8 @@ production inventory and accounting data.
 **Checklist before the first office PC goes live:**
 
 1. Remove the `permissions.allow` entry from `.claude/settings.local.json`.
-2. Narrow or remove the `supabase` block in `.mcp.json`, and revoke the OAuth grant in the
-   Supabase dashboard (Account → Apps / Authorized applications).
+2. Narrow or remove the `supabase-prod` and `supabase-test` blocks in `.mcp.json`, and revoke the
+   OAuth grant in the Supabase dashboard (Account → Apps / Authorized applications).
 3. Confirm no office PC has `.mcp.json`, a Supabase access token, or a `service_role` key
    anywhere in its environment.
 4. Re-read §5 and confirm `ERP_UPDATE_TOKEN` on each PC is **Contents: Read-only, one
@@ -336,10 +347,48 @@ named in the most recent `database-backup` log line.
 
 ---
 
-## 6a. APPLIED SET — what is actually in the cloud project
+## 6a. APPLIED SET — what is actually in each cloud project
 
-Project `wpkrhgqsizjjdaztijwv` (`https://wpkrhgqsizjjdaztijwv.supabase.co`), region ap-northeast-2.
-Verified by query, not assumed. **Last checked 2026-10-23.**
+These tables are the only record of what each project holds. Only migrations applied through the
+MCP tool get a `supabase_migrations` row, and anything pasted into the SQL editor gets none. Keep
+them current, and fill a row in only once it has been checked by query.
+
+### 6a.1 Production — `ykhvbmhmeefdtrzqeoxm`
+
+`https://ykhvbmhmeefdtrzqeoxm.supabase.co`, region ap-south-1 (Mumbai). Created 2026-10-23.
+
+**Status: EMPTY. Nothing applied yet.** Set it up by §7.1, in order.
+
+| Step | File / action | How | Applied? | Verified? |
+|---|---|---|---|---|
+| 1 | `supabase/schema.sql` | agent, `apply_migration` → `erp_000_baseline_schema` | — | — |
+| 2 | `002_align_with_local_model.up.sql` | **by hand**, SQL editor | — | — |
+| 3 | `003_sync_event_log.up.sql` | **by hand**, SQL editor | — | — |
+| 4 | `004_rls_policies.up.sql` | **by hand**, SQL editor | — | — |
+| 5 | `005_sync_event_log_factory_scope.up.sql` | **by hand**, SQL editor | — | — |
+| 6 | `006_device_claims.up.sql` | **by hand**, SQL editor | — | — |
+| 7 | `007_close_leftover_grants.up.sql` | **by hand**, SQL editor | — | — |
+| 8 | `008_push_product_variant.up.sql` | agent, `apply_migration` → `erp_008_push_product_variant` | — | — |
+| 9 | Seed: `factory-777` | agent, `execute_sql` | — | — |
+| 10 | Master data mirror: `workstations`, `operators`, `product_variants` | agent, `execute_sql`, after owner approval of the row list | — | — |
+| 11 | `verify_applied_state.sql`: all 19 checks `ok` | agent, `execute_sql` | — | — |
+| 12 | Advisors: the same set as §6a.2, nothing new | **by hand**, dashboard → Advisors (the MCP servers do not enable the `debugging` feature) | — | — |
+
+**Why some steps are by hand, and which ones.** The split is the same as on test, for the same
+reason (§6a.2): the MCP write tools refuse SQL containing destructive statements. Six files are
+pasted by hand: **002, 003, 004, 005, 006 and 007**. 002 drops and re-adds foreign keys, and
+003–007 contain the `revoke`s that *are* the access model. The baseline, 008, the seed, the mirror
+and the verification all went through the tool on test, or are plain inserts and selects.
+
+**One deliberate difference from test:** 007 and 008 are applied as part of the initial setup
+rather than as fixes afterwards. `verify_applied_state.sql` checks for exactly the state test
+reached after 007, so production has to match it on day one.
+
+### 6a.2 Test — `wpkrhgqsizjjdaztijwv`
+
+`https://wpkrhgqsizjjdaztijwv.supabase.co`, region ap-northeast-2. **Demoted to test 2026-10-23.**
+It holds whatever the pilot wrote. Do not point an office PC at it. Verified by query, not
+assumed. **Last checked 2026-10-23.**
 
 | File | Applied? | How |
 |---|---|---|
@@ -367,7 +416,7 @@ in one transaction because a column's type cannot change while a key joins on it
 function by name, which the detector accepts. So a migration that only adds a function can be
 applied by the agent; one that changes the access model still cannot.
 
-### Verified state, 2026-10-23
+#### Verified state, 2026-10-23
 
 22 tables · RLS enabled on **22 of 22** · 10 policies (every one `TO authenticated`; none for
 `anon`) · 6 RPCs (`claim_device`, `claim_is_current`, `heartbeat_device`, `push_qr_master`,
@@ -384,7 +433,8 @@ Checks that passed, in the order they matter:
 
 1. **The 003-after-005 trap is clear** — `log_production_produced_insert` carries the 005 body
    (`origin_device_id, factory_id` present). This is the check to re-run after *any* future
-   change to the cloud schema.
+   change to the cloud schema. Checks 1–6 here, and the grant surface below, are now one
+   re-runnable query: `migrations/supabase/verify_applied_state.sql`.
 2. `sync_event_log_factory_scope` constraint present, requiring a `factory_id` on every
    `PRODUCTION_PRODUCED` log row and forbidding one on `QR_MASTER` (which is global by the
    2026-10-17 decision).
@@ -397,7 +447,7 @@ Checks that passed, in the order they matter:
 6. `sync_event_log` has both `(seq)` and `(factory_id, seq)` indexes, so the pull stays cheap as
    the log grows.
 
-### Gaps found and closed by 007 — verified fixed 2026-10-22
+#### Gaps found and closed by 007 — verified fixed 2026-10-22
 
 Each was found by querying the applied schema rather than trusting the migration headers.
 
@@ -425,7 +475,7 @@ granted 11 named columns instead. **`claim_epoch` and `claim_holder` are not amo
 is the only reason device eviction works — a device that could read the current claim could never
 be superseded. Re-check that specifically after any change to that table.
 
-### Advisories that remain, and why each is correct
+#### Advisories that remain, and why each is correct
 
 No WARN-level advisory remains that is not intended:
 
@@ -462,15 +512,30 @@ here.
 I cannot see inside a Supabase account, so I cannot tell you whether a project exists — only that
 nothing on this machine has ever contacted one. Every step below is yours to run.
 
-### 7.1 Cloud, once for the project
+### 7.1 Cloud, once for the project — production
 
-1. **Create the Supabase project.** Note its URL (`https://<ref>.supabase.co`) and its
-   **publishable (anon)** key. **Never the `service_role` key** — it bypasses every policy, and
-   the app refuses a key whose payload names that role.
-2. **Apply the SQL in order, pasted whole into the Supabase SQL editor:**
-   `supabase/schema.sql` → `002` → `003` → `004` → `005` → `006` from `migrations/supabase/`.
-   **Do not run these through a script that splits on semicolons** — `003` defines `$$`-quoted
-   function bodies containing semicolons, and a splitter shreds them.
+The project is `ykhvbmhmeefdtrzqeoxm` (created 2026-10-23). Record progress in §6a.1 as you go.
+
+1. **Note its URL and its publishable (anon) key** (Project Settings → API). **Never the
+   `service_role` key** — it bypasses every policy, and the app refuses a key whose payload names
+   that role.
+2. **Apply the SQL in this exact order.** Each file is one transaction. Check each one before
+   starting the next.
+
+   | # | File | Who |
+   |---|---|---|
+   | 1 | `supabase/schema.sql` | agent (`supabase-prod`, `apply_migration`) |
+   | 2 | `migrations/supabase/002_align_with_local_model.up.sql` | **you, SQL editor** |
+   | 3 | `migrations/supabase/003_sync_event_log.up.sql` | **you, SQL editor** |
+   | 4 | `migrations/supabase/004_rls_policies.up.sql` | **you, SQL editor** |
+   | 5 | `migrations/supabase/005_sync_event_log_factory_scope.up.sql` | **you, SQL editor** |
+   | 6 | `migrations/supabase/006_device_claims.up.sql` | **you, SQL editor** |
+   | 7 | `migrations/supabase/007_close_leftover_grants.up.sql` | **you, SQL editor** |
+   | 8 | `migrations/supabase/008_push_product_variant.up.sql` | agent (`apply_migration`) |
+
+   Paste each file **whole**. **Never through a script that splits on semicolons** — `003` defines
+   `$$`-quoted function bodies containing semicolons, and a splitter shreds them. The six by-hand
+   files are the ones the MCP tools refuse, because they contain `drop` or `revoke` (§6a.2).
 3. **Never re-run `003` after `005`.** It silently reinstates a trigger body that omits
    `factory_id`, and the next production scan then fails a check constraint — scans refused by
    the database, with nothing in the error pointing at `003`. Detector:
@@ -486,22 +551,34 @@ nothing on this machine has ever contacted one. Every step below is yours to run
    values ('factory-777', '777', '777 Manufacturing', 'Asia/Karachi', true, now(), now())
    on conflict (id) do nothing;
    ```
+5. **Mirror the master data** the devices will reference: `product_variants` (with their ids
+   unchanged — see step 10 below for why), and, per computer, its `workstations` row and the
+   `operators` it names. The source is **test** (`supabase-test`), which was seeded from the host
+   PC. The agent lists the rows to be copied, **the owner approves the list** (test may hold
+   rows made only for testing), and then the agent inserts them into production. Plain inserts,
+   so the tool accepts them. **Once the real database exists, this step does not apply:** production's
+   master data then comes from that database's backfill (§10.7), never from test (§10.8).
+6. **Verify.** Run `migrations/supabase/verify_applied_state.sql` whole. **Every row must show
+   `ok = true`.** It includes the 003-after-005 detector and the full client grant surface. Run it
+   against **test first**: test's state is known good, so a failure there is a fault in the script,
+   not the project. Then check Advisors in the dashboard against the list in §6a.2. Anything not
+   on that list is a finding.
 
 ### 7.2 Cloud, once per computer
 
-5. **Create one Auth user per PC** (Authentication → Users → Add user). **One account per
+7. **Create one Auth user per PC** (Authentication → Users → Add user). **One account per
    computer, not per person.** Record each email; the password is needed once, on that machine's
    first sync, and never again.
-6. **Create the `workstations` row first**, including its `device_id` — migration 006 adds a
+8. **Create the `workstations` row first**, including its `device_id` — migration 006 adds a
    composite foreign key, so enrolment fails without it.
-7. **Enrol the device account:**
+9. **Enrol the device account:**
    ```sql
    insert into device_accounts (auth_user_id, factory_id, workstation_id, device_id, label, is_active, enrolled_at)
    values ('<auth user uuid>', 'factory-777', '<workstation id>', '<device id>', '<where it stands>', true, now());
    ```
    `device_id` and `workstation_id` must match that computer's own `device-identity.json`
    **exactly**. Either column left null is refused as `BINDING_INCOMPLETE`, deliberately.
-8. **Provision the master data each PC will need** — its `operators`, and the `product_variants`
+10. **Provision the master data each PC will need** — its `operators`, and the `product_variants`
    whose cartons it will push. None of this synchronises; a computer meeting a carton for a
    product it does not have refuses it visibly rather than inventing one.
 
@@ -519,25 +596,25 @@ nothing on this machine has ever contacted one. Every step below is yours to run
 
 ### 7.3 On each office PC
 
-9. **Set the four cloud variables** in the environment the app starts in:
+11. **Set the four cloud variables** in the environment the app starts in:
    `ERP_SUPABASE_URL`, `ERP_SUPABASE_ANON_KEY`, `ERP_DEVICE_EMAIL`, `ERP_DEVICE_PASSWORD`.
    After the first successful sync the refresh token is stored encrypted in
    `device-credential.bin` and the email and password are no longer needed — the URL and key
    still are.
-10. **Set `ERP_UPDATE_TOKEN`** (§5), or that PC will never receive a new version.
-11. **Assign the document-number range** in Settings → Document Number Range. The PC holding the
+12. **Set `ERP_UPDATE_TOKEN`** (§5), or that PC will never receive a new version.
+13. **Assign the document-number range** in Settings → Document Number Range. The PC holding the
     existing documents presses **adopt** (range 1); every other PC is given 2–5 by an
     administrator, from your written record. **Until this is done that PC cannot create a
     numbered document or print a QR label** — scanning, production, dispatch and store work are
     unaffected, and it now says so at sign-in rather than at the printer.
-12. **Install from a fresh installer. Never copy the data folder** between PCs — it carries
+14. **Install from a fresh installer. Never copy the data folder** between PCs — it carries
     `device-identity.json`, and both machines would then claim to be the same workstation.
 
 ### 7.4 On the developer PC
 
-13. **Set `GH_TOKEN`** (§5) in the release terminal only.
-14. **Ship the first build that contains the updater:** `npm run release` from a clean tree.
-15. **Install that build by hand on every office PC.** The 0.3.1 currently installed contains no
+15. **Set `GH_TOKEN`** (§5) in the release terminal only.
+16. **Ship the first build that contains the updater:** `npm run release` from a clean tree.
+17. **Install that build by hand on every office PC.** The 0.3.1 currently installed contains no
     updater and will never update itself. This is a one-time round of the building; every
     release after it arrives on its own.
 
@@ -546,6 +623,96 @@ nothing on this machine has ever contacted one. Every step below is yours to run
 A two-PC test is possible. Watch the **Other Computers** indicator in the navigation rail on both
 machines rather than the logs: scan a carton on one and it should reach the other within about
 five minutes, or immediately on **Send Now**.
+
+### 7.6 Enrolling a PC in production: PC 2 (moving from test), and PCs 3–5
+
+**Precondition: production is set up and verified** — §6a.1 steps 1–11 all ticked.
+
+**This is the interim procedure** (owner, 2026-10-23) until in-app enrolment (`docs/37 §U.1`)
+replaces it. The same steps enrol **PCs 3–5**, which were never on test: A, B and C apply as
+written, and D and F do not apply. **Who does what:**
+
+- **The owner** reads the identity off the PC (step A) and creates its Auth user in the dashboard
+  (B.1). This is the one dashboard step left: neither MCP server can create auth users.
+- **The agent** writes the `workstations` and `device_accounts` rows through `supabase-prod`
+  (B.2, B.3), then confirms the enrolment by query (E).
+
+**PC 2 keeps its identity.** Its `device-identity.json` is not regenerated, its data folder is
+not copied or reset, and no new device id is minted. Production is told about the identity PC 2
+already has, the same way test was.
+
+**A. Read PC 2's identity** (on PC 2, nothing changes):
+
+`%LOCALAPPDATA%\777-erp\device-identity.json` holds `deviceId`, `workstationId`,
+`workstationCode` and `workstationName`. Copy all four exactly. The agent also reads PC 2's
+`workstations` and `device_accounts` rows from **test**, and the two must agree. If they do not,
+stop: something has re-minted the identity, and that has to be understood before anything is
+enrolled.
+
+**B. Production, once (owner and agent):**
+
+1. **Create PC 2's Auth user** — dashboard → Authentication → Users → Add user, in the
+   **production** project. **By hand**: the MCP servers have no auth-admin tool. A new email,
+   because the test user belongs to the other project. Record the email and the user's UUID. The
+   password is needed once, on step C.
+2. **Insert PC 2's `workstations` row** with PC 2's own `workstationId`, `workstationCode`,
+   `workstationName` and `deviceId` (agent, `execute_sql`). This comes before enrolment: 006's
+   composite foreign key refuses an enrolment whose workstation and device do not match a row.
+3. **Enrol it** (agent, `execute_sql`):
+   ```sql
+   insert into device_accounts (auth_user_id, factory_id, workstation_id, device_id, label, is_active, enrolled_at)
+   values ('<prod auth user uuid>', 'factory-777', '<PC 2 workstationId>', '<PC 2 deviceId>', 'PC 2', true, now());
+   ```
+4. **Mirror the operators PC 2 names** (§7.1 step 5), if there are any.
+
+**C. On PC 2 — close 777 ERP first, then change the four variables** (System Properties →
+Environment Variables, user scope):
+
+| Variable | New value |
+|---|---|
+| `ERP_SUPABASE_URL` | `https://ykhvbmhmeefdtrzqeoxm.supabase.co` |
+| `ERP_SUPABASE_ANON_KEY` | production's **publishable (anon)** key. **Never the `service_role` key.** |
+| `ERP_DEVICE_EMAIL` | the production Auth user's email from B.1 |
+| `ERP_DEVICE_PASSWORD` | its password |
+
+**All four must be set, the password included, even though PC 2 already holds a credential.**
+`device-credential.bin` still holds the **test** project's refresh token. The credential does not
+record which project it belongs to, so on the first pass PC 2 offers the test token to
+production, production refuses it, and the app falls back to the password. That sign-in
+overwrites the credential with production's. Without a password there is nothing to fall back to,
+and the pass fails with "no cloud credential and no device password".
+
+Then sign out of Windows and back in, or restart, so the app starts with the new environment.
+
+**D. The pull cursor must start from zero on the new project.** PC 2's position in the log
+(`sync.pull.cursor` in `app_settings`) is a position in **test's** `sync_event_log`. Production's
+log starts again at 1, and the cursor is not tied to a project, so PC 2 would silently skip
+production's first events, up to its old test position. Harmless while PC 2 is the only device
+pushing to production. **Real loss as soon as a second device does.** Clear the cursor (and any
+recorded wait, `sync.pull.deferred`) before a second device is enrolled in production. The code
+change that makes this automatic — keying the cursor by project — is recorded as open in §7.7.
+
+**E. Confirm, by query, not by the rail:** PC 2's `device_accounts` row shows a fresh
+`claim_epoch` and a recent `last_seen_at`. A carton scanned on PC 2 appears in production's
+`qr_master` and `sync_event_log`. After the first successful pass the log says "This computer's
+cloud credential was stored". **Then remove `ERP_DEVICE_EMAIL` and `ERP_DEVICE_PASSWORD`** from
+PC 2's environment (§5a).
+
+**F. Retire PC 2's test enrolment** — `update device_accounts set is_active = false, revoked_at = now()`
+for its row in **test**. A PC that is later misconfigured back to the test URL is then refused
+rather than quietly writing there.
+
+**What does not move.** Work PC 2 already pushed to test stays in test. Its outbox rows are
+`SYNCED`, so they are not sent again. If any of it belongs in production, that is the backfill
+(`docs/37` Part 2), a decision rather than a side effect of this move.
+
+### 7.7 Open items from the production move
+
+| Item | Why it matters | Status |
+|---|---|---|
+| Key the pull cursor by project | A project change silently skips events up to the old position (§7.6 D) | **Open** — small code change in `packages/sync/src/pullCursor.ts` and its caller |
+| Record the credential's project | A stale token is offered to the wrong project once per move. Harmless, because it falls back, but it costs one failed sign-in | Open, low |
+| `migrations/supabase/README.md` | Still says 005 and 006 are unapplied. True of no project now | Open |
 
 ---
 
@@ -620,3 +787,124 @@ update path that needs nobody present.
 * right-click `%LOCALAPPDATA%\Programs\777 ERP\777 ERP.exe` → Properties → Details.
 
 If the version did not change, the update did not install, whatever the app said.
+
+---
+
+## 10. Cutover: bringing the real database onto production
+
+**Status: PROCEDURE, NOT YET RUN.** Written 2026-10-23, before the day, so that nothing on the day
+is improvised. The real database arrives from **PC 2**. Everything built and tested up to then ran
+against the **test** project (`wpkrhgqsizjjdaztijwv`) using a snapshot. On cutover day the real
+database goes to **production** (`ykhvbmhmeefdtrzqeoxm`), and test data never does.
+
+Do the steps **in this order**. Each one says what to record, because the record is how you prove
+the step happened and how you go back if a later step fails.
+
+### 10.0 Before the day
+
+1. **Production is set up and verified** (§6a.1, steps 1–12). Its business tables are empty.
+2. **The release that will run in production is built and installed on the developer PC**, and
+   **the whole procedure below has been rehearsed on a copy** of the real database in a dev data
+   folder (`ERP_DATA_DIR`), pointed at **test**. If the rehearsal changes any row count other
+   than the ones step 10.3 says may change, stop and find out why.
+3. **The paper baseline exists** (`docs/35` step 2): stock per material, open gatepasses, party
+   balances, written down from the books. Without it there is nothing to check the result against,
+   and the cutover is not authorised to proceed.
+
+### 10.1 Freeze and copy
+
+1. **Stop work on PC 2. Close 777 ERP**, and confirm in Task Manager that no `777 ERP.exe` is
+   running.
+2. **Copy the whole data folder** `%LOCALAPPDATA%\777-erp` to removable media, as an archive
+   that is never opened again: the **untouched original**. Copy the database **with** its
+   `-wal` and `-shm` files. A database copied without its `-wal` loses its most recent work.
+3. **Record, from the copy:** `PRAGMA quick_check` (must be `ok`), the latest `schema_migrations`
+   version, `app_settings` `device.id`, `numbering.block` and `numbering.block.confirmed`, the
+   `workstations` rows, and row counts for every business table. The agent's read-only inspection
+   script does this without writing anything.
+
+### 10.2 Device identity — check, never invent
+
+The real database belongs to the machine whose `device-identity.json` sits beside it.
+
+1. **Read PC 2's `device-identity.json`**: `deviceId`, `workstationId`.
+2. **Check it against migration 087's hard-coded stamp.** 087 stamps every pre-existing numbered
+   row with `origin_device_id = 'desktop-main'`, and seeds `device.id = 'desktop-main'`. That was
+   right for the original installation. **If PC 2's `deviceId` is not `desktop-main`**, 087 has
+   attributed (or will attribute) PC 2's own documents to another computer. Numbering then
+   cannot see its own stray numbers, and every replicated document would carry the wrong origin.
+   **Stop:** a corrective migration (re-stamping `desktop-main` to PC 2's id, on that database
+   only) must be written, reviewed and rehearsed first. Do not hand-edit the database.
+3. **The database stays with its identity.** If it runs on PC 2, keep PC 2's data folder exactly
+   as it is. If it must run on a **different** machine, that machine mints its own identity, gets
+   a new `workstations` row, and is enrolled as itself (§7.6). **Never copy `device-identity.json`
+   or `device-credential.bin` to another machine.**
+
+### 10.3 Migrations
+
+1. **Install the production release on the machine that will run the database**, then start it
+   once. On launch the app takes a **pre-migration backup** (a `database-backup` line in
+   `app.log`), then applies every missing migration in order, up to the release's ceiling.
+2. **Verify:** the latest `schema_migrations` version equals the release's ceiling, `quick_check`
+   is `ok`, and **business row counts are unchanged** from 10.1. Migrations 087–090 add columns
+   and rebuild `sync_outbox`, and move no business row. The only expected changes are in
+   `sync_outbox`'s shape and in `app_settings` (`device.id`).
+3. **If it fails:** do not patch. The pre-migration backup and the untouched original are the way
+   back (§4b).
+
+### 10.4 Number block
+
+1. **The real database keeps its block.** If it has been issuing documents, that is **block 1**,
+   confirmed (`numbering.block = 1`, `numbering.block.confirmed = 1`). Never change it on this
+   database.
+2. **Record the written assignment:** block 1 = this database's machine, and blocks 2–5 = the
+   others (§7.3 step 13). A PC enrolled later is given its block from that record, never block 1.
+
+### 10.5 Clear what belongs to the test project
+
+The database may have talked to test during the pilot. Anything it remembers about test must go
+before it talks to production. **All of this is per-PC state** (`replicationScope.ts`), and none
+of it is business data:
+
+1. **The pull cursor and any recorded wait** (`sync.pull.cursor`, `sync.pull.deferred`). They are
+   positions in test's log, and production's log starts at 1 (§7.6 D).
+2. **Queue rows already marked `SYNCED`** — they were sent to **test**. Left in place, their dedupe
+   keys block the production backfill from queueing the same facts again, so production would
+   silently never receive them. Delete them. The facts are in the business tables, and the
+   backfill re-derives them.
+3. **The 868 legacy `PRODUCTION_EVENT` rows** (`docs/37 §2.1`): retire them, as planned there.
+   Never push them.
+4. **`device-credential.bin`** holds a test-project token. It is replaced on the first production
+   sign-in (§7.6 C), so it needs no action. Removing it is harmless.
+
+How: by an admin action in the release, or by the agent with the app closed, through a reviewed,
+rehearsed script. **Never by hand-typed SQL on the day.**
+
+### 10.6 Production enrolment and leases
+
+1. **Enrol the machine** in production (§7.6 A–C), keeping its identity.
+2. **Grant it the leases it holds:** Raw material store, Master data, and Accounts (the last one
+   so ledger balances are shown only where the vouchers are). Record who granted them, and when.
+3. **Point its four variables at production** (§7.6 C). Remove anything pointing at test.
+
+### 10.7 Backfill and verify
+
+1. **Run the backfill** (the "send existing data" action) on the holder. The Health page shows the
+   queue rise, then drain to zero.
+2. **Verify in production, by query:** row counts per replicated table equal the local counts
+   from 10.1. `verify_applied_state.sql` still passes, because the backfill adds rows and changes no
+   grant.
+3. **Bring up a reader** (a PC enrolled without a lease) and compare **Store In → Stock**
+   material by material with the holder. Zero differences, or stop.
+4. **Compare against the paper baseline** (`docs/35` step 5). The application is checked against
+   the books, never against memory.
+
+### 10.8 What never happens on cutover day
+
+- **Test data never enters production.** Production's master data comes from the real database's
+  backfill, never from test. This supersedes §7.1 step 5's "mirror from test", which applies only
+  while production has no real database.
+- **No PC holding real business data is ever pointed at test** once raw-material pull is
+  released. A reader pulls everything in the log, and test holds snapshot data that would be
+  written into the real database.
+- No hand-typed SQL, no copied data folders, and no skipped verification.
