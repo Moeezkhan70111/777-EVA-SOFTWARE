@@ -41,6 +41,7 @@
 import { applyEnvelope, type ApplyOutcome } from "./applyEnvelope.js";
 import type { SyncEnvelope } from "./contract.js";
 import {
+  bindPullCursorToProject,
   clearPullDeferral,
   readPullCursor,
   readPullDeferral,
@@ -72,6 +73,8 @@ export interface PullResult {
   readonly transportError?: string;
   /** Set when the run did not even look, because a recorded wait has not elapsed. */
   readonly deferredUntil?: number;
+  /** Set when the cursor belonged to another project, or to none, and was started again from zero. */
+  readonly restartedForProject?: boolean;
 }
 
 export interface SyncPullOptions {
@@ -81,6 +84,11 @@ export interface SyncPullOptions {
   readonly deferMaxMs?: number;
   /** Injected so a test can move time forward without waiting. */
   readonly now?: () => number;
+  /**
+   * The project this computer is pulling from (its URL). When given, a cursor recorded for a
+   * different project -- or for none -- is forgotten before the first fetch. See pullCursor.ts.
+   */
+  readonly project?: string;
 }
 
 export class SyncPull {
@@ -88,6 +96,7 @@ export class SyncPull {
   private readonly deferBaseMs: number;
   private readonly deferMaxMs: number;
   private readonly now: () => number;
+  private readonly project: string | undefined;
 
   constructor(
     private readonly sql: SyncSqlHandle,
@@ -98,9 +107,13 @@ export class SyncPull {
     this.deferBaseMs = options.deferBaseMs ?? 30_000;
     this.deferMaxMs = options.deferMaxMs ?? 900_000;
     this.now = options.now ?? (() => Date.now());
+    this.project = options.project;
   }
 
   async runOnce(): Promise<PullResult> {
+    // Before the cursor is read: a position from another project must never be fetched from.
+    const restarted = this.project !== undefined && bindPullCursorToProject(this.sql, this.project);
+    const restartedForProject = restarted ? { restartedForProject: true } : {};
     const from = readPullCursor(this.sql);
 
     // A recorded wait means the last run stopped on an event whose prerequisite had not
@@ -117,6 +130,7 @@ export class SyncPull {
         duplicates: 0,
         refused: [],
         deferredUntil: deferral.until,
+        ...restartedForProject,
       };
     }
 
@@ -125,7 +139,7 @@ export class SyncPull {
       changes = await this.transport.fetchChanges(from, this.batchSize);
     } catch (error) {
       const message = error instanceof Error ? error.message : "the service could not be reached";
-      return { from, cursor: from, fetched: 0, applied: 0, duplicates: 0, refused: [], transportError: message };
+      return { from, cursor: from, fetched: 0, applied: 0, duplicates: 0, refused: [], transportError: message, ...restartedForProject };
     }
 
     let applied = 0;
@@ -184,7 +198,7 @@ export class SyncPull {
       writePullDeferral(this.sql, { seq: waiting.seq, until: this.now() + wait, attempts });
     }
 
-    return { from, cursor, fetched: changes.length, applied, duplicates, refused, waitingFor: waiting };
+    return { from, cursor, fetched: changes.length, applied, duplicates, refused, waitingFor: waiting, ...restartedForProject };
   }
 }
 

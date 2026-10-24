@@ -688,9 +688,14 @@ Then sign out of Windows and back in, or restart, so the app starts with the new
 (`sync.pull.cursor` in `app_settings`) is a position in **test's** `sync_event_log`. Production's
 log starts again at 1, and the cursor is not tied to a project, so PC 2 would silently skip
 production's first events, up to its old test position. Harmless while PC 2 is the only device
-pushing to production. **Real loss as soon as a second device does.** Clear the cursor (and any
-recorded wait, `sync.pull.deferred`) before a second device is enrolled in production. The code
-change that makes this automatic — keying the cursor by project — is recorded as open in §7.7.
+pushing to production. **Real loss as soon as a second device does.**
+
+**Automatic in builds from `feat/replication-phase-1` onward (2026-10-25):** the project is recorded
+beside the cursor (`sync.pull.project`). A cursor recorded for another project, or with no project
+recorded, is reset to zero, along with any recorded wait, before the first fetch, and `app.log`
+says so (`pull-cursor`). **Releases up to and including 0.3.6 do not have this.** A PC moved on one
+of those still needs its cursor and `sync.pull.deferred` cleared before a second device is enrolled
+in production.
 
 **E. Confirm, by query, not by the rail:** PC 2's `device_accounts` row shows a fresh
 `claim_epoch` and a recent `last_seen_at`. A carton scanned on PC 2 appears in production's
@@ -710,7 +715,7 @@ rather than quietly writing there.
 
 | Item | Why it matters | Status |
 |---|---|---|
-| Key the pull cursor by project | A project change silently skips events up to the old position (§7.6 D) | **Open** — small code change in `packages/sync/src/pullCursor.ts` and its caller |
+| Key the pull cursor by project | A project change silently skips events up to the old position (§7.6 D) | **Done on `feat/replication-phase-1`** (2026-10-25), not yet released: `bindPullCursorToProject` in `packages/sync/src/pullCursor.ts`, called by `SyncPull` with the configured URL |
 | Record the credential's project | A stale token is offered to the wrong project once per move. Harmless, because it falls back, but it costs one failed sign-in | Open, low |
 | `migrations/supabase/README.md` | Still says 005 and 006 are unapplied. True of no project now | Open |
 

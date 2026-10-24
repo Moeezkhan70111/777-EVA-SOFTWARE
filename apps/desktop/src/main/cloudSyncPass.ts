@@ -259,8 +259,20 @@ export async function runCloudSyncPass(
     });
     const pushed = await drain.runOnce();
 
-    const pull = new sync.SyncPull(db.db, transport);
+    // The project goes with the cursor: a computer moved to another project (test -> production)
+    // starts reading that project's log from the beginning instead of from a position that only
+    // meant something in the old one.
+    const pull = new sync.SyncPull(db.db, transport, { project: identity.url });
     const pulled = await pull.runOnce();
+    if (pulled.restartedForProject) {
+      logger.log({
+        module: "sync",
+        severity: "INFO",
+        operation: "pull-cursor",
+        deviceId,
+        message: `Reading ${describeCloudSyncConfig(settings).host ?? "this project"} from the beginning: the saved position belonged to another project, or to none.`,
+      });
+    }
 
     // Read through a default. The drain always supplies this, but a pass must not be able to
     // throw on the SHAPE of its own result -- that would turn a reported refusal into an

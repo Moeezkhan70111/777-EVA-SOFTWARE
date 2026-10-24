@@ -12,6 +12,48 @@ import { asRow } from "./sqlPort.js";
 
 export const PULL_CURSOR_SETTING_KEY = "sync.pull.cursor";
 
+// ─── Which project the position belongs to ─────────────────────────────────
+//
+// A position is a number in ONE project's log. Point the computer at another project -- a PC moved
+// from test to production -- and the old number means nothing there: production's log starts again
+// at 1, so a cursor left at test's position would silently skip production's first events, and
+// nothing would ever report it (docs/36 section 7.6 D). So the project is recorded beside the
+// cursor, and a position that belongs to a different project, or to none recorded, is forgotten
+// before anything is fetched. Starting again from zero is always safe: every apply is idempotent.
+
+export const PULL_PROJECT_SETTING_KEY = "sync.pull.project";
+
+/** One spelling per project: the URL's origin, lower case, no trailing slash. */
+export const pullProjectKey = (projectUrl: string): string => {
+  const trimmed = projectUrl.trim();
+  try {
+    return new URL(trimmed).origin.toLowerCase();
+  } catch {
+    return trimmed.replace(/\/+$/, "").toLowerCase();
+  }
+};
+
+/**
+ * Makes the cursor belong to `projectUrl`. Returns true when it had to start again: the recorded
+ * project was a different one, or none was recorded (every computer from before this existed).
+ *
+ * The position and any recorded wait are cleared FIRST and the project written last, so a stop in
+ * between only means the next run clears them again -- never a position kept for the wrong project.
+ */
+export function bindPullCursorToProject(sql: SyncSqlHandle, projectUrl: string): boolean {
+  const project = pullProjectKey(projectUrl);
+  if (readSetting(sql, PULL_PROJECT_SETTING_KEY) === project) return false;
+  sql.prepare("DELETE FROM app_settings WHERE setting_key = ?").run(PULL_CURSOR_SETTING_KEY);
+  clearPullDeferral(sql);
+  writeSetting(sql, PULL_PROJECT_SETTING_KEY, project);
+  return true;
+}
+
+const readSetting = (sql: SyncSqlHandle, key: string): string | null => {
+  const row = asRow(sql.prepare("SELECT setting_value FROM app_settings WHERE setting_key = ? LIMIT 1").get(key));
+  return row === null ? null : String(row.setting_value ?? "");
+};
+
 export function readPullCursor(sql: SyncSqlHandle): number {
   const row = asRow(
     sql.prepare("SELECT setting_value FROM app_settings WHERE setting_key = ? LIMIT 1").get(PULL_CURSOR_SETTING_KEY)
