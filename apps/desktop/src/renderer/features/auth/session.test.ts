@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { HOME_ROUTE, landingRoute } from "./session";
+import { HOME_ROUTE, canOpenRoute, landingRoute } from "./session";
 import type { AuthUser } from "../../types/desktopApi";
 
 const user = (permissions: string[], role: AuthUser["role"] = "USER"): AuthUser => ({
@@ -25,5 +25,21 @@ describe("landingRoute — the first screen after signing in", () => {
 
   it("starts an administrator on the Dashboard, though they hold every permission", () => {
     expect(landingRoute(user([], "ADMIN"))).toBe(HOME_ROUTE);
+  });
+});
+
+describe("canOpenRoute — the carton QR Generator (0.3.6)", () => {
+  const routes = ["qr-generator", "b-carton-generator"] as const;
+
+  it("opens for a store operator, who holds no QR Generator permission of their own", () => {
+    for (const route of routes) expect(canOpenRoute(user(["store-scanning"]), route)).toBe(true);
+  });
+
+  it("still opens for anyone given QR Generator, as before", () => {
+    for (const route of routes) expect(canOpenRoute(user(["qr-generator"]), route)).toBe(true);
+  });
+
+  it("stays closed to someone with neither", () => {
+    for (const route of routes) expect(canOpenRoute(user(["stock", "gatepass"]), route)).toBe(false);
   });
 });

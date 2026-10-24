@@ -629,6 +629,11 @@ export const rawMaterialQrMethods = {
       machineProgramBatchId?: string | null;
       /** Upper Move Out: the machine the packet was issued to (migration 079). Null otherwise. */
       machineId?: string | null;
+      /**
+       * Scan Out: who the packet was moved out to (0.3.6). In metadata_json rather than a column
+       * because 0.3.6 ships no migration -- getRawMaterialQrJourney reads it back with json_extract.
+       */
+      issuedToPartyId?: string | null;
     },
     tx: TransactionContext
   ): void {
@@ -664,13 +669,31 @@ export const rawMaterialQrMethods = {
         payload.machineProgramLineId ?? null,
         payload.machineProgramBatchId ?? null,
         payload.machineId ?? null,
-        JSON.stringify({ eventType: payload.eventType, actor: payload.actor ?? null, sessionId: payload.sessionId ?? null }),
+        JSON.stringify({
+          eventType: payload.eventType,
+          actor: payload.actor ?? null,
+          sessionId: payload.sessionId ?? null,
+          ...(payload.issuedToPartyId ? { issuedToPartyId: payload.issuedToPartyId } : {}),
+        }),
         payload.occurredAt
       );
 
     if (Number(result.changes) === 0) {
       throw new Error("Raw material movement event insert failed.");
     }
+  },
+
+  /** A party as the Scan Out rule judges it: does it exist, is it active, what type is it. */
+  getRawMaterialIssueParty(
+    this: SqliteDatabase,
+    partyId: string,
+    tx: TransactionContext
+  ): { id: string; partyName: string; partyType: string; status: string } | null {
+    const context = tx as MutableTransactionContext;
+    const row = context.db
+      .prepare("SELECT id, party_name, party_type, status FROM parties WHERE id = ? AND deleted_at IS NULL LIMIT 1")
+      .get(partyId) as { id: string; party_name: string; party_type: string; status: string } | undefined;
+    return row ? { id: row.id, partyName: row.party_name, partyType: row.party_type, status: row.status } : null;
   },
 
   // ─── QR Management / QR Journey reads ──────────────────────────────────────────
@@ -777,12 +800,14 @@ export const rawMaterialQrMethods = {
         `SELECT e.id, e.event_type, e.event_ts_local, e.device_id, e.actor, e.quantity,
                 e.previous_status, e.new_status, e.sync_status,
                 u.code AS unit_code, ws.name AS section_name,
-                f.name AS factory_name, w.name AS workstation_name
+                f.name AS factory_name, w.name AS workstation_name,
+                issued_to.party_name AS issued_to_party_name
          FROM raw_material_qr_events e
          LEFT JOIN inventory_units u ON u.id = e.unit_id
          LEFT JOIN work_sections ws ON ws.id = e.section_id
          LEFT JOIN factories f ON f.id = e.factory_id
          LEFT JOIN workstations w ON w.id = e.workstation_id
+         LEFT JOIN parties issued_to ON issued_to.id = json_extract(e.metadata_json, '$.issuedToPartyId')
          WHERE e.qr_id = ?
          ORDER BY e.event_ts_local ASC, e.rowid ASC`
       )
@@ -846,11 +871,16 @@ export const rawMaterialQrMethods = {
     return row.section_name ? `Issued to ${String(row.section_name)}` : null;
   },
 
-  /** What the movement did, in words: "2 DOZ in" / "2 DOZ out to PACKING". */
+  /**
+   * What the movement did, in words: "2 DOZ in" / "2 DOZ issued to SHEHZAD RUBBER". The party
+   * chosen on Scan Out (0.3.6) is named in preference to the section, because it is the more
+   * specific answer to "where did it go".
+   */
   rawMaterialEventNote(row: Record<string, unknown>): string {
     const amount = `${Number(row.quantity)} ${row.unit_code ? String(row.unit_code) : ""}`.trim();
     if (String(row.event_type) === "STORE_EXIT") {
-      return `${amount} issued${row.section_name ? ` to ${String(row.section_name)}` : ""}`;
+      const to = row.issued_to_party_name ?? row.section_name;
+      return `${amount} issued${to ? ` to ${String(to)}` : ""}`;
     }
     return `${amount} received into the store`;
   },
@@ -864,12 +894,14 @@ export const rawMaterialQrMethods = {
         `SELECT e.id, e.event_type, e.event_ts_local, e.device_id, e.actor, e.quantity,
                 e.previous_status, e.new_status, e.sync_status,
                 u.code AS unit_code, ws.name AS section_name,
-                f.name AS factory_name, w.name AS workstation_name
+                f.name AS factory_name, w.name AS workstation_name,
+                issued_to.party_name AS issued_to_party_name
          FROM raw_material_qr_events e
          LEFT JOIN inventory_units u ON u.id = e.unit_id
          LEFT JOIN work_sections ws ON ws.id = e.section_id
          LEFT JOIN factories f ON f.id = e.factory_id
          LEFT JOIN workstations w ON w.id = e.workstation_id
+         LEFT JOIN parties issued_to ON issued_to.id = json_extract(e.metadata_json, '$.issuedToPartyId')
          WHERE e.qr_id = ?
          ORDER BY e.event_ts_local ASC, e.rowid ASC`
       )
@@ -916,10 +948,10 @@ export const rawMaterialQrMethods = {
     for (const row of rows) {
       const from = this.rawMaterialStatusAsStage(String(row.previous_status));
       const to = this.rawMaterialStatusAsStage(String(row.new_status));
-      // An exit hop names the section it went to, because "Issued" on its own does not
-      // tell the operator whether it went to packing or to the upper maker.
-      const toStatusLabel =
-        to === "ISSUED" && row.section_name ? `Issued to ${String(row.section_name)}` : null;
+      // An exit hop names where it went, because "Issued" on its own does not tell the operator
+      // whether it went to packing or to the upper maker. The Scan Out party wins when there is one.
+      const issuedTo = row.issued_to_party_name ?? row.section_name;
+      const toStatusLabel = to === "ISSUED" && issuedTo ? `Issued to ${String(issuedTo)}` : null;
       push({
         id: String(row.id),
         kind: String(row.event_type) === "STORE_EXIT" ? "STORE_EXIT" : "STORE_ENTRY",

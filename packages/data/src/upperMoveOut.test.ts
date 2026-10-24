@@ -79,7 +79,7 @@ function createFixture() {
   const exits = () => count("SELECT COUNT(*) AS n FROM raw_material_qr_events WHERE event_type = 'STORE_EXIT'");
 
   return {
-    db, raw, deps, upperOut, upperCategory, otherCategory, material, stockIn, machine, session, issue, onHand, count, exits,
+    db, raw, deps, supplier, upperOut, upperCategory, otherCategory, material, stockIn, machine, session, issue, onHand, count, exits,
     cleanup: () => {
       db.close();
       fs.rmSync(tempDir, { recursive: true, force: true });
@@ -275,7 +275,7 @@ test("K: the generic Raw Material Output scanner still issues every category, an
     const [packet] = await f.stockIn(red, 1);
     const generic = new IssueRawMaterialScanUseCase(f.deps);
     for (const qr of [bag, packet]) {
-      const result = await generic.execute({ rawScan: qr, sessionId: f.session(), context: CONTEXT, actor: "store" });
+      const result = await generic.execute({ rawScan: qr, sessionId: f.session(), issuedToPartyId: f.supplier, context: CONTEXT, actor: "store" });
       assert.equal(result.outcome, "ISSUED", result.reason);
     }
     assert.equal(f.onHand(poly), 0);

@@ -1,6 +1,7 @@
 import {
   InvalidQrError,
   RAW_MATERIAL_QR_STATUS,
+  isRawMaterialIssuePartyType,
   STOCK_EVENT_NOTE,
   cartonsExpectedFromUppers,
   isValidRawMaterialQrId,
@@ -16,9 +17,11 @@ import type { EventPublisher, IdGenerator, ScanOperationalContext, TransactionCo
 //
 //   IN_STORE  ──STORE_EXIT──▶  ISSUED (at the material's section)
 //
-// The mirror of Raw Material Input, with one difference that matters: there is nothing for
-// the operator to choose. Where a packet goes is a property of its material — rubber uppers
-// go to packing, ragzine to the upper maker — so the storekeeper only scans.
+// The mirror of Raw Material Input. Since 0.3.6 the generic Scan Out station also names WHO the
+// packet is moved out to — a supplier or a contractor (RAW_MATERIAL_ISSUE_PARTY_TYPES) — chosen
+// before scanning, the way Raw Material Input names its supplier. The party is judged here, not
+// trusted from the screen, and kept on the STORE_EXIT event. Machine Move Out and Upper Move Out
+// are untouched: the program or the machine already says what the material is for.
 //
 // Gatepass reservations are a finished-goods concept and are deliberately not consulted
 // here: a Gatepass is cut against carton store stock, never against raw material.
@@ -56,11 +59,18 @@ export type RawMaterialIssueOutcome =
    * PROGRAM mode only: this upper is not on the open program at all, or everything the program
    * asked for of it has already been issued. The packet stays in the store.
    */
-  | "NOT_ON_PROGRAM";
+  | "NOT_ON_PROGRAM"
+  /**
+   * Scan Out only: no party was chosen, or the one chosen is not an active supplier or
+   * contractor. Nothing was read or written.
+   */
+  | "NO_PARTY";
 
 export interface RawMaterialIssueInput {
   rawScan: string;
   sessionId: string;
+  /** Who the packet is being moved out to. Required, and must be an active supplier or contractor. */
+  issuedToPartyId: string;
   context: ScanOperationalContext;
   actor?: string | null;
 }
@@ -126,6 +136,8 @@ export interface RawMaterialIssueResult {
   packName?: string | null;
   /** The machine program this bag was counted against, when one was waiting for it. */
   machineProgram?: MachineProgramConsumption;
+  /** Scan Out: who the packet was moved out to. */
+  issuedToPartyName?: string;
   previousStatus?: string | null;
   currentStatus?: string | null;
   issuedAt?: string;
@@ -184,6 +196,8 @@ export interface IssuePacketInput {
   context: ScanOperationalContext;
   actor?: string | null;
   binding: IssueProgramBinding;
+  /** Scan Out: the party already judged by the caller, stamped on the event. Null otherwise. */
+  issuedToPartyId?: string | null;
 }
 
 /**
@@ -348,6 +362,7 @@ export const issueRawMaterialPacket = async (
       machineProgramBatchId: input.binding.mode === "PROGRAM" ? input.binding.batchId : null,
       // Upper Move Out's machine — written once, with the event, never moved afterwards.
       machineId: input.binding.mode === "MACHINE" ? input.binding.machineId : null,
+      issuedToPartyId: input.issuedToPartyId ?? null,
     },
     tx
   );
@@ -409,6 +424,27 @@ export const issueRefusalResult = (
   sessionId: sessionId ?? undefined,
 });
 
+const NO_PARTY_REASON = "Choose who this is being moved out to — a supplier or a contractor — before scanning.";
+
+/**
+ * The party a Scan Out packet is moved out to, judged inside the transaction: it must exist, be
+ * active, and be a supplier or a contractor. Throws NO_PARTY otherwise, so nothing is written.
+ */
+const judgeIssueParty = (
+  repo: RawMaterialMovementRepository,
+  partyId: string,
+  tx: TransactionContext
+): { id: string; partyName: string } => {
+  const party = repo.getRawMaterialIssueParty(partyId, tx);
+  if (!party || party.status !== "ACTIVE" || !isRawMaterialIssuePartyType(party.partyType)) {
+    throw new RawMaterialIssueRejectedError(
+      "NO_PARTY",
+      "That party cannot receive raw material. Choose an active supplier or contractor."
+    );
+  }
+  return party;
+};
+
 export class IssueRawMaterialScanUseCase {
   constructor(private readonly deps: RawMaterialIssueDeps) {}
 
@@ -418,14 +454,22 @@ export class IssueRawMaterialScanUseCase {
     const badFormat = checkRawMaterialScanFormat(raw);
     if (badFormat) return badFormat;
 
+    const partyId = String(input.issuedToPartyId ?? "").trim();
+    if (!partyId) return { accepted: false, outcome: "NO_PARTY", qrId: raw, reason: NO_PARTY_REASON };
+
     try {
-      const committed = await this.deps.txManager.runInTransaction((tx) =>
-        issueRawMaterialPacket(
+      let issuedTo = { id: partyId, partyName: "" };
+      const committed = await this.deps.txManager.runInTransaction((tx) => {
+        issuedTo = judgeIssueParty(this.deps.repo, partyId, tx);
+        return issueRawMaterialPacket(
           this.deps,
-          { qrId: raw, sessionId: input.sessionId, context: input.context, actor: input.actor, binding: AUTO_PROGRAM_BINDING },
+          {
+            qrId: raw, sessionId: input.sessionId, context: input.context, actor: input.actor,
+            binding: AUTO_PROGRAM_BINDING, issuedToPartyId: issuedTo.id,
+          },
           tx
-        )
-      );
+        );
+      });
 
       await this.deps.eventPublisher.publish("RawMaterialIssued.v1", {
         qrId: raw,
@@ -443,6 +487,7 @@ export class IssueRawMaterialScanUseCase {
         packingUnitCode: committed.unit.packingUnitCode,
         packName: committed.unit.packName,
         machineProgram: committed.machineProgram,
+        issuedToPartyName: issuedTo.partyName,
         previousStatus: committed.unit.currentStatus,
         currentStatus: RAW_MATERIAL_QR_STATUS.ISSUED,
         issuedAt: committed.issuedAt,

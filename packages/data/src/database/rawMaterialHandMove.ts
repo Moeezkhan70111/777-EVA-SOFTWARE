@@ -138,6 +138,13 @@ export const rawMaterialHandMoveMethods = {
     }
 
     const typedNote = String(input.note ?? "").trim();
+    // Stock leaving by hand has no label and no scan to say where it went, so the operator has
+    // to (owner request, 0.3.6). Checked last, after every rule about the amount, so a move that
+    // is wrong in two ways is refused for the more basic one first. Dana issues always carry
+    // their program in the note, so this never stops one.
+    if (direction === "OUT" && typedNote === "") {
+      return refuse("NO_PURPOSE", "Say what this is going out for — e.g. cutting table.");
+    }
     // What the operator typed is kept word for word beside what it came to, so the ledger can
     // be read back without redoing the arithmetic.
     const what = direction === "IN" ? STOCK_EVENT_NOTE.MANUAL_IN : STOCK_EVENT_NOTE.MANUAL_OUT;

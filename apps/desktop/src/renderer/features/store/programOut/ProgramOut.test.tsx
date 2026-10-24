@@ -508,6 +508,9 @@ describe("Machine Move Out — one scan, one movement", () => {
     // Issued and remaining are the re-read program's, never patched on screen.
     expect(await row("BLACK")).toHaveTextContent("BLACK100298");
     expect(screen.getByText("Uppers being taken")).toBeInTheDocument();
+    // One scan, ONE save. The scan arrives as a paste and an Enter, so the box has two ways to
+    // send it; this held only by timing until useScanBox read the live buffer on Enter.
+    expect(api.machineProgramStoreOutSaveBatch).toHaveBeenCalledTimes(1);
   });
 
   it("shows a rejection, moves nothing, and stays armed for the next packet", async () => {

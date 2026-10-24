@@ -123,17 +123,22 @@ export const useScanBox = ({ armed, onScan, refocusKey, autoSubmit = "complete-l
     return () => clearTimeout(timer);
   }, [inputVal, armed, submitScan, autoSubmit]);
 
+  // Enter sends what is in the box NOW (valueRef), never the inputVal of the render this handler
+  // came from. A scanner that types a code and Enter gives the box two ways to send it; on a busy PC
+  // the auto-submit timer can send and clear the box before React re-renders, and the Enter that
+  // follows lands on the previous render's handler, which still held the code -- one scan, sent
+  // twice. Reading the same live value the timer reads makes the second one find an empty box.
   const onKeyDown = useCallback(
     (event: React.KeyboardEvent<HTMLInputElement>) => {
       if (event.key === "Enter") {
         event.preventDefault();
-        submitScan(inputVal);
+        submitScan(valueRef.current);
       } else if (event.key === "Escape") {
         event.preventDefault();
         setInputVal("");
       }
     },
-    [inputVal, submitScan, setInputVal]
+    [submitScan, setInputVal]
   );
 
   const submit = useCallback(() => submitScan(valueRef.current), [submitScan]);

@@ -67,13 +67,13 @@ test("stock kept in INCH: 975 INCH out is one rule's worth, and 1 RULE out is th
   db.adjustInventoryStock({ itemId, quantity: 1940, eventType: "RECEIVE" });
   assert.equal(onHand(db, itemId), 1950);
 
-  const inches = db.moveRawMaterialByHand({ itemId, direction: "OUT", quantity: 975, unitCode: "INCH" });
+  const inches = db.moveRawMaterialByHand({ itemId, direction: "OUT", quantity: 975, unitCode: "INCH", note: "to the cutting table" });
   assert.equal(inches.outcome, "MOVED");
   assert.equal(inches.quantity, 975, "975 inches came off, which IS one rule");
   assert.equal(onHand(db, itemId), 975);
 
   // The same move typed the other way takes the same amount off.
-  const rule = db.moveRawMaterialByHand({ itemId, direction: "OUT", quantity: 1, unitCode: "RULE" });
+  const rule = db.moveRawMaterialByHand({ itemId, direction: "OUT", quantity: 1, unitCode: "RULE", note: "to the cutting table" });
   assert.equal(rule.outcome, "MOVED");
   assert.equal(rule.quantity, 975);
   assert.equal(rule.unitCode, "INCH", "the balance is kept in inches, so that is what moved");
@@ -84,12 +84,12 @@ test("part of a rule comes off in inches, and the rest of the roll stays", () =>
   const { db, itemId } = createFixture("INCH");
   db.adjustInventoryStock({ itemId, quantity: 965, eventType: "RECEIVE" }); // 975 on the shelf
 
-  const first = db.moveRawMaterialByHand({ itemId, direction: "OUT", quantity: 700, unitCode: "INCH" });
+  const first = db.moveRawMaterialByHand({ itemId, direction: "OUT", quantity: 700, unitCode: "INCH", note: "to the cutting table" });
   assert.equal(first.outcome, "MOVED");
   assert.equal(first.quantity, 700);
   assert.equal(onHand(db, itemId), 275);
 
-  const second = db.moveRawMaterialByHand({ itemId, direction: "OUT", quantity: 275, unitCode: "INCH" });
+  const second = db.moveRawMaterialByHand({ itemId, direction: "OUT", quantity: 275, unitCode: "INCH", note: "to the cutting table" });
   assert.equal(second.outcome, "MOVED");
   assert.equal(onHand(db, itemId), 0, "700 + 275 is the whole rule");
 });
@@ -99,14 +99,14 @@ test("stock kept in RULE: typing inches takes the right fraction of a rule off",
   assert.equal(onHand(db, itemId), 10);
 
   // 975 INCH is exactly one rule.
-  const whole = db.moveRawMaterialByHand({ itemId, direction: "OUT", quantity: 975, unitCode: "INCH" });
+  const whole = db.moveRawMaterialByHand({ itemId, direction: "OUT", quantity: 975, unitCode: "INCH", note: "to the cutting table" });
   assert.equal(whole.outcome, "MOVED");
   assert.equal(whole.quantity, 1);
   assert.equal(whole.unitCode, "RULE");
   assert.equal(onHand(db, itemId), 9);
 
   // 600 INCH is 600/975 of a rule — kept to three decimals, never rounded up to a whole one.
-  const part = db.moveRawMaterialByHand({ itemId, direction: "OUT", quantity: 600, unitCode: "INCH" });
+  const part = db.moveRawMaterialByHand({ itemId, direction: "OUT", quantity: 600, unitCode: "INCH", note: "to the cutting table" });
   assert.equal(part.outcome, "MOVED");
   assert.equal(part.quantity, Number((600 / 975).toFixed(3)));
   assert.equal(onHand(db, itemId), Number((9 - 600 / 975).toFixed(3)));
@@ -251,4 +251,21 @@ test("a move in of nothing, or in a unit this material does not use, is refused"
   assert.equal(db.moveRawMaterialByHand({ itemId, direction: "IN", quantity: 0, unitCode: "RULE", partyId }).outcome, "INVALID_QUANTITY");
   assert.equal(db.moveRawMaterialByHand({ itemId, direction: "IN", quantity: 5, unitCode: "DOZEN", partyId }).outcome, "UNKNOWN_UNIT");
   assert.equal(onHand(db, itemId), 10);
+});
+
+test("moving out by hand must say what for: no reason, or only spaces, moves nothing", () => {
+  const { db, itemId } = createFixture("RULE");
+  const before = onHand(db, itemId);
+
+  for (const note of [undefined, null, "", "   "]) {
+    const refused = db.moveRawMaterialByHand({ itemId, direction: "OUT", quantity: 1, unitCode: "RULE", note });
+    assert.equal(refused.accepted, false);
+    assert.equal(refused.outcome, "NO_PURPOSE");
+  }
+  assert.equal(onHand(db, itemId), before, "a refused move takes nothing off the shelf");
+
+  // With a reason it goes, and the reason is on the ledger.
+  const moved = db.moveRawMaterialByHand({ itemId, direction: "OUT", quantity: 1, unitCode: "RULE", note: "cutting table" });
+  assert.equal(moved.outcome, "MOVED");
+  assert.equal(onHand(db, itemId), before - 1);
 });
