@@ -294,7 +294,10 @@ describe("ProductFormPage contractor pricing", () => {
         })
       )
     );
-  });
+    // It types every character of four attributes and a product: ~2 s alone, past the default
+    // 5 s under a full-suite load, where it timed out intermittently. Same allowance as the
+    // other keystroke-heavy tests.
+  }, 15000);
 
   it("says what to fix in the popup instead of adding a nameless attribute", async () => {
     renderForm({ createProduct: vi.fn(), updateProduct: vi.fn() });
