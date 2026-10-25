@@ -52,6 +52,7 @@ import { CashVoucherFormPage } from "../pages/CashVoucherFormPage";
 import { CashVoucherListPage } from "../pages/CashVoucherListPage";
 import { SettingsPage } from "../pages/SettingsPage";
 import { HealthPage } from "../pages/HealthPage";
+import { SyncWaitingNotice } from "../features/sync/SyncWaitingNotice";
 import { LogsPage } from "../pages/LogsPage";
 import { WorkspacePage } from "../pages/WorkspacePage";
 import type { AppRoute } from "./routes";
@@ -682,6 +683,7 @@ export const App = () => {
         )}
 
         <main className={`page-content${!showNavbar || FULLSCREEN_ROUTES.has(route) ? " page-content--fullscreen" : ""}`}>
+          {session && !isAddingAccount ? <SyncWaitingNotice onOpenHealth={() => setRoute("health")} /> : null}
           {content}
         </main>
 

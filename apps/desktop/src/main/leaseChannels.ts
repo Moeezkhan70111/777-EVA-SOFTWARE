@@ -74,6 +74,8 @@ export const LEASED_CHANNELS: Readonly<Record<string, readonly LeaseDomain[]>> =
   [IPC.setMachineStatus]: MASTER,
   [IPC.addMachine]: MASTER,
   [IPC.assignMachineContractor]: MASTER,
+  // Sending a record again is a new revision of it: only the holder may.
+  [IPC.sendMasterRecordAgain]: MASTER,
 
   // ── Both: master data whose change rewrites stock history (docs/37 W.5) ──
   [IPC.importInventoryItems]: BOTH,

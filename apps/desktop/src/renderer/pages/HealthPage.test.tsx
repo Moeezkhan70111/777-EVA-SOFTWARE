@@ -1,7 +1,23 @@
 import React from "react";
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { HealthPage } from "./HealthPage";
+import { SessionProvider } from "../features/auth/SessionContext";
+import type { AuthUser } from "../types/desktopApi";
+
+const CLERK: AuthUser = { id: "u-1", username: "babar", role: "USER", accessStatus: "APPROVED", permissions: [], lastLoginAt: null };
+const ADMIN: AuthUser = { ...CLERK, id: "u-2", username: "owner", role: "ADMIN" };
+
+/** The page as the app shows it: inside the session. Other computers are an administrator's. */
+const renderPage = (user: AuthUser = CLERK) =>
+  render(
+    <SessionProvider user={user} token="t">
+      <HealthPage />
+    </SessionProvider>
+  );
+
+const NOTHING_WAITING = { entries: [], waiting: 0, stuck: 0, stale: 0, oldestSince: null, unsentMarks: 0, deadLetters: 0 };
 
 const baseHealth = {
   sqliteStatus: "OK",
@@ -41,12 +57,13 @@ function itemValue(label: string): string {
   return (value?.textContent ?? "").replace("●", "").trim();
 }
 
-function setupDesktop(getHealth: ReturnType<typeof vi.fn>, cloud: unknown = baseCloudStatus) {
+function setupDesktop(getHealth: ReturnType<typeof vi.fn>, cloud: unknown = baseCloudStatus, more: Record<string, unknown> = {}) {
   const getCloudSyncStatus = vi.fn().mockResolvedValue(cloud);
+  const getSyncWaiting = vi.fn().mockResolvedValue({ accepted: true, value: NOTHING_WAITING });
   Object.defineProperty(window, "desktop", {
     value: {
       versions: { node: "22", chrome: "128", electron: "43" },
-      api: { getHealth, getCloudSyncStatus },
+      api: { getHealth, getCloudSyncStatus, getSyncWaiting, ...more },
     },
     configurable: true,
   });
@@ -61,7 +78,7 @@ describe("HealthPage", () => {
     });
     setupDesktop(getHealth);
 
-    render(<HealthPage />);
+    renderPage();
 
     expect(await screen.findByText(/Money integrity check passed/)).toBeInTheDocument();
     expect(screen.getByText("2")).toBeInTheDocument();
@@ -80,7 +97,7 @@ describe("HealthPage", () => {
     });
     setupDesktop(getHealth);
 
-    render(<HealthPage />);
+    renderPage();
 
     expect(await screen.findByText(/Money integrity issue detected/)).toBeInTheDocument();
     expect(screen.getByRole("table")).toBeInTheDocument();
@@ -112,7 +129,7 @@ describe("HealthPage", () => {
       },
     });
 
-    render(<HealthPage />);
+    renderPage();
 
     expect(await screen.findByText("Ready To Send")).toBeInTheDocument();
     expect(screen.getByText("No Transport Yet")).toBeInTheDocument();
@@ -136,7 +153,7 @@ describe("HealthPage", () => {
     });
     setupDesktop(getHealth);
 
-    render(<HealthPage />);
+    renderPage();
 
     expect(await screen.findByText("Not set up on this computer")).toBeInTheDocument();
     // Nothing has ever been sent from here, and the page says exactly that.
@@ -153,10 +170,63 @@ describe("HealthPage", () => {
     const getCloudSyncStatus = setupDesktop(getHealth);
     getCloudSyncStatus.mockRejectedValue(new Error("Your session has expired."));
 
-    render(<HealthPage />);
+    renderPage();
 
     expect(await screen.findByText(/Money integrity check passed/)).toBeInTheDocument();
     expect(screen.getByText("Pending Sync")).toBeInTheDocument();
     expect(screen.queryByText("Ready To Send")).toBeNull();
+  });
+
+  it("lists what this computer waits on, and shows an administrator the others with Send Again", async () => {
+    const getHealth = vi.fn().mockResolvedValue({
+      ...baseHealth,
+      moneyDrift: { healthy: true, pairsChecked: 2, violationCount: 0, violations: [] },
+    });
+    const sendMasterRecordAgain = vi.fn().mockResolvedValue({ accepted: true });
+    setupDesktop(getHealth, baseCloudStatus, {
+      getSyncWaiting: vi.fn().mockResolvedValue({
+        accepted: true,
+        value: {
+          ...NOTHING_WAITING,
+          stuck: 1,
+          entries: [{
+            dedupeKey: "PARTY:p-1:2", aggregateType: "PARTY", aggregateId: "p-1", name: "SHAN",
+            cause: { kind: "MISSING", record: "PARTY_GROUP", id: "g-1" }, since: "2026-10-25T00:00:00.000Z",
+            ageMs: 2 * 3_600_000, tier: "STUCK", itemId: null, itemHere: null,
+          }],
+        },
+      }),
+      getFactorySyncHealth: vi.fn().mockResolvedValue({
+        accepted: true,
+        value: [{
+          deviceId: "dev-reader", label: "Boss PC", reportedAt: new Date().toISOString(),
+          waiting: 0, stuck: 0, stale: 1, oldestWaitingSince: "2026-10-23T00:00:00.000Z", deadLetters: 0, unsentMarks: 0,
+          sample: [{ subject: "Material NAWAAR", waitingFor: "a category not on this computer yet (c-17)", since: "2026-10-23T00:00:00.000Z", needs: "INVENTORY_CATEGORY:c-17" }],
+        }],
+      }),
+      sendMasterRecordAgain,
+    });
+
+    renderPage(ADMIN);
+
+    expect(await screen.findByText("Party SHAN")).toBeInTheDocument();
+    expect(screen.getByText("Stuck")).toBeInTheDocument();
+    expect(await screen.findByText("Boss PC")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Send again what Material NAWAAR is waiting for" }));
+    expect(sendMasterRecordAgain).toHaveBeenCalledWith("INVENTORY_CATEGORY:c-17");
+    expect(await screen.findByText(/Marked. It goes with the next sync/)).toBeInTheDocument();
+  });
+
+  it("does not show other computers to someone who is not an administrator", async () => {
+    const getHealth = vi.fn().mockResolvedValue({
+      ...baseHealth,
+      moneyDrift: { healthy: true, pairsChecked: 2, violationCount: 0, violations: [] },
+    });
+    const getFactorySyncHealth = vi.fn();
+    setupDesktop(getHealth, baseCloudStatus, { getFactorySyncHealth });
+    renderPage(CLERK);
+    expect(await screen.findByText("Waiting on this computer")).toBeInTheDocument();
+    expect(screen.queryByText("Other computers")).toBeNull();
+    expect(getFactorySyncHealth).not.toHaveBeenCalled();
   });
 });

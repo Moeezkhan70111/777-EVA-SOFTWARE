@@ -54,6 +54,62 @@ export interface CloudSyncStatus {
   lastSuccess?: SyncRunSummary | null;
 }
 
+/** How long a wait has lasted: under an hour, over an hour, over a day (packages/sync/src/waiting.ts). */
+export type SyncWaitTier = "WAITING" | "STUCK" | "STALE";
+
+/** What a wait needs. Mirrors WaitCause in @erp/sync. */
+export type SyncWaitCause =
+  | { kind: "MISSING"; record: string; id: string }
+  | { kind: "IN_USE"; record: string; id: string }
+  | { kind: "NAME_TAKEN"; column: string }
+  | { kind: "DISPLACED"; columns: string[] }
+  | { kind: "OTHER"; code: string };
+
+/** One thing this computer is waiting on. Mirrors WaitingEntry in @erp/sync. */
+export interface SyncWaitingEntry {
+  dedupeKey: string;
+  aggregateType: string;
+  aggregateId: string;
+  name: string | null;
+  cause: SyncWaitCause;
+  since: string;
+  ageMs: number;
+  tier: SyncWaitTier;
+  /** The material this leaves incomplete on this computer, when there is one. */
+  itemId: string | null;
+  /** Whether that material is on this computer at all. Null when there is no material. */
+  itemHere: boolean | null;
+}
+
+/** Everything this computer is waiting on, and what it has not been able to send. */
+export interface SyncWaiting {
+  entries: SyncWaitingEntry[];
+  waiting: number;
+  stuck: number;
+  stale: number;
+  oldestSince: string | null;
+  /** Master-data changes made without a lease epoch: only the backfill will send them. */
+  unsentMarks: number;
+  deadLetters: number;
+}
+
+/** Another computer's last report (cloud migration 014). Mirrors DeviceSyncHealth in @erp/sync. */
+export interface DeviceSyncHealthReport {
+  deviceId: string;
+  label: string;
+  reportedAt: string;
+  waiting: number;
+  stuck: number;
+  stale: number;
+  oldestWaitingSince: string | null;
+  /** Up to five waits in words; needs is the record ("TYPE:id") whose sending would end one. */
+  sample: Array<{ subject: string; waitingFor: string; since: string; needs?: string }>;
+  deadLetters: number;
+  unsentMarks: number;
+}
+
+export type SyncReply<T> = { accepted: true; value: T } | { accepted: false; reason?: string };
+
 /** One recorded pass, as the renderer sees it. Mirrors SyncRunRecord in @erp/data. */
 export interface SyncRunSummary {
   id: string;
@@ -2165,6 +2221,12 @@ export interface DesktopApi {
     reason?: string;
     entry?: DeadLetterEvent;
   }>;
+  /** What this computer is waiting on. Any signed-in user: the stock screen marks rows from it. */
+  getSyncWaiting(): Promise<SyncReply<SyncWaiting>>;
+  /** Every computer's last sync-health report. Administrators. Reads the cloud. */
+  getFactorySyncHealth(): Promise<SyncReply<DeviceSyncHealthReport[]>>;
+  /** Marks one master record ("TYPE:id") to be sent again on the next pass. Leased: holder only. */
+  sendMasterRecordAgain(recordKey: string): Promise<{ accepted: boolean; reason?: string }>;
   /** Read-only: which document-number range this computer holds, or why it holds none. */
   getNumberBlockStatus(): Promise<NumberBlockStatus>;
   /**

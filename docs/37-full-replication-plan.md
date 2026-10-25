@@ -304,7 +304,7 @@ The goal is the owner's boss seeing correct raw-material stock on his own PC. Th
    stock event can name a party, and a material can name its work section. Builder, transport,
    receiving contracts.
 2. **Stock events travel**, as a new leased event type `STOCK_EVENT`:
-   - cloud mirror, leased push and log (migration 014);
+   - cloud mirror, leased push and log (migration 015; 014 became the sync-health report);
    - local capture by a trigger on `inventory_stock_events`, so every write path is covered;
    - a receiving contract that stores the event and moves the balance.
    **The event carries `balanceDelta`**: `inventory_stock_events` holds two sign conventions,
@@ -343,6 +343,34 @@ The goal is the owner's boss seeing correct raw-material stock on his own PC. Th
 - **Dana issues follow W.6, as decided.** The reader applies the event without the machine-program
   link, which it can't hold yet, keeps the program id alongside the event, and restores the link
   when programs replicate.
+
+**As built — waiting visibility (item 5), 2026-10-25/26.** Cloud migration 014 is written and
+not yet applied to test.
+
+- **Tiers and words** (`packages/sync/src/waiting.ts`): every parked event and every displaced
+  record is an entry. Each says what waits (named from its own body), what it waits for, since
+  when, its tier, and the material it leaves incomplete.
+- **Name swaps don't deadlock** (local migration 096): when a revision needs a name that an
+  out-of-date record here still holds, that record is renamed `~moved:<id>` and recorded in
+  `sync_displaced_records` with the name it had. It shows as incomplete until its own revision
+  arrives. Bounded at three per apply.
+- **Stock screen:** every row whose material waits carries a mark in words. Under an hour it
+  reads "Still arriving", after that "Incomplete here", and the cause is read out to screen
+  readers too. Above the table, a notice appears once a wait has lasted over an hour, and the
+  materials not on this PC at all are listed by name.
+- **App-wide notice:** over an hour is a warning, over a day an error. A dismissal holds only for
+  the waits it was shown for; a new wait, or a worse tier, brings it back.
+- **Cloud report** (`device_sync_health`, 014): **one row per PC, overwritten, never appended.**
+  A report is sent when it changes or every 15 minutes, so about 96 calls a day. It carries
+  counts, the oldest age, up to five waits in words (each with `needs`, the record that would
+  end it), dead letters, and unsent marks. Readable by the factory's enrolled PCs; written only
+  through `report_sync_health` under the PC's own claim.
+- **Fixable at the source:** the Health page shows "Waiting on this computer" and, for
+  administrators, "Other computers". **Send Again** next to a wait marks that record under the
+  lease held now, and the next pass sends a new revision. It is a leased MASTER_DATA write, so
+  only the holder can do it, and it is refused when the holder doesn't have the record. Unsent
+  marks (changes made before this PC synced) are counted but left for the backfill: restamping
+  them with today's epoch could overwrite a change another holder made in between.
 
 **As built — leased records, cloud migration 013 (applied to test and verified 2026-10-25, docs/36 §6a.2).**
 

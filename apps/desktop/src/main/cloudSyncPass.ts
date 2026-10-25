@@ -27,7 +27,7 @@
 
 import { app } from "electron";
 import type { SqliteDatabase, StructuredLogger, SyncRunOutcome, SyncRunTrigger } from "@erp/data";
-import type { LastReport, SupabaseSyncTransport, SyncPassResult } from "@erp/sync";
+import type { DeviceSyncHealth, LastReport, SupabaseSyncTransport, SyncPassResult } from "@erp/sync";
 import { describeCloudSyncConfig, readCloudSyncConfig } from "./cloudConfig";
 import { DeviceCredentialStore } from "./deviceCredentialStore";
 
@@ -119,6 +119,16 @@ export function describeCloudSync(deps: Pick<CloudSyncPassDeps, "deviceId" | "da
   return describeCloudSyncConfig(
     readCloudSyncConfig(process.env, { hasStoredCredential: credentials.matchesDevice(deps.deviceId) })
   );
+}
+
+/**
+ * Every computer's last sync-health report, read through the transport the passes signed in with,
+ * or null before the first pass has made one. On demand only (the Health page), never per pass.
+ */
+export async function readFactorySyncHealth(): Promise<DeviceSyncHealth[] | null> {
+  const held = cachedTransport;
+  if (held === null) return null;
+  return held.transport.fetchFactorySyncHealth();
 }
 
 /** Builds marked master records into queued revisions. Never throws: a pass reports, it does not crash. */

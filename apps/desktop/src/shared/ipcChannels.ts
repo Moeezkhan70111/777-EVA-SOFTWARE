@@ -293,6 +293,12 @@ export const IPC = {
   listDeadLetterEvents: "erp:list-dead-letter-events",
   requeueDeadLetterEvent: "erp:requeue-dead-letter-event",
 
+  // What this computer and the others are waiting on, and sending one master record again for
+  // a computer that waits for it -- see main/ipc/syncWaiting.ts.
+  getSyncWaiting: "erp:get-sync-waiting",
+  getFactorySyncHealth: "erp:get-factory-sync-health",
+  sendMasterRecordAgain: "erp:send-master-record-again",
+
   // This computer's document-number range: read-only status, the one-time adoption for the
   // existing-data machine, and the one-time assignment for a second computer.
   getNumberBlockStatus: "erp:get-number-block-status",

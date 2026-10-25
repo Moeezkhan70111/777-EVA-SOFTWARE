@@ -312,6 +312,9 @@ contextBridge.exposeInMainWorld("desktop", {
     // Parked events. The requeue takes ONE id: there is no bulk recovery to invoke by mistake.
     listDeadLetterEvents: () => ipcRenderer.invoke(IPC.listDeadLetterEvents),
     requeueDeadLetterEvent: (outboxId: string) => ipcRenderer.invoke(IPC.requeueDeadLetterEvent, outboxId),
+    getSyncWaiting: () => ipcRenderer.invoke(IPC.getSyncWaiting),
+    getFactorySyncHealth: () => ipcRenderer.invoke(IPC.getFactorySyncHealth),
+    sendMasterRecordAgain: (recordKey: string) => ipcRenderer.invoke(IPC.sendMasterRecordAgain, recordKey),
     getNumberBlockStatus: () => ipcRenderer.invoke(IPC.getNumberBlockStatus),
     adoptNumberBlock: () => ipcRenderer.invoke(IPC.adoptNumberBlock),
     assignNumberBlock: (block: number) => ipcRenderer.invoke(IPC.assignNumberBlock, block),

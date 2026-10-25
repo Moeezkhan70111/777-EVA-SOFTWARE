@@ -92,6 +92,17 @@ export const formatRelative = (value: string | Date | null | undefined, now: Dat
   return days === 1 ? "yesterday" : `${days} days ago`;
 };
 
+/** "under a minute", "5 minutes", "3 hours", "2 days" — how long something has lasted. */
+export const formatDuration = (ms: number): string => {
+  const minutes = Math.floor(Math.max(0, ms) / 60_000);
+  if (minutes < 1) return "under a minute";
+  if (minutes < 60) return `${minutes} ${minutes === 1 ? "minute" : "minutes"}`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours} ${hours === 1 ? "hour" : "hours"}`;
+  const days = Math.floor(hours / 24);
+  return `${days} ${days === 1 ? "day" : "days"}`;
+};
+
 /** `YYYY-MM-DD` of a date in the business timezone — for date inputs and daily reports. */
 export const toIsoDate = (value: Date = new Date()): string => {
   const parts = new Intl.DateTimeFormat("en-CA", { timeZone: APP_TIMEZONE, year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(value);

@@ -10,6 +10,9 @@ import { MaterialDrawer } from "./MaterialDrawer";
 import { NewMaterialModal } from "./NewMaterialModal";
 import { ImportMaterialsModal } from "./ImportMaterialsModal";
 import { ActionMenu } from "./ActionMenu";
+import { useSyncWaiting } from "../sync/useSyncWaiting";
+import { incompleteMaterials } from "../sync/syncWaiting";
+import { IncompleteMaterials, IncompleteRowMark } from "../sync/IncompleteMaterials";
 import { downloadCsv, exportFileName } from "../../utils/exportFile";
 import { quantityInBaseUnit } from "@erp/domain";
 import type { ItemUnitLadderStep } from "../../types/desktopApi";
@@ -156,6 +159,10 @@ export const StockTab: React.FC<StockTabProps> = ({
   // include everything it inherits, so narrowing never loses a filter.
   const scopeCategory = categories.find((row) => String(row.id) === (subCategoryId || categoryId));
   const filterFields = useMemo(() => identityFields(scopeCategory), [scopeCategory]);
+
+  // Materials incomplete on this computer because something sent here has not arrived.
+  const { value: syncWaiting } = useSyncWaiting();
+  const incomplete = useMemo(() => incompleteMaterials(syncWaiting), [syncWaiting]);
 
   const awaitingItemIds = useMemo(
     () => new Set(pendingCorrections.map((request) => request.itemId)),
@@ -411,6 +418,8 @@ export const StockTab: React.FC<StockTabProps> = ({
         </div>
       ) : null}
 
+      <IncompleteMaterials incomplete={incomplete} />
+
       {/* ── The list ─────────────────────────────────────────────── */}
       {loading || lookupsLoading ? (
         <StateView kind="loading" message="Loading raw materials…" />
@@ -463,6 +472,7 @@ export const StockTab: React.FC<StockTabProps> = ({
                           <span className="rm-awaiting">⚠ {copy.removal.disabledBadge}</span>
                         ) : null}
                         {awaitingItemIds.has(id) ? <span className="rm-awaiting">⏳ Correction waiting</span> : null}
+                        <IncompleteRowMark entry={incomplete.get(id)} />
                       </td>
                       {/* What the storekeeper counts on the shelf: labelled packets, counted
                           one by one because each holds what its own label says. No packets

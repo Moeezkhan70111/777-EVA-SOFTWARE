@@ -14,7 +14,7 @@ import { IPC } from "../shared/ipcChannels";
 const IPC_DIR = path.resolve(__dirname, "ipc");
 
 /** The modules that register through the guarded ipcMain (leaseGuard.ts). */
-const GUARDED_MODULES = ["rawMaterials", "rawMaterialQr", "store", "parties", "machinePrograms", "upperMoveOut"];
+const GUARDED_MODULES = ["rawMaterials", "rawMaterialQr", "store", "parties", "machinePrograms", "upperMoveOut", "syncWaiting"];
 
 /** Channels these modules register that only read. Checked by hand, one by one. */
 const READS = new Set([
@@ -41,6 +41,8 @@ const READS = new Set([
   "listMachines", "listMachineProgramDana", "listMachineDayPrograms", "listCartonProgramBatches", "listReconcilablePrograms",
   // upperMoveOut
   "listUpperStock",
+  // syncWaiting
+  "getSyncWaiting", "getFactorySyncHealth",
 ]);
 
 const channelValue = (name: string): string => {

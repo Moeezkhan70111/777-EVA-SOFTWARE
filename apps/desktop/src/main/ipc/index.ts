@@ -26,6 +26,7 @@ import { registerManualProductionHandlers } from "./manualProduction";
 import { registerUpdateHandlers } from "./updates";
 import { installLeaseGate } from "../leaseGuard";
 import { registerLeaseHandlers } from "./leases";
+import { registerSyncWaitingHandlers } from "./syncWaiting";
 
 export type { IpcContext } from "./context";
 export { createIpcContext } from "./context";
@@ -60,4 +61,5 @@ export function registerIpcHandlers(ctx: IpcContext): void {
   registerManualProductionHandlers(ctx);
   registerUpdateHandlers(ctx);
   registerLeaseHandlers(ctx);
+  registerSyncWaitingHandlers(ctx);
 }

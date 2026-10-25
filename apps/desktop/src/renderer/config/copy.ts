@@ -474,6 +474,74 @@ export const copy = {
     openSettings: "Open Settings",
   },
 
+  // What this computer is waiting on (features/sync/syncWaiting.ts). A wait under an hour is
+  // ordinary and only marks the rows it touches; over an hour it is stuck, over a day stale.
+  syncWaiting: {
+    record: {
+      PARTY_GROUP: "party group",
+      PARTY: "party",
+      INVENTORY_UNIT: "unit",
+      UNIT_LADDER_PRESET: "unit ladder",
+      INVENTORY_CATEGORY: "category",
+      INVENTORY_ITEM: "material",
+      WORK_SECTION: "work section",
+      MACHINE: "machine",
+      RAW_MATERIAL_QR_BATCH: "label run",
+      RAW_MATERIAL_QR: "packet",
+      PRODUCT_VARIANT: "product",
+      QR_MASTER: "carton",
+    } as Readonly<Record<string, string>>,
+    cause: {
+      missing: (record: string, id: string) => `a ${record} that has not reached this computer (${id})`,
+      inUse: "removal — it is still in use on this computer",
+      nameTaken: "its name, still held by an out-of-date record here",
+      displaced: "its own update — its name was lent to another record",
+      other: (code: string) => `something this computer cannot name (${code})`,
+    },
+    tier: { WAITING: "Arriving", STUCK: "Stuck", STALE: "Stale" },
+    subject: (record: string, name: string) => `${record.charAt(0).toUpperCase()}${record.slice(1)} ${name}`,
+    waitedFor: (duration: string) => `for ${duration}`,
+
+    // On the stock screen: each affected row says so, in words.
+    rowMark: "Incomplete here",
+    rowMarkArriving: "Still arriving",
+    rowMarkTitle: (waitingFor: string, duration: string) => `Not complete on this computer: waiting for ${waitingFor}, for ${duration}.`,
+    stockNotice: (count: number, duration: string) =>
+      `Stock on this computer is incomplete: ${count} ${count === 1 ? "material is" : "materials are"} waiting for records that have not arrived, the oldest for ${duration}. Details on Health.`,
+    notHereTitle: "Not on this computer yet",
+    notHereHint: "These materials were changed on the store computer and have not fully arrived here. Their stock is not in the list below.",
+
+    // Across the app, once a wait has lasted.
+    stuckNotice: (count: number, duration: string) =>
+      `${count} ${count === 1 ? "record has" : "records have"} been waiting over an hour to arrive on this computer (the oldest for ${duration}). What it shows may be incomplete.`,
+    staleNotice: (count: number, duration: string) =>
+      `${count} ${count === 1 ? "record has" : "records have"} been waiting over a day to arrive on this computer (the oldest for ${duration}). What it shows is incomplete until the store computer sends ${count === 1 ? "it" : "them"}.`,
+    openHealth: "Open Health",
+    dismiss: "Dismiss",
+    noticeLabel: "Sync warning",
+
+    // The Health page.
+    hereTitle: "Waiting on this computer",
+    hereEmpty: "Nothing is waiting. Everything sent to this computer has arrived.",
+    hereLoading: "Reading what this computer is waiting on…",
+    hereFailed: "What this computer is waiting on could not be read.",
+    unsentMarks: (count: number) =>
+      `${count} master-data ${count === 1 ? "change was" : "changes were"} made here before this computer could send ${count === 1 ? "it" : "them"}. The backfill sends ${count === 1 ? "it" : "them"}.`,
+    deadLetters: (count: number) =>
+      `${count} ${count === 1 ? "item" : "items"} could not be sent and stopped being retried — see Settings.`,
+    othersTitle: "Other computers",
+    othersEmpty: "No other computer has reported yet.",
+    othersLoading: "Reading the other computers' reports…",
+    othersFailed: "The other computers' reports could not be read.",
+    othersHealthy: "Nothing waiting",
+    othersCounts: (stuck: number, stale: number) => `${stuck} stuck · ${stale} stale`,
+    reportedAgo: (age: string) => `Reported ${age}`,
+    sendAgain: "Send Again",
+    sendAgainLabel: (subject: string) => `Send again what ${subject} is waiting for`,
+    sentAgain: "Marked. It goes with the next sync, within a minute.",
+    sendAgainFailed: "It could not be marked to send again.",
+  },
+
   sync: {
     title: "Cloud Sync",
     notConfiguredTitle: "Not set up on this computer",
