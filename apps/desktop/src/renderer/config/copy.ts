@@ -1564,6 +1564,38 @@ export const copy = {
 
   // Store Station — the operator says which side of the store they work, then lands on it.
   // Kept short on purpose: this screen is read by new operators at a glance.
+  // Single-writer leases (docs/37 section W): a domain is written on one computer and read on the
+  // others. Shown by components/shared/ReadOnlyNotice and features/store/PacketLookup.
+  writeLease: {
+    readOnlyTitle: "Read-only on this computer",
+    /** The domain as it reads inside a sentence. */
+    domainName: {
+      RAW_MATERIAL_STORE: "the raw material store",
+      MASTER_DATA: "master data (materials, units, parties and machines)",
+      SALES_DISPATCH: "sales and dispatch",
+      ACCOUNTS: "accounts",
+      MACHINE_PROGRAMS: "machine programs",
+      APPROVALS: "approvals",
+    },
+    heldElsewhere: (what: string, holder: string | null) =>
+      `${what.charAt(0).toUpperCase()}${what.slice(1)} is written on ${holder ?? "another computer"} only. You can look things up here, but not change them.`,
+    notHeld: (what: string) => `No computer may write ${what} right now. The owner grants it to one computer.`,
+    noLeaseInfo: (what: string) =>
+      `This computer has not yet learned from the cloud who writes ${what}. Run Sync Now once while online.`,
+    catchingUp: (what: string) =>
+      `This computer writes ${what}, but is still catching up with the work done before it took over. Run Sync Now, then try again.`,
+    notReady: "This computer is still starting. Try again in a moment.",
+    lookupTitle: "Look a packet up",
+    lookupHint: "Scan a packet to see where it is. Nothing is received or issued on this computer.",
+    lookupLabel: "Packet code",
+    lookupPlaceholder: "Scan or type a packet code",
+    lookupNotFound: (code: string) => `No packet ${code} is known on this computer.`,
+    lookupFailed: "The packet could not be looked up. Try again.",
+    lookupSupplier: "Supplier",
+    lookupWhere: "Where it is",
+    lookupLastMove: "Last moved",
+  },
+
   store: {
     title: "Store",
     question: "What is your job today?",

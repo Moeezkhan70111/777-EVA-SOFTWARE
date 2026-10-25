@@ -12,7 +12,7 @@ import { openPrintDocument } from "../platform/print";
 import { escapeHtml } from "../utils/html";
 import { formatDateTime } from "../utils/dates";
 import { isCompleteQr, sanitizeScanInput } from "../utils/qr";
-import { isMachineProgramCodeScan, isRawMaterialIssuePartyType, isValidRawMaterialQrId } from "@erp/domain";
+import { LEASE_DOMAIN, isMachineProgramCodeScan, isRawMaterialIssuePartyType, isValidRawMaterialQrId } from "@erp/domain";
 import {
   LastScanCard,
   PlusIcon,
@@ -24,6 +24,8 @@ import {
   StationToolbar,
 } from "../features/scanStation/scanStation";
 import type { ScanStationFeedback, StationScanRow } from "../features/scanStation/scanStation";
+import { LeasedStation } from "../features/store/LeasedStation";
+import { ReaderStation } from "../features/store/ReaderStation";
 
 // Raw Material Output — issuing packets out of the store to the section that consumes them.
 //
@@ -221,7 +223,7 @@ interface RawMaterialOutputPageProps {
   onMachineProgramScan?: (code: string) => void;
 }
 
-export const RawMaterialOutputPage: React.FC<RawMaterialOutputPageProps> = ({
+const RawMaterialOutputStation: React.FC<RawMaterialOutputPageProps> = ({
   token,
   onBack,
   onNavigate,
@@ -566,3 +568,24 @@ export const RawMaterialOutputPage: React.FC<RawMaterialOutputPageProps> = ({
     </div>
   );
 };
+
+/**
+ * Raw Material Output: the station where this computer writes the raw material store, and a packet lookup
+ * where another computer does (docs/37 section W). The station itself is unchanged.
+ */
+export const RawMaterialOutputPage: React.FC<RawMaterialOutputPageProps> = (props) => (
+  <LeasedStation
+    domain={LEASE_DOMAIN.RAW_MATERIAL_STORE}
+    reader={(status) => (
+      <ReaderStation
+        status={status}
+        embedded={props.embedded}
+        onBack={props.onBack}
+        eyebrow={props.embedded ? undefined : "Store Station · Raw Material"}
+        title={props.embedded ? undefined : "Raw Material Output"}
+      />
+    )}
+  >
+    <RawMaterialOutputStation {...props} />
+  </LeasedStation>
+);

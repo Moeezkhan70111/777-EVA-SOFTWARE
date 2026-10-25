@@ -1,5 +1,8 @@
 import React, { useEffect, useRef, useState } from "react";
+import { LEASE_DOMAIN } from "@erp/domain";
 import { copy } from "../../config/copy";
+import { ReadOnlyNotice } from "../../components/shared/ReadOnlyNotice";
+import { useWriteLease } from "../sync/useWriteLease";
 import { RawMaterialOutputPage } from "../../pages/RawMaterialOutputPage";
 import { StateView } from "../../components/shared/StateView";
 import { HandMovePanel } from "./HandMovePanel";
@@ -83,10 +86,20 @@ export const StoreOutPage: React.FC<StoreOutPageProps> = ({
     void openProgram(initialProgramId).then(() => consumedRef.current?.());
   }, [initialProgramId, openProgram]);
 
+  const storeLease = useWriteLease(LEASE_DOMAIN.RAW_MATERIAL_STORE);
+
   if (programOut.program) {
     return (
       <div className="si-page mo-page mo-page--program">
-        <ProgramOutPanel state={programOut} onClose={programOut.close} onChangeJob={onBack} close={programClose} />
+        {/* Issuing against a program writes the store: on a reader it can be read, not saved. */}
+        <ReadOnlyNotice status={storeLease.status} />
+        <ProgramOutPanel
+          state={programOut}
+          onClose={programOut.close}
+          onChangeJob={onBack}
+          close={programClose}
+          viewOnly={!storeLease.canWrite}
+        />
       </div>
     );
   }

@@ -59,24 +59,42 @@ export class LeaseError extends Error {
   }
 }
 
-/** Throws a LeaseError unless this computer may write every one of `domains` now. */
-export async function requireLeases(domains: readonly LeaseDomain[]): Promise<void> {
+/** Whether this computer may write one domain now, as the screens are told it. */
+export interface WriteLeaseStatus {
+  readonly domain: LeaseDomain;
+  readonly canWrite: boolean;
+  /** Null when it may write. Otherwise NOT_READY, NO_LEASE_INFO, NOT_HELD, HELD_ELSEWHERE or CATCHING_UP. */
+  readonly reason: string | null;
+  readonly holderLabel: string | null;
+}
+
+/** The decision for each of `domains`, in order. Not ready yet reads as refused, never as allowed. */
+export async function writeLeaseStatuses(domains: readonly LeaseDomain[]): Promise<WriteLeaseStatus[]> {
   const deps = gate;
-  if (deps === null) {
-    throw new LeaseError(domains[0] ?? LEASE_DOMAIN.MASTER_DATA, "NOT_READY", "This computer is still starting. Try again in a moment.");
-  }
+  if (deps === null) return domains.map((domain) => ({ domain, canWrite: false, reason: "NOT_READY", holderLabel: null }));
   const sync = await import("@erp/sync");
   const syncConfigured = isCloudSyncConfigured({ deviceId: deps.deviceId, dataRoot: deps.dataRoot });
-  for (const domain of domains) {
+  return domains.map((domain) => {
     const decision = sync.leaseWriteDecision(deps.db.db, { domain, deviceId: deps.deviceId, syncConfigured });
-    if (decision.allowed) continue;
-    throw new LeaseError(domain, decision.reason, refusalMessage(domain, decision.reason, decision.holderLabel));
+    return decision.allowed
+      ? { domain, canWrite: true, reason: null, holderLabel: null }
+      : { domain, canWrite: false, reason: decision.reason, holderLabel: decision.holderLabel };
+  });
+}
+
+/** Throws a LeaseError unless this computer may write every one of `domains` now. */
+export async function requireLeases(domains: readonly LeaseDomain[]): Promise<void> {
+  for (const status of await writeLeaseStatuses(domains)) {
+    if (status.canWrite) continue;
+    throw new LeaseError(status.domain, status.reason ?? "NOT_READY", refusalMessage(status.domain, status.reason, status.holderLabel));
   }
 }
 
-function refusalMessage(domain: LeaseDomain, reason: string, holderLabel: string | null): string {
+function refusalMessage(domain: LeaseDomain, reason: string | null, holderLabel: string | null): string {
   const what = DOMAIN_WORDS[domain];
   switch (reason) {
+    case "NOT_READY":
+      return "This computer is still starting. Try again in a moment.";
     case "HELD_ELSEWHERE":
       return `${capitalise(what)} is written on ${holderLabel ?? "another computer"} only. It is read-only here.`;
     case "NOT_HELD":

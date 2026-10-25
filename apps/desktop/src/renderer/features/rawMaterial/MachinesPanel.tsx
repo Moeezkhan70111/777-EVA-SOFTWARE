@@ -4,6 +4,11 @@ import { useNotifications } from "../../state/NotificationsContext";
 import type { MachineRecord, WorkSection } from "../../types/desktopApi";
 import { copy } from "../../config/copy";
 import { useAddMachine } from "./useAddMachine";
+import { LEASE_DOMAIN } from "@erp/domain";
+import { LeaseNotices } from "../sync/LeaseNotices";
+
+/** Parties and machines are master data: written on one computer, read on the others (docs/37 section W). */
+const MASTER_DATA_ONLY = [LEASE_DOMAIN.MASTER_DATA] as const;
 
 // The machines on the floor, and the destination each one stands in.
 //
@@ -56,6 +61,7 @@ export const MachinesPanel: React.FC<MachinesPanelProps> = ({ sections }) => {
 
   return (
     <div className="rm-setup-card">
+      <LeaseNotices domains={MASTER_DATA_ONLY} />
       <div className="rm-setup-card-head">
         <h3 className="rm-setup-card-title">{copy.machineProgram.machines}</h3>
         <span className="rm-section-note">{copy.machineProgram.machinesHint}</span>

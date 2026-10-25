@@ -222,8 +222,25 @@ keeps its own accounts, as before.
 - **Label runs and packets are now pushed** through 012 with their epoch, the run before its
   packets. RUN_NOT_REGISTERED_YET waits, and NOT_LEASE_HOLDER is a bounded refusal.
 - **Rollout rule:** grant the leases before the release reaches a synced PC (docs/36 §7.8).
-- **Not yet built (stage 3b):** the read-only screens on a reader, the lookup-only packet scan,
-  and a release button for handover.
+- **Stage 3b, the screens (2026-10-25):** the renderer reads `getWriteLeases` (re-read every
+  30 seconds) and, on a reader:
+  - Raw Material Input and Output become a **packet lookup**: the same toolbar and way back, the
+    reason in words, and a scan box that reads the packet's journey and changes nothing.
+  - Hand moves are replaced by the notice. A program opened in Machine Store Out is shown with
+    the panel's existing view-only mode.
+  - The Raw Material sections (Stock and Labels for the store, Stock and Setup for master data),
+    parties and machines show a read-only notice.
+  - While the status is still being read, a station waits, so a reader never sees it for a
+    moment. If the status can't be read, nothing is hidden, because the main-process gate decides
+    regardless.
+  - A refused write's message reaches the operator without Electron's "Error invoking remote
+    method" wrapping (`withoutIpcPrefix`, applied to every toast).
+- **Deferred: a release button.** A release has to run inside a sync pass, under the pass's
+  single-flight guard, after the push, with nothing of the domain left unsent. Until it's built,
+  a handover is the owner's grant (docs/36 §7.8). The old holder syncs until its queue is empty,
+  then the new holder is granted, and the takeover records the same barrier: the old holder's
+  last write. Edit buttons on the master-data screens are not yet disabled on a reader. The
+  notice explains, and the gate refuses the write itself.
 
 **As built — leased records, cloud migration 013 (applied to test and verified 2026-10-25, docs/36 §6a.2).**
 

@@ -8695,3 +8695,14 @@ tr.has-error .gp-qty-stepper input { color: var(--err); }
 @media (min-width: 560px) {
   .mpr-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
+
+/* ── Read-only on this computer (docs/37 section W): a leased domain written elsewhere ── */
+.read-only-notice {
+  display: flex; gap: var(--space-3); align-items: flex-start;
+  background: var(--warn-bg); border: 1px solid var(--warn); border-left-width: 5px;
+  border-radius: var(--radius-lg); padding: var(--space-3) var(--space-4); margin-bottom: var(--space-3);
+  color: var(--text);
+}
+.read-only-notice-icon { font-size: 1.1rem; line-height: 1.4; }
+.read-only-notice-title { font-weight: 800; font-size: 0.9rem; }
+.read-only-notice-body { font-size: 0.85rem; color: var(--text-2); }

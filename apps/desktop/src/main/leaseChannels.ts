@@ -103,5 +103,8 @@ export const UNLEASED_WRITE_CHANNELS: Readonly<Record<string, string>> = {
   [IPC.createStockCorrectionRequest]: "A request only: approvals are leased in Milestone 2. Approving it is leased.",
 };
 
+/** The domains this version enforces: every domain some channel above needs. */
+export const ENFORCED_LEASE_DOMAINS: readonly LeaseDomain[] = [...new Set(Object.values(LEASED_CHANNELS).flat())];
+
 /** The leases a channel needs, or none. */
 export const leasesFor = (channel: string): readonly LeaseDomain[] => LEASED_CHANNELS[channel] ?? [];

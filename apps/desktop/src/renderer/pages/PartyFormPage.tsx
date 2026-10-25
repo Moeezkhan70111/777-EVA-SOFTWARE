@@ -4,6 +4,11 @@ import type { AppRoute } from "../app/routes";
 import { copy } from "../config/copy";
 import { UrduInput } from "../components/shared/UrduInput";
 import { learnUrduWords, transliterateWithLearnedWords } from "../utils/urdu";
+import { LEASE_DOMAIN } from "@erp/domain";
+import { LeaseNotices } from "../features/sync/LeaseNotices";
+
+/** Parties and machines are master data: written on one computer, read on the others (docs/37 section W). */
+const MASTER_DATA_ONLY = [LEASE_DOMAIN.MASTER_DATA] as const;
 
 const MAJOR_PAKISTAN_CITIES = [
   "Karachi",
@@ -453,6 +458,7 @@ export const PartyFormPage: React.FC<PartyFormPageProps> = ({ partyId, onNavigat
 
   return (
     <div className="page party-form-page">
+      <LeaseNotices domains={MASTER_DATA_ONLY} />
       <div className="party-form-heading">
         <div className="headingAddParty">
         

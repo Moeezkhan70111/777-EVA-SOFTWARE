@@ -1,4 +1,4 @@
-import type { ClaimPartyRole, ContractorLedger, ContractorRole, ReceiveProductionOutcome, StoreDailyReport, StoreDirection, UpperIssueOutcome, UpperProductionComparison, UpperReconciliation } from "@erp/domain";
+import type { ClaimPartyRole, ContractorLedger, ContractorRole, LeaseDomain, ReceiveProductionOutcome, StoreDailyReport, StoreDirection, UpperIssueOutcome, UpperProductionComparison, UpperReconciliation } from "@erp/domain";
 
 export type SortOrder = "ASC" | "DESC";
 
@@ -695,6 +695,20 @@ export interface QrJourney {
   /** Total time spent in each status (ms); the current status is counted up to `asOf`. */
   dwellMs: Record<string, number>;
   asOf: string;
+}
+
+// ─── Write leases (docs/37 section W) ────────────────────────────────────────
+
+/** Why this computer may not write a domain now. */
+export type LeaseRefusalReason = "NOT_READY" | "NO_LEASE_INFO" | "NOT_HELD" | "HELD_ELSEWHERE" | "CATCHING_UP";
+
+export interface WriteLeaseStatus {
+  domain: LeaseDomain;
+  canWrite: boolean;
+  /** Null when it may write. */
+  reason: LeaseRefusalReason | null;
+  /** Who writes it, in words, when another computer does. */
+  holderLabel: string | null;
 }
 
 // ─── Store Scanning ──────────────────────────────────────────────────────────
@@ -2003,6 +2017,8 @@ export interface DesktopApi {
   searchQrCodes(query: string, limit?: number): Promise<QrSearchRow[]>;
   getQrDetail(qrId: string): Promise<QrDetail | null>;
   getQrJourney(qrId: string): Promise<QrJourney | null>;
+  /** Whether this computer may write each leased domain now, and who does (docs/37 section W). */
+  getWriteLeases(): Promise<WriteLeaseStatus[]>;
   getQrGenerationOverview(filter?: QrGenerationFilter): Promise<QrGenerationOverview>;
   listQrGenerationFilterOptions(): Promise<QrGenerationFilterOptions>;
   listProductListEntries(kind: ProductListKind): Promise<ProductListEntry[]>;

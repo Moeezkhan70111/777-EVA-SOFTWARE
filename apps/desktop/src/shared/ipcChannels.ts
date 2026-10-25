@@ -218,6 +218,8 @@ export const IPC = {
   searchQrCodes: "erp:search-qr-codes",
   getQrDetail: "erp:get-qr-detail",
   getQrJourney: "erp:get-qr-journey",
+  /** Whether this computer may write each leased domain now, and who does (docs/37 section W). */
+  getWriteLeases: "erp:get-write-leases",
   getQrGenerationOverview: "erp:get-qr-generation-overview",
   listQrGenerationFilterOptions: "erp:list-qr-generation-filter-options",
   listQrBatchMembers: "erp:list-qr-batch-members",

@@ -14,7 +14,7 @@ import { copy } from "../config/copy";
 import { formatDateTime } from "../utils/dates";
 import { openReceivingReceiptPrintWindow } from "../features/rawMaterial/receivingReceipt";
 import { isCompleteQr, sanitizeScanInput } from "../utils/qr";
-import { isValidRawMaterialQrId } from "@erp/domain";
+import { LEASE_DOMAIN, isValidRawMaterialQrId } from "@erp/domain";
 import {
   LastScanCard,
   PlusIcon,
@@ -26,6 +26,8 @@ import {
   StationToolbar,
 } from "../features/scanStation/scanStation";
 import type { ScanStationFeedback, StationScanRow } from "../features/scanStation/scanStation";
+import { LeasedStation } from "../features/store/LeasedStation";
+import { ReaderStation } from "../features/store/ReaderStation";
 
 // Raw Material Input — receiving a supplier's delivery into the store.
 //
@@ -109,7 +111,7 @@ interface RawMaterialInputPageProps {
   embedded?: boolean;
 }
 
-export const RawMaterialInputPage: React.FC<RawMaterialInputPageProps> = ({ token, username, onBack, onNavigate, embedded = false }) => {
+const RawMaterialInputStation: React.FC<RawMaterialInputPageProps> = ({ token, username, onBack, onNavigate, embedded = false }) => {
   const api = useDesktopApi();
   const { push } = useNotifications();
 
@@ -428,3 +430,24 @@ export const RawMaterialInputPage: React.FC<RawMaterialInputPageProps> = ({ toke
     </div>
   );
 };
+
+/**
+ * Raw Material Input: the station where this computer writes the raw material store, and a packet lookup
+ * where another computer does (docs/37 section W). The station itself is unchanged.
+ */
+export const RawMaterialInputPage: React.FC<RawMaterialInputPageProps> = (props) => (
+  <LeasedStation
+    domain={LEASE_DOMAIN.RAW_MATERIAL_STORE}
+    reader={(status) => (
+      <ReaderStation
+        status={status}
+        embedded={props.embedded}
+        onBack={props.onBack}
+        eyebrow={props.embedded ? undefined : "Store Station · Raw Material"}
+        title={props.embedded ? undefined : "Raw Material Input"}
+      />
+    )}
+  >
+    <RawMaterialInputStation {...props} />
+  </LeasedStation>
+);

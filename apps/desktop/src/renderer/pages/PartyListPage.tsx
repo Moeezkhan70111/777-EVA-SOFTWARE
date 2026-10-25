@@ -2,6 +2,11 @@
 import type { AppRoute } from "../app/routes";
 import type { Party, PartyGroup } from "../types/desktopApi";
 import { copy } from "../config/copy";
+import { LEASE_DOMAIN } from "@erp/domain";
+import { LeaseNotices } from "../features/sync/LeaseNotices";
+
+/** Parties and machines are master data: written on one computer, read on the others (docs/37 section W). */
+const MASTER_DATA_ONLY = [LEASE_DOMAIN.MASTER_DATA] as const;
 
 interface PartyListPageProps {
   onNavigate: (route: AppRoute, id?: string) => void;
@@ -140,6 +145,7 @@ export const PartyListPage: React.FC<PartyListPageProps> = ({ onNavigate }) => {
 
   return (
     <div className="page party-list-page">
+      <LeaseNotices domains={MASTER_DATA_ONLY} />
       {/* Delete confirmation modal */}
       {confirmDelete && (
         <div
