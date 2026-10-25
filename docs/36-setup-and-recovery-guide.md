@@ -383,10 +383,9 @@ pasted by hand: **002–007 and 009–012**. 002 drops and re-adds foreign keys,
 009–012 contain the `drop`s and `revoke`s that *are* the access model. The baseline, 008, the seed,
 the mirror and the verification all went through the tool on test, or are plain inserts and selects.
 
-**011 and 012 are not yet on test** (written 2026-10-25, reviewed in the repo). Apply them to
-**test first**, 011 before 012 (012's pushes call 011's `lease_holds`), and run the verification
-there before production. On a project still at 010 the script reports exactly checks 3, 11, 22,
-23, 24, 26 and 27 as failing.
+**011 before 012**: 012's pushes call 011's `lease_holds`. On a project still at 010 the
+verification reports exactly checks 3, 11, 22, 23, 24, 26 and 27 as failing. Both are applied
+and verified on test (§6a.2).
 
 **One deliberate difference from test:** 007 and 008 are applied as part of the initial setup
 rather than as fixes afterwards. `verify_applied_state.sql` checks for exactly the state test
@@ -410,8 +409,26 @@ assumed. **Last checked 2026-10-23.**
 | `008_push_product_variant.up.sql` | **YES** | agent, `apply_migration` → `erp_008_push_product_variant` |
 | `009_sync_event_log_any_type.up.sql` | **YES**, 2026-10-25 | by hand, Supabase SQL editor (owner) |
 | `010_close_maintain.up.sql` | **YES**, 2026-10-25 | by hand, Supabase SQL editor (owner) |
-| `011_domain_leases.up.sql` | **not yet** — written 2026-10-25 | by hand, Supabase SQL editor (owner) |
-| `012_raw_material_identity.up.sql` | **not yet** — written 2026-10-25 | by hand, Supabase SQL editor (owner) |
+| `011_domain_leases.up.sql` | **YES**, 2026-10-25 | by hand, Supabase SQL editor (owner) |
+| `012_raw_material_identity.up.sql` | **YES**, 2026-10-25 | by hand, Supabase SQL editor (owner) |
+
+**Verified 2026-10-25, after 011 and 012:** `verify_applied_state.sql`, all 27 checks `ok`. And
+exercised, not only inspected, by two functional checks that act as a temporary second device and
+roll themselves back (afterwards: no temporary rows, no lease events, no raw-material log rows,
+PC2's claim untouched at epoch 33):
+
+* `check_leases.sql`, 8 steps: grant, the holder accepted and a stale epoch, another device and
+  another domain refused, a regrant to the holder changes nothing, takeover, A → B → A refuses A's
+  first-tenure epoch, the history is append-only, no lease for an unknown device, and a client can
+  neither grant nor read leases unenrolled.
+* `check_raw_material_identity.sql`, 6 steps: refused without the lease, a run lands and is logged
+  with exactly the reader's payload, a repeat is DUPLICATE, and in one call IDENTITY_CONFLICT,
+  RUN_DOES_NOT_ADD_UP, PAYLOAD_INCOMPLETE and NOT_LEASE_HOLDER are refused beside a row that
+  lands. Packets: RUN_NOT_REGISTERED_YET, PACKET_OUTSIDE_ITS_RUN, a half packing pair, SERIAL_CLASH,
+  packing 2.5 round-trips, logged unscoped once each, and a superseded claim writes nothing.
+
+Both are **test only**: they write and roll back, and on production even a rolled-back write would
+leave gaps in the log's positions.
 
 **Verified 2026-10-25, after 009 and 010:** `verify_applied_state.sql`, all 21 checks `ok`.
 Checks 5 and 7 now pass: `anon` holds nothing, and `authenticated` exactly `SELECT` on the seven

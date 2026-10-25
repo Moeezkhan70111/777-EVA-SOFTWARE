@@ -171,7 +171,7 @@ keeps its own accounts, as before.
 - **The holder may write offline.** The lease is checked when the writes are pushed, not when they
   are made.
 
-**As built — cloud migration 011 (written 2026-10-25, not yet applied to test).**
+**As built — cloud migration 011 (applied to test and verified 2026-10-25, docs/36 §6a.2).**
 
 - `domain_leases` has one row per domain: holder `device_id`, a label recording who it was granted
   to, and an `epoch` that bumps on every grant, release and takeover. `domain_lease_events` is the
