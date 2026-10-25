@@ -184,6 +184,10 @@ export type SyncRunTrigger = "STARTUP" | "TIMER" | "RECONNECT" | "MANUAL" | "SAV
 /** How a sync pass ended. Mirrors the CHECK on sync_runs.outcome. */
 export type SyncRunOutcome = "OK" | "REFUSED" | "TRANSPORT_ERROR" | "FAILED";
 
+/** How long sync_runs keeps an idle pass, and any other pass (pruneSyncRuns). */
+export const SYNC_RUN_IDLE_RETENTION_MS = 24 * 60 * 60 * 1000;
+export const SYNC_RUN_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
+
 /**
  * One recorded sync attempt.
  *
@@ -1133,6 +1137,33 @@ export class SqliteDatabase
         reason ?? null,
         id
       );
+    this.pruneSyncRuns(Date.now());
+  }
+
+  /**
+   * Keeps sync_runs bounded. A pass runs every minute, so the table would otherwise grow by about
+   * 1,440 rows a day on every computer, for ever.
+   *
+   *   idle passes (OK, nothing pushed, fetched or refused)  kept 24 hours
+   *   every other pass, open ones included                  kept 30 days
+   *   the latest successful pass                            never deleted: the Health panel's
+   *                                                         "last synced" must survive a long silence
+   *
+   * Exported for its test. Uses idx_sync_runs_started.
+   */
+  pruneSyncRuns(nowMs: number): number {
+    const idleCutoff = new Date(nowMs - SYNC_RUN_IDLE_RETENTION_MS).toISOString();
+    const cutoff = new Date(nowMs - SYNC_RUN_RETENTION_MS).toISOString();
+    const result = this.db
+      .prepare(
+        `DELETE FROM sync_runs
+          WHERE id IS NOT (SELECT id FROM sync_runs WHERE outcome = 'OK' ORDER BY started_at DESC LIMIT 1)
+            AND (started_at < ?
+                 OR (started_at < ? AND outcome = 'OK'
+                     AND COALESCE(pushed, 0) = 0 AND COALESCE(fetched, 0) = 0 AND COALESCE(refused, 0) = 0))`
+      )
+      .run(cutoff, idleCutoff);
+    return Number(result.changes);
   }
 
   /** The most recent attempt, and the most recent one that completed. Either may be null. */

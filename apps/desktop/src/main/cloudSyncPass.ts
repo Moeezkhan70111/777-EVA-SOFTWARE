@@ -321,8 +321,22 @@ export async function runCloudSyncPass(
     // throw on the SHAPE of its own result -- that would turn a reported refusal into an
     // unreported crash, which is the opposite of what the field is for.
     const pushRefusals = pushed.refusals ?? [];
+    const transportError = pushed.transportError ?? pulled.transportError ?? leaseError;
 
-    logger.log({
+    // A PASS THAT DID NOTHING IS NOT LOGGED. At one pass a minute, logging every one added about
+    // 1,440 identical lines a day to app.log, which is never rotated, and buried the passes that
+    // mattered. sync_runs still records it (pruned after a day), and Sync Now is always logged: a
+    // person asked, and the log says who.
+    const didNothing =
+      trigger !== "MANUAL" &&
+      transportError === undefined &&
+      pushed.synced === 0 &&
+      pushRefusals.length === 0 &&
+      pulled.fetched === 0 &&
+      pulled.applied === 0 &&
+      pulled.refused.length === 0;
+
+    if (!didNothing) logger.log({
       module: "sync",
       severity: "INFO",
       operation: "cloud-sync",
@@ -338,8 +352,6 @@ export async function runCloudSyncPass(
           : `; cloud refused ${String(pushRefusals.length)}: ` +
             pushRefusals.map((r) => `${r.aggregateType} ${r.aggregateId} (${r.reason})`).join(", ")),
     });
-
-    const transportError = pushed.transportError ?? pulled.transportError ?? leaseError;
 
     // THE CAUSE, NOT JUST THE COUNT. `reason` is what sync_runs records and what the panel
     // reads back as the newest verdict, so a refusal with no transport error has to put its

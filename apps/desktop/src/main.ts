@@ -166,8 +166,13 @@ async function startUpdateService(
 
 /** How long after launch the first sync pass waits, so it never competes with the first scan. */
 const SYNC_STARTUP_DELAY_MS = 120_000;
-/** Then every five minutes: often enough that three computers feel current to each other. */
-const SYNC_INTERVAL_MS = 5 * 60 * 1000;
+/**
+ * Then every minute, so a reader is at most a minute behind the holder (owner decision, 2026-10-25,
+ * until the realtime wake-up is built). An idle pass is three small requests -- heartbeat, an empty
+ * read of the log, the leases -- about 6 KB, roughly 10 MB a day per computer. Idle passes are not
+ * logged, and sync_runs prunes them after a day (pruneSyncRuns), so neither grows with the rate.
+ */
+const SYNC_INTERVAL_MS = 60 * 1000;
 /**
  * After a transport failure, doubling to the cap.
  *
@@ -297,7 +302,7 @@ async function startSyncScheduler(deps: {
       severity: "INFO",
       operation: "sync-scheduler",
       deviceId: scanContext.deviceId,
-      message: `Background cloud sync is on: first pass in ${String(Math.round(SYNC_STARTUP_DELAY_MS / 1000))}s, then every ${String(Math.round(SYNC_INTERVAL_MS / 60000))} minutes, and within seconds of anything new being queued.`,
+      message: `Background cloud sync is on: first pass in ${String(Math.round(SYNC_STARTUP_DELAY_MS / 1000))}s, then every ${String(Math.round(SYNC_INTERVAL_MS / 1000))}s, and within seconds of anything new being queued.`,
     });
     return scheduler;
   } catch (error) {

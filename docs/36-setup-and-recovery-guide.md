@@ -690,8 +690,8 @@ The project is `ykhvbmhmeefdtrzqeoxm` (created 2026-10-23). Record progress in Â
 ### 7.5 Then, and only then
 
 A two-PC test is possible. Watch the **Other Computers** indicator in the navigation rail on both
-machines rather than the logs: scan a carton on one and it should reach the other within about
-five minutes, or immediately on **Send Now**.
+machines rather than the logs: scan a carton on one and it should reach the other within about a
+minute (the pass interval since 2026-10-25), or immediately on **Send Now**.
 
 ### 7.6 Enrolling a PC in production: PC 2 (moving from test), and PCs 3â€“5
 
@@ -808,7 +808,7 @@ select public.grant_domain_lease('MASTER_DATA', '<device id>', 'Store PC -- <per
 select domain, holder_device_id, holder_label, epoch from public.domain_leases order by domain;
 ```
 
-The PC picks the grant up on its next pass, which takes up to five minutes, or immediately with
+The PC picks the grant up on its next pass, which takes up to a minute, or immediately with
 **Sync Now**.
 
 **Handing over** (docs/37 W.3): the old holder syncs until its queue is empty, then the new holder

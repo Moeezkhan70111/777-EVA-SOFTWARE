@@ -8,6 +8,7 @@ import { Authorizer, type SessionUser } from "../authorize";
 import { IPC } from "../../shared/ipcChannels";
 import type { IpcContext } from "./context";
 import { registerCloudSyncHandlers } from "./cloudSync";
+import { runCloudSyncPass } from "../cloudSyncPass";
 
 // WHAT THE RENDERER CAN MAKE THIS COMPUTER DO TO THE CLOUD.
 //
@@ -604,6 +605,36 @@ describe("cloud sync at the process boundary", () => {
   });
 
   // ─── what comes back ──────────────────────────────────────────────────────
+
+  // At one pass a minute, an idle pass logged every time added ~1,440 identical lines a day to a log
+  // that is never rotated. A background pass that did nothing is recorded in sync_runs, not logged.
+  const timerPass = () => {
+    const ctx = buildContext();
+    return runCloudSyncPass(
+      { db: ctx.db, logger: ctx.logger, deviceId: ctx.deviceId, workstationId: ctx.scanContext.workstationId, dataRoot: ctx.paths.dataRoot },
+      "TIMER"
+    );
+  };
+
+  it("does not log a background pass that did nothing, but still records it", async () => {
+    drainResult = { synced: 0, counts: { PENDING: 0 } };
+    pullResult = { fetched: 0, applied: 0, duplicates: 0, refused: [] };
+    await expect(timerPass()).resolves.toMatchObject({ outcome: "OK" });
+    expect(logged.filter((entry) => entry.operation === "cloud-sync")).toEqual([]);
+    expect(syncRuns.at(-1)).toMatchObject({ trigger: "TIMER", outcome: "OK" });
+  });
+
+  it("logs a background pass that sent, read or failed", async () => {
+    drainResult = { synced: 0, counts: { PENDING: 0 } };
+    pullResult = { fetched: 11, applied: 11, duplicates: 0, refused: [] };
+    await timerPass();
+    drainResult = { synced: 0, counts: { PENDING: 3 }, transportError: "the cloud could not be reached" };
+    pullResult = { fetched: 0, applied: 0, duplicates: 0, refused: [] };
+    await timerPass();
+    const lines = logged.filter((entry) => entry.operation === "cloud-sync").map((entry) => entry.message);
+    expect(lines).toHaveLength(2);
+    expect(lines[0]).toContain("read 11");
+  });
 
   it("returns the counts of a completed pass and records who ran it", async () => {
     pullResult = { fetched: 3, applied: 2, duplicates: 1, refused: [] };
