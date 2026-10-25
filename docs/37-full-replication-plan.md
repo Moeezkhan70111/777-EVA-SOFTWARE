@@ -193,6 +193,32 @@ keeps its own accounts, as before.
   that position. The cloud records the barrier, and the client enforces it, because only the
   client knows how far it has read.
 
+**As built — leased records, cloud migration 013 (written 2026-10-25, not yet applied to test).**
+
+- **One generic store, not a mirror per table.** `leased_records` holds one row per (type, id):
+  the holder's whole record as JSON, its revision, and whether it is deleted. A document is one
+  record: an item with its values and unit steps, a category with its fields and options, a
+  ladder preset with its steps. It replaces as one, never row by row.
+- **The cloud judges the envelope, and the receiving PC judges the body.** The cloud checks that
+  the type is known, that the pushing PC holds that type's lease under the record's epoch, and
+  that the revision moves forward. The body is validated by the receiver against its own schema,
+  like every other payload. A typed cloud mirror would have to change with every local migration
+  that touches master data, without adding a check the receiver doesn't already make.
+- **Revisions:** newer → UPDATED (INSERTED the first time). The same revision and content →
+  DUPLICATE. The same revision with different content → REVISION_CONFLICT, refused and visible.
+  An older revision → SUPERSEDED, acknowledged but not applied, because applying it would roll the
+  record back. A deletion is a revision with no body.
+- **Every revision is its own log event** (`TYPE:id:revision`), so a reader that missed one
+  converges on the next.
+- **Milestone 1 types**, all under MASTER_DATA: `PARTY_GROUP`, `PARTY`, `INVENTORY_UNIT`,
+  `UNIT_LADDER_PRESET`, `INVENTORY_CATEGORY`, `INVENTORY_ITEM`, `WORK_SECTION`, `MACHINE`.
+  Milestone 2's documents and approvals are leased records too: each one is a row in
+  `leased_record_types` naming its domain, not a new migration of this shape.
+- **Open, for the owner, before the sending side (stage 4):** whether money in master data
+  (`inventory_items.cost_price_paisa`, `parties.balance_limit_paisa`) travels to the cloud.
+  Migration 008 keeps product prices out and says docs/37 decided that, but no such decision is
+  recorded here. The cloud side is unaffected either way, since it doesn't read the body.
+
 ### W.3 Handover — the one place this model can lose work
 
 | Path | Rule |

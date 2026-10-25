@@ -1699,3 +1699,88 @@ test("012: one transaction each way, and the rollback leaves the log alone", () 
   assert.doesNotMatch(down, /sync_event_log/, "the log is append-only and stays");
   assert.match(RM_IDENTITY_DOWN, /WHAT THIS COSTS/);
 });
+
+// ─── 013: leased records -- master data, whole, by revision ─────────────────
+
+const LEASED_RECORDS = read("migrations/supabase/013_leased_records.up.sql");
+const LEASED_RECORDS_DOWN = read("migrations/supabase/013_leased_records.down.sql");
+
+/** The (type, lease domain) rows 013 seeds into leased_record_types. */
+const leasedRecordTypes = (): Map<string, string> => {
+  const types = new Map<string, string>();
+  const insert = LEASED_RECORDS.slice(LEASED_RECORDS.indexOf("insert into public.leased_record_types"));
+  for (const match of insert.slice(0, insert.indexOf(";")).matchAll(/\('([A-Z_]+)', '([A-Z_]+)'\)/g)) {
+    types.set(match[1] ?? "", match[2] ?? "");
+  }
+  return types;
+};
+
+test("013: every record type is a log type, unscoped, under a lease this computer knows", () => {
+  const types = leasedRecordTypes();
+  assert.equal(types.size, 8, "the eight master-data record types of docs/37 W.1");
+  const logTypes = LEASED_RECORDS.slice(LEASED_RECORDS.indexOf("insert into public.sync_aggregate_types"));
+  for (const [type, domain] of types) {
+    assert.match(logTypes, new RegExp(String.raw`\('${type}', false, '`), `${type} is seeded into the log's types, unscoped`);
+    assert.ok((Object.values(LEASE_DOMAIN) as string[]).includes(domain), `${type}'s domain ${domain} is a lease domain`);
+  }
+  assert.ok([...types.values()].every((domain) => domain === LEASE_DOMAIN.MASTER_DATA), "Milestone 1 records are all master data");
+});
+
+test("013: the push proves the device, then the record type's own lease, before it writes", () => {
+  const body = functionBody(LEASED_RECORDS, "push_leased_record");
+  const claim = body.indexOf("public.claim_is_current(p_epoch, p_holder)");
+  const type = body.indexOf("from public.leased_record_types");
+  const lease = body.indexOf("public.lease_holds(v_domain, account.device_id, (item->>'lease_epoch')::bigint)");
+  const write = body.indexOf("insert into public.leased_records");
+  assert.ok(claim >= 0 && type > claim && lease > type && write > lease, "claim, then the type's domain, then the lease, then write");
+  assert.ok(!body.slice(body.indexOf("for item in")).includes("raise exception"), "refuses per row");
+  assert.ok(!body.includes("item->>'origin_device_id'"), "the origin is the proven device");
+  // The row is locked before its revision is compared, so two pushes cannot both pass the check.
+  assert.ok(body.indexOf("for update") < body.indexOf("update public.leased_records"));
+});
+
+test("013: a revision only moves forward, and an older one is acknowledged, never applied", () => {
+  const body = functionBody(LEASED_RECORDS, "push_leased_record");
+  const older = body.indexOf("if v_revision < existing.revision then");
+  const same = body.indexOf("elsif v_revision = existing.revision then");
+  const update = body.indexOf("update public.leased_records");
+  assert.ok(older >= 0 && same > older && update > same, "older, then equal, then newer -- only newer writes");
+  assert.ok(body.slice(older, same).includes("'SUPERSEDED'") && !body.slice(older, same).includes("update "));
+  assert.ok(body.slice(same, update).includes("'DUPLICATE'") && body.slice(same, update).includes("'REVISION_CONFLICT'"));
+  // Every revision is its own log event, so a reader that missed one converges on the next.
+  assert.ok(LEASED_RECORDS.includes("new.aggregate_type || ':' || new.record_id || ':' || new.revision::text"));
+  assert.match(sqlOnly(LEASED_RECORDS), /after insert or update of revision on public\.leased_records/);
+});
+
+test("013: no variable in the push shares a name with a column", () => {
+  // PL/pgSQL refuses an ambiguous reference at RUN time, not when the function is created: a
+  // variable named revision, deleted or body would pass the paste and fail the first push.
+  const body = functionBody(LEASED_RECORDS, "push_leased_record");
+  const declared = body.slice(body.indexOf("declare"), body.indexOf("begin"));
+  const variables = [...declared.matchAll(/^\s+([a-z_]+)\s/gm)].map((match) => match[1]);
+  for (const column of ["aggregate_type", "record_id", "revision", "deleted", "body", "lease_epoch", "origin_device_id", "domain", "lease_domain"]) {
+    assert.ok(!variables.includes(column), `the variable ${column} would be ambiguous with a column`);
+  }
+});
+
+test("013: the records are closed to clients, and only the push is callable", () => {
+  const sql = sqlOnly(LEASED_RECORDS);
+  for (const table of ["leased_record_types", "leased_records"]) {
+    assert.match(sql, new RegExp(String.raw`alter table public\.${table} enable row level security`));
+    assert.match(sql, new RegExp(String.raw`revoke all on table public\.${table} from public, anon, authenticated`));
+  }
+  assert.doesNotMatch(sql, /create policy/);
+  const granted = [...sql.matchAll(/grant execute on function public\.([a-z_]+)\(/g)].map((match) => match[1]);
+  assert.deepEqual(granted, ["push_leased_record"]);
+  assert.ok(sql.lastIndexOf("create trigger") < sql.indexOf("revoke all on function"));
+  assert.match(sql, /octet_length\(v_body::text\) > 262144/, "a record's size is bounded");
+});
+
+test("013: the rollback keeps the log and the types the log refers to", () => {
+  const down = sqlOnly(LEASED_RECORDS_DOWN);
+  assert.ok(down.trim().startsWith("begin;") && down.includes("commit;"));
+  assert.ok(down.indexOf("drop function if exists public.push_leased_record") < down.indexOf("drop table if exists public.leased_records"));
+  assert.ok(down.indexOf("drop table if exists public.leased_records;") < down.indexOf("drop table if exists public.leased_record_types;"));
+  assert.doesNotMatch(down, /sync_event_log|sync_aggregate_types/);
+  assert.match(LEASED_RECORDS_DOWN, /WHAT THIS COSTS/);
+});

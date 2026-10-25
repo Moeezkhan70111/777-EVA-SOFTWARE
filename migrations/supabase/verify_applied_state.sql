@@ -2,7 +2,7 @@
 --
 -- Not a migration: it changes nothing, has no number, and must never be applied as one. Run it
 -- whole in the Supabase SQL editor (or through the MCP execute_sql tool) against any project that
--- has had schema.sql and 002-012 applied. One row per check. Every row must say ok = true.
+-- has had schema.sql and 002-013 applied. One row per check. Every row must say ok = true.
 --
 -- Updated for 009 (2026-10-25): the log's types are rows in sync_aggregate_types and the scope rule
 -- is a trigger, so checks 2, 3, 17 and 20-21 describe that. A project still at 008 fails exactly
@@ -17,6 +17,10 @@
 -- (11-12 count eight), and check 27 for their log triggers. A project at 011 fails exactly 3, 11
 -- and 27. Check 12 passes there trivially, as 25 does above.
 --
+-- Updated for 013 (2026-10-25): two leased-record tables (check 3 goes to 30), push_leased_record
+-- (11-12 count nine), eight master-data types in check 20, and checks 28-29. A project at 012
+-- fails exactly 3, 11, 20, 28 and 29.
+--
 -- It turns docs/36 section 6a's verified state into something that can be re-run instead of
 -- re-read. Run it after setting up a project, and again after ANY change to its schema or grants.
 --
@@ -29,7 +33,7 @@ with
 expected_rpcs(name) as (
   values ('claim_device'), ('claim_is_current'), ('heartbeat_device'),
          ('push_qr_master'), ('push_production_produced'), ('push_product_variant'),
-         ('push_raw_material_qr_batch'), ('push_raw_material_qr')
+         ('push_raw_material_qr_batch'), ('push_raw_material_qr'), ('push_leased_record')
 ),
 client_table_grants as (
   -- Direct table-level grants to the two client roles and to PUBLIC (grantee 0).
@@ -56,7 +60,7 @@ checks(n, check_name, expected, actual) as (
     (select count(*)::text from pg_constraint
      where conname = 'sync_event_log_factory_scope' and conrelid = to_regclass('public.sync_event_log'))
 
-  union all select 3, 'tables in public', '28',
+  union all select 3, 'tables in public', '30',
     (select count(*)::text from pg_class c join pg_namespace n on n.oid = c.relnamespace
      where n.nspname = 'public' and c.relkind = 'r')
 
@@ -95,11 +99,11 @@ checks(n, check_name, expected, actual) as (
        and a.grantee in ('anon'::regrole, 'authenticated'::regrole))
 
   -- 11-12. THE WRITE PATH. The claim-checking RPCs are the only way in, and anon cannot call them.
-  union all select 11, 'the eight RPCs exist', '8',
+  union all select 11, 'the nine RPCs exist', '9',
     (select count(distinct p.proname)::text from pg_proc p
      where p.pronamespace = 'public'::regnamespace and p.proname in (select name from expected_rpcs))
 
-  union all select 12, 'the eight RPCs: executable by anon', '0',
+  union all select 12, 'the nine RPCs: executable by anon', '0',
     (select count(*)::text from pg_proc p
      where p.pronamespace = 'public'::regnamespace and p.proname in (select name from expected_rpcs)
        and has_function_privilege('anon', p.oid, 'EXECUTE'))
@@ -145,7 +149,7 @@ checks(n, check_name, expected, actual) as (
   --     Read through query_to_xml, so a project without the table (before 009) reports 'table
   --     missing' on this row instead of failing the whole script: it has to diagnose exactly those.
   union all select 20, 'sync_aggregate_types: each type and whether it is factory-scoped',
-    'PRODUCTION_PRODUCED:true,PRODUCT_VARIANT:false,QR_MASTER:false,RAW_MATERIAL_QR:false,RAW_MATERIAL_QR_BATCH:false',
+    'INVENTORY_CATEGORY:false,INVENTORY_ITEM:false,INVENTORY_UNIT:false,MACHINE:false,PARTY:false,PARTY_GROUP:false,PRODUCTION_PRODUCED:true,PRODUCT_VARIANT:false,QR_MASTER:false,RAW_MATERIAL_QR:false,RAW_MATERIAL_QR_BATCH:false,UNIT_LADDER_PRESET:false,WORK_SECTION:false',
     case
       when to_regclass('public.sync_aggregate_types') is null then 'table missing'
       else coalesce((xpath('/row/v/text()', query_to_xml(
@@ -198,6 +202,21 @@ checks(n, check_name, expected, actual) as (
   union all select 27, 'raw-material log triggers present', '2',
     (select count(*)::text from pg_trigger
      where not tgisinternal and tgname in ('trg_raw_material_qr_batches_log', 'trg_raw_material_qrs_log'))
+
+  -- 28-29. LEASED RECORDS (013): every revision is logged, and each record type is under the lease
+  --        it belongs to. The table grants are covered by 5-7 and RLS by 4.
+  union all select 28, 'leased-record log trigger present', '1',
+    (select count(*)::text from pg_trigger
+     where not tgisinternal and tgname = 'trg_leased_records_log')
+
+  union all select 29, 'leased_record_types: each type and its lease domain',
+    'INVENTORY_CATEGORY:MASTER_DATA,INVENTORY_ITEM:MASTER_DATA,INVENTORY_UNIT:MASTER_DATA,MACHINE:MASTER_DATA,PARTY:MASTER_DATA,PARTY_GROUP:MASTER_DATA,UNIT_LADDER_PRESET:MASTER_DATA,WORK_SECTION:MASTER_DATA',
+    case
+      when to_regclass('public.leased_record_types') is null then 'table missing'
+      else coalesce((xpath('/row/v/text()', query_to_xml(
+        'select string_agg(aggregate_type || '':'' || lease_domain, '','' order by aggregate_type collate "C") as v
+           from public.leased_record_types', false, true, '')))[1]::text, '')
+    end
 )
 select n, check_name, expected, actual, actual = expected as ok
 from checks
