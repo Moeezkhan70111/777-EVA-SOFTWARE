@@ -7,6 +7,7 @@ import { downloadCsv } from "../../utils/exportFile";
 import { ImportFileError, readSheetFile } from "../../utils/importFile";
 import { Modal } from "./Modal";
 import type { CategoryRow } from "./rawMaterial";
+import { leaseRefusalText } from "../../../shared/leaseRefusal";
 
 // Creating raw materials in bulk from a spreadsheet.
 //
@@ -87,7 +88,7 @@ export const ImportMaterialsModal: React.FC<ImportMaterialsModalProps> = ({ cate
       setPreview(result.result);
       setStep("preview");
     } catch (cause) {
-      setError(cause instanceof ImportFileError ? cause.message : "The file could not be read.");
+      setError(cause instanceof ImportFileError ? cause.message : (leaseRefusalText(cause) ?? "The file could not be read."));
     } finally {
       setBusy(false);
       if (fileRef.current) fileRef.current.value = "";

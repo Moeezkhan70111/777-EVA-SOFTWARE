@@ -6,6 +6,7 @@ import { copy } from "../../config/copy";
 import { useDesktopApi } from "../../hooks/useDesktopApi";
 import type { MachineContractorRole, MachineRecord } from "../../types/desktopApi";
 import { useContractors } from "./useCartonProgram";
+import { leaseRefusalText } from "../../../shared/leaseRefusal";
 
 // ADD MACHINE / CHANGE CONTRACTORS — one dialog, two uses:
 //
@@ -73,8 +74,8 @@ export const MachineDialog: React.FC<MachineDialogProps> = ({ machine, onClose, 
         if (!result.accepted) return setProblem(result.reason ?? text.notSaved);
       }
       onSaved(text.contractorsSaved, text.contractorsSavedBody(machine.name));
-    } catch {
-      setProblem(copy.common.unknownError);
+    } catch (error) {
+      setProblem(leaseRefusalText(error) ?? copy.common.unknownError);
     } finally {
       setSaving(false);
     }

@@ -21,6 +21,7 @@ import { LEASE_DOMAIN, type LeaseDomain } from "@erp/domain";
 import type { SqliteDatabase } from "@erp/data";
 import { isCloudSyncConfigured } from "./cloudSyncPass";
 import { leasesFor } from "./leaseChannels";
+import { LEASE_ERROR_NAME } from "../shared/leaseRefusal";
 
 type Listener = Parameters<typeof electronIpcMain.handle>[1];
 
@@ -55,7 +56,8 @@ export class LeaseError extends Error {
     message: string
   ) {
     super(message);
-    this.name = "LeaseError";
+    // The renderer recognises a refused write by this name (shared/leaseRefusal.ts).
+    this.name = LEASE_ERROR_NAME;
   }
 }
 

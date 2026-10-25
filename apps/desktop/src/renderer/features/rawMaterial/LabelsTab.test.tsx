@@ -262,6 +262,26 @@ describe("LabelsTab — what one packet holds", () => {
     await waitFor(() => expect(screen.queryAllByLabelText(/How many packets of .*SK6 /)).toHaveLength(0));
     expect(screen.getByLabelText(/How many packets of .*SK12/)).toBeInTheDocument();
   });
+
+  it("on a computer that does not hold the store, says who does -- not that the codes failed", async () => {
+    // The gate test of 2026-10-25: the main process refused with the holder's name, and this tab
+    // threw the error away and said "The codes could not be registered."
+    const api = installApi();
+    api.generateRawMaterialQrBatch.mockRejectedValue(
+      new Error(
+        "Error invoking remote method 'erp:generate-raw-material-qr-batch': LeaseError: The raw material store is written on Gate test - holder only. You can look things up here, but not change them."
+      )
+    );
+    renderTab();
+    await chooseSupplier();
+    await fillRun(NAME, "2", "3");
+    await userEvent.click(printButton());
+    await userEvent.click(await screen.findByRole("button", { name: /^🖨 Print$/ }));
+
+    expect((await screen.findAllByText(/written on Gate test - holder only/)).length).toBeGreaterThan(0);
+    expect(screen.queryByText(/could not be registered/)).toBeNull();
+    expect(api.printDocument).not.toHaveBeenCalled();
+  });
 });
 
 // One Print button, one confirmation, then straight to the default printer at sticker size.

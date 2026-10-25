@@ -5,6 +5,7 @@ import { useDesktopApi } from "../../hooks/useDesktopApi";
 import type { MachineRecord, UpperIssueResult } from "../../types/desktopApi";
 import type { ScanStationFeedback } from "../scanStation/scanStation";
 import { feedbackForIssue, idleFeedback } from "./upperFeedback";
+import { leaseRefusalText } from "../../../shared/leaseRefusal";
 
 // One upper scan, scanned or typed, for the chosen machine — both arrive here and go to the SAME
 // main-process operation, which decides everything (machine, packet, stock). The screen never says
@@ -64,7 +65,14 @@ export const useUpperIssue = (machine: MachineRecord | null, onChanged: () => vo
         let result: UpperIssueResult;
         try {
           result = await api.issueUpperToMachine(code, machineId);
-        } catch {
+        } catch (error) {
+          // Refused because the store is written elsewhere: nothing happened, so there is nothing to check.
+          const refused = leaseRefusalText(error);
+          if (refused !== null) {
+            seqRef.current += 1;
+            setFeedback({ tone: "error", title: copy.writeLease.readOnlyTitle, message: refused, result: { qrId: code }, seq: seqRef.current });
+            return false;
+          }
           setFeedback((previous) => ({ ...previous, tone: "warn", title: text.checkingTitle, message: "", result: null }));
           result = await settleUncertain(code, machineId, machineName);
         }

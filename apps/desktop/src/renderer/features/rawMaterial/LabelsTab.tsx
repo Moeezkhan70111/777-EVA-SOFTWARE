@@ -20,6 +20,7 @@ import { LabelRunHistory } from "./LabelRunHistory";
 import { LabelRunResult } from "./LabelRunResult";
 import { StockUnitPicker } from "./StockUnitPicker";
 import { labelRunTotals, newLabelRun, runFigures, runIsReady, type LabelRun } from "./labelRuns";
+import { leaseRefusalText } from "../../../shared/leaseRefusal";
 
 // QR GENERATOR — registering and printing the labels that go on packets:
 //
@@ -261,8 +262,9 @@ export const LabelsTab: React.FC<LabelsTabProps> = ({ username, configByItem, pr
         }
         done.push({ batch: result.batch, qrCodes: result.qrCodes });
       }
-    } catch {
-      refusal = refusal ?? copy.labelPrint.registerFailed;
+    } catch (error) {
+      // A refused leased write names who writes the store, not a generic failure.
+      refusal = refusal ?? leaseRefusalText(error) ?? copy.labelPrint.registerFailed;
     } finally {
       setGenerating(false);
     }

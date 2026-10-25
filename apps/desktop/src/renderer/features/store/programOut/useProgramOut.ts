@@ -29,6 +29,7 @@ import {
   type CartonRun,
   type PrintedCartonRun,
 } from "./programOut";
+import { leaseRefusalText } from "../../../../shared/leaseRefusal";
 
 // MACHINE MOVE OUT — the state of Store Out working through one open Machine Program.
 //
@@ -234,8 +235,8 @@ export const useProgramOut = ({ token, sessionId }: UseProgramOutInput): Program
           { programId: program.id, batchKey: crypto.randomUUID(), sessionId, qrIds: [qrId] },
           { token }
         );
-      } catch {
-        result = { accepted: false, outcome: "ERROR", reason: copy.states.loadFailedBody, refusedQrId: qrId };
+      } catch (error) {
+        result = { accepted: false, outcome: "ERROR", reason: leaseRefusalText(error) ?? copy.states.loadFailedBody, refusedQrId: qrId };
       } finally {
         inFlight.current = false;
         setIssuing(false);

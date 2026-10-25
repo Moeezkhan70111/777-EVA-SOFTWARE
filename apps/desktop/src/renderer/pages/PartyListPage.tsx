@@ -4,6 +4,9 @@ import type { Party, PartyGroup } from "../types/desktopApi";
 import { copy } from "../config/copy";
 import { LEASE_DOMAIN } from "@erp/domain";
 import { LeaseNotices } from "../features/sync/LeaseNotices";
+import { desktopApi } from "../hooks/useDesktopApi";
+import { leaseRefusalText } from "../../shared/leaseRefusal";
+import { withoutIpcPrefix } from "../utils/ipcError";
 
 /** Parties and machines are master data: written on one computer, read on the others (docs/37 section W). */
 const MASTER_DATA_ONLY = [LEASE_DOMAIN.MASTER_DATA] as const;
@@ -45,7 +48,7 @@ export const PartyListPage: React.FC<PartyListPageProps> = ({ onNavigate }) => {
 
   // Load party groups once
   useEffect(() => {
-    void window.desktop.api.listPartyGroups().then((result) => setGroups(result));
+    void desktopApi().listPartyGroups().then((result) => setGroups(result));
   }, []);
 
   // Close filter panel on outside click
@@ -64,7 +67,7 @@ export const PartyListPage: React.FC<PartyListPageProps> = ({ onNavigate }) => {
   const fetchParties = async () => {
     setLoading(true);
     try {
-      const result = await window.desktop.api.listParties({
+      const result = await desktopApi().listParties({
         search,
         groupId: groupId || undefined,
         status: status === "ALL" ? undefined : status,
@@ -125,7 +128,7 @@ export const PartyListPage: React.FC<PartyListPageProps> = ({ onNavigate }) => {
     if (!confirmDelete) return;
     setDeleting(true);
     try {
-      const result = await window.desktop.api.deleteParty(confirmDelete.id);
+      const result = await desktopApi().deleteParty(confirmDelete.id);
       if (result.accepted) {
         setConfirmDelete(null);
         void fetchParties();
@@ -133,7 +136,7 @@ export const PartyListPage: React.FC<PartyListPageProps> = ({ onNavigate }) => {
         alert(result.reason ?? "Failed to delete party");
       }
     } catch (error) {
-      alert(error instanceof Error ? error.message : "Failed to delete party");
+      alert(leaseRefusalText(error) ?? (error instanceof Error ? withoutIpcPrefix(error.message) : "Failed to delete party"));
     } finally {
       setDeleting(false);
     }
