@@ -218,11 +218,12 @@ program. If the event waits for the program, the reader's stock stays **overstat
 programs replicate, by every issue made to a program. That is confidently wrong stock, the outcome
 this plan exists to prevent.
 
-**Proposed, needs an owner decision:** a reader applies the movement without the machine-program
-link, keeping the origin's program ids in the event's metadata, so stock moves correctly at once.
-When machine programs replicate, the link is restored from the metadata. Only the holder can
-issue against a program, and the holder has the programs locally, so nothing is lost at the
-origin.
+**DECIDED — owner, confirmed 2026-10-25.** A reader applies the movement **without** the
+machine-program link, keeping the origin's program ids in the event's metadata, so stock moves
+correctly at once. When machine programs replicate, the link is restored from the metadata. Only
+the holder can issue against a program, and the holder has the programs locally, so nothing is
+lost at the origin. **Not to be raised again**: the stage-5 contracts for `raw_material_qr_events`
+and `inventory_stock_events` are built this way.
 
 ---
 

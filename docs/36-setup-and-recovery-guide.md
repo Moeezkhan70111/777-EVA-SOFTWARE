@@ -406,6 +406,14 @@ assumed. **Last checked 2026-10-23.**
 | `006_device_claims.up.sql` | **YES** | by hand, Supabase SQL editor |
 | `007_close_leftover_grants.up.sql` | **YES** | by hand, Supabase SQL editor |
 | `008_push_product_variant.up.sql` | **YES** | agent, `apply_migration` → `erp_008_push_product_variant` |
+| `009_sync_event_log_any_type.up.sql` | **YES**, 2026-10-25 | by hand, Supabase SQL editor (owner) |
+| `010_close_maintain.up.sql` | **YES**, 2026-10-25 | by hand, Supabase SQL editor (owner) |
+
+**Verified 2026-10-25, after 009 and 010:** `verify_applied_state.sql`, all 21 checks `ok`.
+Checks 5 and 7 now pass: `anon` holds nothing, and `authenticated` exactly `SELECT` on the seven
+synchronised tables, with no `MAINTAIN`. One check (20) first failed **in the script, not the
+project**: it compared the type list in byte order, and the project's collation sorts
+`PRODUCT_VARIANT` before `PRODUCTION_PRODUCED`. The script now sorts with `collate "C"`.
 
 Only the baseline has a `supabase_migrations` row, because 002–006 were pasted in the editor
 rather than applied through the migration tool. **This table is therefore the only record of

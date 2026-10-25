@@ -139,7 +139,7 @@ checks(n, check_name, expected, actual) as (
     case
       when to_regclass('public.sync_aggregate_types') is null then 'table missing'
       else coalesce((xpath('/row/v/text()', query_to_xml(
-        'select string_agg(aggregate_type || '':'' || factory_scoped::text, '','' order by aggregate_type) as v
+        'select string_agg(aggregate_type || '':'' || factory_scoped::text, '','' order by aggregate_type collate "C") as v
            from public.sync_aggregate_types', false, true, '')))[1]::text, '')
     end
 
