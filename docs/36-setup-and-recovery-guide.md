@@ -369,16 +369,22 @@ them current, and fill a row in only once it has been checked by query.
 | 6 | `006_device_claims.up.sql` | **by hand**, SQL editor | — | — |
 | 7 | `007_close_leftover_grants.up.sql` | **by hand**, SQL editor | — | — |
 | 8 | `008_push_product_variant.up.sql` | agent, `apply_migration` → `erp_008_push_product_variant` | — | — |
-| 9 | Seed: `factory-777` | agent, `execute_sql` | — | — |
-| 10 | Master data mirror: `workstations`, `operators`, `product_variants` | agent, `execute_sql`, after owner approval of the row list | — | — |
-| 11 | `verify_applied_state.sql`: all 19 checks `ok` | agent, `execute_sql` | — | — |
-| 12 | Advisors: the same set as §6a.2, nothing new | **by hand**, dashboard → Advisors (the MCP servers do not enable the `debugging` feature) | — | — |
+| 9 | `009_sync_event_log_any_type.up.sql` | **by hand**, SQL editor | — | — |
+| 10 | `010_close_maintain.up.sql` | **by hand**, SQL editor | — | — |
+| 11 | Seed: `factory-777` | agent, `execute_sql` | — | — |
+| 12 | Master data mirror: `workstations`, `operators`, `product_variants` | agent, `execute_sql`, after owner approval of the row list | — | — |
+| 13 | `verify_applied_state.sql`: all 21 checks `ok` | agent, `execute_sql` | — | — |
+| 14 | Advisors: the same set as §6a.2, nothing new | **by hand**, dashboard → Advisors (the MCP servers do not enable the `debugging` feature) | — | — |
 
 **Why some steps are by hand, and which ones.** The split is the same as on test, for the same
-reason (§6a.2): the MCP write tools refuse SQL containing destructive statements. Six files are
-pasted by hand: **002, 003, 004, 005, 006 and 007**. 002 drops and re-adds foreign keys, and
-003–007 contain the `revoke`s that *are* the access model. The baseline, 008, the seed, the mirror
-and the verification all went through the tool on test, or are plain inserts and selects.
+reason (§6a.2): the MCP write tools refuse SQL containing destructive statements. Eight files are
+pasted by hand: **002–007, 009 and 010**. 002 drops and re-adds foreign keys, and 003–007, 009 and
+010 contain the `drop`s and `revoke`s that *are* the access model. The baseline, 008, the seed, the
+mirror and the verification all went through the tool on test, or are plain inserts and selects.
+
+**009 and 010 are not yet on test either** (written 2026-10-25, reviewed in the repo). Apply them
+to **test first** and run the verification there before production. On a project still at 008 the
+script reports exactly checks 2, 3, 17 and 20 as failing, plus 5 and 7 until 010 is applied.
 
 **One deliberate difference from test:** 007 and 008 are applied as part of the initial setup
 rather than as fixes afterwards. `verify_applied_state.sql` checks for exactly the state test
@@ -467,8 +473,17 @@ future cloud change:**
 
 | Role | Privileges anywhere in `public` |
 |---|---|
-| `anon` | **none at all** |
-| `authenticated` | `SELECT` on 7 tables only: `factories`, `operators`, `product_variants`, `production_events`, `qr_master`, `sync_event_log`, `workstations` |
+| `anon` | **none at all** — *once 010 is applied; see the correction below* |
+| `authenticated` | `SELECT` on 7 tables only: `factories`, `operators`, `product_variants`, `production_events`, `qr_master`, `sync_event_log`, `workstations` — *likewise* |
+
+> **Correction, 2026-10-25.** This table was **not true when written**. The project runs
+> PostgreSQL 17, which added the `MAINTAIN` privilege (VACUUM, ANALYZE, REINDEX, CLUSTER, LOCK
+> TABLE), and the project's default privileges grant it on every new table. The first run of
+> `verify_applied_state.sql`, which reads `pg_class.relacl` directly, found `anon` holding
+> `MAINTAIN` on 13 tables and `authenticated` on 21. The earlier check read a view that does not
+> show it. It is low-risk, because no client path can issue those commands, but it contradicts the
+> access model. `010_close_maintain` revokes it, and changes the defaults so new tables stop
+> inheriting TRUNCATE, REFERENCES, TRIGGER or MAINTAIN. Checks 5 and 7 prove it.
 
 `device_accounts` is deliberately absent from that list: 006 revoked table-level `SELECT` and
 granted 11 named columns instead. **`claim_epoch` and `claim_holder` are not among them**, which
@@ -532,10 +547,18 @@ The project is `ykhvbmhmeefdtrzqeoxm` (created 2026-10-23). Record progress in �
    | 6 | `migrations/supabase/006_device_claims.up.sql` | **you, SQL editor** |
    | 7 | `migrations/supabase/007_close_leftover_grants.up.sql` | **you, SQL editor** |
    | 8 | `migrations/supabase/008_push_product_variant.up.sql` | agent (`apply_migration`) |
+   | 9 | `migrations/supabase/009_sync_event_log_any_type.up.sql` | **you, SQL editor** |
+   | 10 | `migrations/supabase/010_close_maintain.up.sql` | **you, SQL editor** |
 
-   Paste each file **whole**. **Never through a script that splits on semicolons** — `003` defines
-   `$$`-quoted function bodies containing semicolons, and a splitter shreds them. The six by-hand
-   files are the ones the MCP tools refuse, because they contain `drop` or `revoke` (§6a.2).
+   Paste each file **whole**. **Never through a script that splits on semicolons** — `003` and
+   `009` define `$$`-quoted function bodies containing semicolons, and a splitter shreds them. The
+   eight by-hand files are the ones the MCP tools refuse, because they contain `drop` or `revoke`
+   (§6a.2).
+
+   **Never re-run `005` after `009`.** 005 re-adds its two-type factory CHECK, the one 009 replaced
+   with a trigger. With raw-material rows already in the log it fails and rolls back. Before any
+   arrive, it **succeeds**, and every raw-material log insert after it is refused. Detector:
+   verification check 2. If it ever fails, re-apply `009`.
 3. **Never re-run `003` after `005`.** It silently reinstates a trigger body that omits
    `factory_id`, and the next production scan then fails a check constraint — scans refused by
    the database, with nothing in the error pointing at `003`. Detector:

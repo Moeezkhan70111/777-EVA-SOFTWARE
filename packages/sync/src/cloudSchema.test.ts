@@ -1441,3 +1441,54 @@ test("the rollback removes the pair constraint before either side of it", () => 
   // The rollback restores nothing in workstations because 006 changed nothing there.
   assert.ok(!/insert into workstations|update workstations/.test(restored), "there is no workstation row to restore");
 });
+
+// ─── 009: the log's types are rows, and 010 closes MAINTAIN ─────────────────────
+
+const ANY_TYPE = read("migrations/supabase/009_sync_event_log_any_type.up.sql");
+const CLOSE_MAINTAIN = read("migrations/supabase/010_close_maintain.up.sql");
+
+/** The (type, factory_scoped) rows 009 seeds, read out of its insert. */
+const seededTypes = (): Map<string, boolean> => {
+  const seeds = new Map<string, boolean>();
+  for (const match of ANY_TYPE.matchAll(/\('([A-Z_]+)', (true|false), '/g)) {
+    seeds.set(match[1] ?? "", match[2] === "true");
+  }
+  return seeds;
+};
+
+test("009: every event type this computer can apply is a type the cloud log accepts", async () => {
+  // Read at test time from the applier's own registry, so a contract added without its cloud row
+  // fails here rather than as a refused log insert on a real computer.
+  const { APPLY_CONTRACTS } = await import("./applyEnvelope.js");
+  const seeds = seededTypes();
+  for (const contract of APPLY_CONTRACTS) {
+    assert.ok(seeds.has(contract.aggregateType), `${contract.aggregateType} has an apply contract but no row in sync_aggregate_types`);
+  }
+});
+
+test("009: the scope rule is 005's, generalised -- the two original types keep their rule", () => {
+  const seeds = seededTypes();
+  assert.equal(seeds.get(SYNC_AGGREGATE.PRODUCTION_PRODUCED), true, "a production scan names its factory");
+  assert.equal(seeds.get(SYNC_AGGREGATE.QR_MASTER), false, "a carton identity is global (2026-10-17)");
+  // The hard-wired constraints go only in the transaction that installs their replacement.
+  const sql = sqlOnly(ANY_TYPE);
+  const dropScope = sql.indexOf("drop constraint if exists sync_event_log_factory_scope");
+  const trigger = sql.indexOf("create trigger trg_sync_event_log_scope");
+  assert.ok(sql.indexOf("begin;") < dropScope && dropScope < trigger && trigger < sql.indexOf("commit;"));
+  // The read policy reads "your factory, or none" -- the trigger is what makes "none" mean global.
+  assert.match(sql, /factory_id = public\.current_factory_id\(\) or factory_id is null/);
+  assert.doesNotMatch(sql, /aggregate_type = 'QR_MASTER'\s*\)\s*\)\s*;/, "no type is named in the policy any more");
+});
+
+test("009: no client can read or write the list of types", () => {
+  const sql = sqlOnly(ANY_TYPE);
+  assert.match(sql, /alter table public\.sync_aggregate_types enable row level security/);
+  assert.match(sql, /revoke all on table public\.sync_aggregate_types from public, anon, authenticated/);
+  assert.match(sql, /revoke all on function public\.enforce_sync_event_log_scope\(\) from public, anon, authenticated/);
+});
+
+test("010: MAINTAIN is revoked from the client roles, and new tables stop inheriting it", () => {
+  const sql = sqlOnly(CLOSE_MAINTAIN);
+  assert.match(sql, /revoke maintain on all tables in schema public from anon, authenticated/);
+  assert.match(sql, /alter default privileges for role postgres in schema public\s+revoke truncate, references, trigger, maintain on tables from anon, authenticated/);
+});

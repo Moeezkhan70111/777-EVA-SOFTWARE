@@ -2,7 +2,11 @@
 --
 -- Not a migration: it changes nothing, has no number, and must never be applied as one. Run it
 -- whole in the Supabase SQL editor (or through the MCP execute_sql tool) against any project that
--- has had schema.sql and 002-008 applied. One row per check. Every row must say ok = true.
+-- has had schema.sql and 002-009 applied. One row per check. Every row must say ok = true.
+--
+-- Updated for 009 (2026-10-25): the log's types are rows in sync_aggregate_types and the scope rule
+-- is a trigger, so checks 2, 3, 17 and 20-21 describe that. A project still at 008 fails exactly
+-- those, and nothing else.
 --
 -- It turns docs/36 section 6a's verified state into something that can be re-run instead of
 -- re-read. Run it after setting up a project, and again after ANY change to its schema or grants.
@@ -36,11 +40,13 @@ checks(n, check_name, expected, actual) as (
               where p.proname = 'log_production_produced_insert' and p.pronamespace = 'public'::regnamespace),
              'function missing')
 
-  union all select 2, 'sync_event_log_factory_scope constraint present', '1',
+  -- 2. THE 005-AFTER-009 TRAP. Re-running 005 brings back its two-type factory CHECK, and every
+  --    raw-material log insert after that is refused. 009 replaced it with a trigger.
+  union all select 2, '005-after-009: the two-type factory_scope CHECK is gone', '0',
     (select count(*)::text from pg_constraint
      where conname = 'sync_event_log_factory_scope' and conrelid = to_regclass('public.sync_event_log'))
 
-  union all select 3, 'tables in public', '22',
+  union all select 3, 'tables in public', '23',
     (select count(*)::text from pg_class c join pg_namespace n on n.oid = c.relnamespace
      where n.nspname = 'public' and c.relkind = 'r')
 
@@ -110,10 +116,10 @@ checks(n, check_name, expected, actual) as (
      where schemaname = 'public' and roles <> array['authenticated']::name[])
 
   -- 17-18. THE LOG: written by triggers, append-only, and cheap to read by position.
-  union all select 17, 'log and immutability triggers present', '3',
+  union all select 17, 'log, immutability and scope triggers present', '4',
     (select count(*)::text from pg_trigger
      where not tgisinternal
-       and tgname in ('trg_qr_master_log', 'trg_production_events_log', 'trg_sync_event_log_immutable'))
+       and tgname in ('trg_qr_master_log', 'trg_production_events_log', 'trg_sync_event_log_immutable', 'trg_sync_event_log_scope'))
 
   union all select 18, 'sync_event_log indexes (seq) and (factory_id, seq)', '2',
     (select count(*)::text from pg_indexes
@@ -123,6 +129,25 @@ checks(n, check_name, expected, actual) as (
   -- 19. THE SEED. Every installation already uses exactly this id.
   union all select 19, 'factory-777 seeded', '1',
     (select count(*)::text from public.factories where id = 'factory-777')
+
+  -- 20-21. THE LOG'S TYPES (009): exactly these, each scoped or global as decided, and no client
+  --        able to read or change the list.
+  --     Read through query_to_xml, so a project without the table (before 009) reports 'table
+  --     missing' on this row instead of failing the whole script: it has to diagnose exactly those.
+  union all select 20, 'sync_aggregate_types: each type and whether it is factory-scoped',
+    'PRODUCTION_PRODUCED:true,PRODUCT_VARIANT:false,QR_MASTER:false,RAW_MATERIAL_QR:false,RAW_MATERIAL_QR_BATCH:false',
+    case
+      when to_regclass('public.sync_aggregate_types') is null then 'table missing'
+      else coalesce((xpath('/row/v/text()', query_to_xml(
+        'select string_agg(aggregate_type || '':'' || factory_scoped::text, '','' order by aggregate_type) as v
+           from public.sync_aggregate_types', false, true, '')))[1]::text, '')
+    end
+
+  union all select 21, 'sync_aggregate_types: privileges held by anon/authenticated/PUBLIC', '0',
+    (select count(*)::text
+     from pg_class c cross join lateral aclexplode(c.relacl) a
+     where c.oid = to_regclass('public.sync_aggregate_types')
+       and a.grantee in ('anon'::regrole, 'authenticated'::regrole, 0))
 )
 select n, check_name, expected, actual, actual = expected as ok
 from checks
