@@ -5,7 +5,7 @@
 
 import type { SqliteDatabase } from "../sqliteDatabase.js";
 import type { BreakdownRow, DashboardSnapshot, HistoryQuery, HistoryRow, PagedResult, ReportSummary } from "./types.js";
-import { businessHourOf, fromPaisa, operationalDayBounds } from "@erp/domain";
+import { businessHourOf, fromPaisa, operationalDayUtcBounds } from "@erp/domain";
 import type { CanonicalQrPayload } from "@erp/domain";
 import { IN_STORE_STOCK_TOTAL_SQL, orderBy } from "./shared.js";
 import type { MutableTransactionContext } from "./shared.js";
@@ -456,15 +456,23 @@ export const productionMethods = {
 
     // ── CUSTOM date range: apply operational-day boundaries ─────────────────
     // DailyProductionPage / DailyDispatchPage pass plain "YYYY-MM-DD" strings. The
-    // operational day (06:00 → next day 06:00) is defined once in @erp/domain.
-    // event_ts_local stores local timestamps, so the bounds stay in the same
-    // local-time string space — no UTC conversion. SQL uses >= from AND < to.
+    // operational day (06:00 → next day 06:00, Asia/Karachi) is defined once in @erp/domain.
+    // event_ts_local holds UTC INSTANTS (`…Z`), so the day is converted to the UTC instants
+    // it spans and compared in that same space. SQL uses >= from AND < to.
+    //
+    // FIXED 2026-10-25. These bounds used to be the zone-less clock-face strings
+    // (`2026-10-25T06:00:00.000`), compared as text against UTC instants: every day's window
+    // ran 11:00 → 11:00 Karachi instead of 06:00 → 06:00, so a carton made or dispatched between
+    // 06:00 and 11:00 was counted on the PREVIOUS day's report.
     let fromBound = from!;
     let toBound   = to!;
 
     if (range === "CUSTOM" && from && to) {
-      fromBound = operationalDayBounds(from).from;
-      toBound = operationalDayBounds(to).to;
+      const firstDay = operationalDayUtcBounds(from);
+      const lastDay = operationalDayUtcBounds(to);
+      // A date that is not YYYY-MM-DD selects nothing, rather than a window nobody asked for.
+      fromBound = firstDay?.from ?? "";
+      toBound = lastDay?.to ?? "";
     }
 
     const validEventType = eventType === "DISPATCHED" || eventType === "RETURNED" ? eventType : "PRODUCED";

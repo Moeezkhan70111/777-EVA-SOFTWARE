@@ -1,6 +1,6 @@
 import { APP_TIMEZONE } from "./constants.js";
 import { jobChargePaisa } from "./contractorPricing.js";
-import { cartonsToDozens } from "./units.js";
+import { OPERATIONAL_DAY_START_HOUR, cartonsToDozens } from "./units.js";
 
 // Contractor Ledger — what a contractor earned for the work a machine program produced, and what
 // they were paid against it.
@@ -128,6 +128,30 @@ export const businessDayStartIso = (ymd: string, dayOffset = 0): string | null =
   // How far the zone's clock is ahead of UTC at that moment, then midnight on the zone's clock.
   const zoneClockAsUtc = Date.UTC(pick("year"), pick("month") - 1, pick("day"), pick("hour"), pick("minute"), pick("second"));
   return new Date(utcMidnight - (zoneClockAsUtc - utcMidnight)).toISOString();
+};
+
+/**
+ * The UTC instants of one OPERATIONAL day -- the production shift, 06:00 to 06:00 on the business
+ * clock (Asia/Karachi) -- for reading it out of stored timestamps. The upper bound is exclusive.
+ * Null for a bad date.
+ *
+ * USE THIS TO QUERY, never operationalDayBounds. Every production event is stamped with a UTC instant
+ * (`2026-10-25T04:23:00.000Z`), whatever its column is called. operationalDayBounds gives the shift
+ * on the clock face (`2026-10-25T06:00:00.000`) for showing it; compared as text against UTC
+ * instants it shifts the window by Karachi's five hours, which is how cartons made between 06:00 and
+ * 11:00 were reported on the previous day's Daily Production until 2026-10-25.
+ *
+ * Built on businessDayStartIso, so it does not depend on the computer's own timezone.
+ */
+export const operationalDayUtcBounds = (ymd: string): { from: string; to: string } | null => {
+  const dayStart = businessDayStartIso(ymd);
+  const nextDayStart = businessDayStartIso(ymd, 1);
+  if (dayStart === null || nextDayStart === null) return null;
+  const shiftStartMs = OPERATIONAL_DAY_START_HOUR * 3_600_000;
+  return {
+    from: new Date(Date.parse(dayStart) + shiftStartMs).toISOString(),
+    to: new Date(Date.parse(nextDayStart) + shiftStartMs).toISOString(),
+  };
 };
 
 // ─── Work: cartons → dated days ──────────────────────────────────────────────
