@@ -119,6 +119,11 @@ vi.mock("@erp/sync", () => {
       if (heartbeatOutcome.ok !== true) this.claimed = false;
       return heartbeatOutcome;
     }
+    /** The sync-health report (migration 014). Recorded, so how often it is sent shows. */
+    async reportSyncHealth(report: Record<string, unknown>): Promise<string> {
+      healthReports.push(report);
+      return "REPORTED";
+    }
     /** Who holds each write lease. A project without leases unless a test says otherwise. */
     async fetchLeases(): Promise<Record<string, unknown>> {
       if (leaseThrows !== null) throw leaseThrows;
@@ -164,6 +169,12 @@ vi.mock("@erp/sync", () => {
     replaceLeaseCache: (_sql: unknown, projectUrl: string, leases: unknown[]) => {
       leaseCalls.push({ what: "replace", projectUrl, leases });
     },
+    // The health report's helpers: nothing waiting, and the real "only when new or old" rule in small.
+    waitingSummary: () => ({ entries: [], waiting: 0, stuck: 0, stale: 0, oldestSince: null }),
+    outboxCounts: () => ({ PENDING: 0, IN_FLIGHT: 0, FAILED: 0, DEAD_LETTER: 0, SYNCED: 0 }),
+    unsentMarkCount: () => 0,
+    buildHealthReport: (summary: Record<string, unknown>, deadLetters: number, unsentMarks: number) => ({ ...summary, deadLetters, unsentMarks }),
+    shouldReport: (last: unknown, report: unknown) => last === null || JSON.stringify((last as { report: unknown }).report) !== JSON.stringify(report),
     markLeasesUnsupported: (_sql: unknown, projectUrl: string) => {
       leaseCalls.push({ what: "unsupported", projectUrl });
     },
@@ -201,6 +212,8 @@ let leaseFetch: Record<string, unknown>;
 let leaseThrows: Error | null;
 /** What building master records does on the next pass. */
 let buildThrows: Error | null;
+/** Every health report the pass sent. */
+let healthReports: Array<Record<string, unknown>> = [];
 /** What the pass did with the answer. */
 let leaseCalls: Array<Record<string, unknown>>;
 
@@ -380,6 +393,7 @@ beforeEach(() => {
   leaseThrows = null;
   leaseCalls = [];
   buildThrows = null;
+  healthReports = [];
   drainResult = { synced: 2, counts: { PENDING: 0, SYNCED: 2 } };
   pullResult = { fetched: 3, applied: 2, duplicates: 1, refused: [] };
   setEnv(GOOD_ENV);
@@ -624,6 +638,15 @@ describe("cloud sync at the process boundary", () => {
       "TIMER"
     );
   };
+
+  it("reports this computer's sync health, and does not send the same report again on the next pass", async () => {
+    // The report state is per process, so take a fresh project to start from nothing.
+    setEnv({ ...GOOD_ENV, ERP_SUPABASE_URL: "https://zzhealth.supabase.co" });
+    await run();
+    await run();
+    expect(healthReports).toHaveLength(1);
+    expect(healthReports[0]).toMatchObject({ stale: 0, deadLetters: 0, unsentMarks: 0 });
+  });
 
   it("builds changed master records before the drain, so the same pass carries them", async () => {
     await run();

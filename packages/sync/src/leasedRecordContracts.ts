@@ -13,11 +13,19 @@
 //                      the revision no longer has are deleted, the rest upserted. A deletion removes
 //                      the children, then the root. Capture is suppressed throughout: this computer
 //                      applying another's change must not mark it as its own (masterCapture.ts).
+//   A NAME ANOTHER RECORD HERE STILL HOLDS
+//                      two parties swapping names arrive one revision at a time, each wanting the
+//                      name the other has, and waiting would wait for ever on both sides. The store
+//                      PC never holds two records of one type under one name, so a clash with ANOTHER
+//                      record of the same type means this computer's copy of it is out of date: its
+//                      clashing name is moved aside ("~moved:<its id>"), recorded in
+//                      sync_displaced_records (migration 096) and shown as incomplete, and its own
+//                      next revision puts the real name back. Root rows only: a clash between two
+//                      children of one record still waits, visibly.
 //   WHEN WRITING FINDS IT MUST WAIT
-//                      a deletion of a record still in use here (a foreign key), or a name another
-//                      record here still holds (a unique key -- two parties swapping names arrive one
-//                      revision at a time). Both resolve when the other record's revision arrives,
-//                      so both WAIT (ApplyMustWait), and a wait that lasts is made visible, never
+//                      a deletion of a record still in use here (a foreign key), or a name clash this
+//                      computer cannot resolve. It resolves when the other record's revision arrives,
+//                      so it WAITS (ApplyMustWait), and a wait that lasts is made visible, never
 //                      silent (docs/37, the stock-screen slice).
 //
 // A revision older than, or equal to, the one held here is a DUPLICATE: it has been superseded.
@@ -120,19 +128,75 @@ function waitReason(type: MasterRecordType, recordId: string, deleting: boolean,
 const heldRevision = (sql: SyncSqlHandle, type: string, recordId: string): number =>
   Number(asRow(sql.prepare("SELECT revision FROM sync_record_revisions WHERE aggregate_type = ? AND record_id = ?").get(type, recordId))?.revision ?? 0);
 
+/** Names moved aside at most this many times for one revision -- one per unique key it can clash on. */
+const MAX_DISPLACEMENTS = 3;
+
+/** Another record of the same type, here, that holds the name this revision's root row wants. */
+function rootNameClash(
+  sql: SyncSqlHandle,
+  spec: RecordTableSpec,
+  revision: LeasedRecordPayload,
+  error: unknown
+): { readonly id: string; readonly columns: readonly string[] } | null {
+  const body = revision.body;
+  if (body === null) return null;
+  const match = /UNIQUE constraint failed: ([\w.]+(?:, [\w.]+)*)/.exec(error instanceof Error ? error.message : "");
+  if (match === null) return null;
+  const qualified = (match[1] ?? "").split(", ");
+  if (!qualified.every((name) => name.startsWith(`${spec.table}.`))) return null;
+  const columns = qualified.map((name) => name.slice(spec.table.length + 1));
+  // Only names can be moved aside: every clashing value must be text.
+  if (!columns.every((column) => typeof body.row[column] === "string")) return null;
+  const holder = asRow(
+    sql
+      .prepare(`SELECT id FROM ${spec.table} WHERE ${columns.map((column) => `${column} = ?`).join(" AND ")} AND id <> ? LIMIT 1`)
+      .get(...columns.map((column) => body.row[column] ?? null), revision.recordId)
+  );
+  return holder === null ? null : { id: String(holder.id), columns };
+}
+
+/** Moves the out-of-date holder's clashing name aside, and records what it was. */
+function displace(sql: SyncSqlHandle, type: MasterRecordType, spec: RecordTableSpec, clash: { id: string; columns: readonly string[] }): void {
+  const original = asRow(sql.prepare(`SELECT ${clash.columns.join(", ")} FROM ${spec.table} WHERE id = ?`).get(clash.id)) ?? {};
+  sql
+    .prepare(`UPDATE ${spec.table} SET ${clash.columns.map((column) => `${column} = '~moved:' || id`).join(", ")} WHERE id = ?`)
+    .run(clash.id);
+  // The first original is kept: a record moved aside twice keeps the name it really had.
+  sql
+    .prepare(
+      `INSERT INTO sync_displaced_records (aggregate_type, record_id, original_json, displaced_at) VALUES (?, ?, ?, ?)
+       ON CONFLICT (aggregate_type, record_id) DO NOTHING`
+    )
+    .run(type, clash.id, JSON.stringify({ ...original }), new Date().toISOString());
+}
+
+/** The revision's writes, moving an out-of-date name aside when that is what stands in the way. */
+function writeRevision(sql: SyncSqlHandle, type: MasterRecordType, spec: RecordTableSpec, revision: LeasedRecordPayload): void {
+  for (let displaced = 0; ; displaced += 1) {
+    try {
+      if (revision.body === null) deleteRow(sql, spec, revision.recordId);
+      else writeNode(sql, spec, revision.body);
+      return;
+    } catch (error) {
+      const clash = displaced < MAX_DISPLACEMENTS ? rootNameClash(sql, spec, revision, error) : null;
+      if (clash !== null) {
+        displace(sql, type, spec, clash);
+        continue;
+      }
+      const reason = waitReason(type, revision.recordId, revision.body === null, error);
+      if (reason !== null) throw new ApplyMustWait(reason);
+      throw error;
+    }
+  }
+}
+
 function applyRevision(sql: SyncSqlHandle, type: MasterRecordType, revision: LeasedRecordPayload): boolean {
   if (heldRevision(sql, type, revision.recordId) >= revision.revision) return false;
   const spec = MASTER_RECORDS[type];
-  try {
-    withCaptureSuppressed(sql as CaptureHandle, () => {
-      if (revision.body === null) deleteRow(sql, spec, revision.recordId);
-      else writeNode(sql, spec, revision.body);
-    });
-  } catch (error) {
-    const reason = waitReason(type, revision.recordId, revision.body === null, error);
-    if (reason !== null) throw new ApplyMustWait(reason);
-    throw error;
-  }
+  // Suppressed throughout, the moving aside included: none of it is this computer's own change.
+  withCaptureSuppressed(sql as CaptureHandle, () => writeRevision(sql, type, spec, revision));
+  // This record's own revision has applied, so anything of it moved aside has its real values back.
+  sql.prepare("DELETE FROM sync_displaced_records WHERE aggregate_type = ? AND record_id = ?").run(type, revision.recordId);
   sql
     .prepare(
       `INSERT INTO sync_record_revisions (aggregate_type, record_id, revision) VALUES (?, ?, ?)

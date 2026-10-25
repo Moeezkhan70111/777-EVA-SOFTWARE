@@ -374,19 +374,21 @@ them current, and fill a row in only once it has been checked by query.
 | 11 | `011_domain_leases.up.sql` | **by hand**, SQL editor | — | — |
 | 12 | `012_raw_material_identity.up.sql` | **by hand**, SQL editor | — | — |
 | 13 | `013_leased_records.up.sql` | **by hand**, SQL editor | — | — |
-| 14 | Seed: `factory-777` | agent, `execute_sql` | — | — |
-| 15 | Master data mirror: `workstations`, `operators`, `product_variants` | agent, `execute_sql`, after owner approval of the row list | — | — |
-| 16 | `verify_applied_state.sql`: all 29 checks `ok` | agent, `execute_sql` | — | — |
-| 17 | Advisors: the same set as §6a.2, nothing new | **by hand**, dashboard → Advisors (the MCP servers do not enable the `debugging` feature) | — | — |
+| 14 | `014_device_sync_health.up.sql` | **by hand**, SQL editor | — | — |
+| 15 | Seed: `factory-777` | agent, `execute_sql` | — | — |
+| 16 | Master data mirror: `workstations`, `operators`, `product_variants` | agent, `execute_sql`, after owner approval of the row list | — | — |
+| 17 | `verify_applied_state.sql`: all 30 checks `ok` | agent, `execute_sql` | — | — |
+| 18 | Advisors: the same set as §6a.2, nothing new | **by hand**, dashboard → Advisors (the MCP servers do not enable the `debugging` feature) | — | — |
 
 **Why some steps are by hand, and which ones.** The split is the same as on test, for the same
-reason (§6a.2): the MCP write tools refuse SQL containing destructive statements. Eleven files are
-pasted by hand: **002–007 and 009–013**. 002 drops and re-adds foreign keys, and 003–007 and
-009–013 contain the `drop`s and `revoke`s that *are* the access model. The baseline, 008, the seed,
+reason (§6a.2): the MCP write tools refuse SQL containing destructive statements. Twelve files are
+pasted by hand: **002–007 and 009–014**. 002 drops and re-adds foreign keys, and 003–007 and
+009–014 contain the `drop`s and `revoke`s that *are* the access model. The baseline, 008, the seed,
 the mirror and the verification all went through the tool on test, or are plain inserts and selects.
 
-**011 before 012 and 013**: both push RPCs call 011's `lease_holds`. On a project still at 010 the
-verification reports exactly checks 3, 11, 20, 22, 23, 24, 26, 27, 28 and 29 as failing.
+**011 before 012 and 013**: both push RPCs call 011's `lease_holds`. 014 needs only 006. On a
+project still at 010 the verification reports exactly checks 3, 7, 11, 15, 20, 22, 23, 24, 26, 27,
+28, 29 and 30 as failing.
 
 **One deliberate difference from test:** 007 and 008 are applied as part of the initial setup
 rather than as fixes afterwards. `verify_applied_state.sql` checks for exactly the state test
@@ -413,6 +415,7 @@ assumed. **Last checked 2026-10-23.**
 | `011_domain_leases.up.sql` | **YES**, 2026-10-25 | by hand, Supabase SQL editor (owner) |
 | `012_raw_material_identity.up.sql` | **YES**, 2026-10-25 | by hand, Supabase SQL editor (owner) |
 | `013_leased_records.up.sql` | **YES**, 2026-10-25 | by hand, Supabase SQL editor (owner) |
+| `014_device_sync_health.up.sql` | **not yet** — written 2026-10-25 | by hand, Supabase SQL editor (owner) |
 
 **Verified 2026-10-25, after 013:** `verify_applied_state.sql`, all 29 checks `ok`. And
 `check_leased_records.sql` passed all 6 steps, leaving test as it was (no records, lease events,
@@ -595,10 +598,11 @@ The project is `ykhvbmhmeefdtrzqeoxm` (created 2026-10-23). Record progress in �
    | 11 | `migrations/supabase/011_domain_leases.up.sql` | **you, SQL editor** |
    | 12 | `migrations/supabase/012_raw_material_identity.up.sql` | **you, SQL editor** |
    | 13 | `migrations/supabase/013_leased_records.up.sql` | **you, SQL editor** |
+   | 14 | `migrations/supabase/014_device_sync_health.up.sql` | **you, SQL editor** |
 
    Paste each file **whole**. **Never through a script that splits on semicolons** — `003`, `009`,
-   and `011`–`013` define `$$`-quoted function bodies containing semicolons, and a splitter shreds
-   them. The eleven by-hand files are the ones the MCP tools refuse, because they contain `drop` or `revoke`
+   and `011`–`014` define `$$`-quoted function bodies containing semicolons, and a splitter shreds
+   them. The twelve by-hand files are the ones the MCP tools refuse, because they contain `drop` or `revoke`
    (§6a.2).
 
    **Never re-run `005` after `009`.** 005 re-adds its two-type factory CHECK, the one 009 replaced

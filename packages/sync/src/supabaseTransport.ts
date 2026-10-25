@@ -115,6 +115,25 @@ export const SUPABASE_PUSHABLE_AGGREGATES: readonly string[] = [
   ...MASTER_RECORD_TYPES,
 ];
 
+/** What one computer reports about itself (cloud migration 014). Counts and words only. */
+export interface SyncHealthReport {
+  readonly waiting: number;
+  readonly stuck: number;
+  readonly stale: number;
+  readonly oldestWaitingSince: string | null;
+  /** Up to five waits, in words, each with the record that would end it when there is one ("TYPE:id"). */
+  readonly sample: ReadonlyArray<{ readonly subject: string; readonly waitingFor: string; readonly since: string; readonly needs?: string }>;
+  readonly deadLetters: number;
+  readonly unsentMarks: number;
+}
+
+/** One computer's last report, as another computer of the factory reads it. */
+export interface DeviceSyncHealth extends SyncHealthReport {
+  readonly deviceId: string;
+  readonly label: string;
+  readonly reportedAt: string;
+}
+
 /** What fetchLeases learned. Not knowing is an answer too: the cache then keeps what it had. */
 export type LeaseFetch =
   | { readonly ok: true; readonly leases: DomainLease[] }
@@ -626,6 +645,69 @@ export class SupabaseSyncTransport implements SyncTransport, SyncPullTransport {
     return leases === null ? { ok: false, reason: "UNREADABLE" } : { ok: true, leases };
   }
 
+  // ─── Sync health (cloud migration 014) ───────────────────────────────────
+
+  /**
+   * Overwrites this computer's one row in device_sync_health. "NOT_SUPPORTED" when the project has
+   * no report (404, before 014): the caller simply stops reporting there. Anything else unreachable
+   * or refused throws, like every call.
+   */
+  async reportSyncHealth(report: SyncHealthReport): Promise<"REPORTED" | "NOT_SUPPORTED" | "REFUSED"> {
+    const held = this.held;
+    if (held === null) throw new SyncTransportError("this computer has not claimed its device identity");
+    let response;
+    try {
+      response = await this.authedRequest((headers) => ({
+        url: `${this.base()}/rest/v1/rpc/report_sync_health`,
+        method: "POST",
+        headers,
+        body: JSON.stringify({ p_epoch: held.epoch, p_holder: held.holder, p_report: report }),
+        timeoutMs: this.options.timeoutMs,
+      }));
+    } catch (error) {
+      throw asTransportError(error);
+    }
+    if (response.status === 404) return "NOT_SUPPORTED";
+    if (response.status < 200 || response.status >= 300) {
+      throw asTransportError(readServiceError(response.status, response.text));
+    }
+    const answer = parseJsonObject(response.text, "the health report answer was not readable");
+    return answer.accepted === true ? "REPORTED" : "REFUSED";
+  }
+
+  /**
+   * Every computer of this factory's last report, for the store PC's view of who is waiting on what.
+   * Validated row by row (R25): a row that is not shaped like a report is left out, not guessed at.
+   */
+  async fetchFactorySyncHealth(): Promise<DeviceSyncHealth[]> {
+    const query = new URLSearchParams({
+      select: "device_id,label,waiting,stuck,stale,oldest_waiting_since,sample,dead_letters,unsent_marks,reported_at",
+      order: "label.asc",
+    });
+    let response;
+    try {
+      response = await this.authedRequest((headers) => ({
+        url: `${this.base()}/rest/v1/device_sync_health?${query.toString()}`,
+        method: "GET",
+        headers,
+        timeoutMs: this.options.timeoutMs,
+      }));
+    } catch (error) {
+      throw asTransportError(error);
+    }
+    if (response.status === 404) return [];
+    if (response.status < 200 || response.status >= 300) {
+      throw asTransportError(readServiceError(response.status, response.text));
+    }
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(response.text);
+    } catch {
+      throw new SyncTransportError("the sync health answer was not readable");
+    }
+    return Array.isArray(parsed) ? parsed.map(readDeviceSyncHealth).filter((row): row is DeviceSyncHealth => row !== null) : [];
+  }
+
   /** One RPC call carrying the claim. Throws, so the drain gives the whole batch back. */
   private async callPush(
     rpc: string,
@@ -786,6 +868,40 @@ function classify(error: HttpError): FailureKind {
   if (CLAIM_REFUSALS.has(error.message.trim())) return "TRANSIENT";
   if (error.code !== undefined && PERMANENT_CODES.has(error.code)) return "REFUSED";
   return "TRANSIENT";
+}
+
+const wholeCount = (value: unknown): number | null =>
+  typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : null;
+
+/** One device_sync_health row, validated, or null. */
+function readDeviceSyncHealth(value: unknown): DeviceSyncHealth | null {
+  const row = asRow(value);
+  if (row === null || typeof row.device_id !== "string" || typeof row.label !== "string" || typeof row.reported_at !== "string") return null;
+  const counts = [row.waiting, row.stuck, row.stale, row.dead_letters, row.unsent_marks].map(wholeCount);
+  if (counts.some((count) => count === null)) return null;
+  const [waiting, stuck, stale, deadLetters, unsentMarks] = counts as number[];
+  const sample = (Array.isArray(row.sample) ? row.sample : [])
+    .map(asRow)
+    .filter((item): item is Record<string, unknown> => item !== null)
+    .filter((item) => typeof item.subject === "string" && typeof item.waitingFor === "string" && typeof item.since === "string")
+    .map((item) => ({
+      subject: String(item.subject),
+      waitingFor: String(item.waitingFor),
+      since: String(item.since),
+      ...(typeof item.needs === "string" ? { needs: item.needs } : {}),
+    }));
+  return {
+    deviceId: row.device_id,
+    label: row.label,
+    reportedAt: row.reported_at,
+    waiting: waiting ?? 0,
+    stuck: stuck ?? 0,
+    stale: stale ?? 0,
+    deadLetters: deadLetters ?? 0,
+    unsentMarks: unsentMarks ?? 0,
+    oldestWaitingSince: typeof row.oldest_waiting_since === "string" ? row.oldest_waiting_since : null,
+    sample,
+  };
 }
 
 /** A JSON object body, or a transport error naming what was unreadable. */

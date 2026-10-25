@@ -9,6 +9,7 @@ import {
   MASTER_RECORD_TYPES,
   SqliteDatabase,
   buildLeasedRecordRevisions,
+  markRecordToSendAgain,
   readLeasedRecordPayload,
   specTables,
 } from "./sqliteDatabase.js";
@@ -132,4 +133,22 @@ test("a revision is read whole or refused whole", () => {
     const type = why === "a type that is not a master record" ? "GATEPASS" : "INVENTORY_CATEGORY";
     assert.equal(readLeasedRecordPayload(type, payload), null, why);
   }
+});
+
+test("a record is sent again as a new revision, only when this computer has it and knows its lease", () => {
+  withDatabase((db) => {
+    seedMaterial(db);
+    db.db.exec("DELETE FROM sync_dirty_records");
+    assert.equal(markRecordToSendAgain(db.db, "INVENTORY_CATEGORY", "c-1", NOW), "NO_LEASE", "no epoch: it could never be sent");
+    holdMasterData(db, 3);
+    assert.equal(markRecordToSendAgain(db.db, "INVENTORY_CATEGORY", "c-404", NOW), "NOT_HERE");
+    assert.equal(markRecordToSendAgain(db.db, "PRODUCT_VARIANT", "v-1", NOW), "UNKNOWN_TYPE");
+    db.db.prepare("INSERT INTO sync_record_revisions (aggregate_type, record_id, revision) VALUES ('INVENTORY_CATEGORY', 'c-1', 4)").run();
+
+    assert.equal(markRecordToSendAgain(db.db, "INVENTORY_CATEGORY", "c-1", NOW), "MARKED");
+    buildLeasedRecordRevisions(db.db, NOW);
+    const sent = queued(db);
+    assert.deepEqual(sent.map((row) => [row.key, row.epoch]), [["INVENTORY_CATEGORY:c-1:5", 3]], "the next revision, under the lease held now");
+    assert.equal((sent[0]?.payload.body as { row: { name: string } }).row.name, "Leather", "the record as it is, unchanged");
+  });
 });

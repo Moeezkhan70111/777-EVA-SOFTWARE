@@ -27,7 +27,7 @@
 
 import { app } from "electron";
 import type { SqliteDatabase, StructuredLogger, SyncRunOutcome, SyncRunTrigger } from "@erp/data";
-import type { SupabaseSyncTransport, SyncPassResult } from "@erp/sync";
+import type { LastReport, SupabaseSyncTransport, SyncPassResult } from "@erp/sync";
 import { describeCloudSyncConfig, readCloudSyncConfig } from "./cloudConfig";
 import { DeviceCredentialStore } from "./deviceCredentialStore";
 
@@ -99,6 +99,14 @@ interface CachedTransport {
 
 let cachedTransport: CachedTransport | null = null;
 
+/**
+ * The last sync-health report this process sent, per project and device, so a report goes only when
+ * it says something new or as a 15-minute keepalive (healthReport.ts). In memory: a restart sends one
+ * at once, which is what a restart should do. A project without the report (no cloud migration 014)
+ * is remembered too, and not asked again until the next start.
+ */
+let healthReporting: { key: string; last: LastReport | null; unsupported: boolean } | null = null;
+
 /** Whether this computer is set up to sync at all. Cheap, read-only, no network. */
 export function isCloudSyncConfigured(deps: Pick<CloudSyncPassDeps, "deviceId" | "dataRoot">): boolean {
   const credentials = new DeviceCredentialStore(deps.dataRoot);
@@ -128,6 +136,32 @@ function buildMasterRecords(db: SqliteDatabase, logger: StructuredLogger, device
       module: "sync", severity: "ERROR", operation: "master-records", deviceId,
       message: `Changed master records could not be built: ${error instanceof Error ? error.message : String(error)}. They stay marked.`,
     });
+  }
+}
+
+/** Sends this computer's sync health when it changed, or as a keepalive. Never throws. */
+async function reportSyncHealth(
+  sync: typeof import("@erp/sync"),
+  transport: SupabaseSyncTransport,
+  db: SqliteDatabase,
+  key: string
+): Promise<void> {
+  if (healthReporting === null || healthReporting.key !== key) healthReporting = { key, last: null, unsupported: false };
+  const state = healthReporting;
+  if (state.unsupported) return;
+  try {
+    const nowMs = Date.now();
+    const report = sync.buildHealthReport(
+      sync.waitingSummary(db.db, nowMs),
+      sync.outboxCounts(db.db).DEAD_LETTER,
+      sync.unsentMarkCount(db.db)
+    );
+    if (!sync.shouldReport(state.last, report, nowMs)) return;
+    const sent = await transport.reportSyncHealth(report);
+    if (sent === "NOT_SUPPORTED") state.unsupported = true;
+    else if (sent === "REPORTED") state.last = { report, sentAtMs: nowMs };
+  } catch {
+    // Unreachable, or refused: the next pass tries again, because nothing was recorded as sent.
   }
 }
 
@@ -339,6 +373,10 @@ export async function runCloudSyncPass(
     // A project without leases (no cloud migration 011) is not a failure: carton sync carries on,
     // and the cache keeps whatever it had. A failure to reach the cloud is one, like any other call.
     const leaseError = await refreshLeaseCache(sync, transport, db, identity.url, deviceId, logger);
+
+    // WHETHER THIS COMPUTER IS WAITING ON ANYTHING, told to the cloud (migration 014), so a wait that
+    // lasts is seen somewhere other than this computer's own Health page. Never fails the pass.
+    await reportSyncHealth(sync, transport, db, `${identity.url}|${deviceId}`);
 
     // Read through a default. The drain always supplies this, but a pass must not be able to
     // throw on the SHAPE of its own result -- that would turn a reported refusal into an

@@ -160,11 +160,7 @@ test("a deletion waits while the record is still in use here, and applies once i
   }
 });
 
-// KNOWN, AND NOT YET RESOLVED: a true swap waits on both sides for ever, because each revision wants
-// the name the other still holds here. Part 3 resolves it by moving the out-of-date holder of the
-// name aside (the source guarantees names are unique, so that copy is stale) and showing it; until
-// then the two waits are at least visible, and nothing is half-written.
-test("two parties swapping names: each revision waits for the name the other still holds, and nothing is half-written", () => {
+test("two parties swapping names: the out-of-date holder is moved aside, shown, and put right by its own revision", () => {
   const holder = openHolder();
   const reader = openPc("reader");
   try {
@@ -176,15 +172,23 @@ test("two parties swapping names: each revision waits for the name the other sti
     run(holder, "UPDATE parties SET party_name = 'ALPHA' WHERE id = 'p-b'");
     run(holder, "UPDATE parties SET party_name = 'BETA' WHERE id = 'p-a'");
     const revisions = sent(holder);
+    const names = () =>
+      (reader.db.db.prepare("SELECT id, party_name FROM parties WHERE id IN ('p-a', 'p-b') ORDER BY id").all() as Array<Record<string, unknown>>)
+        .map((row) => `${String(row.id)}=${String(row.party_name)}`);
+    const displaced = () =>
+      (reader.db.db.prepare("SELECT record_id, original_json FROM sync_displaced_records ORDER BY record_id").all() as Array<Record<string, unknown>>)
+        .map((row) => `${String(row.record_id)}:${String(row.original_json)}`);
 
-    // p-b now wants ALPHA, which p-a still holds here.
-    assert.deepEqual(apply(reader, revisions.get("PARTY:p-b:2")), {
-      dedupeKey: "PARTY:p-b:2", status: "REJECTED", reason: "NAME_TAKEN:parties.party_name", permanent: false,
-    });
-    // p-a also wants BETA, which p-b holds: a true swap needs one to step aside first. It waits too.
-    assert.equal(apply(reader, revisions.get("PARTY:p-a:2")).reason, "NAME_TAKEN:parties.party_name");
-    const names = reader.db.db.prepare("SELECT id, party_name FROM parties WHERE id IN ('p-a', 'p-b') ORDER BY id").all() as Array<Record<string, unknown>>;
-    assert.deepEqual(names.map((row) => `${String(row.id)}=${String(row.party_name)}`), ["p-a=ALPHA", "p-b=BETA"], "each still as it was");
+    // p-b wants ALPHA, which this computer's out-of-date copy of p-a still holds: p-a is moved aside.
+    assert.equal(apply(reader, revisions.get("PARTY:p-b:2")).status, "APPLIED");
+    assert.deepEqual(names(), ["p-a=~moved:p-a", "p-b=ALPHA"]);
+    assert.deepEqual(displaced(), ['p-a:{"party_name":"ALPHA"}'], "shown as incomplete, with the name it had");
+    assert.equal(marks(reader), 0, "moving it aside is not this computer's own change");
+
+    // p-a's own revision puts it right, and it is no longer incomplete.
+    assert.equal(apply(reader, revisions.get("PARTY:p-a:2")).status, "APPLIED");
+    assert.deepEqual(names(), ["p-a=BETA", "p-b=ALPHA"]);
+    assert.deepEqual(displaced(), []);
   } finally {
     holder.close();
     reader.close();

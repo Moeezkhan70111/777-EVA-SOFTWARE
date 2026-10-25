@@ -2,7 +2,7 @@
 --
 -- Not a migration: it changes nothing, has no number, and must never be applied as one. Run it
 -- whole in the Supabase SQL editor (or through the MCP execute_sql tool) against any project that
--- has had schema.sql and 002-013 applied. One row per check. Every row must say ok = true.
+-- has had schema.sql and 002-014 applied. One row per check. Every row must say ok = true.
 --
 -- Updated for 009 (2026-10-25): the log's types are rows in sync_aggregate_types and the scope rule
 -- is a trigger, so checks 2, 3, 17 and 20-21 describe that. A project still at 008 fails exactly
@@ -21,6 +21,10 @@
 -- (11-12 count nine), eight master-data types in check 20, and checks 28-29. A project at 012
 -- fails exactly 3, 11, 20, 28 and 29.
 --
+-- Updated for 014 (2026-10-25): device_sync_health (check 3 goes to 31, 7 gains its SELECT, 15 goes to
+-- 11 policies), report_sync_health (11-12 count ten), and check 30, which proves the table is one
+-- row per computer and can never become a log. A project at 013 fails exactly 3, 7, 11, 15 and 30.
+--
 -- It turns docs/36 section 6a's verified state into something that can be re-run instead of
 -- re-read. Run it after setting up a project, and again after ANY change to its schema or grants.
 --
@@ -33,7 +37,8 @@ with
 expected_rpcs(name) as (
   values ('claim_device'), ('claim_is_current'), ('heartbeat_device'),
          ('push_qr_master'), ('push_production_produced'), ('push_product_variant'),
-         ('push_raw_material_qr_batch'), ('push_raw_material_qr'), ('push_leased_record')
+         ('push_raw_material_qr_batch'), ('push_raw_material_qr'), ('push_leased_record'),
+         ('report_sync_health')
 ),
 client_table_grants as (
   -- Direct table-level grants to the two client roles and to PUBLIC (grantee 0).
@@ -60,7 +65,7 @@ checks(n, check_name, expected, actual) as (
     (select count(*)::text from pg_constraint
      where conname = 'sync_event_log_factory_scope' and conrelid = to_regclass('public.sync_event_log'))
 
-  union all select 3, 'tables in public', '30',
+  union all select 3, 'tables in public', '31',
     (select count(*)::text from pg_class c join pg_namespace n on n.oid = c.relnamespace
      where n.nspname = 'public' and c.relkind = 'r')
 
@@ -75,8 +80,8 @@ checks(n, check_name, expected, actual) as (
   union all select 6, 'PUBLIC: table privileges anywhere in public', '0',
     (select count(*)::text from client_table_grants where grantee = 0)
 
-  union all select 7, 'authenticated: exactly SELECT on the 7 synchronised tables',
-    'factories:SELECT,operators:SELECT,product_variants:SELECT,production_events:SELECT,qr_master:SELECT,sync_event_log:SELECT,workstations:SELECT',
+  union all select 7, 'authenticated: exactly SELECT on the 7 synchronised tables and device_sync_health',
+    'device_sync_health:SELECT,factories:SELECT,operators:SELECT,product_variants:SELECT,production_events:SELECT,qr_master:SELECT,sync_event_log:SELECT,workstations:SELECT',
     coalesce((select string_agg(relname || ':' || privilege_type, ',' order by relname, privilege_type)
               from client_table_grants where grantee = 'authenticated'::regrole), '')
 
@@ -99,11 +104,11 @@ checks(n, check_name, expected, actual) as (
        and a.grantee in ('anon'::regrole, 'authenticated'::regrole))
 
   -- 11-12. THE WRITE PATH. The claim-checking RPCs are the only way in, and anon cannot call them.
-  union all select 11, 'the nine RPCs exist', '9',
+  union all select 11, 'the ten RPCs exist', '10',
     (select count(distinct p.proname)::text from pg_proc p
      where p.pronamespace = 'public'::regnamespace and p.proname in (select name from expected_rpcs))
 
-  union all select 12, 'the nine RPCs: executable by anon', '0',
+  union all select 12, 'the ten RPCs: executable by anon', '0',
     (select count(*)::text from pg_proc p
      where p.pronamespace = 'public'::regnamespace and p.proname in (select name from expected_rpcs)
        and has_function_privilege('anon', p.oid, 'EXECUTE'))
@@ -122,7 +127,7 @@ checks(n, check_name, expected, actual) as (
        and coalesce(array_to_string(p.proconfig, ',') like '%search_path=%', false))
 
   -- 15-16. POLICIES: every one for authenticated, none for anon.
-  union all select 15, 'policies in public', '10',
+  union all select 15, 'policies in public', '11',
     (select count(*)::text from pg_policies where schemaname = 'public')
 
   union all select 16, 'policies for any role other than authenticated', '0',
@@ -216,6 +221,20 @@ checks(n, check_name, expected, actual) as (
       else coalesce((xpath('/row/v/text()', query_to_xml(
         'select string_agg(aggregate_type || '':'' || lease_domain, '','' order by aggregate_type collate "C") as v
            from public.leased_record_types', false, true, '')))[1]::text, '')
+    end
+
+  -- 30. SYNC HEALTH IS ONE ROW PER COMPUTER (014): the only key is device_id and no column draws
+  --     from a sequence, so a report can only overwrite that computer's row, never add another.
+  union all select 30, 'device_sync_health: keyed by device_id alone, nothing sequence-fed', 'device_id|0',
+    case
+      when to_regclass('public.device_sync_health') is null then 'table missing'
+      else (select string_agg(a.attname, ',' order by a.attnum)
+              from pg_index i join pg_attribute a on a.attrelid = i.indrelid and a.attnum = any(i.indkey)
+             where i.indrelid = to_regclass('public.device_sync_health') and i.indisprimary)
+        || '|' ||
+           (select count(*)::text from pg_attrdef d
+             where d.adrelid = to_regclass('public.device_sync_health')
+               and pg_get_expr(d.adbin, d.adrelid) like 'nextval(%')
     end
 )
 select n, check_name, expected, actual, actual = expected as ok

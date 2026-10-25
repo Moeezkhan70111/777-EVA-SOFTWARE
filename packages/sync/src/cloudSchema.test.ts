@@ -1798,3 +1798,44 @@ test("013: the rollback keeps the log and the types the log refers to", () => {
   assert.doesNotMatch(down, /sync_event_log|sync_aggregate_types/);
   assert.match(LEASED_RECORDS_DOWN, /WHAT THIS COSTS/);
 });
+
+// ─── 014: each computer's sync health, one row each ─────────────────────────
+
+const SYNC_HEALTH = read("migrations/supabase/014_device_sync_health.up.sql");
+const SYNC_HEALTH_DOWN = read("migrations/supabase/014_device_sync_health.down.sql");
+
+test("014: one row per computer, overwritten -- a report can never add a row or touch another computer's", () => {
+  const sql = sqlOnly(SYNC_HEALTH);
+  assert.match(sql, /device_id text primary key,/, "keyed by the device alone");
+  assert.doesNotMatch(sql, /\b(bigserial|serial|identity|nextval)\b/i, "nothing sequence-fed: it is not a log");
+  const report = functionBody(SYNC_HEALTH, "report_sync_health");
+  assert.match(report, /on conflict \(device_id\) do update set/);
+  // Whose row is written comes from the proven claim, never from the report.
+  assert.ok(report.indexOf("public.claim_is_current(p_epoch, p_holder)") < report.indexOf("insert into public.device_sync_health"));
+  assert.match(report, /account\.device_id, account\.factory_id, account\.label/);
+  assert.doesNotMatch(report, /p_report->>'(deviceId|device_id|factoryId|factory_id)'/);
+});
+
+test("014: a report is bounded and validated whole", () => {
+  const report = functionBody(SYNC_HEALTH, "report_sync_health");
+  assert.match(report, /octet_length\(p_report::text\) > 8192/);
+  assert.match(report, /limit 5/, "at most five items kept");
+  assert.match(sqlOnly(SYNC_HEALTH), /jsonb_array_length\(sample\) <= 5/, "and the table refuses more anyway");
+  assert.match(report, /jsonb_typeof\(item->'needs'\) = 'string' and length\(item->>'needs'\) <= 200/, "the record that would end a wait is kept only as short text");
+  for (const field of ["waiting", "stuck", "stale", "deadLetters", "unsentMarks"]) {
+    assert.match(report, new RegExp(String.raw`public\.sync_health_count\(p_report->'${field}'\)`), `${field} is checked`);
+  }
+});
+
+test("014: read by the computers of one factory, written only through the report", () => {
+  const sql = sqlOnly(SYNC_HEALTH);
+  assert.match(sql, /revoke all on table public\.device_sync_health from public, anon, authenticated/);
+  assert.match(sql, /grant select on table public\.device_sync_health to authenticated/);
+  assert.doesNotMatch(sql, /grant (insert|update|delete)/);
+  assert.match(sql, /using \(public\.is_enrolled_device\(\) and factory_id = public\.current_factory_id\(\)\)/);
+  const granted = [...sql.matchAll(/grant execute on function public\.([a-z_]+)\(/g)].map((match) => match[1]);
+  assert.deepEqual(granted, ["report_sync_health"]);
+  assert.match(sql, /revoke all on function public\.sync_health_count\(jsonb\) from public, anon, authenticated/);
+  const down = sqlOnly(SYNC_HEALTH_DOWN);
+  assert.ok(down.indexOf("drop function if exists public.report_sync_health") < down.indexOf("drop table if exists public.device_sync_health"));
+});

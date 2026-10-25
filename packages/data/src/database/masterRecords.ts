@@ -11,7 +11,7 @@
 // checks the two agree, so a table cannot be captured and then never sent, or sent and never captured.
 
 import crypto from "node:crypto";
-import { enqueueSyncEvent, SYNC_AGGREGATE, type SyncAggregateType, type SyncWriteHandle } from "./syncEvents.js";
+import { enqueueSyncEvent, leaseDomainOf, SYNC_AGGREGATE, type SyncAggregateType, type SyncWriteHandle } from "./syncEvents.js";
 
 export type MasterRecordType =
   | typeof SYNC_AGGREGATE.PARTY_GROUP
@@ -305,4 +305,37 @@ export function buildLeasedRecordRevisions(db: BuildHandle, nowIso: string, limi
     throw error;
   }
   return { queued, unqueued };
+}
+
+// ─── Sending a record again ─────────────────────────────────────────────────
+
+export type SendAgainOutcome =
+  /** Marked under the lease held now: the next pass sends a new revision of it. */
+  | "MARKED"
+  | "UNKNOWN_TYPE"
+  /** This computer does not have the record, so it has nothing to send. */
+  | "NOT_HERE"
+  /** This computer knows no lease for the record's domain, so a revision could never be sent. */
+  | "NO_LEASE";
+
+/**
+ * Marks one record to be sent again, as a new revision -- for a record another computer is waiting
+ * for and never received (its change was made before this computer synced, or its revision became a
+ * dead letter). The mark is the one a capture trigger writes, stamped with the epoch held now, so the
+ * next pass builds and sends it like any other change. Nothing about the record itself changes.
+ *
+ * The caller is the lease-guarded write path: only the domain's holder may send a revision.
+ */
+export function markRecordToSendAgain(db: BuildHandle, type: string, recordId: string, nowIso: string): SendAgainOutcome {
+  if (!isMasterRecordType(type)) return "UNKNOWN_TYPE";
+  const present = db.prepare(`SELECT 1 AS here FROM ${MASTER_RECORDS[type].table} WHERE id = ?`).all(recordId);
+  if (present.length === 0) return "NOT_HERE";
+  const lease = db.prepare("SELECT epoch FROM sync_domain_leases WHERE domain = ?").all(leaseDomainOf(type) ?? "") as Array<{ epoch: number }>;
+  const epoch = lease[0]?.epoch;
+  if (epoch === undefined) return "NO_LEASE";
+  db.prepare(
+    `INSERT INTO sync_dirty_records (aggregate_type, record_id, lease_epoch, marked_at) VALUES (?, ?, ?, ?)
+     ON CONFLICT (aggregate_type, record_id) DO UPDATE SET lease_epoch = excluded.lease_epoch, marked_at = excluded.marked_at`
+  ).run(type, recordId, Number(epoch), nowIso);
+  return "MARKED";
 }

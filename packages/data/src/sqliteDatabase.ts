@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { dropCaptureTriggers, installCaptureTriggers } from "./database/masterCapture.js";
-import { buildLeasedRecordRevisions, type BuildResult } from "./database/masterRecords.js";
+import { buildLeasedRecordRevisions, markRecordToSendAgain, type BuildResult, type SendAgainOutcome } from "./database/masterRecords.js";
 import type {
   DuplicateChecker,
   OutboxRepository,
@@ -135,6 +135,7 @@ export {
   readLeasedRecordPayload,
   leasedRecordDedupeKey,
   buildLeasedRecordRevisions,
+  markRecordToSendAgain,
 } from "./database/masterRecords.js";
 export type {
   MasterRecordType,
@@ -145,6 +146,7 @@ export type {
   LeasedRecordPayload,
   BuildHandle,
   BuildResult,
+  SendAgainOutcome,
 } from "./database/masterRecords.js";
 export {
   REPLICATION_EXCLUSIONS,
@@ -1168,6 +1170,11 @@ export class SqliteDatabase
    */
   buildLeasedRecordRevisions(nowIso: string): BuildResult {
     return buildLeasedRecordRevisions(this.db, nowIso);
+  }
+
+  /** Marks one master record to be sent again as a new revision on the next pass (masterRecords.ts). */
+  markRecordToSendAgain(type: string, recordId: string, nowIso: string): SendAgainOutcome {
+    return markRecordToSendAgain(this.db, type, recordId, nowIso);
   }
 
   /**

@@ -69,7 +69,7 @@ const NOT_MASTER: Readonly<Record<string, readonly string[]>> = {
   "This computer's own state: never replicated (replicationScope.ts)": [
     "app_settings", "audit_log", "backup_history", "metrics_counters", "metrics_timeseries", "schema_migrations",
     "system_health_snapshots", "qr_sequences", "raw_material_qr_sequences", "sync_capture", "sync_dirty_records",
-    "sync_record_revisions", "sync_domain_leases", "sync_inbox_parked", "sync_outbox", "sync_runs",
+    "sync_record_revisions", "sync_displaced_records", "sync_domain_leases", "sync_inbox_parked", "sync_outbox", "sync_runs",
   ],
 };
 
