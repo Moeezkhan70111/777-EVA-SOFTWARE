@@ -12,7 +12,7 @@ const PUSHABLE = ["QR_MASTER", "PRODUCTION_PRODUCED"] as const;
 
 function queue(): { sql: SyncSqlHandle; add: (type: string, status?: string) => void; raw: DatabaseSync } {
   const raw = new DatabaseSync(":memory:");
-  raw.exec("CREATE TABLE sync_outbox (id TEXT PRIMARY KEY, aggregate_type TEXT NOT NULL, status TEXT NOT NULL)");
+  raw.exec("CREATE TABLE sync_outbox (id TEXT PRIMARY KEY, aggregate_type TEXT NOT NULL, status TEXT NOT NULL, lease_epoch INTEGER)");
   let n = 0;
   return {
     sql: raw as unknown as SyncSqlHandle,

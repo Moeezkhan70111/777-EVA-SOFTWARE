@@ -62,6 +62,7 @@ const MIGRATION_086 = path.resolve(
   "../../../migrations/sqlite/086_sync_outbox_product_variant.up.sql"
 );
 const MIGRATION_088 = path.resolve(import.meta.dirname, "../../../migrations/sqlite/088_replicated_at.up.sql");
+const MIGRATION_093 = path.resolve(import.meta.dirname, "../../../migrations/sqlite/093_domain_leases.up.sql");
 
 const FAST_RETRY: OutboxRetryPolicy = { maxAttempts: 4, baseBackoffMs: 1_000, maxBackoffMs: 60_000, staleInFlightMs: 60_000 };
 
@@ -95,6 +96,7 @@ function createNode(root: string, name: string): Node {
   runMigration(raw, MIGRATION_083);
   runMigration(raw, MIGRATION_086);
   runMigration(raw, MIGRATION_088);
+  runMigration(raw, MIGRATION_093);
   raw.exec("PRAGMA foreign_keys = ON;");
 
   // The master data a computer is given when it is set up. None of it is synchronised by this

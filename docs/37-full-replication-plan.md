@@ -193,6 +193,38 @@ keeps its own accounts, as before.
   that position. The cloud records the barrier, and the client enforces it, because only the
   client knows how far it has read.
 
+**As built — the PC side, stage 3 (local migration 093, 2026-10-25, not yet released).**
+
+- **The cache.** Every sync pass reads `current_leases()` after its pull and replaces
+  `sync_domain_leases` whole, tied to the project, just as the pull cursor is. A lease from test
+  never authorises a write for production. A project without 011 (production today) answers
+  "not supported". Carton sync carries on, and the gate lets the PC write as it did before
+  leases: such a project can neither enforce a lease nor receive leased work, and a missing
+  migration must not be able to lock the store. Work written there is queued unstamped and waits
+  for the backfill.
+- **The gate** (`leaseWriteDecision` in `@erp/sync`, enforced by `leaseGuard.ts` in the main
+  process):
+  - A PC not set up for sync writes as before. A synced PC writes only as the holder of the
+    domain's lease, once it has read past the barrier with no event of the domain from before it
+    still parked.
+  - Otherwise it refuses with NO_LEASE_INFO, NOT_HELD, HELD_ELSEWHERE (naming the holder) or
+    CATCHING_UP.
+  - It reads the cache, so the holder writes offline.
+- **Which writes are leased** is one list, `leaseChannels.ts`. Milestone 1 enforces the raw material
+  store and master data only. A write that rewrites stock history (an item import, a removal, a
+  unit correction) needs both. A test fails on any channel in those modules that is unclassified.
+  Carton flows, products, and removal or correction *requests* are listed as unleased, each with
+  its reason.
+- **The epoch is stamped as the event is queued,** in the same insert, from the cached lease
+  (`enqueueSyncEvent`). A leased row queued without one (made before the PC knew its lease, or
+  while standalone) is **never claimed or counted as sendable**. It waits for the backfill, so
+  it's never refused into the dead letters.
+- **Label runs and packets are now pushed** through 012 with their epoch, the run before its
+  packets. RUN_NOT_REGISTERED_YET waits, and NOT_LEASE_HOLDER is a bounded refusal.
+- **Rollout rule:** grant the leases before the release reaches a synced PC (docs/36 §7.8).
+- **Not yet built (stage 3b):** the read-only screens on a reader, the lookup-only packet scan,
+  and a release button for handover.
+
 **As built — leased records, cloud migration 013 (written 2026-10-25, not yet applied to test).**
 
 - **One generic store, not a mirror per table.** `leased_records` holds one row per (type, id):

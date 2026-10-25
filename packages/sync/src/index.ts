@@ -12,6 +12,7 @@ export * from "./transport.js";
 export * from "./drain.js";
 export * from "./pullCursor.js";
 export * from "./parking.js";
+export * from "./leases.js";
 export * from "./pull.js";
 export * from "./httpJson.js";
 export * from "./supabaseAuth.js";

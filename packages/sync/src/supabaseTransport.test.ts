@@ -974,12 +974,12 @@ test("an event type with no contract at all is refused without being parked", as
     assert.equal(acks[0]?.accepted, false);
     assert.equal(acks[0]?.failure, "TRANSIENT", "it is a good event this transport cannot carry yet");
     assert.match(acks[0]?.reason ?? "", /NOT_SENDABLE_YET/);
-    // The three types that HAVE contracts are claimed; the four that do not are left alone.
+    // The five types that HAVE contracts are claimed; the four that do not are left alone.
     // Order matters and is the order leaseBatch claims them in: a variant before a carton of it,
-    // a carton before a scan of it. Each link is only ever ahead of the next.
+    // a carton before a scan of it, a label run before a packet of it.
     assert.deepEqual(
       [...SUPABASE_PUSHABLE_AGGREGATES],
-      ["PRODUCT_VARIANT", "QR_MASTER", "PRODUCTION_PRODUCED"]
+      ["PRODUCT_VARIANT", "QR_MASTER", "PRODUCTION_PRODUCED", "RAW_MATERIAL_QR_BATCH", "RAW_MATERIAL_QR"]
     );
     for (const absent of ["PRODUCTION_EVENT", "DISPATCH_EVENT", "RETURN_EVENT", "PROJECTION"]) {
       assert.ok(!SUPABASE_PUSHABLE_AGGREGATES.includes(absent), `${absent} has no contract and must not be claimed`);
@@ -1150,6 +1150,127 @@ test("the token is sent as a header and never in the path or the body", async ()
         assert.equal(call.body.includes(PASSWORD), false, "no request body may carry the password");
       }
     }
+  } finally {
+    await fake.close();
+  }
+});
+
+// ─── raw material, leased (cloud migrations 011 and 012) ─────────────────────
+
+const RM_AT = "2026-10-25T05:00:00.000Z";
+
+const labelRun = (batchId: string, leaseEpoch: number | null): SyncEnvelope => ({
+  dedupeKey: `RAW_MATERIAL_QR_BATCH:${batchId}`,
+  aggregateType: "RAW_MATERIAL_QR_BATCH",
+  aggregateId: batchId,
+  operation: "INSERT",
+  payload: {
+    batchId, partyId: "party-1", itemId: "item-1", startSequence: 11, endSequence: 12, quantity: 2,
+    createdAt: RM_AT, createdBy: "user-1", requestedBy: null,
+  },
+  originDeviceId: "desktop-main",
+  createdAt: RM_AT,
+  leaseEpoch,
+});
+
+const labelPacket = (qrId: string, batchId: string, leaseEpoch: number | null): SyncEnvelope => ({
+  dedupeKey: `RAW_MATERIAL_QR:${qrId}`,
+  aggregateType: "RAW_MATERIAL_QR",
+  aggregateId: qrId,
+  operation: "INSERT",
+  payload: {
+    qrId, batchId, partyId: "party-1", itemId: "item-1", sequence: 11,
+    packingQuantity: 2.5, packingUnitId: "unit-kg", createdAt: RM_AT,
+  },
+  originDeviceId: "desktop-main",
+  createdAt: RM_AT,
+  leaseEpoch,
+});
+
+const rowsSentTo = (fake: Fake, rpc: string): Array<Record<string, unknown>> =>
+  fake.calls
+    .filter((call) => call.path === `/rest/v1/rpc/${rpc}`)
+    .flatMap((call) => (JSON.parse(call.body) as { p_rows: Array<Record<string, unknown>> }).p_rows);
+
+test("a label run and its packets go with the lease epoch they were written under, the run first", async () => {
+  const fake = await startFakeSupabase();
+  try {
+    const transport = await claimed(fake);
+    fake.reply("/rpc/push_raw_material_qr_batch", 200, { ok: true, results: [{ id: "rmb-1", outcome: "INSERTED" }] });
+    fake.reply("/rpc/push_raw_material_qr", 200, { ok: true, results: [{ id: "rmq-11", outcome: "INSERTED" }] });
+
+    // Handed over packet first: the transport still sends the run first.
+    const acks = await transport.send([labelPacket("rmq-11", "rmb-1", 7), labelRun("rmb-1", 7)]);
+    assert.deepEqual(acks.map((ack) => [ack.dedupeKey, ack.accepted]), [
+      ["RAW_MATERIAL_QR_BATCH:rmb-1", true],
+      ["RAW_MATERIAL_QR:rmq-11", true],
+    ]);
+    const order = fake.calls.map((call) => call.path).filter((p) => p.includes("raw_material"));
+    assert.deepEqual(order, ["/rest/v1/rpc/push_raw_material_qr_batch", "/rest/v1/rpc/push_raw_material_qr"]);
+
+    // Exactly the keys 012 reads, the epoch among them, and no origin device: the cloud takes
+    // that from the proven claim.
+    assert.deepEqual(rowsSentTo(fake, "push_raw_material_qr_batch"), [{
+      id: "rmb-1", party_id: "party-1", item_id: "item-1", start_sequence: 11, end_sequence: 12, quantity: 2,
+      created_at: RM_AT, created_by: "user-1", requested_by: null, lease_epoch: 7,
+    }]);
+    assert.deepEqual(rowsSentTo(fake, "push_raw_material_qr"), [{
+      id: "rmq-11", batch_id: "rmb-1", party_id: "party-1", item_id: "item-1", sequence: 11,
+      packing_quantity: 2.5, packing_unit_id: "unit-kg", created_at: RM_AT, lease_epoch: 7,
+    }]);
+  } finally {
+    await fake.close();
+  }
+});
+
+test("a packet whose run has not arrived waits, and a write on a lost lease is refused", async () => {
+  const fake = await startFakeSupabase();
+  try {
+    const transport = await claimed(fake);
+    fake.reply("/rpc/push_raw_material_qr_batch", 200, { ok: true, results: [{ id: "rmb-2", outcome: "REFUSED", reason: "NOT_LEASE_HOLDER" }] });
+    fake.reply("/rpc/push_raw_material_qr", 200, { ok: true, results: [{ id: "rmq-12", outcome: "REFUSED", reason: "RUN_NOT_REGISTERED_YET" }] });
+    const acks = await transport.send([labelRun("rmb-2", 3), labelPacket("rmq-12", "rmb-1", 3)]);
+    const byKey = new Map(acks.map((ack) => [ack.dedupeKey, ack]));
+    // Taken over: refused, so it is bounded and lands visibly in the dead letters (docs/37 W.3).
+    assert.equal(byKey.get("RAW_MATERIAL_QR_BATCH:rmb-2")?.failure, "REFUSED");
+    assert.equal(byKey.get("RAW_MATERIAL_QR_BATCH:rmb-2")?.reason, "NOT_LEASE_HOLDER");
+    // A prerequisite, not a fault: waits without spending its refusal budget.
+    assert.equal(byKey.get("RAW_MATERIAL_QR:rmq-12")?.failure, "TRANSIENT");
+  } finally {
+    await fake.close();
+  }
+});
+
+test("a leased row without an epoch is never sent, and waits", async () => {
+  const fake = await startFakeSupabase();
+  try {
+    const transport = await claimed(fake);
+    const acks = await transport.send([labelRun("rmb-3", null), labelPacket("rmq-13", "rmb-3", null)]);
+    assert.ok(acks.every((ack) => !ack.accepted && ack.failure === "TRANSIENT" && ack.reason === "NO_LEASE_EPOCH"));
+    assert.equal(fake.calls.filter((call) => call.path.includes("raw_material")).length, 0, "nothing reached the cloud");
+  } finally {
+    await fake.close();
+  }
+});
+
+test("the leases are read from current_leases, and not knowing is an answer, not a failure", async () => {
+  const fake = await startFakeSupabase();
+  try {
+    const transport = await claimed(fake);
+    const row = { domain: "RAW_MATERIAL_STORE", holder_device_id: "desktop-main", holder_label: "Store PC", epoch: 7, barrier_seq: 40, granted_at: null };
+    fake.reply("/rpc/current_leases", 200, [row]);
+    assert.deepEqual(await transport.fetchLeases(), {
+      ok: true,
+      leases: [{ domain: "RAW_MATERIAL_STORE", holderDeviceId: "desktop-main", holderLabel: "Store PC", epoch: 7, barrierSeq: 40, grantedAt: null }],
+    });
+    // A project without 011 (production today): carton sync must carry on.
+    fake.reply("/rpc/current_leases", 404, { code: "PGRST202", message: "Could not find the function public.current_leases" });
+    assert.deepEqual(await transport.fetchLeases(), { ok: false, reason: "NOT_SUPPORTED" });
+    fake.reply("/rpc/current_leases", 200, [{ ...row, epoch: "seven" }]);
+    assert.deepEqual(await transport.fetchLeases(), { ok: false, reason: "UNREADABLE" });
+    // Unreachable or refused is a transport failure, like every other call.
+    fake.reply("/rpc/current_leases", 503, { message: "unavailable" });
+    await assert.rejects(transport.fetchLeases(), SyncTransportError);
   } finally {
     await fake.close();
   }

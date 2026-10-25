@@ -88,6 +88,8 @@ export {
   readProductionProducedPayload,
   RAW_MATERIAL_QR_OPENING_STATE,
   LEASE_DOMAIN,
+  LEASED_AGGREGATE_DOMAIN,
+  leaseDomainOf,
   rawMaterialQrBatchDedupeKey,
   rawMaterialQrDedupeKey,
   readRawMaterialQrBatchPayload,

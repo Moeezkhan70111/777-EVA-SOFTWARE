@@ -21,7 +21,7 @@
 // worked out from the local clock when the scan is recorded, so recomputing them on a computer in
 // another timezone would quietly produce a different hour. They travel as the origin wrote them.
 
-import { RAW_MATERIAL_QR_STATUS } from "@erp/domain";
+import { LEASE_DOMAIN, RAW_MATERIAL_QR_STATUS, type LeaseDomain } from "@erp/domain";
 
 /**
  * The write surface these helpers need: one prepared statement, run with bound values.
@@ -64,25 +64,25 @@ export const SYNC_AGGREGATE = {
 
 export type SyncAggregateType = (typeof SYNC_AGGREGATE)[keyof typeof SYNC_AGGREGATE];
 
-/**
- * The domains with a single writer (docs/37 section W): one computer holds each one's write lease,
- * every other computer reads it. Carton and QR flows are deliberately absent -- they stay
- * multi-writer, because their identities are deduplicated by construction.
- *
- * Must match the rows cloud migration 011 seeds into lease_domains. cloudSchema.test.ts checks it.
- */
-export const LEASE_DOMAIN = {
-  RAW_MATERIAL_STORE: "RAW_MATERIAL_STORE",
-  MASTER_DATA: "MASTER_DATA",
-  /** One domain, not two: a bill is locked to its gatepass. */
-  SALES_DISPATCH: "SALES_DISPATCH",
-  /** Also says where the vouchers are, so party ledger balances show only there. */
-  ACCOUNTS: "ACCOUNTS",
-  MACHINE_PROGRAMS: "MACHINE_PROGRAMS",
-  APPROVALS: "APPROVALS",
-} as const;
+// The lease domains live in @erp/domain (leases.ts): one definition, re-exported here.
+export { LEASE_DOMAIN, type LeaseDomain };
 
-export type LeaseDomain = (typeof LEASE_DOMAIN)[keyof typeof LEASE_DOMAIN];
+/**
+ * The lease each leased event type is written under. A type that is not here is not leased --
+ * carton flows -- and is queued without an epoch.
+ *
+ * enqueueSyncEvent stamps a leased event with this computer's cached epoch for its domain, in the
+ * same insert, so no caller can forget it. The cloud accepts the event only while that epoch is
+ * still this computer's lease (cloud migrations 011 and 012).
+ */
+export const LEASED_AGGREGATE_DOMAIN: Readonly<Partial<Record<SyncAggregateType, LeaseDomain>>> = {
+  [SYNC_AGGREGATE.RAW_MATERIAL_QR_BATCH]: LEASE_DOMAIN.RAW_MATERIAL_STORE,
+  [SYNC_AGGREGATE.RAW_MATERIAL_QR]: LEASE_DOMAIN.RAW_MATERIAL_STORE,
+};
+
+/** The lease an event type is written under, or null when it is not leased. */
+export const leaseDomainOf = (aggregateType: string): LeaseDomain | null =>
+  (LEASED_AGGREGATE_DOMAIN as Readonly<Record<string, LeaseDomain | undefined>>)[aggregateType] ?? null;
 
 /** One identity per QR, for all time. */
 export const qrMasterDedupeKey = (qrId: string): string => `${SYNC_AGGREGATE.QR_MASTER}:${qrId}`;
@@ -387,17 +387,25 @@ export interface EnqueueInput {
  *     been migrated yet — the business transaction still commits. Losing the chance to tell
  *     another computer about a carton is bad. Losing the carton is worse.
  *
+ * A LEASED event is stamped with this computer's cached lease epoch for its domain, read in the
+ * same insert (migration 093). The write gate has already refused the write unless this computer
+ * holds that lease, so the cached epoch is its own. With no cached lease the epoch is null, and
+ * the drain leaves the row for the backfill rather than sending it.
+ *
  * Returns true when a row was queued. False means either a duplicate or a failure, and the caller
  * is expected to log rather than abort.
  */
 export function enqueueSyncEvent(db: SyncWriteHandle, input: EnqueueInput): boolean {
+  const domain = leaseDomainOf(input.aggregateType);
   try {
     const result = db
       .prepare(
         `INSERT INTO sync_outbox (
            id, aggregate_type, aggregate_id, operation, dedupe_key,
            payload_json, status, lock_token, available_at, attempts, last_error, created_at, updated_at
-         ) VALUES (?, ?, ?, 'INSERT', ?, ?, 'PENDING', NULL, ?, 0, NULL, ?, ?)
+           ${domain === null ? "" : ", lease_epoch"}
+         ) VALUES (?, ?, ?, 'INSERT', ?, ?, 'PENDING', NULL, ?, 0, NULL, ?, ?
+           ${domain === null ? "" : ", (SELECT epoch FROM sync_domain_leases WHERE domain = ?)"})
          ON CONFLICT(dedupe_key) DO NOTHING`
       )
       .run(
@@ -408,7 +416,8 @@ export function enqueueSyncEvent(db: SyncWriteHandle, input: EnqueueInput): bool
         JSON.stringify(input.payload),
         input.nowIso,
         input.nowIso,
-        input.nowIso
+        input.nowIso,
+        ...(domain === null ? [] : [domain])
       );
     return Number(result.changes) > 0;
   } catch {

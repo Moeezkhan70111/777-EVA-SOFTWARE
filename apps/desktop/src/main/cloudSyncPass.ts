@@ -114,6 +114,43 @@ export function describeCloudSync(deps: Pick<CloudSyncPassDeps, "deviceId" | "da
 }
 
 /**
+ * Replaces the lease cache with the cloud's answer. Returns a transport failure's reason, or
+ * undefined when the pass may call itself fine. Never throws: a pass reports, it does not crash.
+ */
+async function refreshLeaseCache(
+  sync: typeof import("@erp/sync"),
+  transport: SupabaseSyncTransport,
+  db: SqliteDatabase,
+  projectUrl: string,
+  deviceId: string,
+  logger: StructuredLogger
+): Promise<string | undefined> {
+  try {
+    const fetched = await transport.fetchLeases();
+    if (fetched.ok) {
+      sync.replaceLeaseCache(db.db, projectUrl, fetched.leases, new Date().toISOString());
+      return undefined;
+    }
+    // NOT_SUPPORTED is the normal state of a project without leases, and says so every pass, so it
+    // is not logged. It is recorded: such a project cannot enforce a lease, so the gate lets this
+    // computer write as it did before leases rather than lock it out. UNREADABLE is a fault worth seeing.
+    if (fetched.reason === "NOT_SUPPORTED") {
+      sync.markLeasesUnsupported(db.db, projectUrl);
+      return undefined;
+    }
+    if (fetched.reason === "UNREADABLE") {
+      logger.log({
+        module: "sync", severity: "WARNING", operation: "leases", deviceId,
+        message: "The cloud's answer about who holds each write lease was unreadable. The last good answer is kept.",
+      });
+    }
+    return undefined;
+  } catch (error) {
+    return error instanceof Error ? error.message : "The write leases could not be read.";
+  }
+}
+
+/**
  * Runs one pass and records it in sync_runs.
  *
  * The run row is opened before the network is touched and closed on every path out, so an
@@ -274,6 +311,12 @@ export async function runCloudSyncPass(
       });
     }
 
+    // WHO HOLDS WHAT (docs/37 section W), read after the pull so the catch-up barrier is judged
+    // against what this computer has just read. The local write gate reads this cache, offline too.
+    // A project without leases (no cloud migration 011) is not a failure: carton sync carries on,
+    // and the cache keeps whatever it had. A failure to reach the cloud is one, like any other call.
+    const leaseError = await refreshLeaseCache(sync, transport, db, identity.url, deviceId, logger);
+
     // Read through a default. The drain always supplies this, but a pass must not be able to
     // throw on the SHAPE of its own result -- that would turn a reported refusal into an
     // unreported crash, which is the opposite of what the field is for.
@@ -296,7 +339,7 @@ export async function runCloudSyncPass(
             pushRefusals.map((r) => `${r.aggregateType} ${r.aggregateId} (${r.reason})`).join(", ")),
     });
 
-    const transportError = pushed.transportError ?? pulled.transportError;
+    const transportError = pushed.transportError ?? pulled.transportError ?? leaseError;
 
     // THE CAUSE, NOT JUST THE COUNT. `reason` is what sync_runs records and what the panel
     // reads back as the newest verdict, so a refusal with no transport error has to put its

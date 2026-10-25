@@ -776,6 +776,42 @@ rather than quietly writing there.
 | Record the credential's project | A stale token is offered to the wrong project once per move. Harmless, because it falls back, but it costs one failed sign-in | Open, low |
 | `migrations/supabase/README.md` | Still says 005 and 006 are unapplied. True of no project now | Open |
 
+### 7.8 Write leases: granting, handing over, taking over
+
+From the release that carries local migration 093 (`feat/replication-phase-1`, not yet released), a
+PC that is **set up for cloud sync** writes the raw material store and master data **only while it
+holds that domain's lease**. A PC that is not set up for sync is unaffected and writes as before.
+The cloud enforces the lease with migrations 011–013, and the PC's own gate (`leaseGuard.ts`)
+refuses the write first, with a message naming who does write it.
+
+**Before that release reaches a synced PC, grant it the leases it needs.** Otherwise, on its first
+pass, it learns that it holds nothing, and its store and material screens refuse every write. In
+phase 1, one PC holds both domains (docs/37 W.1). Find the device id in its `device_accounts` row,
+then run this in the SQL editor of the project it syncs with (the agent can also run it through MCP
+on your word):
+
+```sql
+select public.grant_domain_lease('RAW_MATERIAL_STORE', '<device id>', 'Store PC -- <person>');
+select public.grant_domain_lease('MASTER_DATA', '<device id>', 'Store PC -- <person>');
+select domain, holder_device_id, holder_label, epoch from public.domain_leases order by domain;
+```
+
+The PC picks the grant up on its next pass, which takes up to five minutes, or immediately with
+**Sync Now**.
+
+**Handing over** (docs/37 W.3): the old holder syncs until its queue is empty, then the new holder
+is granted. Granting a held domain to another PC is a **takeover**. It is recorded as one, with a
+barrier at the old holder's last write, and the new holder will not write until it has pulled past
+that barrier. Anything the old holder had not pushed is refused when it does push, and appears in
+its dead letters: visible, never merged.
+
+**A PC that shows "not yet learned who writes …"** has never completed a pass against its current
+project. Connect it once and press Sync Now.
+
+**A project without 011** (production, until §6a.1 is done) answers that it has no leases. A PC
+syncing with it writes the store and master data as it did before leases, and that work waits,
+unsent, for the backfill. This is deliberate: an unapplied migration must not lock the store.
+
 ---
 
 ## 8. A known limit: what "online" does and does not mean

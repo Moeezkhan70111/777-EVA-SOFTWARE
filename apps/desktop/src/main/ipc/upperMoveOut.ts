@@ -9,7 +9,9 @@
 // checks again. The machine and the scan arrive here from the screen, and nothing about either is
 // trusted — the use case reads both from the database inside the write lock.
 
-import { ipcMain, type IpcMainInvokeEvent } from "electron";
+import type { IpcMainInvokeEvent } from "electron";
+// Leased channels pass the write gate first (leaseGuard.ts, leaseChannels.ts).
+import { ipcMain } from "../leaseGuard";
 import { IPC } from "../../shared/ipcChannels";
 import type { IpcContext } from "./context";
 import { PERMISSION, UPPER_ISSUE_OUTCOME, asRecord, asString } from "@erp/domain";

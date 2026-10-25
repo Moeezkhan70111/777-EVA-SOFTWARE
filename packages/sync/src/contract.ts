@@ -64,6 +64,12 @@ export interface SyncEnvelope {
   readonly originDeviceId: string;
   /** UTC ISO 8601, as everything in this system is stored (R16). */
   readonly createdAt: string;
+  /**
+   * The lease epoch a LEASED event was written under (migration 093), sent so the cloud can check
+   * it is still this computer's lease. Absent or null for carton flows, which are not leased, and
+   * on anything read back from the cloud: a receiver never needs it.
+   */
+  readonly leaseEpoch?: number | null;
 }
 
 // ─── Validation at the boundary (R25) ───────────────────────────────────────

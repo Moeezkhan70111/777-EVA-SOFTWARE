@@ -42,14 +42,19 @@ export const pullProjectKey = (projectUrl: string): string => {
  */
 export function bindPullCursorToProject(sql: SyncSqlHandle, projectUrl: string): boolean {
   const project = pullProjectKey(projectUrl);
-  if (readSetting(sql, PULL_PROJECT_SETTING_KEY) === project) return false;
+  if (readSyncSetting(sql, PULL_PROJECT_SETTING_KEY) === project) return false;
   sql.prepare("DELETE FROM app_settings WHERE setting_key = ?").run(PULL_CURSOR_SETTING_KEY);
   clearPullDeferral(sql);
-  writeSetting(sql, PULL_PROJECT_SETTING_KEY, project);
+  writeSyncSetting(sql, PULL_PROJECT_SETTING_KEY, project);
   return true;
 }
 
-const readSetting = (sql: SyncSqlHandle, key: string): string | null => {
+/** The project the cursor belongs to, as pullProjectKey spells it, or null before the first pull. */
+export function readPullProject(sql: SyncSqlHandle): string | null {
+  return readSyncSetting(sql, PULL_PROJECT_SETTING_KEY);
+}
+
+export const readSyncSetting = (sql: SyncSqlHandle, key: string): string | null => {
   const row = asRow(sql.prepare("SELECT setting_value FROM app_settings WHERE setting_key = ? LIMIT 1").get(key));
   return row === null ? null : String(row.setting_value ?? "");
 };
@@ -105,7 +110,7 @@ export function readPullDeferral(sql: SyncSqlHandle): PullDeferral | null {
 }
 
 export function writePullDeferral(sql: SyncSqlHandle, deferral: PullDeferral): void {
-  writeSetting(sql, PULL_DEFER_SETTING_KEY, JSON.stringify(deferral));
+  writeSyncSetting(sql, PULL_DEFER_SETTING_KEY, JSON.stringify(deferral));
 }
 
 export function clearPullDeferral(sql: SyncSqlHandle): void {
@@ -114,10 +119,10 @@ export function clearPullDeferral(sql: SyncSqlHandle): void {
 
 export function writePullCursor(sql: SyncSqlHandle, cursor: number): void {
   if (!Number.isInteger(cursor) || cursor < 0) return;
-  writeSetting(sql, PULL_CURSOR_SETTING_KEY, String(cursor));
+  writeSyncSetting(sql, PULL_CURSOR_SETTING_KEY, String(cursor));
 }
 
-function writeSetting(sql: SyncSqlHandle, key: string, value: string): void {
+export function writeSyncSetting(sql: SyncSqlHandle, key: string, value: string): void {
   sql
     .prepare(
       `INSERT INTO app_settings (setting_key, setting_value, value_type, is_encrypted, updated_by, updated_at)

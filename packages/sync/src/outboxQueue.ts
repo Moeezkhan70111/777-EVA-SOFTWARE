@@ -12,7 +12,7 @@
 //     straight to DEAD_LETTER where it can be seen, instead of being retried for ever.
 //   * Nothing is ever deleted here. A sent row keeps its history.
 
-import { SYNC_AGGREGATE, enqueueQrMaster, type QrMasterPayload } from "@erp/data";
+import { LEASED_AGGREGATE_DOMAIN, SYNC_AGGREGATE, enqueueQrMaster, type QrMasterPayload } from "@erp/data";
 import { QR_MASTER_OPENING_STATE, type SyncEnvelope } from "./contract.js";
 import { asRow, changedRows, type SqlValue, type SyncSqlHandle } from "./sqlPort.js";
 
@@ -87,10 +87,21 @@ interface OutboxRow {
   operation: string;
   dedupe_key: string;
   payload_json: string;
+  lease_epoch: number | bigint | null;
   attempts: number;
   transient_attempts: number;
   created_at: string;
 }
+
+/**
+ * LEASED WORK WITH NO LEASE EPOCH IS NOT SENDABLE. Such a row was queued before this computer knew
+ * its lease, or while it ran standalone (migration 093). Sent as it is, the cloud would refuse every
+ * one NOT_LEASE_HOLDER and the queue would walk them into the dead letters, which looks exactly like
+ * losing them. So it is never claimed, never offered and never counted as pushable: it waits,
+ * PENDING, for the backfill to decide it (docs/37 section 3.1, RM backfill).
+ */
+const LEASED_TYPES: readonly string[] = Object.keys(LEASED_AGGREGATE_DOMAIN);
+const STAMPED_IF_LEASED = ` AND NOT (aggregate_type IN (${LEASED_TYPES.map(() => "?").join(", ")}) AND lease_epoch IS NULL)`;
 
 export interface LeasedEvent {
   readonly outboxId: string;
@@ -130,6 +141,7 @@ export function leaseBatch(
   //
   //   0  PRODUCT_VARIANT  -- a carton of an unknown product is refused UNKNOWN_PRODUCT_VARIANT
   //   1  QR_MASTER        -- a scan of an unregistered carton is refused QR_NOT_REGISTERED_YET
+  //      RAW_MATERIAL_QR_BATCH -- a packet of an unregistered run is refused RUN_NOT_REGISTERED_YET
   //   2  everything else
   //
   // So a variant travels in the same call as its carton, or an earlier one, and the carton in
@@ -158,8 +170,8 @@ export function leaseBatch(
         WHERE id IN (
           SELECT id FROM sync_outbox
            WHERE status IN ('PENDING', 'FAILED')
-             AND available_at <= ?${typeFilter}
-           ORDER BY CASE aggregate_type WHEN ? THEN 0 WHEN ? THEN 1 ELSE 2 END ASC,
+             AND available_at <= ?${typeFilter}${STAMPED_IF_LEASED}
+           ORDER BY CASE aggregate_type WHEN ? THEN 0 WHEN ? THEN 1 WHEN ? THEN 1 ELSE 2 END ASC,
                     created_at ASC, rowid ASC
            LIMIT ?
         )`
@@ -169,14 +181,16 @@ export function leaseBatch(
       options.nowIso,
       options.nowIso,
       ...typeValues,
+      ...LEASED_TYPES,
       SYNC_AGGREGATE.PRODUCT_VARIANT,
       SYNC_AGGREGATE.QR_MASTER,
+      SYNC_AGGREGATE.RAW_MATERIAL_QR_BATCH,
       options.limit
     );
 
   const rows = sql
     .prepare(
-      `SELECT id, aggregate_type, aggregate_id, operation, dedupe_key, payload_json, attempts, transient_attempts, created_at
+      `SELECT id, aggregate_type, aggregate_id, operation, dedupe_key, payload_json, lease_epoch, attempts, transient_attempts, created_at
          FROM sync_outbox
         WHERE status = 'IN_FLIGHT' AND lock_token = ?
         ORDER BY created_at ASC, rowid ASC`
@@ -202,6 +216,7 @@ export function leaseBatch(
         payload,
         originDeviceId: options.deviceId,
         createdAt: row.created_at,
+        leaseEpoch: row.lease_epoch === null ? null : Number(row.lease_epoch),
       },
     });
   }
@@ -418,8 +433,8 @@ export function outboxSummary(
       : scalar(
           sql,
           `SELECT COUNT(*) AS n FROM sync_outbox
-            WHERE ${unsent} AND aggregate_type IN (${placeholders}) AND available_at <= ?`,
-          [...types, options.nowIso]
+            WHERE ${unsent} AND aggregate_type IN (${placeholders}) AND available_at <= ?${STAMPED_IF_LEASED}`,
+          [...types, options.nowIso, ...LEASED_TYPES]
         );
   const pushableTotal =
     types.length === 0
@@ -427,8 +442,8 @@ export function outboxSummary(
       : scalar(
           sql,
           `SELECT COUNT(*) AS n FROM sync_outbox
-            WHERE ${unsent} AND aggregate_type IN (${placeholders})`,
-          [...types]
+            WHERE ${unsent} AND aggregate_type IN (${placeholders})${STAMPED_IF_LEASED}`,
+          [...types, ...LEASED_TYPES]
         );
   const unsentTotal = scalar(sql, `SELECT COUNT(*) AS n FROM sync_outbox WHERE ${unsent}`, []);
 
@@ -596,7 +611,8 @@ export function newestSendableRow(sql: SyncSqlHandle, pushableTypes: readonly st
   const placeholders = pushableTypes.map(() => "?").join(", ");
   return scalar(
     sql,
-    `SELECT COALESCE(MAX(rowid), 0) AS n FROM sync_outbox WHERE status = 'PENDING' AND aggregate_type IN (${placeholders})`,
-    [...pushableTypes]
+    `SELECT COALESCE(MAX(rowid), 0) AS n FROM sync_outbox
+      WHERE status = 'PENDING' AND aggregate_type IN (${placeholders})${STAMPED_IF_LEASED}`,
+    [...pushableTypes, ...LEASED_TYPES]
   );
 }

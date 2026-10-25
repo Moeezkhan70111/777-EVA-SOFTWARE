@@ -46,6 +46,7 @@ const MIGRATION_083 = path.resolve(
   "../../../migrations/sqlite/083_sync_outbox_transient_attempts.up.sql"
 );
 const MIGRATION_088 = path.resolve(import.meta.dirname, "../../../migrations/sqlite/088_replicated_at.up.sql");
+const MIGRATION_093 = path.resolve(import.meta.dirname, "../../../migrations/sqlite/093_domain_leases.up.sql");
 
 /** Applies a shipped migration the way the runner does: split on semicolons. */
 function runMigration(raw: DatabaseSync, file: string): void {
@@ -74,6 +75,7 @@ function createNode(root: string, name: string): Node {
   raw.exec(fs.readFileSync(SCHEMA_PATH, "utf8"));
   runMigration(raw, MIGRATION_083);
   runMigration(raw, MIGRATION_088);
+  runMigration(raw, MIGRATION_093);
   // The master data both computers are given when they are set up. Events carry identity, never
   // the products themselves, so a receiver must already hold the product a QR names.
   const now = "2026-10-01T04:00:00.000Z";

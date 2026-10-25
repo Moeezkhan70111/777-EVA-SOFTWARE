@@ -4,7 +4,8 @@
 // IPC handlers are registered per feature; every write is authorised through ctx.authorizer
 // (see ../authorize.ts) and every channel name comes from shared/ipcChannels.ts.
 
-import { ipcMain } from "electron";
+// Leased channels pass the write gate first (leaseGuard.ts, leaseChannels.ts).
+import { ipcMain } from "../leaseGuard";
 import { IPC } from "../../shared/ipcChannels";
 import type { IpcContext } from "./context";
 import { PERMISSION } from "@erp/domain";

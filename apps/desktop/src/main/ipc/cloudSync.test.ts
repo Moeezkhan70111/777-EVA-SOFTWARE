@@ -118,6 +118,11 @@ vi.mock("@erp/sync", () => {
       if (heartbeatOutcome.ok !== true) this.claimed = false;
       return heartbeatOutcome;
     }
+    /** Who holds each write lease. A project without leases unless a test says otherwise. */
+    async fetchLeases(): Promise<Record<string, unknown>> {
+      if (leaseThrows !== null) throw leaseThrows;
+      return leaseFetch;
+    }
   }
   class OutboxDrain {
     constructor(_sql: unknown, _transport: unknown, options: Record<string, unknown>) {
@@ -155,6 +160,12 @@ vi.mock("@erp/sync", () => {
       sql.prepare("SELECT setting_value FROM app_settings WHERE setting_key = ? LIMIT 1");
       return 7;
     },
+    replaceLeaseCache: (_sql: unknown, projectUrl: string, leases: unknown[]) => {
+      leaseCalls.push({ what: "replace", projectUrl, leases });
+    },
+    markLeasesUnsupported: (_sql: unknown, projectUrl: string) => {
+      leaseCalls.push({ what: "unsupported", projectUrl });
+    },
     parkedSummary: (sql: { prepare: (text: string) => unknown }) => {
       sql.prepare("SELECT COUNT(*) AS n FROM sync_inbox_parked");
       return parked;
@@ -184,6 +195,11 @@ let claimRequests: Array<Record<string, unknown>>;
 let heartbeatOutcome: Record<string, unknown>;
 let heartbeatThrows: Error | null;
 let heartbeats: number;
+/** What the stubbed transport's fetchLeases answers, or throws. */
+let leaseFetch: Record<string, unknown>;
+let leaseThrows: Error | null;
+/** What the pass did with the answer. */
+let leaseCalls: Array<Record<string, unknown>>;
 
 const windowEvent = { sender: { id: 1 } } as unknown as IpcMainInvokeEvent;
 
@@ -351,6 +367,9 @@ beforeEach(() => {
   heartbeatOutcome = { ok: true, epoch: 4, holder: "holder-4" };
   heartbeatThrows = null;
   heartbeats = 0;
+  leaseFetch = { ok: false, reason: "NOT_SUPPORTED" };
+  leaseThrows = null;
+  leaseCalls = [];
   drainResult = { synced: 2, counts: { PENDING: 0, SYNCED: 2 } };
   pullResult = { fetched: 3, applied: 2, duplicates: 1, refused: [] };
   setEnv(GOOD_ENV);
@@ -605,6 +624,27 @@ describe("cloud sync at the process boundary", () => {
     expect(logged).toHaveLength(1);
     expect(logged[0]).toMatchObject({ severity: "INFO", operation: "cloud-sync", userId: "u-admin" });
     expect(logged[0]?.message).toContain("owner");
+  });
+
+  it("keeps the cloud's answer about who holds each write lease, for this project", async () => {
+    const leases = [{ domain: "RAW_MATERIAL_STORE", holderDeviceId: "desktop-main", holderLabel: "Store PC", epoch: 7, barrierSeq: 0, grantedAt: null }];
+    leaseFetch = { ok: true, leases };
+    await expect(run()).resolves.toMatchObject({ accepted: true });
+    expect(leaseCalls).toEqual([{ what: "replace", projectUrl: GOOD_ENV.ERP_SUPABASE_URL, leases }]);
+  });
+
+  it("records a project with no leases, so the store is not locked by a missing migration", async () => {
+    await expect(run()).resolves.toMatchObject({ accepted: true });
+    expect(leaseCalls).toEqual([{ what: "unsupported", projectUrl: GOOD_ENV.ERP_SUPABASE_URL }]);
+  });
+
+  it("a failure to read the leases is a transport failure, and the cache is left alone", async () => {
+    leaseThrows = new Error("the cloud could not be reached");
+    const answer = await run();
+    expect(answer.accepted).toBe(false);
+    expect(answer.reason).toBe("the cloud could not be reached");
+    expect(answer.pushed).toBe(2);
+    expect(leaseCalls).toEqual([]);
   });
 
   it("reports a transport failure as not accepted, while still handing back what did happen", async () => {
