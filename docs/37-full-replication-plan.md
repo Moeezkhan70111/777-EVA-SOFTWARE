@@ -291,6 +291,59 @@ path remembering, for the same reason the refused-write fix had to be central.
     record a revision refers to, a refusal for a name clash, and a deletion that waits while
     something still uses the record.
 
+**Pull interval: 60 seconds (owner decision, 2026-10-25).** Realtime wake-up is deferred until the
+stock slice is delivered and in use. An idle pass is three small requests, about 10 MB a day per
+PC. Passes that did nothing aren't logged, and `sync_runs` keeps idle passes for a day and the rest
+for 30 days. The latest success is always kept.
+
+### The stock-screen slice — the minimum for raw-material stock on another PC (owner, 2026-10-25)
+
+The goal is the owner's boss seeing correct raw-material stock on his own PC. The order is:
+
+1. **4b: master data travels**, all eight records. A material needs its category and units, a
+   stock event can name a party, and a material can name its work section. Builder, transport,
+   receiving contracts.
+2. **Stock events travel**, as a new leased event type `STOCK_EVENT`:
+   - cloud mirror, leased push and log (migration 014);
+   - local capture by a trigger on `inventory_stock_events`, so every write path is covered;
+   - a receiving contract that stores the event and moves the balance.
+   **The event carries `balanceDelta`**: `inventory_stock_events` holds two sign conventions,
+   including `TRANSFER_OUT` with both signs. `stockEventBalanceDelta` (domain) reads both
+   correctly. On the snapshot it reproduces all 903 balances, where a plain sum gets 148 wrong.
+   The receiver applies the delta and never re-derives a sign.
+3. **Backfill:** the holder sends its existing master records and stock history once, with
+   capture suppressed, under its current epoch. A new PC is then provisioned from the cloud,
+   **not** from a copy of the store PC's database. A copy would carry vouchers and ledgers that
+   then go stale on that PC.
+4. **Ledger guard:** parties replicate in step 1, so party balances must be hidden on a PC that
+   doesn't hold the vouchers (docs/38 §3). This ships with the slice.
+5. **A record that waits is never silent (owner decision, 2026-10-25), built before the slice goes
+   live.** A parked revision still waits indefinitely, because dropping it would lose it. But:
+   - **Age tiers:** under an hour is normal. Over an hour is stuck, a warning. Over a day is
+     stale, which stays up until it's dismissed.
+   - **In words:** each parked row names what is waiting and what it waits for.
+   - **On the stock screen, row by row:** every material whose record or stock is incomplete
+     carries its own mark, so someone checking one material knows whether *that row* can be
+     trusted. A banner alone isn't enough.
+   - **Reported to the cloud:** each heartbeat carries the stuck count and the oldest age, so one
+     query shows which PCs are stuck, since when and on what. Nobody opens a Health page on a
+     reader.
+   - **Fixable at the source:** the holder sees its unsent and unstamped marks and dead letters,
+     and can send a record again. The builder sends prerequisites first.
+   - **Superseded waiters remove themselves** once a newer revision has applied.
+6. **Live test,** with a third, **empty** instance as the boss's PC. It must reach the same stock
+   as the holder from the cloud alone.
+
+**Not in the slice, and what that means:**
+- **Packet movements (`raw_material_qr_events`) don't travel yet.** Stock numbers are right, but a
+  packet lookup on the boss's PC shows a packet as generated even after it's received or issued.
+- **The W.5 history rewrites aren't replicated yet:** unit correction, item removal and run
+  erase. Each would leave the boss's PC disagreeing until it's handled. They're rare operations,
+  and they're the next work after the slice.
+- **Dana issues follow W.6, as decided.** The reader applies the event without the machine-program
+  link, which it can't hold yet, keeps the program id alongside the event, and restores the link
+  when programs replicate.
+
 **As built — leased records, cloud migration 013 (applied to test and verified 2026-10-25, docs/36 §6a.2).**
 
 - **One generic store, not a mirror per table.** `leased_records` holds one row per (type, id):
