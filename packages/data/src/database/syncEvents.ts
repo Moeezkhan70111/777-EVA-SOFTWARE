@@ -60,6 +60,18 @@ export const SYNC_AGGREGATE = {
    * events (docs/37 Class A, "the one trap in this class").
    */
   RAW_MATERIAL_QR: "RAW_MATERIAL_QR",
+  // ── Master data: leased records, replaced whole by revision (cloud migration 013) ──
+  // Each is one record and everything that belongs to it: a material with its field values and
+  // unit steps, a category with its fields and their options, a unit with the conversions from it,
+  // a ladder preset with its steps. masterCapture.ts maps every master table to one of these.
+  PARTY_GROUP: "PARTY_GROUP",
+  PARTY: "PARTY",
+  INVENTORY_UNIT: "INVENTORY_UNIT",
+  UNIT_LADDER_PRESET: "UNIT_LADDER_PRESET",
+  INVENTORY_CATEGORY: "INVENTORY_CATEGORY",
+  INVENTORY_ITEM: "INVENTORY_ITEM",
+  WORK_SECTION: "WORK_SECTION",
+  MACHINE: "MACHINE",
 } as const;
 
 export type SyncAggregateType = (typeof SYNC_AGGREGATE)[keyof typeof SYNC_AGGREGATE];
@@ -78,6 +90,14 @@ export { LEASE_DOMAIN, type LeaseDomain };
 export const LEASED_AGGREGATE_DOMAIN: Readonly<Partial<Record<SyncAggregateType, LeaseDomain>>> = {
   [SYNC_AGGREGATE.RAW_MATERIAL_QR_BATCH]: LEASE_DOMAIN.RAW_MATERIAL_STORE,
   [SYNC_AGGREGATE.RAW_MATERIAL_QR]: LEASE_DOMAIN.RAW_MATERIAL_STORE,
+  [SYNC_AGGREGATE.PARTY_GROUP]: LEASE_DOMAIN.MASTER_DATA,
+  [SYNC_AGGREGATE.PARTY]: LEASE_DOMAIN.MASTER_DATA,
+  [SYNC_AGGREGATE.INVENTORY_UNIT]: LEASE_DOMAIN.MASTER_DATA,
+  [SYNC_AGGREGATE.UNIT_LADDER_PRESET]: LEASE_DOMAIN.MASTER_DATA,
+  [SYNC_AGGREGATE.INVENTORY_CATEGORY]: LEASE_DOMAIN.MASTER_DATA,
+  [SYNC_AGGREGATE.INVENTORY_ITEM]: LEASE_DOMAIN.MASTER_DATA,
+  [SYNC_AGGREGATE.WORK_SECTION]: LEASE_DOMAIN.MASTER_DATA,
+  [SYNC_AGGREGATE.MACHINE]: LEASE_DOMAIN.MASTER_DATA,
 };
 
 /** The lease an event type is written under, or null when it is not leased. */

@@ -6,6 +6,8 @@ import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import {
   LEASE_DOMAIN,
+  LEASED_AGGREGATE_DOMAIN,
+  MASTER_CAPTURE,
   SYNC_AGGREGATE,
   qrMasterDedupeKey,
   productionProducedDedupeKey,
@@ -1724,6 +1726,13 @@ test("013: every record type is a log type, unscoped, under a lease this compute
     assert.ok((Object.values(LEASE_DOMAIN) as string[]).includes(domain), `${type}'s domain ${domain} is a lease domain`);
   }
   assert.ok([...types.values()].every((domain) => domain === LEASE_DOMAIN.MASTER_DATA), "Milestone 1 records are all master data");
+  // This computer captures exactly these records, each under the same lease the cloud checks.
+  const local = Object.fromEntries(
+    Object.entries(LEASED_AGGREGATE_DOMAIN).filter(([, domain]) => domain === LEASE_DOMAIN.MASTER_DATA)
+  );
+  assert.deepEqual(local, Object.fromEntries(types));
+  const captured = new Set(MASTER_CAPTURE.map((capture) => capture.record as string));
+  assert.deepEqual([...captured].sort(), [...types.keys()].sort(), "every cloud record type is captured here, and nothing else");
 });
 
 test("013: the push proves the device, then the record type's own lease, before it writes", () => {

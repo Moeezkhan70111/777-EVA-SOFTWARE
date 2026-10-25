@@ -3,6 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import { dropCaptureTriggers, installCaptureTriggers } from "./database/masterCapture.js";
 import type {
   DuplicateChecker,
   OutboxRepository,
@@ -114,6 +115,16 @@ export type {
   SyncQueueHandle,
   WithdrawOutcome,
 } from "./database/syncEvents.js";
+export {
+  MASTER_CAPTURE,
+  CAPTURE_TRIGGER_PREFIX,
+  captureTriggerName,
+  captureTriggerSql,
+  installCaptureTriggers,
+  dropCaptureTriggers,
+  withCaptureSuppressed,
+} from "./database/masterCapture.js";
+export type { CaptureHandle, MasterTableCapture } from "./database/masterCapture.js";
 export {
   REPLICATION_EXCLUSIONS,
   REPLICATION_EXCLUDED_TABLES,
@@ -329,6 +340,11 @@ export class SqliteDatabase
 
     this.ensureSchemaCompatibility();
     this.ensureDefaultRoles();
+
+    // LAST, after every migration and every startup fix, so none of them counts as a change to
+    // master data. Replaces the capture triggers with the current definitions -- and restores any a
+    // table-rebuild migration dropped along with its table (database/masterCapture.ts).
+    installCaptureTriggers(this.db);
   }
 
   /** Where the backups for this database live. One derivation, shared with seedDefaultSettings. */
@@ -680,6 +696,10 @@ export class SqliteDatabase
     if (pending.length > 0) {
       this.db.exec("PRAGMA foreign_keys = OFF;");
       this.db.exec("BEGIN IMMEDIATE TRANSACTION");
+      // No migration may fire the master-data capture triggers, or trip over one that names a table
+      // it is rebuilding. Dropped inside this transaction, so a failed run puts them back. They are
+      // installed again at the end of the constructor.
+      dropCaptureTriggers(this.db);
     }
     try {
       for (const file of pending) {

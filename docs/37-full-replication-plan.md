@@ -241,6 +241,55 @@ keeps its own accounts, as before.
   then the new holder is granted, and the takeover records the same barrier: the old holder's
   last write. Edit buttons on the master-data screens are not yet disabled on a reader. The
   notice explains, and the gate refuses the write itself.
+- **Proven live, 2026-10-25,** on test, with two dev instances (`dev-gate-holder`,
+  `dev-gate-reader`, data folders `C:\erp-gate-*`):
+  - With no grant, both were read-only.
+  - After the grant, the holder could write, and the reader was locked, naming the holder.
+  - A 10-label run reached the cloud 2.7 s after it was made. It was sent by a save (trigger
+    `SAVE`), stamped with epoch 1, and accepted first time.
+  - The reader applied the run and all ten packets with `replicated_at` set and nothing parked,
+    and its packet lookup showed them.
+  - The test found screens swallowing refused writes, fixed centrally (`desktopApi()` reports
+    every lease refusal).
+
+**As built — stage 4a, capturing master-data changes (local migration 094, 2026-10-25).**
+Owner decision, 2026-10-25: the database marks what changed (triggers), rather than each write
+path remembering, for the same reason the refused-write fix had to be central.
+
+- **One map, `MASTER_CAPTURE` (`masterCapture.ts`):** 14 master tables, each mapped to one of the
+  eight records. Children mark their parent: a material's values and unit steps mark the
+  material, a category's fields and options mark the category, a unit's conversions mark the unit,
+  and a preset's steps mark the preset. Every insert, update and delete marks the record in
+  `sync_dirty_records`, in the same transaction as the write, with the master-data lease epoch held
+  at that moment.
+- **Bulk operations:** a mark is one row per record. Importing 400 materials (item, value and unit
+  step rows) is 400 marks, not 1,200 rows. Fifty edits to one material before the next pass are
+  one mark. The builder sends one revision per changed record, which is right and well within a
+  pass's batches.
+- **Migrations:** the triggers are generated from the map, not written in a migration, because the
+  runner splits on semicolons and a trigger body needs them.
+  - They're dropped at the start of every migration run, inside its one transaction, so no
+    migration fires them or trips over one naming a table it is rebuilding.
+  - They're installed again at the end of every start, which also repairs a rebuild migration that
+    dropped a table's triggers with the table.
+  - Proven by a test that runs a bulk `UPDATE` and a table rebuild as a migration: nothing is
+    marked, and all three triggers are back.
+- **Receiving and the backfill:** `withCaptureSuppressed` turns marking off for writes that aren't
+  this computer's own changes. It runs inside those writes' transaction and refuses to run
+  outside one, so a crash rolls the switch back and it can never be left off.
+- **Coverage test:** every table in a fully migrated database is either in `MASTER_CAPTURE` or
+  listed as not master data, with a reason. That list covers 91 tables in 11 groups: carton flows,
+  products (not in Milestone 1), store events, documents, approvals, people, workspace, and
+  per-computer state. A new table in neither list fails the suite, and so does a master table
+  missing any of its three triggers. The cloud schema test checks that the eight records match
+  013's seeds exactly.
+- **Next, stage 4b:**
+  - the builder: snapshot each marked record whole, give it its next revision, and queue it, with
+    the local outbox widened for the eight types;
+  - the transport through `push_leased_record`;
+  - the receiving contracts: whole-record replace with capture suppressed, parking for a missing
+    record a revision refers to, a refusal for a name clash, and a deletion that waits while
+    something still uses the record.
 
 **As built — leased records, cloud migration 013 (applied to test and verified 2026-10-25, docs/36 §6a.2).**
 
