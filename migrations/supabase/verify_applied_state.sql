@@ -2,11 +2,20 @@
 --
 -- Not a migration: it changes nothing, has no number, and must never be applied as one. Run it
 -- whole in the Supabase SQL editor (or through the MCP execute_sql tool) against any project that
--- has had schema.sql and 002-009 applied. One row per check. Every row must say ok = true.
+-- has had schema.sql and 002-012 applied. One row per check. Every row must say ok = true.
 --
 -- Updated for 009 (2026-10-25): the log's types are rows in sync_aggregate_types and the scope rule
 -- is a trigger, so checks 2, 3, 17 and 20-21 describe that. A project still at 008 fails exactly
 -- those, and nothing else.
+--
+-- Updated for 011 (2026-10-25): three lease tables (check 3 goes from 23 to 26), and checks 22-26
+-- describe the write lease. When 011 was written, a project still at 010 failed exactly 3, 22-24
+-- and 26. Check 25 passes there trivially, since there is nothing yet for anon to call (confirmed
+-- on test, 2026-10-25).
+--
+-- Updated for 012 (2026-10-25): two raw-material mirrors (check 3 goes to 28), two more push RPCs
+-- (11-12 count eight), and check 27 for their log triggers. A project at 011 fails exactly 3, 11
+-- and 27. Check 12 passes there trivially, as 25 does above.
 --
 -- It turns docs/36 section 6a's verified state into something that can be re-run instead of
 -- re-read. Run it after setting up a project, and again after ANY change to its schema or grants.
@@ -19,7 +28,8 @@
 with
 expected_rpcs(name) as (
   values ('claim_device'), ('claim_is_current'), ('heartbeat_device'),
-         ('push_qr_master'), ('push_production_produced'), ('push_product_variant')
+         ('push_qr_master'), ('push_production_produced'), ('push_product_variant'),
+         ('push_raw_material_qr_batch'), ('push_raw_material_qr')
 ),
 client_table_grants as (
   -- Direct table-level grants to the two client roles and to PUBLIC (grantee 0).
@@ -46,7 +56,7 @@ checks(n, check_name, expected, actual) as (
     (select count(*)::text from pg_constraint
      where conname = 'sync_event_log_factory_scope' and conrelid = to_regclass('public.sync_event_log'))
 
-  union all select 3, 'tables in public', '23',
+  union all select 3, 'tables in public', '28',
     (select count(*)::text from pg_class c join pg_namespace n on n.oid = c.relnamespace
      where n.nspname = 'public' and c.relkind = 'r')
 
@@ -85,11 +95,11 @@ checks(n, check_name, expected, actual) as (
        and a.grantee in ('anon'::regrole, 'authenticated'::regrole))
 
   -- 11-12. THE WRITE PATH. The claim-checking RPCs are the only way in, and anon cannot call them.
-  union all select 11, 'the six RPCs exist', '6',
+  union all select 11, 'the eight RPCs exist', '8',
     (select count(distinct p.proname)::text from pg_proc p
      where p.pronamespace = 'public'::regnamespace and p.proname in (select name from expected_rpcs))
 
-  union all select 12, 'the six RPCs: executable by anon', '0',
+  union all select 12, 'the eight RPCs: executable by anon', '0',
     (select count(*)::text from pg_proc p
      where p.pronamespace = 'public'::regnamespace and p.proname in (select name from expected_rpcs)
        and has_function_privilege('anon', p.oid, 'EXECUTE'))
@@ -148,6 +158,46 @@ checks(n, check_name, expected, actual) as (
      from pg_class c cross join lateral aclexplode(c.relacl) a
      where c.oid = to_regclass('public.sync_aggregate_types')
        and a.grantee in ('anon'::regrole, 'authenticated'::regrole, 0))
+
+  -- 22-26. THE WRITE LEASE (011): the six domains, a device can read and release but never
+  --        grant, and the history of who held what cannot be rewritten. The lease tables' grants
+  --        are already covered by 5-7, which look at every table in public.
+  union all select 22, 'lease_domains: the six single-writer domains',
+    'ACCOUNTS,APPROVALS,MACHINE_PROGRAMS,MASTER_DATA,RAW_MATERIAL_STORE,SALES_DISPATCH',
+    case
+      when to_regclass('public.lease_domains') is null then 'table missing'
+      else coalesce((xpath('/row/v/text()', query_to_xml(
+        'select string_agg(domain, '','' order by domain collate "C") as v from public.lease_domains',
+        false, true, '')))[1]::text, '')
+    end
+
+  union all select 23, 'the five lease functions exist', '5',
+    (select count(distinct p.proname)::text from pg_proc p
+     where p.pronamespace = 'public'::regnamespace
+       and p.proname in ('last_seq_written_by', 'lease_holds', 'current_leases', 'release_domain_lease', 'grant_domain_lease'))
+
+  union all select 24, 'lease functions executable by authenticated', 'current_leases,release_domain_lease',
+    coalesce((select string_agg(p.proname, ',' order by p.proname) from pg_proc p
+              where p.pronamespace = 'public'::regnamespace
+                and p.proname in ('last_seq_written_by', 'lease_holds', 'current_leases', 'release_domain_lease', 'grant_domain_lease')
+                and has_function_privilege('authenticated', p.oid, 'EXECUTE')), '')
+
+  union all select 25, 'lease functions executable by anon', '0',
+    (select count(*)::text from pg_proc p
+     where p.pronamespace = 'public'::regnamespace
+       and p.proname in ('last_seq_written_by', 'lease_holds', 'current_leases', 'release_domain_lease',
+                         'grant_domain_lease', 'refuse_lease_log_change')
+       and has_function_privilege('anon', p.oid, 'EXECUTE'))
+
+  union all select 26, 'domain_lease_events: append-only trigger present', '1',
+    (select count(*)::text from pg_trigger
+     where not tgisinternal and tgname = 'trg_domain_lease_events_immutable')
+
+  -- 27. RAW-MATERIAL IDENTITY (012): label runs and packets reach the log through their triggers.
+  --     The mirrors' grants are covered by 5-7 and their RLS by 4.
+  union all select 27, 'raw-material log triggers present', '2',
+    (select count(*)::text from pg_trigger
+     where not tgisinternal and tgname in ('trg_raw_material_qr_batches_log', 'trg_raw_material_qrs_log'))
 )
 select n, check_name, expected, actual, actual = expected as ok
 from checks

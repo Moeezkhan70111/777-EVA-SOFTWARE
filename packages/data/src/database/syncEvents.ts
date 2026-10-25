@@ -64,6 +64,26 @@ export const SYNC_AGGREGATE = {
 
 export type SyncAggregateType = (typeof SYNC_AGGREGATE)[keyof typeof SYNC_AGGREGATE];
 
+/**
+ * The domains with a single writer (docs/37 section W): one computer holds each one's write lease,
+ * every other computer reads it. Carton and QR flows are deliberately absent -- they stay
+ * multi-writer, because their identities are deduplicated by construction.
+ *
+ * Must match the rows cloud migration 011 seeds into lease_domains. cloudSchema.test.ts checks it.
+ */
+export const LEASE_DOMAIN = {
+  RAW_MATERIAL_STORE: "RAW_MATERIAL_STORE",
+  MASTER_DATA: "MASTER_DATA",
+  /** One domain, not two: a bill is locked to its gatepass. */
+  SALES_DISPATCH: "SALES_DISPATCH",
+  /** Also says where the vouchers are, so party ledger balances show only there. */
+  ACCOUNTS: "ACCOUNTS",
+  MACHINE_PROGRAMS: "MACHINE_PROGRAMS",
+  APPROVALS: "APPROVALS",
+} as const;
+
+export type LeaseDomain = (typeof LEASE_DOMAIN)[keyof typeof LEASE_DOMAIN];
+
 /** One identity per QR, for all time. */
 export const qrMasterDedupeKey = (qrId: string): string => `${SYNC_AGGREGATE.QR_MASTER}:${qrId}`;
 /** One identity per variant, for all time. */

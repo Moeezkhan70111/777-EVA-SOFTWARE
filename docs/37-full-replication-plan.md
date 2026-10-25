@@ -171,6 +171,28 @@ keeps its own accounts, as before.
 - **The holder may write offline.** The lease is checked when the writes are pushed, not when they
   are made.
 
+**As built — cloud migration 011 (written 2026-10-25, not yet applied to test).**
+
+- `domain_leases` has one row per domain: holder `device_id`, a label recording who it was granted
+  to, and an `epoch` that bumps on every grant, release and takeover. `domain_lease_events` is the
+  append-only record of all three.
+- **No second token.** The lease names a device, and 006's claim proves which device is calling.
+  A copied enrolment cannot borrow a lease, because it cannot hold the claim.
+- **Every leased event carries the lease epoch it was written under.** A push RPC calls
+  `lease_holds(domain, device, lease_epoch)` after `claim_is_current`, in the same transaction,
+  under a row lock. The device alone is not enough. If a lease went A → B → A, A's unpushed writes
+  from its first tenure would land on top of B's. With the epoch they are refused and park in A's
+  dead letters (W.3).
+- **Granting is owner-only:** `grant_domain_lease` is executable by no client role. Until U.2 the
+  cloud knows machines, not people, so it cannot tell an administrator from a storekeeper. Leases
+  are granted from the SQL editor, or by the agent through MCP on the owner's word, just as
+  enrolment is. A device can read leases (`current_leases`) and release its own
+  (`release_domain_lease`), never take one.
+- **Catch-up barrier.** Release and takeover record `barrier_seq`, the last log position the
+  previous holder wrote. The new holder's computer refuses its own writes until its pull has passed
+  that position. The cloud records the barrier, and the client enforces it, because only the
+  client knows how far it has read.
+
 ### W.3 Handover — the one place this model can lose work
 
 | Path | Rule |

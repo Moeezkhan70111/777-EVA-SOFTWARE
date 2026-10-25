@@ -87,6 +87,7 @@ export {
   readProductVariantPayload,
   readProductionProducedPayload,
   RAW_MATERIAL_QR_OPENING_STATE,
+  LEASE_DOMAIN,
   rawMaterialQrBatchDedupeKey,
   rawMaterialQrDedupeKey,
   readRawMaterialQrBatchPayload,
@@ -102,6 +103,7 @@ export {
 } from "./database/syncEvents.js";
 export type {
   SyncAggregateType,
+  LeaseDomain,
   QrMasterPayload,
   ProductVariantPayload,
   ProductionProducedPayload,

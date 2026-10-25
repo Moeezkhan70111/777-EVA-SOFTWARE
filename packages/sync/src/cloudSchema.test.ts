@@ -4,7 +4,16 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { SYNC_AGGREGATE, qrMasterDedupeKey, productionProducedDedupeKey } from "@erp/data";
+import {
+  LEASE_DOMAIN,
+  SYNC_AGGREGATE,
+  qrMasterDedupeKey,
+  productionProducedDedupeKey,
+  rawMaterialQrBatchDedupeKey,
+  rawMaterialQrDedupeKey,
+  readRawMaterialQrBatchPayload,
+  readRawMaterialQrPayload,
+} from "@erp/data";
 
 // IS THE CLOUD SCHEMA ABLE TO HOLD WHAT THE LOCAL ONE CONTAINS?
 //
@@ -1491,4 +1500,202 @@ test("010: MAINTAIN is revoked from the client roles, and new tables stop inheri
   const sql = sqlOnly(CLOSE_MAINTAIN);
   assert.match(sql, /revoke maintain on all tables in schema public from anon, authenticated/);
   assert.match(sql, /alter default privileges for role postgres in schema public\s+revoke truncate, references, trigger, maintain on tables from anon, authenticated/);
+});
+
+// ─── 011: the write lease ───────────────────────────────────────────────────
+
+const LEASES = read("migrations/supabase/011_domain_leases.up.sql");
+const LEASES_DOWN = read("migrations/supabase/011_domain_leases.down.sql");
+const LEASE_FUNCTIONS = ["last_seq_written_by", "lease_holds", "current_leases", "release_domain_lease", "grant_domain_lease"];
+
+/** One function's whole declaration, header to closing `$$;`, comments stripped. */
+const declarationOf = (sql: string, name: string): string => {
+  const found = new RegExp(String.raw`create or replace function public\.${name}\([\s\S]*?\n\$\$;`).exec(sqlOnly(sql));
+  assert.ok(found, `${name} must be declared, schema-qualified`);
+  return found?.[0] ?? "";
+};
+
+test("011: the cloud's lease domains are exactly this computer's", () => {
+  const seeded = [...LEASES.matchAll(/^\s+\('([A-Z_]+)', '/gm)].map((match) => match[1]);
+  assert.deepEqual([...seeded].sort(), Object.values(LEASE_DOMAIN).sort());
+  // Carton flows stay multi-writer (owner, 2026-10-23): no carton type may ever gain a lease.
+  for (const carton of [SYNC_AGGREGATE.QR_MASTER, SYNC_AGGREGATE.PRODUCTION_PRODUCED]) {
+    assert.ok(!seeded.includes(carton), `${carton} must stay unleased`);
+  }
+});
+
+test("011: every lease function is security definer with an empty search path", () => {
+  for (const fn of LEASE_FUNCTIONS) {
+    const declaration = declarationOf(LEASES, fn);
+    assert.match(declaration, /security definer/, `${fn} must be security definer`);
+    assert.match(declaration, /set search_path = ''/, `${fn} must pin an empty search path`);
+    assert.doesNotMatch(declaration, /(from|into|join|update)\s+(?!public\.)(domain_leases|lease_domains|domain_lease_events|sync_event_log|device_accounts)\b/,
+      `${fn} must name every table by its full name`);
+  }
+});
+
+test("011: the lease check locks the row it reads, so it must be volatile", () => {
+  // A grant or release must not slip between a push's check and its write. PostgreSQL refuses a
+  // row lock inside a stable function, so stable here fails at the first push, not at apply time.
+  const holds = declarationOf(LEASES, "lease_holds");
+  assert.match(holds, /for share/);
+  assert.match(holds, /\bvolatile\b/);
+  assert.doesNotMatch(holds, /\bstable\b/);
+  // The device alone is not enough: a lease that went A to B and back to A would accept A's
+  // unpushed first-tenure writes on top of B's. The write's own lease epoch must still be current.
+  assert.match(holds, /lease\.holder_device_id = p_device_id/);
+  assert.match(holds, /lease\.epoch = p_lease_epoch/);
+});
+
+test("011: a device may read leases and release its own, and never grant one", () => {
+  const sql = sqlOnly(LEASES);
+  for (const fn of LEASE_FUNCTIONS) {
+    assert.match(sql, new RegExp(String.raw`revoke all on function public\.${fn}\([^)]*\) from public, anon, authenticated;`),
+      `${fn} must be taken from every client role first`);
+  }
+  const granted = [...sql.matchAll(/grant execute on function public\.([a-z_]+)\(/g)].map((match) => match[1]);
+  assert.deepEqual(granted.sort(), ["current_leases", "release_domain_lease"]);
+  assert.doesNotMatch(sql, /to anon/, "nothing is granted to anon");
+  // Releasing proves the device first, with the same claim every push uses.
+  const release = declarationOf(LEASES, "release_domain_lease");
+  assert.ok(release.indexOf("public.claim_is_current(p_epoch, p_holder)") < release.indexOf("update public.domain_leases"));
+  assert.match(release, /for update/);
+  // Reading names who holds what: enrolled devices only.
+  assert.match(declarationOf(LEASES, "current_leases"), /if not public\.is_enrolled_device\(\) then\s+return;/);
+});
+
+test("011: the tables are closed to clients and the lease history cannot be rewritten", () => {
+  const sql = sqlOnly(LEASES);
+  for (const table of ["lease_domains", "domain_leases", "domain_lease_events"]) {
+    assert.match(sql, new RegExp(String.raw`alter table public\.${table} enable row level security`));
+    assert.match(sql, new RegExp(String.raw`revoke all on table public\.${table} from public, anon, authenticated`));
+  }
+  assert.match(sql, /revoke all on sequence public\.domain_lease_events_seq_seq from public, anon, authenticated/);
+  assert.match(sql, /before update or delete on public\.domain_lease_events/);
+  // A grant may only name a device that is still enrolled and bound.
+  assert.match(declarationOf(LEASES, "grant_domain_lease"), /is_active and revoked_at is null and workstation_id is not null/);
+  // A takeover is recorded as one, with the barrier where the old holder stopped writing.
+  assert.match(declarationOf(LEASES, "grant_domain_lease"), /'TAKEN_OVER'/);
+});
+
+test("011: one transaction each way, and the rollback drops the functions before the tables", () => {
+  for (const sql of [sqlOnly(LEASES), sqlOnly(LEASES_DOWN)]) {
+    assert.ok(sql.trim().startsWith("begin;") && sql.includes("commit;"));
+  }
+  const down = sqlOnly(LEASES_DOWN);
+  assert.ok(down.indexOf("drop function if exists public.grant_domain_lease") < down.indexOf("drop table if exists public.domain_leases"));
+  assert.match(LEASES_DOWN, /WHAT THIS COSTS/);
+});
+
+// ─── 012: raw-material label runs and packets ───────────────────────────────
+
+const RM_IDENTITY = read("migrations/supabase/012_raw_material_identity.up.sql");
+const RM_IDENTITY_DOWN = read("migrations/supabase/012_raw_material_identity.down.sql");
+const RM_PUSHES = ["push_raw_material_qr_batch", "push_raw_material_qr"] as const;
+
+/**
+ * The payload a log trigger would write for `row`, built from the trigger's own
+ * jsonb_build_object pairs. A key the trigger names, mapped to the column it reads.
+ */
+const payloadFromTrigger = (trigger: string, row: Record<string, unknown>): Record<string, unknown> => {
+  const body = functionBody(RM_IDENTITY, trigger);
+  const built = body.slice(body.indexOf("jsonb_build_object("));
+  const payload: Record<string, unknown> = {};
+  for (const [, key, column] of built.matchAll(/'([A-Za-z]+)', new\.([a-z_]+)/g)) {
+    assert.ok(key !== undefined && column !== undefined);
+    assert.ok(column in row, `${trigger} reads new.${column}, which the sample row does not have`);
+    payload[key] = row[column];
+  }
+  return payload;
+};
+
+test("012: the cloud log's payloads are ones the receiving computer accepts, field for field", () => {
+  // Column values as PostgreSQL would hand them to jsonb_build_object: integers and double
+  // precision as JSON numbers, text as strings, null as null.
+  const run = {
+    id: "rmb-1", party_id: "party-1", item_id: "item-1", start_sequence: 11, end_sequence: 13, quantity: 3,
+    created_at: "2026-10-25T05:00:00.000Z", created_by: "user-1", requested_by: null,
+  };
+  assert.deepEqual(readRawMaterialQrBatchPayload(payloadFromTrigger("log_raw_material_qr_batch_insert", run)), {
+    batchId: "rmb-1", partyId: "party-1", itemId: "item-1", startSequence: 11, endSequence: 13, quantity: 3,
+    createdAt: "2026-10-25T05:00:00.000Z", createdBy: "user-1", requestedBy: null,
+  });
+
+  const packet = {
+    id: "rmq-12", batch_id: "rmb-1", party_id: "party-1", item_id: "item-1", sequence: 12,
+    packing_quantity: 2.5, packing_unit_id: "unit-kg", created_at: "2026-10-25T05:00:00.000Z",
+  };
+  assert.deepEqual(readRawMaterialQrPayload(payloadFromTrigger("log_raw_material_qr_insert", packet)), {
+    qrId: "rmq-12", batchId: "rmb-1", partyId: "party-1", itemId: "item-1", sequence: 12,
+    packingQuantity: 2.5, packingUnitId: "unit-kg", createdAt: "2026-10-25T05:00:00.000Z",
+  });
+  // A packet printed before packing existed travels with both halves null, and is still accepted.
+  const oldPacket = { ...packet, packing_quantity: null, packing_unit_id: null };
+  assert.notEqual(readRawMaterialQrPayload(payloadFromTrigger("log_raw_material_qr_insert", oldPacket)), null);
+});
+
+test("012: the cloud builds the same dedupe keys the local outbox builds, unscoped as 009 seeded", () => {
+  assert.equal(rawMaterialQrBatchDedupeKey("rmb-1"), "RAW_MATERIAL_QR_BATCH:rmb-1");
+  assert.equal(rawMaterialQrDedupeKey("rmq-12"), "RAW_MATERIAL_QR:rmq-12");
+  assert.ok(RM_IDENTITY.includes("'RAW_MATERIAL_QR_BATCH:' || new.id"));
+  assert.ok(RM_IDENTITY.includes("'RAW_MATERIAL_QR:' || new.id"));
+  // factory_id null, which the 009 scope trigger accepts only for an unscoped type.
+  const seeds = seededTypes();
+  assert.equal(seeds.get(SYNC_AGGREGATE.RAW_MATERIAL_QR_BATCH), false);
+  assert.equal(seeds.get(SYNC_AGGREGATE.RAW_MATERIAL_QR), false);
+  for (const trigger of ["log_raw_material_qr_batch_insert", "log_raw_material_qr_insert"]) {
+    const body = functionBody(RM_IDENTITY, trigger);
+    assert.ok(body.indexOf("pg_advisory_xact_lock(777, 1)") < body.indexOf("insert into public.sync_event_log"),
+      `${trigger} must take the log lock before it takes a position`);
+    assert.match(body, /on conflict \(dedupe_key\) do nothing/);
+  }
+});
+
+test("012: every push proves the device, then the store lease, before it writes anything", () => {
+  for (const push of RM_PUSHES) {
+    const body = functionBody(RM_IDENTITY, push);
+    const claim = body.indexOf("public.claim_is_current(p_epoch, p_holder)");
+    const lease = body.indexOf(`public.lease_holds('${LEASE_DOMAIN.RAW_MATERIAL_STORE}', account.device_id, (item->>'lease_epoch')::bigint)`);
+    const write = body.indexOf("insert into public.");
+    assert.ok(claim >= 0 && lease > claim && write > lease, `${push}: claim, then lease, then write`);
+    // The origin is the proven device, never a value the client sends.
+    assert.ok(!body.includes("item->>'origin_device_id'"), `${push} must not take the origin from the client`);
+    // Nothing in the loop raises: one bad row must not stall the rows beside it.
+    assert.ok(!body.slice(body.indexOf("for item in")).includes("raise exception"), `${push} must refuse per row`);
+  }
+});
+
+test("012: the mirrors are closed to every client, and only the two pushes are callable", () => {
+  const sql = sqlOnly(RM_IDENTITY);
+  for (const table of ["raw_material_qr_batches", "raw_material_qrs"]) {
+    assert.match(sql, new RegExp(String.raw`alter table public\.${table} enable row level security`));
+    assert.match(sql, new RegExp(String.raw`revoke all on table public\.${table} from public, anon, authenticated`));
+  }
+  assert.doesNotMatch(sql, /create policy/, "computers read the log, not the mirrors");
+  assert.doesNotMatch(sql, /grant (select|insert|update|delete)/);
+  const granted = [...sql.matchAll(/grant execute on function public\.([a-z_]+)\(/g)].map((match) => match[1]);
+  assert.deepEqual(granted.sort(), [...RM_PUSHES].sort());
+  // The revokes follow the triggers: EXECUTE is checked when a trigger is created.
+  assert.ok(sql.lastIndexOf("create trigger") < sql.indexOf("revoke all on function"));
+});
+
+test("012: the cloud relays runs without judging master data it does not hold", () => {
+  // Owner decision "wait for it": a run naming a supplier the cloud has not seen is relayed, and the
+  // receiving computer parks it until the supplier arrives. A foreign key here would refuse it.
+  assert.doesNotMatch(sqlOnly(RM_IDENTITY), /references public\.(parties|inventory_items|inventory_units)/);
+  // What the cloud does judge is the event itself.
+  for (const reason of ["RUN_DOES_NOT_ADD_UP", "PACKET_OUTSIDE_ITS_RUN", "SERIAL_CLASH", "IDENTITY_CONFLICT", "NOT_LEASE_HOLDER"]) {
+    assert.ok(RM_IDENTITY.includes(`'${reason}'`), `refuses ${reason}`);
+  }
+});
+
+test("012: one transaction each way, and the rollback leaves the log alone", () => {
+  for (const sql of [sqlOnly(RM_IDENTITY), sqlOnly(RM_IDENTITY_DOWN)]) {
+    assert.ok(sql.trim().startsWith("begin;") && sql.includes("commit;"));
+  }
+  const down = sqlOnly(RM_IDENTITY_DOWN);
+  assert.ok(down.indexOf("drop function if exists public.push_raw_material_qr(") < down.indexOf("drop table if exists public.raw_material_qrs"));
+  assert.ok(down.indexOf("drop table if exists public.raw_material_qrs;") < down.indexOf("drop table if exists public.raw_material_qr_batches;"));
+  assert.doesNotMatch(down, /sync_event_log/, "the log is append-only and stays");
+  assert.match(RM_IDENTITY_DOWN, /WHAT THIS COSTS/);
 });
