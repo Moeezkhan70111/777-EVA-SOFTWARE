@@ -225,7 +225,7 @@ keeps its own accounts, as before.
 - **Not yet built (stage 3b):** the read-only screens on a reader, the lookup-only packet scan,
   and a release button for handover.
 
-**As built — leased records, cloud migration 013 (written 2026-10-25, not yet applied to test).**
+**As built — leased records, cloud migration 013 (applied to test and verified 2026-10-25, docs/36 §6a.2).**
 
 - **One generic store, not a mirror per table.** `leased_records` holds one row per (type, id):
   the holder's whole record as JSON, its revision, and whether it is deleted. A document is one
@@ -246,10 +246,17 @@ keeps its own accounts, as before.
   `UNIT_LADDER_PRESET`, `INVENTORY_CATEGORY`, `INVENTORY_ITEM`, `WORK_SECTION`, `MACHINE`.
   Milestone 2's documents and approvals are leased records too: each one is a row in
   `leased_record_types` naming its domain, not a new migration of this shape.
-- **Open, for the owner, before the sending side (stage 4):** whether money in master data
-  (`inventory_items.cost_price_paisa`, `parties.balance_limit_paisa`) travels to the cloud.
-  Migration 008 keeps product prices out and says docs/37 decided that, but no such decision is
-  recorded here. The cloud side is unaffected either way, since it doesn't read the body.
+- **DECIDED — owner, 2026-10-25: money in master data replicates.**
+  `inventory_items.cost_price_paisa` and `parties.balance_limit_paisa` travel inside their
+  records like every other column. **A leased record replicates whole.** If a field is held back,
+  the other PCs hold incomplete records. When the lease moves to one of those PCs, it edits and
+  writes back records that are missing data it never received, and that silently deletes the
+  data everywhere.
+  **Hiding cost prices from operators is a screen permission, not a replication decision.** If
+  it's wanted, it is built as a permission on the screens that show prices, and the record stays
+  whole underneath.
+  (Migration 008's product variants carry no price for a different reason: that contract is an
+  identity-only, insert-only record, not a whole leased record.)
 
 ### W.3 Handover — the one place this model can lose work
 

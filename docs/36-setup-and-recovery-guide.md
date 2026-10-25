@@ -412,7 +412,19 @@ assumed. **Last checked 2026-10-23.**
 | `010_close_maintain.up.sql` | **YES**, 2026-10-25 | by hand, Supabase SQL editor (owner) |
 | `011_domain_leases.up.sql` | **YES**, 2026-10-25 | by hand, Supabase SQL editor (owner) |
 | `012_raw_material_identity.up.sql` | **YES**, 2026-10-25 | by hand, Supabase SQL editor (owner) |
-| `013_leased_records.up.sql` | **not yet** — written 2026-10-25 | by hand, Supabase SQL editor (owner) |
+| `013_leased_records.up.sql` | **YES**, 2026-10-25 | by hand, Supabase SQL editor (owner) |
+
+**Verified 2026-10-25, after 013:** `verify_applied_state.sql`, all 29 checks `ok`. And
+`check_leased_records.sql` passed all 6 steps, leaving test as it was (no records, lease events,
+temporary devices or log rows; PC2's claim untouched at epoch 33):
+* refused under another domain's lease;
+* a first revision lands, logged as `TYPE:id:revision` with the reader's envelope;
+* the same revision with the same content is DUPLICATE, and with other content REVISION_CONFLICT;
+* a newer revision is UPDATED, and an older one SUPERSEDED with the record unmoved;
+* a deletion is logged with no body;
+* an unknown type, a malformed record, an oversized record and a stale epoch are each refused, on
+  their own row, beside a row that lands;
+* after a takeover, the old holder's next revision is refused.
 
 **Verified 2026-10-25, after 011 and 012:** `verify_applied_state.sql`, all 27 checks `ok`. And
 exercised, not only inspected, by two functional checks that act as a temporary second device and
