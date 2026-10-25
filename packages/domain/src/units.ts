@@ -54,10 +54,13 @@ export const OPERATIONAL_DAY_START_HOUR = 6;
 export const OPERATIONAL_DAY_START_TIME = `${String(OPERATIONAL_DAY_START_HOUR).padStart(2, "0")}:00:00.000`;
 
 /**
- * Local-time boundaries of the operational day that contains the given calendar date
- * (`YYYY-MM-DD`). The upper bound is exclusive. Strings stay in the "local timestamp
- * without zone" space that `production_events.event_ts_local` uses, so callers can
- * compare them directly without any UTC conversion.
+ * The operational day that starts on the given calendar date (`YYYY-MM-DD`), AS SHOWN ON THE CLOCK:
+ * `2026-08-21T06:00:00.000` to `2026-08-22T06:00:00.000`, zone-less. The upper bound is exclusive.
+ *
+ * FOR DISPLAY ONLY ("21/08 06:00 → 22/08 06:00"). Do not compare these against stored timestamps.
+ * This comment used to say production_events.event_ts_local holds zone-less local times. It does
+ * not, and never has: every event is stamped with a UTC instant (`…Z`). Compared as text, these
+ * bounds shift the window five hours late. Query with operationalDayUtcBounds (contractorLedger.ts).
  */
 export function operationalDayBounds(dateYmd: string): { from: string; to: string } {
   const day = dateYmd.slice(0, 10);

@@ -2669,13 +2669,16 @@ test("daily production report: 06:00 boundary — events in correct production d
       });
     };
 
-    // Insert one event per boundary case
-    await insertEvent("2026-08-21T05:59:00.000", "000001"); // before 06:00 — NOT in 21/08
-    await insertEvent("2026-08-21T06:00:00.000", "000002"); // exactly 06:00 — IN 21/08
-    await insertEvent("2026-08-21T17:59:00.000", "000003"); // 17:59 — IN 21/08
-    await insertEvent("2026-08-21T18:00:00.000", "000004"); // 18:00 — IN 21/08
-    await insertEvent("2026-08-22T05:59:00.000", "000005"); // 05:59 next day — IN 21/08
-    await insertEvent("2026-08-22T06:00:00.000", "000006"); // exactly 06:00 next day — NOT in 21/08
+    // Insert one event per boundary case, stamped as the application stamps them: a UTC instant.
+    // The times above are Karachi clock times, five hours ahead of these. (This test used to seed
+    // zone-less clock-face strings, a format the application never writes -- which is how it went
+    // on passing while the real report ran 11:00 → 11:00. Fixed 2026-10-25.)
+    await insertEvent("2026-08-21T00:59:00.000Z", "000001"); // 05:59 Karachi — NOT in 21/08
+    await insertEvent("2026-08-21T01:00:00.000Z", "000002"); // 06:00 Karachi — IN 21/08
+    await insertEvent("2026-08-21T12:59:00.000Z", "000003"); // 17:59 Karachi — IN 21/08
+    await insertEvent("2026-08-21T13:00:00.000Z", "000004"); // 18:00 Karachi — IN 21/08
+    await insertEvent("2026-08-22T00:59:00.000Z", "000005"); // 05:59 next day — IN 21/08
+    await insertEvent("2026-08-22T01:00:00.000Z", "000006"); // 06:00 next day — NOT in 21/08
 
     // Query for production date 2026-08-21
     const report = fixture.db.getReport("CUSTOM", "2026-08-21", "2026-08-21");
@@ -2715,21 +2718,23 @@ test("daily production report: single-day CUSTOM query no longer returns zero wh
     // getOrCreateVariant is lookup-only, so register the product via Product Master first.
     fixture.db.createProduct({ article: "ZEROT", size: "8/11", color: "BLUE" });
 
-    // Insert one event during the day shift of 2026-08-21
+    // Insert one event during the day shift of 2026-08-21: 10:30 Karachi, stamped as the application
+    // stamps it, 05:30 UTC. Inside the 06:00-11:00 window the old string comparison put on the
+    // previous day -- so with the application's real format this test catches that bug.
     await fixture.db.runInTransaction(async (tx) => {
       const qrId = "ZEROT_BLUE_8/11_000001";
       const variant = await fixture.db.getOrCreateVariant(
         { qrId, article: "ZEROT", color: "BLUE", size: "8/11", serial: "000001" },
         tx
       );
-      await fixture.db.insertProduced({ qrId, productVariantId: variant.id, createdAt: "2026-08-21T10:30:00.000" }, tx);
+      await fixture.db.insertProduced({ qrId, productVariantId: variant.id, createdAt: "2026-08-21T05:30:00.000Z" }, tx);
       await fixture.db.appendProducedEvent(
         {
           eventId: crypto.randomUUID(),
           qrId,
           productVariantId: variant.id,
           article: "ZEROT", color: "BLUE", size: "8/11", serial: "000001",
-          occurredAt: "2026-08-21T10:30:00.000",
+          occurredAt: "2026-08-21T05:30:00.000Z",
           parserVersion: "v1",
           factoryId: "factory-1", workstationId: "workstation-1", deviceId: "device-1",
         },

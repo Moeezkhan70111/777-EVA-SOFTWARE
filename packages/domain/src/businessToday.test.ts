@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { businessDateOf, businessToday } from "./contractorLedger.js";
+import { businessDateOf, businessToday, operationalDayUtcBounds } from "./contractorLedger.js";
 
 // The regression these pin is specific: Karachi is UTC+5, so for the five hours after local
 // midnight the UTC calendar date is still yesterday. Six places used the UTC date as "today",
@@ -57,4 +57,37 @@ test("the offset comes from the timezone database, not from adding five hours", 
   assert.equal(businessDateOf("2008-06-01T18:30:00.000Z"), "2008-06-02");
   // With no DST in force the same clock time is still the 1st.
   assert.equal(businessDateOf("2026-06-01T18:30:00.000Z"), "2026-06-01");
+});
+
+// ─── The operational day, as UTC instants to query with (2026-10-25) ────────
+
+test("an operational day is 06:00 to 06:00 Karachi, which is 01:00 to 01:00 UTC", () => {
+  assert.deepEqual(operationalDayUtcBounds("2026-10-25"), {
+    from: "2026-10-25T01:00:00.000Z",
+    to: "2026-10-26T01:00:00.000Z",
+  });
+});
+
+test("the window crosses a month end on the business clock, not the computer's", () => {
+  assert.deepEqual(operationalDayUtcBounds("2026-08-31"), {
+    from: "2026-08-31T01:00:00.000Z",
+    to: "2026-09-01T01:00:00.000Z",
+  });
+});
+
+test("the instants sort against stored UTC timestamps exactly as the clock says", () => {
+  const day = operationalDayUtcBounds("2026-10-25");
+  assert.ok(day);
+  // 09:23 Karachi -- the hour the old string comparison put on the previous day.
+  const morning = "2026-10-25T04:23:00.000Z";
+  assert.ok(morning >= day.from && morning < day.to, "a carton made at 09:23 belongs to the 25th's shift");
+  // 05:59 Karachi on the 25th still belongs to the 24th's shift.
+  assert.ok("2026-10-25T00:59:00.000Z" < day.from);
+  // 05:59 the next morning closes this shift, 06:00 opens the next.
+  assert.ok("2026-10-26T00:59:00.000Z" < day.to && "2026-10-26T01:00:00.000Z" >= day.to);
+});
+
+test("a date that is not YYYY-MM-DD has no operational day", () => {
+  assert.equal(operationalDayUtcBounds("25/10/2026"), null);
+  assert.equal(operationalDayUtcBounds(""), null);
 });
