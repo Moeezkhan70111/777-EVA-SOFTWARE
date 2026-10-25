@@ -25,9 +25,10 @@
 // An event this code does not understand must stop visibly in the sender's dead-letter queue, not
 // be written with guessed values.
 
-import type { RegisteredContract } from "./applyContract.js";
+import { ApplyMustWait, type RegisteredContract } from "./applyContract.js";
 import { productionProducedContract, productVariantContract, qrMasterContract } from "./cartonContracts.js";
 import type { SyncEnvelope } from "./contract.js";
+import { LEASED_RECORD_CONTRACTS } from "./leasedRecordContracts.js";
 import { rawMaterialQrBatchContract, rawMaterialQrContract } from "./rawMaterialContracts.js";
 import type { SyncSqlHandle } from "./sqlPort.js";
 
@@ -53,6 +54,7 @@ export const APPLY_CONTRACTS: readonly RegisteredContract[] = [
   productionProducedContract,
   rawMaterialQrBatchContract,
   rawMaterialQrContract,
+  ...LEASED_RECORD_CONTRACTS,
 ];
 
 const contractFor = (aggregateType: string): RegisteredContract | undefined =>
@@ -95,7 +97,14 @@ export function applyEnvelope(
   const missing = arrival.missing(sql);
   if (missing !== null) return refuse(envelope.dedupeKey, missing, false);
 
-  const inserted = inOneTransaction(sql, () => arrival.write(sql, replicatedAt));
+  let inserted: boolean;
+  try {
+    inserted = inOneTransaction(sql, () => arrival.write(sql, replicatedAt));
+  } catch (error) {
+    // The database said wait (a record still in use, a name still held): rolled back, and parked.
+    if (error instanceof ApplyMustWait) return refuse(envelope.dedupeKey, error.reason, false);
+    throw error;
+  }
   if (inserted) return { dedupeKey: envelope.dedupeKey, status: "APPLIED" };
 
   // Nothing inserted: usually the same event arriving twice, which at-least-once delivery

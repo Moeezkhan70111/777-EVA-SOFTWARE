@@ -63,6 +63,19 @@ export interface ApplyContract<P> {
   readonly conflict?: (sql: SyncSqlHandle, payload: P) => string | null;
 }
 
+/**
+ * Thrown by a contract's write when the database itself says the record must wait: a deletion of a
+ * record still in use here, or a name another record here still holds. The applier rolls the write
+ * back and parks the event (a wait, never a refusal); it applies once the other record's change
+ * arrives. Anything else a write throws is still a fault.
+ */
+export class ApplyMustWait extends Error {
+  constructor(readonly reason: string) {
+    super(reason);
+    this.name = "ApplyMustWait";
+  }
+}
+
 /** A payload that has been read and is ready to check and write. */
 export interface PreparedArrival {
   readonly id: string;

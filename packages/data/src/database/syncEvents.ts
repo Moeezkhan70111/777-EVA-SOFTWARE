@@ -394,6 +394,12 @@ export interface EnqueueInput {
   readonly dedupeKey: string;
   readonly payload: Record<string, unknown>;
   readonly nowIso: string;
+  /**
+   * For a leased event: the epoch it was written under, when the caller knows it better than the
+   * cache does now -- a master record is built after the fact, from a mark that recorded the epoch
+   * held at the write (masterRecords.ts). Left out, the cached epoch is read in the same insert.
+   */
+  readonly leaseEpoch?: number;
 }
 
 /**
@@ -425,7 +431,7 @@ export function enqueueSyncEvent(db: SyncWriteHandle, input: EnqueueInput): bool
            payload_json, status, lock_token, available_at, attempts, last_error, created_at, updated_at
            ${domain === null ? "" : ", lease_epoch"}
          ) VALUES (?, ?, ?, 'INSERT', ?, ?, 'PENDING', NULL, ?, 0, NULL, ?, ?
-           ${domain === null ? "" : ", (SELECT epoch FROM sync_domain_leases WHERE domain = ?)"})
+           ${domain === null ? "" : input.leaseEpoch !== undefined ? ", ?" : ", (SELECT epoch FROM sync_domain_leases WHERE domain = ?)"})
          ON CONFLICT(dedupe_key) DO NOTHING`
       )
       .run(
@@ -437,7 +443,7 @@ export function enqueueSyncEvent(db: SyncWriteHandle, input: EnqueueInput): bool
         input.nowIso,
         input.nowIso,
         input.nowIso,
-        ...(domain === null ? [] : [domain])
+        ...(domain === null ? [] : [input.leaseEpoch !== undefined ? input.leaseEpoch : domain])
       );
     return Number(result.changes) > 0;
   } catch {

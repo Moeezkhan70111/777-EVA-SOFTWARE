@@ -616,3 +616,20 @@ export function newestSendableRow(sql: SyncSqlHandle, pushableTypes: readonly st
     [...pushableTypes, ...LEASED_TYPES]
   );
 }
+
+/**
+ * When the newest master-data change still to be built was marked, or "" when there is none.
+ *
+ * For push on save, beside newestSendableRow: a master-data edit leaves a MARK (migration 094), not
+ * a queue row -- the pass builds the row -- so the watch looks at marks too. Only marks carrying a
+ * lease epoch count: one without is never built (it waits for the backfill), and would start a pass
+ * that sends nothing. "" too before migration 094, so an older database is simply not watched.
+ */
+export function newestStampedMark(sql: SyncSqlHandle): string {
+  try {
+    const row = asRow(sql.prepare("SELECT MAX(marked_at) AS at FROM sync_dirty_records WHERE lease_epoch IS NOT NULL").get());
+    return typeof row?.at === "string" ? row.at : "";
+  } catch {
+    return "";
+  }
+}

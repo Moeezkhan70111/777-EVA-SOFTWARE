@@ -32,6 +32,9 @@ import {
   readQrMasterPayload,
   readRawMaterialQrBatchPayload,
   readRawMaterialQrPayload,
+  MASTER_RECORD_TYPES,
+  isMasterRecordType,
+  readLeasedRecordPayload,
 } from "@erp/data";
 import { readDomainLeases, type DomainLease } from "./leases.js";
 import type { SyncEnvelope } from "./contract.js";
@@ -108,6 +111,8 @@ export const SUPABASE_PUSHABLE_AGGREGATES: readonly string[] = [
   // row queued without one is never claimed (outboxQueue.ts). A run travels before its packets.
   SYNC_AGGREGATE.RAW_MATERIAL_QR_BATCH,
   SYNC_AGGREGATE.RAW_MATERIAL_QR,
+  // Master data, whole by revision (cloud migration 013), prerequisites first.
+  ...MASTER_RECORD_TYPES,
 ];
 
 /** What fetchLeases learned. Not knowing is an answer too: the cache then keeps what it had. */
@@ -278,6 +283,7 @@ export class SupabaseSyncTransport implements SyncTransport, SyncPullTransport {
     const scans: SyncEnvelope[] = [];
     const runs: SyncEnvelope[] = [];
     const packets: SyncEnvelope[] = [];
+    const records: SyncEnvelope[] = [];
 
     for (const envelope of envelopes) {
       if (envelope.aggregateType === SYNC_AGGREGATE.PRODUCT_VARIANT) {
@@ -290,6 +296,8 @@ export class SupabaseSyncTransport implements SyncTransport, SyncPullTransport {
         runs.push(envelope);
       } else if (envelope.aggregateType === SYNC_AGGREGATE.RAW_MATERIAL_QR) {
         packets.push(envelope);
+      } else if (isMasterRecordType(envelope.aggregateType)) {
+        records.push(envelope);
       } else {
         acks.push({
           dedupeKey: envelope.dedupeKey,
@@ -312,6 +320,7 @@ export class SupabaseSyncTransport implements SyncTransport, SyncPullTransport {
     // The same rule for raw material: a run before a packet of it.
     if (runs.length > 0) acks.push(...(await this.pushRuns(held, runs)));
     if (packets.length > 0) acks.push(...(await this.pushPackets(held, packets)));
+    if (records.length > 0) acks.push(...(await this.pushLeasedRecords(held, records)));
     return acks;
   }
 
@@ -516,6 +525,68 @@ export class SupabaseSyncTransport implements SyncTransport, SyncPullTransport {
     if (rows.length === 0) return acks;
     const results = await this.callPush("push_raw_material_qr", held, rows);
     return [...acks, ...matchResults(results, byAggregate, "id")];
+  }
+
+  /**
+   * Master-data revisions, through push_leased_record (cloud migration 013).
+   *
+   * LEASED like label runs: each carries the epoch it was written under. The answer names a record
+   * by type AND id, and one batch can hold two revisions of the same record (edited twice between
+   * passes is one mark, but a revision can be retried beside its successor), so answers are matched
+   * to envelopes per key, in order.
+   *
+   * INSERTED, UPDATED and DUPLICATE are delivered. SUPERSEDED is delivered too: the cloud already
+   * holds a newer revision of the record, so this one has nothing left to say.
+   */
+  private async pushLeasedRecords(held: ClaimHeld, envelopes: readonly SyncEnvelope[]): Promise<SyncAck[]> {
+    const rows: Array<Record<string, unknown>> = [];
+    const byKey = new Map<string, SyncEnvelope[]>();
+    const acks: SyncAck[] = [];
+
+    for (const envelope of envelopes) {
+      const revision = readLeasedRecordPayload(envelope.aggregateType, envelope.payload);
+      if (revision === null) {
+        acks.push({ dedupeKey: envelope.dedupeKey, accepted: false, reason: "PAYLOAD_INCOMPLETE", failure: "REFUSED" });
+        continue;
+      }
+      const leaseEpoch = envelope.leaseEpoch ?? null;
+      if (leaseEpoch === null) {
+        acks.push(unstampedLeasedRow(envelope));
+        continue;
+      }
+      const key = `${envelope.aggregateType}:${revision.recordId}`;
+      byKey.set(key, [...(byKey.get(key) ?? []), envelope]);
+      rows.push({
+        aggregate_type: envelope.aggregateType,
+        record_id: revision.recordId,
+        revision: revision.revision,
+        deleted: revision.deleted,
+        body: revision.body,
+        lease_epoch: leaseEpoch,
+      });
+    }
+    if (rows.length === 0) return acks;
+
+    const results = await this.callPush("push_leased_record", held, rows);
+    for (const result of results) {
+      const key = `${String(result.aggregate_type ?? "")}:${String(result.record_id ?? "")}`;
+      const envelope = byKey.get(key)?.shift();
+      if (envelope === undefined) continue;
+      const outcome = String(result.outcome ?? "");
+      if (outcome === "INSERTED" || outcome === "UPDATED" || outcome === "DUPLICATE" || outcome === "SUPERSEDED") {
+        acks.push({ dedupeKey: envelope.dedupeKey, accepted: true });
+        continue;
+      }
+      // Every refusal 013 gives is a verdict on the revision: NOT_LEASE_HOLDER (a lease lost, W.3),
+      // REVISION_CONFLICT, UNKNOWN_RECORD_TYPE, RECORD_TOO_LARGE. Bounded, and visible as a dead letter.
+      acks.push({
+        dedupeKey: envelope.dedupeKey,
+        accepted: false,
+        reason: typeof result.reason === "string" ? result.reason : outcome || "REFUSED",
+        failure: "REFUSED",
+      });
+    }
+    return acks;
   }
 
   // ─── Leases ───────────────────────────────────────────────────────────────

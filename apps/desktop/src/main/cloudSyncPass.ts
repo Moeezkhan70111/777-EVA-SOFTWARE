@@ -113,6 +113,24 @@ export function describeCloudSync(deps: Pick<CloudSyncPassDeps, "deviceId" | "da
   );
 }
 
+/** Builds marked master records into queued revisions. Never throws: a pass reports, it does not crash. */
+function buildMasterRecords(db: SqliteDatabase, logger: StructuredLogger, deviceId: string): void {
+  try {
+    const built = db.buildLeasedRecordRevisions(new Date().toISOString());
+    if (built.unqueued > 0) {
+      logger.log({
+        module: "sync", severity: "WARNING", operation: "master-records", deviceId,
+        message: `${String(built.unqueued)} changed master record(s) could not be queued and stay marked for the next pass.`,
+      });
+    }
+  } catch (error) {
+    logger.log({
+      module: "sync", severity: "ERROR", operation: "master-records", deviceId,
+      message: `Changed master records could not be built: ${error instanceof Error ? error.message : String(error)}. They stay marked.`,
+    });
+  }
+}
+
 /**
  * Replaces the lease cache with the cloud's answer. Returns a transport failure's reason, or
  * undefined when the pass may call itself fine. Never throws: a pass reports, it does not crash.
@@ -289,6 +307,11 @@ export async function runCloudSyncPass(
         outbox: queueNow(),
       });
     }
+
+    // MASTER DATA FIRST: every record changed under this computer's master-data lease becomes a
+    // queued revision (masterRecords.ts), so this pass's drain carries it. A failure here is logged
+    // and the pass goes on: the marks stay, and the next pass builds them.
+    buildMasterRecords(db, logger, deviceId);
 
     const drain = new sync.OutboxDrain(db.db, transport, {
       deviceId,

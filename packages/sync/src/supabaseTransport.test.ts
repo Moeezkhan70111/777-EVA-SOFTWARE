@@ -979,7 +979,10 @@ test("an event type with no contract at all is refused without being parked", as
     // a carton before a scan of it, a label run before a packet of it.
     assert.deepEqual(
       [...SUPABASE_PUSHABLE_AGGREGATES],
-      ["PRODUCT_VARIANT", "QR_MASTER", "PRODUCTION_PRODUCED", "RAW_MATERIAL_QR_BATCH", "RAW_MATERIAL_QR"]
+      [
+        "PRODUCT_VARIANT", "QR_MASTER", "PRODUCTION_PRODUCED", "RAW_MATERIAL_QR_BATCH", "RAW_MATERIAL_QR",
+        "PARTY_GROUP", "INVENTORY_UNIT", "WORK_SECTION", "UNIT_LADDER_PRESET", "INVENTORY_CATEGORY", "PARTY", "INVENTORY_ITEM", "MACHINE",
+      ]
     );
     for (const absent of ["PRODUCTION_EVENT", "DISPATCH_EVENT", "RETURN_EVENT", "PROJECTION"]) {
       assert.ok(!SUPABASE_PUSHABLE_AGGREGATES.includes(absent), `${absent} has no contract and must not be claimed`);
@@ -1271,6 +1274,55 @@ test("the leases are read from current_leases, and not knowing is an answer, not
     // Unreachable or refused is a transport failure, like every other call.
     fake.reply("/rpc/current_leases", 503, { message: "unavailable" });
     await assert.rejects(transport.fetchLeases(), SyncTransportError);
+  } finally {
+    await fake.close();
+  }
+});
+
+// ─── master data, whole by revision (cloud migration 013) ───────────────────
+
+const revisionOf = (type: string, recordId: string, revision: number, leaseEpoch: number | null, body: Record<string, unknown> | null): SyncEnvelope => ({
+  dedupeKey: `${type}:${recordId}:${String(revision)}`,
+  aggregateType: type,
+  aggregateId: recordId,
+  operation: "INSERT",
+  payload: { recordId, revision, deleted: body === null, body },
+  originDeviceId: "desktop-main",
+  createdAt: RM_AT,
+  leaseEpoch,
+});
+
+test("master-data revisions go with their epoch, and each answer finds its own revision even for one record twice", async () => {
+  const fake = await startFakeSupabase();
+  try {
+    const transport = await claimed(fake);
+    const unit = { row: { id: "u-kg", code: "KG" }, children: { inventory_unit_conversions: [] } };
+    fake.reply("/rpc/push_leased_record", 200, {
+      ok: true,
+      results: [
+        { aggregate_type: "INVENTORY_UNIT", record_id: "u-kg", outcome: "INSERTED" },
+        { aggregate_type: "INVENTORY_UNIT", record_id: "u-kg", outcome: "SUPERSEDED" },
+        { aggregate_type: "PARTY", record_id: "p-1", outcome: "REFUSED", reason: "NOT_LEASE_HOLDER" },
+      ],
+    });
+    const acks = await transport.send([
+      revisionOf("INVENTORY_UNIT", "u-kg", 2, 5, unit),
+      revisionOf("INVENTORY_UNIT", "u-kg", 1, 5, unit),
+      revisionOf("PARTY", "p-1", 1, 4, { row: { id: "p-1", party_name: "Supplier" }, children: {} }),
+      revisionOf("PARTY", "p-2", 1, null, { row: { id: "p-2" }, children: {} }),
+    ]);
+    const byKey = new Map(acks.map((ack) => [ack.dedupeKey, ack]));
+    assert.equal(byKey.get("INVENTORY_UNIT:u-kg:2")?.accepted, true);
+    assert.equal(byKey.get("INVENTORY_UNIT:u-kg:1")?.accepted, true, "superseded by a newer revision in the cloud: nothing left to send");
+    assert.equal(byKey.get("PARTY:p-1:1")?.failure, "REFUSED");
+    assert.equal(byKey.get("PARTY:p-1:1")?.reason, "NOT_LEASE_HOLDER");
+    assert.equal(byKey.get("PARTY:p-2:1")?.failure, "TRANSIENT", "no epoch: waits, never sent");
+
+    const sentRows = rowsSentTo(fake, "push_leased_record");
+    assert.deepEqual(sentRows.map((row) => [row.aggregate_type, row.record_id, row.revision, row.lease_epoch]), [
+      ["INVENTORY_UNIT", "u-kg", 2, 5], ["INVENTORY_UNIT", "u-kg", 1, 5], ["PARTY", "p-1", 1, 4],
+    ]);
+    assert.deepEqual(sentRows[0]?.body, unit);
   } finally {
     await fake.close();
   }

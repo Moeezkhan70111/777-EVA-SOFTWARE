@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { dropCaptureTriggers, installCaptureTriggers } from "./database/masterCapture.js";
+import { buildLeasedRecordRevisions, type BuildResult } from "./database/masterRecords.js";
 import type {
   DuplicateChecker,
   OutboxRepository,
@@ -125,6 +126,26 @@ export {
   withCaptureSuppressed,
 } from "./database/masterCapture.js";
 export type { CaptureHandle, MasterTableCapture } from "./database/masterCapture.js";
+export {
+  MASTER_RECORDS,
+  MASTER_RECORD_TYPES,
+  isMasterRecordType,
+  specTables,
+  snapshotRecord,
+  readLeasedRecordPayload,
+  leasedRecordDedupeKey,
+  buildLeasedRecordRevisions,
+} from "./database/masterRecords.js";
+export type {
+  MasterRecordType,
+  RecordReference,
+  RecordReadHandle,
+  RecordTableSpec,
+  RecordNode,
+  LeasedRecordPayload,
+  BuildHandle,
+  BuildResult,
+} from "./database/masterRecords.js";
 export {
   REPLICATION_EXCLUSIONS,
   REPLICATION_EXCLUDED_TABLES,
@@ -1138,6 +1159,15 @@ export class SqliteDatabase
         id
       );
     this.pruneSyncRuns(Date.now());
+  }
+
+  /**
+   * Queues a revision of every master record changed under this computer's master-data lease
+   * (masterRecords.ts). Called by each sync pass just before it pushes, so a change travels on the
+   * next pass whatever path made it.
+   */
+  buildLeasedRecordRevisions(nowIso: string): BuildResult {
+    return buildLeasedRecordRevisions(this.db, nowIso);
   }
 
   /**

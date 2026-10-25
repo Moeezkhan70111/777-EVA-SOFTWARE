@@ -1471,7 +1471,12 @@ test("009: every event type this computer can apply is a type the cloud log acce
   // Read at test time from the applier's own registry, so a contract added without its cloud row
   // fails here rather than as a refused log insert on a real computer.
   const { APPLY_CONTRACTS } = await import("./applyEnvelope.js");
-  const seeds = seededTypes();
+  // Every cloud migration that seeds the log's types: 009 the first five, 013 the eight master records.
+  const seeds = new Set(seededTypes().keys());
+  const masterSeeds = LEASED_RECORDS.slice(LEASED_RECORDS.indexOf("insert into public.sync_aggregate_types"));
+  for (const match of masterSeeds.slice(0, masterSeeds.indexOf(";")).matchAll(/\('([A-Z_]+)', (true|false), '/g)) {
+    seeds.add(match[1] ?? "");
+  }
   for (const contract of APPLY_CONTRACTS) {
     assert.ok(seeds.has(contract.aggregateType), `${contract.aggregateType} has an apply contract but no row in sync_aggregate_types`);
   }

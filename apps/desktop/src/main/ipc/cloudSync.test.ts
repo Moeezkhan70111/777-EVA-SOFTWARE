@@ -199,6 +199,8 @@ let heartbeats: number;
 /** What the stubbed transport's fetchLeases answers, or throws. */
 let leaseFetch: Record<string, unknown>;
 let leaseThrows: Error | null;
+/** What building master records does on the next pass. */
+let buildThrows: Error | null;
 /** What the pass did with the answer. */
 let leaseCalls: Array<Record<string, unknown>>;
 
@@ -276,6 +278,12 @@ const buildContext = (): IpcContext => {
         if (syncRuns[index]) Object.assign(syncRuns[index], { outcome, counts, reason });
       },
       syncRunSummary: () => ({ lastAttempt: null, lastSuccess: null }),
+      // Master records are built before every drain (masterRecords.ts). Recorded, so the order shows.
+      buildLeasedRecordRevisions: () => {
+        built.push({ what: "master-records" });
+        if (buildThrows !== null) throw buildThrows;
+        return { queued: 0, unqueued: 0 };
+      },
     },
     // No background loop in these tests: the manual button then calls the pass directly, which
     // is exactly the path being exercised.
@@ -371,6 +379,7 @@ beforeEach(() => {
   leaseFetch = { ok: false, reason: "NOT_SUPPORTED" };
   leaseThrows = null;
   leaseCalls = [];
+  buildThrows = null;
   drainResult = { synced: 2, counts: { PENDING: 0, SYNCED: 2 } };
   pullResult = { fetched: 3, applied: 2, duplicates: 1, refused: [] };
   setEnv(GOOD_ENV);
@@ -615,6 +624,18 @@ describe("cloud sync at the process boundary", () => {
       "TIMER"
     );
   };
+
+  it("builds changed master records before the drain, so the same pass carries them", async () => {
+    await run();
+    const order = built.map((entry) => entry.what).filter((what) => what === "master-records" || what === "drain");
+    expect(order).toEqual(["master-records", "drain"]);
+  });
+
+  it("a failure to build master records is logged, and the pass still sends and reads", async () => {
+    buildThrows = new Error("disk full");
+    await expect(run()).resolves.toMatchObject({ accepted: true, pushed: 2, fetched: 3 });
+    expect(logged.find((entry) => entry.operation === "master-records")).toMatchObject({ severity: "ERROR" });
+  });
 
   it("does not log a background pass that did nothing, but still records it", async () => {
     drainResult = { synced: 0, counts: { PENDING: 0 } };

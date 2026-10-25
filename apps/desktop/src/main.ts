@@ -284,13 +284,18 @@ async function startSyncScheduler(deps: {
     // Watched here rather than called from each write path, so every path that queues is covered
     // and the data layer knows nothing of the scheduler. A save never waits for this: it reads
     // what the save has already written, and the pass it may start runs in the background.
+    // A master-data edit leaves a mark rather than a queue row (the pass builds it), so marks are
+    // watched too.
     let newestSeen = sync.newestSendableRow(db.db, sync.SUPABASE_PUSHABLE_AGGREGATES);
+    let newestMarkSeen = sync.newestStampedMark(db.db);
     const outboxWatch = setInterval(() => {
       try {
         const newest = sync.newestSendableRow(db.db, sync.SUPABASE_PUSHABLE_AGGREGATES);
-        if (newest > newestSeen) scheduler.nudge();
+        const newestMark = sync.newestStampedMark(db.db);
+        if (newest > newestSeen || newestMark > newestMarkSeen) scheduler.nudge();
         // Lowered too, when sent rows leave the count, so the next new row is still noticed.
         newestSeen = newest;
+        newestMarkSeen = newestMark;
       } catch {
         // A check that cannot read the queue skips one beat; the timer pass still carries the row.
       }
