@@ -192,6 +192,14 @@ const SYNC_MAX_BACKOFF_MS = 60_000;
  * nothing at all unless the answer has changed from offline to online.
  */
 const CONNECTIVITY_POLL_MS = 20_000;
+/**
+ * How often the queue is checked for something new to send (push on save).
+ *
+ * One second, plus the scheduler's own short bundling delay, puts new work in the cloud within a
+ * few seconds instead of at the next five-minute pass. Each check is one local SELECT; it never
+ * touches the network, and a save never waits for it.
+ */
+const OUTBOX_WATCH_MS = 1_000;
 
 /**
  * Starts the background sync loop, or returns null with the reason logged.
@@ -267,12 +275,29 @@ async function startSyncScheduler(deps: {
     // Let the process exit without waiting for this timer.
     connectivityTimer.unref?.();
 
+    // PUSH ON SAVE. Anything queued is sent within seconds rather than at the next timer pass.
+    // Watched here rather than called from each write path, so every path that queues is covered
+    // and the data layer knows nothing of the scheduler. A save never waits for this: it reads
+    // what the save has already written, and the pass it may start runs in the background.
+    let newestSeen = sync.newestSendableRow(db.db, sync.SUPABASE_PUSHABLE_AGGREGATES);
+    const outboxWatch = setInterval(() => {
+      try {
+        const newest = sync.newestSendableRow(db.db, sync.SUPABASE_PUSHABLE_AGGREGATES);
+        if (newest > newestSeen) scheduler.nudge();
+        // Lowered too, when sent rows leave the count, so the next new row is still noticed.
+        newestSeen = newest;
+      } catch {
+        // A check that cannot read the queue skips one beat; the timer pass still carries the row.
+      }
+    }, OUTBOX_WATCH_MS);
+    outboxWatch.unref?.();
+
     logger.log({
       module: "sync",
       severity: "INFO",
       operation: "sync-scheduler",
       deviceId: scanContext.deviceId,
-      message: `Background cloud sync is on: first pass in ${String(Math.round(SYNC_STARTUP_DELAY_MS / 1000))}s, then every ${String(Math.round(SYNC_INTERVAL_MS / 60000))} minutes.`,
+      message: `Background cloud sync is on: first pass in ${String(Math.round(SYNC_STARTUP_DELAY_MS / 1000))}s, then every ${String(Math.round(SYNC_INTERVAL_MS / 60000))} minutes, and within seconds of anything new being queued.`,
     });
     return scheduler;
   } catch (error) {

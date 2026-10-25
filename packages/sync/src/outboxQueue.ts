@@ -578,3 +578,25 @@ export function requeueDeadLetter(sql: SyncSqlHandle, outboxId: string, nowIso: 
 // The opening state is carried nowhere on purpose: insertProduced always writes the same four
 // values, so the receiver sets them itself.
 export { QR_MASTER_OPENING_STATE };
+
+/**
+ * The newest row a pass could send right now, as a number that grows with every enqueue (its
+ * rowid), or 0 when there is none. Pure SELECT.
+ *
+ * For push on save: the host compares it with the last value it saw and nudges the scheduler when
+ * it grows. Watching the queue rather than calling out from each write means every path that queues
+ * -- scans, label runs, production -- is covered, including ones not written yet, and the data
+ * layer never has to know a scheduler exists.
+ *
+ * Only PENDING rows of types the transport can carry count: a row of a type with no cloud contract
+ * yet would start a pass that sends nothing.
+ */
+export function newestSendableRow(sql: SyncSqlHandle, pushableTypes: readonly string[]): number {
+  if (pushableTypes.length === 0) return 0;
+  const placeholders = pushableTypes.map(() => "?").join(", ");
+  return scalar(
+    sql,
+    `SELECT COALESCE(MAX(rowid), 0) AS n FROM sync_outbox WHERE status = 'PENDING' AND aggregate_type IN (${placeholders})`,
+    [...pushableTypes]
+  );
+}

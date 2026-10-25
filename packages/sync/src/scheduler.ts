@@ -16,6 +16,8 @@
 //   startup     once, after a delay, so a sync never competes with the first scan of the day
 //   timer       on an interval while things are working
 //   reconnect   as soon as the machine looks online again after looking offline
+//   save        shortly after something is queued (nudge), so new work reaches the cloud in
+//               seconds, not at the next timer pass -- the save itself never waits for it
 //
 // WHEN IT DOES NOT
 //
@@ -26,8 +28,11 @@
 // THE RULE THAT OUTRANKS ALL OF IT: a pass that cannot run is not an error. The ERP is local
 // first, the scan path never waits on this, and a week offline is a week of ordinary work.
 
-/** What started a pass. Recorded so "the timer worked" is distinguishable from "somebody retried". */
-export type SyncTrigger = "STARTUP" | "TIMER" | "RECONNECT" | "MANUAL";
+/**
+ * What started a pass. Recorded so "the timer worked" is distinguishable from "somebody retried".
+ * SAVE: something was just queued and is being sent without waiting for the timer (push on save).
+ */
+export type SyncTrigger = "STARTUP" | "TIMER" | "RECONNECT" | "MANUAL" | "SAVE";
 
 /** How a pass ended, in the only four shapes the caller has to tell apart. */
 export type SyncOutcome =
@@ -69,7 +74,15 @@ export interface SyncSchedulerOptions {
   readonly clearTimer: (timer: NodeJS.Timeout) => void;
   /** Called on every state change, for logging. Never throws back into the scheduler. */
   readonly onStateChange?: (state: SyncSchedulerState) => void;
+  /**
+   * How long a nudge waits before its pass, so a burst of saves -- a run of scans -- shares one
+   * pass instead of starting one each. Measured from the FIRST nudge of a burst, so a steady stream
+   * of saves cannot postpone the pass for ever. Default 1500.
+   */
+  readonly saveNudgeDelayMs?: number;
 }
+
+const DEFAULT_SAVE_NUDGE_DELAY_MS = 1_500;
 
 export interface SyncSchedulerState {
   readonly running: boolean;
@@ -99,6 +112,10 @@ export class SyncScheduler {
   /** When the pending timer was set and for how long, so nextPassInMs can be reported. */
   private scheduledAt = 0;
   private scheduledDelay: number | null = null;
+  /** A nudge's pending pass. Separate from `timer`, which keeps the ordinary rhythm. */
+  private nudgeTimer: NodeJS.Timeout | null = null;
+  /** A nudge arrived while a pass was running: run once more when it finishes. */
+  private nudgeAfterPass = false;
 
   constructor(private readonly options: SyncSchedulerOptions) {}
 
@@ -127,7 +144,38 @@ export class SyncScheduler {
   stop(): void {
     this.stopped = true;
     this.cancelTimer();
+    this.cancelNudge();
     this.announce();
+  }
+
+  /**
+   * Something was just queued: send it soon, without waiting for the timer (push on save).
+   *
+   * THE SAVE NEVER WAITS FOR THIS. The queue row was written in the save's own transaction; this
+   * only starts a background pass a moment later, and nothing calls it before that save commits.
+   *
+   * Ignored while there is nothing it could do: stopped, not configured, looking offline, or backing
+   * off after a transport failure -- the backoff's own pass, or the reconnect, carries the row then,
+   * and nudging would only hammer a network that just failed. During a pass it is remembered, and
+   * exactly one more pass follows, because the running one may have leased before the row existed.
+   */
+  nudge(): void {
+    if (this.stopped || !this.options.isConfigured()) return;
+    if (this.consecutiveFailures > 0 || !this.options.isOnline()) return;
+    if (this.running) {
+      this.nudgeAfterPass = true;
+      return;
+    }
+    // Already coming: this save rides on it.
+    if (this.nudgeTimer !== null) return;
+    this.nudgeTimer = this.options.setTimer(() => {
+      this.nudgeTimer = null;
+      if (this.running) {
+        this.nudgeAfterPass = true;
+        return;
+      }
+      void this.runNow("SAVE");
+    }, this.options.saveNudgeDelayMs ?? DEFAULT_SAVE_NUDGE_DELAY_MS);
   }
 
   /**
@@ -180,6 +228,12 @@ export class SyncScheduler {
     // sooner or later will not change, and a completed pass means things work.
     this.consecutiveFailures = result.outcome === "TRANSPORT_ERROR" ? this.consecutiveFailures + 1 : 0;
     this.announce();
+    // A save that came in while this pass ran gets its own pass now -- unless this one just failed
+    // to reach the cloud, in which case nudge() declines and the backoff carries it.
+    if (this.nudgeAfterPass) {
+      this.nudgeAfterPass = false;
+      this.nudge();
+    }
     return result;
   }
 
@@ -223,6 +277,12 @@ export class SyncScheduler {
     if (this.timer !== null) this.options.clearTimer(this.timer);
     this.timer = null;
     this.scheduledDelay = null;
+  }
+
+  private cancelNudge(): void {
+    if (this.nudgeTimer !== null) this.options.clearTimer(this.nudgeTimer);
+    this.nudgeTimer = null;
+    this.nudgeAfterPass = false;
   }
 
   private announce(): void {

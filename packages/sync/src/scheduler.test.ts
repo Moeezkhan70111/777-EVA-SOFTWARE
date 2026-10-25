@@ -30,6 +30,22 @@ class FakeTimers {
     return entries[0]?.delay ?? null;
   }
 
+  /** Every pending delay, smallest first -- for a nudge pending beside the ordinary timer. */
+  delays(): number[] {
+    return [...this.pending.values()].map((entry) => entry.delay).sort((a, b) => a - b);
+  }
+
+  /** Fires the one pending timer with exactly this delay, and waits for whatever it started. */
+  async fireDelay(delay: number): Promise<void> {
+    const found = [...this.pending.entries()].filter(([, entry]) => entry.delay === delay);
+    assert.equal(found.length, 1, `expected one pending timer of ${String(delay)} ms`);
+    const [id, entry] = found[0];
+    this.pending.delete(id);
+    entry.handler();
+    await new Promise((resolve) => setImmediate(resolve));
+    await new Promise((resolve) => setImmediate(resolve));
+  }
+
   /** Fires the pending timer and waits for whatever it started. */
   async fire(): Promise<void> {
     const entries = [...this.pending.entries()];
@@ -342,4 +358,86 @@ test("state reports what is pending, for a panel to show", async () => {
   assert.ok(before.nextPassInMs !== null && before.nextPassInMs <= 90_000);
   await h.timers.fire();
   assert.equal(h.scheduler.state().lastOutcome, "OK");
+});
+
+// ─── Push on save: the nudge ─────────────────────────────────────────────────
+
+/** The default bundling delay (DEFAULT_SAVE_NUDGE_DELAY_MS): distinct from every other delay here. */
+const NUDGE_MS = 1_500;
+
+test("a save is sent within seconds, and the ordinary rhythm is left exactly as it was", async () => {
+  const h = harness();
+  h.scheduler.start();
+  h.scheduler.nudge();
+  assert.deepEqual(h.timers.delays(), [NUDGE_MS, 90_000], "the startup pass is still where it was");
+
+  await h.timers.fireDelay(NUDGE_MS);
+  assert.deepEqual(h.passes, ["SAVE"], "recorded as a save, not as the timer");
+  assert.deepEqual(h.timers.delays(), [90_000]);
+});
+
+test("a burst of saves shares one pass", async () => {
+  const h = harness();
+  h.scheduler.start();
+  for (let scan = 0; scan < 5; scan += 1) h.scheduler.nudge();
+  assert.deepEqual(h.timers.delays(), [NUDGE_MS, 90_000], "one nudge pending, however many saves");
+
+  await h.timers.fireDelay(NUDGE_MS);
+  assert.deepEqual(h.passes, ["SAVE"]);
+});
+
+test("a save made while a pass runs gets exactly one more pass, after it", async () => {
+  let release: () => void = () => undefined;
+  const passes: SyncTrigger[] = [];
+  const h = harness({
+    runPass: async (trigger) => {
+      passes.push(trigger);
+      // The first pass is held open, as a slow network would.
+      if (passes.length === 1) await new Promise<void>((resolve) => (release = resolve));
+      return { outcome: "OK" };
+    },
+  });
+  h.scheduler.start();
+
+  const manual = h.scheduler.runNow("MANUAL");
+  for (let scan = 0; scan < 3; scan += 1) h.scheduler.nudge();
+  assert.deepEqual(h.timers.delays(), [90_000], "nothing is started beside a running pass");
+
+  release();
+  await manual;
+  assert.deepEqual(h.timers.delays(), [NUDGE_MS, 90_000], "one pass follows, for all three saves");
+  await h.timers.fireDelay(NUDGE_MS);
+  assert.deepEqual(passes, ["MANUAL", "SAVE"]);
+});
+
+test("a nudge does nothing while offline, unconfigured, backing off, or stopped", async () => {
+  const h = harness();
+  h.scheduler.start();
+
+  h.setOnline(false);
+  h.scheduler.nudge();
+  h.setOnline(true);
+  h.setConfigured(false);
+  h.scheduler.nudge();
+  h.setConfigured(true);
+  assert.deepEqual(h.timers.delays(), [90_000], "no network, or nothing to sync to: no pass");
+
+  // A transport failure: the backoff's own pass carries the row, so a nudge must not hammer it.
+  h.setResult({ outcome: "TRANSPORT_ERROR", reason: "offline" });
+  await h.scheduler.runNow("MANUAL");
+  h.scheduler.nudge();
+  assert.deepEqual(h.timers.delays(), [90_000]);
+
+  h.scheduler.stop();
+  h.scheduler.nudge();
+  assert.deepEqual(h.timers.delays(), [], "a stopped scheduler starts nothing");
+});
+
+test("stopping cancels a nudge that was about to run", () => {
+  const h = harness();
+  h.scheduler.start();
+  h.scheduler.nudge();
+  h.scheduler.stop();
+  assert.deepEqual(h.timers.delays(), []);
+  assert.deepEqual(h.passes, []);
 });

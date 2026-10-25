@@ -59,7 +59,7 @@ export interface SyncRunSummary {
   id: string;
   startedAt: string;
   finishedAt: string | null;
-  trigger: "STARTUP" | "TIMER" | "RECONNECT" | "MANUAL";
+  trigger: "STARTUP" | "TIMER" | "RECONNECT" | "MANUAL" | "SAVE";
   outcome: "OK" | "REFUSED" | "TRANSPORT_ERROR" | "FAILED" | null;
   pushed: number | null;
   fetched: number | null;
