@@ -57,6 +57,7 @@ function seedHistory(store: Pc): void {
 }
 
 function grantBoth(store: Pc): void {
+  run(store, "INSERT OR REPLACE INTO app_settings (setting_key, setting_value, value_type, is_encrypted, updated_by, updated_at) VALUES ('device.id', 'dev-store', 'string', 0, 'test', '2026-10-26T00:00:00.000Z')");
   for (const domain of ["MASTER_DATA", "RAW_MATERIAL_STORE"]) {
     run(
       store,

@@ -27,6 +27,7 @@ import { MASTER_RECORD_TYPES, MASTER_RECORDS, type BuildHandle, type MasterRecor
 import {
   enqueueRawMaterialQr,
   enqueueRawMaterialQrBatch,
+  heldLeaseEpoch,
   LEASE_DOMAIN,
   SYNC_AGGREGATE,
 } from "./syncEvents.js";
@@ -50,7 +51,7 @@ export interface StockMismatch {
 }
 
 export interface BackfillPlan {
-  /** The epochs the marks would carry, or null when this computer knows no such lease. */
+  /** The epochs the marks would carry, or null when this computer does not hold that lease. */
   readonly masterEpoch: number | null;
   readonly storeEpoch: number | null;
   readonly masterRecords: Readonly<Record<MasterRecordType, number>>;
@@ -68,11 +69,6 @@ export type BackfillOutcome =
 
 type Row = Record<string, unknown>;
 const count = (db: BuildHandle, sql: string, ...params: unknown[]): number => Number((db.prepare(sql).all(...params)[0] as Row | undefined)?.n ?? 0);
-
-const epochOf = (db: BuildHandle, domain: string): number | null => {
-  const row = db.prepare("SELECT epoch FROM sync_domain_leases WHERE domain = ?").all(domain)[0] as Row | undefined;
-  return row === undefined ? null : Number(row.epoch);
-};
 
 /** Own runs and packets not in the outbox at all. Received ones (replicated_at set) are not ours to send. */
 const UNQUEUED_RUNS = `SELECT * FROM raw_material_qr_batches b WHERE b.replicated_at IS NULL
@@ -132,8 +128,8 @@ export function planBackfill(db: BuildHandle): BackfillPlan {
     MASTER_RECORD_TYPES.map((type) => [type, count(db, `SELECT COUNT(*) AS n FROM ${MASTER_RECORDS[type].table}`)])
   ) as Record<MasterRecordType, number>;
   return {
-    masterEpoch: epochOf(db, LEASE_DOMAIN.MASTER_DATA),
-    storeEpoch: epochOf(db, LEASE_DOMAIN.RAW_MATERIAL_STORE),
+    masterEpoch: heldLeaseEpoch(db, LEASE_DOMAIN.MASTER_DATA),
+    storeEpoch: heldLeaseEpoch(db, LEASE_DOMAIN.RAW_MATERIAL_STORE),
     masterRecords,
     stockMovements: count(db, "SELECT COUNT(*) AS n FROM inventory_stock_events WHERE replicated_at IS NULL"),
     labelRunsToQueue: count(db, `SELECT COUNT(*) AS n FROM (${UNQUEUED_RUNS})`),

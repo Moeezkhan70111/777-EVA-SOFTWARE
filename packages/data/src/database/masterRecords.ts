@@ -11,7 +11,7 @@
 // checks the two agree, so a table cannot be captured and then never sent, or sent and never captured.
 
 import crypto from "node:crypto";
-import { enqueueSyncEvent, leaseDomainOf, SYNC_AGGREGATE, type SyncAggregateType, type SyncWriteHandle } from "./syncEvents.js";
+import { enqueueSyncEvent, heldLeaseEpoch, leaseDomainOf, SYNC_AGGREGATE, type SyncAggregateType, type SyncWriteHandle } from "./syncEvents.js";
 
 export type MasterRecordType =
   | typeof SYNC_AGGREGATE.PARTY_GROUP
@@ -317,7 +317,7 @@ export type SendAgainOutcome =
   | "UNKNOWN_TYPE"
   /** This computer does not have the record, so it has nothing to send. */
   | "NOT_HERE"
-  /** This computer knows no lease for the record's domain, so a revision could never be sent. */
+  /** This computer does not hold the record's lease, so a revision from here would be refused. */
   | "NO_LEASE";
 
 /**
@@ -332,9 +332,9 @@ export function markRecordToSendAgain(db: BuildHandle, type: string, recordId: s
   if (!isMasterRecordType(type)) return "UNKNOWN_TYPE";
   const present = db.prepare(`SELECT 1 AS here FROM ${MASTER_RECORDS[type].table} WHERE id = ?`).all(recordId);
   if (present.length === 0) return "NOT_HERE";
-  const lease = db.prepare("SELECT epoch FROM sync_domain_leases WHERE domain = ?").all(leaseDomainOf(type) ?? "") as Array<{ epoch: number }>;
-  const epoch = lease[0]?.epoch;
-  if (epoch === undefined) return "NO_LEASE";
+  const domain = leaseDomainOf(type);
+  const epoch = domain === null ? null : heldLeaseEpoch(db, domain);
+  if (epoch === null) return "NO_LEASE";
   db.prepare(
     `INSERT INTO sync_dirty_records (aggregate_type, record_id, lease_epoch, marked_at) VALUES (?, ?, ?, ?)
      ON CONFLICT (aggregate_type, record_id) DO UPDATE SET lease_epoch = excluded.lease_epoch, marked_at = excluded.marked_at`

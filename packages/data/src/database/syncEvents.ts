@@ -111,6 +111,31 @@ export const LEASED_AGGREGATE_DOMAIN: Readonly<Partial<Record<SyncAggregateType,
 export const leaseDomainOf = (aggregateType: string): LeaseDomain | null =>
   (LEASED_AGGREGATE_DOMAIN as Readonly<Record<string, LeaseDomain | undefined>>)[aggregateType] ?? null;
 
+/** What reading this computer's held lease needs: one query. */
+export interface LeaseReadHandle {
+  prepare(sql: string): { all(...params: unknown[]): unknown[] };
+}
+
+/**
+ * The epoch of `domain`'s lease when THIS computer holds it, or null.
+ *
+ * The cache (sync_domain_leases) holds every domain's lease, whoever holds it -- and a domain no
+ * computer has ever been granted sits there with epoch 0 and no holder. Work stamped with any of
+ * those is refused by the cloud, NOT_LEASE_HOLDER, into the dead letters. So a deliberate act of
+ * sending (the backfill, Send Again) asks this, not merely whether a row exists: the holder must be
+ * this computer's own device id (app_settings device.id), at an epoch actually granted.
+ */
+export function heldLeaseEpoch(db: LeaseReadHandle, domain: LeaseDomain): number | null {
+  const row = db
+    .prepare(
+      `SELECT l.epoch FROM sync_domain_leases l
+        WHERE l.domain = ? AND l.epoch > 0
+          AND l.holder_device_id = (SELECT setting_value FROM app_settings WHERE setting_key = 'device.id')`
+    )
+    .all(domain)[0] as { epoch?: unknown } | undefined;
+  return row === undefined ? null : Number(row.epoch);
+}
+
 /** One identity per QR, for all time. */
 export const qrMasterDedupeKey = (qrId: string): string => `${SYNC_AGGREGATE.QR_MASTER}:${qrId}`;
 /** One identity per variant, for all time. */

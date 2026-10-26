@@ -94,6 +94,7 @@ export {
   LEASE_DOMAIN,
   LEASED_AGGREGATE_DOMAIN,
   leaseDomainOf,
+  heldLeaseEpoch,
   rawMaterialQrBatchDedupeKey,
   rawMaterialQrDedupeKey,
   readRawMaterialQrBatchPayload,

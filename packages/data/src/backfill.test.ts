@@ -55,6 +55,7 @@ function seedHistory(run: (sql: string, ...params: Array<string | number | null>
 }
 
 const grantBoth = (run: (sql: string, ...params: Array<string | number | null>) => void, masterEpoch = 2, storeEpoch = 3) => {
+  run("INSERT OR REPLACE INTO app_settings (setting_key, setting_value, value_type, is_encrypted, updated_by, updated_at) VALUES ('device.id', 'dev-store', 'string', 0, 'test', '2026-10-26T00:00:00.000Z')");
   for (const [domain, epoch] of [["MASTER_DATA", masterEpoch], ["RAW_MATERIAL_STORE", storeEpoch]] as const) {
     run(
       `INSERT OR REPLACE INTO sync_domain_leases (domain, holder_device_id, holder_label, epoch, barrier_seq, granted_at, project_key, fetched_at)
@@ -161,5 +162,20 @@ test("run twice, nothing is queued twice", () => {
     buildStockEvents(db.db, NOW);
     assert.equal(n(db, "SELECT COUNT(*) AS n FROM sync_outbox WHERE aggregate_type IN ('STOCK_EVENT', 'RAW_MATERIAL_QR_BATCH', 'RAW_MATERIAL_QR')"), first);
     assert.equal(n(db, "SELECT COUNT(*) AS n FROM sync_dirty_records"), 0, "every mark settled");
+  });
+});
+
+test("a lease row that does not name this computer is not a lease: never granted, or held by another", () => {
+  withStore((db, run) => {
+    seedHistory(run);
+    grantBoth(run);
+    // Never granted: the cache keeps the domain at epoch 0 with no holder.
+    run("UPDATE sync_domain_leases SET holder_device_id = NULL, epoch = 0 WHERE domain = 'MASTER_DATA'");
+    assert.equal(db.planBackfill().masterEpoch, null);
+    // Held by another computer.
+    run("UPDATE sync_domain_leases SET holder_device_id = 'dev-other', epoch = 4 WHERE domain = 'MASTER_DATA'");
+    assert.equal(db.planBackfill().masterEpoch, null);
+    const outcome = db.runBackfill(NOW);
+    assert.equal(outcome.done ? null : outcome.reason, "NO_LEASE");
   });
 });
