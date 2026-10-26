@@ -417,7 +417,7 @@ assumed. **Last checked 2026-10-23.**
 | `012_raw_material_identity.up.sql` | **YES**, 2026-10-25 | by hand, Supabase SQL editor (owner) |
 | `013_leased_records.up.sql` | **YES**, 2026-10-25 | by hand, Supabase SQL editor (owner) |
 | `014_device_sync_health.up.sql` | **YES**, 2026-10-26 (verify 30/30, check_sync_health passed) | by hand, Supabase SQL editor (owner) |
-| `015_stock_events.up.sql` | **not yet** — written 2026-10-26 | by hand, Supabase SQL editor (owner) |
+| `015_stock_events.up.sql` | **YES**, 2026-10-26 (verify 31/31, check_stock_events passed) | by hand, Supabase SQL editor (owner) |
 
 **Verified 2026-10-25, after 013:** `verify_applied_state.sql`, all 29 checks `ok`. And
 `check_leased_records.sql` passed all 6 steps, leaving test as it was (no records, lease events,
