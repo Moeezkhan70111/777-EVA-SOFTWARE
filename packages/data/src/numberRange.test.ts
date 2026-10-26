@@ -222,8 +222,8 @@ test("an unattributed row counts as this computer's, so today's guard is unchang
 
 test("a computer with no recorded identity falls back to the stricter question", () => {
   withFixture("range-no-identity", 1, ({ db, raw }) => {
-    // Migration 087 SEEDS device.id, so every migrated database has an identity and this
-    // fallback is normally unreachable -- which is the point of seeding it. Blanked here on
+    // Migration 087 seeds device.id when the identity is known, and ensureOperationalContext sets
+    // it on every start, so this fallback is normally unreachable. Blanked here on
     // purpose to cover the path: with no identity, provenance cannot be used, so the old broader
     // question is asked and a peer's row DOES block. That is the conservative direction, and
     // such a machine is not replicating anything yet.

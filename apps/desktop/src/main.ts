@@ -14,7 +14,7 @@ import {
   type RuntimePaths,
 } from "./main/runtimePaths";
 import { reportFatalStartupError, type StartupFailure } from "./main/startupFailure";
-import { describeInstallation, resolveInstallation } from "./main/deviceIdentity";
+import { describeInstallation, readStoredIdentity, resolveInstallation } from "./main/deviceIdentity";
 import { DeviceCredentialStore } from "./main/deviceCredentialStore";
 import { describeBuildInfo, readBuildInfo } from "./main/buildInfo";
 import { createIpcContext, registerIpcHandlers } from "./main/ipc";
@@ -399,6 +399,10 @@ async function initializeServices({ paths, dataMigration }: Bootstrap): Promise<
     dbPath: paths.databaseFile,
     schemaPath: paths.schemaFile,
     migrationsDir: paths.migrationsDir,
+    // Read from device-identity.json before the database opens, so a migration that records which
+    // computer made the documents already here (087) records THIS one. Null on a first start: the
+    // identity is minted after the database is open, and those rows stay unstamped (still "mine").
+    migrationDeviceId: readStoredIdentity(paths.dataRoot)?.deviceId ?? null,
   });
   const logger = new dataModule.StructuredLogger(paths.logsDir);
 
