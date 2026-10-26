@@ -575,6 +575,14 @@ export const copy = {
 
   sync: {
     title: "Cloud Sync",
+    // The realtime doorbell, as the Health page says it.
+    realtimeLabel: "Live Updates",
+    realtime: {
+      LISTENING: "On — other computers' work arrives within seconds",
+      CONNECTING: "Connecting…",
+      RECONNECTING: "Reconnecting — updates arrive every minute meanwhile",
+      OFF: "Off — updates arrive every minute",
+    } as Readonly<Record<"OFF" | "CONNECTING" | "LISTENING" | "RECONNECTING", string>>,
     notConfiguredTitle: "Not set up on this computer",
     notConfiguredHint:
       "This computer works normally without cloud sync. Nothing is sent until it is set up.",

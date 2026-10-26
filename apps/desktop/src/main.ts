@@ -15,6 +15,7 @@ import {
 } from "./main/runtimePaths";
 import { reportFatalStartupError, type StartupFailure } from "./main/startupFailure";
 import { describeInstallation, readStoredIdentity, resolveInstallation } from "./main/deviceIdentity";
+import { refreshRealtimeWake, stopRealtimeWake } from "./main/realtimeWake";
 import { DeviceCredentialStore } from "./main/deviceCredentialStore";
 import { describeBuildInfo, readBuildInfo } from "./main/buildInfo";
 import { createIpcContext, registerIpcHandlers } from "./main/ipc";
@@ -233,8 +234,16 @@ async function startSyncScheduler(deps: {
       dataRoot: paths.dataRoot,
     };
 
+    // The scheduler is created below; the doorbell's ring reaches it through this.
+    let wake = (): void => undefined;
     const scheduler = new sync.SyncScheduler({
-      runPass: (trigger) => runCloudSyncPass(passDeps, trigger),
+      // After every pass the realtime doorbell is matched to the pass's session (realtimeWake.ts):
+      // started once there is one, so another computer's work arrives within seconds of a ring.
+      runPass: async (trigger) => {
+        const result = await runCloudSyncPass(passDeps, trigger);
+        await refreshRealtimeWake({ logger, deviceId: scanContext.deviceId, wake }).catch(() => undefined);
+        return result;
+      },
       // Asked before every pass rather than cached: a computer provisioned at lunchtime must
       // start syncing without a restart.
       isConfigured: () => isCloudSyncConfigured({ deviceId: scanContext.deviceId, dataRoot: paths.dataRoot }),
@@ -257,6 +266,7 @@ async function startSyncScheduler(deps: {
       clearTimer: (timer) => clearTimeout(timer),
     });
 
+    wake = () => scheduler.wake();
     scheduler.start();
 
     // THE MOMENT A WAITING QUEUE CAN DRAIN. The office internet is unreliable, so a computer
@@ -751,6 +761,7 @@ app.on("window-all-closed", () => {
 });
 
 app.on("before-quit", async () => {
+  stopRealtimeWake();
   // A startup failure already exited; there is no database handle to close in that case.
   const services = await servicesPromise.catch(() => null);
   // Before the database: a check firing into a closing process has nothing useful to do, and an

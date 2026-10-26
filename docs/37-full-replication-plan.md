@@ -372,7 +372,24 @@ not yet applied to test.
   marks (changes made before this PC synced) are counted but left for the backfill: restamping
   them with today's epoch could overwrite a change another holder made in between.
 
-**As built — a first sync that does not freeze, 2026-10-27.** On the gate test the empty reader's
+() => `**As built — realtime wake-up, 2026-10-27 (decision reversed: no longer deferred).** A reader pulls
+within a second or two of another computer's write, not on its next one-minute timer.
+
+- **A doorbell, not the log** (cloud migration 016): every log insert rings \`sync_log_doorbell\`, one
+  row per scope holding a position and who rang. Only the doorbell is published to Realtime, so
+  computers receive a position, never another payload, and still read every change through the
+  validated pull. One ring per transaction per scope, so a push of a hundred rows is one ring.
+- **The listener** (\`doorbell.ts\`) speaks Realtime's channel protocol over Node's own WebSocket (no
+  new package). It joins with this computer's token, under the same policies the pull reads with.
+  It ignores rings caused by this computer's own writes, rings once itself on every (re)connect to
+  cover the gap, declares a connection dead when a heartbeat goes unanswered, refreshes its token
+  on the channel, and reconnects backing off from 1 s to 60 s.
+- **A ring wakes the scheduler** (\`wake()\`, trigger REALTIME, local migration 098): a quarter of a
+  second later, one pass for a burst of rings, never while backing off a failed network. The
+  minute timer stays as the safety net. \`realtimeWake.ts\` matches the listener to the sync pass's
+  session after every pass, and Health shows **Live Updates**: on, reconnecting, or off.
+
+**As built — a first sync that does not freeze, 2026-10-27.**` On the gate test the empty reader's
 window went "not responding" for minutes: each page of 200 held the main process for about ten
 seconds. Measured cause: the backfill sent every label run and packet ahead of the materials and
 parties they name, the reader parked ~5,700 of them, and every page retried all of them.

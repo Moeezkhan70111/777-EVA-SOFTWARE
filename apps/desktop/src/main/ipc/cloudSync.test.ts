@@ -463,6 +463,8 @@ describe("cloud sync at the process boundary", () => {
       running: false,
       queue: QUEUE,
       pullCursor: 7,
+      // The realtime doorbell has not started in this process: no pass has made a session.
+      realtime: "OFF",
       waitingFor: undefined,
       // Added with the background loop (Phase 4). `schedule` is absent because this context has
       // no scheduler; the two run records come from sync_runs (migration 085) and are null here

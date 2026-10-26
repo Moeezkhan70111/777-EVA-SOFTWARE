@@ -120,6 +120,11 @@ export const HealthPage = () => {
             <HealthItem label="Last Sent"      value={when(sync.queue.lastSyncedAt)} />
             <HealthItem label="Last Failure"   value={when(sync.queue.lastFailureAt)} tone={sync.queue.lastFailureAt === null ? "ok" : "warn"} />
             <HealthItem label="Cloud Log Read To" value={sync.pullCursor} />
+            <HealthItem
+              label={copy.sync.realtimeLabel}
+              value={copy.sync.realtime[sync.realtime ?? "OFF"]}
+              tone={sync.realtime === "LISTENING" ? "ok" : sync.realtime === "RECONNECTING" ? "warn" : "default"}
+            />
             {sync.waitingFor !== undefined && (
               <HealthItem
                 label="Pull Waiting At"

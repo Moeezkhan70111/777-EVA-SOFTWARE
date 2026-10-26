@@ -124,6 +124,17 @@ export function describeCloudSync(deps: Pick<CloudSyncPassDeps, "deviceId" | "da
 }
 
 /**
+ * The session the realtime doorbell listens with (realtimeWake.ts): this computer's project and its
+ * signed-in transport, or null before a pass has made one. Nothing secret leaves here but the token
+ * function, which the doorbell hands only to the cloud.
+ */
+export function doorbellSession(): { url: string; anonKey: string; deviceId: string; accessToken: () => Promise<string> } | null {
+  const held = cachedTransport;
+  if (held === null) return null;
+  return { url: held.url, anonKey: held.anonKey, deviceId: held.deviceId, accessToken: () => held.transport.accessToken() };
+}
+
+/**
  * Every computer's last sync-health report, read through the transport the passes signed in with,
  * or null before the first pass has made one. On demand only (the Health page), never per pass.
  */

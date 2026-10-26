@@ -376,20 +376,21 @@ them current, and fill a row in only once it has been checked by query.
 | 13 | `013_leased_records.up.sql` | **by hand**, SQL editor | — | — |
 | 14 | `014_device_sync_health.up.sql` | **by hand**, SQL editor | — | — |
 | 15 | `015_stock_events.up.sql` | **by hand**, SQL editor | — | — |
-| 16 | Seed: `factory-777` | agent, `execute_sql` | — | — |
-| 17 | Master data mirror: `workstations`, `operators`, `product_variants` | agent, `execute_sql`, after owner approval of the row list | — | — |
-| 18 | `verify_applied_state.sql`: all 31 checks `ok` | agent, `execute_sql` | — | — |
-| 19 | Advisors: the same set as §6a.2, nothing new | **by hand**, dashboard → Advisors (the MCP servers do not enable the `debugging` feature) | — | — |
+| 16 | `016_sync_log_doorbell.up.sql` | **by hand**, SQL editor | — | — |
+| 17 | Seed: `factory-777` | agent, `execute_sql` | — | — |
+| 18 | Master data mirror: `workstations`, `operators`, `product_variants` | agent, `execute_sql`, after owner approval of the row list | — | — |
+| 19 | `verify_applied_state.sql`: all 32 checks `ok` | agent, `execute_sql` | — | — |
+| 20 | Advisors: the same set as §6a.2, nothing new | **by hand**, dashboard → Advisors (the MCP servers do not enable the `debugging` feature) | — | — |
 
 **Why some steps are by hand, and which ones.** The split is the same as on test, for the same
-reason (§6a.2): the MCP write tools refuse SQL containing destructive statements. Thirteen files are
-pasted by hand: **002–007 and 009–015**. 002 drops and re-adds foreign keys, and 003–007 and
-009–015 contain the `drop`s and `revoke`s that *are* the access model. The baseline, 008, the seed,
+reason (§6a.2): the MCP write tools refuse SQL containing destructive statements. Fourteen files are
+pasted by hand: **002–007 and 009–016**. 002 drops and re-adds foreign keys, and 003–007 and
+009–016 contain the `drop`s and `revoke`s that *are* the access model. The baseline, 008, the seed,
 the mirror and the verification all went through the tool on test, or are plain inserts and selects.
 
 **011 before 012, 013 and 015**: their push RPCs call 011's `lease_holds`. 014 needs only 006. On a
 project still at 010 the verification reports exactly checks 3, 7, 11, 15, 20, 22, 23, 24, 26, 27,
-28, 29, 30 and 31 as failing.
+28, 29, 30, 31 and 32 as failing.
 
 **One deliberate difference from test:** 007 and 008 are applied as part of the initial setup
 rather than as fixes afterwards. `verify_applied_state.sql` checks for exactly the state test
@@ -418,6 +419,7 @@ assumed. **Last checked 2026-10-23.**
 | `013_leased_records.up.sql` | **YES**, 2026-10-25 | by hand, Supabase SQL editor (owner) |
 | `014_device_sync_health.up.sql` | **YES**, 2026-10-26 (verify 30/30, check_sync_health passed) | by hand, Supabase SQL editor (owner) |
 | `015_stock_events.up.sql` | **YES**, 2026-10-26 (verify 31/31, check_stock_events passed) | by hand, Supabase SQL editor (owner) |
+| `016_sync_log_doorbell.up.sql` | **not yet** — written 2026-10-27 | by hand, Supabase SQL editor (owner) |
 
 **Verified 2026-10-25, after 013:** `verify_applied_state.sql`, all 29 checks `ok`. And
 `check_leased_records.sql` passed all 6 steps, leaving test as it was (no records, lease events,
@@ -602,10 +604,11 @@ The project is `ykhvbmhmeefdtrzqeoxm` (created 2026-10-23). Record progress in �
    | 13 | `migrations/supabase/013_leased_records.up.sql` | **you, SQL editor** |
    | 14 | `migrations/supabase/014_device_sync_health.up.sql` | **you, SQL editor** |
    | 15 | `migrations/supabase/015_stock_events.up.sql` | **you, SQL editor** |
+   | 16 | `migrations/supabase/016_sync_log_doorbell.up.sql` | **you, SQL editor** |
 
    Paste each file **whole**. **Never through a script that splits on semicolons** — `003`, `009`,
-   and `011`–`015` define `$$`-quoted function bodies containing semicolons, and a splitter shreds
-   them. The thirteen by-hand files are the ones the MCP tools refuse, because they contain `drop` or `revoke`
+   and `011`–`016` define `$$`-quoted function bodies containing semicolons, and a splitter shreds
+   them. The fourteen by-hand files are the ones the MCP tools refuse, because they contain `drop` or `revoke`
    (§6a.2).
 
    **Never re-run `005` after `009`.** 005 re-adds its two-type factory CHECK, the one 009 replaced

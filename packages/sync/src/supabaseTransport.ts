@@ -161,6 +161,14 @@ export class SupabaseSyncTransport implements SyncTransport, SyncPullTransport {
 
   constructor(private readonly options: SupabaseTransportOptions) {}
 
+  /**
+   * A current access token for this computer's session -- for the realtime doorbell, which joins its
+   * channel as this computer, through the same policies the pull reads under.
+   */
+  accessToken(): Promise<string> {
+    return this.options.auth.accessToken();
+  }
+
   // ─── The claim ────────────────────────────────────────────────────────────
 
   /**

@@ -41,6 +41,8 @@ export interface CloudSyncStatus {
   queue: SyncQueueSummary;
   /** How far through the cloud log this computer has read. 0 = it has applied nothing. */
   pullCursor: number;
+  /** The realtime doorbell (cloud migration 016). LISTENING: other computers' work arrives in seconds. */
+  realtime?: "OFF" | "CONNECTING" | "LISTENING" | "RECONNECTING";
   /**
    * Present only while pulled events are parked, waiting for something that has not arrived yet:
    * how many, and the one at the earliest log position with why and when it is next tried.

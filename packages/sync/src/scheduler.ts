@@ -32,7 +32,7 @@
  * What started a pass. Recorded so "the timer worked" is distinguishable from "somebody retried".
  * SAVE: something was just queued and is being sent without waiting for the timer (push on save).
  */
-export type SyncTrigger = "STARTUP" | "TIMER" | "RECONNECT" | "MANUAL" | "SAVE";
+export type SyncTrigger = "STARTUP" | "TIMER" | "RECONNECT" | "MANUAL" | "SAVE" | "REALTIME";
 
 /** How a pass ended, in the only four shapes the caller has to tell apart. */
 export type SyncOutcome =
@@ -80,9 +80,15 @@ export interface SyncSchedulerOptions {
    * of saves cannot postpone the pass for ever. Default 1500.
    */
   readonly saveNudgeDelayMs?: number;
+  /**
+   * How long a doorbell ring waits before its pass (wake), so a burst of rings shares one pass.
+   * Short: a ring means another computer's work is already in the cloud. Default 250.
+   */
+  readonly wakeDelayMs?: number;
 }
 
 const DEFAULT_SAVE_NUDGE_DELAY_MS = 1_500;
+const DEFAULT_WAKE_DELAY_MS = 250;
 
 export interface SyncSchedulerState {
   readonly running: boolean;
@@ -114,8 +120,8 @@ export class SyncScheduler {
   private scheduledDelay: number | null = null;
   /** A nudge's pending pass. Separate from `timer`, which keeps the ordinary rhythm. */
   private nudgeTimer: NodeJS.Timeout | null = null;
-  /** A nudge arrived while a pass was running: run once more when it finishes. */
-  private nudgeAfterPass = false;
+  /** A nudge or wake arrived while a pass was running: run once more when it finishes, for that reason. */
+  private afterPass: SyncTrigger | null = null;
 
   constructor(private readonly options: SyncSchedulerOptions) {}
 
@@ -160,22 +166,36 @@ export class SyncScheduler {
    * exactly one more pass follows, because the running one may have leased before the row existed.
    */
   nudge(): void {
+    this.soon("SAVE", this.options.saveNudgeDelayMs ?? DEFAULT_SAVE_NUDGE_DELAY_MS);
+  }
+
+  /**
+   * The cloud's doorbell rang: another computer's work has reached the log (cloud migration 016).
+   * Starts a pass a moment later, sharing a pass with any nudge or ring already coming, and under the
+   * same guards -- a ring never forces a pass while the scheduler is backing off a failed network.
+   */
+  wake(): void {
+    this.soon("REALTIME", this.options.wakeDelayMs ?? DEFAULT_WAKE_DELAY_MS);
+  }
+
+  /** A pass shortly, for `trigger`: shared with one already coming, or remembered during a pass. */
+  private soon(trigger: SyncTrigger, delayMs: number): void {
     if (this.stopped || !this.options.isConfigured()) return;
     if (this.consecutiveFailures > 0 || !this.options.isOnline()) return;
     if (this.running) {
-      this.nudgeAfterPass = true;
+      this.afterPass ??= trigger;
       return;
     }
-    // Already coming: this save rides on it.
+    // Already coming: this one rides on it.
     if (this.nudgeTimer !== null) return;
     this.nudgeTimer = this.options.setTimer(() => {
       this.nudgeTimer = null;
       if (this.running) {
-        this.nudgeAfterPass = true;
+        this.afterPass ??= trigger;
         return;
       }
-      void this.runNow("SAVE");
-    }, this.options.saveNudgeDelayMs ?? DEFAULT_SAVE_NUDGE_DELAY_MS);
+      void this.runNow(trigger);
+    }, delayMs);
   }
 
   /**
@@ -228,12 +248,12 @@ export class SyncScheduler {
     // sooner or later will not change, and a completed pass means things work.
     this.consecutiveFailures = result.outcome === "TRANSPORT_ERROR" ? this.consecutiveFailures + 1 : 0;
     this.announce();
-    // A save that came in while this pass ran gets its own pass now -- unless this one just failed
-    // to reach the cloud, in which case nudge() declines and the backoff carries it.
-    if (this.nudgeAfterPass) {
-      this.nudgeAfterPass = false;
-      this.nudge();
-    }
+    // A save or ring that came in while this pass ran gets its own pass now -- unless this one just
+    // failed to reach the cloud, in which case soon() declines and the backoff carries it.
+    const again = this.afterPass;
+    this.afterPass = null;
+    if (again === "REALTIME") this.wake();
+    else if (again !== null) this.nudge();
     return result;
   }
 
@@ -282,7 +302,7 @@ export class SyncScheduler {
   private cancelNudge(): void {
     if (this.nudgeTimer !== null) this.options.clearTimer(this.nudgeTimer);
     this.nudgeTimer = null;
-    this.nudgeAfterPass = false;
+    this.afterPass = null;
   }
 
   private announce(): void {

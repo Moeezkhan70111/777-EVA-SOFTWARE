@@ -2,7 +2,7 @@
 --
 -- Not a migration: it changes nothing, has no number, and must never be applied as one. Run it
 -- whole in the Supabase SQL editor (or through the MCP execute_sql tool) against any project that
--- has had schema.sql and 002-015 applied. One row per check. Every row must say ok = true.
+-- has had schema.sql and 002-016 applied. One row per check. Every row must say ok = true.
 --
 -- Updated for 009 (2026-10-25): the log's types are rows in sync_aggregate_types and the scope rule
 -- is a trigger, so checks 2, 3, 17 and 20-21 describe that. A project still at 008 fails exactly
@@ -28,6 +28,11 @@
 -- Updated for 015 (2026-10-26): the stock-movement mirror (check 3 goes to 32), push_stock_event
 -- (11-12 count eleven), STOCK_EVENT in check 20, and check 31 for its log trigger. A project at 014
 -- fails exactly 3, 11, 20 and 31.
+--
+-- Updated for 016 (2026-10-27): the realtime doorbell (check 3 goes to 33, 7 gains its SELECT, 15 goes
+-- to 12 policies), and check 32, which proves the doorbell is rung by the log and is the ONLY public
+-- table published to Realtime -- never the log itself, whose rows carry whole payloads. A project at
+-- 015 fails exactly 3, 7, 15 and 32.
 --
 -- It turns docs/36 section 6a's verified state into something that can be re-run instead of
 -- re-read. Run it after setting up a project, and again after ANY change to its schema or grants.
@@ -69,7 +74,7 @@ checks(n, check_name, expected, actual) as (
     (select count(*)::text from pg_constraint
      where conname = 'sync_event_log_factory_scope' and conrelid = to_regclass('public.sync_event_log'))
 
-  union all select 3, 'tables in public', '32',
+  union all select 3, 'tables in public', '33',
     (select count(*)::text from pg_class c join pg_namespace n on n.oid = c.relnamespace
      where n.nspname = 'public' and c.relkind = 'r')
 
@@ -84,8 +89,8 @@ checks(n, check_name, expected, actual) as (
   union all select 6, 'PUBLIC: table privileges anywhere in public', '0',
     (select count(*)::text from client_table_grants where grantee = 0)
 
-  union all select 7, 'authenticated: exactly SELECT on the 7 synchronised tables and device_sync_health',
-    'device_sync_health:SELECT,factories:SELECT,operators:SELECT,product_variants:SELECT,production_events:SELECT,qr_master:SELECT,sync_event_log:SELECT,workstations:SELECT',
+  union all select 7, 'authenticated: exactly SELECT on the 7 synchronised tables, device_sync_health and the doorbell',
+    'device_sync_health:SELECT,factories:SELECT,operators:SELECT,product_variants:SELECT,production_events:SELECT,qr_master:SELECT,sync_event_log:SELECT,sync_log_doorbell:SELECT,workstations:SELECT',
     coalesce((select string_agg(relname || ':' || privilege_type, ',' order by relname, privilege_type)
               from client_table_grants where grantee = 'authenticated'::regrole), '')
 
@@ -131,7 +136,7 @@ checks(n, check_name, expected, actual) as (
        and coalesce(array_to_string(p.proconfig, ',') like '%search_path=%', false))
 
   -- 15-16. POLICIES: every one for authenticated, none for anon.
-  union all select 15, 'policies in public', '11',
+  union all select 15, 'policies in public', '12',
     (select count(*)::text from pg_policies where schemaname = 'public')
 
   union all select 16, 'policies for any role other than authenticated', '0',
@@ -246,6 +251,14 @@ checks(n, check_name, expected, actual) as (
   union all select 31, 'stock-movement log trigger present', '1',
     (select count(*)::text from pg_trigger
      where not tgisinternal and tgname = 'trg_inventory_stock_events_log')
+
+  -- 32. THE REALTIME DOORBELL (016): the log rings it, and it is the only public table Realtime
+  --     publishes. Publishing the log would stream every event's whole payload to every computer.
+  union all select 32, 'doorbell rung by the log, and the only public table published to Realtime', '1|sync_log_doorbell',
+    (select count(*)::text from pg_trigger where not tgisinternal and tgname = 'trg_sync_event_log_doorbell')
+      || '|' ||
+    coalesce((select string_agg(tablename, ',' order by tablename) from pg_publication_tables
+               where pubname = 'supabase_realtime' and schemaname = 'public'), '')
 )
 select n, check_name, expected, actual, actual = expected as ok
 from checks

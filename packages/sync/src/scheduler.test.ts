@@ -441,3 +441,49 @@ test("stopping cancels a nudge that was about to run", () => {
   assert.deepEqual(h.timers.delays(), []);
   assert.deepEqual(h.passes, []);
 });
+
+// ─── Realtime: the doorbell's wake ───────────────────────────────────────────
+
+/** The default doorbell delay (DEFAULT_WAKE_DELAY_MS). */
+const WAKE_MS = 250;
+
+test("a ring starts a pass within a quarter of a second, recorded as realtime, and a burst shares it", async () => {
+  const h = harness();
+  h.scheduler.start();
+  for (let ring = 0; ring < 4; ring += 1) h.scheduler.wake();
+  assert.deepEqual(h.timers.delays(), [WAKE_MS, 90_000], "one pass coming, however many rings");
+
+  await h.timers.fireDelay(WAKE_MS);
+  assert.deepEqual(h.passes, ["REALTIME"]);
+  assert.deepEqual(h.timers.delays(), [90_000], "the ordinary rhythm is untouched: it is the safety net");
+});
+
+test("a ring during a pass gets exactly one more pass after it, for the ring", async () => {
+  let release: () => void = () => undefined;
+  const passes: SyncTrigger[] = [];
+  const h = harness({
+    runPass: async (trigger) => {
+      passes.push(trigger);
+      if (passes.length === 1) await new Promise<void>((resolve) => (release = resolve));
+      return { outcome: "OK" };
+    },
+  });
+  h.scheduler.start();
+  const manual = h.scheduler.runNow("MANUAL");
+  h.scheduler.wake();
+  h.scheduler.wake();
+  release();
+  await manual;
+  assert.deepEqual(h.timers.delays(), [WAKE_MS, 90_000]);
+  await h.timers.fireDelay(WAKE_MS);
+  assert.deepEqual(passes, ["MANUAL", "REALTIME"]);
+});
+
+test("a ring never forces a pass while the scheduler backs off a failed network", async () => {
+  const h = harness({ runPass: async () => ({ outcome: "TRANSPORT_ERROR", reason: "offline" }) });
+  h.scheduler.start();
+  await h.scheduler.runNow("MANUAL");
+  const before = h.timers.delays();
+  h.scheduler.wake();
+  assert.deepEqual(h.timers.delays(), before, "the backoff's own pass carries it");
+});

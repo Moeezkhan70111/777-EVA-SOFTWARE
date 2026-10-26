@@ -217,7 +217,7 @@ export interface PreMigrationBackup {
 }
 
 /** What started a sync pass. Mirrors the CHECK on sync_runs.trigger (SAVE since migration 092). */
-export type SyncRunTrigger = "STARTUP" | "TIMER" | "RECONNECT" | "MANUAL" | "SAVE";
+export type SyncRunTrigger = "STARTUP" | "TIMER" | "RECONNECT" | "MANUAL" | "SAVE" | "REALTIME";
 
 /** How a sync pass ended. Mirrors the CHECK on sync_runs.outcome. */
 export type SyncRunOutcome = "OK" | "REFUSED" | "TRANSPORT_ERROR" | "FAILED";

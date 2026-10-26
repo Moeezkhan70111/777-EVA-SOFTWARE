@@ -19,6 +19,7 @@ import { IPC } from "../../shared/ipcChannels";
 import type { IpcContext } from "./context";
 import { rejection } from "../authorize";
 import { describeCloudSync, isCloudSyncConfigured, runCloudSyncPass } from "../cloudSyncPass";
+import { realtimeStatus } from "../realtimeWake";
 
 export interface CloudSyncOutcome {
   accepted: boolean;
@@ -102,6 +103,8 @@ export function registerCloudSyncHandlers(ctx: IpcContext): void {
       }),
       // How far through the cloud log this computer has read. 0 means it has never applied one.
       pullCursor: sync.readPullCursor(db.db),
+      // Whether the cloud's doorbell is being listened to: LISTENING means seconds, not a minute.
+      realtime: realtimeStatus(),
       // Set only while something pulled is parked, waiting on something that has not arrived: how
       // many, and the one at the earliest log position.
       waitingFor:

@@ -1921,3 +1921,42 @@ test("015: the movements are closed to every client, only the push is callable, 
   assert.doesNotMatch(down, /sync_event_log|sync_aggregate_types/);
   assert.match(STOCK_EVENTS_DOWN, /WHAT THIS COSTS/);
 });
+
+// ─── 016: the realtime doorbell ─────────────────────────────────────────────
+
+const DOORBELL = read("migrations/supabase/016_sync_log_doorbell.up.sql");
+const DOORBELL_DOWN = read("migrations/supabase/016_sync_log_doorbell.down.sql");
+
+test("016: only the doorbell is published to Realtime, never the log and its payloads", () => {
+  const sql = sqlOnly(DOORBELL);
+  const published = [...sql.matchAll(/alter publication supabase_realtime add table public\.([a-z_]+)/g)].map((match) => match[1]);
+  assert.deepEqual(published, ["sync_log_doorbell"]);
+  assert.doesNotMatch(sql, /add table public\.sync_event_log/);
+  // A position and a device: nothing a reader could act on without the validated pull.
+  const table = sql.slice(sql.indexOf("create table if not exists public.sync_log_doorbell"), sql.indexOf(");", sql.indexOf("create table if not exists public.sync_log_doorbell")));
+  assert.doesNotMatch(table, /payload|jsonb/);
+});
+
+test("016: the log rings once per transaction per scope, after the row is written", () => {
+  const sql = sqlOnly(DOORBELL);
+  assert.match(sql, /create trigger trg_sync_event_log_doorbell\s+after insert on public\.sync_event_log\s+for each row/);
+  const ring = functionBody(DOORBELL, "ring_sync_log_doorbell");
+  assert.match(ring, /current_setting\('erp\.doorbell_rung', true\)/);
+  assert.match(ring, /set_config\('erp\.doorbell_rung', v_rung \|\| '\|' \|\| v_scope \|\| '\|', true\)/, "transaction-local, per scope");
+  assert.match(ring, /greatest\(public\.sync_log_doorbell\.last_seq, excluded\.last_seq\)/, "never moves backwards");
+});
+
+test("016: read by the computers of one factory, written only by the trigger", () => {
+  const sql = sqlOnly(DOORBELL);
+  assert.match(sql, /alter table public\.sync_log_doorbell enable row level security/);
+  assert.match(sql, /revoke all on table public\.sync_log_doorbell from public, anon, authenticated/);
+  assert.match(sql, /grant select on table public\.sync_log_doorbell to authenticated/);
+  assert.doesNotMatch(sql, /grant (insert|update|delete)/);
+  assert.match(sql, /using \(public\.is_enrolled_device\(\) and \(factory_id = public\.current_factory_id\(\) or factory_id is null\)\)/);
+  assert.doesNotMatch(sql, /grant execute/);
+  assert.match(sql, /revoke all on function public\.ring_sync_log_doorbell\(\) from public, anon, authenticated/);
+  for (const text of [sql, sqlOnly(DOORBELL_DOWN)]) assert.ok(text.trim().startsWith("begin;") && text.includes("commit;"));
+  const down = sqlOnly(DOORBELL_DOWN);
+  assert.ok(down.indexOf("alter publication supabase_realtime drop table public.sync_log_doorbell") < down.indexOf("drop table if exists public.sync_log_doorbell"));
+  assert.doesNotMatch(down, /delete from/, "the rollback removes the doorbell, never log rows");
+});
