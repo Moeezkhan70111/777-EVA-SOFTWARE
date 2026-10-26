@@ -52,6 +52,7 @@ import { CashVoucherFormPage } from "../pages/CashVoucherFormPage";
 import { CashVoucherListPage } from "../pages/CashVoucherListPage";
 import { SettingsPage } from "../pages/SettingsPage";
 import { HealthPage } from "../pages/HealthPage";
+import { rememberRoute, routeBeforeReload } from "../features/navigation/resumeRoute";
 import { SyncWaitingNotice } from "../features/sync/SyncWaitingNotice";
 import { LogsPage } from "../pages/LogsPage";
 import { WorkspacePage } from "../pages/WorkspacePage";
@@ -111,7 +112,11 @@ export const App = () => {
   // Automatic updates: silent until a downloaded version is waiting, then one "Restart Now"
   // prompt. Mounted here because it belongs to the application, not to any one screen.
   useAppUpdate();
-  const [route, setRoute] = useState<AppRoute>(HOME_ROUTE);
+  // A reload of this window comes back to the screen it showed (resumeRoute.ts); a fresh start does not.
+  const [route, setRoute] = useState<AppRoute>(() => routeBeforeReload() ?? HOME_ROUTE);
+  React.useEffect(() => {
+    rememberRoute(route);
+  }, [route]);
   const [workspaceTab] = useState<WorkspaceTab>("tasks");
   const [selectedProductId, setSelectedProductId] = useState<string | undefined>(undefined);
   const [selectedPartyId, setSelectedPartyId] = useState<string | undefined>(undefined);

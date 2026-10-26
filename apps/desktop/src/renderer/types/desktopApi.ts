@@ -2248,6 +2248,11 @@ export interface DesktopApi {
   getFactorySyncHealth(): Promise<SyncReply<DeviceSyncHealthReport[]>>;
   /** Marks one master record ("TYPE:id") to be sent again on the next pass. Leased: holder only. */
   sendMasterRecordAgain(recordKey: string): Promise<{ accepted: boolean; reason?: string }>;
+  /**
+   * Hears what kind of data a sync just changed (shared/dataChange.ts). Returns the way to stop
+   * listening. Read through hooks/useDataChanged, which checks each message.
+   */
+  onDataChanged?(listener: (change: unknown) => void): () => void;
   /** What the one-time backfill would send, and when it last ran here. Administrators. */
   getBackfillPlan(): Promise<SyncReply<{ plan: BackfillPlan; lastAt: string | null }>>;
   /** Marks this computer's history for the passes to send. Administrators, holder of both leases. */

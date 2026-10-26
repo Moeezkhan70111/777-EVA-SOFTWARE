@@ -56,11 +56,16 @@ test("the budget holds: no more batches than allowed, and none started after the
 });
 
 test("the pull reads page after page while each is full, and adds the pages up", async () => {
-  const pages = [page(200), page(200, { from: 200, cursor: 400 }), page(12, { from: 400, cursor: 412, parked: 3 })];
+  const pages = [
+    page(200, { appliedTypes: ["INVENTORY_ITEM"] }),
+    page(200, { from: 200, cursor: 400, appliedTypes: ["STOCK_EVENT"] }),
+    page(12, { from: 400, cursor: 412, parked: 3, appliedTypes: ["INVENTORY_ITEM", "PARTY"] }),
+  ];
   let calls = 0;
   const result = await pullBacklog({ runOnce: async () => pages[calls++] ?? page(0) }, { ...BUDGET, batchSize: 200 });
   assert.equal(calls, 3);
   assert.deepEqual([result.from, result.cursor, result.fetched, result.applied, result.parked], [0, 412, 412, 412, 3]);
+  assert.deepEqual(result.appliedTypes, ["INVENTORY_ITEM", "PARTY", "STOCK_EVENT"], "every page's changes, once each");
 });
 
 test("the pull stops at an unreached service, and keeps the restart flag of the first page", async () => {

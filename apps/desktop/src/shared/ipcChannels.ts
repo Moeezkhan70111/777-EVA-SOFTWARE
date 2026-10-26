@@ -299,6 +299,9 @@ export const IPC = {
   getFactorySyncHealth: "erp:get-factory-sync-health",
   sendMasterRecordAgain: "erp:send-master-record-again",
 
+  // Main to renderer, not a request: what kind of data a sync just changed (shared/dataChange.ts).
+  dataChanged: "erp:data-changed",
+
   // The one-time backfill: what the store PC held before it synced -- see main/ipc/backfill.ts.
   getBackfillPlan: "erp:get-backfill-plan",
   runBackfill: "erp:run-backfill",

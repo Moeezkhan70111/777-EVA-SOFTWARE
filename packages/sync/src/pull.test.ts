@@ -294,6 +294,7 @@ test("PC2 pulls and shows what PC1 recorded", async () => {
     const pulled = await puller(fixture.pc2, fixture.backend, time.nowMs).runOnce();
     assert.equal(pulled.fetched, 2);
     assert.equal(pulled.applied, 2);
+    assert.deepEqual(pulled.appliedTypes, ["PRODUCTION_PRODUCED", "QR_MASTER"], "what changed, for the screens showing it");
     assert.deepEqual(pulled.refused, []);
     assert.equal(pulled.waitingFor, undefined);
 
@@ -325,6 +326,7 @@ test("pulling again changes nothing", async () => {
     assert.equal(first.applied, 2);
     assert.equal(second.fetched, 0, "the cursor has moved past them");
     assert.equal(second.applied, 0);
+    assert.deepEqual(second.appliedTypes, [], "nothing new: no screen has anything to refresh");
     assert.equal(second.cursor, first.cursor);
     assert.deepEqual(qrIds(fixture.pc2), ["SK9_BLACK_7/10_000001"]);
     assert.equal(
@@ -402,6 +404,7 @@ test("a scan whose carton has not arrived is parked, and applied the moment the 
     const finished = await pull.runOnce();
 
     assert.equal(finished.parked, 0);
+    assert.ok(finished.appliedTypes?.includes("PRODUCTION_PRODUCED"), "a parked event applied on retry counts as a change too");
     assert.equal(finished.waitingFor, undefined);
     assert.deepEqual(qrIds(fixture.pc2), ["SK9_BLACK_7/10_000001"]);
     assert.equal(eventSerials(fixture.pc2).length, 1, "and the scan landed exactly once");

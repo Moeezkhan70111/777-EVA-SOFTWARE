@@ -3,6 +3,8 @@ import { usePolledRead, type PolledRead } from "../../hooks/usePolledRead";
 import { copy } from "../../config/copy";
 import type { SyncReply, SyncWaiting } from "../../types/desktopApi";
 import { isSyncWaiting } from "./syncWaiting";
+import { useDataChanged } from "../../hooks/useDataChanged";
+import { DATA_KIND } from "../../../shared/dataChange";
 
 // What this computer is waiting on, kept current. A local read, no network: polled every 30
 // seconds while the window is visible, about twice per sync pass.
@@ -28,5 +30,8 @@ export const useSyncWaiting = (): PolledRead<SyncWaiting> => {
     if (!reply.accepted) return reply;
     return isSyncWaiting(reply.value) ? { accepted: true, value: reply.value } : { accepted: false, reason: copy.syncWaiting.hereFailed };
   }, []);
-  return usePolledRead(read, { intervalMs: POLL_INTERVAL_MS, failed: copy.syncWaiting.hereFailed });
+  const polled = usePolledRead(read, { intervalMs: POLL_INTERVAL_MS, failed: copy.syncWaiting.hereFailed });
+  // Whatever a sync applies can settle a wait, or start one: read again at once, not in 30 seconds.
+  useDataChanged([DATA_KIND.SYNC], () => void polled.reload());
+  return polled;
 };

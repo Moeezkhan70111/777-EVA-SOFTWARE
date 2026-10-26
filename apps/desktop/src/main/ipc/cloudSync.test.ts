@@ -29,6 +29,12 @@ import { runCloudSyncPass } from "../cloudSyncPass";
 
 const handlers = new Map<string, (event: IpcMainInvokeEvent, ...args: unknown[]) => unknown>();
 
+/** What the pass told the open windows had changed (main/dataChanged.ts), one entry per announcement. */
+const announced: string[][] = [];
+vi.mock("../dataChanged", () => ({
+  announceDataChanged: (kinds: readonly string[]) => announced.push([...kinds]),
+}));
+
 vi.mock("electron", () => ({
   ipcMain: {
     handle: (channel: string, handler: (event: IpcMainInvokeEvent, ...args: unknown[]) => unknown) => {
@@ -62,6 +68,7 @@ interface DrainResultStub {
 interface PullResultStub {
   fetched: number;
   applied: number;
+  appliedTypes?: string[];
   duplicates: number;
   refused: Array<{ reason: string }>;
   transportError?: string;
@@ -659,6 +666,19 @@ describe("cloud sync at the process boundary", () => {
     await run();
     expect(healthReports).toHaveLength(1);
     expect(healthReports[0]).toMatchObject({ stale: 0, deadLetters: 0, unsentMarks: 0 });
+  });
+
+  it("tells the open screens what a pass applied, and stays quiet when it read nothing", async () => {
+    announced.length = 0;
+    pullResult = { fetched: 3, applied: 2, appliedTypes: ["STOCK_EVENT", "INVENTORY_ITEM"], duplicates: 1, refused: [] };
+    await run();
+    expect(announced).toEqual([["MATERIALS", "STOCK", "SYNC"]]);
+
+    announced.length = 0;
+    pullResult = { fetched: 0, applied: 0, duplicates: 0, refused: [] };
+    await run();
+    // An idle pass reloads nothing.
+    expect(announced).toEqual([]);
   });
 
   it("builds changed master records, then stock movements, before the drain, so the same pass carries them", async () => {

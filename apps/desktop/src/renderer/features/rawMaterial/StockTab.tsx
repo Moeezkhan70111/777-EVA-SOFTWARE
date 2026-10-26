@@ -13,6 +13,8 @@ import { ActionMenu } from "./ActionMenu";
 import { useSyncWaiting } from "../sync/useSyncWaiting";
 import { incompleteMaterials } from "../sync/syncWaiting";
 import { IncompleteMaterials, IncompleteRowMark } from "../sync/IncompleteMaterials";
+import { useDataChanged } from "../../hooks/useDataChanged";
+import { DATA_KIND } from "../../../shared/dataChange";
 import { downloadCsv, exportFileName } from "../../utils/exportFile";
 import { quantityInBaseUnit } from "@erp/domain";
 import type { ItemUnitLadderStep } from "../../types/desktopApi";
@@ -101,9 +103,16 @@ export const StockTab: React.FC<StockTabProps> = ({
 
   const attributeKey = JSON.stringify(attributeFilters);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
+  /**
+   * Reads the list and its totals. QUIET when data changed underneath an open screen: no loading
+   * state, so the table, the page, the scroll position and an open drawer all stay where they are,
+   * and the figures simply change. A quiet read that fails keeps what is shown.
+   */
+  const load = useCallback(async (quiet = false) => {
+    if (!quiet) {
+      setLoading(true);
+      setError(null);
+    }
     try {
       const attributes = Object.fromEntries(
         Object.entries(JSON.parse(attributeKey) as Record<string, string>).filter(([, value]) => value.trim() !== "")
@@ -131,15 +140,18 @@ export const StockTab: React.FC<StockTabProps> = ({
       }
       setPendingCorrections(await api.listStockCorrectionRequests({ status: "PENDING" }));
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : copy.states.loadFailedBody);
+      if (!quiet) setError(cause instanceof Error ? cause.message : copy.states.loadFailedBody);
     } finally {
-      setLoading(false);
+      if (!quiet) setLoading(false);
     }
   }, [api, search, categoryId, subCategoryId, attributeKey, equivalentUnitId, showDisabled]);
 
   useEffect(() => {
     void load();
   }, [load]);
+
+  // Stock, materials or labels arriving from another computer: the same read, in place.
+  useDataChanged([DATA_KIND.STOCK, DATA_KIND.MATERIALS, DATA_KIND.LABELS], () => void load(true));
 
   useEffect(() => {
     setPage(1);

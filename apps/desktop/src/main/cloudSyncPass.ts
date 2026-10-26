@@ -30,6 +30,8 @@ import type { SqliteDatabase, StructuredLogger, SyncRunOutcome, SyncRunTrigger }
 import type { DeviceSyncHealth, LastReport, SupabaseSyncTransport, SyncPassResult } from "@erp/sync";
 import { describeCloudSyncConfig, readCloudSyncConfig } from "./cloudConfig";
 import { DeviceCredentialStore } from "./deviceCredentialStore";
+import { announceDataChanged } from "./dataChanged";
+import { dataKindsOf } from "../shared/dataChange";
 
 export interface CloudSyncPassOutcome extends SyncPassResult {
   /** Carton identities and production events sent and acknowledged this pass. */
@@ -401,6 +403,10 @@ export async function runCloudSyncPass(
     const pull = new sync.SyncPull(db.db, transport, { project: identity.url, batchSize: sync.PULL_BUDGET.batchSize });
     // Page after page while each comes back full: a new computer reads the log in minutes.
     const pulled = await sync.pullBacklog(pull, sync.PULL_BUDGET);
+    // Open screens showing what just arrived reload in place: a figure that is current in the
+    // database but stale on the screen is no better than a slow sync. Anything read can also settle
+    // or start a wait, so a read that applied nothing still tells the waiting lists.
+    if (pulled.applied > 0 || pulled.fetched > 0) announceDataChanged(dataKindsOf(pulled.appliedTypes ?? []));
     if (pulled.restartedForProject) {
       logger.log({
         module: "sync",

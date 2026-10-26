@@ -372,6 +372,20 @@ not yet applied to test.
   marks (changes made before this PC synced) are counted but left for the backfill: restamping
   them with today's epoch could overwrite a change another holder made in between.
 
+**As built — screens that follow the data, 2026-10-27 (from the step-1 live test).** A stock figure
+current in the database but stale on the screen is no better than a slow sync, so:
+
+- **After a pass applies anything, the main process tells every open window what kind of data
+  changed** (`shared/dataChange.ts`: stock, materials, parties, labels, cartons, and the waits).
+- **Screens showing one of those kinds reload in place**, quietly (`useDataChanged`): no loading
+  state, so the table, the filters, the page, the scroll position and an open drawer stay where
+  they are, and the figures simply change. A burst of changes is one reload. Wired into the Stock
+  tab, the raw-material lookups (including packets in store), the material drawer's history and
+  ladder, and the waiting marks and notices.
+- **A manual reload returns to the screen it showed** (`resumeRoute.ts`, sessionStorage). Opening
+  the app is still a fresh start on the user's starting screen. A form opened for one record is not
+  resumed.
+
 **As built — the backfill (item 3), 2026-10-26.** No cloud migration: it only marks, and the
 existing pushes send.
 

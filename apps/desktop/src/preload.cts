@@ -317,6 +317,15 @@ contextBridge.exposeInMainWorld("desktop", {
     sendMasterRecordAgain: (recordKey: string) => ipcRenderer.invoke(IPC.sendMasterRecordAgain, recordKey),
     getBackfillPlan: () => ipcRenderer.invoke(IPC.getBackfillPlan),
     runBackfill: () => ipcRenderer.invoke(IPC.runBackfill),
+    // A subscription, not a call: the listener hears every change the main process announces, and
+    // the returned function stops it. The event object never reaches the renderer.
+    onDataChanged: (listener: (change: unknown) => void) => {
+      const handler = (_event: unknown, change: unknown) => listener(change);
+      ipcRenderer.on(IPC.dataChanged, handler);
+      return () => {
+        ipcRenderer.removeListener(IPC.dataChanged, handler);
+      };
+    },
     getNumberBlockStatus: () => ipcRenderer.invoke(IPC.getNumberBlockStatus),
     adoptNumberBlock: () => ipcRenderer.invoke(IPC.adoptNumberBlock),
     assignNumberBlock: (block: number) => ipcRenderer.invoke(IPC.assignNumberBlock, block),

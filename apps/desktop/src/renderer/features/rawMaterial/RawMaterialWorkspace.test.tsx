@@ -214,3 +214,73 @@ describe("RawMaterialWorkspace", () => {
     expect(categoryNav).toHaveTextContent("RUBBER UPPER");
   });
 });
+
+// ─── data arriving from another computer (shared/dataChange.ts) ─────────────
+
+describe("RawMaterialWorkspace when data changes underneath it", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  /** Installs the API with a subscription the test can fire, as the main process would. */
+  function installLiveApi() {
+    const api = installApi();
+    const listeners = new Set<(change: unknown) => void>();
+    const onDataChanged = vi.fn((listener: (change: unknown) => void) => {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    });
+    Object.defineProperty(window, "desktop", {
+      value: { versions: { node: "22", chrome: "128", electron: "43" }, api: { ...api, onDataChanged } },
+      configurable: true,
+    });
+    const announce = (kinds: string[]) => listeners.forEach((listener) => listener({ kinds }));
+    return { api, announce, listeners };
+  }
+
+  it("updates the stock in place when stock arrives: no refresh, no loading state, same screen", async () => {
+    const { api, announce } = installLiveApi();
+    renderWorkspace(["stock"]);
+    const before = await screen.findByText("RAGZINE — BLACK");
+    expect(before.closest("tr")).toHaveTextContent("0");
+
+    // Another computer received 37 dozen of it.
+    api.listInventoryItems.mockResolvedValue(ITEMS.map((item) => (item.id === "item-bare" ? { ...item, quantity_on_hand: 37 } : item)));
+    const reads = api.listInventoryItems.mock.calls.length;
+    announce(["STOCK", "SYNC"]);
+
+    await waitFor(() => expect(screen.getByText("RAGZINE — BLACK").closest("tr")).toHaveTextContent("37"));
+    expect(api.listInventoryItems.mock.calls.length).toBe(reads + 1);
+    expect(screen.queryByText("Loading raw materials…")).toBeNull();
+    // The same row element: the table was never taken down and rebuilt.
+    expect(screen.getByText("RAGZINE — BLACK")).toBe(before);
+  });
+
+  it("ignores a change of something the screen does not show, and reloads once for a burst", async () => {
+    const { api, announce } = installLiveApi();
+    renderWorkspace(["stock"]);
+    await screen.findByText("RAGZINE — BLACK");
+    const reads = api.listInventoryItems.mock.calls.length;
+
+    announce(["PARTIES"]);
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    expect(api.listInventoryItems.mock.calls.length).toBe(reads);
+
+    announce(["STOCK"]);
+    announce(["MATERIALS"]);
+    announce(["STOCK"]);
+    await waitFor(() => expect(api.listInventoryItems.mock.calls.length).toBe(reads + 1));
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    expect(api.listInventoryItems.mock.calls.length).toBe(reads + 1);
+  });
+
+  it("stops listening when the screen closes", async () => {
+    const { listeners } = installLiveApi();
+    const { unmount } = renderWorkspace(["stock"]);
+    await screen.findByText("RAGZINE — BLACK");
+    expect(listeners.size).toBeGreaterThan(0);
+    unmount();
+    expect(listeners.size).toBe(0);
+  });
+});

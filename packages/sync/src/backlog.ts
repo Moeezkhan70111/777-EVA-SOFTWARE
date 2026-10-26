@@ -87,6 +87,7 @@ function mergePull(total: PullResult, next: PullResult): PullResult {
     from: total.from,
     fetched: total.fetched + next.fetched,
     applied: total.applied + next.applied,
+    appliedTypes: [...new Set([...(total.appliedTypes ?? []), ...(next.appliedTypes ?? [])])].sort(),
     duplicates: total.duplicates + next.duplicates,
     refused: [...total.refused, ...next.refused],
     ...(total.restartedForProject === true ? { restartedForProject: true } : {}),

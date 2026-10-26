@@ -74,6 +74,8 @@ export interface PullResult {
   readonly fetched: number;
   /** Applied for the first time this run, from the log or from the parked events. */
   readonly applied: number;
+  /** The aggregate types of what was applied this run, so open screens showing them can refresh. */
+  readonly appliedTypes?: readonly string[];
   readonly duplicates: number;
   /** Permanently refused. Each is reported, never silently dropped. */
   readonly refused: readonly PullProblem[];
@@ -104,6 +106,7 @@ export interface SyncPullOptions {
 /** What one run did, gathered as it goes. */
 interface Tally {
   applied: number;
+  appliedTypes: Set<string>;
   duplicates: number;
   refused: PullProblem[];
   /** Parked by THIS run, so the retry at its end does not try them a second time. */
@@ -130,7 +133,7 @@ export class SyncPull {
   async runOnce(): Promise<PullResult> {
     const restartedForProject = this.bindToProject() ? { restartedForProject: true } : {};
     const from = readPullCursor(this.sql);
-    const tally: Tally = { applied: 0, duplicates: 0, refused: [], parkedNow: new Set() };
+    const tally: Tally = { applied: 0, appliedTypes: new Set(), duplicates: 0, refused: [], parkedNow: new Set() };
     // One arrival time for the whole run, from the injectable clock, so a test can fix it.
     const replicatedAt = new Date(this.now()).toISOString();
 
@@ -180,7 +183,7 @@ export class SyncPull {
           continue;
         }
         settled.add(change.seq);
-        this.count(outcome, change.seq, tally);
+        this.count(outcome, change.seq, tally, change.envelope.aggregateType);
         if (alreadyParked.has(change.envelope.dedupeKey)) unparkEvent(this.sql, change.envelope.dedupeKey);
       }
       if (waiting.size === 0 || settled.size === before) break;
@@ -204,15 +207,20 @@ export class SyncPull {
         parkEvent(this.sql, { seq: parked.seq, envelope: parked.envelope, reason: outcome.reason ?? parked.reason, nowMs: this.now() }, this.backoff);
         continue;
       }
-      this.count(outcome, parked.seq, tally);
+      this.count(outcome, parked.seq, tally, parked.envelope.aggregateType);
       unparkEvent(this.sql, parked.envelope.dedupeKey);
     }
   }
 
-  private count(outcome: ApplyOutcome, seq: number, tally: Tally): void {
-    if (outcome.status === "APPLIED") tally.applied += 1;
-    else if (outcome.status === "DUPLICATE") tally.duplicates += 1;
-    else tally.refused.push(problem(seq, outcome));
+  private count(outcome: ApplyOutcome, seq: number, tally: Tally, aggregateType: string): void {
+    if (outcome.status === "APPLIED") {
+      tally.applied += 1;
+      tally.appliedTypes.add(aggregateType);
+    } else if (outcome.status === "DUPLICATE") {
+      tally.duplicates += 1;
+    } else {
+      tally.refused.push(problem(seq, outcome));
+    }
   }
 
   private parkedKeys(): Set<string> {
@@ -227,6 +235,7 @@ export class SyncPull {
       cursor,
       fetched,
       applied: tally.applied,
+      appliedTypes: [...tally.appliedTypes].sort(),
       duplicates: tally.duplicates,
       refused: tally.refused,
       parked: summary.count,
