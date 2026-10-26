@@ -543,6 +543,36 @@ export const copy = {
     sendAgainFailed: "It could not be marked to send again.",
   },
 
+  // The one-time backfill (features/sync/BackfillPanel.tsx): the store PC sends what it held
+  // before it synced.
+  backfill: {
+    title: "Send This Computer's History",
+    intro:
+      "Everything written on this computer before it started syncing — materials, parties, units, stock movements and label runs — has never been sent. The other computers fill their stock from it. Send it once, from the store computer.",
+    loading: "Working out what would be sent…",
+    failed: "What would be sent could not be worked out.",
+    willSend: "What will be sent",
+    masterRecords: (count: number) => `${count} master ${count === 1 ? "record" : "records"} (materials, categories, units, parties, machines, work sections)`,
+    stockMovements: (count: number) => `${count} stock ${count === 1 ? "movement" : "movements"}`,
+    labels: (runs: number, packets: number) => `${runs} label ${runs === 1 ? "run" : "runs"} and ${packets} ${packets === 1 ? "packet" : "packets"} never queued`,
+    unstamped: (count: number) => `${count} queued ${count === 1 ? "label" : "labels"} waiting for a lease`,
+    noLease: "This computer does not hold both the master-data and the store leases, so it cannot send its history. Only the store computer can.",
+    mismatchTitle: "Stock that does not add up — nothing will be sent until it is decided",
+    mismatchHint:
+      "For each material below, the recorded movements do not add up to its stock. Sent as they are, every other computer would show a different number. Correct each one, then send.",
+    mismatchBalance: "Stock",
+    mismatchMovements: "Movements add up to",
+    mismatchUnit: "Recorded in another unit",
+    lastSent: (when: string) => `Last sent ${when}. Sending again is safe: nothing already sent is sent twice.`,
+    send: "Send History",
+    sending: "Marking…",
+    confirmTitle: "Send this computer's history?",
+    confirmExplain:
+      "Everything listed is marked and goes over the next syncs, a few hundred records a minute. The store keeps working meanwhile.",
+    confirmWarning: "Do this on the store computer only. Another computer is refused.",
+    sent: "Marked. It goes over the next syncs — the other computers' screens fill as it arrives.",
+  },
+
   sync: {
     title: "Cloud Sync",
     notConfiguredTitle: "Not set up on this computer",

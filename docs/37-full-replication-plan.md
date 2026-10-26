@@ -372,6 +372,28 @@ not yet applied to test.
   marks (changes made before this PC synced) are counted but left for the backfill: restamping
   them with today's epoch could overwrite a change another holder made in between.
 
+**As built — the backfill (item 3), 2026-10-26.** No cloud migration: it only marks, and the
+existing pushes send.
+
+- **Marks, writes nothing else** (`backfill.ts`): every master record under the master-data epoch,
+  every stock movement recorded here under the store epoch, the label runs and packets never
+  queued, and the queued ones still without an epoch. Then the ordinary passes send it, by the same
+  builders and pushes as any new change. Received rows (`replicated_at` set) are never re-sent.
+- **Refuses rather than send wrong stock.** If any material's movements, read by the store's own
+  sign rule, don't add up to its balance, or are in another unit than the balance, it marks
+  nothing and lists those materials. Run from **Settings → Cloud Sync** by an administrator. The
+  run is a leased write under **both** domains, so only the caught-up store PC can do it
+  (docs/36 §7.9).
+- **A material always travels ahead of its stock:** the stock builder skips a movement while its
+  material's revision is still waiting to be built (the master builder takes 200 a pass).
+- **Proven end to end:** a store holding 230 materials of pre-sync history is backfilled, the real
+  builders run pass by pass, and an empty reader applies whatever arrives, retrying what waits. It
+  ends with the store's exact balances, materials, parties, units, movements, runs and packets, and
+  nothing marked as its own.
+- **Not in it:** the 868 legacy carton outbox rows (§2.1), which belong to the carton backfill.
+  §2.2's "provision by snapshot" is superseded for this slice by item 3: a new PC is filled from
+  the cloud alone.
+
 **As built — stock movements (item 2), 2026-10-26.** Cloud migration 015 is written and not yet
 applied to test. Local migration 097.
 

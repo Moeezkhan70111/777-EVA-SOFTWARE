@@ -108,6 +108,27 @@ export interface DeviceSyncHealthReport {
   unsentMarks: number;
 }
 
+/** A material whose movements do not add up to its stock. Mirrors StockMismatch in @erp/data. */
+export interface BackfillMismatch {
+  itemId: string;
+  displayName: string;
+  balance: number;
+  fromMovements: number;
+  unitDiffers: boolean;
+}
+
+/** What the one-time backfill would send from this computer. Mirrors BackfillPlan in @erp/data. */
+export interface BackfillPlan {
+  masterEpoch: number | null;
+  storeEpoch: number | null;
+  masterRecords: Record<string, number>;
+  stockMovements: number;
+  labelRunsToQueue: number;
+  packetsToQueue: number;
+  unstampedQueued: number;
+  mismatches: BackfillMismatch[];
+}
+
 export type SyncReply<T> = { accepted: true; value: T } | { accepted: false; reason?: string };
 
 /** One recorded pass, as the renderer sees it. Mirrors SyncRunRecord in @erp/data. */
@@ -2227,6 +2248,10 @@ export interface DesktopApi {
   getFactorySyncHealth(): Promise<SyncReply<DeviceSyncHealthReport[]>>;
   /** Marks one master record ("TYPE:id") to be sent again on the next pass. Leased: holder only. */
   sendMasterRecordAgain(recordKey: string): Promise<{ accepted: boolean; reason?: string }>;
+  /** What the one-time backfill would send, and when it last ran here. Administrators. */
+  getBackfillPlan(): Promise<SyncReply<{ plan: BackfillPlan; lastAt: string | null }>>;
+  /** Marks this computer's history for the passes to send. Administrators, holder of both leases. */
+  runBackfill(): Promise<{ accepted: boolean; reason?: string; plan?: BackfillPlan }>;
   /** Read-only: which document-number range this computer holds, or why it holds none. */
   getNumberBlockStatus(): Promise<NumberBlockStatus>;
   /**

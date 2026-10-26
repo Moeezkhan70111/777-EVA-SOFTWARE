@@ -5,6 +5,7 @@ import { useDesktopApi } from "../../hooks/useDesktopApi";
 import { useNotifications } from "../../state/NotificationsContext";
 import { copy } from "../../config/copy";
 import type { CloudSyncStatus, DeadLetterEvent, DesktopApi } from "../../types/desktopApi";
+import { BackfillPanel } from "../../features/sync/BackfillPanel";
 
 // WHAT THIS COMPUTER HAS SENT, AND THE TWO THINGS AN ADMINISTRATOR CAN DO ABOUT IT.
 //
@@ -211,6 +212,9 @@ export const CloudSyncSection: React.FC<CloudSyncSectionProps> = ({ isAdmin }) =
           onPutBack={setConfirming}
         />
       )}
+
+      {/* The one-time backfill: an administrator, on the store computer. */}
+      {isAdmin && status?.configured === true && <BackfillPanel />}
 
       {confirming !== null && (
         <ConfirmDialog

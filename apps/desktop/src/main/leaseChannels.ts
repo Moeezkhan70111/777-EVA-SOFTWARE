@@ -89,6 +89,8 @@ export const LEASED_CHANNELS: Readonly<Record<string, readonly LeaseDomain[]>> =
   // 2026-10-26, when stock movements began to replicate). The program's other store steps --
   // store out, Dana, upper return -- were already store-leased, so its whole life is on the holder.
   [IPC.completeMachineProgramProduction]: BOTH,
+  // The backfill sends master records and stock history: only the holder of both, caught up.
+  [IPC.runBackfill]: BOTH,
 };
 
 /**

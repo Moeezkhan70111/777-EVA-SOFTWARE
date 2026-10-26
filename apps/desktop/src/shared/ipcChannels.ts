@@ -299,6 +299,10 @@ export const IPC = {
   getFactorySyncHealth: "erp:get-factory-sync-health",
   sendMasterRecordAgain: "erp:send-master-record-again",
 
+  // The one-time backfill: what the store PC held before it synced -- see main/ipc/backfill.ts.
+  getBackfillPlan: "erp:get-backfill-plan",
+  runBackfill: "erp:run-backfill",
+
   // This computer's document-number range: read-only status, the one-time adoption for the
   // existing-data machine, and the one-time assignment for a second computer.
   getNumberBlockStatus: "erp:get-number-block-status",

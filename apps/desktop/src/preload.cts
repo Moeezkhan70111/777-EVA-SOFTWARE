@@ -315,6 +315,8 @@ contextBridge.exposeInMainWorld("desktop", {
     getSyncWaiting: () => ipcRenderer.invoke(IPC.getSyncWaiting),
     getFactorySyncHealth: () => ipcRenderer.invoke(IPC.getFactorySyncHealth),
     sendMasterRecordAgain: (recordKey: string) => ipcRenderer.invoke(IPC.sendMasterRecordAgain, recordKey),
+    getBackfillPlan: () => ipcRenderer.invoke(IPC.getBackfillPlan),
+    runBackfill: () => ipcRenderer.invoke(IPC.runBackfill),
     getNumberBlockStatus: () => ipcRenderer.invoke(IPC.getNumberBlockStatus),
     adoptNumberBlock: () => ipcRenderer.invoke(IPC.adoptNumberBlock),
     assignNumberBlock: (block: number) => ipcRenderer.invoke(IPC.assignNumberBlock, block),

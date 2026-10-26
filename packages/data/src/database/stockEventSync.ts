@@ -52,9 +52,16 @@ export function stockEventPayloadOf(row: EventRow): StockEventPayload | null {
 export function buildStockEvents(db: BuildHandle, nowIso: string, limit = 500): StockEventBuildResult {
   const marks = db
     .prepare(
-      `SELECT record_id, lease_epoch FROM sync_dirty_records
-        WHERE aggregate_type = ? AND lease_epoch IS NOT NULL
-        ORDER BY marked_at, record_id
+      // A movement waits while its material's own revision is still to be built (the backfill
+      // marks hundreds of materials, built 200 a pass), so a material is always queued, and
+      // pushed, ahead of its stock.
+      `SELECT d.record_id, d.lease_epoch FROM sync_dirty_records d
+        WHERE d.aggregate_type = ? AND d.lease_epoch IS NOT NULL
+          AND NOT EXISTS (
+            SELECT 1 FROM inventory_stock_events e
+              JOIN sync_dirty_records m ON m.aggregate_type = 'INVENTORY_ITEM' AND m.record_id = e.item_id AND m.lease_epoch IS NOT NULL
+             WHERE e.id = d.record_id)
+        ORDER BY d.marked_at, d.record_id
         LIMIT ?`
     )
     .all(SYNC_AGGREGATE.STOCK_EVENT, limit) as Array<{ record_id: string; lease_epoch: number }>;

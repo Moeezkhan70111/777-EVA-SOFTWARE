@@ -6,6 +6,7 @@ import { DatabaseSync } from "node:sqlite";
 import { dropCaptureTriggers, installCaptureTriggers } from "./database/masterCapture.js";
 import { buildLeasedRecordRevisions, markRecordToSendAgain, type BuildResult, type SendAgainOutcome } from "./database/masterRecords.js";
 import { buildStockEvents, type StockEventBuildResult } from "./database/stockEventSync.js";
+import { lastBackfillAt, planBackfill, runBackfill, type BackfillOutcome, type BackfillPlan } from "./database/backfill.js";
 import type {
   DuplicateChecker,
   OutboxRepository,
@@ -145,6 +146,8 @@ export {
 } from "./database/masterRecords.js";
 export { buildStockEvents, stockEventPayloadOf } from "./database/stockEventSync.js";
 export type { StockEventBuildResult } from "./database/stockEventSync.js";
+export { BACKFILL_SETTING_KEY, lastBackfillAt, planBackfill, runBackfill, stockMismatches } from "./database/backfill.js";
+export type { BackfillOutcome, BackfillPlan, StockMismatch } from "./database/backfill.js";
 export type {
   MasterRecordType,
   RecordReference,
@@ -1203,6 +1206,21 @@ export class SqliteDatabase
    */
   buildStockEvents(nowIso: string): StockEventBuildResult {
     return buildStockEvents(this.db, nowIso);
+  }
+
+  /** What the one-time backfill would send from here, and whether it can (backfill.ts). Reads only. */
+  planBackfill(): BackfillPlan {
+    return planBackfill(this.db);
+  }
+
+  /** When the last backfill finished here, or null (backfill.ts). */
+  lastBackfillAt(): string | null {
+    return lastBackfillAt(this.db);
+  }
+
+  /** Marks everything this computer held before it synced, for the passes to send (backfill.ts). */
+  runBackfill(nowIso: string): BackfillOutcome {
+    return runBackfill(this.db, nowIso);
   }
 
   /** Marks one master record to be sent again as a new revision on the next pass (masterRecords.ts). */

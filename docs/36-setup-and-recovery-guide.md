@@ -831,6 +831,28 @@ project. Connect it once and press Sync Now.
 syncing with it writes the store and master data as it did before leases, and that work waits,
 unsent, for the backfill. This is deliberate: an unapplied migration must not lock the store.
 
+### 7.9 Sending the store PC's history (the backfill), once
+
+Everything the store PC wrote **before** it started syncing has never been sent: materials,
+categories, units, parties, machines, work sections, stock movements, and label runs. A new PC
+fills its stock from the cloud alone, so this has to go up once, after the leases are granted
+(§7.8).
+
+1. On the **store PC**, signed in as an administrator, open **Settings → Cloud Sync → Send This
+   Computer's History**. It lists what will be sent. Nothing has been sent yet.
+2. **If it lists materials whose stock does not add up, stop.** For each one, the recorded movements
+   do not add up to its stock (or one is in another unit). Sent as it is, every other PC would show
+   a different number. Decide what each should be, correct it on the store PC, and reopen the
+   panel. The button stays off until the list is empty.
+3. Press **Send History** and confirm. Nothing is sent at that moment: everything is *marked*, and
+   the ordinary syncs send it over the next minutes, materials ahead of their stock.
+4. Watch it arrive on the other PC. Its stock screen marks each material still arriving, and the
+   app-wide notice appears only if something waits over an hour.
+
+Sending again is safe: a movement, run or packet already sent is a duplicate everywhere, and a
+master record just travels as its next revision. Any other PC is refused: it does not hold both
+leases.
+
 ---
 
 ## 8. A known limit: what "online" does and does not mean
