@@ -61,6 +61,9 @@ const UNKNOWN_TO_RECORD: Readonly<Record<string, string>> = {
   UNKNOWN_INVENTORY_ITEM: SYNC_AGGREGATE.INVENTORY_ITEM,
   UNKNOWN_INVENTORY_UNIT: SYNC_AGGREGATE.INVENTORY_UNIT,
   UNKNOWN_PRODUCT_VARIANT: SYNC_AGGREGATE.PRODUCT_VARIANT,
+  // A packet before its label run, a scan before its carton.
+  RAW_MATERIAL_QR_BATCH_NOT_HERE_YET: SYNC_AGGREGATE.RAW_MATERIAL_QR_BATCH,
+  QR_NOT_REGISTERED_YET: SYNC_AGGREGATE.QR_MASTER,
   UNKNOWN_FACTORY: "FACTORY",
   UNKNOWN_WORKSTATION: "WORKSTATION",
   UNKNOWN_OPERATOR: "OPERATOR",
@@ -78,6 +81,16 @@ export function waitCause(reason: string): WaitCause {
   if (record !== undefined) return { kind: "MISSING", record, id: rest.join(":") };
   return { kind: "OTHER", code: reason };
 }
+
+/**
+ * The record a parked event is waiting to arrive, as "TYPE:id" -- the same key an arriving envelope
+ * has (its aggregate type and id) -- or null when the wait is not for one named record (still in
+ * use, a name still held). The pull retries a parked event when exactly that record arrives.
+ */
+export const waitedForKey = (reason: string): string | null => {
+  const cause = waitCause(reason);
+  return cause.kind === "MISSING" ? `${cause.record}:${cause.id}` : null;
+};
 
 export const waitTier = (ageMs: number): WaitTier =>
   ageMs >= WAIT_STALE_AFTER_MS ? "STALE" : ageMs >= WAIT_STUCK_AFTER_MS ? "STUCK" : "WAITING";

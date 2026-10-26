@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { BACKFILL_SETTING_KEY, SqliteDatabase, buildLeasedRecordRevisions, buildStockEvents, withCaptureSuppressed } from "./sqliteDatabase.js";
+import { BACKFILL_SETTING_KEY, SqliteDatabase, buildLabelRuns, buildLeasedRecordRevisions, buildStockEvents, withCaptureSuppressed } from "./sqliteDatabase.js";
 
 const SCHEMA = path.resolve(import.meta.dirname, "../src/local-schema.sql");
 const NOW = "2026-10-26T10:00:00.000Z";
@@ -75,6 +75,7 @@ test("before the backfill, nothing written before syncing can be sent", () => {
     seedHistory(run);
     grantBoth(run);
     buildLeasedRecordRevisions(db.db, NOW);
+    buildLabelRuns(db.db, NOW);
     buildStockEvents(db.db, NOW);
     assert.deepEqual(sendable(db), [], "marked without an epoch: left for the backfill");
   });
@@ -120,7 +121,7 @@ test("stock that does not add up is listed, and nothing is sent until it is deci
   });
 });
 
-test("the backfill marks everything under the leases held now, and a material travels ahead of its stock", () => {
+test("the backfill marks everything under the leases held now, and a material and its supplier travel ahead of their labels and stock", () => {
   withStore((db, run) => {
     seedHistory(run);
     grantBoth(run);
@@ -137,15 +138,21 @@ test("the backfill marks everything under the leases held now, and a material tr
     assert.equal(outcome.done, true);
     assert.equal(n(db, "SELECT COUNT(*) AS n FROM sync_dirty_records WHERE aggregate_type = 'STOCK_EVENT' AND lease_epoch = 3"), 3, "own movements only");
     assert.equal(n(db, "SELECT COUNT(*) AS n FROM sync_dirty_records WHERE aggregate_type = 'INVENTORY_ITEM' AND lease_epoch = 2"), 2);
-    assert.deepEqual(sendable(db), ["RAW_MATERIAL_QR_BATCH:b-1@3", "RAW_MATERIAL_QR:q-1@3", "RAW_MATERIAL_QR:q-2@3"], "the run before its packets");
+    assert.equal(n(db, "SELECT COUNT(*) AS n FROM sync_dirty_records WHERE aggregate_type IN ('RAW_MATERIAL_QR_BATCH', 'RAW_MATERIAL_QR') AND lease_epoch = 3"), 3, "the run and its packets, marked");
+    assert.deepEqual(sendable(db), [], "nothing goes before the materials it names");
     assert.ok(db.db.prepare("SELECT 1 FROM app_settings WHERE setting_key = ?").get(BACKFILL_SETTING_KEY));
 
-    // Movements wait while their material's revision is still to be built.
+    // Labels and movements wait while their material's and supplier's revisions are still to be built.
+    assert.equal(buildLabelRuns(db.db, NOW).queued, 0);
     assert.equal(buildStockEvents(db.db, NOW).queued, 0);
     buildLeasedRecordRevisions(db.db, NOW);
+    assert.equal(buildLabelRuns(db.db, NOW).queued, 3, "then the run and its packets");
     assert.equal(buildStockEvents(db.db, NOW).queued, 3);
     const order = sendable(db);
-    assert.ok(order.indexOf("INVENTORY_ITEM:i-1:1@2") < order.indexOf("STOCK_EVENT:e-1@3"));
+    assert.ok(order.indexOf("PARTY:p-1:1@2") < order.indexOf("RAW_MATERIAL_QR_BATCH:b-1@3"), "the supplier before the run");
+    assert.ok(order.indexOf("INVENTORY_ITEM:i-1:1@2") < order.indexOf("RAW_MATERIAL_QR_BATCH:b-1@3"), "the material before the run");
+    assert.ok(order.indexOf("RAW_MATERIAL_QR_BATCH:b-1@3") < order.indexOf("RAW_MATERIAL_QR:q-1@3"), "the run before its packets");
+    assert.ok(order.indexOf("INVENTORY_ITEM:i-1:1@2") < order.indexOf("STOCK_EVENT:e-1@3"), "the material before its stock");
   });
 });
 
@@ -155,10 +162,12 @@ test("run twice, nothing is queued twice", () => {
     grantBoth(run);
     db.runBackfill(NOW);
     buildLeasedRecordRevisions(db.db, NOW);
+    buildLabelRuns(db.db, NOW);
     buildStockEvents(db.db, NOW);
     const first = n(db, "SELECT COUNT(*) AS n FROM sync_outbox WHERE aggregate_type IN ('STOCK_EVENT', 'RAW_MATERIAL_QR_BATCH', 'RAW_MATERIAL_QR')");
     db.runBackfill(NOW);
     buildLeasedRecordRevisions(db.db, NOW);
+    buildLabelRuns(db.db, NOW);
     buildStockEvents(db.db, NOW);
     assert.equal(n(db, "SELECT COUNT(*) AS n FROM sync_outbox WHERE aggregate_type IN ('STOCK_EVENT', 'RAW_MATERIAL_QR_BATCH', 'RAW_MATERIAL_QR')"), first);
     assert.equal(n(db, "SELECT COUNT(*) AS n FROM sync_dirty_records"), 0, "every mark settled");
@@ -177,5 +186,25 @@ test("a lease row that does not name this computer is not a lease: never granted
     assert.equal(db.planBackfill().masterEpoch, null);
     const outcome = db.runBackfill(NOW);
     assert.equal(outcome.done ? null : outcome.reason, "NO_LEASE");
+  });
+});
+
+test("labels queued without an epoch before syncing are marked and queued again, in order -- never sent ahead of their material", () => {
+  withStore((db, run) => {
+    seedHistory(run);
+    // As an older build left them: queued when printed, with no lease known, under their print date.
+    run(`INSERT INTO sync_outbox (id, aggregate_type, aggregate_id, operation, dedupe_key, payload_json, status, available_at, attempts, created_at, updated_at)
+         VALUES ('old-run', 'RAW_MATERIAL_QR_BATCH', 'b-1', 'INSERT', 'RAW_MATERIAL_QR_BATCH:b-1', '{}', 'PENDING', ?, 0, '2026-01-01T00:00:00.000Z', ?)`, NOW, NOW);
+    grantBoth(run);
+    assert.equal(db.planBackfill().unstampedQueued, 1);
+
+    assert.equal(db.runBackfill(NOW).done, true);
+    assert.equal(n(db, "SELECT COUNT(*) AS n FROM sync_outbox WHERE dedupe_key = 'RAW_MATERIAL_QR_BATCH:b-1'"), 0, "the unsendable copy is gone");
+    buildLeasedRecordRevisions(db.db, NOW);
+    buildLabelRuns(db.db, NOW);
+    const order = sendable(db);
+    assert.ok(order.indexOf("INVENTORY_ITEM:i-1:1@2") < order.indexOf("RAW_MATERIAL_QR_BATCH:b-1@3"), "queued again, behind its material");
+    const payload = JSON.parse(String((db.db.prepare("SELECT payload_json FROM sync_outbox WHERE dedupe_key = 'RAW_MATERIAL_QR_BATCH:b-1'").get() as { payload_json: string }).payload_json)) as Record<string, unknown>;
+    assert.deepEqual([payload.batchId, payload.itemId, payload.quantity], ["b-1", "i-1", 2], "rebuilt whole from the run itself");
   });
 });

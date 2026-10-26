@@ -8,6 +8,7 @@
 
 import { isSyncEnvelope, type SyncEnvelope } from "./contract.js";
 import { asRow, type SyncSqlHandle } from "./sqlPort.js";
+import { waitedForKey } from "./waiting.js";
 
 export interface ParkedEvent {
   readonly seq: number;
@@ -58,23 +59,38 @@ export function parkEvent(
 }
 
 /**
- * The parked events worth trying now, oldest log position first. `all` ignores the backoff: a pull
- * that applied something new may have delivered exactly what one of them was waiting for.
+ * The parked events worth trying now, oldest log position first:
+ *
+ *   * those waiting for a record that has just ARRIVED (`arrived`, "TYPE:id"), at once;
+ *   * those whose wait names no one record (still in use, a name still held), whenever anything
+ *     arrived -- any arrival might be the one that frees them, and there are only ever a few;
+ *   * every other one only when its backoff has run out.
+ *
+ * TARGETED, NOT ALL. A first sync can hold thousands of events that arrived before what they need.
+ * Retrying every one of them whenever anything new applied cost about ten seconds per page of 200,
+ * on the main process, and froze the window (gate test, 2026-10-27). Each now waits for its own
+ * prerequisite and is tried once when that arrives.
  *
  * A row that no longer reads as an envelope is not returned. It cannot be applied, and leaving it
  * is the honest outcome: it stays visible in the summary rather than vanishing.
  */
-export function parkedEventsToTry(sql: SyncSqlHandle, nowMs: number, all: boolean): ParkedEvent[] {
-  const rows = (
-    all
-      ? sql.prepare("SELECT seq, envelope_json, reason, attempts FROM sync_inbox_parked ORDER BY seq").all()
-      : sql
-          .prepare("SELECT seq, envelope_json, reason, attempts FROM sync_inbox_parked WHERE next_try_at <= ? ORDER BY seq")
-          .all(nowMs)
-  ).map(asRow);
+export function parkedEventsToTry(sql: SyncSqlHandle, nowMs: number, arrived: ReadonlySet<string>): ParkedEvent[] {
+  // Reasons first, without the envelopes: cheap even for thousands of rows.
+  const waits = sql.prepare("SELECT dedupe_key, reason, next_try_at FROM sync_inbox_parked").all().map(asRow);
+  const wanted = new Set<string>();
+  for (const wait of waits) {
+    if (wait === null) continue;
+    const key = waitedForKey(String(wait.reason));
+    const due = Number(wait.next_try_at) <= nowMs;
+    const freed = key === null ? arrived.size > 0 : arrived.has(key);
+    if (due || freed) wanted.add(String(wait.dedupe_key));
+  }
+  if (wanted.size === 0) return [];
+
+  const rows = sql.prepare("SELECT dedupe_key, seq, envelope_json, reason, attempts FROM sync_inbox_parked ORDER BY seq").all().map(asRow);
   const events: ParkedEvent[] = [];
   for (const row of rows) {
-    if (row === null) continue;
+    if (row === null || !wanted.has(String(row.dedupe_key))) continue;
     const envelope = readEnvelope(String(row.envelope_json ?? ""));
     if (envelope === null) continue;
     events.push({ seq: Number(row.seq), envelope, reason: String(row.reason), attempts: Number(row.attempts) });

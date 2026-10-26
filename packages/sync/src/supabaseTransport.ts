@@ -342,10 +342,11 @@ export class SupabaseSyncTransport implements SyncTransport, SyncPullTransport {
     if (variants.length > 0) acks.push(...(await this.pushVariants(held, variants)));
     if (cartons.length > 0) acks.push(...(await this.pushCartons(held, cartons)));
     if (scans.length > 0) acks.push(...(await this.pushScans(held, scans)));
-    // The same rule for raw material: a run before a packet of it.
+    // The same rule for raw material: the materials and parties a run names, then the run, then its
+    // packets -- so a computer reading the log receives each before what needs it.
+    if (records.length > 0) acks.push(...(await this.pushLeasedRecords(held, records)));
     if (runs.length > 0) acks.push(...(await this.pushRuns(held, runs)));
     if (packets.length > 0) acks.push(...(await this.pushPackets(held, packets)));
-    if (records.length > 0) acks.push(...(await this.pushLeasedRecords(held, records)));
     // A material's revision before a movement of it.
     if (movements.length > 0) acks.push(...(await this.pushStockEvents(held, movements)));
     return acks;

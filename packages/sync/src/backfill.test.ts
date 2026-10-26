@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { SqliteDatabase, buildLeasedRecordRevisions, buildStockEvents } from "@erp/data";
+import { SqliteDatabase, buildLabelRuns, buildLeasedRecordRevisions, buildStockEvents } from "@erp/data";
 import { applyEnvelope } from "./applyEnvelope.js";
 import type { SyncEnvelope } from "./contract.js";
 
@@ -71,6 +71,7 @@ function grantBoth(store: Pc): void {
 /** One pass on the store: build, then hand over everything queued, in outbox order. */
 function pass(store: Pc): SyncEnvelope[] {
   buildLeasedRecordRevisions(store.db.db, NOW);
+  buildLabelRuns(store.db.db, NOW);
   buildStockEvents(store.db.db, NOW);
   const rows = store.db.db
     .prepare("SELECT aggregate_type, aggregate_id, dedupe_key, payload_json FROM sync_outbox WHERE status = 'PENDING' AND lease_epoch IS NOT NULL ORDER BY rowid")
@@ -104,6 +105,7 @@ test("an empty computer reaches the store's stock, materials and labels from the
     assert.equal(outcome.done, true, outcome.done ? "" : outcome.reason);
 
     let waiting: SyncEnvelope[] = [];
+    let waits = 0;
     let passes = 0;
     for (; passes < 10; passes += 1) {
       const arrived = [...waiting, ...pass(store)];
@@ -111,12 +113,16 @@ test("an empty computer reaches the store's stock, materials and labels from the
       waiting = arrived.filter((envelope) => {
         const applied = applyEnvelope(reader.db.db, envelope, NOW);
         assert.notEqual(applied.permanent, true, `${envelope.dedupeKey} was refused: ${String(applied.reason)}`);
+        if (applied.status === "REJECTED") waits += 1;
         return applied.status === "REJECTED";
       });
     }
 
     assert.ok(passes > 1, "the materials took more than one pass");
     assert.deepEqual(waiting, [], "nothing left waiting");
+    // IN ORDER: every label and movement arrived after the material and supplier it names, so the
+    // empty computer never had to park anything (the first gate sync parked ~5,700 and froze).
+    assert.equal(waits, 0, "nothing arrived before what it needs");
     assert.equal(balances(reader), balances(store), "every balance, exactly");
     for (const table of ["inventory_items", "parties", "party_groups", "inventory_categories", "inventory_units", "inventory_stock_events", "raw_material_qr_batches", "raw_material_qrs"]) {
       assert.equal(count(reader, table), count(store, table), table);

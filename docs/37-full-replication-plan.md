@@ -372,6 +372,26 @@ not yet applied to test.
   marks (changes made before this PC synced) are counted but left for the backfill: restamping
   them with today's epoch could overwrite a change another holder made in between.
 
+**As built — a first sync that does not freeze, 2026-10-27.** On the gate test the empty reader's
+window went "not responding" for minutes: each page of 200 held the main process for about ten
+seconds. Measured cause: the backfill sent every label run and packet ahead of the materials and
+parties they name, the reader parked ~5,700 of them, and every page retried all of them.
+
+- **Sent in order.** The backfill marks label runs and packets instead of queueing them, and
+  `labelRunSync.ts` queues them only once their material and party revisions are queued (a packet
+  once its run is), as stock movements already waited for their material. Labels queued without an
+  epoch by older builds are marked and queued again the same way. The claim order puts master
+  records with cartons in tier 1, runs in tier 2, and packets, movements and scans last, and one call
+  pushes records before runs. The end-to-end backfill test now parks nothing at all.
+- **Parked events retried only when what they wait for arrives** (`parkedEventsToTry`,
+  `waitedForKey`), round after round while one arrival frees the next (material, run, packets).
+  Waits that name no one record (still in use, a name still held) are still retried on any arrival;
+  everything else on its backoff.
+- **The window gets a turn every 25 applied events** (`YIELD_EVERY`), so no page holds it for more
+  than a fraction of a second. Each event is its own transaction, so nothing spans the pause.
+- Moving the pass into a worker thread remains planned, after realtime: the robust fix, and the home
+  for other heavy work if the rehearsal shows it stalling.
+
 **As built — screens that follow the data, 2026-10-27 (from the step-1 live test).** A stock figure
 current in the database but stale on the screen is no better than a slow sync, so:
 

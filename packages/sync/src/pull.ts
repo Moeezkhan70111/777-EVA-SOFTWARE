@@ -104,9 +104,23 @@ export interface SyncPullOptions {
 }
 
 /** What one run did, gathered as it goes. */
+/**
+ * Applying is synchronous database work on the main process: at ~5 ms an event, a page of 200 would
+ * hold the window for a second. Control is handed back every this many events, so a long first sync
+ * never stalls the window for more than a fraction of a second at a time. No transaction spans the
+ * pause: each event is applied in its own.
+ */
+const YIELD_EVERY = 25;
+const yieldToWindow = (): Promise<void> => new Promise((resolve) => setImmediate(resolve));
+
+/** A guard, not a budget: each parked event is tried at most once per run however long the chain. */
+const MAX_RETRY_ROUNDS = 100;
+
 interface Tally {
   applied: number;
   appliedTypes: Set<string>;
+  /** What applied this run, as "TYPE:id": a parked event waiting for one of these is tried again. */
+  arrived: Set<string>;
   duplicates: number;
   refused: PullProblem[];
   /** Parked by THIS run, so the retry at its end does not try them a second time. */
@@ -133,7 +147,7 @@ export class SyncPull {
   async runOnce(): Promise<PullResult> {
     const restartedForProject = this.bindToProject() ? { restartedForProject: true } : {};
     const from = readPullCursor(this.sql);
-    const tally: Tally = { applied: 0, appliedTypes: new Set(), duplicates: 0, refused: [], parkedNow: new Set() };
+    const tally: Tally = { applied: 0, appliedTypes: new Set(), arrived: new Set(), duplicates: 0, refused: [], parkedNow: new Set() };
     // One arrival time for the whole run, from the injectable clock, so a test can fix it.
     const replicatedAt = new Date(this.now()).toISOString();
 
@@ -141,17 +155,17 @@ export class SyncPull {
     try {
       changes = await this.transport.fetchChanges(from, this.batchSize);
     } catch (error) {
-      this.retryParked(tally, false, replicatedAt);
+      await this.retryParked(tally, replicatedAt);
       const message = error instanceof Error ? error.message : "the service could not be reached";
       return { ...this.result(from, from, 0, tally), transportError: message, ...restartedForProject };
     }
 
-    this.applyBatch(changes, tally, replicatedAt);
+    await this.applyBatch(changes, tally, replicatedAt);
     // Every fetched event is now settled or parked, so the cursor passes the whole batch.
     const cursor = changes.reduce((highest, change) => Math.max(highest, change.seq), from);
     writePullCursor(this.sql, cursor);
 
-    this.retryParked(tally, tally.applied > 0, replicatedAt);
+    await this.retryParked(tally, replicatedAt);
     return { ...this.result(from, cursor, changes.length, tally), ...restartedForProject };
   }
 
@@ -167,7 +181,8 @@ export class SyncPull {
   }
 
   /** Applies a fetched batch, sweeping while it makes progress, and parks what still waits. */
-  private applyBatch(changes: readonly SyncChange[], tally: Tally, replicatedAt: string): void {
+  private async applyBatch(changes: readonly SyncChange[], tally: Tally, replicatedAt: string): Promise<void> {
+    let since = 0;
     const alreadyParked = this.parkedKeys();
     const settled = new Set<number>();
     const waiting = new Map<number, PullProblem>();
@@ -177,13 +192,14 @@ export class SyncPull {
       waiting.clear();
       for (const change of changes) {
         if (settled.has(change.seq)) continue;
+        if (++since % YIELD_EVERY === 0) await yieldToWindow();
         const outcome = applyEnvelope(this.sql, change.envelope, replicatedAt);
         if (outcome.status === "REJECTED" && outcome.permanent !== true) {
           waiting.set(change.seq, problem(change.seq, outcome));
           continue;
         }
         settled.add(change.seq);
-        this.count(outcome, change.seq, tally, change.envelope.aggregateType);
+        this.count(outcome, change.seq, tally, change.envelope);
         if (alreadyParked.has(change.envelope.dedupeKey)) unparkEvent(this.sql, change.envelope.dedupeKey);
       }
       if (waiting.size === 0 || settled.size === before) break;
@@ -197,25 +213,45 @@ export class SyncPull {
     }
   }
 
-  /** Tries parked events again: all of them, or only those whose backoff has run out. */
-  private retryParked(tally: Tally, all: boolean, replicatedAt: string): void {
-    for (const parked of parkedEventsToTry(this.sql, this.now(), all)) {
-      if (tally.parkedNow.has(parked.envelope.dedupeKey)) continue;
-      const outcome = applyEnvelope(this.sql, parked.envelope, replicatedAt);
-      if (outcome.status === "REJECTED" && outcome.permanent !== true) {
-        // Still waiting: the row stays, with a wider backoff.
-        parkEvent(this.sql, { seq: parked.seq, envelope: parked.envelope, reason: outcome.reason ?? parked.reason, nowMs: this.now() }, this.backoff);
-        continue;
+  /**
+   * Tries parked events again: those waiting for something that arrived this run, and those whose
+   * backoff has run out (parkedEventsToTry). Round after round while a round lets something through,
+   * because one arrival frees the next: a material frees its label run, the run frees its packets.
+   * Each event is tried at most once per run.
+   */
+  private async retryParked(tally: Tally, replicatedAt: string): Promise<void> {
+    const tried = new Set<string>();
+    let since = 0;
+    let arrived: ReadonlySet<string> = tally.arrived;
+    for (let round = 0; round < MAX_RETRY_ROUNDS; round += 1) {
+      const batch = parkedEventsToTry(this.sql, this.now(), arrived).filter(
+        (parked) => !tally.parkedNow.has(parked.envelope.dedupeKey) && !tried.has(parked.envelope.dedupeKey)
+      );
+      if (batch.length === 0) return;
+      const before = new Set(tally.arrived);
+      for (const parked of batch) {
+        tried.add(parked.envelope.dedupeKey);
+        if (++since % YIELD_EVERY === 0) await yieldToWindow();
+        const outcome = applyEnvelope(this.sql, parked.envelope, replicatedAt);
+        if (outcome.status === "REJECTED" && outcome.permanent !== true) {
+          // Still waiting: the row stays, with a wider backoff.
+          parkEvent(this.sql, { seq: parked.seq, envelope: parked.envelope, reason: outcome.reason ?? parked.reason, nowMs: this.now() }, this.backoff);
+          continue;
+        }
+        this.count(outcome, parked.seq, tally, parked.envelope);
+        unparkEvent(this.sql, parked.envelope.dedupeKey);
       }
-      this.count(outcome, parked.seq, tally, parked.envelope.aggregateType);
-      unparkEvent(this.sql, parked.envelope.dedupeKey);
+      // Only what THIS round let through can free the next round.
+      arrived = new Set([...tally.arrived].filter((key) => !before.has(key)));
+      if (arrived.size === 0) return;
     }
   }
 
-  private count(outcome: ApplyOutcome, seq: number, tally: Tally, aggregateType: string): void {
+  private count(outcome: ApplyOutcome, seq: number, tally: Tally, envelope: SyncEnvelope): void {
     if (outcome.status === "APPLIED") {
       tally.applied += 1;
-      tally.appliedTypes.add(aggregateType);
+      tally.appliedTypes.add(envelope.aggregateType);
+      tally.arrived.add(`${envelope.aggregateType}:${envelope.aggregateId}`);
     } else if (outcome.status === "DUPLICATE") {
       tally.duplicates += 1;
     } else {

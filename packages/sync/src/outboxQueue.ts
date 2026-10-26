@@ -12,7 +12,7 @@
 //     straight to DEAD_LETTER where it can be seen, instead of being retried for ever.
 //   * Nothing is ever deleted here. A sent row keeps its history.
 
-import { LEASED_AGGREGATE_DOMAIN, SYNC_AGGREGATE, enqueueQrMaster, type QrMasterPayload } from "@erp/data";
+import { LEASED_AGGREGATE_DOMAIN, MASTER_RECORD_TYPES, SYNC_AGGREGATE, enqueueQrMaster, type QrMasterPayload } from "@erp/data";
 import { QR_MASTER_OPENING_STATE, type SyncEnvelope } from "./contract.js";
 import { asRow, changedRows, type SqlValue, type SyncSqlHandle } from "./sqlPort.js";
 
@@ -103,6 +103,15 @@ interface OutboxRow {
 const LEASED_TYPES: readonly string[] = Object.keys(LEASED_AGGREGATE_DOMAIN);
 const STAMPED_IF_LEASED = ` AND NOT (aggregate_type IN (${LEASED_TYPES.map(() => "?").join(", ")}) AND lease_epoch IS NULL)`;
 
+/** The claim order, prerequisites first. Types not listed come last (LAST_TIER). */
+const CLAIM_TIERS: ReadonlyArray<readonly [string, number]> = [
+  [SYNC_AGGREGATE.PRODUCT_VARIANT, 0],
+  [SYNC_AGGREGATE.QR_MASTER, 1],
+  ...MASTER_RECORD_TYPES.map((type) => [type, 1] as const),
+  [SYNC_AGGREGATE.RAW_MATERIAL_QR_BATCH, 2],
+];
+const LAST_TIER = 3;
+
 export interface LeasedEvent {
   readonly outboxId: string;
   readonly envelope: SyncEnvelope;
@@ -137,12 +146,17 @@ export function leaseBatch(
   }
 ): LeasedEvent[] {
   // PREREQUISITES ARE CLAIMED BEFORE WHAT NEEDS THEM, which is why the ORDER BY below sorts by
-  // aggregate type ahead of created_at rather than after it. Three tiers:
+  // aggregate type ahead of created_at rather than after it. Four tiers (CLAIM_TIERS):
   //
   //   0  PRODUCT_VARIANT  -- a carton of an unknown product is refused UNKNOWN_PRODUCT_VARIANT
   //   1  QR_MASTER        -- a scan of an unregistered carton is refused QR_NOT_REGISTERED_YET
-  //      RAW_MATERIAL_QR_BATCH -- a packet of an unregistered run is refused RUN_NOT_REGISTERED_YET
-  //   2  everything else
+  //      master records   -- a label run or movement whose material or party has not arrived waits
+  //   2  RAW_MATERIAL_QR_BATCH -- a packet of an unregistered run is refused RUN_NOT_REGISTERED_YET
+  //   3  everything else  -- packets, stock movements, scans
+  //
+  // Master records were in "everything else" until 2026-10-27: a backfill then sent every label
+  // run and packet ahead of the materials and parties they name, and a new computer parked
+  // thousands of them on its first sync (the gate test froze for minutes).
   //
   // So a variant travels in the same call as its carton, or an earlier one, and the carton in
   // the same call as its scan, or an earlier one. The chain is variant -> carton -> scan, and
@@ -171,7 +185,7 @@ export function leaseBatch(
           SELECT id FROM sync_outbox
            WHERE status IN ('PENDING', 'FAILED')
              AND available_at <= ?${typeFilter}${STAMPED_IF_LEASED}
-           ORDER BY CASE aggregate_type WHEN ? THEN 0 WHEN ? THEN 1 WHEN ? THEN 1 ELSE 2 END ASC,
+           ORDER BY CASE aggregate_type ${CLAIM_TIERS.map(() => "WHEN ? THEN ?").join(" ")} ELSE ${String(LAST_TIER)} END ASC,
                     created_at ASC, rowid ASC
            LIMIT ?
         )`
@@ -182,9 +196,7 @@ export function leaseBatch(
       options.nowIso,
       ...typeValues,
       ...LEASED_TYPES,
-      SYNC_AGGREGATE.PRODUCT_VARIANT,
-      SYNC_AGGREGATE.QR_MASTER,
-      SYNC_AGGREGATE.RAW_MATERIAL_QR_BATCH,
+      ...CLAIM_TIERS.flatMap(([type, tier]) => [type, tier]),
       options.limit
     );
 

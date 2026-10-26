@@ -24,14 +24,7 @@
 
 import { stockEventBalanceDelta } from "@erp/domain";
 import { MASTER_RECORD_TYPES, MASTER_RECORDS, type BuildHandle, type MasterRecordType } from "./masterRecords.js";
-import {
-  enqueueRawMaterialQr,
-  enqueueRawMaterialQrBatch,
-  heldLeaseEpoch,
-  LEASE_DOMAIN,
-  SYNC_AGGREGATE,
-} from "./syncEvents.js";
-import crypto from "node:crypto";
+import { heldLeaseEpoch, LEASE_DOMAIN, SYNC_AGGREGATE } from "./syncEvents.js";
 
 /** Where the last completed backfill is recorded (app_settings: per computer, never replicated). */
 export const BACKFILL_SETTING_KEY = "sync.backfill.last";
@@ -153,9 +146,7 @@ export function runBackfill(db: BuildHandle, nowIso: string): BackfillOutcome {
   db.exec("BEGIN IMMEDIATE");
   try {
     markEverything(db, plan.masterEpoch, plan.storeEpoch, nowIso);
-    queueLabels(db);
-    db.prepare(`UPDATE sync_outbox SET lease_epoch = ? WHERE aggregate_type IN ('RAW_MATERIAL_QR_BATCH', 'RAW_MATERIAL_QR')
-      AND lease_epoch IS NULL AND status IN ('PENDING', 'FAILED')`).run(plan.storeEpoch);
+    markLabels(db, plan.storeEpoch, nowIso);
     db.prepare(
       `INSERT INTO app_settings (setting_key, setting_value, value_type, is_encrypted, updated_by, updated_at)
        VALUES (?, ?, 'json', 0, 'backfill', ?)
@@ -173,6 +164,34 @@ const MARK = `INSERT INTO sync_dirty_records (aggregate_type, record_id, lease_e
   SELECT ?, id, ?, ? FROM {table} {where}
   ON CONFLICT (aggregate_type, record_id) DO UPDATE SET lease_epoch = excluded.lease_epoch, marked_at = excluded.marked_at`;
 
+/**
+ * Marks the label runs and packets to send, for labelRunSync.ts to queue behind their materials and
+ * parties: those never queued, and those queued without an epoch.
+ *
+ * A row queued without an epoch was never sendable, and if stamped where it stands it would keep its
+ * old date and go out ahead of the materials it names. Its run or packet is still in the store's
+ * tables, which is all the builder needs, so the queue row is removed and the label marked: it is
+ * queued again, in order. Nothing of the business is lost -- a queue row is a copy, not the record.
+ */
+function markLabels(db: BuildHandle, storeEpoch: number, nowIso: string): void {
+  const labels = [
+    { type: SYNC_AGGREGATE.RAW_MATERIAL_QR_BATCH, table: "raw_material_qr_batches" },
+    { type: SYNC_AGGREGATE.RAW_MATERIAL_QR, table: "raw_material_qrs" },
+  ];
+  for (const { type, table } of labels) {
+    db.prepare(
+      `INSERT INTO sync_dirty_records (aggregate_type, record_id, lease_epoch, marked_at)
+       SELECT ?, t.id, ?, ? FROM ${table} t
+        WHERE t.replicated_at IS NULL
+          AND NOT EXISTS (SELECT 1 FROM sync_outbox o WHERE o.dedupe_key = ? || ':' || t.id AND o.lease_epoch IS NOT NULL)
+       ON CONFLICT (aggregate_type, record_id) DO UPDATE SET lease_epoch = excluded.lease_epoch, marked_at = excluded.marked_at`
+    ).run(type, storeEpoch, nowIso, type);
+    db.prepare(
+      `DELETE FROM sync_outbox WHERE aggregate_type = ? AND lease_epoch IS NULL AND status IN ('PENDING', 'FAILED')`
+    ).run(type);
+  }
+}
+
 function markEverything(db: BuildHandle, masterEpoch: number, storeEpoch: number, nowIso: string): void {
   for (const type of MASTER_RECORD_TYPES) {
     // "WHERE true": SQLite reads ON CONFLICT after a bare FROM as a join constraint.
@@ -183,34 +202,3 @@ function markEverything(db: BuildHandle, masterEpoch: number, storeEpoch: number
     .run(SYNC_AGGREGATE.STOCK_EVENT, storeEpoch, nowIso);
 }
 
-const text = (value: unknown): string | null => (typeof value === "string" && value.trim() !== "" ? value : null);
-
-/** Queues own runs, then their packets, that were never queued. Stamped from the lease cache. */
-function queueLabels(db: BuildHandle): void {
-  for (const run of db.prepare(UNQUEUED_RUNS).all() as Row[]) {
-    enqueueRawMaterialQrBatch(db, {
-      batchId: String(run.id),
-      partyId: String(run.party_id),
-      itemId: String(run.item_id),
-      startSequence: Number(run.start_sequence),
-      endSequence: Number(run.end_sequence),
-      quantity: Number(run.quantity),
-      createdAt: String(run.created_at),
-      createdBy: text(run.created_by),
-      requestedBy: text(run.requested_by),
-    }, crypto.randomUUID());
-  }
-  for (const packet of db.prepare(UNQUEUED_PACKETS).all() as Row[]) {
-    const packing = packet.packing_quantity === null || packet.packing_quantity === undefined ? null : Number(packet.packing_quantity);
-    enqueueRawMaterialQr(db, {
-      qrId: String(packet.id),
-      batchId: String(packet.batch_id),
-      partyId: String(packet.party_id),
-      itemId: String(packet.item_id),
-      sequence: Number(packet.sequence),
-      packingQuantity: packing,
-      packingUnitId: packing === null ? null : text(packet.packing_unit_id),
-      createdAt: String(packet.created_at),
-    }, crypto.randomUUID());
-  }
-}

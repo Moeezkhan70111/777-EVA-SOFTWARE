@@ -152,6 +152,27 @@ function buildMasterRecords(db: SqliteDatabase, logger: StructuredLogger, device
 }
 
 /**
+ * Builds the label runs and packets the backfill marked, after the master records so a material and
+ * its supplier are queued ahead of their labels. Never throws.
+ */
+function buildLabelRuns(db: SqliteDatabase, logger: StructuredLogger, deviceId: string): void {
+  try {
+    const built = db.buildLabelRuns(new Date().toISOString());
+    if (built.unqueued > 0) {
+      logger.log({
+        module: "sync", severity: "WARNING", operation: "label-runs", deviceId,
+        message: `${String(built.unqueued)} label run(s) or packet(s) could not be queued and stay marked.`,
+      });
+    }
+  } catch (error) {
+    logger.log({
+      module: "sync", severity: "ERROR", operation: "label-runs", deviceId,
+      message: `Label runs could not be built: ${error instanceof Error ? error.message : String(error)}. They stay marked.`,
+    });
+  }
+}
+
+/**
  * Builds marked stock movements into queued events, after the master records so a material is
  * queued ahead of its stock. Never throws.
  */
@@ -381,7 +402,8 @@ export async function runCloudSyncPass(
     // queued revision (masterRecords.ts), so this pass's drain carries it. A failure here is logged
     // and the pass goes on: the marks stay, and the next pass builds them.
     buildMasterRecords(db, logger, deviceId);
-    // Then the stock movements recorded under the store lease, each with its balance change.
+    // Then the labels the backfill marked, then the stock movements, each behind its material.
+    buildLabelRuns(db, logger, deviceId);
     buildStockEvents(db, logger, deviceId);
 
     const drain = new sync.OutboxDrain(db.db, transport, {
@@ -394,6 +416,7 @@ export async function runCloudSyncPass(
     // batches, so a backfill's later master records and their stock join this pass.
     const pushed = await sync.drainBacklog(drain, sync.DRAIN_BUDGET, () => {
       buildMasterRecords(db, logger, deviceId);
+      buildLabelRuns(db, logger, deviceId);
       buildStockEvents(db, logger, deviceId);
     });
 

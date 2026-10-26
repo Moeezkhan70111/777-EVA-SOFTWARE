@@ -6,6 +6,7 @@ import { DatabaseSync } from "node:sqlite";
 import { dropCaptureTriggers, installCaptureTriggers } from "./database/masterCapture.js";
 import { buildLeasedRecordRevisions, markRecordToSendAgain, type BuildResult, type SendAgainOutcome } from "./database/masterRecords.js";
 import { buildStockEvents, type StockEventBuildResult } from "./database/stockEventSync.js";
+import { buildLabelRuns, type LabelBuildResult } from "./database/labelRunSync.js";
 import { lastBackfillAt, planBackfill, runBackfill, type BackfillOutcome, type BackfillPlan } from "./database/backfill.js";
 import type {
   DuplicateChecker,
@@ -147,6 +148,8 @@ export {
 } from "./database/masterRecords.js";
 export { buildStockEvents, stockEventPayloadOf } from "./database/stockEventSync.js";
 export type { StockEventBuildResult } from "./database/stockEventSync.js";
+export { buildLabelRuns } from "./database/labelRunSync.js";
+export type { LabelBuildResult } from "./database/labelRunSync.js";
 export { BACKFILL_SETTING_KEY, lastBackfillAt, planBackfill, runBackfill, stockMismatches } from "./database/backfill.js";
 export type { BackfillOutcome, BackfillPlan, StockMismatch } from "./database/backfill.js";
 export type {
@@ -1207,6 +1210,11 @@ export class SqliteDatabase
    */
   buildStockEvents(nowIso: string): StockEventBuildResult {
     return buildStockEvents(this.db, nowIso);
+  }
+
+  /** Queues the label runs and packets the backfill marked, behind their materials (labelRunSync.ts). */
+  buildLabelRuns(nowIso: string): LabelBuildResult {
+    return buildLabelRuns(this.db, nowIso);
   }
 
   /** What the one-time backfill would send from here, and whether it can (backfill.ts). Reads only. */

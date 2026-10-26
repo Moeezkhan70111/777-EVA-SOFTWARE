@@ -518,6 +518,11 @@ test("a waiting event no longer holds up everything behind it", async () => {
     const last = await pull.runOnce();
     assert.equal(last.fetched, 0, "the cursor reached the end of the log");
     assert.equal(last.parked, 1, "and the carton it cannot place is still held, not lost");
+    // TARGETED RETRIES: the scans that arrived are not the product it waits for, so it was never
+    // tried again for them -- only its own product, or its backoff, would. Retrying every parked
+    // event whenever anything applied is what froze a first sync for minutes (2026-10-27).
+    const attempts = (fixture.pc2.raw.prepare("SELECT attempts FROM sync_inbox_parked").get() as { attempts: number }).attempts;
+    assert.equal(attempts, 1, "parked once, not retried for unrelated arrivals");
   } finally {
     await fixture.cleanup();
   }
