@@ -24,19 +24,25 @@
 -- envelope) and reads honestly on a table like parties, where "the device that created this
 -- party" is a provenance fact and not a property of the party.
 --
--- THE BACKFILL IS 'desktop-main' because that is this installation's device id, read from
--- device-identity.json rather than assumed. There is exactly one installation today. A computer
--- provisioned later from a snapshot will hold these rows stamped desktop-main, which is correct:
--- it did not issue them, so they must not constrain its own allocation.
+-- THE BACKFILL IS THIS COMPUTER'S OWN DEVICE ID, bound as $device_id by the migration runner from
+-- device-identity.json, read before the database is opened (SqliteDatabaseOptions.migrationDeviceId).
+-- It used to be the literal 'desktop-main', the retired PC 1's id. PC 2 took over PC 1's documents
+-- under a freshly minted identity (2026-10-26), so that literal would have recorded every one of its
+-- own documents as another machine's: wrong provenance the day numbered tables replicate, and its
+-- own block-1 rows dropped from its own out-of-range guard.
 --
--- NULL IS NOT MINE. After this migration no row on this computer is NULL, but a replicated row
--- arriving from a computer that predates the column could be. countOutsideRange matches on
--- equality, so NULL rows are excluded -- they cannot be attributed, so they must not block
--- anybody's allocation.
+-- WHEN NO IDENTITY IS STORED YET -- a first start, which mints one only after the database is open --
+-- $device_id is null and the rows are left unstamped. That is safe and already meaningful: the
+-- guard counts an unstamped row as this computer's (numberRange.ts, countOutsideRange), and every
+-- document written after this migration is unstamped too.
+--
+-- NULL IS MINE. countOutsideRange counts an unstamped row as this computer's, so a wrong block is
+-- still caught on rows nobody stamped. The price is the invariant stated there: the applier must
+-- stamp origin_device_id on every replicated row.
 --
 -- app_settings GAINS device.id so the data layer can answer "who am I" without reading the
--- filesystem. ensureOperationalContext keeps it current on every startup, and it is seeded here
--- so the value exists before the next start. app_settings is already on the replication
+-- filesystem. ensureOperationalContext keeps it current on every startup, and it is seeded here,
+-- when the identity is known, so the value exists before the next start. app_settings is already on the replication
 -- exclusion list (docs/37 section 0.2), which is exactly where a per-machine fact belongs.
 --
 -- (No semicolons in comments: the migration runner splits statements on them.)
@@ -56,21 +62,21 @@ ALTER TABLE machines ADD COLUMN origin_device_id TEXT;
 ALTER TABLE inventory_items ADD COLUMN origin_device_id TEXT;
 ALTER TABLE work_sections ADD COLUMN origin_device_id TEXT;
 
-UPDATE cash_vouchers SET origin_device_id = 'desktop-main' WHERE origin_device_id IS NULL;
-UPDATE sale_vouchers SET origin_device_id = 'desktop-main' WHERE origin_device_id IS NULL;
-UPDATE purchase_vouchers SET origin_device_id = 'desktop-main' WHERE origin_device_id IS NULL;
-UPDATE gatepasses SET origin_device_id = 'desktop-main' WHERE origin_device_id IS NULL;
-UPDATE machine_programs SET origin_device_id = 'desktop-main' WHERE origin_device_id IS NULL;
-UPDATE manual_production_entries SET origin_device_id = 'desktop-main' WHERE origin_device_id IS NULL;
-UPDATE parties SET origin_device_id = 'desktop-main' WHERE origin_device_id IS NULL;
-UPDATE article_sizes SET origin_device_id = 'desktop-main' WHERE origin_device_id IS NULL;
-UPDATE party_claims SET origin_device_id = 'desktop-main' WHERE origin_device_id IS NULL;
-UPDATE removal_requests SET origin_device_id = 'desktop-main' WHERE origin_device_id IS NULL;
-UPDATE stock_correction_requests SET origin_device_id = 'desktop-main' WHERE origin_device_id IS NULL;
-UPDATE machines SET origin_device_id = 'desktop-main' WHERE origin_device_id IS NULL;
-UPDATE inventory_items SET origin_device_id = 'desktop-main' WHERE origin_device_id IS NULL;
-UPDATE work_sections SET origin_device_id = 'desktop-main' WHERE origin_device_id IS NULL;
+UPDATE cash_vouchers SET origin_device_id = $device_id WHERE origin_device_id IS NULL AND $device_id IS NOT NULL;
+UPDATE sale_vouchers SET origin_device_id = $device_id WHERE origin_device_id IS NULL AND $device_id IS NOT NULL;
+UPDATE purchase_vouchers SET origin_device_id = $device_id WHERE origin_device_id IS NULL AND $device_id IS NOT NULL;
+UPDATE gatepasses SET origin_device_id = $device_id WHERE origin_device_id IS NULL AND $device_id IS NOT NULL;
+UPDATE machine_programs SET origin_device_id = $device_id WHERE origin_device_id IS NULL AND $device_id IS NOT NULL;
+UPDATE manual_production_entries SET origin_device_id = $device_id WHERE origin_device_id IS NULL AND $device_id IS NOT NULL;
+UPDATE parties SET origin_device_id = $device_id WHERE origin_device_id IS NULL AND $device_id IS NOT NULL;
+UPDATE article_sizes SET origin_device_id = $device_id WHERE origin_device_id IS NULL AND $device_id IS NOT NULL;
+UPDATE party_claims SET origin_device_id = $device_id WHERE origin_device_id IS NULL AND $device_id IS NOT NULL;
+UPDATE removal_requests SET origin_device_id = $device_id WHERE origin_device_id IS NULL AND $device_id IS NOT NULL;
+UPDATE stock_correction_requests SET origin_device_id = $device_id WHERE origin_device_id IS NULL AND $device_id IS NOT NULL;
+UPDATE machines SET origin_device_id = $device_id WHERE origin_device_id IS NULL AND $device_id IS NOT NULL;
+UPDATE inventory_items SET origin_device_id = $device_id WHERE origin_device_id IS NULL AND $device_id IS NOT NULL;
+UPDATE work_sections SET origin_device_id = $device_id WHERE origin_device_id IS NULL AND $device_id IS NOT NULL;
 
 INSERT INTO app_settings (setting_key, setting_value, value_type, is_encrypted, updated_by, updated_at)
-VALUES ('device.id', 'desktop-main', 'string', 0, 'migration-087', '2026-10-23T00:00:00.000Z')
+SELECT 'device.id', $device_id, 'string', 0, 'migration-087', '2026-10-23T00:00:00.000Z' WHERE $device_id IS NOT NULL
 ON CONFLICT(setting_key) DO NOTHING;

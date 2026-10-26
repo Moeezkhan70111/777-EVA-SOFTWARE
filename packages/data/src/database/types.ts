@@ -13,6 +13,14 @@ export interface SqliteDatabaseOptions {
    * a packaged installation reads both resources from its own `resources` folder.
    */
   migrationsDir?: string;
+  /**
+   * This computer's device id as device-identity.json records it, read by the caller BEFORE the
+   * database is opened. A migration that records provenance binds it as $device_id (087 stamps
+   * the numbered documents already here with it). Null or absent -- a first start, which mints
+   * its identity only after the database is open -- binds null, and such a migration leaves its
+   * rows unstamped, which the number guard reads as this computer's.
+   */
+  migrationDeviceId?: string | null;
 }
 
 export interface PartyBalanceLimitFigures {

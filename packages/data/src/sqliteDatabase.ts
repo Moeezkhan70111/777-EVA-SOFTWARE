@@ -669,7 +669,7 @@ export class SqliteDatabase
 
         for (const statement of statements) {
           try {
-            this.db.exec(statement);
+            this.runMigrationStatement(statement);
           } catch (error) {
             const message = error instanceof Error ? error.message.toLowerCase() : "";
             if (!message.includes("duplicate column name")) throw error;
@@ -694,6 +694,22 @@ export class SqliteDatabase
     } catch {
       // Column already exists.
     }
+  }
+
+  /**
+   * One migration statement. A statement naming $device_id is run with this computer's device id
+   * BOUND (migrationDeviceId), never pasted into the SQL, so no value in an identity file can
+   * change what a migration does. Everything else is executed as written.
+   */
+  private runMigrationStatement(statement: string): void {
+    // Looked for in the code only: a file's leading comment travels with its first statement.
+    const code = statement.replace(/--[^\n]*/g, "");
+    if (!code.includes("$device_id")) {
+      this.db.exec(statement);
+      return;
+    }
+    const deviceId = this.options.migrationDeviceId?.trim() || null;
+    this.db.prepare(statement).run({ device_id: deviceId });
   }
 
   close(): void {
