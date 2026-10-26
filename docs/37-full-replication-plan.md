@@ -486,6 +486,43 @@ the holder can issue against a program, and the holder has the programs locally,
 lost at the origin. **Not to be raised again**: the stage-5 contracts for `raw_material_qr_events`
 and `inventory_stock_events` are built this way.
 
+### W.7 Closing a machine program
+
+Closing a program (`completeMachineProgramProduction`) writes into four leased domains, and voids
+carton labels, at once:
+
+| What closing writes | Domain |
+|---|---|
+| `machine_program_closures`, the program's status, the reconciliation lines | Machine programs |
+| Cut size back into stock (a stock movement) | Raw material store |
+| Voiding the program's carton upper labels that never came back | QR & carton flows (multi-writer, no lease) |
+| The cut-size material and its category, the first time each is needed | Master data |
+| A numbered party claim, deducted on a contractor's or supplier's ledger | Approvals |
+
+**DECIDED — owner, 2026-10-26: option A for Milestone 1.** Closing needs the master-data and store
+leases, so only the store PC closes a program. This matches the screens (Complete Program is on
+Store In and Store Out, for store operators) and the physical flow: cut size comes back to the
+store. Programs don't replicate yet, so a program only exists on the PC that opened it, and its
+store steps (store out, Dana, upper return) were already store-leased.
+
+**RECORDED FOR MILESTONE 2 — option B, when machine programs replicate.** If the machine operator
+should close programs from their own PC, split the close by domain rather than lease one PC for
+all four:
+
+1. **Whoever holds the machine-programs lease** closes the program and records the reconciliation:
+   cartons due and back, the missing uppers and what became of them. That can be the machine side.
+2. **The store receives the cut size** as its own store step on the store-lease holder, from the
+   closure's figures. Stock moves only where it is physically received, by the store's single
+   writer, in line with "everything that comes into the system is traceable through the
+   appropriate transaction".
+3. **The party claims are posted by the Approvals holder,** from the closure's figures.
+4. The closure carries what steps 2 and 3 need, and both wait (§W.6 style) until it arrives. A
+   closure whose cut size or claims are not yet posted shows as incomplete on the store PC, like
+   any wait (`waiting.ts`).
+
+Option C (any PC closes and writes all four) is ruled out: it would let a non-holder write store
+stock and ledger entries, which is exactly what the leases prevent.
+
 ---
 
 ## U. People and machines — APPROVED 2026-10-23, scheduled after Milestone 1
@@ -853,9 +890,10 @@ side of the RM label-run contracts.
 | Carton Class A (`qr_codes`, `qr_batches`, the other production event types, carton labels) and carton Class B | **1–1.5 wk** |
 | The lease's read-only gating for the remaining domains | **0.5–1 wk** |
 | Documents and approvals under lease | **1–1.5 wk** |
+| §W.7 option B: closing a machine program split by domain (if the machine side should close) | **0.5–1 wk** |
 | §W.4 FIFO, after a business decision | **0.5–1 wk** |
 | Backfill for the remaining domains | **0.5–1 wk** |
-| **Milestone 2** | **~3.5–6 wk** |
+| **Milestone 2** | **~4–7 wk** |
 
 **People and machines (§U), after Milestone 1:** U.1 in-app enrolment **1.5–2 wk**, U.2
 cloud-authoritative logins **3–4 wk**, so **~4.5–6 wk**. Order relative to Milestone 2 is not yet
