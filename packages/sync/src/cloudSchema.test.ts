@@ -15,6 +15,8 @@ import {
   rawMaterialQrDedupeKey,
   readRawMaterialQrBatchPayload,
   readRawMaterialQrPayload,
+  readStockEventPayload,
+  stockEventDedupeKey,
 } from "@erp/data";
 
 // IS THE CLOUD SCHEMA ABLE TO HOLD WHAT THE LOCAL ONE CONTAINS?
@@ -1471,11 +1473,14 @@ test("009: every event type this computer can apply is a type the cloud log acce
   // Read at test time from the applier's own registry, so a contract added without its cloud row
   // fails here rather than as a refused log insert on a real computer.
   const { APPLY_CONTRACTS } = await import("./applyEnvelope.js");
-  // Every cloud migration that seeds the log's types: 009 the first five, 013 the eight master records.
+  // Every cloud migration that seeds the log's types: 009 the first five, 013 the eight master
+  // records, 015 stock movements.
   const seeds = new Set(seededTypes().keys());
-  const masterSeeds = LEASED_RECORDS.slice(LEASED_RECORDS.indexOf("insert into public.sync_aggregate_types"));
-  for (const match of masterSeeds.slice(0, masterSeeds.indexOf(";")).matchAll(/\('([A-Z_]+)', (true|false), '/g)) {
-    seeds.add(match[1] ?? "");
+  for (const migration of [LEASED_RECORDS, STOCK_EVENTS]) {
+    const insert = migration.slice(migration.indexOf("insert into public.sync_aggregate_types"));
+    for (const match of insert.slice(0, insert.indexOf(";")).matchAll(/\('([A-Z_]+)', (true|false), '/g)) {
+      seeds.add(match[1] ?? "");
+    }
   }
   for (const contract of APPLY_CONTRACTS) {
     assert.ok(seeds.has(contract.aggregateType), `${contract.aggregateType} has an apply contract but no row in sync_aggregate_types`);
@@ -1604,8 +1609,8 @@ const RM_PUSHES = ["push_raw_material_qr_batch", "push_raw_material_qr"] as cons
  * The payload a log trigger would write for `row`, built from the trigger's own
  * jsonb_build_object pairs. A key the trigger names, mapped to the column it reads.
  */
-const payloadFromTrigger = (trigger: string, row: Record<string, unknown>): Record<string, unknown> => {
-  const body = functionBody(RM_IDENTITY, trigger);
+const payloadFromTrigger = (trigger: string, row: Record<string, unknown>, migration: string = RM_IDENTITY): Record<string, unknown> => {
+  const body = functionBody(migration, trigger);
   const built = body.slice(body.indexOf("jsonb_build_object("));
   const payload: Record<string, unknown> = {};
   for (const [, key, column] of built.matchAll(/'([A-Za-z]+)', new\.([a-z_]+)/g)) {
@@ -1838,4 +1843,81 @@ test("014: read by the computers of one factory, written only through the report
   assert.match(sql, /revoke all on function public\.sync_health_count\(jsonb\) from public, anon, authenticated/);
   const down = sqlOnly(SYNC_HEALTH_DOWN);
   assert.ok(down.indexOf("drop function if exists public.report_sync_health") < down.indexOf("drop table if exists public.device_sync_health"));
+});
+
+// ─── 015: stock movements, with the balance change their origin made ────────
+
+const STOCK_EVENTS = read("migrations/supabase/015_stock_events.up.sql");
+const STOCK_EVENTS_DOWN = read("migrations/supabase/015_stock_events.down.sql");
+
+test("015: the cloud log's payload is one the receiving computer accepts, field for field", () => {
+  const scanOut = {
+    id: "e-1", item_id: "i-1", event_type: "TRANSFER_OUT", quantity: 2, unit_id: "u-kg", note: "Issued", created_by: "user-1",
+    created_at: "2026-10-26T05:00:00.000Z", party_id: null, machine_program_id: "mp-9", balance_delta: -2,
+  };
+  assert.deepEqual(readStockEventPayload(payloadFromTrigger("log_stock_event_insert", scanOut, STOCK_EVENTS)), {
+    eventId: "e-1", itemId: "i-1", eventType: "TRANSFER_OUT", quantity: 2, unitId: "u-kg", note: "Issued", createdBy: "user-1",
+    createdAt: "2026-10-26T05:00:00.000Z", partyId: null, machineProgramId: "mp-9", balanceDelta: -2,
+  });
+});
+
+test("015: the cloud builds the local dedupe key, unscoped, and the type is under the store lease here too", () => {
+  assert.equal(stockEventDedupeKey("e-1"), "STOCK_EVENT:e-1");
+  assert.ok(STOCK_EVENTS.includes("'STOCK_EVENT:' || new.id"));
+  assert.match(sqlOnly(STOCK_EVENTS), /\('STOCK_EVENT', false, '/, "seeded unscoped: factory_id is null");
+  assert.equal(LEASED_AGGREGATE_DOMAIN[SYNC_AGGREGATE.STOCK_EVENT], LEASE_DOMAIN.RAW_MATERIAL_STORE);
+  const body = functionBody(STOCK_EVENTS, "log_stock_event_insert");
+  assert.ok(body.indexOf("pg_advisory_xact_lock(777, 1)") < body.indexOf("insert into public.sync_event_log"));
+  assert.match(body, /on conflict \(dedupe_key\) do nothing/);
+});
+
+test("015: the push proves the device, then the store lease, before it writes, and refuses per row", () => {
+  const body = functionBody(STOCK_EVENTS, "push_stock_event");
+  const claim = body.indexOf("public.claim_is_current(p_epoch, p_holder)");
+  const lease = body.indexOf(`public.lease_holds('${LEASE_DOMAIN.RAW_MATERIAL_STORE}', account.device_id, (item->>'lease_epoch')::bigint)`);
+  const write = body.indexOf("insert into public.");
+  assert.ok(claim >= 0 && lease > claim && write > lease, "claim, then lease, then write");
+  assert.ok(!body.includes("item->>'origin_device_id'"), "the origin is the proven device");
+  assert.ok(!body.slice(body.indexOf("for item in")).includes("raise exception"), "one bad row must not stall the rest");
+  for (const reason of ["PAYLOAD_INCOMPLETE", "DELTA_DOES_NOT_MATCH", "NOT_LEASE_HOLDER", "IDENTITY_CONFLICT"]) {
+    assert.ok(body.includes(`'${reason}'`), `refuses ${reason}`);
+  }
+});
+
+test("015: the sign is the origin's -- the cloud checks only the delta's size, and never the unit as identity", () => {
+  const sql = sqlOnly(STOCK_EVENTS);
+  assert.match(sql, /check \(abs\(balance_delta\) = abs\(quantity\)\)/);
+  const body = functionBody(STOCK_EVENTS, "push_stock_event");
+  assert.match(body, /if abs\(v_delta\) <> abs\(v_quantity\) then/);
+  assert.doesNotMatch(body, /TRANSFER_OUT'? and/, "no sign rule is re-derived in the cloud");
+  const identity = body.slice(body.indexOf("if found then"), body.indexOf("continue;", body.indexOf("if found then")));
+  assert.doesNotMatch(identity, /unit_id/, "a unit correction on the store PC must not make its movements conflict");
+  // The cloud relays movements without judging master data it does not hold: they wait on arrival.
+  assert.doesNotMatch(sql, /references public\.(parties|inventory_items|inventory_units|machine_programs)/);
+});
+
+test("015: no variable in the push shares a name with a column", () => {
+  const body = functionBody(STOCK_EVENTS, "push_stock_event");
+  const declared = body.slice(body.indexOf("declare"), body.indexOf("begin"));
+  const variables = [...declared.matchAll(/^\s+([a-z_]+)\s/gm)].map((match) => match[1]);
+  for (const column of ["id", "item_id", "event_type", "quantity", "unit_id", "note", "created_by", "created_at",
+    "party_id", "machine_program_id", "balance_delta", "origin_device_id", "received_at"]) {
+    assert.ok(!variables.includes(column), `the variable ${column} would be ambiguous with a column`);
+  }
+});
+
+test("015: the movements are closed to every client, only the push is callable, and the rollback keeps the log", () => {
+  const sql = sqlOnly(STOCK_EVENTS);
+  assert.match(sql, /alter table public\.inventory_stock_events enable row level security/);
+  assert.match(sql, /revoke all on table public\.inventory_stock_events from public, anon, authenticated/);
+  assert.doesNotMatch(sql, /create policy/);
+  assert.doesNotMatch(sql, /grant (select|insert|update|delete)/);
+  const granted = [...sql.matchAll(/grant execute on function public\.([a-z_]+)\(/g)].map((match) => match[1]);
+  assert.deepEqual(granted, ["push_stock_event"]);
+  assert.ok(sql.lastIndexOf("create trigger") < sql.indexOf("revoke all on function"));
+  for (const text of [sql, sqlOnly(STOCK_EVENTS_DOWN)]) assert.ok(text.trim().startsWith("begin;") && text.includes("commit;"));
+  const down = sqlOnly(STOCK_EVENTS_DOWN);
+  assert.ok(down.indexOf("drop function if exists public.push_stock_event") < down.indexOf("drop table if exists public.inventory_stock_events"));
+  assert.doesNotMatch(down, /sync_event_log|sync_aggregate_types/);
+  assert.match(STOCK_EVENTS_DOWN, /WHAT THIS COSTS/);
 });

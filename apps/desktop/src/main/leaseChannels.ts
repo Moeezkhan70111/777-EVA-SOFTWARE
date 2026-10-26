@@ -84,6 +84,11 @@ export const LEASED_CHANNELS: Readonly<Record<string, readonly LeaseDomain[]>> =
   [IPC.correctInventoryItemUnit]: BOTH,
   // Approving a removal deletes the item, or the category, with its stock history.
   [IPC.reviewRemovalRequest]: BOTH,
+  // Closing a program puts its cut size back in the store: a stock movement, on a material (and
+  // category) it creates the first time. Both are leased writes, so closing is too (found
+  // 2026-10-26, when stock movements began to replicate). The program's other store steps --
+  // store out, Dana, upper return -- were already store-leased, so its whole life is on the holder.
+  [IPC.completeMachineProgramProduction]: BOTH,
 };
 
 /**
@@ -99,7 +104,6 @@ export const UNLEASED_WRITE_CHANNELS: Readonly<Record<string, string>> = {
   [IPC.printMachineProgramCartons]: "Carton labels: multi-writer.",
   [IPC.convertMachineProgramCartonsToB]: "Carton labels: multi-writer.",
   [IPC.convertMachineProgramUpperCartonsToB]: "Carton labels: multi-writer.",
-  [IPC.completeMachineProgramProduction]: "Machine programs: leased in Milestone 2, when they replicate.",
   [IPC.createItemRemovalRequest]: "A request only: approvals are leased in Milestone 2. Approving it is leased.",
   [IPC.createCategoryRemovalRequest]: "A request only: approvals are leased in Milestone 2. Approving it is leased.",
   [IPC.createStockCorrectionRequest]: "A request only: approvals are leased in Milestone 2. Approving it is leased.",

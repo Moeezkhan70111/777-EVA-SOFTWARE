@@ -32,6 +32,7 @@ import {
   readQrMasterPayload,
   readRawMaterialQrBatchPayload,
   readRawMaterialQrPayload,
+  readStockEventPayload,
   MASTER_RECORD_TYPES,
   isMasterRecordType,
   readLeasedRecordPayload,
@@ -113,6 +114,8 @@ export const SUPABASE_PUSHABLE_AGGREGATES: readonly string[] = [
   SYNC_AGGREGATE.RAW_MATERIAL_QR,
   // Master data, whole by revision (cloud migration 013), prerequisites first.
   ...MASTER_RECORD_TYPES,
+  // Raw-material stock movements (cloud migration 015), after the materials they move.
+  SYNC_AGGREGATE.STOCK_EVENT,
 ];
 
 /** What one computer reports about itself (cloud migration 014). Counts and words only. */
@@ -303,6 +306,7 @@ export class SupabaseSyncTransport implements SyncTransport, SyncPullTransport {
     const runs: SyncEnvelope[] = [];
     const packets: SyncEnvelope[] = [];
     const records: SyncEnvelope[] = [];
+    const movements: SyncEnvelope[] = [];
 
     for (const envelope of envelopes) {
       if (envelope.aggregateType === SYNC_AGGREGATE.PRODUCT_VARIANT) {
@@ -317,6 +321,8 @@ export class SupabaseSyncTransport implements SyncTransport, SyncPullTransport {
         packets.push(envelope);
       } else if (isMasterRecordType(envelope.aggregateType)) {
         records.push(envelope);
+      } else if (envelope.aggregateType === SYNC_AGGREGATE.STOCK_EVENT) {
+        movements.push(envelope);
       } else {
         acks.push({
           dedupeKey: envelope.dedupeKey,
@@ -340,6 +346,8 @@ export class SupabaseSyncTransport implements SyncTransport, SyncPullTransport {
     if (runs.length > 0) acks.push(...(await this.pushRuns(held, runs)));
     if (packets.length > 0) acks.push(...(await this.pushPackets(held, packets)));
     if (records.length > 0) acks.push(...(await this.pushLeasedRecords(held, records)));
+    // A material's revision before a movement of it.
+    if (movements.length > 0) acks.push(...(await this.pushStockEvents(held, movements)));
     return acks;
   }
 
@@ -543,6 +551,50 @@ export class SupabaseSyncTransport implements SyncTransport, SyncPullTransport {
     const acks = [...waiting, ...envelopesWithUnreadablePayloads(byAggregate)];
     if (rows.length === 0) return acks;
     const results = await this.callPush("push_raw_material_qr", held, rows);
+    return [...acks, ...matchResults(results, byAggregate, "id")];
+  }
+
+  /**
+   * Raw-material stock movements, through push_stock_event (cloud migration 015). Leased under the
+   * store lease, exactly as label runs are. Each carries balanceDelta, which the cloud checks only
+   * for size against the quantity: the sign is the origin's to decide.
+   */
+  private async pushStockEvents(held: ClaimHeld, envelopes: readonly SyncEnvelope[]): Promise<SyncAck[]> {
+    const rows: Array<Record<string, unknown>> = [];
+    const byAggregate = new Map<string, SyncEnvelope>();
+    const waiting: SyncAck[] = [];
+
+    for (const envelope of envelopes) {
+      const event = readStockEventPayload(envelope.payload);
+      if (event === null) {
+        byAggregate.set(`!payload:${envelope.dedupeKey}`, envelope);
+        continue;
+      }
+      const leaseEpoch = envelope.leaseEpoch ?? null;
+      if (leaseEpoch === null) {
+        waiting.push(unstampedLeasedRow(envelope));
+        continue;
+      }
+      byAggregate.set(event.eventId, envelope);
+      rows.push({
+        id: event.eventId,
+        item_id: event.itemId,
+        event_type: event.eventType,
+        quantity: event.quantity,
+        unit_id: event.unitId,
+        note: event.note,
+        created_by: event.createdBy,
+        created_at: event.createdAt,
+        party_id: event.partyId,
+        machine_program_id: event.machineProgramId,
+        balance_delta: event.balanceDelta,
+        lease_epoch: leaseEpoch,
+      });
+    }
+
+    const acks = [...waiting, ...envelopesWithUnreadablePayloads(byAggregate)];
+    if (rows.length === 0) return acks;
+    const results = await this.callPush("push_stock_event", held, rows);
     return [...acks, ...matchResults(results, byAggregate, "id")];
   }
 

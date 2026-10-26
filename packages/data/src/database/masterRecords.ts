@@ -239,6 +239,8 @@ export interface BuildResult {
 }
 
 const ORDER = MASTER_RECORD_TYPES.map((type, index) => `WHEN '${type}' THEN ${String(index)}`).join(" ");
+/** Only master records: other captured types (stock events) have builders of their own. */
+const MASTER_TYPES_SQL = MASTER_RECORD_TYPES.map((type) => `'${type}'`).join(", ");
 
 /**
  * Turns marked records into queued revisions, prerequisites first, in one transaction.
@@ -256,7 +258,7 @@ export function buildLeasedRecordRevisions(db: BuildHandle, nowIso: string, limi
   const marks = db
     .prepare(
       `SELECT aggregate_type, record_id, lease_epoch FROM sync_dirty_records
-        WHERE lease_epoch IS NOT NULL
+        WHERE lease_epoch IS NOT NULL AND aggregate_type IN (${MASTER_TYPES_SQL})
         ORDER BY CASE aggregate_type ${ORDER} ELSE 99 END, marked_at, record_id
         LIMIT ?`
     )

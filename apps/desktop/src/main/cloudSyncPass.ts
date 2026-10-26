@@ -149,6 +149,29 @@ function buildMasterRecords(db: SqliteDatabase, logger: StructuredLogger, device
   }
 }
 
+/**
+ * Builds marked stock movements into queued events, after the master records so a material is
+ * queued ahead of its stock. Never throws.
+ */
+function buildStockEvents(db: SqliteDatabase, logger: StructuredLogger, deviceId: string): void {
+  try {
+    const built = db.buildStockEvents(new Date().toISOString());
+    if (built.unqueued > 0 || built.vanished > 0) {
+      logger.log({
+        module: "sync", severity: "WARNING", operation: "stock-events", deviceId,
+        message:
+          `${String(built.unqueued)} stock movement(s) could not be queued and stay marked` +
+          `${built.vanished > 0 ? `, and ${String(built.vanished)} were removed before they could be sent` : ""}.`,
+      });
+    }
+  } catch (error) {
+    logger.log({
+      module: "sync", severity: "ERROR", operation: "stock-events", deviceId,
+      message: `Stock movements could not be built: ${error instanceof Error ? error.message : String(error)}. They stay marked.`,
+    });
+  }
+}
+
 /** Sends this computer's sync health when it changed, or as a keepalive. Never throws. */
 async function reportSyncHealth(
   sync: typeof import("@erp/sync"),
@@ -356,6 +379,8 @@ export async function runCloudSyncPass(
     // queued revision (masterRecords.ts), so this pass's drain carries it. A failure here is logged
     // and the pass goes on: the marks stay, and the next pass builds them.
     buildMasterRecords(db, logger, deviceId);
+    // Then the stock movements recorded under the store lease, each with its balance change.
+    buildStockEvents(db, logger, deviceId);
 
     const drain = new sync.OutboxDrain(db.db, transport, {
       deviceId,

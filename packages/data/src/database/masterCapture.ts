@@ -70,6 +70,20 @@ export const MASTER_CAPTURE: readonly MasterTableCapture[] = [
   { table: "machines", record: SYNC_AGGREGATE.MACHINE, recordId: `${ROW}.id` },
 ];
 
+/**
+ * APPEND-ONLY EVENT TABLES, captured the same way but on INSERT only: a new row is a new event to
+ * send, once. A stock event is marked under the raw-material store lease, and the builder
+ * (stockEventSync.ts) queues it with the change it made to the balance.
+ *
+ * An UPDATE or DELETE of a stored event is one of the history rewrites of docs/37 W.5 (a unit
+ * correction, a material removed for good). Those are not replicated yet, by decision, so they are
+ * not captured: sending a rewrite as if it were a new event would move another computer's balance
+ * a second time.
+ */
+export const EVENT_CAPTURE: readonly MasterTableCapture[] = [
+  { table: "inventory_stock_events", record: SYNC_AGGREGATE.STOCK_EVENT, recordId: `${ROW}.id` },
+];
+
 /** Every capture trigger's name starts with this, so they can all be found and dropped. */
 export const CAPTURE_TRIGGER_PREFIX = "trg_capture_";
 
@@ -108,6 +122,16 @@ END`
 const tableExists = (db: CaptureHandle, table: string): boolean =>
   db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ? LIMIT 1").get(table) !== undefined;
 
+/** The one INSERT trigger for an append-only event table, as SQL. */
+export function eventCaptureTriggerSql(capture: MasterTableCapture): string {
+  return `CREATE TRIGGER ${captureTriggerName(capture.table, "ins")}
+  AFTER INSERT ON ${capture.table}
+  WHEN COALESCE((SELECT suppressed FROM sync_capture WHERE id = 1), 0) = 0
+BEGIN
+  ${markStatement(capture, "NEW")}
+END`;
+}
+
 /** Drops every capture trigger. Opens no transaction of its own: the migration runner calls it inside its own. */
 export function dropCaptureTriggers(db: CaptureHandle): void {
   const triggers = db
@@ -129,6 +153,9 @@ export function installCaptureTriggers(db: CaptureHandle): boolean {
       for (const capture of MASTER_CAPTURE) {
         if (!tableExists(db, capture.table)) continue;
         for (const sql of captureTriggerSql(capture)) db.exec(sql);
+      }
+      for (const capture of EVENT_CAPTURE) {
+        if (tableExists(db, capture.table)) db.exec(eventCaptureTriggerSql(capture));
       }
     }
     db.exec("COMMIT");

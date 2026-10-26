@@ -372,6 +372,33 @@ not yet applied to test.
   marks (changes made before this PC synced) are counted but left for the backfill: restamping
   them with today's epoch could overwrite a change another holder made in between.
 
+**As built — stock movements (item 2), 2026-10-26.** Cloud migration 015 is written and not yet
+applied to test. Local migration 097.
+
+- **Capture on every path:** an INSERT trigger on `inventory_stock_events`, generated beside the
+  master-data triggers (`EVENT_CAPTURE`), marks the movement under the store lease. The trigger is
+  dropped during migrations and suppressed while receiving, like the master-data triggers. Only
+  INSERT is captured: an UPDATE or DELETE is a W.5 rewrite, which isn't replicated yet, and
+  sending it as a new movement would move the reader's balance twice.
+- **Built after the master records**, in the same pass (`stockEventSync.ts`), so a material is
+  queued ahead of its stock. `balanceDelta` is computed there, once, by `stockEventBalanceDelta`.
+  A test runs every live write path (opening stock, scans in and out, adjustments, hand moves in
+  and out) and checks that the queued deltas add up to the real balance.
+- **Cloud (015):** a mirror table, a leased push (`push_stock_event`, store lease), and the log
+  trigger. The cloud checks only the delta's *size* against the quantity; the sign is the
+  origin's. The unit is not part of a movement's identity, because a unit correction on the store
+  PC rewrites it.
+- **Receiver:** stores the movement as the store stored it and adds `balanceDelta` to the balance,
+  in one transaction, only when the row is new — a repeat moves nothing. It waits for the
+  material, unit and party. A balance kept here in another unit waits (`STOCK_UNIT_DIFFERS`)
+  rather than mixing units. A Dana issue's program is kept in `pending_machine_program_id` (W.6).
+- **Found while building it — closing a machine program is now leased (both domains).** Closing a
+  program puts its cut size back into the store: a stock movement, on a material and category it
+  creates the first time. It was classified as unleased ("machine programs, Milestone 2"), so on a
+  PC without the leases those writes would have been stamped with the holder's epoch and refused
+  by the cloud. The program's other store steps (store out, Dana, upper return) were already
+  store-leased, so a program's whole life is on the holder.
+
 **As built — leased records, cloud migration 013 (applied to test and verified 2026-10-25, docs/36 §6a.2).**
 
 - **One generic store, not a mirror per table.** `leased_records` holds one row per (type, id):

@@ -108,7 +108,7 @@ function describePayload(envelope: SyncEnvelope): { name: string | null; itemId:
       itemId: envelope.aggregateType === SYNC_AGGREGATE.INVENTORY_ITEM ? text(payload.recordId) : null,
     };
   }
-  // Raw-material label runs, packets and stock events name their material by itemId.
+  // Raw-material label runs, packets and stock movements name their material by itemId.
   return { name: null, itemId: text(payload.itemId) };
 }
 
@@ -201,6 +201,7 @@ const RECORD_WORDS: Readonly<Record<string, string>> = {
   [SYNC_AGGREGATE.PRODUCT_VARIANT]: "product",
   [SYNC_AGGREGATE.QR_MASTER]: "carton",
   [SYNC_AGGREGATE.PRODUCTION_PRODUCED]: "production scan",
+  [SYNC_AGGREGATE.STOCK_EVENT]: "stock movement",
 };
 
 export const recordWords = (type: string): string => RECORD_WORDS[type] ?? type.toLowerCase().replace(/_/g, " ");

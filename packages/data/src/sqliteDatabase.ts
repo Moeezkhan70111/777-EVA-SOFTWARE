@@ -5,6 +5,7 @@ import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { dropCaptureTriggers, installCaptureTriggers } from "./database/masterCapture.js";
 import { buildLeasedRecordRevisions, markRecordToSendAgain, type BuildResult, type SendAgainOutcome } from "./database/masterRecords.js";
+import { buildStockEvents, type StockEventBuildResult } from "./database/stockEventSync.js";
 import type {
   DuplicateChecker,
   OutboxRepository,
@@ -96,6 +97,8 @@ export {
   rawMaterialQrDedupeKey,
   readRawMaterialQrBatchPayload,
   readRawMaterialQrPayload,
+  stockEventDedupeKey,
+  readStockEventPayload,
   enqueueRawMaterialQrBatch,
   enqueueRawMaterialQr,
   withdrawUnsentSyncEvents,
@@ -113,11 +116,14 @@ export type {
   ProductionProducedPayload,
   RawMaterialQrBatchPayload,
   RawMaterialQrPayload,
+  StockEventPayload,
   SyncQueueHandle,
   WithdrawOutcome,
 } from "./database/syncEvents.js";
 export {
   MASTER_CAPTURE,
+  EVENT_CAPTURE,
+  eventCaptureTriggerSql,
   CAPTURE_TRIGGER_PREFIX,
   captureTriggerName,
   captureTriggerSql,
@@ -137,6 +143,8 @@ export {
   buildLeasedRecordRevisions,
   markRecordToSendAgain,
 } from "./database/masterRecords.js";
+export { buildStockEvents, stockEventPayloadOf } from "./database/stockEventSync.js";
+export type { StockEventBuildResult } from "./database/stockEventSync.js";
 export type {
   MasterRecordType,
   RecordReference,
@@ -1170,6 +1178,15 @@ export class SqliteDatabase
    */
   buildLeasedRecordRevisions(nowIso: string): BuildResult {
     return buildLeasedRecordRevisions(this.db, nowIso);
+  }
+
+  /**
+   * Queues every stock event recorded under this computer's store lease, with the change it made to
+   * the balance (stockEventSync.ts). Called by each pass after the master records, so a material is
+   * queued ahead of its stock.
+   */
+  buildStockEvents(nowIso: string): StockEventBuildResult {
+    return buildStockEvents(this.db, nowIso);
   }
 
   /** Marks one master record to be sent again as a new revision on the next pass (masterRecords.ts). */

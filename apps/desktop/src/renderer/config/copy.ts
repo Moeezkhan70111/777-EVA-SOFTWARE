@@ -490,6 +490,7 @@ export const copy = {
       RAW_MATERIAL_QR: "packet",
       PRODUCT_VARIANT: "product",
       QR_MASTER: "carton",
+      STOCK_EVENT: "stock movement",
     } as Readonly<Record<string, string>>,
     cause: {
       missing: (record: string, id: string) => `a ${record} that has not reached this computer (${id})`,

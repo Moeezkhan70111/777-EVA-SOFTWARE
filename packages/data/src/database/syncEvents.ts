@@ -21,7 +21,7 @@
 // worked out from the local clock when the scan is recorded, so recomputing them on a computer in
 // another timezone would quietly produce a different hour. They travel as the origin wrote them.
 
-import { LEASE_DOMAIN, RAW_MATERIAL_QR_STATUS, type LeaseDomain } from "@erp/domain";
+import { LEASE_DOMAIN, RAW_MATERIAL_QR_STATUS, STOCK_EVENT_TYPE, type LeaseDomain, type StockEventType } from "@erp/domain";
 
 /**
  * The write surface these helpers need: one prepared statement, run with bound values.
@@ -72,6 +72,12 @@ export const SYNC_AGGREGATE = {
   INVENTORY_ITEM: "INVENTORY_ITEM",
   WORK_SECTION: "WORK_SECTION",
   MACHINE: "MACHINE",
+  /**
+   * One raw-material stock movement, as stored, with the change it made to its material's balance
+   * (balanceDelta). Append-only: captured when inserted (masterCapture.ts, EVENT_CAPTURE), applied
+   * on arrival by adding balanceDelta, never by re-deriving a sign (cloud migration 015).
+   */
+  STOCK_EVENT: "STOCK_EVENT",
 } as const;
 
 export type SyncAggregateType = (typeof SYNC_AGGREGATE)[keyof typeof SYNC_AGGREGATE];
@@ -98,6 +104,7 @@ export const LEASED_AGGREGATE_DOMAIN: Readonly<Partial<Record<SyncAggregateType,
   [SYNC_AGGREGATE.INVENTORY_ITEM]: LEASE_DOMAIN.MASTER_DATA,
   [SYNC_AGGREGATE.WORK_SECTION]: LEASE_DOMAIN.MASTER_DATA,
   [SYNC_AGGREGATE.MACHINE]: LEASE_DOMAIN.MASTER_DATA,
+  [SYNC_AGGREGATE.STOCK_EVENT]: LEASE_DOMAIN.RAW_MATERIAL_STORE,
 };
 
 /** The lease an event type is written under, or null when it is not leased. */
@@ -117,6 +124,8 @@ export const rawMaterialQrBatchDedupeKey = (batchId: string): string =>
   `${SYNC_AGGREGATE.RAW_MATERIAL_QR_BATCH}:${batchId}`;
 /** One identity per packet, for all time. */
 export const rawMaterialQrDedupeKey = (qrId: string): string => `${SYNC_AGGREGATE.RAW_MATERIAL_QR}:${qrId}`;
+/** One per stock event id: an event is sent once and never revised. */
+export const stockEventDedupeKey = (eventId: string): string => `${SYNC_AGGREGATE.STOCK_EVENT}:${eventId}`;
 
 // ─── QR_MASTER ──────────────────────────────────────────────────────────────
 
@@ -382,6 +391,63 @@ export function readRawMaterialQrPayload(payload: Record<string, unknown>): RawM
     qrId, batchId, partyId, itemId, sequence, createdAt,
     packingQuantity: hasQuantity ? (rawQuantity as number) : null,
     packingUnitId: packingUnitId.value,
+  };
+}
+
+// ─── STOCK_EVENT ────────────────────────────────────────────────────────────
+
+/**
+ * One row of inventory_stock_events as its origin stored it, and what it did to the balance.
+ *
+ * quantity keeps the origin's sign, whichever of the two conventions wrote it (domain
+ * stockEvents.ts). balanceDelta is the origin's stockEventBalanceDelta of it: the receiver adds it
+ * to the balance and never re-derives a sign. machineProgramId is the Dana issue's program, which
+ * a computer without machine programs keeps aside (docs/37 W.6).
+ */
+export interface StockEventPayload {
+  readonly eventId: string;
+  readonly itemId: string;
+  readonly eventType: StockEventType;
+  readonly quantity: number;
+  readonly unitId: string;
+  readonly note: string | null;
+  readonly createdBy: string | null;
+  readonly createdAt: string;
+  readonly partyId: string | null;
+  readonly machineProgramId: string | null;
+  readonly balanceDelta: number;
+}
+
+const STOCK_EVENT_TYPES: ReadonlySet<string> = new Set(Object.values(STOCK_EVENT_TYPE));
+
+const finiteNumber = (value: unknown): number | null =>
+  typeof value === "number" && Number.isFinite(value) ? value : null;
+
+export function readStockEventPayload(payload: Record<string, unknown>): StockEventPayload | null {
+  const eventId = text(payload.eventId);
+  const itemId = text(payload.itemId);
+  const unitId = text(payload.unitId);
+  const createdAt = text(payload.createdAt);
+  const eventType = text(payload.eventType);
+  const quantity = finiteNumber(payload.quantity);
+  const balanceDelta = finiteNumber(payload.balanceDelta);
+  const note = optionalText(payload.note);
+  const createdBy = optionalText(payload.createdBy);
+  const partyId = optionalText(payload.partyId);
+  const machineProgramId = optionalText(payload.machineProgramId);
+  if (eventId === null || itemId === null || unitId === null || createdAt === null) return null;
+  if (eventType === null || !STOCK_EVENT_TYPES.has(eventType)) return null;
+  if (quantity === null || balanceDelta === null) return null;
+  if (!note.ok || !createdBy.ok || !partyId.ok || !machineProgramId.ok) return null;
+  // The rule decides the sign and nothing else: a delta of a different size is a broken event.
+  if (Math.abs(balanceDelta) !== Math.abs(quantity)) return null;
+  return {
+    eventId, itemId, unitId, createdAt, quantity, balanceDelta,
+    eventType: eventType as StockEventType,
+    note: note.value,
+    createdBy: createdBy.value,
+    partyId: partyId.value,
+    machineProgramId: machineProgramId.value,
   };
 }
 

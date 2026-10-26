@@ -30,6 +30,7 @@ import { productionProducedContract, productVariantContract, qrMasterContract } 
 import type { SyncEnvelope } from "./contract.js";
 import { LEASED_RECORD_CONTRACTS } from "./leasedRecordContracts.js";
 import { rawMaterialQrBatchContract, rawMaterialQrContract } from "./rawMaterialContracts.js";
+import { stockEventContract } from "./stockEventContracts.js";
 import type { SyncSqlHandle } from "./sqlPort.js";
 
 export type ApplyStatus =
@@ -55,6 +56,7 @@ export const APPLY_CONTRACTS: readonly RegisteredContract[] = [
   rawMaterialQrBatchContract,
   rawMaterialQrContract,
   ...LEASED_RECORD_CONTRACTS,
+  stockEventContract,
 ];
 
 const contractFor = (aggregateType: string): RegisteredContract | undefined =>

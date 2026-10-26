@@ -297,6 +297,11 @@ const buildContext = (): IpcContext => {
         if (buildThrows !== null) throw buildThrows;
         return { queued: 0, unqueued: 0 };
       },
+      // Then the stock movements (stockEventSync.ts).
+      buildStockEvents: () => {
+        built.push({ what: "stock-events" });
+        return { queued: 0, unqueued: 0, vanished: 0 };
+      },
     },
     // No background loop in these tests: the manual button then calls the pass directly, which
     // is exactly the path being exercised.
@@ -648,10 +653,10 @@ describe("cloud sync at the process boundary", () => {
     expect(healthReports[0]).toMatchObject({ stale: 0, deadLetters: 0, unsentMarks: 0 });
   });
 
-  it("builds changed master records before the drain, so the same pass carries them", async () => {
+  it("builds changed master records, then stock movements, before the drain, so the same pass carries them", async () => {
     await run();
-    const order = built.map((entry) => entry.what).filter((what) => what === "master-records" || what === "drain");
-    expect(order).toEqual(["master-records", "drain"]);
+    const order = built.map((entry) => entry.what).filter((what) => ["master-records", "stock-events", "drain"].includes(what));
+    expect(order).toEqual(["master-records", "stock-events", "drain"]);
   });
 
   it("a failure to build master records is logged, and the pass still sends and reads", async () => {
