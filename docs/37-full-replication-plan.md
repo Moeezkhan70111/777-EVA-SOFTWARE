@@ -384,6 +384,11 @@ existing pushes send.
   nothing and lists those materials. Run from **Settings → Cloud Sync** by an administrator. The
   run is a leased write under **both** domains, so only the caught-up store PC can do it
   (docs/36 §7.9).
+- **A pass works through a backlog** (`backlog.ts`, 2026-10-26): it keeps sending while each batch
+  of 100 comes back full (up to 20 batches or 40 seconds), building what was marked between
+  batches, and keeps reading while each page of 200 is full (up to 25 or 40 seconds). PC 2's
+  ~12,700 rows go in about seven minutes instead of two hours, and a new PC reads them in about
+  three.
 - **A material always travels ahead of its stock:** the stock builder skips a movement while its
   material's revision is still waiting to be built (the master builder takes 200 a pass).
 - **Proven end to end:** a store holding 230 materials of pre-sync history is backfilled, the real

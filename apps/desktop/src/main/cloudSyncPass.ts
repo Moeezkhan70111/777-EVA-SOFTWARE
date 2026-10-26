@@ -385,14 +385,22 @@ export async function runCloudSyncPass(
     const drain = new sync.OutboxDrain(db.db, transport, {
       deviceId,
       aggregateTypes: sync.SUPABASE_PUSHABLE_AGGREGATES,
+      batchSize: sync.DRAIN_BUDGET.batchSize,
     });
-    const pushed = await drain.runOnce();
+    // BATCH AFTER BATCH while each comes back full, within the budget (backlog.ts): a backfill's
+    // thousands of rows go in minutes, not hours. What was marked meanwhile is built between
+    // batches, so a backfill's later master records and their stock join this pass.
+    const pushed = await sync.drainBacklog(drain, sync.DRAIN_BUDGET, () => {
+      buildMasterRecords(db, logger, deviceId);
+      buildStockEvents(db, logger, deviceId);
+    });
 
     // The project goes with the cursor: a computer moved to another project (test -> production)
     // starts reading that project's log from the beginning instead of from a position that only
     // meant something in the old one.
-    const pull = new sync.SyncPull(db.db, transport, { project: identity.url });
-    const pulled = await pull.runOnce();
+    const pull = new sync.SyncPull(db.db, transport, { project: identity.url, batchSize: sync.PULL_BUDGET.batchSize });
+    // Page after page while each comes back full: a new computer reads the log in minutes.
+    const pulled = await sync.pullBacklog(pull, sync.PULL_BUDGET);
     if (pulled.restartedForProject) {
       logger.log({
         module: "sync",

@@ -17,6 +17,7 @@ export * from "./leases.js";
 export * from "./waiting.js";
 export * from "./healthReport.js";
 export * from "./pull.js";
+export * from "./backlog.js";
 export * from "./httpJson.js";
 export * from "./supabaseAuth.js";
 export * from "./supabaseTransport.js";

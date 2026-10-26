@@ -153,6 +153,11 @@ vi.mock("@erp/sync", () => {
     SupabaseSyncTransport,
     OutboxDrain,
     SyncPull,
+    // One batch and one page: the looping itself is proved in packages/sync (backlog.test.ts).
+    DRAIN_BUDGET: { batchSize: 100, maxBatches: 20, withinMs: 40_000 },
+    PULL_BUDGET: { batchSize: 200, maxBatches: 25, withinMs: 40_000 },
+    drainBacklog: (drain: { runOnce(): Promise<unknown> }) => drain.runOnce(),
+    pullBacklog: (pull: { runOnce(): Promise<unknown> }) => pull.runOnce(),
     SUPABASE_PUSHABLE_AGGREGATES: ["QR_MASTER"] as readonly string[],
     // The status reads the queue. These stand in for the real SELECTs, which are proved against
     // disposable databases in packages/sync; what matters here is that the handler asks for them
@@ -582,7 +587,10 @@ describe("cloud sync at the process boundary", () => {
     // it. What the real list CONTAINS (now QR_MASTER and PRODUCTION_PRODUCED) is pinned in
     // packages/sync/src/supabaseTransport.test.ts; it cannot be re-checked here, because the real
     // module reaches node:sqlite and vite cannot load it in this environment.
-    expect(Object.keys(drain?.options ?? {}).sort()).toEqual(["aggregateTypes", "deviceId"]);
+    // batchSize is how many rows a batch takes, never which types: it matches the budget the pass
+    // loops on, so a full batch is recognised as one (backlog.ts).
+    expect(Object.keys(drain?.options ?? {}).sort()).toEqual(["aggregateTypes", "batchSize", "deviceId"]);
+    expect(drain?.options?.batchSize).toBe(100);
   });
 
   // ─── one pass at a time ───────────────────────────────────────────────────
