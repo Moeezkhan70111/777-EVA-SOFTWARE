@@ -2,7 +2,7 @@
 -- Functional check of 016 on TEST, after 011, 015 and 016 are applied. Leaves nothing behind: the
 -- block ends by raising, so the temporary device, its claim, the lease, the movements, their log rows
 -- and the ring are all rolled back. PC rows are only READ, to copy not-null columns. Success is the
--- error message 'DOORBELL_CHECK_PASSED ...'.
+-- error message 'DOORBELL_CHECK_PASSED ...'. Variables are v_-prefixed: plain names collide with the doorbell's columns.
 do $$
 declare
   b text := 'db-check-device';
@@ -10,8 +10,8 @@ declare
   holder uuid := gen_random_uuid();
   e bigint;
   r jsonb;
-  first_seq bigint;
-  last_seq bigint;
+  v_first bigint;
+  v_last bigint;
   seen int;
   scan jsonb := jsonb_build_object('item_id', 'item-check', 'event_type', 'RECEIVE', 'quantity', 5, 'unit_id', 'unit-check',
     'note', null, 'created_by', null, 'created_at', '2026-10-27T05:00:00.000Z', 'party_id', null, 'machine_program_id', null,
@@ -34,10 +34,10 @@ begin
     scan || jsonb_build_object('id', 'db-check-1', 'lease_epoch', e),
     scan || jsonb_build_object('id', 'db-check-2', 'lease_epoch', e)));
   if (select count(*) from jsonb_array_elements(r->'results') x where x->>'outcome' = 'INSERTED') <> 2 then raise exception 'STEP 1: %', r; end if;
-  select min(seq), max(seq) into first_seq, last_seq from public.sync_event_log where dedupe_key in ('STOCK_EVENT:db-check-1', 'STOCK_EVENT:db-check-2');
-  if first_seq = last_seq then raise exception 'STEP 1: expected two log rows'; end if;
+  select min(seq), max(seq) into v_first, v_last from public.sync_event_log where dedupe_key in ('STOCK_EVENT:db-check-1', 'STOCK_EVENT:db-check-2');
+  if v_first = v_last then raise exception 'STEP 1: expected two log rows'; end if;
   if (select last_seq || '|' || last_origin_device_id from public.sync_log_doorbell where scope = 'global')
-     is distinct from first_seq || '|' || b then
+     is distinct from v_first || '|' || b then
     raise exception 'STEP 1: doorbell %', (select to_jsonb(d) from public.sync_log_doorbell d where scope = 'global');
   end if;
 
