@@ -535,8 +535,7 @@ export const ScanDock: React.FC<ScanDockProps> = ({
         </span>
         <span className="ssn-dock-state ssn-dock-state--off" aria-hidden="true">
           <span className="ssn-dock-state-dot" />
-          {/* What is true: never "ready" while the station waits for the operator (0.3.9). */}
-          Not scanning
+          Not ready
         </span>
       </div>
       <div className="ssn-dock-foot">
@@ -578,14 +577,12 @@ export const SessionCard: React.FC<{
   groupNoun: string;
   subhead: string;
   emptyLabel: string;
-  /** The card's title: "Session" on the carton stations, "Batch" on the raw material ones. */
-  title?: string;
-}> = ({ code, meta, tallies, total, totalNoun, totalLabel = "Received", groupNoun, subhead, emptyLabel, title = "Session" }) => {
+}> = ({ code, meta, tallies, total, totalNoun, totalLabel = "Received", groupNoun, subhead, emptyLabel }) => {
   const max = tallies.reduce((m, row) => Math.max(m, row.count), 0) || 1;
   return (
     <section className="ssn-card ssn-session" aria-label="This session">
       <div className="ssn-card-head">
-        <span className="ssn-card-title">{title}</span>
+        <span className="ssn-card-title">Session</span>
         <span className="ssn-session-code ssn-mono" data-testid="session-code">
           {code ?? "—"}
         </span>

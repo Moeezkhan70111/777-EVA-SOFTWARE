@@ -1597,6 +1597,8 @@ export const copy = {
   // What the store's other screens still say: the Munshi's stock station, the program screens.
   // Kept short on purpose: this screen is read by new operators at a glance.
   store: {
+    scanMaterialTitle: "Scan Material",
+    scanMaterialLine: "Scan a QR code to receive material into stock.",
     moveInTitle: "Move In",
     operator: "Operator",
     qrTitle: "Raw Material QR",
@@ -1605,112 +1607,13 @@ export const copy = {
     setupTitle: "Setup",
   },
 
-  // THE TWO SCAN STATIONS (0.3.9) — what each says about itself. The headline above the scan box
-  // is always the truth: not scanning yet, ready, or scanning.
+  // The Store page's words about a scan panel's session, outside the panels themselves (0.3.9).
   storeStation: {
-    // Never a status word like "ready" while the system waits for the operator: a question when they
-    // must choose, an instruction when they must scan.
-    receiving: {
-      idleTitle: "Whose delivery is this?",
-      idleLine: "Choose the supplier, then press Start scanning.",
-      readyTitle: "Scan the first packet",
-      readyLine: (supplier: string) => `Each packet is counted as received from ${supplier}.`,
-      scanningTitle: "Scan the next packet",
-      scanningLine: (supplier: string) => `Each packet is counted as received from ${supplier}.`,
-    },
-    issuing: {
-      idleTitle: "Who is this material for?",
-      idleLine: "Choose who the packets are going to, then press Start scanning.",
-      readyTitle: "Scan the first packet",
-      readyLine: (party: string) => `Each packet is counted as issued to ${party}.`,
-      scanningTitle: "Scan the next packet",
-      scanningLine: (party: string) => `Each packet is counted as issued to ${party}.`,
-    },
-    // To an operator a session is a BATCH (0.3.9); the record and its number are unchanged.
-    startScanning: "Start scanning",
-    endBatch: "End batch",
-    printSlip: "Print slip",
-    printLastSlip: "Print last slip",
-    reprintSlip: "Reprint slip",
-    lastBatch: "Last batch",
-    noLastBatch: "No batch has been closed on this computer yet.",
-    batchTitle: "Batch",
-    noBatchOpen: "No batch open. Choose a supplier above.",
-    recentNote: (n: number) => `Last ${n} in this batch`,
-    noneReceived: "No packets received in this batch yet.",
-    noneIssued: "No packets issued in this batch yet.",
     batchOpen: (n: number) => `Batch open · ${n.toLocaleString()} packet${n === 1 ? "" : "s"}`,
     nothingStarted: "Nothing started",
     packets: (n: number) => `${n.toLocaleString()} packet${n === 1 ? "" : "s"}`,
+    reprintSlip: "Reprint slip",
     popupBlocked: "Allow popups to print the slip",
-    batchEnded: "Batch ended",
-    receivedCount: (n: number) => `${n.toLocaleString()} packet${n === 1 ? "" : "s"} received`,
-    issuedCount: (n: number) => `${n.toLocaleString()} packet${n === 1 ? "" : "s"} issued`,
-  },
-
-  // ONE SCAN'S ANSWER (0.3.9) — what the operator reads in the half-second they glance up: did it
-  // take, and was it the right packet. A refusal says why, what happened and what to do, in words.
-  storeScan: {
-    received: "Received",
-    issued: "Issued",
-    notReceived: "Not received",
-    notIssued: "Not issued",
-    from: "From",
-    goingTo: "Going to",
-    notChosen: "Not chosen yet",
-    scannedEarlier: (time: string, n: number) => `You scanned it at ${time}, as packet ${n.toLocaleString()} of this batch.`,
-    /** The count row: "1 packet in this batch", "12 packets in this batch". */
-    inThisBatch: (n: number) => (n === 1 ? "packet in this batch" : "packets in this batch"),
-    unchanged: (label: string) => `${label} — unchanged`,
-    beforeThat: "Before that",
-    lastBatch: "Last batch",
-    scannerInput: "Scanner input",
-    scanPlaceholder: "Scan a packet",
-    receivingNotReady: "Choose the supplier first",
-    issuingNotReady: "Choose who it is going to first",
-    keepScanning: "Keep scanning",
-    endTitle: (code: string) => `End batch ${code}?`,
-    endLine: (packets: string, quantity: string) => `${packets} · ${quantity}. Print the slip now or after; it can be reprinted later.`,
-    putAside: "Put it aside and scan the next one.",
-    scanAgain: "Scan it again.",
-    askOffice: "Put it aside and tell the office.",
-    receiving: {
-      alreadyIn: "This packet is already in",
-      receivedBefore: "It was received before this batch.",
-      wrongSupplier: "This packet is from another supplier",
-      wrongSupplierTodo: "Put it aside, or end this batch and start one for its supplier.",
-      unknown: "This label is not in the system",
-      unknownHappened: "No packet was ever printed with this code.",
-      notSet: "This material's packing is not set",
-      notSetTodo: "Ask for its packing to be set under Setup, then scan it again.",
-      notRawMaterial: "This is not a raw material label",
-      notRawMaterialTodo: "Cartons go on Carton Move In. Scan the packet's own label.",
-      cannot: "This packet cannot be received",
-      movedElsewhere: "Another computer moved this packet",
-      notAllowed: "Your account cannot receive material",
-      notAllowedTodo: "Ask an administrator for store access.",
-      failed: "The scan was not saved",
-      failedTodo: "Scan it again. If it fails again, tell the office.",
-    },
-    issuing: {
-      notInStore: "This packet is not in the store",
-      alreadyOut: "This packet has already gone out",
-      noParty: "Nobody is chosen to send it to",
-      noPartyTodo: "Choose who it is for, press Start scanning, then scan it again.",
-      unknown: "This label is not in the system",
-      unknownHappened: "No packet was ever printed with this code.",
-      notSet: "This material is not set up to go out",
-      notSetTodo: "Ask for it to be set up under Setup, then scan it again.",
-      notRawMaterial: "This is not a raw material label",
-      notRawMaterialTodo: "Cartons go out on Carton Move Out. Scan the packet's own label.",
-      cannot: "This packet cannot be issued",
-      movedElsewhere: "Another computer moved this packet",
-      notAllowed: "Your account cannot issue material",
-      notAllowedTodo: "Ask an administrator for store access.",
-      failed: "The scan was not saved",
-      failedTodo: "Scan it again. If it fails again, tell the office.",
-      program: (machine: string, taken: string) => `Counted to ${machine} · ${taken}`,
-    },
   },
 
   // RECEIPTS — the deliveries received, on the Store page's Receipts tab and the Raw Material workspace.
@@ -1746,12 +1649,6 @@ export const copy = {
     },
     noTabs: "Nothing here for your account",
     noTabsHint: "Ask an administrator for stock, label or setup access.",
-    // The rails' names for assistive technology: the two modes, never a third name for them.
-    scanIn: "Receiving scanner",
-    scanOut: "Issuing scanner",
-    supplier: "Supplier",
-    chooseSupplier: "Choose supplier…",
-    noSuppliers: "No suppliers yet",
     reportFor: (mode: string) => `Daily report · ${mode}`,
     programs: {
       title: "Machine programs",
@@ -1765,7 +1662,7 @@ export const copy = {
       /** The Scan out rail while a program is open in Issuing: its uppers are scanned in the program. */
       pausedTitle: (code: string) => `Scanning out is paused while ${code} is open`,
       scanOutPaused: "Its uppers are scanned in the program, on the left.",
-      closeToResume: "Close the program to scan packets out here again. The batch on this computer is kept.",
+      closeToResume: "Close the program to scan packets out here again. Nothing scanned so far is lost.",
     },
     issuedToday: {
       title: "Issued today",
@@ -1804,12 +1701,12 @@ export const copy = {
     chooseScanParty: "Choose supplier or contractor…",
     noScanParties: "No suppliers or contractors yet",
     noScanPartyMatch: "No supplier or contractor found",
-    scanPartyHelp: "Choose who the packets are going to, then press Start scanning.",
-    // A batch belongs to one party (0.3.8): choose the party, Start scanning, scan, End batch.
-    scanPartyLocked: "Every packet in this batch goes to this party. End the batch to choose another.",
-    scanStartHint: "Choose the party, then press Start scanning",
-    scanPressNew: "Press Start scanning to start",
-    scanSessionClosed: "Batch ended — choose the party and press Start scanning",
+    scanPartyHelp: "Choose who the packets are going to, then press New session.",
+    // The session belongs to one party (0.3.8): choose the party, New session, scan, End session.
+    scanPartyLocked: "Every packet in this session goes to this party. End the session to choose another.",
+    scanStartHint: "Choose the party, then press New session",
+    scanPressNew: "Press New session to start",
+    scanSessionClosed: "Session ended — choose the party and press New session",
     scanPartyFirstTitle: "⚠ CHOOSE A PARTY FIRST",
     scanPartyFirstBody: "Choose who these packets are going to, then scan. Nothing was moved.",
     scanPartyRefusedTitle: "✕ CHOOSE A PARTY",

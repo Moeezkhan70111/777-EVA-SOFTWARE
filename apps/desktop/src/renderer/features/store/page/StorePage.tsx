@@ -3,8 +3,6 @@ import type { AppRoute } from "../../../app/routes";
 import { copy } from "../../../config/copy";
 import { useRawMaterialLookups } from "../../rawMaterial/useRawMaterialLookups";
 import { SCAN_STATION_CSS } from "../../scanStation/scanStation";
-import { useIssuingStation } from "../stations/useIssuingStation";
-import { useReceivingStation } from "../stations/useReceivingStation";
 import { IssuingWorkArea } from "./IssuingWorkArea";
 import { MachineProgramsDialog } from "./MachineProgramsDialog";
 import { ModeSwitch } from "./ModeSwitch";
@@ -15,6 +13,7 @@ import { ScanOutRail } from "./ScanOutRail";
 import type { StoreAccess, StoreMode } from "./storeTabs";
 import { useModeKeys } from "./useModeKeys";
 import { useStoreProgram } from "./useStoreProgram";
+import { NO_SESSION, type StationStatus } from "./stationStatus";
 
 // THE STORE PAGE (0.3.9) — Receiving and Issuing on one page, in place of Store Station, Store In
 // and Store Out.
@@ -48,34 +47,24 @@ interface StorePageProps {
 
 export const StorePage: React.FC<StorePageProps> = (props) => {
   const { mode, token, username, isAdmin, access, onModeChange, onNavigate } = props;
-  const [issueSessionId, setIssueSessionId] = useState<string | null>(null);
-  const programs = useStoreProgram({ token, issueSessionId, initialProgramId: props.initialProgramId, onInitialProgramConsumed: props.onInitialProgramConsumed });
-  const receiving = useReceivingStation({ token, username, active: mode === "receiving" && !programs.isOpen });
-  const issuing = useIssuingStation({
-    token,
-    username,
-    active: mode === "issuing" && !programs.isOpen,
-    onSessionChange: setIssueSessionId,
-    onMachineProgramScan: programs.openProgram,
-  });
+  // Each panel reports where its session stands; the switch shows both, and program batches ride
+  // Issuing's open session onto its slip.
+  const [receivingStatus, setReceivingStatus] = useState<StationStatus>(NO_SESSION);
+  const [issuingStatus, setIssuingStatus] = useState<StationStatus>(NO_SESSION);
+  const programs = useStoreProgram({ token, issueSessionId: issuingStatus.sessionId, initialProgramId: props.initialProgramId, onInitialProgramConsumed: props.onInitialProgramConsumed });
+  // A panel may take the scanner's focus only while its mode is on screen and nothing else has the
+  // page — a machine program, or the pick-list. When that ends, it takes the focus back by itself.
+  const free = !programs.isOpen && !programs.dialogOpen;
   const lookups = useRawMaterialLookups();
   const [reportOpen, setReportOpen] = useState<Record<StoreMode, boolean>>({ receiving: false, issuing: false });
   useModeKeys(onModeChange);
 
-  // The scanner box never needs a click: when the Machine programs dialog closes, the active mode's
-  // box takes the focus back (after the dialog has handed it back to its button).
-  const dialogWasOpen = useRef(false);
-  const activeScanBox = mode === "receiving" ? receiving.scanBox : issuing.scanBox;
-  useEffect(() => {
-    if (dialogWasOpen.current && !programs.dialogOpen) setTimeout(activeScanBox.focusScanner, 0);
-    dialogWasOpen.current = programs.dialogOpen;
-  }, [programs.dialogOpen, activeScanBox]);
 
   const closeReport = useCallback((which: StoreMode) => setReportOpen((open) => ({ ...open, [which]: false })), []);
   // Receipts → Continue opened the full-screen station; here the open session is already on the rail.
   const navigate = useCallback((route: AppRoute) => (route === "raw-material-input" ? onModeChange("receiving") : onNavigate(route)), [onModeChange, onNavigate]);
   const shared = { token, username, isAdmin, access, lookups, onNavigate: navigate };
-  const issuingKey = `${issuing.session?.id ?? ""}|${issuing.session?.status ?? ""}|${issuing.summary?.totalPackets ?? 0}`;
+  const issuingKey = `${issuingStatus.sessionId ?? ""}|${issuingStatus.open}|${issuingStatus.packets}`;
   const showing = (which: StoreMode) => mode === which && !programs.isOpen;
 
   return (
@@ -98,8 +87,8 @@ export const StorePage: React.FC<StorePageProps> = (props) => {
 
       <ModeSwitch
         mode={mode}
-        receiving={{ open: receiving.open, packets: receiving.summary?.totalPackets ?? 0 }}
-        issuing={{ open: issuing.session?.status === "OPEN", packets: issuing.summary?.totalPackets ?? 0 }}
+        receiving={receivingStatus}
+        issuing={issuingStatus}
         onSelect={onModeChange}
       />
 
@@ -113,12 +102,18 @@ export const StorePage: React.FC<StorePageProps> = (props) => {
             reportOpen={reportOpen.issuing}
             onCloseReport={() => closeReport("issuing")}
             sessionKey={issuingKey}
-            onReprint={(sessionId) => void issuing.reprint(sessionId)}
           />
         </div>
         {programs.isOpen ? <ProgramWork store={programs} mode={mode} /> : null}
-        <ScanInRail station={receiving} hidden={!showing("receiving")} />
-        <ScanOutRail station={issuing} hidden={!showing("issuing")} />
+        <ScanInRail token={token} username={username} hidden={!showing("receiving")} active={mode === "receiving" && free} onStatus={setReceivingStatus} />
+        <ScanOutRail
+          token={token}
+          username={username}
+          hidden={!showing("issuing")}
+          active={mode === "issuing" && free}
+          onStatus={setIssuingStatus}
+          onMachineProgramScan={programs.openProgram}
+        />
         {programs.isOpen ? <ProgramRail store={programs} mode={mode} token={token} /> : null}
       </div>
 

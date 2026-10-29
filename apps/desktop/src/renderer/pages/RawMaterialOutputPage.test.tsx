@@ -12,7 +12,7 @@ import type {
 // Same station contract as Raw Material Input: a hardware scanner drops the whole code into
 // the focused input in one burst with no Enter, and the page has to submit on its own.
 // Since 0.3.8 a session belongs to one party: choose the party (a supplier or a contractor), press
-// Start issuing, scan, End session. The session no longer opens by itself, and the party cannot be
+// New session, scan, End session. The session no longer opens by itself, and the party cannot be
 // changed while one runs.
 
 vi.mock("../utils/playScanSound", () => ({ playScanSound: vi.fn() }));
@@ -164,10 +164,10 @@ const ready = async () => {
   await screen.findByRole("combobox", { name: "Moving out to" });
 };
 
-const newSessionButton = () => screen.getByRole("button", { name: /Start scanning/ });
-const endSessionButton = () => screen.getByRole("button", { name: /End batch/ });
+const newSessionButton = () => screen.getByRole("button", { name: /New session/ });
+const endSessionButton = () => screen.getByRole("button", { name: /End session/ });
 
-/** The whole sequence: choose the party, then Start issuing. */
+/** The whole sequence: choose the party, then New session. */
 const startFor = async (name: RegExp) => {
   await chooseParty(name);
   await act(async () => {
@@ -186,7 +186,7 @@ describe("RawMaterialOutputPage", () => {
     vi.restoreAllMocks();
   });
 
-  it("does not open a session by itself: Start issuing waits for a party, and nothing can be scanned", async () => {
+  it("does not open a session by itself: New session waits for a party, and nothing can be scanned", async () => {
     const { api } = createFakeBackend();
     renderPage();
     await ready();
@@ -234,7 +234,7 @@ describe("RawMaterialOutputPage", () => {
     expect(newSessionButton()).toBeEnabled();
   });
 
-  it("Start issuing locks the session to the chosen party: the picker gives way to the party, its type and the lock", async () => {
+  it("New session locks the session to the chosen party: the picker gives way to the party, its type and the lock", async () => {
     const { api } = createFakeBackend();
     renderPage();
     await ready();
@@ -261,11 +261,8 @@ describe("RawMaterialOutputPage", () => {
 
     expect(rawMaterialIssueScan).toHaveBeenCalledTimes(1);
     expect(rawMaterialIssueScan.mock.calls[0][1]).toMatchObject({ issuedToPartyId: "party-contractor" });
-    await waitFor(() => expect(screen.getByTestId("scan-zone")).toHaveAttribute("data-state", "accepted"));
-    // Said in words, not by colour: Issued, the material, how much, the packet.
-    expect(screen.getByTestId("scan-zone")).toHaveTextContent("Issued");
-    expect(screen.getByTestId("scan-zone")).toHaveTextContent("RUBBER UPPER · SK6 · RED · 7/10");
-    expect(screen.getByTestId("scan-zone")).toHaveTextContent(LABEL);
+    await waitFor(() => expect(screen.getByTestId("scan-status")).toHaveTextContent("ISSUED"));
+    expect(screen.getByText(/sent to ASLAM UPPER MAKER/i)).toBeInTheDocument();
   });
 
   it("End session frees the party: the picker comes back and scanning stops", async () => {
@@ -318,9 +315,8 @@ describe("RawMaterialOutputPage", () => {
 
     await scanCode(LABEL);
 
-    await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("Not issued"));
-    expect(screen.getByRole("alert")).toHaveTextContent("Nobody is chosen to send it to");
-    expect(screen.getByRole("alert")).toHaveTextContent(/End the session and start a new one/);
+    await waitFor(() => expect(screen.getByTestId("scan-status")).toHaveTextContent("CHOOSE A PARTY"));
+    expect(screen.getByText(/End the session and start a new one/)).toBeInTheDocument();
   });
 
   it("offers only active suppliers and contractors to move out to", async () => {
@@ -346,7 +342,7 @@ describe("RawMaterialOutputPage", () => {
 
     expect(rawMaterialIssueScan).toHaveBeenCalledTimes(1);
     expect(rawMaterialIssueScan.mock.calls[0][0]).toBe(LABEL);
-    await waitFor(() => expect(screen.getByTestId("scan-zone")).toHaveAttribute("data-state", "accepted"));
+    await waitFor(() => expect(screen.getByTestId("scan-status")).toHaveTextContent("ISSUED"));
     expect((screen.getByLabelText("Scanner input") as HTMLInputElement).value).toBe("");
   });
 
@@ -372,8 +368,8 @@ describe("RawMaterialOutputPage", () => {
 
     await scanCode("SK6_RED_7/10_000001");
 
-    await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("This is not a raw material label"));
-    expect(screen.getByRole("alert")).toHaveTextContent(/Store Move Out/);
+    await waitFor(() => expect(screen.getByTestId("scan-status")).toHaveTextContent("NOT A RAW MATERIAL QR"));
+    expect(screen.getByText(/Store Move Out/)).toBeInTheDocument();
   });
 
   it("a packet already issued is refused and the station stays ready", async () => {
@@ -386,10 +382,7 @@ describe("RawMaterialOutputPage", () => {
     await scanCode(LABEL);
 
     expect(rawMaterialIssueScan).toHaveBeenCalledTimes(2);
-    // A double scan is explained by the first one, right there in the session.
-    await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("This packet has already gone out"));
-    expect(screen.getByRole("alert")).toHaveTextContent(/You scanned it at .+, as packet 1 of this batch\./);
-    expect(screen.getByRole("alert")).toHaveTextContent("Put it aside and scan the next one.");
+    await waitFor(() => expect(screen.getByTestId("scan-status")).toHaveTextContent("NOT IN STORE"));
     expect((screen.getByLabelText("Scanner input") as HTMLInputElement).value).toBe("");
   });
 

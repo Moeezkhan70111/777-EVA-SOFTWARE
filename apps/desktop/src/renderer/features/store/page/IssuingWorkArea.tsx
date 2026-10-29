@@ -23,12 +23,11 @@ interface IssuingWorkAreaProps {
   onCloseReport: () => void;
   /** Changes whenever this computer's issue session moves, so Issued today follows it. */
   sessionKey: string;
-  onReprint: (sessionId: string) => void;
   onNavigate: (route: AppRoute) => void;
 }
 
 export const IssuingWorkArea: React.FC<IssuingWorkAreaProps> = (props) => {
-  const { token, username, isAdmin, access, lookups, reportOpen, onCloseReport, sessionKey, onReprint, onNavigate } = props;
+  const { token, username, isAdmin, access, lookups, reportOpen, onCloseReport, sessionKey, onNavigate } = props;
   const [chosen, setChosen] = useState<IssuingTab>("byHand");
   const allowed = allowedTabs(ISSUING_TABS, access);
   const tab = shownTab(chosen, allowed) ?? "byHand";
@@ -40,7 +39,7 @@ export const IssuingWorkArea: React.FC<IssuingWorkAreaProps> = (props) => {
 
   const pane = (() => {
     if (reportOpen) return <StoreDailyReport direction={STORE_DIRECTION.OUT} token={token} />;
-    if (tab === "issuedToday") return <IssuedToday refreshKey={sessionKey} onReprint={onReprint} />;
+    if (tab === "issuedToday") return <IssuedToday refreshKey={sessionKey} username={username} />;
     if (tab === "stock") {
       return (
         <RawMaterialSection

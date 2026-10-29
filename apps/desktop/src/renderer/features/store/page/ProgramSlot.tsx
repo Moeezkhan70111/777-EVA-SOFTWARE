@@ -3,7 +3,7 @@ import { copy } from "../../../config/copy";
 import { CartonInStation } from "../programOut/CartonInStation";
 import { ProgramOutPanel } from "../programOut/ProgramOutPanel";
 import { isProgramClosed } from "../programClose/useProgramClose";
-import { BarcodeWell } from "../stations/ScanZone";
+import { ScanInIcon } from "../StoreIcons";
 import type { StoreMode } from "./storeTabs";
 import type { StoreProgram } from "./useStoreProgram";
 
@@ -43,19 +43,19 @@ export const ProgramRail: React.FC<{ store: StoreProgram; mode: StoreMode; token
     );
   }
   return (
-    <aside className="sp-rail" aria-label={copy.storePage.scanOut}>
-      <header className="sp-who sp-who--out">
-        <span className="sp-marker">{copy.storePage.issuing}</span>
+    <aside className="sp-rail si-scan mo-scan" aria-label={copy.moveOut.scanTitle}>
+      <header className="si-scan-head">
+        <span className="si-scan-mark" aria-hidden="true">
+          <ScanInIcon />
+        </span>
+        <div>
+          <h2 className="si-scan-title">{copy.moveOut.scanTitle}</h2>
+          <p className="si-scan-line">{copy.storePage.programs.pausedTitle(program.code)}</p>
+        </div>
       </header>
-      <div className="sp-rail-scan">
-        <section className="sz sz--out sz--waiting" data-testid="scan-zone" data-state="waiting">
-          <BarcodeWell />
-          <p className="sz-question" data-testid="scan-state">
-            {copy.storePage.programs.pausedTitle(program.code)}
-          </p>
-          <p className="sz-line">{copy.storePage.programs.scanOutPaused}</p>
-          <p className="sz-line">{copy.storePage.programs.closeToResume}</p>
-        </section>
+      <div className="sp-paused" data-testid="scan-paused">
+        <p>{copy.storePage.programs.scanOutPaused}</p>
+        <p className="field-help">{copy.storePage.programs.closeToResume}</p>
       </div>
     </aside>
   );

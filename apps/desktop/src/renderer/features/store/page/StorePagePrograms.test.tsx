@@ -115,7 +115,7 @@ describe("Machine programs on the Store page", () => {
     expect(api.openMachineProgramStoreOut).toHaveBeenCalledWith("p-3", expect.anything());
     expect(await screen.findByTestId("program-panel")).toHaveTextContent("MP-000003 read only");
     expect(screen.getByTestId("carton-in")).toHaveTextContent("Carton In MP-000003");
-    expect(screen.queryByRole("complementary", { name: "Receiving scanner" })).toBeNull();
+    expect(screen.queryByRole("complementary", { name: "Scan Material" })).toBeNull();
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 
@@ -125,8 +125,9 @@ describe("Machine programs on the Store page", () => {
     await openFromPickList();
 
     expect(await screen.findByTestId("program-panel")).toHaveTextContent("MP-000003 issue");
-    const rail = screen.getByRole("complementary", { name: "Issuing scanner" });
+    const rail = screen.getByRole("complementary", { name: "Scan Out" });
     expect(rail).toHaveTextContent("Scanning out is paused while MP-000003 is open");
+    // The Scan Out panel waits behind the program, mounted: its box is not on screen.
     expect(within(rail).queryByLabelText("Scanner input")).toBeNull();
   });
 
@@ -136,7 +137,7 @@ describe("Machine programs on the Store page", () => {
     await openFromPickList();
     fireEvent.click(await screen.findByRole("button", { name: "Close program" }));
     expect(screen.getByRole("tablist", { name: "Receiving sections" })).toBeInTheDocument();
-    expect(screen.getByRole("complementary", { name: "Receiving scanner" })).toBeInTheDocument();
+    expect(screen.getByRole("complementary", { name: "Scan Material" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Receiving/ })).toHaveTextContent("Batch open");
   });
 

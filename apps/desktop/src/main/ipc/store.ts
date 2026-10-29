@@ -51,7 +51,7 @@ export function registerStoreHandlers(ctx: IpcContext): void {
       });
       return { accepted: true, session };
     } catch (error) {
-      return { accepted: false, reason: error instanceof Error ? error.message : "The batch could not be started." };
+      return { accepted: false, reason: error instanceof Error ? error.message : "The session could not be started." };
     }
   });
 
@@ -99,7 +99,7 @@ export function registerStoreHandlers(ctx: IpcContext): void {
       // renderer: the party is read from the stored session, never taken from the call.
       const session = opts?.sessionId ? db.getRawMaterialReceivingSession(String(opts.sessionId)) : null;
       if (!session || session.status !== "OPEN") {
-        return { accepted: false, outcome: "INVALID_FORMAT", reason: "Choose the supplier and press Start scanning first." };
+        return { accepted: false, outcome: "INVALID_FORMAT", reason: "Start a receiving session for a supplier first." };
       }
 
       try {
@@ -141,7 +141,7 @@ export function registerStoreHandlers(ctx: IpcContext): void {
       });
       return { accepted: true, session };
     } catch (error) {
-      return { accepted: false, reason: error instanceof Error ? error.message : "The batch could not be started." };
+      return { accepted: false, reason: error instanceof Error ? error.message : "The session could not be started." };
     }
   });
 
@@ -182,7 +182,7 @@ export function registerStoreHandlers(ctx: IpcContext): void {
 
     const session = opts?.sessionId ? db.getRawMaterialIssueSession(String(opts.sessionId)) : null;
     if (!session || session.status !== "OPEN") {
-      return { accepted: false, outcome: "INVALID_FORMAT", reason: "Choose who the packets are going to and press Start scanning first." };
+      return { accepted: false, outcome: "INVALID_FORMAT", reason: "Start an issue session first." };
     }
 
     // ONE SESSION, ONE PARTY (0.3.8). The screen locks the party once the session starts; this is
@@ -194,7 +194,7 @@ export function registerStoreHandlers(ctx: IpcContext): void {
       return {
         accepted: false,
         outcome: "NO_PARTY",
-        reason: `This batch's packets go to ${party?.partyName ?? "another party"}. End the batch and start a new one to send packets to someone else. Nothing was moved.`,
+        reason: `This session's packets go to ${party?.partyName ?? "another party"}. End the session and start a new one to move packets out to someone else. Nothing was moved.`,
       };
     }
 

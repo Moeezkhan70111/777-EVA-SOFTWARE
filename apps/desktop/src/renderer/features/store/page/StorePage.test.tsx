@@ -140,11 +140,11 @@ describe("Store page — the two modes", () => {
     await waitFor(() => expect(modeButton(/Receiving/)).toHaveTextContent("Batch open"));
 
     fireEvent.click(modeButton(/Issuing/));
-    expect(screen.getByRole("complementary", { name: "Issuing scanner" })).toBeVisible();
-    expect(screen.queryByRole("complementary", { name: "Receiving scanner" })).toBeNull();
+    expect(screen.getByRole("complementary", { name: "Scan Out" })).toBeVisible();
+    expect(screen.queryByRole("complementary", { name: "Scan Material" })).toBeNull();
 
     fireEvent.click(modeButton(/Receiving/));
-    expect(screen.getByRole("complementary", { name: "Receiving scanner" })).toBeVisible();
+    expect(screen.getByRole("complementary", { name: "Scan Material" })).toBeVisible();
     expect(modeButton(/Receiving/)).toHaveTextContent("Batch open · 2 packets");
     expect(api.getOpenRawMaterialReceivingSession).toHaveBeenCalledTimes(1);
   });
@@ -177,143 +177,41 @@ describe("Store page — the two modes", () => {
   });
 });
 
-describe("Store page — the scan rail, in three zones", () => {
+describe("Store page — the scan panels, as released", () => {
   afterEach(() => vi.restoreAllMocks());
 
-  it("waits with a question while nothing is started: who, the supplier picker, and a large Start", async () => {
+  it("hosts Scan Material as Store In had it: the supplier, Start session, READY TO SCAN", async () => {
     installApi({ receivingOpen: false });
     renderPage();
-    const rail = screen.getByRole("complementary", { name: "Receiving scanner" });
-    await waitFor(() => expect(within(rail).getByTestId("scan-zone")).toHaveAttribute("data-state", "waiting"));
-    expect(within(rail).getByTestId("who-strip")).toHaveTextContent("FromNot chosen yet");
-    expect(within(rail).getByTestId("scan-state")).toHaveTextContent("Whose delivery is this?");
-    expect(within(rail).getByText("Choose the supplier, then press Start scanning.")).toBeInTheDocument();
-    // Nothing says "ready" while the screen waits for the operator.
-    expect(rail).not.toHaveTextContent(/ready/i);
-    expect(within(rail).getByRole("button", { name: "Start scanning" })).toBeDisabled();
+    const rail = screen.getByRole("complementary", { name: "Scan Material" });
+    expect(await within(rail).findByRole("button", { name: /Start session/ })).toBeDisabled();
+    expect(within(rail).getByTestId("scan-status")).toHaveTextContent("READY TO SCAN");
     expect(within(rail).getByLabelText("Scanner input")).toBeDisabled();
-    // No session, nothing to count, nothing to end.
-    expect(within(rail).queryByTestId("scan-count")).toBeNull();
-    expect(within(rail).queryByRole("button", { name: "End batch" })).toBeNull();
   });
 
-  it("with a session open: FROM the supplier and its type, ready, the count, and a quiet footer", async () => {
+  it("hosts Scan Out as Store Out had it: the party with its type, New session, End session, Print slip", async () => {
+    installApi();
+    renderPage({ start: "issuing" });
+    const rail = screen.getByRole("complementary", { name: "Scan Out" });
+    expect(within(rail).getByRole("button", { name: /New session/ })).toBeDisabled();
+    expect(within(rail).getByRole("button", { name: /End session/ })).toBeDisabled();
+    expect(within(rail).getByRole("button", { name: /Print slip/ })).toBeInTheDocument();
+    await act(async () => {
+      fireEvent.click(await within(rail).findByRole("combobox", { name: "Moving out to" }));
+    });
+    expect(await screen.findByRole("option", { name: /DANIYAL/ })).toHaveTextContent("Contractor");
+  });
+
+  it("gives the scanner's focus to the mode on screen only, and back after the Machine programs dialog", async () => {
     installApi();
     renderPage();
-    const rail = screen.getByRole("complementary", { name: "Receiving scanner" });
-    await waitFor(() => expect(within(rail).getByTestId("scan-count")).toHaveTextContent("2"));
-    const who = within(rail).getByTestId("who-strip");
-    expect(who).toHaveTextContent("From");
-    expect(who).toHaveTextContent("SHEHZAD RUBBER");
-    expect(within(who).getByTestId("party-type-badge")).toHaveTextContent("Supplier");
-    expect(within(rail).getByTestId("scan-state")).toHaveTextContent("Scan the next packet");
-    expect(within(rail).getByText("Each packet is counted as received from SHEHZAD RUBBER.")).toBeInTheDocument();
-    expect(rail).not.toHaveTextContent(/ready/i);
-    // One compact row: the number, what it counts, the quantity total.
-    expect(within(rail).getByTestId("scan-count")).toHaveTextContent("2packets in this batch50 KG");
-    // The batch's number belongs to the footer, not the scanning view.
-    expect(within(rail).getByTestId("session-line")).toHaveTextContent("RMI-000191");
-    expect(within(rail).queryByRole("button", { name: "Print slip" })).toBeNull();
-  });
-
-  it("answers a scan in the half-second: accepted, then the double scan refused with the count unchanged", async () => {
-    installApi();
-    renderPage();
-    const rail = screen.getByRole("complementary", { name: "Receiving scanner" });
-    const box = await within(rail).findByLabelText("Scanner input");
-    await waitFor(() => expect(box).toBeEnabled());
-
-    await act(async () => {
-      fireEvent.change(box, { target: { value: "RM_SHEHZAD_DANARED_000012" } });
-      fireEvent.keyDown(box, { key: "Enter" });
-    });
-    await waitFor(() => expect(within(rail).getByTestId("scan-zone")).toHaveAttribute("data-state", "accepted"));
-    // The category on the small line, the distinguishing part as the headline.
-    expect(within(rail).getByTestId("scan-zone")).toHaveTextContent("ReceivedDana · EvaRED25 KGRM_SHEHZAD_DANARED_000012");
-    // The box clears on a completed scan and keeps the focus.
-    expect(box).toHaveValue("");
-    expect(box).toHaveFocus();
-
-    await act(async () => {
-      fireEvent.change(box, { target: { value: "RM_SHEHZAD_DANARED_000012" } });
-      fireEvent.keyDown(box, { key: "Enter" });
-    });
-    const alert = await within(rail).findByRole("alert");
-    expect(alert).toHaveTextContent("Not received");
-    expect(alert).toHaveTextContent("This packet is already in");
-    expect(alert).toHaveTextContent("Put it aside and scan the next one.");
-    expect(within(rail).getByTestId("scan-count")).toHaveTextContent("packets in this batch — unchanged");
-  });
-
-  it("puts Print slip in the End session step, and ends only when asked", async () => {
-    const api = installApi();
-    const closeRawMaterialReceivingSession = vi.fn(async () => ({ ...RECEIVING, status: "CLOSED" as const }));
-    Object.assign(api, { closeRawMaterialReceivingSession });
-    renderPage();
-    const rail = screen.getByRole("complementary", { name: "Receiving scanner" });
-    fireEvent.click(await within(rail).findByRole("button", { name: "End batch" }));
-
-    const step = within(rail).getByRole("region", { name: "End batch RMI-000191?" });
-    expect(within(step).getByRole("button", { name: "Print slip" })).toBeEnabled();
-    fireEvent.click(within(step).getByRole("button", { name: "Keep scanning" }));
-    expect(closeRawMaterialReceivingSession).not.toHaveBeenCalled();
-
-    fireEvent.click(within(rail).getByRole("button", { name: "End batch" }));
-    await act(async () => {
-      fireEvent.click(within(within(rail).getByRole("region", { name: "End batch RMI-000191?" })).getByRole("button", { name: "End batch" }));
-    });
-    expect(closeRawMaterialReceivingSession).toHaveBeenCalledWith("rs-1");
-  });
-
-  it("keeps the scanner's box in view under the strip: off and saying why until a batch starts, then live", async () => {
-    installApi({ receivingOpen: false });
-    renderPage();
-    const rail = screen.getByRole("complementary", { name: "Receiving scanner" });
-    const box = within(rail).getByLabelText("Scanner input");
-    expect(box).toBeVisible();
-    expect(box).toBeDisabled();
-    expect(box).toHaveAttribute("placeholder", "Choose the supplier first");
-    expect(within(rail).queryByRole("button", { name: "Type a code" })).toBeNull();
-  });
-
-  it("gives the box the focus by itself when a batch is open, and back after the Machine programs dialog", async () => {
-    installApi();
-    renderPage();
-    const rail = screen.getByRole("complementary", { name: "Receiving scanner" });
-    const box = within(rail).getByLabelText("Scanner input");
+    const box = within(screen.getByRole("complementary", { name: "Scan Material" })).getByLabelText("Scanner input");
     await waitFor(() => expect(box).toHaveFocus());
-    expect(box).toHaveAttribute("placeholder", "Scan a packet");
 
     fireEvent.click(screen.getByRole("button", { name: "Machine programs" }));
     const dialog = await screen.findByRole("dialog");
     fireEvent.click(within(dialog).getAllByRole("button", { name: /close|cancel/i })[0]);
     await waitFor(() => expect(box).toHaveFocus());
-  });
-
-  it("says one packet, not 1 packets", async () => {
-    installApi({ receivedPackets: 1 });
-    renderPage();
-    const rail = screen.getByRole("complementary", { name: "Receiving scanner" });
-    await waitFor(() => expect(within(rail).getByTestId("scan-count")).toHaveTextContent("1packet in this batch"));
-  });
-
-  it("on Scan out waits asking who it is for, with the type against each party, Start issuing, and the last session to reprint", async () => {
-    const api = installApi();
-    api.listRawMaterialIssueSessions.mockImplementation(async () => [ISSUE_ROW]);
-    renderPage({ start: "issuing" });
-    const rail = screen.getByRole("complementary", { name: "Issuing scanner" });
-    expect(within(rail).getByTestId("who-strip")).toHaveTextContent("Going toNot chosen yet");
-    expect(within(rail).getByTestId("scan-state")).toHaveTextContent("Who is this material for?");
-    expect(within(rail).getByText("Choose who the packets are going to, then press Start scanning.")).toBeInTheDocument();
-    expect(within(rail).getByRole("button", { name: "Start scanning" })).toBeDisabled();
-    expect(await within(rail).findByText(/RMO-000173/)).toBeInTheDocument();
-    expect(within(rail).getByRole("button", { name: "Reprint slip" })).toBeInTheDocument();
-    expect(within(rail).getByRole("contentinfo", { name: "Last batch" })).toBeInTheDocument();
-
-    await act(async () => {
-      fireEvent.click(within(rail).getByRole("combobox", { name: "Moving out to" }));
-    });
-    expect(await screen.findByRole("option", { name: /DANIYAL/ })).toHaveTextContent("Contractor");
   });
 });
 
@@ -362,7 +260,7 @@ describe("Store page — keys 1 and 2", () => {
     installApi();
     const onModeChange = vi.fn();
     renderPage({ onModeChange });
-    const box = within(screen.getByRole("complementary", { name: "Receiving scanner" })).getByLabelText("Scanner input");
+    const box = within(screen.getByRole("complementary", { name: "Scan Material" })).getByLabelText("Scanner input");
     await waitFor(() => expect(box).toBeEnabled());
     box.focus();
     await act(async () => {
