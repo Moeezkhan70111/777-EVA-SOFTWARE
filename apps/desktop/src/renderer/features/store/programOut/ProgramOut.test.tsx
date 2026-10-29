@@ -386,9 +386,9 @@ afterEach(() => {
 });
 
 describe("notificationTarget", () => {
-  it("sends a machine-program notice to Store Out, carrying the program's stored id", () => {
+  it("sends a machine-program notice to the Store page in Issuing, carrying the program's stored id", () => {
     expect(notificationTarget({ kind: NOTIFICATION_KIND.MACHINE_PROGRAM_ISSUED, entityId: "prog-1" })).toEqual({
-      route: "store-out-operator",
+      route: "store-issuing",
       programId: "prog-1",
     });
   });

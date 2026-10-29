@@ -1237,7 +1237,12 @@ export const copy = {
   cartonProgram: {
     // Open programs and deleting one (0.3.8): administrators only, with a typed reason.
     openProgramsTitle: "Open programs",
-    openProgramsLine: "Every program still open, whatever its date. Delete one that can never be honestly completed; a program that can be is completed from Store In.",
+    openProgramsLine: "Every program still open, whatever its date. Open one in the Store page to issue against it or complete it; delete one that can never be honestly completed.",
+    openInStore: "Open in Store",
+    openInReceiving: "Receiving",
+    openInIssuing: "Issuing",
+    openInReceivingFor: (code: string) => `Open ${code} in Store · Receiving`,
+    openInIssuingFor: (code: string) => `Open ${code} in Store · Issuing`,
     openProgramsEmpty: "No machine program is open.",
     openProgramsFailed: "The open programs could not be loaded.",
     openProgramsLoading: "Loading open programs…",
@@ -1705,6 +1710,19 @@ export const copy = {
     issued: "Issued",
     quantity: "Quantity",
     reportFor: (mode: string) => `Daily report · ${mode}`,
+    programs: {
+      title: "Machine programs",
+      subtitle: "Choose an open program, or scan or type its number.",
+      listTitle: "Open programs",
+      loading: "Loading open programs…",
+      failed: "The open programs could not be loaded.",
+      empty: "No machine program is open.",
+      openFor: (code: string) => `Open ${code}`,
+      cartonQr: "Carton QR Generator",
+      /** The Scan out rail while a program is open in Issuing: its uppers are scanned in the program. */
+      scanOutPaused: (code: string) => `Scan out is paused while ${code} is open — its uppers are scanned in the program, on the left.`,
+      closeToResume: "Close the program to scan out again. This computer's issue session is kept.",
+    },
     issuedToday: {
       title: "Issued today",
       line: "Every issue session started today, on every computer.",

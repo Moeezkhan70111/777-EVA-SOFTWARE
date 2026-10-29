@@ -7,20 +7,30 @@ import { formatDate } from "../../utils/dates";
 import type { OpenMachineProgram } from "../../types/desktopApi";
 import { DeleteProgramDialog } from "./DeleteProgramDialog";
 import { useOpenPrograms } from "./useCartonProgram";
+import type { StoreMode } from "../store/page/storeTabs";
 
-// OPEN PROGRAMS (0.3.8) — every machine program still open, whatever its date, for an administrator
-// to delete. A program that can be completed is completed from the store; this is for one that can
-// never honestly be (nothing came back, or never will). The day list
+// OPEN PROGRAMS — every machine program still open, whatever its date.
+//
+//   Open in Store (0.3.9): Receiving reads it and scans its cartons back, Issuing issues against it —
+//                           for whoever works the store.
+//   Delete (0.3.8):        administrators only, for a program that can never honestly be completed
+//                           (nothing came back, or never will).
+//
+// The day list
 // below shows only programs with carton runs, so a program with none is found only here.
 
 const text = copy.cartonProgram;
 
 interface OpenProgramsProps {
+  /** Administrators only: offers Delete. The main process checks again. */
+  canDelete: boolean;
+  /** Opens a program on the Store page; absent when this user cannot open it. */
+  onOpenInStore?: (programId: string, mode: StoreMode) => void;
   /** A program was deleted: the day list may have changed too. */
   onDeleted: () => void;
 }
 
-export const OpenPrograms: React.FC<OpenProgramsProps> = ({ onDeleted }) => {
+export const OpenPrograms: React.FC<OpenProgramsProps> = ({ canDelete, onOpenInStore, onDeleted }) => {
   const api = useDesktopApi();
   const { push } = useNotifications();
   const open = useOpenPrograms(text.openProgramsFailed);
@@ -55,14 +65,26 @@ export const OpenPrograms: React.FC<OpenProgramsProps> = ({ onDeleted }) => {
               <span>{program.machineName}</span>
               <span>{formatDate(program.programDate)}</span>
               <span>{program.contractorName}</span>
-              <button
-                type="button"
-                className="btn btn-secondary btn-sm"
-                aria-label={text.deleteProgramFor(program.code)}
-                onClick={() => setDeleting(program)}
-              >
-                {text.deleteProgram}
-              </button>
+              {onOpenInStore ? (
+                <span className="mp-open-actions" role="group" aria-label={text.openInStore}>
+                  <button type="button" className="btn btn-secondary btn-sm" aria-label={text.openInReceivingFor(program.code)} onClick={() => onOpenInStore(program.programId, "receiving")}>
+                    {text.openInReceiving}
+                  </button>
+                  <button type="button" className="btn btn-secondary btn-sm" aria-label={text.openInIssuingFor(program.code)} onClick={() => onOpenInStore(program.programId, "issuing")}>
+                    {text.openInIssuing}
+                  </button>
+                </span>
+              ) : null}
+              {canDelete ? (
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm"
+                  aria-label={text.deleteProgramFor(program.code)}
+                  onClick={() => setDeleting(program)}
+                >
+                  {text.deleteProgram}
+                </button>
+              ) : null}
             </li>
           ))}
         </ul>

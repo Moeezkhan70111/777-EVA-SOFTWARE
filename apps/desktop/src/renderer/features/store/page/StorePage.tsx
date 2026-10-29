@@ -6,12 +6,15 @@ import { SCAN_STATION_CSS } from "../../scanStation/scanStation";
 import { useIssuingStation } from "../stations/useIssuingStation";
 import { useReceivingStation } from "../stations/useReceivingStation";
 import { IssuingWorkArea } from "./IssuingWorkArea";
+import { MachineProgramsDialog } from "./MachineProgramsDialog";
 import { ModeSwitch } from "./ModeSwitch";
+import { ProgramRail, ProgramWork } from "./ProgramSlot";
 import { ReceivingWorkArea } from "./ReceivingWorkArea";
 import { ScanInRail } from "./ScanInRail";
 import { ScanOutRail } from "./ScanOutRail";
 import type { StoreAccess, StoreMode } from "./storeTabs";
 import { useModeKeys } from "./useModeKeys";
+import { useStoreProgram } from "./useStoreProgram";
 
 // THE STORE PAGE (0.3.9) — Receiving and Issuing on one page, in place of Store Station, Store In
 // and Store Out.
@@ -24,6 +27,9 @@ import { useModeKeys } from "./useModeKeys";
 // BOTH STATIONS LIVE HERE, for as long as the page does: each keeps its session whichever mode is on
 // screen, and the switch shows both. Both rails stay mounted; the inactive one is hidden and its scan
 // box disarmed (the stations' `active`), so a scan can only land in the mode being looked at.
+//
+// AN OPEN MACHINE PROGRAM takes the work area and the rail (ProgramSlot). Both stations stay mounted
+// and disarmed meanwhile: the program's own scanner is the one box listening.
 
 interface StorePageProps {
   mode: StoreMode;
@@ -33,11 +39,25 @@ interface StorePageProps {
   access: StoreAccess;
   onModeChange: (mode: StoreMode) => void;
   onNavigate: (route: AppRoute) => void;
+  /** Absent when this account may not open the Carton QR Generator. */
+  onOpenCartonQr?: () => void;
+  /** A machine program to open on arrival, from a notification or the Machine Program page. */
+  initialProgramId?: string;
+  onInitialProgramConsumed?: () => void;
 }
 
-export const StorePage: React.FC<StorePageProps> = ({ mode, token, username, isAdmin, access, onModeChange, onNavigate }) => {
-  const receiving = useReceivingStation({ token, username, active: mode === "receiving" });
-  const issuing = useIssuingStation({ token, username, active: mode === "issuing" });
+export const StorePage: React.FC<StorePageProps> = (props) => {
+  const { mode, token, username, isAdmin, access, onModeChange, onNavigate } = props;
+  const [issueSessionId, setIssueSessionId] = useState<string | null>(null);
+  const programs = useStoreProgram({ token, issueSessionId, initialProgramId: props.initialProgramId, onInitialProgramConsumed: props.onInitialProgramConsumed });
+  const receiving = useReceivingStation({ token, username, active: mode === "receiving" && !programs.isOpen });
+  const issuing = useIssuingStation({
+    token,
+    username,
+    active: mode === "issuing" && !programs.isOpen,
+    onSessionChange: setIssueSessionId,
+    onMachineProgramScan: programs.openProgram,
+  });
   const lookups = useRawMaterialLookups();
   const [reportOpen, setReportOpen] = useState<Record<StoreMode, boolean>>({ receiving: false, issuing: false });
   useModeKeys(onModeChange);
@@ -47,6 +67,7 @@ export const StorePage: React.FC<StorePageProps> = ({ mode, token, username, isA
   const navigate = useCallback((route: AppRoute) => (route === "raw-material-input" ? onModeChange("receiving") : onNavigate(route)), [onModeChange, onNavigate]);
   const shared = { token, username, isAdmin, access, lookups, onNavigate: navigate };
   const issuingKey = `${issuing.session?.id ?? ""}|${issuing.session?.status ?? ""}|${issuing.summary?.totalPackets ?? 0}`;
+  const showing = (which: StoreMode) => mode === which && !programs.isOpen;
 
   return (
     <div className="sp-page">
@@ -57,6 +78,9 @@ export const StorePage: React.FC<StorePageProps> = ({ mode, token, username, isA
           <p className="sp-sub">{copy.storePage.subtitle}</p>
         </div>
         <div className="sp-head-actions">
+          <button type="button" className="btn btn-secondary" aria-haspopup="dialog" onClick={programs.openDialog}>
+            {copy.storePage.machinePrograms}
+          </button>
           <button type="button" className="btn btn-secondary" aria-pressed={reportOpen[mode]} onClick={() => setReportOpen((open) => ({ ...open, [mode]: !open[mode] }))}>
             {copy.storePage.dailyReport}
           </button>
@@ -71,10 +95,10 @@ export const StorePage: React.FC<StorePageProps> = ({ mode, token, username, isA
       />
 
       <div className="sp-body">
-        <div hidden={mode !== "receiving"} className="sp-work-slot">
+        <div hidden={!showing("receiving")} className="sp-work-slot">
           <ReceivingWorkArea {...shared} reportOpen={reportOpen.receiving} onCloseReport={() => closeReport("receiving")} />
         </div>
-        <div hidden={mode !== "issuing"} className="sp-work-slot">
+        <div hidden={!showing("issuing")} className="sp-work-slot">
           <IssuingWorkArea
             {...shared}
             reportOpen={reportOpen.issuing}
@@ -83,9 +107,21 @@ export const StorePage: React.FC<StorePageProps> = ({ mode, token, username, isA
             onReprint={(sessionId) => void issuing.reprint(sessionId)}
           />
         </div>
-        <ScanInRail station={receiving} hidden={mode !== "receiving"} />
-        <ScanOutRail station={issuing} hidden={mode !== "issuing"} />
+        {programs.isOpen ? <ProgramWork store={programs} mode={mode} /> : null}
+        <ScanInRail station={receiving} hidden={!showing("receiving")} />
+        <ScanOutRail station={issuing} hidden={!showing("issuing")} />
+        {programs.isOpen ? <ProgramRail store={programs} mode={mode} token={token} /> : null}
       </div>
+
+      {programs.dialogOpen ? (
+        <MachineProgramsDialog
+          onOpen={programs.openProgram}
+          busy={programs.program.loading}
+          error={programs.program.error}
+          onClose={programs.closeDialog}
+          onOpenCartonQr={props.onOpenCartonQr}
+        />
+      ) : null}
     </div>
   );
 };

@@ -25,7 +25,7 @@ import { StoreOutPage } from "../features/store/StoreOutPage";
 import { StoreOutReportPage } from "../features/store/dailyReport/StoreOutReportPage";
 import { storeInTabOfRoute } from "../features/store/storeOperators";
 import { StorePage } from "../features/store/page/StorePage";
-import { STORE_MODE_ROUTE, storeModeOfRoute } from "../features/store/page/storeTabs";
+import { STORE_MODE_ROUTE, storeModeOfRoute, type StoreMode } from "../features/store/page/storeTabs";
 import { StoreWorkspacePage } from "../features/store/StoreWorkspacePage";
 import { StoreScanningPage } from "../pages/StoreScanningPage";
 import { StoreMoveOutPage } from "../pages/StoreMoveOutPage";
@@ -123,8 +123,8 @@ export const App = () => {
   const [saleVoucherGatepassId, setSaleVoucherGatepassId] = useState<string | undefined>(undefined);
   /** The raw material the workspace was opened for (from a stock-correction notification). */
   const [rawMaterialItemId, setRawMaterialItemId] = useState<string | undefined>(undefined);
-  /** The machine program Store Out was opened for (from a machine-program notification). */
-  const [storeOutProgramId, setStoreOutProgramId] = useState<string | undefined>(undefined);
+  /** The machine program the Store page was opened on (a notification, or the Machine Program page). */
+  const [storeProgramId, setStoreProgramId] = useState<string | undefined>(undefined);
   /** The machine program Reconciliation was opened for (Start Reconciliation on Machine Program). */
   const [reconcileProgramId, setReconcileProgramId] = useState<string | null>(null);
   // It is for that one visit: leaving the QR Generator lets the next visit open on its first tab.
@@ -207,13 +207,14 @@ export const App = () => {
     setRoute("raw-material");
   }, []);
   /**
-   * A machine-program notice opens Store Out on that program. The stored id travels, and the
-   * main process still resolves it and judges whether it may be issued against — clicking a
+   * A machine-program notice opens the Store page in Issuing on that program (0.3.9), where its
+   * uppers are fetched; the Machine Program page can open one in either mode. The stored id travels,
+   * and the main process still resolves it and judges whether it may be issued against — clicking a
    * notice is not authorisation.
    */
-  const openStoreOutForProgram = useCallback((programId: string) => {
-    setStoreOutProgramId(programId);
-    setRoute("store-out-operator");
+  const openStoreForProgram = useCallback((programId: string, mode: StoreMode = "issuing") => {
+    setStoreProgramId(programId);
+    setRoute(STORE_MODE_ROUTE[mode]);
   }, []);
   const onNotificationClick = useCallback(
     (notification: UserNotification) => {
@@ -222,10 +223,10 @@ export const App = () => {
       if (!target) return;
       if (target.route === "sale-voucher-form") openSaleVoucherForGatepass(target.gatepassId);
       else if (target.route === "gatepass-list") openGatepassDocument(target.gatepassId);
-      else if (target.route === "store-out-operator") openStoreOutForProgram(target.programId);
+      else if (target.route === "store-issuing") openStoreForProgram(target.programId);
       else openRawMaterialItem(target.itemId);
     },
-    [admin, openSaleVoucherForGatepass, openGatepassDocument, openRawMaterialItem, openStoreOutForProgram]
+    [admin, openSaleVoucherForGatepass, openGatepassDocument, openRawMaterialItem, openStoreForProgram]
   );
   const leavePartyForm = useCallback((next: AppRoute) => {
     setSelectedPartyId(undefined);
@@ -348,6 +349,8 @@ export const App = () => {
         return (
           <MachineProgramPage
             isAdmin={session.role === USER_ROLE.ADMIN}
+            // Open programs can be taken to the Store page by whoever works it (0.3.9).
+            onOpenInStore={canOpenRoute(session, "store-receiving") ? openStoreForProgram : undefined}
             onOpenQrGenerator={canOpenRoute(session, "qr-generator") ? () => setRoute("qr-generator") : undefined}
             // Reconciliation lives in the QR Generator workspace; the program travels with the route.
             onStartReconciliation={canOpenRoute(session, "qr-generator") ? (programId) => {
@@ -430,6 +433,9 @@ export const App = () => {
             }}
             onModeChange={(next) => setRoute(STORE_MODE_ROUTE[next])}
             onNavigate={setRoute}
+            onOpenCartonQr={canOpenRoute(session, "qr-generator") ? () => setRoute("qr-generator") : undefined}
+            initialProgramId={storeProgramId}
+            onInitialProgramConsumed={() => setStoreProgramId(undefined)}
           />
         );
       case "store-out-operator":
@@ -440,8 +446,6 @@ export const App = () => {
             onBack={() => setRoute("store-home")}
             onOpenReport={() => setRoute("store-out-daily-report")}
             onOpenQrGenerator={canOpenRoute(session, "qr-generator") ? () => setRoute("qr-generator") : undefined}
-            initialProgramId={storeOutProgramId}
-            onInitialProgramConsumed={() => setStoreOutProgramId(undefined)}
           />
         );
       case "store-out-daily-report":
@@ -666,7 +670,7 @@ export const App = () => {
     selectedProductId,
     session,
     sessionToken,
-    storeOutProgramId,
+    storeProgramId,
     workspaceTab,
   ]);
 
