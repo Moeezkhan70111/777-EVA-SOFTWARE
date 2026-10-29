@@ -93,6 +93,7 @@ const FULLSCREEN_ROUTES: ReadonlySet<AppRoute> = new Set<AppRoute>([
   "store-in-stock",
   "store-in-receipts",
   "store-in-setup",
+  "store-in-manual-entry",
   "store-in-daily-report",
   "store-out-operator",
   "store-out-daily-report",
@@ -342,6 +343,7 @@ export const App = () => {
       case "machine-program":
         return (
           <MachineProgramPage
+            isAdmin={session.role === USER_ROLE.ADMIN}
             onOpenQrGenerator={canOpenRoute(session, "qr-generator") ? () => setRoute("qr-generator") : undefined}
             // Reconciliation lives in the QR Generator workspace; the program travels with the route.
             onStartReconciliation={canOpenRoute(session, "qr-generator") ? (programId) => {
@@ -380,6 +382,7 @@ export const App = () => {
       case "store-in-stock":
       case "store-in-receipts":
       case "store-in-setup":
+      case "store-in-manual-entry":
       case "store-in-daily-report":
         return (
           <StoreInPage
@@ -393,6 +396,7 @@ export const App = () => {
               settings:
                 hasPermission(session, PERMISSION.SETTINGS) || hasPermission(session, PERMISSION.RAW_MATERIAL_SETUP),
               report: hasPermission(session, PERMISSION.STORE_SCANNING),
+              manual: hasPermission(session, PERMISSION.STORE_SCANNING),
             }}
             onNavigate={setRoute}
           />

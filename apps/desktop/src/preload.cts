@@ -85,6 +85,7 @@ contextBridge.exposeInMainWorld("desktop", {
       ipcRenderer.invoke(IPC.rawMaterialReceiptScan, rawScan, opts),
     startRawMaterialIssueSession: (opts?: Record<string, unknown>) =>
       ipcRenderer.invoke(IPC.startRawMaterialIssueSession, opts),
+    getOpenRawMaterialIssueSession: () => ipcRenderer.invoke(IPC.getOpenRawMaterialIssueSession),
     closeRawMaterialIssueSession: (sessionId: string) =>
       ipcRenderer.invoke(IPC.closeRawMaterialIssueSession, sessionId),
     getRawMaterialIssueSessionSummary: (sessionId: string) =>
@@ -100,6 +101,8 @@ contextBridge.exposeInMainWorld("desktop", {
     setProductSubGroupHasNoUpper: (id: string, hasNoUpper: boolean) =>
       ipcRenderer.invoke(IPC.setProductSubGroupHasNoUpper, id, hasNoUpper),
     listMachineDayPrograms: (programDate: string) => ipcRenderer.invoke(IPC.listMachineDayPrograms, programDate),
+    listOpenMachinePrograms: () => ipcRenderer.invoke(IPC.listOpenMachinePrograms),
+    deleteMachineProgram: (programId: string, reason: string) => ipcRenderer.invoke(IPC.deleteMachineProgram, programId, reason),
     addMachine: (input: Record<string, unknown>) => ipcRenderer.invoke(IPC.addMachine, input),
     assignMachineContractor: (input: Record<string, unknown>) => ipcRenderer.invoke(IPC.assignMachineContractor, input),
     listReconcilablePrograms: (programDate: string) => ipcRenderer.invoke(IPC.listReconcilablePrograms, programDate),

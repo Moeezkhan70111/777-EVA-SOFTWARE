@@ -272,6 +272,15 @@ export interface CartonProgramLine {
 }
 
 /** A machine's program for one business day — MP-000123 — with its contractors as opened. */
+/** A program still open, as the administrator's list of what is left to delete shows it (0.3.8). */
+export interface OpenMachineProgram {
+  programId: string;
+  code: string;
+  programDate: string;
+  machineName: string;
+  contractorName: string;
+}
+
 export interface MachineDayProgram {
   programId: string;
   programNumber: number;
@@ -1696,6 +1705,8 @@ export interface DesktopApi {
   startRawMaterialIssueSession(
     opts?: { token?: string; startNew?: boolean }
   ): Promise<{ accepted: boolean; session?: RawMaterialIssueSession; reason?: string }>;
+  /** This terminal's open issue session from today, or null. Never starts one. */
+  getOpenRawMaterialIssueSession(): Promise<RawMaterialIssueSession | null>;
   closeRawMaterialIssueSession(sessionId: string): Promise<RawMaterialIssueSession | null>;
   getRawMaterialIssueSessionSummary(sessionId: string): Promise<RawMaterialIssueSessionSummary | null>;
   rawMaterialIssueScan(
@@ -1716,6 +1727,10 @@ export interface DesktopApi {
   setProductSubGroupHasNoUpper(id: string, hasNoUpper: boolean): Promise<{ accepted: boolean; reason?: string }>;
   /** Every machine's program for one business date (YYYY-MM-DD). */
   listMachineDayPrograms(programDate: string): Promise<{ accepted: boolean; rows: MachineDayProgram[]; reason?: string }>;
+  /** Every program still open, whatever its date (0.3.8). */
+  listOpenMachinePrograms(): Promise<{ accepted: boolean; rows: OpenMachineProgram[]; reason?: string }>;
+  /** Deletes (cancels) one program. Administrators only; the reason is required and audited. */
+  deleteMachineProgram(programId: string, reason: string): Promise<{ accepted: boolean; outcome: string; reason?: string }>;
   /** The runs behind one program line, each kept on its own. */
   listCartonProgramBatches(input: {
     programId: string;
@@ -2718,6 +2733,8 @@ export interface RawMaterialIssueSession {
 
 export interface RawMaterialIssueSessionSummary {
   session: RawMaterialIssueSession;
+  /** Who the session's packets go to: its first scan's party, or null before the first scan. */
+  partyId: string | null;
   totalPackets: number;
   bySection: Array<{
     sectionName: string;

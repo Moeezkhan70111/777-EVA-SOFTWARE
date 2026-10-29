@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { CONTRACTOR_PARTY_TYPE } from "@erp/domain";
 import { useDesktopApi } from "../../hooks/useDesktopApi";
-import type { CartonProgramBatch, CartonProgramLine, MachineDayProgram, MachineRecord } from "../../types/desktopApi";
+import type { CartonProgramBatch, CartonProgramLine, MachineDayProgram, MachineRecord, OpenMachineProgram } from "../../types/desktopApi";
 
 // Reading the Machine Program and what it is made for. Every read here is side-effect free in the
 // main process — a program is opened only by a QR run — so loading on every visit, on Refresh, on a
@@ -48,6 +48,13 @@ function useRows<T>(read: () => Promise<Reply<T>>, failed: string): LoadState<T>
 export const useDayPrograms = (programDate: string, failed: string): LoadState<MachineDayProgram> => {
   const api = useDesktopApi();
   const read = useCallback(() => api.listMachineDayPrograms(programDate), [api, programDate]);
+  return useRows(read, failed);
+};
+
+/** Every program still open, whatever its date: what an administrator can still delete (0.3.8). */
+export const useOpenPrograms = (failed: string): LoadState<OpenMachineProgram> => {
+  const api = useDesktopApi();
+  const read = useCallback(() => api.listOpenMachinePrograms(), [api]);
   return useRows(read, failed);
 };
 

@@ -8,6 +8,7 @@ import type {
 } from "../types/desktopApi";
 import type { AppRoute } from "../app/routes";
 import { SearchableCombobox } from "../components/shared/SearchableCombobox";
+import { PartyTypeBadge } from "../features/parties/PartyTypeBadge";
 import { useNotifications } from "../state/NotificationsContext";
 import { playScanSound } from "../utils/playScanSound";
 import { copy } from "../config/copy";
@@ -333,6 +334,8 @@ export const RawMaterialInputPage: React.FC<RawMaterialInputPageProps> = ({ toke
       >
         {open ? (
           <>
+            {/* The party this session receives from, and what it is. */}
+            <PartyTypeBadge partyType={suppliers.find((party) => party.id === session?.partyId)?.partyType} />
             <button type="button" className="ssn-btn" onClick={() => void endSession()} disabled={busy}>
               End session
             </button>
@@ -350,6 +353,7 @@ export const RawMaterialInputPage: React.FC<RawMaterialInputPageProps> = ({ toke
                 placeholder={supplierOptions.length === 0 ? "No suppliers yet" : "Choose supplier…"}
               />
             </div>
+            <PartyTypeBadge partyType={suppliers.find((party) => party.id === partyId)?.partyType} />
             <button type="button" className="ssn-btn" onClick={() => void startSession()} disabled={busy || !partyId}>
               <PlusIcon />
               Start session

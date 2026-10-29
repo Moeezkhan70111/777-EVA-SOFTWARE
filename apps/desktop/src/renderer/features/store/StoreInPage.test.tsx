@@ -2,12 +2,12 @@ import React from "react";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { StoreInPage } from "./StoreInPage";
+import { StoreInPage, type StoreInAccess } from "./StoreInPage";
 import type { StoreInTab } from "./storeOperators";
 import { NotificationsProvider } from "../../state/NotificationsContext";
 import type { MachineProgramCartonPacket, MachineProgramReconciliation, MachineProgramRecord } from "../../types/desktopApi";
 
-// STORE IN — the machine program lookup.
+// STORE IN — the machine program lookup, and the Manual Entry tab (0.3.8).
 //
 // What matters here: Store In can open ANY machine program to read it (fully issued included),
 // can print the cartons it is owed, and can never issue against it — no Dana Issue, no Upper Out
@@ -26,7 +26,7 @@ vi.mock("../rawMaterial/RawMaterialSection", () => ({
 vi.mock("../rawMaterial/useRawMaterialLookups", () => ({
   useRawMaterialLookups: () => ({ loading: false, error: null, categories: [], units: [], reload: async () => undefined }),
 }));
-vi.mock("./HandMovePanel", () => ({ HandMovePanel: () => <div>Move In by Hand</div> }));
+vi.mock("./HandMovePanel", () => ({ HandMovePanel: () => <div data-testid="hand-move-in">Move In by Hand</div> }));
 vi.mock("../../utils/playScanSound", () => ({ playScanSound: () => undefined }));
 
 const printWindow = vi.fn((_opts: { ids: string[] }) => true);
@@ -171,7 +171,9 @@ function installApi(
   return api;
 }
 
-const renderPage = (onNavigate: (route: string) => void = () => undefined, tab: StoreInTab = "stock") =>
+const ALL: StoreInAccess = { stock: true, labels: true, settings: true, report: true, manual: true };
+
+const renderPage = (onNavigate: (route: string) => void = () => undefined, tab: StoreInTab = "stock", access: StoreInAccess = ALL) =>
   render(
     <NotificationsProvider>
       <StoreInPage
@@ -179,7 +181,7 @@ const renderPage = (onNavigate: (route: string) => void = () => undefined, tab: 
         token="t-1"
         username="aslam"
         isAdmin={false}
-        access={{ stock: true, labels: true, settings: true, report: true }}
+        access={access}
         onNavigate={onNavigate}
       />
     </NotificationsProvider>
@@ -204,6 +206,42 @@ describe("Store In — Daily Report tab", () => {
     expect(api.getStoreDailyReport).toHaveBeenCalledWith(expect.objectContaining({ direction: "IN", token: "t-1" }));
     expect(screen.getByRole("tab", { name: "Daily Report Store In" })).toHaveAttribute("aria-selected", "true");
     expect(screen.getByTestId("rm-input-station")).toBeInTheDocument();
+  });
+});
+
+describe("Store In — Manual Entry tab (0.3.8)", () => {
+  it("is a tab just before the Daily Report", () => {
+    installApi();
+    renderPage();
+    const tabs = within(screen.getByRole("tablist")).getAllByRole("tab").map((tab) => tab.textContent);
+    expect(tabs.slice(-2)).toEqual(["Manual Entry", "Daily Report Store In"]);
+  });
+
+  it("types in unlabelled material on the left while the scan station stays on the right", () => {
+    installApi();
+    renderPage(undefined, "manual");
+    expect(screen.getByRole("tab", { name: "Manual Entry" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByTestId("hand-move-in")).toBeInTheDocument();
+    expect(screen.getByTestId("rm-input-station")).toBeInTheDocument();
+  });
+
+  it("is no longer a button under the scanner", () => {
+    installApi();
+    renderPage();
+    expect(screen.queryByRole("button", { name: "Manual Entry" })).toBeNull();
+    expect(screen.queryByTestId("hand-move-in")).toBeNull();
+  });
+
+  it("is offered only to an account that works the store", () => {
+    installApi();
+    renderPage(undefined, "stock", { ...ALL, manual: false });
+    expect(screen.queryByRole("tab", { name: "Manual Entry" })).toBeNull();
+  });
+
+  it("keeps the machine program lookup on the page", () => {
+    installApi();
+    renderPage(undefined, "manual");
+    expect(screen.getByLabelText("Scan QR or enter Machine Program No.")).toBeInTheDocument();
   });
 });
 

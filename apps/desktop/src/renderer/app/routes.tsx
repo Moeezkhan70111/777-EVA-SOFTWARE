@@ -31,6 +31,7 @@ export type AppRoute =
   | "store-in-stock"
   | "store-in-receipts"
   | "store-in-setup"
+  | "store-in-manual-entry"
   | "store-in-daily-report"
   | "store-out-operator"
   | "store-out-daily-report"

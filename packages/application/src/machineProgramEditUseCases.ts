@@ -1,5 +1,6 @@
 import {
   CONTRACTOR_PARTY_TYPE,
+  MACHINE_PROGRAM_DELETE_REASON_MIN,
   MACHINE_PROGRAM_STATUS,
   attributeKey,
   checkMachineShift,
@@ -299,7 +300,14 @@ export class DeleteMachineProgramUseCase {
         throw new MachineProgramRejectedError("PROGRAM_CLOSED", "This program has already been deleted.");
       }
 
-      const reason = String(input.reason ?? "").trim() || null;
+      // A deletion says why (owner, 0.3.8): the reason is kept in the audit record.
+      const reason = String(input.reason ?? "").trim();
+      if (reason.length < MACHINE_PROGRAM_DELETE_REASON_MIN) {
+        throw new MachineProgramRejectedError(
+          "REASON_REQUIRED",
+          `Type why ${formatMachineProgramCode(program.programNumber)} is being deleted — at least ${MACHINE_PROGRAM_DELETE_REASON_MIN} characters. It is kept in the audit record. Nothing was changed.`
+        );
+      }
       const closed = await this.deps.repo.closeMachineProgram(
         { programId: program.id, status: MACHINE_PROGRAM_STATUS.CANCELLED, actor: input.actor, reason, nowIso: tx.nowIso },
         tx

@@ -132,6 +132,16 @@ export const copy = {
   parties: {
     currentBalance: "Current Balance",
     balanceUnavailable: "Balance unavailable",
+    // A party's type, shown as a badge wherever a party is chosen for a store movement (0.3.8).
+    typeLabel: {
+      CUSTOMER: "Customer",
+      SUPPLIER: "Supplier",
+      CONTRACTOR: "Contractor",
+      DISTRIBUTOR: "Distributor",
+      DEALER: "Dealer",
+      TRANSPORTER: "Transporter",
+    } as Readonly<Record<string, string>>,
+    typeBadgeName: (label: string) => `Party type: ${label}`,
   },
 
   gatepass: {
@@ -1225,6 +1235,23 @@ export const copy = {
   // for a day — MP-000123 — made of the carton QRs generated for it. Nothing here is typed in but a
   // machine and who works it; the programs open on their own from the QR Generator.
   cartonProgram: {
+    // Open programs and deleting one (0.3.8): administrators only, with a typed reason.
+    openProgramsTitle: "Open programs",
+    openProgramsLine: "Every program still open, whatever its date. Delete one that can never be honestly completed; a program that can be is completed from Store In.",
+    openProgramsEmpty: "No machine program is open.",
+    openProgramsFailed: "The open programs could not be loaded.",
+    openProgramsLoading: "Loading open programs…",
+    deleteProgram: "Delete…",
+    deleteProgramFor: (code: string) => `Delete ${code}…`,
+    deleteTitle: (code: string) => `Delete ${code}?`,
+    deleteExplain:
+      "The program is kept as history and marked deleted. Whatever it still had reserved is released. Anything that already left the store for it stays where it is.",
+    deleteReasonLabel: "Why is it being deleted?",
+    deleteReasonHelp: (min: number) => `At least ${min} characters. Kept in the audit record with your name.`,
+    deleteConfirm: (code: string) => `Delete ${code}`,
+    deleting: "Deleting…",
+    deleteDone: (code: string) => `${code} deleted`,
+    deleteFailed: "The program could not be deleted.",
     title: "Machine Program",
     subtitle: "One program per machine per day, made of the carton QRs generated for it.",
     // Machines
@@ -1584,6 +1611,7 @@ export const copy = {
     scanMaterialLine: "Scan a QR code to receive material into stock.",
     or: "OR",
     manualEntry: "Manual Entry",
+    manualEntryLine: "Type in material that came without labels",
     noAccessTitle: "Nothing here for your account",
     noAccessHint: "Ask an administrator for stock, label or setup access.",
     addMaterialTitle: "Add New Material",
@@ -1629,7 +1657,12 @@ export const copy = {
     chooseScanParty: "Choose supplier or contractor…",
     noScanParties: "No suppliers or contractors yet",
     noScanPartyMatch: "No supplier or contractor found",
-    scanPartyHelp: "Every packet you scan goes out to this party, until you choose another.",
+    scanPartyHelp: "Choose who the packets are going to, then press New session.",
+    // The session belongs to one party (0.3.8): choose the party, New session, scan, End session.
+    scanPartyLocked: "Every packet in this session goes to this party. End the session to choose another.",
+    scanStartHint: "Choose the party, then press New session",
+    scanPressNew: "Press New session to start",
+    scanSessionClosed: "Session ended — choose the party and press New session",
     scanPartyFirstTitle: "⚠ CHOOSE A PARTY FIRST",
     scanPartyFirstBody: "Choose who these packets are going to, then scan. Nothing was moved.",
     scanPartyRefusedTitle: "✕ CHOOSE A PARTY",

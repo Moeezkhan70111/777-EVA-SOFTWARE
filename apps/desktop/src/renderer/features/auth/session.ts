@@ -124,6 +124,8 @@ export const routePermission: Partial<Record<AppRoute, PermissionCode>> = {
   "store-in-receipts": PERMISSION.STOCK,
   // The day's movements are read by whoever works the store, the same as the stations.
   "store-in-daily-report": PERMISSION.STORE_SCANNING,
+  // Typing in an unlabelled delivery is store work, as the button under the scanner was.
+  "store-in-manual-entry": PERMISSION.STORE_SCANNING,
   "store-out-operator": PERMISSION.STORE_SCANNING,
   "store-out-daily-report": PERMISSION.STORE_SCANNING,
 

@@ -799,12 +799,49 @@ test("deleting releases only what is outstanding, restores no stock, and frees t
   });
 });
 
+test("a deletion needs a typed reason: none, or too short, is refused and the program stays open (0.3.8)", async () => {
+  await withFixture(async (f) => {
+    await readyToProgram(f);
+    const line = await f.addToNewRun({ machineId: f.machine1.id, itemId: f.black, quantity: 30 });
+
+    for (const reason of [undefined, "", "   ", "no"]) {
+      const refused = await f.remove.execute({ programId: line.programId!, reason, actor: ACTOR });
+      assert.equal(refused.outcome, "REASON_REQUIRED", `reason ${JSON.stringify(reason)}`);
+      assert.match(refused.reason ?? "", /at least 5 characters/);
+    }
+    assert.equal(f.db.getMachineProgram(line.programId!)?.status, MACHINE_PROGRAM_STATUS.PROGRAMMED, "nothing was changed");
+
+    const deleted = await f.remove.execute({ programId: line.programId!, reason: "  Never ran — trial only  ", actor: ACTOR });
+    assert.equal(deleted.outcome, "CANCELLED");
+    const audit = f.raw
+      .prepare("SELECT payload_json FROM audit_log WHERE event_type = 'MACHINE_PROGRAM_DELETED' AND entity_id = ?")
+      .get(line.programId!) as { payload_json: string } | undefined;
+    const payload = JSON.parse(audit?.payload_json ?? "{}") as { reason?: string; actor?: string };
+    assert.equal(payload.reason, "Never ran — trial only", "the reason, as typed, is in the audit entry");
+    assert.equal(payload.actor, ACTOR);
+  });
+});
+
+test("every program still open is listed whatever its date, and a deleted one is not (0.3.8)", async () => {
+  await withFixture(async (f) => {
+    await readyToProgram(f);
+    const today = await f.addToNewRun({ machineId: f.machine1.id, itemId: f.black, quantity: 10 });
+    const tomorrow = await f.addToNewRun({ machineId: f.machine2.id, date: TOMORROW, itemId: f.black, quantity: 10 });
+    assert.deepEqual(f.db.listOpenMachinePrograms().map((program) => program.programId), [today.programId, tomorrow.programId]);
+
+    await f.remove.execute({ programId: today.programId!, reason: "Shift cancelled", actor: ACTOR });
+    const open = f.db.listOpenMachinePrograms();
+    assert.deepEqual(open.map((program) => program.programId), [tomorrow.programId]);
+    assert.match(open[0].code, /^MP-\d{6}$/);
+  });
+});
+
 test("every change is audited", async () => {
   await withFixture(async (f) => {
     await readyToProgram(f);
     const line = await f.addToNewRun({ machineId: f.machine1.id, itemId: f.black, quantity: 30 });
     await f.saveOnRun({ machineId: f.machine1.id, runId: line.runId!, lineId: line.lineId!, itemId: f.black, quantity: 20 });
-    await f.remove.execute({ programId: line.programId!, actor: ACTOR });
+    await f.remove.execute({ programId: line.programId!, reason: "Machine stopped for repair", actor: ACTOR });
     const events = (f.raw.prepare("SELECT event_type FROM audit_log WHERE entity_type = 'MACHINE_PROGRAM' ORDER BY occurred_at, rowid").all() as Array<{ event_type: string }>).map((row) => row.event_type);
     // Four assignments: each machine gets its machine contractor and its packing contractor,
     // and each role is its own audited transaction.
@@ -1239,7 +1276,7 @@ test("only a colour actually on the injector can be timed, and only on a live pr
 
     // Deleting a program CANCELS it — its history is kept, never erased — so timing a sole on
     // it is refused as closed rather than as missing.
-    await f.remove.execute({ programId, reason: "test", actor: ACTOR });
+    await f.remove.execute({ programId, reason: "test run", actor: ACTOR });
     const deleted = await f.timeSole({ programId, slot: { startMinute: 360, endMinute: 600 } });
     assert.equal(deleted.outcome, "PROGRAM_CLOSED");
     assert.deepEqual(f.runSlots(programId).map((row) => [row.start_minute, row.end_minute]), [[null, null]]);

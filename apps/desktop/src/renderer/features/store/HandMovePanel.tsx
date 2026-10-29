@@ -4,6 +4,7 @@ import type { HandMoveDirection, Party, RawMaterialHandMoveOptions } from "../..
 import { useDesktopApi } from "../../hooks/useDesktopApi";
 import { useNotifications } from "../../state/NotificationsContext";
 import { SearchableCombobox } from "../../components/shared/SearchableCombobox";
+import { PartyTypeBadge } from "../parties/PartyTypeBadge";
 import { StateView } from "../../components/shared/StateView";
 import { StepHeading } from "../../components/shared/StepHeading";
 import { copy } from "../../config/copy";
@@ -208,6 +209,7 @@ export const HandMovePanel: React.FC<HandMovePanelProps> = ({ direction, token, 
               ariaLabel={copy.moveOut.stepSupplier}
               onChange={setPartyId}
             />
+            <PartyTypeBadge partyType={suppliers.find((party) => party.id === partyId)?.partyType} />
             <p className="field-help">{copy.moveOut.supplierHelp}</p>
           </div>
         </section>

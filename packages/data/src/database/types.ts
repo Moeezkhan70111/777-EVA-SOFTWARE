@@ -785,6 +785,15 @@ export interface CartonProgramLine {
  * A machine's program for one business day: MP-000123, the machine and both of its contractors
  * as they stood when the day's first run opened it, and the cartons generated for it.
  */
+/** A program still open, as the administrator's list of what is left to delete shows it (0.3.8). */
+export interface OpenMachineProgram {
+  programId: string;
+  code: string;
+  programDate: string;
+  machineName: string;
+  contractorName: string;
+}
+
 export interface MachineDayProgram {
   programId: string;
   programNumber: number;
@@ -1592,6 +1601,8 @@ export interface RawMaterialIssueSession {
 /** What an issue session sent out, grouped the way the printed slip is read. */
 export interface RawMaterialIssueSessionSummary {
   session: RawMaterialIssueSession;
+  /** Who the session's packets go to: its first scan's party, or null before the first scan. */
+  partyId: string | null;
   totalPackets: number;
   bySection: Array<{
     sectionName: string;

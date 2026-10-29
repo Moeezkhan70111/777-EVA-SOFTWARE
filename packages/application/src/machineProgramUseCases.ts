@@ -74,7 +74,9 @@ export type MachineProgramOutcome =
   /** Something on it has already been scanned out, so it cannot be taken off. */
   | "IN_USE"
   /** A FIX run whose carton labels are already printed: they name the colour it was printed in. */
-  | "CARTONS_LABELLED";
+  | "CARTONS_LABELLED"
+  /** A deletion with no reason, or one too short to say anything (0.3.8). */
+  | "REASON_REQUIRED";
 
 export interface MachineProgramWriteResult {
   accepted: boolean;
