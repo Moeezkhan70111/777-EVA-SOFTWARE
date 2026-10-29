@@ -122,10 +122,10 @@ export const RawMaterialOutputPage: React.FC<RawMaterialOutputPageProps> = ({
       >
         <button type="button" className="ssn-btn" onClick={() => void station.startSession()} disabled={locked || !station.partyId}>
           <PlusIcon />
-          {copy.storeStation.startIssuing}
+          {copy.storeStation.startScanning}
         </button>
         <button type="button" className="ssn-btn" onClick={() => void station.endSession()} disabled={!locked}>
-          {copy.storeStation.endSession}
+          {copy.storeStation.endBatch}
         </button>
         <button type="button" className="ssn-btn" onClick={station.print} disabled={!summary || summary.totalPackets === 0}>
           {copy.storeStation.printSlip}
@@ -180,6 +180,7 @@ export const RawMaterialOutputPage: React.FC<RawMaterialOutputPageProps> = ({
                 groupNoun="Destinations"
                 subhead="By destination"
                 emptyLabel="Nothing issued yet."
+                title={copy.storeStation.batchTitle}
               />
               <LastScanCard title="Last issued" row={station.rows[0] ?? null} />
             </aside>
@@ -190,8 +191,8 @@ export const RawMaterialOutputPage: React.FC<RawMaterialOutputPageProps> = ({
       {!blocked && (
         <RecentScansCard
           title="Recently issued"
-          note={`Last ${RECENT_LIMIT} in this session`}
-          emptyLabel="No packets issued in this session yet."
+          note={copy.storeStation.recentNote(RECENT_LIMIT)}
+          emptyLabel={copy.storeStation.noneIssued}
           rows={station.rows}
         />
       )}

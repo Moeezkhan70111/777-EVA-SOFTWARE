@@ -124,7 +124,7 @@ export const useReceivingStation = ({ token, username, active }: { token: string
     try {
       setSession(await api.closeRawMaterialReceivingSession(session.id));
       await refreshSummary(session.id);
-      push("success", copy.storeStation.sessionClosed, copy.storeStation.receivedCount(summary?.totalPackets ?? 0));
+      push("success", copy.storeStation.batchEnded, copy.storeStation.receivedCount(summary?.totalPackets ?? 0));
     } finally {
       setBusy(false);
     }

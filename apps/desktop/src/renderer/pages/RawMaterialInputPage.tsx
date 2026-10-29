@@ -79,10 +79,10 @@ export const RawMaterialInputPage: React.FC<RawMaterialInputPageProps> = ({ toke
             {/* The party this session receives from, and what it is. */}
             <PartyTypeBadge partyType={station.sessionSupplier?.partyType} />
             <button type="button" className="ssn-btn" onClick={() => void station.endSession()} disabled={busy}>
-              End session
+              {copy.storeStation.endBatch}
             </button>
             <button type="button" className="ssn-btn" onClick={station.print} disabled={!summary}>
-              Print receipt
+              {copy.storeStation.printSlip}
             </button>
           </>
         ) : (
@@ -98,11 +98,11 @@ export const RawMaterialInputPage: React.FC<RawMaterialInputPageProps> = ({ toke
             <PartyTypeBadge partyType={station.suppliers.find((party) => party.id === station.partyId)?.partyType} />
             <button type="button" className="ssn-btn" onClick={() => void station.startSession()} disabled={busy || !station.partyId}>
               <PlusIcon />
-              Start session
+              {copy.storeStation.startScanning}
             </button>
             {summary && summary.totalPackets > 0 ? (
               <button type="button" className="ssn-btn ssn-btn--ghost" onClick={station.print}>
-                Print last receipt
+                {copy.storeStation.printLastSlip}
               </button>
             ) : null}
           </>
@@ -143,7 +143,7 @@ export const RawMaterialInputPage: React.FC<RawMaterialInputPageProps> = ({ toke
                   meta={
                     session
                       ? `${session.partyName} · started ${formatDateTime(session.startedAt)}${session.startedBy ? ` · ${session.startedBy}` : ""}`
-                      : "No session open. Choose a supplier above."
+                      : copy.storeStation.noBatchOpen
                   }
                   tallies={(summary?.byMaterial ?? []).map((row) => ({
                     key: row.itemDisplayName,
@@ -156,6 +156,7 @@ export const RawMaterialInputPage: React.FC<RawMaterialInputPageProps> = ({ toke
                   groupNoun="Materials"
                   subhead="By material"
                   emptyLabel="Nothing received yet."
+                  title={copy.storeStation.batchTitle}
                 />
                 {/* On the desk the scan panel and the recent list already show the last packet. */}
                 {embedded ? null : <LastScanCard title="Last received" row={station.rows[0] ?? null} />}
@@ -168,8 +169,8 @@ export const RawMaterialInputPage: React.FC<RawMaterialInputPageProps> = ({ toke
       {!station.loadError && showSessionDetails && (
         <RecentScansCard
           title="Recently received"
-          note={`Last ${RECENT_LIMIT} in this session`}
-          emptyLabel="No packets received in this session yet."
+          note={copy.storeStation.recentNote(RECENT_LIMIT)}
+          emptyLabel={copy.storeStation.noneReceived}
           rows={station.rows}
         />
       )}

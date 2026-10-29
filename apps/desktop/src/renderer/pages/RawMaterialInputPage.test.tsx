@@ -224,7 +224,7 @@ describe("RawMaterialInputPage", () => {
 
     expect(rawMaterialReceiptScan).toHaveBeenCalledTimes(2);
     await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("This packet is already in"));
-    expect(screen.getByRole("alert")).toHaveTextContent(/You scanned it at .+, as packet 1 of this session\./);
+    expect(screen.getByRole("alert")).toHaveTextContent(/You scanned it at .+, as packet 1 of this batch\./);
     expect(screen.getByRole("alert")).toHaveTextContent("Put it aside and scan the next one.");
     expect((screen.getByLabelText("Scanner input") as HTMLInputElement).value).toBe("");
   });

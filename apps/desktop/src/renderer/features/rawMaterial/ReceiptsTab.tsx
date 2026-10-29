@@ -436,7 +436,7 @@ export const ReceiptsTab: React.FC<ReceiptsTabProps> = ({ username, onNavigate }
         <div className="rm-section-head">
           <h2 className="rm-section-title">Deliveries received</h2>
           <span className="rm-section-note">
-            Every Raw Material Input session — what physically reached the store, scanned packet by packet.
+            {copy.receiptsTab.note}
           </span>
           <div className="rm-toolbar-actions rm-section-action">
             {(["ALL", "OPEN", "CLOSED"] as SessionStatusFilter[]).map((status) => (
@@ -456,13 +456,13 @@ export const ReceiptsTab: React.FC<ReceiptsTabProps> = ({ username, onNavigate }
         {openSession ? (
           <div className="rm-resume-banner">
             <div>
-              <strong>Session in progress on this terminal</strong>
+              <strong>{copy.receiptsTab.openHere}</strong>
               <span>
                 {openSession.code} — {openSession.partyName}
               </span>
             </div>
             <button type="button" className="btn btn-sm btn-primary" onClick={continueSession}>
-              Continue session
+              {copy.receiptsTab.continueBatch}
             </button>
           </div>
         ) : null}
@@ -474,14 +474,14 @@ export const ReceiptsTab: React.FC<ReceiptsTabProps> = ({ username, onNavigate }
             kind="empty"
             compact
             title="No deliveries in this range"
-            hint="Widen the dates, clear the status filter, or scan one in on Raw Material Input."
+            hint={copy.receiptsTab.emptyHint}
           />
         ) : (
           <div className="table-container">
             <table className="data-table rm-table">
               <thead>
                 <tr>
-                  <th scope="col">Session</th>
+                  <th scope="col">{copy.receiptsTab.batchColumn}</th>
                   <th scope="col">Supplier</th>
                   <th scope="col">Started</th>
                   <th scope="col">Closed</th>

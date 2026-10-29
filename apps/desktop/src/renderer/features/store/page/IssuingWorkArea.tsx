@@ -65,7 +65,7 @@ export const IssuingWorkArea: React.FC<IssuingWorkAreaProps> = (props) => {
   })();
 
   return (
-    <div className="sp-work">
+    <div className="sp-work sp-work--issuing">
       <TabStrip
         items={allowed.map((entry) => ({ id: entry.id, label: entry.label }))}
         active={reportOpen ? null : tab}

@@ -8,10 +8,10 @@ import type { ScanState } from "./scanState";
 // THE SCAN ZONE (0.3.9): one answer, in one of three states. Each must say which it is in words and
 // an icon, never by colour alone, so it reads in greyscale.
 
-const READY: ScanState = { kind: "scanning", title: "Ready", line: "Scan the next packet from SHEHZAD RUBBER." };
-const IDLE: ScanState = { kind: "idle", title: "Not scanning", line: "Whose delivery is this?" };
+const SCANNING: ScanState = { kind: "scanning", title: "Scan the next packet", line: "Each packet is counted as received from SHEHZAD RUBBER." };
+const IDLE: ScanState = { kind: "idle", title: "Whose delivery is this?", line: "Choose the supplier, then press Start scanning." };
 
-const zone = (outcome: React.ComponentProps<typeof ScanZone>["outcome"], state: ScanState = READY) =>
+const zone = (outcome: React.ComponentProps<typeof ScanZone>["outcome"], state: ScanState = SCANNING) =>
   render(<ScanZone mode="in" outcome={outcome} state={state} doneWord="Received" notDoneWord="Not received" />);
 
 describe("ScanZone", () => {
@@ -42,12 +42,12 @@ describe("ScanZone", () => {
   it("waiting: the question to answer, and whatever helps answer it", () => {
     render(
       <ScanZone mode="out" outcome={{ kind: "waiting", seq: 0 }} state={IDLE} doneWord="Issued" notDoneWord="Not issued">
-        <button type="button">Start issuing</button>
+        <button type="button">Start scanning</button>
       </ScanZone>
     );
-    expect(screen.getByTestId("scan-state")).toHaveTextContent("Not scanning");
-    expect(screen.getByText("Whose delivery is this?")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Start issuing" })).toBeInTheDocument();
+    expect(screen.getByTestId("scan-state")).toHaveTextContent("Whose delivery is this?");
+    expect(screen.getByText("Choose the supplier, then press Start scanning.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Start scanning" })).toBeInTheDocument();
   });
 
   it("waits whenever the station cannot take a scan, whatever the last answer was", () => {

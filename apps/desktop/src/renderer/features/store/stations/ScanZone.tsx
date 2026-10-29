@@ -8,7 +8,8 @@ import type { ScanState } from "./scanState";
 //   ACCEPTED  pale green: ✓ RECEIVED, the material (the largest text on the page), how much, the code
 //   REFUSED   pale red with a red left border, role="alert": ✕ NOT RECEIVED, why in one sentence,
 //             the code, what happened, what to do
-//   WAITING   plain: ○ NOT SCANNING and the question to answer (or READY and what to scan)
+//   WAITING   plain white: a barcode in a soft square, the question to answer (or what to scan),
+//             one line saying what happens, then whatever helps answer it
 //
 // Never colour alone: the icon and the words say which state it is, so it reads in greyscale.
 
@@ -26,10 +27,14 @@ const CrossIcon = () => (
   </svg>
 );
 
-const WaitIcon = () => (
-  <svg className="sz-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-    <circle cx="12" cy="12" r="9.5" stroke="currentColor" strokeWidth="2" strokeDasharray="3 3" />
-  </svg>
+/** A barcode, in the soft square the waiting state opens with. */
+export const BarcodeWell = () => (
+  <span className="sz-well" aria-hidden="true">
+    <svg viewBox="0 0 32 32" fill="none">
+      <path d="M6 9v14M10 9v14M13 9v14M17 9v14M20 9v14M23 9v14M26 9v14" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+      <path d="M8 9v14M15 9v14M24.5 9v14" stroke="currentColor" strokeWidth="1" strokeLinecap="round" />
+    </svg>
+  </span>
 );
 
 interface ScanZoneProps {
@@ -49,11 +54,11 @@ export const ScanZone: React.FC<ScanZoneProps> = ({ mode, outcome, state, doneWo
   if (state.kind === "idle" || outcome.kind === "waiting") {
     return (
       <section className={`sz sz--${mode} sz--waiting`} aria-live="polite" data-testid="scan-zone" data-state="waiting">
-        <p className="sz-kicker" data-testid="scan-state">
-          <WaitIcon />
+        <BarcodeWell />
+        <p className="sz-question" data-testid="scan-state">
           {state.title}
         </p>
-        <p className="sz-question">{state.line}</p>
+        <p className="sz-line">{state.line}</p>
         {children}
       </section>
     );

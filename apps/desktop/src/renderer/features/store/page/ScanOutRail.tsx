@@ -32,14 +32,14 @@ const StartIssuing: React.FC<{ station: IssuingStation }> = ({ station }) => (
       />
     )}
     <button type="button" className="btn btn-primary sz-start-btn" onClick={() => void station.startSession()} disabled={!station.partyId}>
-      {copy.storeStation.startIssuing}
+      {copy.storeStation.startScanning}
     </button>
   </div>
 );
 
 /** Waiting: the last session this computer closed, to reprint its slip. */
 const LastSessionFooter: React.FC<{ station: IssuingStation }> = ({ station }) => (
-  <footer className="sp-foot" aria-label={copy.storeStation.lastSession}>
+  <footer className="sp-foot" aria-label={copy.storeStation.lastBatch}>
     {station.lastSession ? (
       <>
         <span className="sp-foot-line">
@@ -51,7 +51,7 @@ const LastSessionFooter: React.FC<{ station: IssuingStation }> = ({ station }) =
         </button>
       </>
     ) : (
-      <span className="sp-foot-line">{copy.storeStation.noLastSession}</span>
+      <span className="sp-foot-line">{copy.storeStation.noLastBatch}</span>
     )}
   </footer>
 );

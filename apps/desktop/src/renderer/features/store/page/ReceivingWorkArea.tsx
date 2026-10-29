@@ -65,7 +65,7 @@ export const ReceivingWorkArea: React.FC<ReceivingWorkAreaProps> = (props) => {
   })();
 
   return (
-    <div className="sp-work">
+    <div className="sp-work sp-work--receiving">
       {allowed.length > 0 ? (
         <TabStrip
           items={allowed.map((entry) => ({ id: entry.id, label: entry.label }))}

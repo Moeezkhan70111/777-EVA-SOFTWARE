@@ -1,45 +1,56 @@
 import { describe, expect, it } from "vitest";
 import { issuingScanState, receivingScanState } from "./scanState";
 
-// What a station says while it waits (0.3.9): a question while it cannot take a scan, and what to
-// scan once it can. Never "ready" over a box that cannot take a scan, as "READY TO SCAN" was.
+// What a station says while it waits (0.3.9): a question when the operator must choose, an
+// instruction when they must scan — never a status word like "ready" while it waits for them.
 
 describe("receivingScanState", () => {
-  it("is not scanning until a session is open, and asks whose delivery it is", () => {
+  it("asks whose delivery it is until a session is open", () => {
     expect(receivingScanState({ canScan: false, partyName: null, packets: 0 })).toEqual({
       kind: "idle",
-      title: "Not scanning",
-      line: "Whose delivery is this?",
+      title: "Whose delivery is this?",
+      line: "Choose the supplier, then press Start scanning.",
     });
   });
 
-  it("is ready, naming the supplier, once a session is open with nothing in it", () => {
+  it("asks for the first packet, saying who it is counted from", () => {
     expect(receivingScanState({ canScan: true, partyName: "SHEHZAD RUBBER", packets: 0 })).toEqual({
       kind: "ready",
-      title: "Ready",
-      line: "Scan the first packet from SHEHZAD RUBBER.",
+      title: "Scan the first packet",
+      line: "Each packet is counted as received from SHEHZAD RUBBER.",
     });
   });
 
-  it("asks for the next packet once the session holds one", () => {
-    expect(receivingScanState({ canScan: true, partyName: "SHEHZAD RUBBER", packets: 12 })).toEqual({
+  it("asks for the next packet once the batch holds one", () => {
+    expect(receivingScanState({ canScan: true, partyName: "SHEHZAD RUBBER", packets: 12 })).toMatchObject({
       kind: "scanning",
-      title: "Ready",
-      line: "Scan the next packet from SHEHZAD RUBBER.",
+      title: "Scan the next packet",
     });
+  });
+
+  it("never says ready", () => {
+    for (const facts of [
+      { canScan: false, partyName: null, packets: 0 },
+      { canScan: true, partyName: "X", packets: 0 },
+      { canScan: true, partyName: "X", packets: 3 },
+    ]) {
+      const state = receivingScanState(facts);
+      expect(`${state.title} ${state.line}`).not.toMatch(/ready/i);
+    }
   });
 });
 
 describe("issuingScanState", () => {
-  it("is not scanning while the session has no party, however many packets it once had, and asks who it is for", () => {
-    expect(issuingScanState({ canScan: false, partyName: "DANIYAL", packets: 41 })).toMatchObject({
+  it("asks who the material is for while the batch has no party, however many packets it once had", () => {
+    expect(issuingScanState({ canScan: false, partyName: "DANIYAL", packets: 41 })).toEqual({
       kind: "idle",
-      line: "Who is this material for?",
+      title: "Who is this material for?",
+      line: "Choose who the packets are going to, then press Start scanning.",
     });
   });
 
-  it("names the party it is going to, first and next", () => {
-    expect(issuingScanState({ canScan: true, partyName: "DANIYAL", packets: 0 }).line).toBe("Scan the first packet going to DANIYAL.");
-    expect(issuingScanState({ canScan: true, partyName: "DANIYAL", packets: 12 }).line).toBe("Scan the next packet going to DANIYAL.");
+  it("says who each packet is counted to", () => {
+    expect(issuingScanState({ canScan: true, partyName: "DANIYAL", packets: 0 })).toMatchObject({ title: "Scan the first packet", line: "Each packet is counted as issued to DANIYAL." });
+    expect(issuingScanState({ canScan: true, partyName: "DANIYAL", packets: 12 }).title).toBe("Scan the next packet");
   });
 });

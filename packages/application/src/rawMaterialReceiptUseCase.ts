@@ -328,7 +328,7 @@ const checkPacket = async (repo: RawMaterialMovementRepository, request: Receipt
 
   // The supplier check is the whole point of a session.
   if (request.mode.kind === "SESSION" && unit.partyId !== request.mode.partyId) {
-    throw new RawMaterialReceiptRejectedError("WRONG_PARTY", `This packet belongs to ${unit.partyName}. Close this session and start one for that supplier.`, identity);
+    throw new RawMaterialReceiptRejectedError("WRONG_PARTY", `This packet belongs to ${unit.partyName}. End this batch and start one for that supplier.`, identity);
   }
   if (unit.registryStatus === "VOID") throw new RawMaterialReceiptRejectedError("NOT_ELIGIBLE", "This QR was voided and has no packet to receive.", identity);
   if (unit.itemStatus !== "ACTIVE") throw new RawMaterialReceiptRejectedError("NOT_ELIGIBLE", "This raw material is no longer active.", identity);

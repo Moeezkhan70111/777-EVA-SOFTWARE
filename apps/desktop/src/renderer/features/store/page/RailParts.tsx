@@ -72,7 +72,7 @@ export const EndStep: React.FC<EndStepProps> = ({ code, packets, quantity, onPri
         {copy.storeStation.printSlip}
       </button>
       <button type="button" className="btn btn-primary" onClick={onEnd}>
-        {copy.storeStation.endSession}
+        {copy.storeStation.endBatch}
       </button>
     </div>
     <button type="button" className="sp-text-btn" onClick={onKeep}>
@@ -97,7 +97,7 @@ export const SessionFooter: React.FC<{ line: string; typing: boolean; onToggleTy
         {typing ? copy.storeScan.hideTyping : copy.storeScan.typeCode}
       </button>
       <button type="button" className="btn btn-secondary" onClick={onEnd}>
-        {copy.storeStation.endSession}
+        {copy.storeStation.endBatch}
       </button>
     </div>
   </footer>

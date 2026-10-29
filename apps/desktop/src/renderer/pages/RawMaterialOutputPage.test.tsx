@@ -164,8 +164,8 @@ const ready = async () => {
   await screen.findByRole("combobox", { name: "Moving out to" });
 };
 
-const newSessionButton = () => screen.getByRole("button", { name: /Start issuing/ });
-const endSessionButton = () => screen.getByRole("button", { name: /End session/ });
+const newSessionButton = () => screen.getByRole("button", { name: /Start scanning/ });
+const endSessionButton = () => screen.getByRole("button", { name: /End batch/ });
 
 /** The whole sequence: choose the party, then Start issuing. */
 const startFor = async (name: RegExp) => {
@@ -388,7 +388,7 @@ describe("RawMaterialOutputPage", () => {
     expect(rawMaterialIssueScan).toHaveBeenCalledTimes(2);
     // A double scan is explained by the first one, right there in the session.
     await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("This packet has already gone out"));
-    expect(screen.getByRole("alert")).toHaveTextContent(/You scanned it at .+, as packet 1 of this session\./);
+    expect(screen.getByRole("alert")).toHaveTextContent(/You scanned it at .+, as packet 1 of this batch\./);
     expect(screen.getByRole("alert")).toHaveTextContent("Put it aside and scan the next one.");
     expect((screen.getByLabelText("Scanner input") as HTMLInputElement).value).toBe("");
   });

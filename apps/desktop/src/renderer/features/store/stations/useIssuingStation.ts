@@ -149,7 +149,7 @@ export const useIssuingStation = ({ token, username, active, onSessionChange, on
 
   const endSession = useCallback(async () => {
     const packets = summary?.totalPackets ?? 0;
-    if (await run.endSession()) push("success", copy.storeStation.sessionClosed, copy.storeStation.issuedCount(packets));
+    if (await run.endSession()) push("success", copy.storeStation.batchEnded, copy.storeStation.issuedCount(packets));
   }, [push, run, summary]);
 
   const print = useCallback(() => {

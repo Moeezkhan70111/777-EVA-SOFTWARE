@@ -13,7 +13,7 @@ export interface ModeSession {
 }
 
 const stateLine = (session: ModeSession): string =>
-  session.open ? copy.storeStation.sessionOpen(session.packets) : copy.storeStation.nothingStarted;
+  session.open ? copy.storeStation.batchOpen(session.packets) : copy.storeStation.nothingStarted;
 
 const ModeHalf: React.FC<{ mode: StoreMode; label: string; session: ModeSession; active: boolean; onSelect: (mode: StoreMode) => void }> = ({
   mode,

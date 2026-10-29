@@ -26,7 +26,7 @@ const StartReceiving: React.FC<{ station: ReceivingStation }> = ({ station }) =>
       placeholder={station.supplierOptions.length === 0 ? copy.storePage.noSuppliers : copy.storePage.chooseSupplier}
     />
     <button type="button" className="btn btn-primary sz-start-btn" onClick={() => void station.startSession()} disabled={station.busy || !station.partyId}>
-      {copy.storeStation.startSession}
+      {copy.storeStation.startScanning}
     </button>
   </div>
 );

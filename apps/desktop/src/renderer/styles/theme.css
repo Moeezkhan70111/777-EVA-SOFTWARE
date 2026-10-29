@@ -179,14 +179,34 @@
   /* The store's two modes (0.3.9): Receiving teal, Issuing the amber-orange Move Out already used.
      Each pair is a strong colour for text and borders, and a soft one for the tinted header. */
   --store-receiving:      oklch(0.5 0.09 185);
-  --store-receiving-soft: oklch(0.96 0.03 185);
   --store-issuing:        var(--warning-deep);
-  --store-issuing-soft:   var(--warning-soft);
-  /* The rail's strip (white text on it) and the quantity's ink (on pale green): each at least 4.5:1. */
-  --store-receiving-strip: oklch(0.42 0.08 185);
-  --store-issuing-strip:   var(--warning-deep);
+  /* Each mode's dark ink (tab text, badge text, the quantity): at least 4.5:1 on its own tint. */
   --store-receiving-ink:   oklch(0.42 0.08 185);
   --store-issuing-ink:     var(--warning-strong);
+  --store-receiving-tint:  #e6f3f7;
+  --store-issuing-tint:    #fdf1ea;
+
+  /* THE STORE PAGE's look (0.3.9): calm and open, separated by borders and background, not shadows. */
+  --store-page-bg:         #f7f9fb;
+  --store-field-bg:        #fbfcfd;      /* a hair off-white: reads as fillable without a heavy border */
+  --store-line:            #e3e8ee;      /* cards and inputs */
+  --store-divider:         #eef1f5;      /* lines inside a card */
+  --store-radius-card:     12px;
+  --store-radius-control:  9px;         /* inputs and buttons */
+  --store-card-pad:        26px;
+  --store-state-pad:       30px;         /* the scan rail's state block */
+  /* Field and section labels. #8591a0 was asked for; it is 3.2:1 on white, so this is the nearest
+     grey that reaches 4.5:1 for 11px text (4.75 on white, 4.51 on the page background). */
+  --store-label:           #687483;
+  --store-tab-text:        #5b6675;
+  --store-action:          #141b26;      /* the main action on a card: near-black, white text */
+  --store-action-hover:    #273142;
+  --store-accepted-bg:     #f6fbf8;
+  --store-refused-bg:      #fdf4f4;
+  --store-icon-well:       #f1f4f7;
+
+  /* Tabs and sidebar rows. */
+  --radius-tab:            7px;
   --danger-tint:        #fee2e2;
   --danger-strong:      #b91c1c;
   --danger-deep:        #7f1d1d;
@@ -406,6 +426,7 @@ html, body { margin: 0; height: 100%; overflow-x: hidden; background: var(--bg);
   transition: background-color .12s ease, color .12s ease;
 }
 .nav-item:hover { background: var(--sidebar-hover); color: var(--sidebar-ink); }
+.nav-item, .nav-top-btn { border-radius: var(--radius-tab); }
 
 /* ── Popovers: profile menu, notifications ─────────────────────────────── */
 
@@ -7624,20 +7645,21 @@ tr.has-error .gp-qty-stepper input { color: var(--err); }
 .sp-sub { margin: 3px 0 0; font-size: .84rem; color: var(--foreground-muted); }
 .sp-head-actions { display: flex; gap: var(--space-2); flex-wrap: wrap; }
 
-.sp-modes { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-2); flex-shrink: 0; }
+.sp-modes { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; flex-shrink: 0; }
 .sp-mode {
   display: flex; flex-direction: column; align-items: flex-start; gap: 2px;
-  min-height: var(--touch-target); padding: 10px 16px; cursor: pointer; text-align: left;
-  background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-xl);
+  min-height: var(--touch-target); padding: 14px 20px; cursor: pointer; text-align: left;
+  background: var(--white); border: 1px solid var(--store-line); border-radius: var(--store-radius-card);
   font: inherit; color: var(--foreground);
 }
 .sp-mode-name { font-size: 1rem; font-weight: 800; }
 .sp-mode-state { font-size: .8rem; color: var(--foreground-muted); }
 .sp-mode-state--open { font-weight: 700; }
-.sp-mode--receiving .sp-mode-state--open { color: var(--store-receiving); }
-.sp-mode--issuing .sp-mode-state--open { color: var(--store-issuing); }
-.sp-mode--receiving[aria-pressed="true"] { border: 2px solid var(--store-receiving); background: var(--store-receiving-soft); }
-.sp-mode--issuing[aria-pressed="true"] { border: 2px solid var(--store-issuing); background: var(--store-issuing-soft); }
+.sp-mode--receiving .sp-mode-state--open { color: var(--store-receiving-ink); }
+.sp-mode--issuing .sp-mode-state--open { color: var(--store-issuing-ink); }
+/* The active card carries a 2px border in its accent (13px 19px keeps the content still). */
+.sp-mode--receiving[aria-pressed="true"] { border: 2px solid var(--store-receiving); padding: 13px 19px; }
+.sp-mode--issuing[aria-pressed="true"] { border: 2px solid var(--store-issuing); padding: 13px 19px; }
 .sp-mode:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
 
 .sp-body { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(400px, 452px); gap: 14px; }
@@ -7653,8 +7675,7 @@ tr.has-error .gp-qty-stepper input { color: var(--err); }
 .sp-work-pane > .mpi-page { overflow: visible; overscroll-behavior: auto; }
 .sp-rail {
   position: relative; display: flex; flex-direction: column; min-height: 0; overflow-y: auto;
-  background: var(--surface); border: 1px solid var(--line-soft);
-  border-radius: var(--radius-2xl); box-shadow: var(--shadow-md);
+  background: var(--white); border: 1px solid var(--store-line); border-radius: var(--store-radius-card);
 }
 .sp-rail-actions { display: flex; gap: var(--space-2); flex-wrap: wrap; }
 .sp-rail-actions .btn { min-height: var(--touch-target); flex: 1; }
@@ -7667,39 +7688,98 @@ tr.has-error .gp-qty-stepper input { color: var(--err); }
   display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto auto; gap: var(--space-3); align-items: center;
   padding: 10px 14px; background: var(--surface); border: 1px solid var(--line-soft); border-radius: var(--radius-lg);
 }
+/* ── THE STORE PAGE's visual language (0.3.9). Its sections are shared components that read the
+   theme's tokens, so the page redefines those tokens for everything inside it: corners, borders,
+   fields, no shadows. The same sections elsewhere in the app keep their look. ── */
+.sp-page {
+  --background: var(--store-page-bg);
+  --radius-sm: var(--store-radius-control);
+  --radius-md: var(--store-radius-control);
+  --radius-lg: var(--store-radius-card);
+  --radius-xl: var(--store-radius-card);
+  --radius-2xl: var(--store-radius-card);
+  --border: var(--store-line);
+  --border-dark: var(--store-line);
+  --line: var(--store-line);
+  --line-strong: var(--store-line);
+  --border-soft: var(--store-divider);
+  --line-soft: var(--store-divider);
+  --glass-60: var(--store-line);
+  --neutral-175: var(--store-field-bg);
+  --shadow-sm: none;
+  --shadow-md: none;
+  --shadow-lg: none;
+  --shadow-xl: none;
+}
+.sp-page .card, .sp-page .form-card, .sp-page .qr-input-card, .sp-page .si-manual-open { padding: var(--store-card-pad); }
+.sp-page .si-manual-open .mo-manual, .sp-page .si-manual-head { padding-left: 0; padding-right: 0; }
+.sp-page .sp-issued-row { border-color: var(--store-line); border-radius: var(--store-radius-card); padding: 14px 18px; }
+
+/* Tabs: rounded pill segments in a padded strip. The active one in its mode's soft tint. */
+.sp-page .tab-strip { display: flex; flex-wrap: wrap; gap: 4px; padding: 5px; background: var(--white); border: 1px solid var(--store-line); border-radius: var(--store-radius-card); }
+.sp-page .tab-strip-btn { min-height: var(--touch-target); border-radius: var(--radius-tab); color: var(--store-tab-text); background: transparent; box-shadow: none; }
+.sp-page .tab-strip-btn:hover { color: var(--foreground); background: var(--store-divider); }
+.sp-work--receiving .tab-strip-btn.is-active { background: var(--store-receiving-tint); color: var(--store-receiving-ink); box-shadow: none; }
+.sp-work--issuing .tab-strip-btn.is-active { background: var(--store-issuing-tint); color: var(--store-issuing-ink); box-shadow: none; }
+
+/* Field and section labels: small mono caps. Required fields say so in their error, not an asterisk. */
+.sp-page .input-label, .sp-page .mo-field-label, .sp-page .form-group label, .sp-page .section-label,
+.sp-page .qr-step-title, .sp-page .rm-preview-label, .sp-page .mo-in-store-label {
+  font-family: var(--font-mono); font-size: 11px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--store-label);
+}
+.sp-page .required-mark { display: none; }
+
+/* Buttons: the main action near-black; secondary white with a light border. Accent colours are for
+   meaning — the active mode, a party's type, an accepted scan — never decoration. */
+.sp-page .btn-primary { background: var(--store-action); border-color: var(--store-action); color: var(--white); box-shadow: none; }
+.sp-page .btn-primary:hover:not(:disabled) { background: var(--store-action-hover); border-color: var(--store-action-hover); }
+.sp-page .btn-secondary { background: var(--white); border-color: var(--store-line); color: var(--foreground); box-shadow: none; }
+.sp-page .btn-secondary:hover:not(:disabled) { background: var(--store-field-bg); }
+
 /* ── THE SCAN RAIL (0.3.9): three zones. The operator scans, hears the beep, glances up for half a
    second, and needs one answer — did it take, and was it the right packet. ── */
-.sp-who { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 10px 16px; color: var(--white); flex-shrink: 0; }
-.sp-who--in { background: var(--store-receiving-strip); }
-.sp-who--out { background: var(--store-issuing-strip); }
-.sp-who-label { font-family: var(--font-mono); font-size: .72rem; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
+.sp-who {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap; flex-shrink: 0;
+  padding: 14px var(--store-card-pad); background: var(--white); color: var(--foreground); border-bottom: 1px solid var(--store-divider);
+}
+.sp-who-label { font-family: var(--font-mono); font-size: 11px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--store-label); }
 .sp-who-name { font-size: 1rem; font-weight: 800; overflow-wrap: anywhere; }
-.sp-rail-scan { flex: 1; display: flex; flex-direction: column; gap: var(--space-4); padding: var(--space-4); }
+/* The party's type as a soft pill in the mode's tint. */
+.sp-who .party-type-badge { margin: 0; border: 0; border-radius: 999px; padding: 3px 10px; font-weight: 700; }
+.sp-who--in .party-type-badge { background: var(--store-receiving-tint); color: var(--store-receiving-ink); }
+.sp-who--out .party-type-badge { background: var(--store-issuing-tint); color: var(--store-issuing-ink); }
+.sp-rail-scan { flex: 1; display: flex; flex-direction: column; gap: 20px; padding: var(--store-card-pad); }
 .sp-rail-actions { display: flex; gap: var(--space-2); flex-wrap: wrap; }
 .sp-rail-actions .btn { min-height: var(--touch-target); flex: 1; }
 
 .sz {
   display: flex; flex-direction: column; align-items: center; gap: 6px; text-align: center;
-  padding: 22px 16px; border: 1px solid var(--line-soft); border-radius: var(--radius-xl); background: var(--surface);
+  padding: var(--store-state-pad); border: 1px solid var(--store-line); border-radius: var(--store-radius-card); background: var(--white);
 }
-.sz--accepted { background: var(--success-soft); border-color: var(--success-line); }
-.sz--refused { background: var(--danger-soft); border-color: var(--danger-line); border-left: 5px solid var(--danger-strong); }
+.sz--accepted { background: var(--store-accepted-bg); }
+.sz--refused { background: var(--store-refused-bg); border-left: 5px solid var(--danger-strong); }
 .sz-kicker {
   display: inline-flex; align-items: center; gap: 8px; margin: 0;
   font-family: var(--font-mono); font-size: .78rem; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: var(--neutral-600);
 }
 .sz--accepted .sz-kicker { color: var(--success-strong); }
 .sz--refused .sz-kicker { color: var(--danger-strong); }
-.sz-icon { width: 22px; height: 22px; flex-shrink: 0; }
+.sz-icon { width: 26px; height: 26px; flex-shrink: 0; }
 .sz-material, .sz-reason { margin: 0; font-size: 25px; font-weight: 700; line-height: 1.2; color: var(--foreground); overflow-wrap: anywhere; }
 .sz-quantity { margin: 0; font-size: 19px; font-weight: 600; }
 .sz--in .sz-quantity { color: var(--store-receiving-ink); }
 .sz--out .sz-quantity { color: var(--store-issuing-ink); }
 .sz-code { margin: 0; font-family: var(--font-mono); font-size: 14px; color: var(--neutral-600); overflow-wrap: anywhere; }
-.sz-happened, .sz-note { margin: 0; font-size: .92rem; color: var(--foreground-muted); }
+.sz-happened, .sz-note, .sz-line { margin: 0; font-size: .92rem; color: var(--foreground-muted); }
 .sz-todo { margin: 4px 0 0; font-size: 1rem; font-weight: 700; color: var(--foreground); }
-.sz-question { margin: 0; font-size: 1.25rem; font-weight: 700; color: var(--foreground); }
-.sz-start { align-self: stretch; display: flex; flex-direction: column; gap: var(--space-2); margin-top: var(--space-2); text-align: left; }
+.sz-question { margin: 6px 0 0; font-size: 22px; font-weight: 700; line-height: 1.25; color: var(--foreground); }
+/* The waiting state opens with a barcode in a large soft-grey rounded square. */
+.sz-well {
+  display: inline-flex; align-items: center; justify-content: center; width: 76px; height: 76px;
+  border-radius: 20px; background: var(--store-icon-well); color: var(--neutral-600);
+}
+.sz-well svg { width: 38px; height: 38px; }
+.sz-start { align-self: stretch; display: flex; flex-direction: column; gap: 12px; margin-top: 14px; text-align: left; }
 .sz-start-btn { min-height: 52px; font-size: 1.05rem; }
 
 .sz-count { display: flex; flex-direction: column; align-items: center; }
