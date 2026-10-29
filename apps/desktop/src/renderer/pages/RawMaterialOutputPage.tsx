@@ -114,7 +114,7 @@ export const RawMaterialOutputPage: React.FC<RawMaterialOutputPageProps> = ({
 
       {/* Embedded on the Store Out page the pane above already names the station. */}
       <StationToolbar
-        eyebrow={embedded ? undefined : "Store Station · Raw Material"}
+        eyebrow={embedded ? undefined : "Store · Raw Material"}
         title={embedded ? undefined : "Raw Material Output"}
         onBack={onBack}
         scannerPill={scannerConnected ? { text: "Scanner ready", color: "#16a34a" } : { text: "Keyboard input", color: "#94a3b8" }}

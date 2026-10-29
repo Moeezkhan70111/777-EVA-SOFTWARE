@@ -19,6 +19,9 @@ export const STORE_MODE_ROUTE: Record<StoreMode, AppRoute> = {
 
 export const storeModeOfRoute = (route: AppRoute): StoreMode => (route === "store-issuing" ? "issuing" : "receiving");
 
+/** Either of the Store page's two routes. */
+export const isStoreRoute = (route: AppRoute): boolean => route === STORE_MODE_ROUTE.receiving || route === STORE_MODE_ROUTE.issuing;
+
 /** What this account may open beyond the page itself. */
 export interface StoreAccess {
   /** Add material, Stock and Receipts. */

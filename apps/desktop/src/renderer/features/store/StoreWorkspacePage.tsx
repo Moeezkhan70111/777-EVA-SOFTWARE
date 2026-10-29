@@ -57,7 +57,7 @@ export const StoreWorkspacePage: React.FC<StoreWorkspacePageProps> = (props) => 
           lookups={lookups}
           username={props.username}
           isAdmin={props.isAdmin}
-          onGenerateLabels={props.canPrintLabels ? openLabelsFor : () => props.onNavigate("store-in-qr-generator")}
+          onGenerateLabels={props.canPrintLabels ? openLabelsFor : () => props.onNavigate("raw-material-qr-generator")}
           labelsItemId={labelsItemId}
           onLabelsItemConsumed={() => setLabelsItemId(undefined)}
           onNavigate={props.onNavigate}

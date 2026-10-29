@@ -1594,49 +1594,15 @@ export const copy = {
     offline: "Not updating — the last refresh failed. It will try again.",
   },
 
-  // Store Station — the operator says which side of the store they work, then lands on it.
+  // What the store's other screens still say: the Munshi's stock station, the program screens.
   // Kept short on purpose: this screen is read by new operators at a glance.
   store: {
-    title: "Store",
-    question: "What is your job today?",
     moveInTitle: "Move In",
-    moveInLine: "Goods coming into the store",
-    moveOutTitle: "Move Out",
-    moveOutLine: "Goods going out of the store",
     operator: "Operator",
-    start: "Start",
-    keyHint: "Press 1 or 2",
-    changeJob: "Change job",
-    comingNext: "This screen is being built.",
-    // The one Store In page
-    storeInTitle: "Store In",
-    storeInLine: "Add new materials, generate QR codes and manage stock.",
-    storeInSections: "Store In sections",
-    scanMaterialTitle: "Scan Material",
-    scanMaterialLine: "Scan a QR code to receive material into stock.",
-    or: "OR",
-    manualEntry: "Manual Entry",
-    manualEntryLine: "Type in material that came without labels",
-    noAccessTitle: "Nothing here for your account",
-    noAccessHint: "Ask an administrator for stock, label or setup access.",
-    addMaterialTitle: "Add New Material",
-    addMaterialLine: "Make a new raw material",
-    needsStockAccess: "Ask an admin for Stock access to use this",
     qrTitle: "Raw Material QR",
-    /** What the Store In tab strip calls it — shorter, because the page is already Store In. */
-    qrTabTitle: "QR Generator",
-    qrLine: "Print QR labels for packets",
-    needsQrAccess: "Ask an admin for QR Generator access to use this",
-    scannerTitle: "Raw Material Move In",
-    scannerLine: "Scan packets into the store",
-    deskSwitch: "Show on the left",
     stockTitle: "Stock",
-    stockLine: "See what is in the store",
     receiptsTitle: "Receipts",
-    receiptsLine: "Bills and deliveries received",
     setupTitle: "Setup",
-    setupLine: "Categories, units and destinations",
-    needsSettingsAccess: "Ask an admin for Raw Material Setup access to use this",
   },
 
   // THE TWO SCAN STATIONS (0.3.9) — what each says about itself. The headline above the scan box
@@ -2289,8 +2255,6 @@ export const copy = {
   nav: {
     home: "Dashboard",
     homeTitle: "Dashboard",
-    /** A store operator's first sidebar row: back to Store Station to pick their job. */
-    selectJob: "Select Job",
     /** The Dashboard title for an administrator who has no role of their own. */
     adminTitle: "Administrator",
     emptyTitle: "No pages assigned yet",
@@ -2314,9 +2278,10 @@ export const copy = {
       liveProduction: { label: "Live Production", line: "Scan and record production" },
       liveDispatch: { label: "Live Dispatch", line: "Dispatch cartons by scanning" },
       liveReturn: { label: "Return Scanning", line: "Record returned cartons" },
-      storeHome: { label: "Store Station", line: "Move In / Move Out chooser" },
-      storeMoveIn: { label: "Move In", line: "Receive cartons into the store" },
-      storeMoveOut: { label: "Move Out", line: "Send cartons to the gate" },
+      storeHome: { label: "Store", line: "Raw material in and out" },
+      // Finished cartons, not raw material: named so, beside Store (owner, 0.3.9).
+      storeMoveIn: { label: "Carton Move In", line: "Receive cartons into the store" },
+      storeMoveOut: { label: "Carton Move Out", line: "Send cartons to the gate" },
       rawMaterialInput: { label: "Raw Material Input", line: "Receive raw material packets" },
       rawMaterialOutput: { label: "Raw Material Output", line: "Issue raw material packets" },
       munshiHome: { label: "Munshi Station", line: "The gatepass desk" },

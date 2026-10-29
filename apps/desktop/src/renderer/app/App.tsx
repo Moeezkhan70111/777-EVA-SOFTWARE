@@ -19,13 +19,8 @@ import { LiveDispatchPage } from "../pages/LiveDispatchPage";
 import { DispatchHistoryPage } from "../pages/DispatchHistoryPage";
 import { LiveReturnPage } from "../pages/LiveReturnPage";
 import { ReturnHistoryPage } from "../pages/ReturnHistoryPage";
-import { StoreHomePage } from "../features/store/StoreHomePage";
-import { StoreInPage } from "../features/store/StoreInPage";
-import { StoreOutPage } from "../features/store/StoreOutPage";
-import { StoreOutReportPage } from "../features/store/dailyReport/StoreOutReportPage";
-import { storeInTabOfRoute } from "../features/store/storeOperators";
 import { StorePage } from "../features/store/page/StorePage";
-import { STORE_MODE_ROUTE, storeModeOfRoute, type StoreMode } from "../features/store/page/storeTabs";
+import { STORE_MODE_ROUTE, isStoreRoute, storeModeOfRoute, type StoreMode } from "../features/store/page/storeTabs";
 import { StoreWorkspacePage } from "../features/store/StoreWorkspacePage";
 import { StoreScanningPage } from "../pages/StoreScanningPage";
 import { StoreMoveOutPage } from "../pages/StoreMoveOutPage";
@@ -75,7 +70,6 @@ import { canOpenRoute, hasPermission, HOME_ROUTE, landingRoute } from "../featur
 import type { AuthUser } from "../types/desktopApi";
 import { MunshiHomePage } from "../features/munshi/MunshiHomePage";
 import { HomePage } from "../features/navigation/HomePage";
-import { useStoreJob } from "../features/store/useStoreJob";
 import { useAdminData } from "../features/users/useAdminData";
 import { notificationTarget } from "../features/users/notificationTarget";
 import type { UserNotification } from "../features/users/types";
@@ -87,20 +81,8 @@ const FULLSCREEN_ROUTES: ReadonlySet<AppRoute> = new Set<AppRoute>([
   "live-production",
   "live-dispatch",
   "live-return",
-  "store-home",
-  "store-in-operator",
-  "store-in-new-material",
-  "store-in-qr-generator",
-  "store-in-scanner",
-  "store-in-stock",
-  "store-in-receipts",
-  "store-in-setup",
-  "store-in-manual-entry",
-  "store-in-daily-report",
-  "store-out-operator",
   "store-receiving",
   "store-issuing",
-  "store-out-daily-report",
   "munshi-home",
   "munshi-stock",
   "store-scanning",
@@ -135,7 +117,9 @@ export const App = () => {
 
   const auth = useAuthSession({ api, push, route, setRoute });
   // A store operator's picked job, which decides what their sidebar lists.
-  const storeJob = useStoreJob(route);
+  // Read by Escape, which must not move a store operator off the Store page (0.3.9).
+  const routeRef = useRef(route);
+  routeRef.current = route;
   const { session, sessionToken, savedProfiles, isAddingAccount, authView, authError, authSuccess, requestStatus, needsBootstrap } = auth;
   const admin = useAdminData({ api, push, session, sessionToken, setAuthError: auth.setAuthError });
   // Said at sign-in, not at the printer: a computer with no number range can neither create a
@@ -170,8 +154,12 @@ export const App = () => {
     // Don't navigate if a child component has mounted a suppress-esc sentinel
     // (e.g. ProductFormPage add-group modals, PartyFormPage city dropdown open)
     if (document.querySelector("[data-suppress-esc]")) return;
-    // Escape means "start again": Store Station for a store operator, the Dashboard for others.
-    setRoute(landingRoute(sessionRef.current));
+    // Escape means "start again": the Store page for a store operator, the Dashboard for others.
+    // On the Store page it stays put — going "back" to Receiving from Issuing would switch mode
+    // under the operator. A scan box's own Escape only clears the box (useScanBox).
+    const landing = landingRoute(sessionRef.current);
+    if (isStoreRoute(landing) && isStoreRoute(routeRef.current)) return;
+    setRoute(landing);
   }, []);
 
   useRouteKeyboard(setRoute, onBackup, onEscape);
@@ -330,7 +318,7 @@ export const App = () => {
           <RawMaterialInputPage
             token={sessionToken ?? ""}
             username={session.username}
-            onBack={() => setRoute("store-home")}
+            onBack={() => setRoute(landingRoute(session))}
             onNavigate={canOpenRawMaterial ? setRoute : undefined}
           />
         );
@@ -339,7 +327,7 @@ export const App = () => {
           <RawMaterialOutputPage
             token={sessionToken ?? ""}
             username={session.username}
-            onBack={() => setRoute("store-home")}
+            onBack={() => setRoute(landingRoute(session))}
             onNavigate={canOpenRawMaterial ? setRoute : undefined}
           />
         );
@@ -378,44 +366,6 @@ export const App = () => {
         return <LiveReturnPage />;
       case "return-history":
         return <ReturnHistoryPage />;
-      case "store-home":
-        return <StoreHomePage onNavigate={setRoute} />;
-      // STORE IN — one page, one tab per section, the scan station down the right. Every one of
-      // these routes renders the SAME element type here, unkeyed, so moving between tabs keeps
-      // the component — and with it the scanner's open session — mounted.
-      case "store-in-operator":
-      case "store-in-new-material":
-      case "store-in-qr-generator":
-      case "store-in-stock":
-      case "store-in-receipts":
-      case "store-in-setup":
-      case "store-in-manual-entry":
-      case "store-in-daily-report":
-        return (
-          <StoreInPage
-            tab={storeInTabOfRoute(route)}
-            token={sessionToken ?? ""}
-            username={session.username}
-            isAdmin={session.role === USER_ROLE.ADMIN}
-            access={{
-              stock: hasPermission(session, PERMISSION.STOCK),
-              labels: hasPermission(session, PERMISSION.RAW_MATERIAL_QR_GENERATOR),
-              settings:
-                hasPermission(session, PERMISSION.SETTINGS) || hasPermission(session, PERMISSION.RAW_MATERIAL_SETUP),
-              report: hasPermission(session, PERMISSION.STORE_SCANNING),
-              manual: hasPermission(session, PERMISSION.STORE_SCANNING),
-            }}
-            onNavigate={setRoute}
-          />
-        );
-      case "store-in-scanner":
-        return (
-          <RawMaterialInputPage
-            token={sessionToken ?? ""}
-            username={session.username}
-            onBack={() => setRoute("store-in-operator")}
-          />
-        );
       // THE STORE PAGE (0.3.9): both modes render the SAME element, unkeyed, so switching mode keeps
       // the page — and both scan stations with their sessions — mounted.
       case "store-receiving":
@@ -438,18 +388,6 @@ export const App = () => {
             onInitialProgramConsumed={() => setStoreProgramId(undefined)}
           />
         );
-      case "store-out-operator":
-        return (
-          <StoreOutPage
-            token={sessionToken ?? ""}
-            username={session.username}
-            onBack={() => setRoute("store-home")}
-            onOpenReport={() => setRoute("store-out-daily-report")}
-            onOpenQrGenerator={canOpenRoute(session, "qr-generator") ? () => setRoute("qr-generator") : undefined}
-          />
-        );
-      case "store-out-daily-report":
-        return <StoreOutReportPage token={sessionToken ?? ""} onBack={() => setRoute("store-out-operator")} />;
       // The Munshi's station, and the raw material Stock section opened from it. Stock is the
       // store's own workspace section — the same component, the same data, the same checks —
       // with the Munshi's way back instead of the Move In operator's.
@@ -482,7 +420,7 @@ export const App = () => {
           <StoreScanningPage
             token={sessionToken ?? ""}
             username={session.username}
-            onBack={() => setRoute("store-home")}
+            onBack={() => setRoute(landingRoute(session))}
           />
         );
       case "store-move-out":
@@ -490,7 +428,7 @@ export const App = () => {
           <StoreMoveOutPage
             token={sessionToken ?? ""}
             username={session.username}
-            onBack={() => setRoute("store-home")}
+            onBack={() => setRoute(landingRoute(session))}
           />
         );
       case "gatepass":
@@ -684,7 +622,6 @@ export const App = () => {
             appVersion={appVersion}
             onBackup={onBackup}
             user={session}
-            storeJob={storeJob}
             onProfile={() => setRoute("profile")}
             onChangePassword={() => setRoute("change-password")}
             onLogout={auth.handleLogout}

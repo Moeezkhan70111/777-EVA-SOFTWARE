@@ -67,7 +67,7 @@ export const RawMaterialInputPage: React.FC<RawMaterialInputPageProps> = ({ toke
       {/* Embedded on the Store In page the pane above already says what this is, so the
           station drops its own title rather than saying it twice. */}
       <StationToolbar
-        eyebrow={embedded ? undefined : "Store Station · Raw Material"}
+        eyebrow={embedded ? undefined : "Store · Raw Material"}
         title={embedded ? undefined : "Raw Material Input"}
         onBack={onBack}
         scannerPill={scannerConnected ? { text: "Scanner ready", color: "#16a34a" } : { text: "Keyboard input", color: "#94a3b8" }}

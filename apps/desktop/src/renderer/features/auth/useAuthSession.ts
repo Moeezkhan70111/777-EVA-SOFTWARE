@@ -73,7 +73,7 @@ export const useAuthSession = ({ api, push, route, setRoute }: UseAuthSessionArg
   const [needsBootstrap, setNeedsBootstrap] = useState(false);
 
   /**
-   * Lands the user on their starting screen (landingRoute: Store Station for a store operator,
+   * Lands the user on their starting screen (landingRoute: the Store page for a store operator,
    * the Dashboard for everyone else) unless they are resuming on a screen their role still allows.
    */
   const landOn = useCallback(

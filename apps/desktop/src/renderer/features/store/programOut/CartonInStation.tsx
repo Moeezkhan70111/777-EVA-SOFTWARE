@@ -15,7 +15,7 @@ import { useScanBox } from "../../scanStation/useScanBox";
 //
 // It takes the place of Scan Material on the RIGHT of Store In — the page's one scan station —
 // rather than a second scanner beside the program. The Scan Material station stays mounted behind
-// it (StoreInPage), so an open receiving session is never lost; closing the program brings it back.
+// it (the Store page's Scan in rail), so an open receiving session is never lost; closing the program brings it back.
 //
 // The box is armed as soon as there is a printed label to come back, because this panel exists to
 // scan. One scan is one carton: the main process checks it was printed for THIS program, produces
