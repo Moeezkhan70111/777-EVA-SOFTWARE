@@ -96,7 +96,7 @@ const sessionTimeLine = (startedAt: string, closedAt: string | null): string =>
  * become one number. Grouped by unit so a session of only one unit (the common case) still
  * shows one plain total, and a mixed one shows one total per unit instead of a wrong sum.
  */
-const quantityTotalLine = (byMaterial: StoreVoucherMaterial[]): string => {
+export const quantityTotalLine = (byMaterial: StoreVoucherMaterial[]): string => {
   const totalsByUnit = new Map<string, number>();
   for (const material of byMaterial) {
     const unit = material.unitCode || "";

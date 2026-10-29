@@ -4,11 +4,11 @@ import type { AppRoute } from "../../app/routes";
 import { copy } from "../../config/copy";
 import { StateView } from "../../components/shared/StateView";
 import { TabStrip, type TabStripItem } from "../../components/shared/TabStrip";
-import { NewMaterialModal } from "../rawMaterial/NewMaterialModal";
 import { RawMaterialSection } from "../rawMaterial/RawMaterialSection";
 import { useRawMaterialLookups } from "../rawMaterial/useRawMaterialLookups";
 import { RawMaterialInputPage } from "../../pages/RawMaterialInputPage";
-import { HandMovePanel } from "./HandMovePanel";
+import { ManualEntry } from "./sections/ManualEntry";
+import { NewMaterialForm } from "./sections/NewMaterialForm";
 import { StoreDailyReport } from "./dailyReport/StoreDailyReport";
 import { ProgramLookupField } from "./programOut/ProgramLookupField";
 import { ProgramOutPanel } from "./programOut/ProgramOutPanel";
@@ -185,38 +185,5 @@ export const StoreInPage: React.FC<StoreInPageProps> = ({ tab, token, username, 
         </aside>
       </div>
     </div>
-  );
-};
-
-/** Manual Entry: material that came without labels, typed in rather than scanned. */
-const ManualEntry: React.FC<{ token: string }> = ({ token }) => (
-  <div className="si-manual-open">
-    <header className="si-manual-head">
-      <h2 className="si-manual-title">{copy.moveOut.manualInTitle}</h2>
-    </header>
-    <HandMovePanel direction="IN" token={token} />
-  </div>
-);
-
-/** Step 1 of receiving: the material has to exist before a label can name it. */
-const NewMaterialForm: React.FC<{
-  lookups: ReturnType<typeof useRawMaterialLookups>;
-  formKey: number;
-  onDone: () => void;
-}> = ({ lookups, formKey, onDone }) => {
-  // Loading shows only on first arrival: a reload after adding a unit or an option mid-form
-  // must not unmount the form and throw away what was typed.
-  if (lookups.loading && lookups.categories.length === 0) return <StateView kind="loading" message={copy.common.loading} />;
-  if (lookups.error) return <StateView kind="error" message={lookups.error} onRetry={() => void lookups.reload()} />;
-  return (
-    <NewMaterialModal
-      key={formKey}
-      layout="page"
-      categories={lookups.categories}
-      units={lookups.units}
-      onClose={onDone}
-      onCreated={lookups.reload}
-      onLookupsChanged={lookups.reload}
-    />
   );
 };

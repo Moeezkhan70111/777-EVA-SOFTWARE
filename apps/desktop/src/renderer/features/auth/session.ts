@@ -127,6 +127,9 @@ export const routePermission: Partial<Record<AppRoute, PermissionCode>> = {
   // Typing in an unlabelled delivery is store work, as the button under the scanner was.
   "store-in-manual-entry": PERMISSION.STORE_SCANNING,
   "store-out-operator": PERMISSION.STORE_SCANNING,
+  // The Store page (0.3.9): Receiving and Issuing, one page, the store's one permission.
+  "store-receiving": PERMISSION.STORE_SCANNING,
+  "store-issuing": PERMISSION.STORE_SCANNING,
   "store-out-daily-report": PERMISSION.STORE_SCANNING,
 
   // The Munshi's station. Only the station screen itself is the Munshi's permission; the

@@ -175,6 +175,12 @@
   --warning-tint:       #fef3c7;
   --warning-strong:     #92400e;
   --warning-deep:       #b45309;
+  /* The store's two modes (0.3.9): Receiving teal, Issuing the amber-orange Move Out already used.
+     Each pair is a strong colour for text and borders, and a soft one for the tinted header. */
+  --store-receiving:      oklch(0.5 0.09 185);
+  --store-receiving-soft: oklch(0.96 0.03 185);
+  --store-issuing:        var(--warning-deep);
+  --store-issuing-soft:   var(--warning-soft);
   --danger-tint:        #fee2e2;
   --danger-strong:      #b91c1c;
   --danger-deep:        #7f1d1d;
@@ -7597,6 +7603,100 @@ tr.has-error .gp-qty-stepper input { color: var(--err); }
 }
 .si-manual-close:hover { border-color: var(--primary); color: var(--primary-dark); }
 .si-manual-open .mo-manual { padding: 0 14px 14px; }
+/* ── THE STORE PAGE (0.3.9): Receiving | Issuing, the work area on the left, the active mode's scan
+   rail on the right. Like Store In, the page never scrolls: each pane scrolls inside itself, so the
+   scan box is always on screen. */
+.sp-page {
+  display: flex; flex-direction: column; height: 100%; min-height: 0;
+  padding: 18px 24px 16px; gap: var(--space-3); overflow: hidden;
+  background: var(--background); color: var(--foreground);
+}
+/* Right padding keeps the head clear of the app's floating profile menu. */
+.sp-head { display: flex; align-items: center; gap: var(--space-3); flex-shrink: 0; padding-right: 180px; }
+.sp-head-text { flex: 1; min-width: 0; }
+.sp-title { margin: 0; font-size: 1.6rem; font-weight: 900; letter-spacing: -.02em; line-height: 1.1; }
+.sp-sub { margin: 3px 0 0; font-size: .84rem; color: var(--foreground-muted); }
+.sp-head-actions { display: flex; gap: var(--space-2); flex-wrap: wrap; }
+
+.sp-modes { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-2); flex-shrink: 0; }
+.sp-mode {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 2px;
+  min-height: var(--touch-target); padding: 10px 16px; cursor: pointer; text-align: left;
+  background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-xl);
+  font: inherit; color: var(--foreground);
+}
+.sp-mode-name { font-size: 1rem; font-weight: 800; }
+.sp-mode-state { font-size: .8rem; color: var(--foreground-muted); }
+.sp-mode-state--open { font-weight: 700; }
+.sp-mode--receiving .sp-mode-state--open { color: var(--store-receiving); }
+.sp-mode--issuing .sp-mode-state--open { color: var(--store-issuing); }
+.sp-mode--receiving[aria-pressed="true"] { border: 2px solid var(--store-receiving); background: var(--store-receiving-soft); }
+.sp-mode--issuing[aria-pressed="true"] { border: 2px solid var(--store-issuing); background: var(--store-issuing-soft); }
+.sp-mode:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+
+.sp-body { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 14px; }
+.sp-work-slot { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+.sp-work-slot > .sp-work { flex: 1; }
+/* The inactive mode stays mounted (its session, its form) but is not shown. hidden must win over
+   the display these blocks set, or both modes would show at once. */
+.sp-work-slot[hidden], .sp-rail[hidden] { display: none; }
+.sp-work { min-width: 0; min-height: 0; display: flex; flex-direction: column; gap: var(--space-3); }
+.sp-work .tab-strip { flex-shrink: 0; }
+.sp-work-pane { flex: 1; min-height: 0; overflow-y: auto; padding-right: 4px; }
+.sp-work-pane .rm-new-page { max-width: none; }
+.sp-work-pane > .mpi-page { overflow: visible; overscroll-behavior: auto; }
+.sp-rail {
+  display: flex; flex-direction: column; min-height: 0; overflow-y: auto;
+  background: var(--surface); border: 1px solid var(--line-soft);
+  border-radius: var(--radius-2xl); box-shadow: var(--shadow-md);
+}
+.sp-rail-head { padding: 12px 16px; border-bottom: 1px solid var(--line-soft); }
+.sp-rail-head--in { background: var(--store-receiving-soft); color: var(--store-receiving); }
+.sp-rail-head--out { background: var(--store-issuing-soft); color: var(--store-issuing); }
+.sp-rail-title { margin: 0; font-size: 1rem; font-weight: 800; }
+.sp-rail-line { margin: 2px 0 0; font-size: .76rem; color: var(--foreground-muted); }
+.sp-rail-section { padding: 12px 16px; border-bottom: 1px solid var(--line-soft); display: flex; flex-direction: column; gap: var(--space-2); }
+.sp-rail-section:last-child { border-bottom: 0; }
+.sp-rail-actions { display: flex; gap: var(--space-2); flex-wrap: wrap; }
+.sp-rail-actions .btn { min-height: var(--touch-target); flex: 1; }
+.sp-rail .ssn-card { box-shadow: none; }
+
+.sp-state { display: flex; flex-direction: column; gap: 4px; }
+.sp-state-title { margin: 0; font-size: 1.15rem; font-weight: 900; }
+.sp-state--idle .sp-state-title { color: var(--foreground-subtle); }
+.sp-state--ready .sp-state-title { color: var(--foreground); }
+.sp-state--scanning .sp-state-title { color: var(--success-strong); }
+.sp-state-line { margin: 0; font-size: .84rem; color: var(--foreground-muted); }
+.sp-result { margin: 4px 0 0; padding: 8px 10px; border-radius: var(--radius-md); font-size: .82rem; }
+.sp-result strong { display: block; }
+.sp-result--success { background: var(--success-soft); color: var(--success-strong); }
+.sp-result--warn { background: var(--warning-soft); color: var(--warning-strong); }
+.sp-result--error { background: var(--danger-soft); color: var(--danger-strong); }
+
+.sp-session { display: grid; grid-template-columns: 1fr auto; gap: 4px 10px; align-items: center; }
+.sp-session-party { font-weight: 800; }
+.sp-session-code { font-family: Consolas, "Courier New", monospace; font-weight: 700; color: var(--foreground-muted); }
+.sp-session-figures { grid-column: 1 / -1; display: flex; gap: var(--space-4); font-size: .84rem; }
+.sp-session-figures dt { color: var(--foreground-subtle); font-size: .72rem; text-transform: uppercase; letter-spacing: .06em; }
+.sp-session-figures dd { margin: 0; font-weight: 800; }
+.sp-last-session { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); font-size: .84rem; }
+
+.sp-issued-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-2); }
+.sp-issued-row {
+  display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto auto; gap: var(--space-3); align-items: center;
+  padding: 10px 14px; background: var(--surface); border: 1px solid var(--line-soft); border-radius: var(--radius-lg);
+}
+.sp-issued-code { font-family: Consolas, "Courier New", monospace; font-weight: 700; }
+
+/* Tablet and narrower: the scan rail first, the work area under it. */
+@media (max-width: 900px) {
+  .sp-page { overflow-y: auto; height: auto; padding: 16px; }
+  .sp-head { padding-right: 0; flex-wrap: wrap; }
+  .sp-body { grid-template-columns: minmax(0, 1fr); }
+  .sp-rail { order: -1; }
+  .sp-issued-row { grid-template-columns: minmax(0, 1fr) auto; }
+}
+
 
 @media (max-width: 1100px) {
   .si-page { overflow-y: auto; }

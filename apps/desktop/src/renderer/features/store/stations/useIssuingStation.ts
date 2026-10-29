@@ -43,6 +43,8 @@ export interface IssuingStation {
   print: () => void;
   /** The last session this computer closed, to reprint its slip. */
   lastSession: RawMaterialIssueSessionRow | null;
+  /** Prints any session's slip again — the last one, or one from Issued today. */
+  reprint: (sessionId: string) => Promise<void>;
   reprintLast: () => Promise<void>;
   feedback: ScanStationFeedback;
   panelFeedback: ScanStationFeedback;
@@ -151,11 +153,17 @@ export const useIssuingStation = ({ token, username, active, onSessionChange, on
     if (summary && !openIssueSlipPrintWindow(summary, username)) push("error", copy.toast.popupBlocked, copy.storeStation.popupBlocked);
   }, [push, summary, username]);
 
+  const reprint = useCallback(
+    async (sessionId: string) => {
+      const past = await api.getRawMaterialIssueSessionSummary(sessionId);
+      if (past && !openIssueSlipPrintWindow(past, username)) push("error", copy.toast.popupBlocked, copy.storeStation.popupBlocked);
+    },
+    [api, push, username]
+  );
+  const lastId = run.lastSession?.session.id;
   const reprintLast = useCallback(async () => {
-    if (!run.lastSession) return;
-    const last = await api.getRawMaterialIssueSessionSummary(run.lastSession.session.id);
-    if (last && !openIssueSlipPrintWindow(last, username)) push("error", copy.toast.popupBlocked, copy.storeStation.popupBlocked);
-  }, [api, push, run.lastSession, username]);
+    if (lastId) await reprint(lastId);
+  }, [lastId, reprint]);
 
   const lockedParty = parties.find((party) => party.id === sessionPartyId);
   const state = issuingScanState({ canScan: locked, partyName: lockedParty?.partyName ?? null, packets: locked ? (summary?.totalPackets ?? 0) : 0 });
@@ -165,7 +173,7 @@ export const useIssuingStation = ({ token, username, active, onSessionChange, on
     parties, partyOptions, partiesError, reloadParties, partyId, choosePartyId,
     chosenParty: parties.find((party) => party.id === partyId), lockedParty, locked,
     session, summary, sessionError: run.sessionError, reloadSession: run.reload, startSession: run.startSession, endSession, print,
-    lastSession: run.lastSession, reprintLast, feedback,
+    lastSession: run.lastSession, reprint, reprintLast, feedback,
     panelFeedback: feedback.tone === "idle" ? { ...feedback, title: state.title, message: state.line } : feedback,
     state, scanBox, rows: rowsOf(summary),
   };

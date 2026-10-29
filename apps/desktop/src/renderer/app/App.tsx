@@ -24,6 +24,8 @@ import { StoreInPage } from "../features/store/StoreInPage";
 import { StoreOutPage } from "../features/store/StoreOutPage";
 import { StoreOutReportPage } from "../features/store/dailyReport/StoreOutReportPage";
 import { storeInTabOfRoute } from "../features/store/storeOperators";
+import { StorePage } from "../features/store/page/StorePage";
+import { STORE_MODE_ROUTE, storeModeOfRoute } from "../features/store/page/storeTabs";
 import { StoreWorkspacePage } from "../features/store/StoreWorkspacePage";
 import { StoreScanningPage } from "../pages/StoreScanningPage";
 import { StoreMoveOutPage } from "../pages/StoreMoveOutPage";
@@ -96,6 +98,8 @@ const FULLSCREEN_ROUTES: ReadonlySet<AppRoute> = new Set<AppRoute>([
   "store-in-manual-entry",
   "store-in-daily-report",
   "store-out-operator",
+  "store-receiving",
+  "store-issuing",
   "store-out-daily-report",
   "munshi-home",
   "munshi-stock",
@@ -407,6 +411,25 @@ export const App = () => {
             token={sessionToken ?? ""}
             username={session.username}
             onBack={() => setRoute("store-in-operator")}
+          />
+        );
+      // THE STORE PAGE (0.3.9): both modes render the SAME element, unkeyed, so switching mode keeps
+      // the page — and both scan stations with their sessions — mounted.
+      case "store-receiving":
+      case "store-issuing":
+        return (
+          <StorePage
+            mode={storeModeOfRoute(route)}
+            token={sessionToken ?? ""}
+            username={session.username}
+            isAdmin={session.role === USER_ROLE.ADMIN}
+            access={{
+              stock: hasPermission(session, PERMISSION.STOCK),
+              labels: hasPermission(session, PERMISSION.RAW_MATERIAL_QR_GENERATOR),
+              settings: hasPermission(session, PERMISSION.SETTINGS) || hasPermission(session, PERMISSION.RAW_MATERIAL_SETUP),
+            }}
+            onModeChange={(next) => setRoute(STORE_MODE_ROUTE[next])}
+            onNavigate={setRoute}
           />
         );
       case "store-out-operator":

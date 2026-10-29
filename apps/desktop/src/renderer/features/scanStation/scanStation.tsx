@@ -452,66 +452,106 @@ export const ScanPanel: React.FC<{
 
       {/* Keyboard-wedge scanner target. Kept visible but secondary, so a supervisor can
           type a code for troubleshooting without this becoming a manual-entry workflow. */}
-      <div className="ssn-dock">
-        <div className={`ssn-dock-row${disabled ? " ssn-dock-row--disabled" : ""}`}>
-          <label className="ssn-dock-icon" htmlFor="ssn-scanner-input" title={copy.scanning.scannerInput}>
-            <ScannerIcon />
-            <span className="ssn-sr-only">Scanner</span>
-          </label>
-          <input
-            id="ssn-scanner-input"
-            ref={inputRef}
-            className="ssn-input"
-            value={inputVal}
-            onChange={(e) => onInputChange(e.target.value)}
-            onKeyDown={onKeyDown}
-            placeholder={disabled ? (disabledHint ?? "Session not ready") : (placeholder ?? "Waiting for scan…")}
-            aria-label={copy.scanning.scannerInput}
-            autoComplete="off"
-            autoCorrect="off"
-            autoCapitalize="off"
-            spellCheck={false}
-            disabled={disabled}
-          />
-          {onSubmit ? (
-            <button
-              type="button"
-              className="ssn-btn ssn-dock-submit"
-              onClick={onSubmit}
-              disabled={disabled || inputVal.trim() === ""}
-            >
-              {submitLabel ?? "Enter"}
-            </button>
-          ) : null}
-          {/* Exactly one of these is visible, chosen by CSS from focus / disabled state. */}
-          <span className="ssn-dock-state ssn-dock-state--armed" aria-hidden="true">
-            <span className="ssn-dock-state-dot" />
-            Listening
-          </span>
-          <span className="ssn-dock-state ssn-dock-state--paused" aria-hidden="true">
-            <span className="ssn-dock-state-dot" />
-            Click to focus
-          </span>
-          <span className="ssn-dock-state ssn-dock-state--off" aria-hidden="true">
-            <span className="ssn-dock-state-dot" />
-            Not ready
-          </span>
-        </div>
-        <div className="ssn-dock-foot">
-          <span className="ssn-dock-hint">
-            {dockHint ?? "Auto-submits on scan"} · <kbd>Esc</kbd> clears
-          </span>
+      <ScanDock
+        inputRef={inputRef}
+        inputVal={inputVal}
+        onInputChange={onInputChange}
+        onKeyDown={onKeyDown}
+        onFocusScanner={onFocusScanner}
+        disabled={disabled}
+        disabledHint={disabledHint}
+        onSubmit={onSubmit}
+        submitLabel={submitLabel}
+        placeholder={placeholder}
+        dockHint={dockHint}
+      />
+    </section>
+  );
+};
+
+export interface ScanDockProps {
+  inputRef: React.RefObject<HTMLInputElement | null>;
+  inputVal: string;
+  onInputChange: (value: string) => void;
+  onKeyDown: (e: React.KeyboardEvent<HTMLInputElement>) => void;
+  onFocusScanner: () => void;
+  disabled: boolean;
+  /** Placeholder when the station cannot accept scans yet. */
+  disabledHint?: string;
+  onSubmit?: () => void;
+  submitLabel?: string;
+  placeholder?: string;
+  dockHint?: string;
+}
+
+/**
+ * The scanner's box — the keyboard-wedge target under a scan panel, and on the Store page's rails.
+ * Its id is generated: the Store page holds two of them at once.
+ */
+export const ScanDock: React.FC<ScanDockProps> = ({
+  inputRef, inputVal, onInputChange, onKeyDown, onFocusScanner, disabled, disabledHint, onSubmit, submitLabel, placeholder, dockHint,
+}) => {
+  const inputId = React.useId();
+  return (
+    <div className="ssn-dock">
+      <div className={`ssn-dock-row${disabled ? " ssn-dock-row--disabled" : ""}`}>
+        <label className="ssn-dock-icon" htmlFor={inputId} title={copy.scanning.scannerInput}>
+          <ScannerIcon />
+          <span className="ssn-sr-only">Scanner</span>
+        </label>
+        <input
+          id={inputId}
+          ref={inputRef}
+          className="ssn-input"
+          value={inputVal}
+          onChange={(e) => onInputChange(e.target.value)}
+          onKeyDown={onKeyDown}
+          placeholder={disabled ? (disabledHint ?? "Session not ready") : (placeholder ?? "Waiting for scan…")}
+          aria-label={copy.scanning.scannerInput}
+          autoComplete="off"
+          autoCorrect="off"
+          autoCapitalize="off"
+          spellCheck={false}
+          disabled={disabled}
+        />
+        {onSubmit ? (
           <button
             type="button"
-            className="ssn-btn ssn-btn--ghost ssn-btn--sm"
-            onClick={onFocusScanner}
-            title={copy.scanning.refocus}
+            className="ssn-btn ssn-dock-submit"
+            onClick={onSubmit}
+            disabled={disabled || inputVal.trim() === ""}
           >
-            Focus scanner
+            {submitLabel ?? "Enter"}
           </button>
-        </div>
+        ) : null}
+        {/* Exactly one of these is visible, chosen by CSS from focus / disabled state. */}
+        <span className="ssn-dock-state ssn-dock-state--armed" aria-hidden="true">
+          <span className="ssn-dock-state-dot" />
+          Listening
+        </span>
+        <span className="ssn-dock-state ssn-dock-state--paused" aria-hidden="true">
+          <span className="ssn-dock-state-dot" />
+          Click to focus
+        </span>
+        <span className="ssn-dock-state ssn-dock-state--off" aria-hidden="true">
+          <span className="ssn-dock-state-dot" />
+          Not ready
+        </span>
       </div>
-    </section>
+      <div className="ssn-dock-foot">
+        <span className="ssn-dock-hint">
+          {dockHint ?? "Auto-submits on scan"} · <kbd>Esc</kbd> clears
+        </span>
+        <button
+          type="button"
+          className="ssn-btn ssn-btn--ghost ssn-btn--sm"
+          onClick={onFocusScanner}
+          title={copy.scanning.refocus}
+        >
+          Focus scanner
+        </button>
+      </div>
+    </div>
   );
 };
 

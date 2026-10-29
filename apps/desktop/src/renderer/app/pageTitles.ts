@@ -34,6 +34,8 @@ export const PAGE_TITLES: Record<AppRoute, string> = {
   "munshi-home": "Munshi",
   "munshi-stock": "Raw Material Stock",
   "store-out-operator": "Move Out Operator",
+  "store-receiving": "Store · Receiving",
+  "store-issuing": "Store · Issuing",
   "store-scanning": "Store Scanning",
   "store-move-out": "Store Move Out",
   gatepass: "Create Gatepass",
