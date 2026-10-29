@@ -29,6 +29,12 @@
 
 import { dozensToCartons } from "./units.js";
 
+/**
+ * The fewest characters a machine program's deletion reason may have (owner, 0.3.8). Deleting is
+ * administrator-only and kept in the audit record with its reason, so the reason must say something.
+ */
+export const MACHINE_PROGRAM_DELETE_REASON_MIN = 5;
+
 export const MACHINE_PROGRAM_STATUS = {
   /** Saved and holding a reservation. */
   PROGRAMMED: "PROGRAMMED",

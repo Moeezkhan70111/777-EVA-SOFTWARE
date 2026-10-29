@@ -22,6 +22,7 @@ import { StockIcon, ScanInIcon } from "./StoreIcons";
 //
 //   ┌ Store In ───────────────────────────────────────────────────────────┐
 //   │ [Add New Material] [QR Generator] [Stock] [Receipts] [Setup]        │
+//   │ [Manual Entry] [Daily Report]                                       │
 //   ├────────────────────────────────────┬────────────────────────────────┤
 //   │ the chosen section                 │ Scan Material                  │
 //   │                                    │ (the Move In station, always)  │
@@ -34,6 +35,9 @@ import { StockIcon, ScanInIcon } from "./StoreIcons";
 // The scan station on the right NEVER unmounts: every tab renders this one component in the
 // same place, unkeyed, so React keeps it — and with it the open receiving session, the scan box
 // and the recent scans — while the operator moves between tabs.
+//
+// MANUAL ENTRY is a tab, beside the Daily Report (0.3.8): a delivery that carries no labels is
+// typed in on the left while the scan station stays mounted on the right.
 //
 // THE MACHINE PROGRAM LOOKUP under the title is the same box as on Store Out. Here it opens the
 // program VIEW ONLY, in place of the section on the left — never over the scan station, which
@@ -49,6 +53,8 @@ export interface StoreInAccess {
   settings: boolean;
   /** The Daily Report — what came into the store on a day. */
   report: boolean;
+  /** Manual Entry — typing in material that came without labels. */
+  manual: boolean;
 }
 
 interface StoreInPageProps {
@@ -64,6 +70,7 @@ const allows = (tab: StoreInTab, access: StoreInAccess): boolean => {
   if (tab === "setup") return access.settings;
   if (tab === "labels") return access.labels;
   if (tab === "report") return access.report;
+  if (tab === "manual") return access.manual;
   return access.stock;
 };
 
@@ -72,8 +79,6 @@ export const StoreInPage: React.FC<StoreInPageProps> = ({ tab, token, username, 
   // A fresh, empty form after each material is created — the desk stays open for the next one.
   const [formKey, setFormKey] = useState(0);
   const [labelsItemId, setLabelsItemId] = useState<string | undefined>(undefined);
-  // The owner's reference screen puts Manual Entry under the scanner, as the other way in.
-  const [manualOpen, setManualOpen] = useState(false);
   // No issue session: nothing leaves the store from here.
   const programView = useProgramOut({ token, sessionId: null });
   // One close state for the open program, shared by the program view and the Carton In station.
@@ -133,6 +138,8 @@ export const StoreInPage: React.FC<StoreInPageProps> = ({ tab, token, username, 
             <NewMaterialForm lookups={lookups} formKey={formKey} onDone={() => setFormKey((key) => key + 1)} />
           ) : active === "report" ? (
             <StoreDailyReport direction={STORE_DIRECTION.IN} token={token} />
+          ) : active === "manual" ? (
+            <ManualEntry token={token} />
           ) : (
             <RawMaterialSection
               tab={active}
@@ -174,35 +181,22 @@ export const StoreInPage: React.FC<StoreInPageProps> = ({ tab, token, username, 
               </div>
             </header>
             <RawMaterialInputPage token={token} username={username} embedded />
-  
-            {/* A delivery that carries no labels cannot be scanned in, so it is typed in. The
-                station above stays mounted either way — an open session is not interrupted. */}
-            <div className="si-manual">
-              <p className="si-manual-or">
-                <span>{copy.store.or}</span>
-              </p>
-              {manualOpen ? (
-                <div className="si-manual-open">
-                  <header className="si-manual-head">
-                    <h3 className="si-manual-title">{copy.moveOut.manualInTitle}</h3>
-                    <button type="button" className="si-manual-close" onClick={() => setManualOpen(false)}>
-                      {copy.common.close}
-                    </button>
-                  </header>
-                  <HandMovePanel direction="IN" token={token} />
-                </div>
-              ) : (
-                <button type="button" className="si-manual-btn" onClick={() => setManualOpen(true)}>
-                  {copy.store.manualEntry}
-                </button>
-              )}
-            </div>
           </div>
         </aside>
       </div>
     </div>
   );
 };
+
+/** Manual Entry: material that came without labels, typed in rather than scanned. */
+const ManualEntry: React.FC<{ token: string }> = ({ token }) => (
+  <div className="si-manual-open">
+    <header className="si-manual-head">
+      <h2 className="si-manual-title">{copy.moveOut.manualInTitle}</h2>
+    </header>
+    <HandMovePanel direction="IN" token={token} />
+  </div>
+);
 
 /** Step 1 of receiving: the material has to exist before a label can name it. */
 const NewMaterialForm: React.FC<{

@@ -96,7 +96,7 @@ export const NAV_SECTIONS: readonly NavSection[] = [
     items: [
       item("store-home", t.storeHome, "store", [
         "store-in-operator", "store-in-new-material", "store-in-qr-generator", "store-in-scanner",
-        "store-in-stock", "store-in-receipts", "store-in-setup", "store-in-daily-report",
+        "store-in-stock", "store-in-receipts", "store-in-setup", "store-in-manual-entry", "store-in-daily-report",
         "store-out-operator", "store-out-daily-report",
       ]),
       item("store-scanning", t.storeMoveIn, "scan"),

@@ -1221,15 +1221,8 @@ export const rawMaterialQrMethods = {
     if (!deviceId) throw new Error("Device is required to start an issue session.");
 
     if (!input.startNew) {
-      const open = this.db
-        .prepare("SELECT * FROM raw_material_issue_sessions WHERE device_id = ? AND status = 'OPEN' ORDER BY started_at DESC LIMIT 1")
-        .get(deviceId) as Record<string, unknown> | undefined;
-      if (open) {
-        const todayStart = this.localDayStartIso(this.localYmd(new Date()));
-        if (todayStart && String(open.started_at) >= todayStart) {
-          return this.mapRawMaterialIssueSession(open);
-        }
-      }
+      const open = this.getOpenRawMaterialIssueSession(deviceId);
+      if (open) return open;
     }
 
     const now = new Date().toISOString();
@@ -1255,6 +1248,37 @@ export const rawMaterialQrMethods = {
       try { this.db.exec("ROLLBACK"); } catch { /* ignore missing transaction state */ }
       throw error;
     }
+  },
+
+  /**
+   * This terminal's open issue session from today, or null -- without starting one. A session left
+   * open from an earlier day is not offered: the next one started closes it (startOrResume above).
+   */
+  getOpenRawMaterialIssueSession(this: SqliteDatabase, deviceId: string): RawMaterialIssueSession | null {
+    const open = this.db
+      .prepare("SELECT * FROM raw_material_issue_sessions WHERE device_id = ? AND status = 'OPEN' ORDER BY started_at DESC LIMIT 1")
+      .get(String(deviceId ?? "").trim()) as Record<string, unknown> | undefined;
+    if (!open) return null;
+    const todayStart = this.localDayStartIso(this.localYmd(new Date()));
+    return todayStart && String(open.started_at) >= todayStart ? this.mapRawMaterialIssueSession(open) : null;
+  },
+
+  /**
+   * Who an issue session's packets go to: the party its first scanned packet was moved out to, or
+   * null before its first scan. A session belongs to one party (0.3.8). The session row has no party
+   * column, and every Scan Out records its party, so the first scan is where the session's party is.
+   * A Machine Program batch rides the same session with no party stamped, so it is passed over.
+   */
+  rawMaterialIssueSessionPartyId(this: SqliteDatabase, sessionId: string): string | null {
+    const row = this.db
+      .prepare(
+        `SELECT json_extract(metadata_json, '$.issuedToPartyId') AS party_id FROM raw_material_qr_events
+          WHERE session_id = ? AND event_type = 'STORE_EXIT'
+            AND json_extract(metadata_json, '$.issuedToPartyId') IS NOT NULL
+          ORDER BY event_ts_local ASC, rowid ASC LIMIT 1`
+      )
+      .get(String(sessionId ?? "").trim()) as { party_id: unknown } | undefined;
+    return typeof row?.party_id === "string" && row.party_id !== "" ? row.party_id : null;
   },
 
   getRawMaterialIssueSession(this: SqliteDatabase, sessionId: string): RawMaterialIssueSession | null {
@@ -1316,6 +1340,7 @@ export const rawMaterialQrMethods = {
 
     return {
       session,
+      partyId: this.rawMaterialIssueSessionPartyId(session.id),
       totalPackets: rows.length,
       bySection: [...bySection.values()]
         .sort((a, b) => a.sectionName.localeCompare(b.sectionName))

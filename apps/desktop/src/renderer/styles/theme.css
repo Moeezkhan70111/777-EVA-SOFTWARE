@@ -8695,3 +8695,14 @@ tr.has-error .gp-qty-stepper input { color: var(--err); }
 @media (min-width: 560px) {
   .mpr-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
+
+/* Store movements (0.3.8): what kind of party is chosen, and the party a Move Out session is locked to. */
+.party-type-badge { margin-top: 6px; align-self: flex-start; }
+.ssn-toolbar .party-type-badge { margin-top: 0; }
+.mo-locked-party { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.mo-locked-party .field-help { flex-basis: 100%; margin: 0; }
+
+/* Machine Program — open programs an administrator can delete (0.3.8). */
+.mp-open-list { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 8px; }
+.mp-open-row { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--radius-xl); }
+.mp-open-row .btn { margin-left: auto; }

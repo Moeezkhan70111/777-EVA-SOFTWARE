@@ -107,6 +107,33 @@ export function registerMachineProgramHandlers(ctx: IpcContext): void {
   // runs, uppers and their writes — was retired in Phase 1 and its channels are not registered.
 
   read(IPC.listMachineDayPrograms, { rows: [] }, (programDate) => ({ rows: db.listMachineDayPrograms(asString(programDate)) }));
+  read(IPC.listOpenMachinePrograms, { rows: [] }, () => ({ rows: db.listOpenMachinePrograms() }));
+
+  // DELETING A PROGRAM (0.3.8): administrators only, and never without a reason, which the use case
+  // checks and keeps in the audit record. A hidden button is not the rule: this is.
+  ipcMain.handle(IPC.deleteMachineProgram, async (event: IpcMainInvokeEvent, programId?: unknown, reason?: unknown) => {
+    let admin;
+    try {
+      admin = authorizer.requireAdmin(event);
+    } catch (error) {
+      log("WARNING", "delete-program-denied", error instanceof Error ? error.message : String(error));
+      return { ...rejection(error, "Only an administrator can delete a machine program."), accepted: false, outcome: "NOT_AUTHORIZED" };
+    }
+    try {
+      const result = await programs.deleteProgram.execute({
+        programId: asString(programId),
+        reason: typeof reason === "string" ? reason : "",
+        actor: admin.username,
+        actorUserId: admin.id,
+        deviceId,
+      });
+      log(result.accepted ? "INFO" : "WARNING", "delete-program", JSON.stringify({ programId: asString(programId), outcome: result.outcome }), admin.id);
+      return result;
+    } catch (error) {
+      log("ERROR", "delete-program-error", error instanceof Error ? error.message : String(error), admin.id);
+      return { accepted: false, outcome: "ERROR", reason: "The program could not be deleted. Nothing was changed — try again." };
+    }
+  });
   read(IPC.listCartonProgramBatches, { rows: [] }, (input) => {
     const line = asRecord(input);
     return {

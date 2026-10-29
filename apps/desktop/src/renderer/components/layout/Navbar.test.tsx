@@ -87,7 +87,7 @@ describe("Navbar sidebar", () => {
       // Raw Material QR needs the label permission and Setup the setup one; this operator has neither.
       // The Store In page's own tabs, in tab order, then the full-screen scan station.
       expect(rowNames(rail)).toEqual([
-        "Select Job", "Move In", "Add New Material", "Stock", "Receipts", "Daily Report Store In", "Raw Material Move In",
+        "Select Job", "Move In", "Add New Material", "Stock", "Receipts", "Manual Entry", "Daily Report Store In", "Raw Material Move In",
       ]);
       expect(within(rail).getByRole("button", { name: "Move In" })).toHaveAttribute("aria-current", "page");
 

@@ -75,6 +75,7 @@ export const IPC = {
   rawMaterialReceiptScan: "erp:raw-material-receipt-scan",
   // Raw Material Output: packets leaving the store for the section that consumes them.
   startRawMaterialIssueSession: "erp:start-raw-material-issue-session",
+  getOpenRawMaterialIssueSession: "erp:get-open-raw-material-issue-session",
   closeRawMaterialIssueSession: "erp:close-raw-material-issue-session",
   getRawMaterialIssueSessionSummary: "erp:get-raw-material-issue-session-summary",
   rawMaterialIssueScan: "erp:raw-material-issue-scan",
@@ -89,6 +90,10 @@ export const IPC = {
   // The Machine Program: one program per machine per day, opened by the day's first QR run, and
   // the machines it is made for with their two contractors.
   listMachineDayPrograms: "erp:list-machine-day-programs",
+  /** Every program still open, whatever its date (0.3.8). */
+  listOpenMachinePrograms: "erp:list-open-machine-programs",
+  /** Deletes (cancels) one program: administrators only, with a typed reason (0.3.8). */
+  deleteMachineProgram: "erp:delete-machine-program",
   listCartonProgramBatches: "erp:list-carton-program-batches",
   addMachine: "erp:add-machine",
   assignMachineContractor: "erp:assign-machine-contractor",

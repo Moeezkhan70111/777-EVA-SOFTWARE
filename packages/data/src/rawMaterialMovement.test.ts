@@ -883,3 +883,57 @@ test("the party is kept on the packet's exit and named in its journey", async ()
     f.cleanup();
   }
 });
+
+// ─── ONE SESSION, ONE PARTY (0.3.8) ─────────────────────────────────────────
+// Move Out starts a session only for a chosen party, and the session's party is its first packet's.
+
+test("the open issue session is found without starting one, and none is made when there is none", () => {
+  const f = createFixture();
+  try {
+    assert.equal(f.db.getOpenRawMaterialIssueSession("device-1")?.id, f.issueSession.id);
+    f.db.closeRawMaterialIssueSession(f.issueSession.id);
+    assert.equal(f.db.getOpenRawMaterialIssueSession("device-1"), null);
+    assert.equal(f.countRows("raw_material_issue_sessions"), 1, "looking did not open a session");
+  } finally {
+    f.cleanup();
+  }
+});
+
+test("a session's party is its first packet's, and a session with nothing in it has none", async () => {
+  const f = createFixture();
+  try {
+    assert.equal(f.db.rawMaterialIssueSessionPartyId(f.issueSession.id), null);
+    assert.equal(f.db.getRawMaterialIssueSessionSummary(f.issueSession.id)?.partyId, null);
+
+    const m = readyMaterial(f, "7/10", 2);
+    await f.scanIn(m.labels[0]);
+    await f.scanIn(m.labels[1]);
+    await f.scanOutTo(m.labels[0], f.otherSupplier);
+    await f.scanOutTo(m.labels[1], f.supplier);
+
+    assert.equal(f.db.rawMaterialIssueSessionPartyId(f.issueSession.id), f.otherSupplier, "the first packet decides");
+    assert.equal(f.db.getRawMaterialIssueSessionSummary(f.issueSession.id)?.partyId, f.otherSupplier);
+  } finally {
+    f.cleanup();
+  }
+});
+
+test("a Machine Program batch on the session, which names no party, does not decide the session's party", async () => {
+  const f = createFixture();
+  try {
+    const m = readyMaterial(f, "7/10", 2);
+    await f.scanIn(m.labels[0]);
+    await f.scanIn(m.labels[1]);
+    await f.scanOutTo(m.labels[0], f.otherSupplier);
+    // A program batch rides this session with no party stamped: the first exit, recorded that way.
+    f.raw
+      .prepare("UPDATE raw_material_qr_events SET metadata_json = json_remove(metadata_json, '$.issuedToPartyId') WHERE qr_id = ? AND event_type = 'STORE_EXIT'")
+      .run(m.labels[0]);
+    assert.equal(f.db.rawMaterialIssueSessionPartyId(f.issueSession.id), null, "a program batch alone does not lock the session");
+
+    await f.scanOutTo(m.labels[1], f.supplier);
+    assert.equal(f.db.rawMaterialIssueSessionPartyId(f.issueSession.id), f.supplier, "the first scanned packet decides");
+  } finally {
+    f.cleanup();
+  }
+});

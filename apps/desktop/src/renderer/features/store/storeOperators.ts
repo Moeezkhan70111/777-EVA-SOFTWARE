@@ -49,7 +49,7 @@ export interface StoreJobPage {
  * Each is also a route, so the sidebar can point straight at a tab and a tab can be come back
  * to. The scan station is not among them: it is the pane down the right of every tab.
  */
-export type StoreInTab = "material" | "labels" | "stock" | "receipts" | "setup" | "report";
+export type StoreInTab = "material" | "labels" | "stock" | "receipts" | "setup" | "manual" | "report";
 
 export interface StoreInSection extends StoreJobPage {
   id: StoreInTab;
@@ -61,6 +61,9 @@ export const STORE_IN_TABS: readonly StoreInSection[] = [
   { id: "stock", route: "store-in-stock", title: copy.store.stockTitle, line: copy.store.stockLine },
   { id: "receipts", route: "store-in-receipts", title: copy.store.receiptsTitle, line: copy.store.receiptsLine },
   { id: "setup", route: "store-in-setup", title: copy.store.setupTitle, line: copy.store.setupLine },
+  // Manual Entry was a button under the scanner until 0.3.8: material that came without labels is
+  // typed in here, beside the Daily Report that lists it.
+  { id: "manual", route: "store-in-manual-entry", title: copy.store.manualEntry, line: copy.store.manualEntryLine },
   { id: "report", route: "store-in-daily-report", title: copy.storeDailyReport.inTitle, line: copy.storeDailyReport.inLine },
 ];
 
