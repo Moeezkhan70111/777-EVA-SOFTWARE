@@ -143,7 +143,8 @@ describe("RawMaterialInputPage", () => {
 
     expect(rawMaterialReceiptScan).toHaveBeenCalledTimes(1);
     expect(rawMaterialReceiptScan.mock.calls[0][0]).toBe(LABEL);
-    await waitFor(() => expect(screen.getByTestId("scan-status")).toHaveTextContent("RECEIVED"));
+    await waitFor(() => expect(screen.getByTestId("scan-zone")).toHaveAttribute("data-state", "accepted"));
+    expect(screen.getByTestId("scan-zone")).toHaveTextContent("Received");
     // The input clears itself so the next packet can be scanned straight away.
     expect((screen.getByLabelText("Scanner input") as HTMLInputElement).value).toBe("");
   });
@@ -222,7 +223,9 @@ describe("RawMaterialInputPage", () => {
     await scanCode(LABEL);
 
     expect(rawMaterialReceiptScan).toHaveBeenCalledTimes(2);
-    await waitFor(() => expect(screen.getByTestId("scan-status")).toHaveTextContent("ALREADY RECEIVED"));
+    await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("This packet is already in"));
+    expect(screen.getByRole("alert")).toHaveTextContent(/You scanned it at .+, as packet 1 of this session\./);
+    expect(screen.getByRole("alert")).toHaveTextContent("Put it aside and scan the next one.");
     expect((screen.getByLabelText("Scanner input") as HTMLInputElement).value).toBe("");
   });
 });

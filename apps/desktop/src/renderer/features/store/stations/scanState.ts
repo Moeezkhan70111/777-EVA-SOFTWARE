@@ -3,9 +3,9 @@ import { copy } from "../../../config/copy";
 // THE SCAN STATE (0.3.9) — what a store scan station says about itself, decided from the facts and
 // nothing else, so the headline can never say "ready" over a box that cannot take a scan:
 //
-//   idle      no session that can take a scan yet   "Not scanning yet" + what to do next
-//   ready     a session is open, nothing scanned    "Ready" + what to scan
-//   scanning  one packet or more in the session     "Scanning" + the count
+//   idle      no session that can take a scan yet   "Not scanning" + the question to answer
+//   ready     a session is open, nothing scanned    "Ready" + what to scan first
+//   scanning  one packet or more in the session     "Ready" + what to scan next (the count is beside it)
 //
 // Receiving can take a scan once a session is open. Issuing only once its session is open AND
 // locked to a party (0.3.8): an open session with no party yet is still "not scanning yet".
@@ -33,13 +33,13 @@ interface StationWords {
   readyTitle: string;
   readyLine: (party: string) => string;
   scanningTitle: string;
-  scanningLine: (packets: number) => string;
+  scanningLine: (party: string) => string;
 }
 
 const stateFor = (facts: StationFacts, words: StationWords): ScanState => {
   if (!facts.canScan) return { kind: "idle", title: words.idleTitle, line: words.idleLine };
   if (facts.packets === 0) return { kind: "ready", title: words.readyTitle, line: words.readyLine(facts.partyName ?? "—") };
-  return { kind: "scanning", title: words.scanningTitle, line: words.scanningLine(facts.packets) };
+  return { kind: "scanning", title: words.scanningTitle, line: words.scanningLine(facts.partyName ?? "—") };
 };
 
 export const receivingScanState = (facts: StationFacts): ScanState => stateFor(facts, copy.storeStation.receiving);

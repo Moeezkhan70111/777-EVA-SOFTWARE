@@ -49,7 +49,7 @@ const Harness: React.FC = () => {
       <button type="button" onClick={() => setMode(mode === "receiving" ? "issuing" : "receiving")}>
         switch
       </button>
-      <p data-testid="states">{`${receiving.state.title} / ${issuing.state.title}`}</p>
+      <p data-testid="states">{`${receiving.state.kind} / ${issuing.state.kind}`}</p>
       <div hidden={mode !== "receiving"}>
         <input aria-label="scan in" ref={receiving.scanBox.inputRef} value={receiving.scanBox.inputVal} onChange={(e) => receiving.scanBox.setInputVal(e.target.value)} onKeyDown={receiving.scanBox.onKeyDown} />
       </div>
@@ -84,7 +84,7 @@ describe("the two store stations on one page", () => {
   it("each keeps its own session, and both say where they stand", async () => {
     installApi();
     renderHarness();
-    await waitFor(() => expect(screen.getByTestId("states")).toHaveTextContent("Ready / Scanning"));
+    await waitFor(() => expect(screen.getByTestId("states")).toHaveTextContent("ready / scanning"));
   });
 
   it("gives the scanner's focus to the active mode's box only, and moves it on a switch", async () => {
@@ -113,13 +113,13 @@ describe("the two store stations on one page", () => {
   it("loses neither session on a switch there and back", async () => {
     const api = installApi();
     renderHarness();
-    await waitFor(() => expect(screen.getByTestId("states")).toHaveTextContent("Ready / Scanning"));
+    await waitFor(() => expect(screen.getByTestId("states")).toHaveTextContent("ready / scanning"));
     for (let i = 0; i < 2; i += 1) {
       await act(async () => {
         fireEvent.click(screen.getByRole("button", { name: "switch" }));
       });
     }
-    expect(screen.getByTestId("states")).toHaveTextContent("Ready / Scanning");
+    expect(screen.getByTestId("states")).toHaveTextContent("ready / scanning");
     expect(api.getOpenRawMaterialReceivingSession).toHaveBeenCalledTimes(1);
     expect(api.getOpenRawMaterialIssueSession).toHaveBeenCalledTimes(1);
   });

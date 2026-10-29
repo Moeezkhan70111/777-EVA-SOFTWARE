@@ -11,13 +11,14 @@ import {
   PlusIcon,
   RecentScansCard,
   SCAN_STATION_CSS,
-  ScanPanel,
+  ScanDock,
   SessionCard,
   StationBlocked,
   StationToolbar,
 } from "../features/scanStation/scanStation";
 import { useScannerConnected } from "../features/scanStation/useScannerConnected";
 import { LockedParty } from "../features/store/stations/LockedParty";
+import { ScanZone } from "../features/store/stations/ScanZone";
 import { useIssuingStation, type IssuingStation } from "../features/store/stations/useIssuingStation";
 
 // Raw Material Output — issuing packets out of the store, full-screen.
@@ -148,16 +149,18 @@ export const RawMaterialOutputPage: React.FC<RawMaterialOutputPageProps> = ({
           <StationBlocked title="Raw Material Output is not available" message={station.sessionError ?? ""} onRetry={() => void station.reloadSession()} />
         ) : (
           <>
-            <ScanPanel
-              feedback={station.panelFeedback}
-              inputRef={scanBox.inputRef}
-              inputVal={scanBox.inputVal}
-              onInputChange={scanBox.setInputVal}
-              onKeyDown={scanBox.onKeyDown}
-              onFocusScanner={scanBox.focusScanner}
-              disabled={!locked}
-              disabledHint={station.state.line}
-            />
+            <div className="ssn-zone">
+              <ScanZone mode="out" outcome={station.outcome} state={station.state} doneWord={copy.storeScan.issued} notDoneWord={copy.storeScan.notIssued} />
+              <ScanDock
+                inputRef={scanBox.inputRef}
+                inputVal={scanBox.inputVal}
+                onInputChange={scanBox.setInputVal}
+                onKeyDown={scanBox.onKeyDown}
+                onFocusScanner={scanBox.focusScanner}
+                disabled={!locked}
+                disabledHint={station.state.line}
+              />
+            </div>
             <aside className="ssn-side">
               <SessionCard
                 code={session?.code ?? null}

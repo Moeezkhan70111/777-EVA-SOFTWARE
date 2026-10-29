@@ -1,112 +1,107 @@
-import React from "react";
+import React, { useState } from "react";
 import { copy } from "../../../config/copy";
 import { SearchableCombobox } from "../../../components/shared/SearchableCombobox";
 import { StateView } from "../../../components/shared/StateView";
-import { PartyTypeBadge } from "../../parties/PartyTypeBadge";
-import { LastScanCard } from "../../scanStation/scanStation";
-import { LockedParty } from "../stations/LockedParty";
+import { quantityTotalLine } from "../../rawMaterial/storeVoucher";
+import { LastScans, ScanCount } from "../stations/ScanCount";
+import { ScanZone } from "../stations/ScanZone";
 import type { IssuingStation } from "../stations/useIssuingStation";
-import { RailScanBlock } from "./RailScanBlock";
-import { RailSessionCard } from "./RailSessionCard";
+import { EndStep, ScanCapture, SessionFooter, WhoStrip, useTyping } from "./RailParts";
 
-// SCAN OUT — the Issuing mode's rail:
+// SCAN OUT — the Issuing rail, in three zones (0.3.9):
 //
-//   Scan out                     (orange)
-//   Not scanning yet / Ready / Scanning, and the scanner's box
-//   who it is going to (type shown against each), Start issuing, the last session · Reprint slip
-//   — once a session starts: the locked party, its badge and the session card (0.3.8), the last
-//     scan, End session · Print slip
+//   1  WHO      GOING TO the locked party, and its type                  (orange strip)
+//   2  THE SCAN accepted / refused / waiting — waiting asks "Who is this material for?" with the
+//               party picker (type shown against each) and Start issuing; the count; the last three
+//   3  FOOTER   the session's number and total, Type a code, End session — or, waiting, the last
+//               session closed here with Reprint
 
-const PartyPick: React.FC<{ station: IssuingStation }> = ({ station }) => (
-  <>
-    <section className="sp-rail-section">
-      {station.partiesError ? (
-        <StateView kind="error" compact message={station.partiesError} onRetry={() => void station.reloadParties()} />
-      ) : (
-        <>
-          <SearchableCombobox
-            dropdown
-            value={station.partyId}
-            options={station.partyOptions}
-            placeholder={station.partyOptions.length === 0 ? copy.moveOut.noScanParties : copy.moveOut.chooseScanParty}
-            emptyLabel={copy.moveOut.noScanPartyMatch}
-            ariaLabel={copy.moveOut.scanPartyStep}
-            onChange={station.choosePartyId}
-          />
-          <PartyTypeBadge partyType={station.chosenParty?.partyType} />
-        </>
-      )}
-      <div className="sp-rail-actions">
-        <button type="button" className="btn btn-primary" onClick={() => void station.startSession()} disabled={!station.partyId}>
-          {copy.storeStation.startIssuing}
-        </button>
-      </div>
-    </section>
-    <section className="sp-rail-section" aria-label={copy.storeStation.lastSession}>
-      <span className="section-label">{copy.storeStation.lastSession}</span>
-      {station.lastSession ? (
-        <div className="sp-last-session">
-          <span>
-            <strong>{station.lastSession.session.code}</strong> · {station.lastSession.partyName ?? copy.storePage.issuedToday.noParty} ·{" "}
-            {copy.storeStation.packets(station.lastSession.packets)}
-          </span>
-          <button type="button" className="btn btn-secondary btn-sm" onClick={() => void station.reprintLast()}>
-            {copy.storeStation.reprintSlip}
-          </button>
-        </div>
-      ) : (
-        <p className="field-help">{copy.storeStation.noLastSession}</p>
-      )}
-    </section>
-  </>
+const StartIssuing: React.FC<{ station: IssuingStation }> = ({ station }) => (
+  <div className="sz-start">
+    {station.partiesError ? (
+      <StateView kind="error" compact message={station.partiesError} onRetry={() => void station.reloadParties()} />
+    ) : (
+      <SearchableCombobox
+        dropdown
+        value={station.partyId}
+        options={station.partyOptions}
+        placeholder={station.partyOptions.length === 0 ? copy.moveOut.noScanParties : copy.moveOut.chooseScanParty}
+        emptyLabel={copy.moveOut.noScanPartyMatch}
+        ariaLabel={copy.moveOut.scanPartyStep}
+        onChange={station.choosePartyId}
+      />
+    )}
+    <button type="button" className="btn btn-primary sz-start-btn" onClick={() => void station.startSession()} disabled={!station.partyId}>
+      {copy.storeStation.startIssuing}
+    </button>
+  </div>
 );
 
-const LockedSession: React.FC<{ station: IssuingStation }> = ({ station }) => {
+/** Waiting: the last session this computer closed, to reprint its slip. */
+const LastSessionFooter: React.FC<{ station: IssuingStation }> = ({ station }) => (
+  <footer className="sp-foot" aria-label={copy.storeStation.lastSession}>
+    {station.lastSession ? (
+      <>
+        <span className="sp-foot-line">
+          {station.lastSession.session.code} · {station.lastSession.partyName ?? copy.storePage.issuedToday.noParty} ·{" "}
+          {copy.storeStation.packets(station.lastSession.packets)}
+        </span>
+        <button type="button" className="btn btn-secondary" onClick={() => void station.reprintLast()}>
+          {copy.storeStation.reprintSlip}
+        </button>
+      </>
+    ) : (
+      <span className="sp-foot-line">{copy.storeStation.noLastSession}</span>
+    )}
+  </footer>
+);
+
+const IssuingFooter: React.FC<{ station: IssuingStation; typing: boolean; onToggleTyping: () => void }> = ({ station, typing, onToggleTyping }) => {
+  const [ending, setEnding] = useState(false);
   const { session, summary } = station;
-  if (!session) return null;
-  return (
-    <>
-      <section className="sp-rail-section">
-        <LockedParty party={station.lockedParty} />
-        <RailSessionCard
-          code={session.code}
-          packets={summary?.totalPackets ?? 0}
-          byMaterial={summary?.byMaterial ?? []}
-          countLabel={copy.storePage.issued}
-        />
-      </section>
-      <section className="sp-rail-section">
-        <LastScanCard title={copy.storeStation.lastScan} row={station.rows[0] ?? null} />
-      </section>
-      <section className="sp-rail-section">
-        <div className="sp-rail-actions">
-          <button type="button" className="btn btn-secondary" onClick={() => void station.endSession()}>
-            {copy.storeStation.endSession}
-          </button>
-          <button type="button" className="btn btn-secondary" onClick={station.print} disabled={!summary || summary.totalPackets === 0}>
-            {copy.storeStation.printSlip}
-          </button>
-        </div>
-      </section>
-    </>
-  );
+  if (!session || !station.locked) return <LastSessionFooter station={station} />;
+  const quantity = summary && summary.byMaterial.length > 0 ? quantityTotalLine(summary.byMaterial) : "—";
+  if (ending) {
+    return (
+      <EndStep
+        code={session.code}
+        packets={copy.storeStation.packets(summary?.totalPackets ?? 0)}
+        quantity={quantity}
+        canPrint={Boolean(summary && summary.totalPackets > 0)}
+        onPrint={station.print}
+        onEnd={() => void station.endSession().then(() => setEnding(false))}
+        onKeep={() => setEnding(false)}
+      />
+    );
+  }
+  return <SessionFooter line={copy.storeScan.sessionLine(session.code, quantity)} typing={typing} onToggleTyping={onToggleTyping} onEnd={() => setEnding(true)} />;
 };
 
-export const ScanOutRail: React.FC<{ station: IssuingStation; hidden: boolean }> = ({ station, hidden }) => (
-  <aside className="sp-rail" aria-label={copy.storePage.scanOut} hidden={hidden}>
-    <header className="sp-rail-head sp-rail-head--out">
-      <h2 className="sp-rail-title">{copy.storePage.scanOut}</h2>
-      <p className="sp-rail-line">{copy.storePage.scanOutLine}</p>
-    </header>
-    {station.sessionError ? (
-      <section className="sp-rail-section">
-        <StateView kind="error" compact message={station.sessionError} onRetry={() => void station.reloadSession()} />
-      </section>
-    ) : (
-      <>
-        <RailScanBlock state={station.state} feedback={station.feedback} scanBox={station.scanBox} />
-        {station.locked ? <LockedSession station={station} /> : <PartyPick station={station} />}
-      </>
-    )}
-  </aside>
-);
+export const ScanOutRail: React.FC<{ station: IssuingStation; hidden: boolean }> = ({ station, hidden }) => {
+  const { typing, toggle } = useTyping(station.scanBox);
+  const who = station.lockedParty ?? station.chosenParty;
+  return (
+    <aside className="sp-rail" aria-label={copy.storePage.scanOut} hidden={hidden}>
+      <WhoStrip mode="out" label={copy.storeScan.goingTo} name={who?.partyName ?? null} partyType={who?.partyType} />
+      {station.sessionError ? (
+        <div className="sp-rail-scan">
+          <StateView kind="error" compact message={station.sessionError} onRetry={() => void station.reloadSession()} />
+        </div>
+      ) : (
+        <div className="sp-rail-scan">
+          <ScanZone mode="out" outcome={station.outcome} state={station.state} doneWord={copy.storeScan.issued} notDoneWord={copy.storeScan.notIssued}>
+            {station.locked ? null : <StartIssuing station={station} />}
+          </ScanZone>
+          {station.locked ? (
+            <>
+              <ScanCount count={station.summary?.totalPackets ?? 0} label={copy.storeScan.packetsIssued} unchanged={station.outcome.kind === "refused"} />
+              <LastScans rows={station.rows} />
+            </>
+          ) : null}
+          <ScanCapture scanBox={station.scanBox} canScan={station.locked} hint={station.state.line} typing={typing} />
+        </div>
+      )}
+      <IssuingFooter station={station} typing={typing} onToggleTyping={toggle} />
+    </aside>
+  );
+};

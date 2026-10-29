@@ -1,23 +1,22 @@
-import React from "react";
+import React, { useState } from "react";
 import { copy } from "../../../config/copy";
 import { SearchableCombobox } from "../../../components/shared/SearchableCombobox";
 import { StateView } from "../../../components/shared/StateView";
-import { PartyTypeBadge } from "../../parties/PartyTypeBadge";
-import { LastScanCard } from "../../scanStation/scanStation";
+import { quantityTotalLine } from "../../rawMaterial/storeVoucher";
+import { LastScans, ScanCount } from "../stations/ScanCount";
+import { ScanZone } from "../stations/ScanZone";
 import type { ReceivingStation } from "../stations/useReceivingStation";
-import { RailScanBlock } from "./RailScanBlock";
-import { RailSessionCard } from "./RailSessionCard";
+import { EndStep, ScanCapture, SessionFooter, WhoStrip, useTyping } from "./RailParts";
 
-// SCAN IN — the Receiving mode's rail, always on screen beside its work area:
+// SCAN IN — the Receiving rail, in three zones (0.3.9). An operator scans, hears the beep, glances
+// up for half a second, and needs one answer: did it take, and was it the right packet.
 //
-//   Scan in                      (teal)
-//   Not scanning yet / Ready / Scanning, and the scanner's box
-//   the session: supplier + type, RMI number, packets and quantity   — or the supplier to start one
-//   the last scan
-//   End session · Print slip
+//   1  WHO      FROM the supplier, and its type                          (teal strip)
+//   2  THE SCAN accepted / refused / waiting; the count; the last three scans
+//   3  FOOTER   the session's number and total, Type a code, End session (quiet)
 
-const SupplierPick: React.FC<{ station: ReceivingStation }> = ({ station }) => (
-  <section className="sp-rail-section">
+const StartReceiving: React.FC<{ station: ReceivingStation }> = ({ station }) => (
+  <div className="sz-start">
     <SearchableCombobox
       dropdown
       value={station.partyId}
@@ -26,61 +25,59 @@ const SupplierPick: React.FC<{ station: ReceivingStation }> = ({ station }) => (
       ariaLabel={copy.storePage.supplier}
       placeholder={station.supplierOptions.length === 0 ? copy.storePage.noSuppliers : copy.storePage.chooseSupplier}
     />
-    <PartyTypeBadge partyType={station.suppliers.find((party) => party.id === station.partyId)?.partyType} />
-    <div className="sp-rail-actions">
-      <button type="button" className="btn btn-primary" onClick={() => void station.startSession()} disabled={station.busy || !station.partyId}>
-        {copy.storeStation.startSession}
-      </button>
-    </div>
-  </section>
+    <button type="button" className="btn btn-primary sz-start-btn" onClick={() => void station.startSession()} disabled={station.busy || !station.partyId}>
+      {copy.storeStation.startSession}
+    </button>
+  </div>
 );
 
-const OpenSession: React.FC<{ station: ReceivingStation }> = ({ station }) => {
+const ReceivingFooter: React.FC<{ station: ReceivingStation; typing: boolean; onToggleTyping: () => void }> = ({ station, typing, onToggleTyping }) => {
+  const [ending, setEnding] = useState(false);
   const { session, summary } = station;
-  if (!session) return null;
-  return (
-    <>
-      <section className="sp-rail-section">
-        <RailSessionCard
-          party={{ name: session.partyName, type: station.sessionSupplier?.partyType }}
-          code={session.code}
-          packets={summary?.totalPackets ?? 0}
-          byMaterial={summary?.byMaterial ?? []}
-          countLabel={copy.storePage.received}
-        />
-      </section>
-      <section className="sp-rail-section">
-        <LastScanCard title={copy.storeStation.lastScan} row={station.rows[0] ?? null} />
-      </section>
-      <section className="sp-rail-section">
-        <div className="sp-rail-actions">
-          <button type="button" className="btn btn-secondary" onClick={() => void station.endSession()} disabled={station.busy}>
-            {copy.storeStation.endSession}
-          </button>
-          <button type="button" className="btn btn-secondary" onClick={station.print} disabled={!summary}>
-            {copy.storeStation.printSlip}
-          </button>
-        </div>
-      </section>
-    </>
-  );
+  if (!session || !station.open) return null;
+  const quantity = summary && summary.byMaterial.length > 0 ? quantityTotalLine(summary.byMaterial) : "—";
+  if (ending) {
+    return (
+      <EndStep
+        code={session.code}
+        packets={copy.storeStation.packets(summary?.totalPackets ?? 0)}
+        quantity={quantity}
+        canPrint={Boolean(summary)}
+        onPrint={station.print}
+        onEnd={() => void station.endSession().then(() => setEnding(false))}
+        onKeep={() => setEnding(false)}
+      />
+    );
+  }
+  return <SessionFooter line={copy.storeScan.sessionLine(session.code, quantity)} typing={typing} onToggleTyping={onToggleTyping} onEnd={() => setEnding(true)} />;
 };
 
-export const ScanInRail: React.FC<{ station: ReceivingStation; hidden: boolean }> = ({ station, hidden }) => (
-  <aside className="sp-rail" aria-label={copy.storePage.scanIn} hidden={hidden}>
-    <header className="sp-rail-head sp-rail-head--in">
-      <h2 className="sp-rail-title">{copy.storePage.scanIn}</h2>
-      <p className="sp-rail-line">{copy.storePage.scanInLine}</p>
-    </header>
-    {station.loadError ? (
-      <section className="sp-rail-section">
-        <StateView kind="error" compact message={station.loadError} onRetry={() => void station.reload()} />
-      </section>
-    ) : (
-      <>
-        <RailScanBlock state={station.state} feedback={station.feedback} scanBox={station.scanBox} />
-        {station.open ? <OpenSession station={station} /> : <SupplierPick station={station} />}
-      </>
-    )}
-  </aside>
-);
+export const ScanInRail: React.FC<{ station: ReceivingStation; hidden: boolean }> = ({ station, hidden }) => {
+  const { typing, toggle } = useTyping(station.scanBox);
+  const chosen = station.session?.partyName ?? station.suppliers.find((party) => party.id === station.partyId)?.partyName ?? null;
+  const chosenType = station.sessionSupplier?.partyType ?? station.suppliers.find((party) => party.id === station.partyId)?.partyType;
+  return (
+    <aside className="sp-rail" aria-label={copy.storePage.scanIn} hidden={hidden}>
+      <WhoStrip mode="in" label={copy.storeScan.from} name={chosen} partyType={chosenType} />
+      {station.loadError ? (
+        <div className="sp-rail-scan">
+          <StateView kind="error" compact message={station.loadError} onRetry={() => void station.reload()} />
+        </div>
+      ) : (
+        <div className="sp-rail-scan">
+          <ScanZone mode="in" outcome={station.outcome} state={station.state} doneWord={copy.storeScan.received} notDoneWord={copy.storeScan.notReceived}>
+            {station.open ? null : <StartReceiving station={station} />}
+          </ScanZone>
+          {station.open ? (
+            <>
+              <ScanCount count={station.summary?.totalPackets ?? 0} label={copy.storeScan.packetsReceived} unchanged={station.outcome.kind === "refused"} />
+              <LastScans rows={station.rows} />
+            </>
+          ) : null}
+          <ScanCapture scanBox={station.scanBox} canScan={station.open} hint={station.state.line} typing={typing} />
+        </div>
+      )}
+      <ReceivingFooter station={station} typing={typing} onToggleTyping={toggle} />
+    </aside>
+  );
+};

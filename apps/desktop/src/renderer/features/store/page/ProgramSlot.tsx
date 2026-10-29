@@ -43,17 +43,18 @@ export const ProgramRail: React.FC<{ store: StoreProgram; mode: StoreMode; token
   }
   return (
     <aside className="sp-rail" aria-label={copy.storePage.scanOut}>
-      <header className="sp-rail-head sp-rail-head--out">
-        <h2 className="sp-rail-title">{copy.storePage.scanOut}</h2>
-        <p className="sp-rail-line">{copy.storePage.scanOutLine}</p>
+      <header className="sp-who sp-who--out">
+        <span className="sp-who-label">{copy.storePage.scanOut}</span>
       </header>
-      <section className="sp-rail-section sp-state sp-state--idle">
-        <h3 className="sp-state-title" data-testid="scan-state">
-          {copy.storeStation.issuing.idleTitle}
-        </h3>
-        <p className="sp-state-line">{copy.storePage.programs.scanOutPaused(program.code)}</p>
-        <p className="field-help">{copy.storePage.programs.closeToResume}</p>
-      </section>
+      <div className="sp-rail-scan">
+        <section className="sz sz--out sz--waiting" data-testid="scan-zone" data-state="waiting">
+          <p className="sz-kicker" data-testid="scan-state">
+            {copy.storeStation.issuing.idleTitle}
+          </p>
+          <p className="sz-question">{copy.storePage.programs.scanOutPaused(program.code)}</p>
+          <p className="sz-happened">{copy.storePage.programs.closeToResume}</p>
+        </section>
+      </div>
     </aside>
   );
 };

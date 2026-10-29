@@ -261,8 +261,11 @@ describe("RawMaterialOutputPage", () => {
 
     expect(rawMaterialIssueScan).toHaveBeenCalledTimes(1);
     expect(rawMaterialIssueScan.mock.calls[0][1]).toMatchObject({ issuedToPartyId: "party-contractor" });
-    await waitFor(() => expect(screen.getByTestId("scan-status")).toHaveTextContent("ISSUED"));
-    expect(screen.getByText(/sent to ASLAM UPPER MAKER/i)).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByTestId("scan-zone")).toHaveAttribute("data-state", "accepted"));
+    // Said in words, not by colour: Issued, the material, how much, the packet.
+    expect(screen.getByTestId("scan-zone")).toHaveTextContent("Issued");
+    expect(screen.getByTestId("scan-zone")).toHaveTextContent("RUBBER UPPER — SK6 — RED — 7/10");
+    expect(screen.getByTestId("scan-zone")).toHaveTextContent(LABEL);
   });
 
   it("End session frees the party: the picker comes back and scanning stops", async () => {
@@ -315,8 +318,9 @@ describe("RawMaterialOutputPage", () => {
 
     await scanCode(LABEL);
 
-    await waitFor(() => expect(screen.getByTestId("scan-status")).toHaveTextContent("CHOOSE A PARTY"));
-    expect(screen.getByText(/End the session and start a new one/)).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("Not issued"));
+    expect(screen.getByRole("alert")).toHaveTextContent("Nobody is chosen to send it to");
+    expect(screen.getByRole("alert")).toHaveTextContent(/End the session and start a new one/);
   });
 
   it("offers only active suppliers and contractors to move out to", async () => {
@@ -342,7 +346,7 @@ describe("RawMaterialOutputPage", () => {
 
     expect(rawMaterialIssueScan).toHaveBeenCalledTimes(1);
     expect(rawMaterialIssueScan.mock.calls[0][0]).toBe(LABEL);
-    await waitFor(() => expect(screen.getByTestId("scan-status")).toHaveTextContent("ISSUED"));
+    await waitFor(() => expect(screen.getByTestId("scan-zone")).toHaveAttribute("data-state", "accepted"));
     expect((screen.getByLabelText("Scanner input") as HTMLInputElement).value).toBe("");
   });
 
@@ -368,8 +372,8 @@ describe("RawMaterialOutputPage", () => {
 
     await scanCode("SK6_RED_7/10_000001");
 
-    await waitFor(() => expect(screen.getByTestId("scan-status")).toHaveTextContent("NOT A RAW MATERIAL QR"));
-    expect(screen.getByText(/Store Move Out/)).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("This is not a raw material label"));
+    expect(screen.getByRole("alert")).toHaveTextContent(/Store Move Out/);
   });
 
   it("a packet already issued is refused and the station stays ready", async () => {
@@ -382,7 +386,10 @@ describe("RawMaterialOutputPage", () => {
     await scanCode(LABEL);
 
     expect(rawMaterialIssueScan).toHaveBeenCalledTimes(2);
-    await waitFor(() => expect(screen.getByTestId("scan-status")).toHaveTextContent("NOT IN STORE"));
+    // A double scan is explained by the first one, right there in the session.
+    await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("This packet has already gone out"));
+    expect(screen.getByRole("alert")).toHaveTextContent(/You scanned it at .+, as packet 1 of this session\./);
+    expect(screen.getByRole("alert")).toHaveTextContent("Put it aside and scan the next one.");
     expect((screen.getByLabelText("Scanner input") as HTMLInputElement).value).toBe("");
   });
 

@@ -7,10 +7,11 @@ import { playScanSound } from "../../../utils/playScanSound";
 import { partyOption } from "../../parties/partyOption";
 import { openIssueSlipPrintWindow } from "../../rawMaterial/issueSlip";
 import { useScanBox, type ScanBox } from "../../scanStation/useScanBox";
-import type { ScanStationFeedback, StationScanRow } from "../../scanStation/scanStation";
+import type { StationScanRow } from "../../scanStation/scanStation";
 import type { SearchableComboboxOption } from "../../../components/shared/SearchableCombobox";
 import type { Party, RawMaterialIssueSession, RawMaterialIssueSessionRow, RawMaterialIssueSessionSummary } from "../../../types/desktopApi";
-import { ISSUING_IDLE, choosePartyFirst, issuingFeedbackFor } from "./issuingFeedback";
+import { choosePartyFirst, issuingOutcomeFor } from "./issuingOutcome";
+import { WAITING, type ScanOutcome } from "./scanOutcome";
 import { issuingScanState, type ScanState } from "./scanState";
 import { useIssueSession } from "./useIssueSession";
 
@@ -46,8 +47,8 @@ export interface IssuingStation {
   /** Prints any session's slip again — the last one, or one from Issued today. */
   reprint: (sessionId: string) => Promise<void>;
   reprintLast: () => Promise<void>;
-  feedback: ScanStationFeedback;
-  panelFeedback: ScanStationFeedback;
+  /** The last scan's answer: waiting until the first scan of this sitting. */
+  outcome: ScanOutcome;
   state: ScanState;
   scanBox: ScanBox;
   rows: StationScanRow[];
@@ -100,8 +101,8 @@ export const useIssuingStation = ({ token, username, active, onSessionChange, on
   const api = useDesktopApi();
   const { push } = useNotifications();
   const { parties, partiesError, reloadParties } = useIssueParties();
-  const [feedback, setFeedback] = useState<ScanStationFeedback>(ISSUING_IDLE);
-  const run = useIssueSession({ token, onStarted: () => setFeedback(ISSUING_IDLE) });
+  const [outcome, setOutcome] = useState<ScanOutcome>(WAITING);
+  const run = useIssueSession({ token, onStarted: () => setOutcome(WAITING) });
   const { session, summary, sessionPartyId, partyId, setPartyId, locked } = run;
 
   useEffect(() => {
@@ -118,26 +119,28 @@ export const useIssuingStation = ({ token, username, active, onSessionChange, on
       if (!session || session.status !== "OPEN") return false;
       // No party, no move: turned away here without a call. The main process refuses it too.
       if (!sessionPartyId) {
-        setFeedback((previous) => choosePartyFirst(previous.seq + 1));
+        setOutcome((previous) => choosePartyFirst(previous.seq + 1, code));
         playScanSound("error");
         return false;
       }
       const result = await api.rawMaterialIssueScan(code, { token, sessionId: session.id, issuedToPartyId: sessionPartyId });
-      setFeedback((previous) => issuingFeedbackFor(result, previous.seq + 1));
+      // The session as it stood before this scan: a double scan is explained by the first one.
+      const scans = (summary?.scans ?? []).map((scan) => ({ qrId: scan.qrId, at: scan.issuedAt }));
+      setOutcome((previous) => issuingOutcomeFor(result, scans, previous.seq + 1));
       playScanSound(result.accepted ? "success" : "error");
       if (result.accepted) await run.refreshSummary(session.id);
       return result.accepted;
     },
-    [api, onMachineProgramScan, run, session, sessionPartyId, token]
+    [api, onMachineProgramScan, run, session, sessionPartyId, summary, token]
   );
 
-  const scanBox = useScanBox({ armed: active && locked, onScan: runScan, refocusKey: feedback.seq });
+  const scanBox = useScanBox({ armed: active && locked, onScan: runScan, refocusKey: outcome.seq });
   const { focusScanner } = scanBox;
 
   const choosePartyId = useCallback(
     (next: string) => {
       setPartyId(next);
-      setFeedback(ISSUING_IDLE);
+      setOutcome(WAITING);
       // Hand the keyboard straight back to the scanner once the party is chosen.
       setTimeout(focusScanner, 0);
     },
@@ -173,8 +176,7 @@ export const useIssuingStation = ({ token, username, active, onSessionChange, on
     parties, partyOptions, partiesError, reloadParties, partyId, choosePartyId,
     chosenParty: parties.find((party) => party.id === partyId), lockedParty, locked,
     session, summary, sessionError: run.sessionError, reloadSession: run.reload, startSession: run.startSession, endSession, print,
-    lastSession: run.lastSession, reprint, reprintLast, feedback,
-    panelFeedback: feedback.tone === "idle" ? { ...feedback, title: state.title, message: state.line } : feedback,
+    lastSession: run.lastSession, reprint, reprintLast, outcome,
     state, scanBox, rows: rowsOf(summary),
   };
 };

@@ -7,10 +7,11 @@ import { playScanSound } from "../../../utils/playScanSound";
 import { partyOption } from "../../parties/partyOption";
 import { openReceivingReceiptPrintWindow } from "../../rawMaterial/receivingReceipt";
 import { useScanBox, type ScanBox } from "../../scanStation/useScanBox";
-import type { ScanStationFeedback, StationScanRow } from "../../scanStation/scanStation";
+import type { StationScanRow } from "../../scanStation/scanStation";
 import type { SearchableComboboxOption } from "../../../components/shared/SearchableCombobox";
 import type { Party, RawMaterialReceivingSession, RawMaterialReceivingSessionSummary } from "../../../types/desktopApi";
-import { RECEIVING_IDLE, receivingFeedbackFor } from "./receivingFeedback";
+import { receivingOutcomeFor } from "./receivingOutcome";
+import { WAITING, type ScanOutcome } from "./scanOutcome";
 import { receivingScanState, type ScanState } from "./scanState";
 
 // THE RECEIVING STATION — everything Move In does, without how it looks: the supplier, the session,
@@ -40,10 +41,8 @@ export interface ReceivingStation {
   startSession: () => Promise<void>;
   endSession: () => Promise<void>;
   print: () => void;
-  /** The last scan's answer; idle until the first scan. */
-  feedback: ScanStationFeedback;
-  /** The scan panel's headline: the scan state while nothing has been scanned, the answer after. */
-  panelFeedback: ScanStationFeedback;
+  /** The last scan's answer: waiting until the first scan of this sitting. */
+  outcome: ScanOutcome;
   state: ScanState;
   scanBox: ScanBox;
   rows: StationScanRow[];
@@ -70,7 +69,7 @@ export const useReceivingStation = ({ token, username, active }: { token: string
   const [partyId, setPartyId] = useState("");
   const [session, setSession] = useState<RawMaterialReceivingSession | null>(null);
   const [summary, setSummary] = useState<RawMaterialReceivingSessionSummary | null>(null);
-  const [feedback, setFeedback] = useState<ScanStationFeedback>(RECEIVING_IDLE);
+  const [outcome, setOutcome] = useState<ScanOutcome>(WAITING);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const open = session?.status === "OPEN";
@@ -112,7 +111,7 @@ export const useReceivingStation = ({ token, username, active }: { token: string
         return;
       }
       setSession(result.session);
-      setFeedback(RECEIVING_IDLE);
+      setOutcome(WAITING);
       await refreshSummary(result.session.id);
     } finally {
       setBusy(false);
@@ -135,27 +134,28 @@ export const useReceivingStation = ({ token, username, active }: { token: string
     async (code: string): Promise<boolean> => {
       if (!session || session.status !== "OPEN") return false;
       const result = await api.rawMaterialReceiptScan(code, { token, sessionId: session.id });
-      setFeedback((previous) => receivingFeedbackFor(result, previous.seq + 1));
+      // The session as it stood before this scan: a double scan is explained by the first one.
+      const scans = (summary?.scans ?? []).map((scan) => ({ qrId: scan.qrId, at: scan.receivedAt }));
+      setOutcome((previous) => receivingOutcomeFor(result, scans, previous.seq + 1));
       playScanSound(result.accepted ? "success" : "error");
       if (result.accepted) await refreshSummary(session.id);
       return result.accepted;
     },
-    [api, refreshSummary, session, token]
+    [api, refreshSummary, session, summary, token]
   );
 
-  const scanBox = useScanBox({ armed: active && open, onScan: runScan, refocusKey: feedback.seq });
+  const scanBox = useScanBox({ armed: active && open, onScan: runScan, refocusKey: outcome.seq });
 
   const print = useCallback(() => {
     if (summary && !openReceivingReceiptPrintWindow(summary, username)) push("error", copy.toast.popupBlocked, copy.storeStation.popupBlocked);
   }, [push, summary, username]);
 
   const state = receivingScanState({ canScan: open, partyName: session?.partyName ?? null, packets: open ? (summary?.totalPackets ?? 0) : 0 });
-  const panelFeedback = feedback.tone === "idle" ? { ...feedback, title: state.title, message: state.line } : feedback;
   const supplierOptions = useMemo(() => suppliers.map(partyOption), [suppliers]);
   const sessionSupplier = suppliers.find((party) => party.id === session?.partyId);
 
   return {
     suppliers, supplierOptions, partyId, setPartyId, session, summary, sessionSupplier, open, busy, loadError,
-    reload, startSession, endSession, print, feedback, panelFeedback, state, scanBox, rows: rowsOf(summary),
+    reload, startSession, endSession, print, outcome, state, scanBox, rows: rowsOf(summary),
   };
 };

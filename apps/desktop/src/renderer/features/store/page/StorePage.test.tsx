@@ -46,6 +46,12 @@ function installApi({ receivingOpen = true, receivedPackets = 2 } = {}) {
     getRawMaterialIssueSessionSummary: vi.fn(async () => null),
     listRawMaterialIssueSessions: vi.fn(async () => [ISSUE_ROW]),
     startRawMaterialIssueSession: vi.fn(),
+    // The first scan of LABEL takes; scanning it again is the double scan.
+    rawMaterialReceiptScan: vi.fn(async (code: string) =>
+      api.rawMaterialReceiptScan.mock.calls.length === 1
+        ? { accepted: true, outcome: "RECEIVED", qrId: code, itemDisplayName: "DANA — EVA — RED", packingQuantity: 25, packingUnitCode: "KG" }
+        : { accepted: false, outcome: "ALREADY_IN_STORE", qrId: code, reason: "This packet has already been received." }
+    ),
   };
   Object.defineProperty(window, "desktop", { value: { versions: { node: "22", chrome: "128", electron: "43" }, api }, configurable: true });
   return api;
@@ -167,50 +173,106 @@ describe("Store page — the two modes", () => {
   });
 });
 
-describe("Store page — the scan state says the truth", () => {
+describe("Store page — the scan rail, in three zones", () => {
   afterEach(() => vi.restoreAllMocks());
 
-  it("is Not scanning yet with nothing started, and the box is off", async () => {
+  it("waits with a question while nothing is started: who, the supplier picker, and a large Start", async () => {
     installApi({ receivingOpen: false });
     renderPage();
     const rail = screen.getByRole("complementary", { name: "Scan in" });
-    await waitFor(() => expect(within(rail).getByTestId("scan-state")).toHaveTextContent("Not scanning yet"));
-    expect(within(rail).getByLabelText("Scanner input")).toBeDisabled();
+    await waitFor(() => expect(within(rail).getByTestId("scan-zone")).toHaveAttribute("data-state", "waiting"));
+    expect(within(rail).getByTestId("who-strip")).toHaveTextContent("FromNot chosen yet");
+    expect(within(rail).getByTestId("scan-state")).toHaveTextContent("Not scanning");
+    expect(within(rail).getByText("Whose delivery is this?")).toBeInTheDocument();
     expect(within(rail).getByRole("button", { name: "Start session" })).toBeDisabled();
+    expect(within(rail).getByLabelText("Scanner input")).toBeDisabled();
+    // No session, nothing to count, nothing to end.
+    expect(within(rail).queryByTestId("scan-count")).toBeNull();
+    expect(within(rail).queryByRole("button", { name: "End session" })).toBeNull();
   });
 
-  it("is Ready with a session open and nothing in it, naming the supplier", async () => {
-    installApi({ receivedPackets: 0 });
-    renderPage();
-    const rail = screen.getByRole("complementary", { name: "Scan in" });
-    await waitFor(() => expect(within(rail).getByTestId("scan-state")).toHaveTextContent("Ready"));
-    expect(within(rail).getByText("Scan a packet from SHEHZAD RUBBER.")).toBeInTheDocument();
-    expect(within(rail).getByLabelText("Scanner input")).toBeEnabled();
-  });
-
-  it("is Scanning, with the count, and the session card says who, what kind, and how much", async () => {
+  it("with a session open: FROM the supplier and its type, ready, the count, and a quiet footer", async () => {
     installApi();
     renderPage();
     const rail = screen.getByRole("complementary", { name: "Scan in" });
-    await waitFor(() => expect(within(rail).getByTestId("scan-state")).toHaveTextContent("Scanning"));
-    const card = within(rail).getByTestId("rail-session");
-    expect(card).toHaveTextContent("SHEHZAD RUBBER");
-    expect(card).toHaveTextContent("RMI-000191");
-    expect(card).toHaveTextContent("2 packets");
-    expect(card).toHaveTextContent("50 KG");
-    expect(within(card).getByTestId("party-type-badge")).toHaveTextContent("Supplier");
-    expect(within(rail).getByRole("button", { name: "End session" })).toBeInTheDocument();
-    expect(within(rail).getByRole("button", { name: "Print slip" })).toBeInTheDocument();
+    await waitFor(() => expect(within(rail).getByTestId("scan-count")).toHaveTextContent("2"));
+    const who = within(rail).getByTestId("who-strip");
+    expect(who).toHaveTextContent("From");
+    expect(who).toHaveTextContent("SHEHZAD RUBBER");
+    expect(within(who).getByTestId("party-type-badge")).toHaveTextContent("Supplier");
+    expect(within(rail).getByText("Scan the next packet from SHEHZAD RUBBER.")).toBeInTheDocument();
+    expect(within(rail).getByTestId("scan-count")).toHaveTextContent("packets received");
+    // The session number and the total belong to the footer, not the scanning view.
+    expect(within(rail).getByTestId("session-line")).toHaveTextContent("RMI-000191 · 50 KG");
+    expect(within(rail).getByRole("button", { name: "Type a code" })).toBeInTheDocument();
+    expect(within(rail).queryByRole("button", { name: "Print slip" })).toBeNull();
   });
 
-  it("on Scan out shows the type against each party, Start issuing, and the last session to reprint", async () => {
+  it("answers a scan in the half-second: accepted, then the double scan refused with the count unchanged", async () => {
+    installApi();
+    renderPage();
+    const rail = screen.getByRole("complementary", { name: "Scan in" });
+    const box = await within(rail).findByLabelText("Scanner input");
+    await waitFor(() => expect(box).toBeEnabled());
+
+    await act(async () => {
+      fireEvent.change(box, { target: { value: "RM_SHEHZAD_DANARED_000012" } });
+      fireEvent.keyDown(box, { key: "Enter" });
+    });
+    await waitFor(() => expect(within(rail).getByTestId("scan-zone")).toHaveAttribute("data-state", "accepted"));
+    expect(within(rail).getByTestId("scan-zone")).toHaveTextContent("ReceivedDANA — EVA — RED25 KGRM_SHEHZAD_DANARED_000012");
+
+    await act(async () => {
+      fireEvent.change(box, { target: { value: "RM_SHEHZAD_DANARED_000012" } });
+      fireEvent.keyDown(box, { key: "Enter" });
+    });
+    const alert = await within(rail).findByRole("alert");
+    expect(alert).toHaveTextContent("Not received");
+    expect(alert).toHaveTextContent("This packet is already in");
+    expect(alert).toHaveTextContent("Put it aside and scan the next one.");
+    expect(within(rail).getByTestId("scan-count")).toHaveTextContent("packets received — unchanged");
+  });
+
+  it("puts Print slip in the End session step, and ends only when asked", async () => {
+    const api = installApi();
+    const closeRawMaterialReceivingSession = vi.fn(async () => ({ ...RECEIVING, status: "CLOSED" as const }));
+    Object.assign(api, { closeRawMaterialReceivingSession });
+    renderPage();
+    const rail = screen.getByRole("complementary", { name: "Scan in" });
+    fireEvent.click(await within(rail).findByRole("button", { name: "End session" }));
+
+    const step = within(rail).getByRole("region", { name: "End RMI-000191?" });
+    expect(within(step).getByRole("button", { name: "Print slip" })).toBeEnabled();
+    fireEvent.click(within(step).getByRole("button", { name: "Keep scanning" }));
+    expect(closeRawMaterialReceivingSession).not.toHaveBeenCalled();
+
+    fireEvent.click(within(rail).getByRole("button", { name: "End session" }));
+    await act(async () => {
+      fireEvent.click(within(within(rail).getByRole("region", { name: "End RMI-000191?" })).getByRole("button", { name: "End session" }));
+    });
+    expect(closeRawMaterialReceivingSession).toHaveBeenCalledWith("rs-1");
+  });
+
+  it("shows the scanner's box only when Type a code is pressed", async () => {
+    installApi();
+    renderPage();
+    const rail = screen.getByRole("complementary", { name: "Scan in" });
+    const box = await within(rail).findByLabelText("Scanner input");
+    expect(box.closest(".sp-capture")).toHaveClass("sp-capture--unseen");
+    fireEvent.click(within(rail).getByRole("button", { name: "Type a code" }));
+    expect(box.closest(".sp-capture")).not.toHaveClass("sp-capture--unseen");
+    expect(within(rail).getByRole("button", { name: "Hide the box" })).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("on Scan out waits asking who it is for, with the type against each party, Start issuing, and the last session to reprint", async () => {
     const api = installApi();
     api.listRawMaterialIssueSessions.mockImplementation(async () => [ISSUE_ROW]);
     renderPage({ start: "issuing" });
     const rail = screen.getByRole("complementary", { name: "Scan out" });
-    expect(within(rail).getByTestId("scan-state")).toHaveTextContent("Not scanning yet");
+    expect(within(rail).getByTestId("who-strip")).toHaveTextContent("Going toNot chosen yet");
+    expect(within(rail).getByText("Who is this material for?")).toBeInTheDocument();
     expect(within(rail).getByRole("button", { name: "Start issuing" })).toBeDisabled();
-    expect(await within(rail).findByText("RMO-000173")).toBeInTheDocument();
+    expect(await within(rail).findByText(/RMO-000173/)).toBeInTheDocument();
     expect(within(rail).getByRole("button", { name: "Reprint slip" })).toBeInTheDocument();
 
     await act(async () => {

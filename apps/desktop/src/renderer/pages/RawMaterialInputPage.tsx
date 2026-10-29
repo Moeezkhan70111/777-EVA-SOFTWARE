@@ -8,13 +8,15 @@ import {
   PlusIcon,
   RecentScansCard,
   SCAN_STATION_CSS,
-  ScanPanel,
+  ScanDock,
   SessionCard,
   StationBlocked,
   StationToolbar,
 } from "../features/scanStation/scanStation";
 import { useScannerConnected } from "../features/scanStation/useScannerConnected";
 import { useReceivingStation } from "../features/store/stations/useReceivingStation";
+import { ScanZone } from "../features/store/stations/ScanZone";
+import { copy } from "../config/copy";
 
 // Raw Material Input — receiving a supplier's delivery into the store, full-screen.
 //
@@ -122,16 +124,18 @@ export const RawMaterialInputPage: React.FC<RawMaterialInputPageProps> = ({ toke
           <StationBlocked title="Raw Material Input is not available" message={station.loadError} onRetry={() => void station.reload()} />
         ) : (
           <>
-            <ScanPanel
-              feedback={station.panelFeedback}
-              inputRef={scanBox.inputRef}
-              inputVal={scanBox.inputVal}
-              onInputChange={scanBox.setInputVal}
-              onKeyDown={scanBox.onKeyDown}
-              onFocusScanner={scanBox.focusScanner}
-              disabled={!open}
-              disabledHint={station.state.line}
-            />
+            <div className="ssn-zone">
+              <ScanZone mode="in" outcome={station.outcome} state={station.state} doneWord={copy.storeScan.received} notDoneWord={copy.storeScan.notReceived} />
+              <ScanDock
+                inputRef={scanBox.inputRef}
+                inputVal={scanBox.inputVal}
+                onInputChange={scanBox.setInputVal}
+                onKeyDown={scanBox.onKeyDown}
+                onFocusScanner={scanBox.focusScanner}
+                disabled={!open}
+                disabledHint={station.state.line}
+              />
+            </div>
             {showSessionDetails && (
               <aside className="ssn-side">
                 <SessionCard
