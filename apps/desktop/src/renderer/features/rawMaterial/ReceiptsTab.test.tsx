@@ -79,10 +79,10 @@ describe("ReceiptsTab — Deliveries received", () => {
     const onNavigate = vi.fn();
     renderTab(onNavigate);
 
-    await waitFor(() => expect(screen.getByText("A batch is open on this computer")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText("A session is open on this computer")).toBeInTheDocument());
     expect(screen.getAllByText(/RMI-000002/).length).toBeGreaterThan(0);
 
-    await userEvent.click(screen.getByRole("button", { name: "Continue batch" }));
+    await userEvent.click(screen.getByRole("button", { name: "Continue session" }));
     expect(onNavigate).toHaveBeenCalledWith("raw-material-input");
 
     // The same session's row in the table offers its own Continue action too.
@@ -97,7 +97,7 @@ describe("ReceiptsTab — Deliveries received", () => {
     const row = (await screen.findByText("RMI-000002")).closest("tr")!;
     expect(within(row).queryByRole("button", { name: "Continue" })).not.toBeInTheDocument();
     expect(row).toHaveTextContent("another terminal");
-    expect(screen.queryByText("A batch is open on this computer")).not.toBeInTheDocument();
+    expect(screen.queryByText("A session is open on this computer")).not.toBeInTheDocument();
   });
 
   it("narrows the list to open sessions only", async () => {

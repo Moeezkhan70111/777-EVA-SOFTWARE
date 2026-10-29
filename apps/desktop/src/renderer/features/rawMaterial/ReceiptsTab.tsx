@@ -462,7 +462,7 @@ export const ReceiptsTab: React.FC<ReceiptsTabProps> = ({ username, onNavigate }
               </span>
             </div>
             <button type="button" className="btn btn-sm btn-primary" onClick={continueSession}>
-              {copy.receiptsTab.continueBatch}
+              {copy.receiptsTab.continueSession}
             </button>
           </div>
         ) : null}
@@ -481,7 +481,7 @@ export const ReceiptsTab: React.FC<ReceiptsTabProps> = ({ username, onNavigate }
             <table className="data-table rm-table">
               <thead>
                 <tr>
-                  <th scope="col">{copy.receiptsTab.batchColumn}</th>
+                  <th scope="col">{copy.receiptsTab.sessionColumn}</th>
                   <th scope="col">Supplier</th>
                   <th scope="col">Started</th>
                   <th scope="col">Closed</th>

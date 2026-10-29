@@ -2,9 +2,9 @@ import { describe, expect, it } from "vitest";
 import { copy } from "../../../config/copy";
 
 // THE STORE PAGE'S WORDS (0.3.9), around its two scan panels — the switch, Issued today, Receipts,
-// the machine programs. Operators read English as a second language, standing in a noisy store: to
-// them a session is a BATCH, there is no jargon, and the only mode names are Receiving and Issuing.
-// The scan panels themselves are 0.3.7's, words included, so they are not checked here.
+// the machine programs. Operators read English as a second language, standing in a noisy store: a
+// session is a SESSION, as the 0.3.7 panels call it (owner), there is no jargon, and the only mode
+// names are Receiving and Issuing. The panels themselves are 0.3.7's, words included.
 
 /** Every string in a copy section, functions called with a sample argument. */
 const textsOf = (section: unknown): string[] => {
@@ -23,7 +23,7 @@ describe("the Store page's wording", () => {
   });
 
   it.each([
-    ["session", /\bsessions?\b/i],
+    ["batch — the panels call it a session", /\bbatch(es)?\b/i],
     ["ready", /\bready\b/i],
     ["initialize", /initiali[sz]/i],
     ["entity", /\bentit(y|ies)\b/i],
@@ -34,8 +34,8 @@ describe("the Store page's wording", () => {
     expect(texts.filter((text) => pattern.test(text))).toEqual([]);
   });
 
-  it("says batch on the mode switch", () => {
-    expect(copy.storeStation.batchOpen(12)).toBe("Batch open · 12 packets");
-    expect(copy.storeStation.batchOpen(1)).toBe("Batch open · 1 packet");
+  it("says session on the mode switch, as the panels do", () => {
+    expect(copy.storeStation.sessionOpen(12)).toBe("Session open · 12 packets");
+    expect(copy.storeStation.sessionOpen(1)).toBe("Session open · 1 packet");
   });
 });

@@ -105,7 +105,7 @@ describe("Store page — layout", () => {
   it("shows each mode's session in words, the inactive one too", async () => {
     installApi();
     renderPage();
-    await waitFor(() => expect(modeButton(/Receiving/)).toHaveTextContent("Batch open · 2 packets"));
+    await waitFor(() => expect(modeButton(/Receiving/)).toHaveTextContent("Session open · 2 packets"));
     expect(modeButton(/Receiving/)).toHaveAttribute("aria-pressed", "true");
     expect(modeButton(/Issuing/)).toHaveTextContent("Nothing started");
     expect(modeButton(/Issuing/)).toHaveAttribute("aria-pressed", "false");
@@ -137,7 +137,7 @@ describe("Store page — the two modes", () => {
   it("switches to Issuing: Scan out on the right, Scan in hidden, and neither session lost", async () => {
     const api = installApi();
     renderPage();
-    await waitFor(() => expect(modeButton(/Receiving/)).toHaveTextContent("Batch open"));
+    await waitFor(() => expect(modeButton(/Receiving/)).toHaveTextContent("Session open"));
 
     fireEvent.click(modeButton(/Issuing/));
     expect(screen.getByRole("complementary", { name: "Scan Out" })).toBeVisible();
@@ -145,7 +145,7 @@ describe("Store page — the two modes", () => {
 
     fireEvent.click(modeButton(/Receiving/));
     expect(screen.getByRole("complementary", { name: "Scan Material" })).toBeVisible();
-    expect(modeButton(/Receiving/)).toHaveTextContent("Batch open · 2 packets");
+    expect(modeButton(/Receiving/)).toHaveTextContent("Session open · 2 packets");
     expect(api.getOpenRawMaterialReceivingSession).toHaveBeenCalledTimes(1);
   });
 

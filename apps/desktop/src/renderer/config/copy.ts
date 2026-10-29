@@ -1607,9 +1607,10 @@ export const copy = {
     setupTitle: "Setup",
   },
 
-  // The Store page's words about a scan panel's session, outside the panels themselves (0.3.9).
+  // The Store page's words about a scan panel's session, outside the panels themselves (0.3.9). The
+  // panels say "session", as released, and so does everything around them.
   storeStation: {
-    batchOpen: (n: number) => `Batch open · ${n.toLocaleString()} packet${n === 1 ? "" : "s"}`,
+    sessionOpen: (n: number) => `Session open · ${n.toLocaleString()} packet${n === 1 ? "" : "s"}`,
     nothingStarted: "Nothing started",
     packets: (n: number) => `${n.toLocaleString()} packet${n === 1 ? "" : "s"}`,
     reprintSlip: "Reprint slip",
@@ -1619,9 +1620,9 @@ export const copy = {
   // RECEIPTS — the deliveries received, on the Store page's Receipts tab and the Raw Material workspace.
   receiptsTab: {
     note: "Every delivery received into the store, scanned packet by packet.",
-    openHere: "A batch is open on this computer",
-    continueBatch: "Continue batch",
-    batchColumn: "Batch",
+    openHere: "A session is open on this computer",
+    continueSession: "Continue session",
+    sessionColumn: "Session",
     emptyHint: "Widen the dates, clear the status filter, or scan one in under Receiving.",
   },
 
@@ -1666,9 +1667,9 @@ export const copy = {
     },
     issuedToday: {
       title: "Issued today",
-      line: "Every batch started today, on every computer.",
-      loading: "Loading today's batches…",
-      failed: "Today's batches could not be loaded.",
+      line: "Every session started today, on every computer.",
+      loading: "Loading today's sessions…",
+      failed: "Today's sessions could not be loaded.",
       empty: "Nothing has been issued today.",
       emptyHint: "Choose who the packets are going to on the right, then press Start scanning.",
       open: "Open",
