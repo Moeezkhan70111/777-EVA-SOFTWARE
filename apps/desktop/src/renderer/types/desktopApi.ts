@@ -1707,6 +1707,17 @@ export interface DesktopApi {
   ): Promise<{ accepted: boolean; session?: RawMaterialIssueSession; reason?: string }>;
   /** This terminal's open issue session from today, or null. Never starts one. */
   getOpenRawMaterialIssueSession(): Promise<RawMaterialIssueSession | null>;
+  /**
+   * Issue sessions, newest first, with their party and packet count. thisComputerOnly limits them
+   * to this computer's (the last session it closed); otherwise every computer's (Issued today).
+   */
+  listRawMaterialIssueSessions(filters?: {
+    status?: "OPEN" | "CLOSED";
+    thisComputerOnly?: boolean;
+    dateFrom?: string;
+    dateTo?: string;
+    limit?: number;
+  }): Promise<RawMaterialIssueSessionRow[]>;
   closeRawMaterialIssueSession(sessionId: string): Promise<RawMaterialIssueSession | null>;
   getRawMaterialIssueSessionSummary(sessionId: string): Promise<RawMaterialIssueSessionSummary | null>;
   rawMaterialIssueScan(
@@ -2729,6 +2740,15 @@ export interface RawMaterialIssueSession {
   status: "OPEN" | "CLOSED";
   startedAt: string;
   closedAt: string | null;
+}
+
+/** One issue session in a list: who its packets went to and how many (Issued today, last session). */
+export interface RawMaterialIssueSessionRow {
+  session: RawMaterialIssueSession;
+  /** Its first scanned packet's party; null while it has none. */
+  partyId: string | null;
+  partyName: string | null;
+  packets: number;
 }
 
 export interface RawMaterialIssueSessionSummary {

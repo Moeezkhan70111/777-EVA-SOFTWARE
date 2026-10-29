@@ -21,6 +21,7 @@ import type {
   RawMaterialQrBatchRecord,
   RawMaterialQrRecord,
   RawMaterialIssueSession,
+  RawMaterialIssueSessionRow,
   RawMaterialIssueSessionSummary,
   RawMaterialReceivingSession,
   RawMaterialReceivingSessionSummary,
@@ -29,6 +30,7 @@ import type { MutableTransactionContext } from "./shared.js";
 import { EFFECTIVE_PACK_NAME_SQL } from "./shared.js";
 import type { TransactionContext } from "@erp/application";
 import {
+  isRawMaterialReceiptPartyType,
   RAW_MATERIAL_KIND,
   RAW_MATERIAL_QR_STATUS,
   buildRawMaterialQrId,
@@ -1035,9 +1037,12 @@ export const rawMaterialQrMethods = {
     if (!deviceId) throw new Error("Device is required to start a receiving session.");
 
     const party = this.db
-      .prepare("SELECT id FROM parties WHERE id = ? AND deleted_at IS NULL LIMIT 1")
-      .get(partyId) as { id: string } | undefined;
+      .prepare("SELECT id, party_name, party_type FROM parties WHERE id = ? AND deleted_at IS NULL LIMIT 1")
+      .get(partyId) as { id: string; party_name: string; party_type: string } | undefined;
     if (!party) throw new Error("That supplier was not found.");
+    if (!isRawMaterialReceiptPartyType(party.party_type)) {
+      throw new Error(`Only a supplier's delivery is received here, and ${party.party_name} is not a supplier. Nothing was started.`);
+    }
 
     const now = new Date().toISOString();
     this.db.exec("BEGIN IMMEDIATE TRANSACTION");
@@ -1286,6 +1291,76 @@ export const rawMaterialQrMethods = {
       .prepare("SELECT * FROM raw_material_issue_sessions WHERE id = ? LIMIT 1")
       .get(String(sessionId ?? "").trim()) as Record<string, unknown> | undefined;
     return row ? this.mapRawMaterialIssueSession(row) : null;
+  },
+
+  /**
+   * Issue sessions, newest first, each with who its packets went to and how many — "Issued today"
+   * (every computer, as Receipts lists every receiving session) and the last session this
+   * computer closed (deviceId, CLOSED, limit 1). Days are local calendar days, as on Receipts.
+   *
+   * The packets are read in ONE query for all the sessions listed, bounded by the indexed event
+   * date: a packet is scanned after its session starts, so never on an earlier UTC day.
+   */
+  listRawMaterialIssueSessions(
+    this: SqliteDatabase,
+    filters: { status?: "OPEN" | "CLOSED"; deviceId?: string; dateFrom?: string; dateTo?: string; limit?: number } = {}
+  ): RawMaterialIssueSessionRow[] {
+    const sessions = this.issueSessionsWhere(filters);
+    if (sessions.length === 0) return [];
+    const firstDay = sessions.reduce((min, s) => (s.startedAt < min ? s.startedAt : min), sessions[0].startedAt).slice(0, 10);
+    const exits = this.db
+      .prepare(
+        `SELECT session_id, json_extract(metadata_json, '$.issuedToPartyId') AS party_id FROM raw_material_qr_events
+          WHERE event_type = 'STORE_EXIT' AND event_date >= ? AND session_id IN (${sessions.map(() => "?").join(", ")})
+          ORDER BY event_ts_local ASC, rowid ASC`
+      )
+      .all(firstDay, ...sessions.map((s) => s.id)) as Array<{ session_id: string; party_id: unknown }>;
+
+    const tally = new Map<string, { packets: number; partyId: string | null }>();
+    for (const exit of exits) {
+      const entry = tally.get(exit.session_id) ?? { packets: 0, partyId: null };
+      entry.packets += 1;
+      // The session's party is its first scanned packet's; a program batch names none.
+      if (!entry.partyId && typeof exit.party_id === "string" && exit.party_id !== "") entry.partyId = exit.party_id;
+      tally.set(exit.session_id, entry);
+    }
+    return sessions.map((session) => {
+      const entry = tally.get(session.id);
+      const partyId = entry?.partyId ?? null;
+      return { session, partyId, partyName: partyId ? (this.getParty(partyId)?.partyName ?? null) : null, packets: entry?.packets ?? 0 };
+    });
+  },
+
+  issueSessionsWhere(
+    this: SqliteDatabase,
+    filters: { status?: "OPEN" | "CLOSED"; deviceId?: string; dateFrom?: string; dateTo?: string; limit?: number }
+  ): RawMaterialIssueSession[] {
+    const limit = Math.max(1, Math.min(Math.trunc(filters.limit ?? 200), 1000));
+    const where: string[] = [];
+    const params: Array<string | number> = [];
+    if (filters.status) {
+      where.push("status = ?");
+      params.push(filters.status);
+    }
+    if (filters.deviceId) {
+      where.push("device_id = ?");
+      params.push(filters.deviceId);
+    }
+    const fromIso = filters.dateFrom ? this.localDayStartIso(filters.dateFrom) : null;
+    const toIso = filters.dateTo ? this.localDayStartIso(filters.dateTo, 1) : null;
+    if (fromIso) {
+      where.push("started_at >= ?");
+      params.push(fromIso);
+    }
+    if (toIso) {
+      where.push("started_at < ?");
+      params.push(toIso);
+    }
+    const whereClause = where.length > 0 ? `WHERE ${where.join(" AND ")}` : "";
+    const rows = this.db
+      .prepare(`SELECT * FROM raw_material_issue_sessions ${whereClause} ORDER BY started_at DESC LIMIT ?`)
+      .all(...params, limit) as Array<Record<string, unknown>>;
+    return rows.map((row) => this.mapRawMaterialIssueSession(row));
   },
 
   closeRawMaterialIssueSession(this: SqliteDatabase, sessionId: string): RawMaterialIssueSession | null {

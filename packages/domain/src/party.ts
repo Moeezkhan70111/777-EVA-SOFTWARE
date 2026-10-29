@@ -11,6 +11,17 @@ export const RAW_MATERIAL_ISSUE_PARTY_TYPES: readonly PartyType[] = ['SUPPLIER',
 
 export const isRawMaterialIssuePartyType = (partyType: string): boolean =>
   (RAW_MATERIAL_ISSUE_PARTY_TYPES as readonly string[]).includes(partyType);
+
+/**
+ * Who raw material may be RECEIVED from — a Move In session or a by-hand move in: suppliers only
+ * (owner, 0.3.9). Labels are printed for suppliers alone and a packet is received only into its
+ * own supplier's session, so a session for anyone else could never receive anything. Material
+ * coming back from a contractor is Return Upper, inside its machine program, with no session.
+ */
+export const RAW_MATERIAL_RECEIPT_PARTY_TYPES: readonly PartyType[] = ['SUPPLIER'];
+
+export const isRawMaterialReceiptPartyType = (partyType: string): boolean =>
+  (RAW_MATERIAL_RECEIPT_PARTY_TYPES as readonly string[]).includes(partyType);
 export type PartyStatus = 'ACTIVE' | 'INACTIVE';
 
 export interface PartyGroup {

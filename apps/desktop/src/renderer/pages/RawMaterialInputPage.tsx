@@ -16,7 +16,7 @@ import { copy } from "../config/copy";
 import { formatDateTime } from "../utils/dates";
 import { openReceivingReceiptPrintWindow } from "../features/rawMaterial/receivingReceipt";
 import { isCompleteQr, sanitizeScanInput } from "../utils/qr";
-import { isValidRawMaterialQrId } from "@erp/domain";
+import { isRawMaterialReceiptPartyType, isValidRawMaterialQrId } from "@erp/domain";
 import {
   LastScanCard,
   PlusIcon,
@@ -144,7 +144,7 @@ export const RawMaterialInputPage: React.FC<RawMaterialInputPageProps> = ({ toke
         api.listParties({ search: "", status: "ACTIVE", page: 1, pageSize: 500 }),
         api.getOpenRawMaterialReceivingSession(),
       ]);
-      setSuppliers(parties.rows.filter((party) => party.partyType !== "CUSTOMER"));
+      setSuppliers(parties.rows.filter((party) => isRawMaterialReceiptPartyType(party.partyType)));
       setSession(openSession);
       if (openSession) {
         setPartyId(openSession.partyId);

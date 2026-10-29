@@ -1598,6 +1598,15 @@ export interface RawMaterialIssueSession {
   closedAt: string | null;
 }
 
+/** One issue session in a list: who its packets went to and how many (Issued today, last session). */
+export interface RawMaterialIssueSessionRow {
+  session: RawMaterialIssueSession;
+  /** Its first scanned packet's party; null while it has none. */
+  partyId: string | null;
+  partyName: string | null;
+  packets: number;
+}
+
 /** What an issue session sent out, grouped the way the printed slip is read. */
 export interface RawMaterialIssueSessionSummary {
   session: RawMaterialIssueSession;
