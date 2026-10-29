@@ -1634,6 +1634,41 @@ export const copy = {
     needsSettingsAccess: "Ask an admin for Raw Material Setup access to use this",
   },
 
+  // THE TWO SCAN STATIONS (0.3.9) — what each says about itself. The headline above the scan box
+  // is always the truth: not scanning yet, ready, or scanning.
+  storeStation: {
+    receiving: {
+      idleTitle: "Not scanning yet",
+      idleLine: "Choose the supplier, then press Start session.",
+      readyTitle: "Ready",
+      readyLine: (supplier: string) => `Scan a packet from ${supplier}.`,
+      scanningTitle: "Scanning",
+      scanningLine: (n: number) => `${n.toLocaleString()} packet${n === 1 ? "" : "s"} received in this session.`,
+    },
+    issuing: {
+      idleTitle: "Not scanning yet",
+      idleLine: "Choose who the packets are going to, then press Start issuing.",
+      readyTitle: "Ready",
+      readyLine: (party: string) => `Scan a packet going to ${party}.`,
+      scanningTitle: "Scanning",
+      scanningLine: (n: number) => `${n.toLocaleString()} packet${n === 1 ? "" : "s"} issued in this session.`,
+    },
+    startSession: "Start session",
+    startIssuing: "Start issuing",
+    endSession: "End session",
+    printSlip: "Print slip",
+    reprintSlip: "Reprint slip",
+    lastSession: "Last session",
+    noLastSession: "No session has been closed on this computer yet.",
+    sessionOpen: (n: number) => `${n.toLocaleString()} packet${n === 1 ? "" : "s"}`,
+    nothingStarted: "Nothing started",
+    lastScan: "Last scan",
+    popupBlocked: "Allow popups to print the slip",
+    sessionClosed: "Session closed",
+    receivedCount: (n: number) => `${n.toLocaleString()} packet${n === 1 ? "" : "s"} received`,
+    issuedCount: (n: number) => `${n.toLocaleString()} packet${n === 1 ? "" : "s"} issued`,
+  },
+
   // STORE OUT — the two ways material leaves the store, side by side.
   moveOut: {
     title: "Move Out",
@@ -1657,12 +1692,12 @@ export const copy = {
     chooseScanParty: "Choose supplier or contractor…",
     noScanParties: "No suppliers or contractors yet",
     noScanPartyMatch: "No supplier or contractor found",
-    scanPartyHelp: "Choose who the packets are going to, then press New session.",
-    // The session belongs to one party (0.3.8): choose the party, New session, scan, End session.
+    scanPartyHelp: "Choose who the packets are going to, then press Start issuing.",
+    // The session belongs to one party (0.3.8): choose the party, Start issuing, scan, End session.
     scanPartyLocked: "Every packet in this session goes to this party. End the session to choose another.",
-    scanStartHint: "Choose the party, then press New session",
-    scanPressNew: "Press New session to start",
-    scanSessionClosed: "Session ended — choose the party and press New session",
+    scanStartHint: "Choose the party, then press Start issuing",
+    scanPressNew: "Press Start issuing to start",
+    scanSessionClosed: "Session ended — choose the party and press Start issuing",
     scanPartyFirstTitle: "⚠ CHOOSE A PARTY FIRST",
     scanPartyFirstBody: "Choose who these packets are going to, then scan. Nothing was moved.",
     scanPartyRefusedTitle: "✕ CHOOSE A PARTY",

@@ -12,7 +12,7 @@ import type {
 // Same station contract as Raw Material Input: a hardware scanner drops the whole code into
 // the focused input in one burst with no Enter, and the page has to submit on its own.
 // Since 0.3.8 a session belongs to one party: choose the party (a supplier or a contractor), press
-// New session, scan, End session. The session no longer opens by itself, and the party cannot be
+// Start issuing, scan, End session. The session no longer opens by itself, and the party cannot be
 // changed while one runs.
 
 vi.mock("../utils/playScanSound", () => ({ playScanSound: vi.fn() }));
@@ -164,10 +164,10 @@ const ready = async () => {
   await screen.findByRole("combobox", { name: "Moving out to" });
 };
 
-const newSessionButton = () => screen.getByRole("button", { name: /New session/ });
+const newSessionButton = () => screen.getByRole("button", { name: /Start issuing/ });
 const endSessionButton = () => screen.getByRole("button", { name: /End session/ });
 
-/** The whole sequence: choose the party, then New session. */
+/** The whole sequence: choose the party, then Start issuing. */
 const startFor = async (name: RegExp) => {
   await chooseParty(name);
   await act(async () => {
@@ -186,7 +186,7 @@ describe("RawMaterialOutputPage", () => {
     vi.restoreAllMocks();
   });
 
-  it("does not open a session by itself: New session waits for a party, and nothing can be scanned", async () => {
+  it("does not open a session by itself: Start issuing waits for a party, and nothing can be scanned", async () => {
     const { api } = createFakeBackend();
     renderPage();
     await ready();
@@ -234,7 +234,7 @@ describe("RawMaterialOutputPage", () => {
     expect(newSessionButton()).toBeEnabled();
   });
 
-  it("New session locks the session to the chosen party: the picker gives way to the party, its type and the lock", async () => {
+  it("Start issuing locks the session to the chosen party: the picker gives way to the party, its type and the lock", async () => {
     const { api } = createFakeBackend();
     renderPage();
     await ready();
