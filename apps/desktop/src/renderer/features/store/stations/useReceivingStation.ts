@@ -11,7 +11,8 @@ import type { StationScanRow } from "../../scanStation/scanStation";
 import type { SearchableComboboxOption } from "../../../components/shared/SearchableCombobox";
 import type { Party, RawMaterialReceivingSession, RawMaterialReceivingSessionSummary } from "../../../types/desktopApi";
 import { receivingOutcomeFor } from "./receivingOutcome";
-import { WAITING, type ScanOutcome } from "./scanOutcome";
+import { WAITING, type NameSplitter, type ScanOutcome } from "./scanOutcome";
+import { useMaterialNames } from "./useMaterialNames";
 import { receivingScanState, type ScanState } from "./scanState";
 
 // THE RECEIVING STATION — everything Move In does, without how it looks: the supplier, the session,
@@ -50,14 +51,15 @@ export interface ReceivingStation {
 
 const RECENT_LIMIT = 12;
 
-const rowsOf = (summary: RawMaterialReceivingSessionSummary | null): StationScanRow[] =>
+const rowsOf = (split: NameSplitter, summary: RawMaterialReceivingSessionSummary | null): StationScanRow[] =>
   (summary?.scans ?? [])
     .slice(-RECENT_LIMIT)
     .reverse()
     .map((scan) => ({
       key: `${scan.qrId}|${scan.receivedAt}`,
       qrId: scan.qrId,
-      product: `${scan.itemDisplayName} · ${scan.quantity} ${scan.unitCode}`.trim(),
+      // The distinguishing part only: the category is the same down a whole batch.
+      product: `${split(scan.itemDisplayName).name} · ${scan.quantity} ${scan.unitCode}`.trim(),
       at: scan.receivedAt,
       badge: "In Store",
     }));
@@ -70,6 +72,7 @@ export const useReceivingStation = ({ token, username, active }: { token: string
   const [session, setSession] = useState<RawMaterialReceivingSession | null>(null);
   const [summary, setSummary] = useState<RawMaterialReceivingSessionSummary | null>(null);
   const [outcome, setOutcome] = useState<ScanOutcome>(WAITING);
+  const split = useMaterialNames();
   const [loadError, setLoadError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const open = session?.status === "OPEN";
@@ -136,12 +139,12 @@ export const useReceivingStation = ({ token, username, active }: { token: string
       const result = await api.rawMaterialReceiptScan(code, { token, sessionId: session.id });
       // The session as it stood before this scan: a double scan is explained by the first one.
       const scans = (summary?.scans ?? []).map((scan) => ({ qrId: scan.qrId, at: scan.receivedAt }));
-      setOutcome((previous) => receivingOutcomeFor(result, scans, previous.seq + 1));
+      setOutcome((previous) => receivingOutcomeFor(result, scans, previous.seq + 1, split));
       playScanSound(result.accepted ? "success" : "error");
       if (result.accepted) await refreshSummary(session.id);
       return result.accepted;
     },
-    [api, refreshSummary, session, summary, token]
+    [api, refreshSummary, session, split, summary, token]
   );
 
   const scanBox = useScanBox({ armed: active && open, onScan: runScan, refocusKey: outcome.seq });
@@ -156,6 +159,6 @@ export const useReceivingStation = ({ token, username, active }: { token: string
 
   return {
     suppliers, supplierOptions, partyId, setPartyId, session, summary, sessionSupplier, open, busy, loadError,
-    reload, startSession, endSession, print, outcome, state, scanBox, rows: rowsOf(summary),
+    reload, startSession, endSession, print, outcome, state, scanBox, rows: rowsOf(split, summary),
   };
 };

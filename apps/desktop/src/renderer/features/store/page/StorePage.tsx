@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import type { AppRoute } from "../../../app/routes";
 import { copy } from "../../../config/copy";
 import { useRawMaterialLookups } from "../../rawMaterial/useRawMaterialLookups";
@@ -61,6 +61,15 @@ export const StorePage: React.FC<StorePageProps> = (props) => {
   const lookups = useRawMaterialLookups();
   const [reportOpen, setReportOpen] = useState<Record<StoreMode, boolean>>({ receiving: false, issuing: false });
   useModeKeys(onModeChange);
+
+  // The scanner box never needs a click: when the Machine programs dialog closes, the active mode's
+  // box takes the focus back (after the dialog has handed it back to its button).
+  const dialogWasOpen = useRef(false);
+  const activeScanBox = mode === "receiving" ? receiving.scanBox : issuing.scanBox;
+  useEffect(() => {
+    if (dialogWasOpen.current && !programs.dialogOpen) setTimeout(activeScanBox.focusScanner, 0);
+    dialogWasOpen.current = programs.dialogOpen;
+  }, [programs.dialogOpen, activeScanBox]);
 
   const closeReport = useCallback((which: StoreMode) => setReportOpen((open) => ({ ...open, [which]: false })), []);
   // Receipts → Continue opened the full-screen station; here the open session is already on the rail.

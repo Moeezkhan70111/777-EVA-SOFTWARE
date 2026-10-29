@@ -45,7 +45,7 @@ export const ProgramRail: React.FC<{ store: StoreProgram; mode: StoreMode; token
   return (
     <aside className="sp-rail" aria-label={copy.storePage.scanOut}>
       <header className="sp-who sp-who--out">
-        <span className="sp-who-label">{copy.storePage.issuing}</span>
+        <span className="sp-marker">{copy.storePage.issuing}</span>
       </header>
       <div className="sp-rail-scan">
         <section className="sz sz--out sz--waiting" data-testid="scan-zone" data-state="waiting">

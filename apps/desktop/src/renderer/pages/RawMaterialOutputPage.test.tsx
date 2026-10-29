@@ -264,7 +264,7 @@ describe("RawMaterialOutputPage", () => {
     await waitFor(() => expect(screen.getByTestId("scan-zone")).toHaveAttribute("data-state", "accepted"));
     // Said in words, not by colour: Issued, the material, how much, the packet.
     expect(screen.getByTestId("scan-zone")).toHaveTextContent("Issued");
-    expect(screen.getByTestId("scan-zone")).toHaveTextContent("RUBBER UPPER — SK6 — RED — 7/10");
+    expect(screen.getByTestId("scan-zone")).toHaveTextContent("RUBBER UPPER · SK6 · RED · 7/10");
     expect(screen.getByTestId("scan-zone")).toHaveTextContent(LABEL);
   });
 

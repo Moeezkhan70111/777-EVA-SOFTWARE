@@ -1,18 +1,19 @@
 import { copy } from "../../../config/copy";
 import { formatTime } from "../../../utils/dates";
+import type { MaterialName } from "./materialName";
 
 // THE ANSWER TO ONE SCAN (0.3.9), as the operator needs it in the half-second they glance up: did
 // it take, and was it the right packet. Built from the business layer's reply — nothing is decided
 // here — and drawn by ScanZone on the Store page's rails and the full-screen stations alike.
 //
-//   accepted  what went in or out: the material, how much, the packet's code
+//   accepted  what went in or out: the material (split in two), how much, the packet's code
 //   refused   why, in one sentence; what happened; what to do now
 //   waiting   no scan yet in this sitting (the station's scan state says what to do)
 
 export interface AcceptedScan {
   kind: "accepted";
   seq: number;
-  material: string;
+  material: MaterialName;
   quantity: string | null;
   code: string | null;
   /** A machine program the packet was counted against, when one was waiting for it. */
@@ -36,6 +37,9 @@ export interface WaitingScan {
 export type ScanOutcome = AcceptedScan | RefusedScan | WaitingScan;
 
 export const WAITING: WaitingScan = { kind: "waiting", seq: 0 };
+
+/** Splits a material's display name for the rail (useMaterialNames). */
+export type NameSplitter = (displayName: string) => MaterialName;
 
 /** "2 DOZ", or nothing when the packing is unknown. */
 export const quantityOf = (quantity?: number, unitCode?: string | null): string | null =>

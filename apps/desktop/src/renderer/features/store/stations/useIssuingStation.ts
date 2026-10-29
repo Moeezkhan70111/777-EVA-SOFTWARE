@@ -11,7 +11,8 @@ import type { StationScanRow } from "../../scanStation/scanStation";
 import type { SearchableComboboxOption } from "../../../components/shared/SearchableCombobox";
 import type { Party, RawMaterialIssueSession, RawMaterialIssueSessionRow, RawMaterialIssueSessionSummary } from "../../../types/desktopApi";
 import { choosePartyFirst, issuingOutcomeFor } from "./issuingOutcome";
-import { WAITING, type ScanOutcome } from "./scanOutcome";
+import { WAITING, type NameSplitter, type ScanOutcome } from "./scanOutcome";
+import { useMaterialNames } from "./useMaterialNames";
 import { issuingScanState, type ScanState } from "./scanState";
 import { useIssueSession } from "./useIssueSession";
 
@@ -65,14 +66,15 @@ interface IssuingInput {
 
 const RECENT_LIMIT = 12;
 
-const rowsOf = (summary: RawMaterialIssueSessionSummary | null): StationScanRow[] =>
+const rowsOf = (split: NameSplitter, summary: RawMaterialIssueSessionSummary | null): StationScanRow[] =>
   (summary?.scans ?? [])
     .slice(-RECENT_LIMIT)
     .reverse()
     .map((scan) => ({
       key: `${scan.qrId}|${scan.issuedAt}`,
       qrId: scan.qrId,
-      product: `${scan.itemDisplayName} · ${scan.quantity} ${scan.unitCode}`.trim(),
+      // The distinguishing part only: the category is the same down a whole batch.
+      product: `${split(scan.itemDisplayName).name} · ${scan.quantity} ${scan.unitCode}`.trim(),
       at: scan.issuedAt,
       badge: scan.sectionName ?? "Issued",
     }));
@@ -102,6 +104,7 @@ export const useIssuingStation = ({ token, username, active, onSessionChange, on
   const { push } = useNotifications();
   const { parties, partiesError, reloadParties } = useIssueParties();
   const [outcome, setOutcome] = useState<ScanOutcome>(WAITING);
+  const split = useMaterialNames();
   const run = useIssueSession({ token, onStarted: () => setOutcome(WAITING) });
   const { session, summary, sessionPartyId, partyId, setPartyId, locked } = run;
 
@@ -126,12 +129,12 @@ export const useIssuingStation = ({ token, username, active, onSessionChange, on
       const result = await api.rawMaterialIssueScan(code, { token, sessionId: session.id, issuedToPartyId: sessionPartyId });
       // The session as it stood before this scan: a double scan is explained by the first one.
       const scans = (summary?.scans ?? []).map((scan) => ({ qrId: scan.qrId, at: scan.issuedAt }));
-      setOutcome((previous) => issuingOutcomeFor(result, scans, previous.seq + 1));
+      setOutcome((previous) => issuingOutcomeFor(result, scans, previous.seq + 1, split));
       playScanSound(result.accepted ? "success" : "error");
       if (result.accepted) await run.refreshSummary(session.id);
       return result.accepted;
     },
-    [api, onMachineProgramScan, run, session, sessionPartyId, summary, token]
+    [api, onMachineProgramScan, run, session, sessionPartyId, split, summary, token]
   );
 
   const scanBox = useScanBox({ armed: active && locked, onScan: runScan, refocusKey: outcome.seq });
@@ -177,6 +180,6 @@ export const useIssuingStation = ({ token, username, active, onSessionChange, on
     chosenParty: parties.find((party) => party.id === partyId), lockedParty, locked,
     session, summary, sessionError: run.sessionError, reloadSession: run.reload, startSession: run.startSession, endSession, print,
     lastSession: run.lastSession, reprint, reprintLast, outcome,
-    state, scanBox, rows: rowsOf(summary),
+    state, scanBox, rows: rowsOf(split, summary),
   };
 };

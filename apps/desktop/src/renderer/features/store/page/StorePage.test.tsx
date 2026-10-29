@@ -46,6 +46,10 @@ function installApi({ receivingOpen = true, receivedPackets = 2 } = {}) {
     getRawMaterialIssueSessionSummary: vi.fn(async () => null),
     listRawMaterialIssueSessions: vi.fn(async () => [ISSUE_ROW]),
     startRawMaterialIssueSession: vi.fn(),
+    listInventoryCategories: vi.fn(async () => [
+      { id: "c-dana", name: "DANA", path_name: "DANA" },
+      { id: "c-eva", name: "EVA", parent_id: "c-dana", path_name: "DANA — EVA" },
+    ]),
     // The first scan of LABEL takes; scanning it again is the double scan.
     rawMaterialReceiptScan: vi.fn(async (code: string) =>
       api.rawMaterialReceiptScan.mock.calls.length === 1
@@ -205,10 +209,10 @@ describe("Store page — the scan rail, in three zones", () => {
     expect(within(rail).getByTestId("scan-state")).toHaveTextContent("Scan the next packet");
     expect(within(rail).getByText("Each packet is counted as received from SHEHZAD RUBBER.")).toBeInTheDocument();
     expect(rail).not.toHaveTextContent(/ready/i);
-    expect(within(rail).getByTestId("scan-count")).toHaveTextContent("packets received in this batch");
-    // The session number and the total belong to the footer, not the scanning view.
-    expect(within(rail).getByTestId("session-line")).toHaveTextContent("RMI-000191 · 50 KG");
-    expect(within(rail).getByRole("button", { name: "Type a code" })).toBeInTheDocument();
+    // One compact row: the number, what it counts, the quantity total.
+    expect(within(rail).getByTestId("scan-count")).toHaveTextContent("2packets in this batch50 KG");
+    // The batch's number belongs to the footer, not the scanning view.
+    expect(within(rail).getByTestId("session-line")).toHaveTextContent("RMI-000191");
     expect(within(rail).queryByRole("button", { name: "Print slip" })).toBeNull();
   });
 
@@ -224,7 +228,11 @@ describe("Store page — the scan rail, in three zones", () => {
       fireEvent.keyDown(box, { key: "Enter" });
     });
     await waitFor(() => expect(within(rail).getByTestId("scan-zone")).toHaveAttribute("data-state", "accepted"));
-    expect(within(rail).getByTestId("scan-zone")).toHaveTextContent("ReceivedDANA — EVA — RED25 KGRM_SHEHZAD_DANARED_000012");
+    // The category on the small line, the distinguishing part as the headline.
+    expect(within(rail).getByTestId("scan-zone")).toHaveTextContent("ReceivedDana · EvaRED25 KGRM_SHEHZAD_DANARED_000012");
+    // The box clears on a completed scan and keeps the focus.
+    expect(box).toHaveValue("");
+    expect(box).toHaveFocus();
 
     await act(async () => {
       fireEvent.change(box, { target: { value: "RM_SHEHZAD_DANARED_000012" } });
@@ -234,7 +242,7 @@ describe("Store page — the scan rail, in three zones", () => {
     expect(alert).toHaveTextContent("Not received");
     expect(alert).toHaveTextContent("This packet is already in");
     expect(alert).toHaveTextContent("Put it aside and scan the next one.");
-    expect(within(rail).getByTestId("scan-count")).toHaveTextContent("packets received in this batch — unchanged");
+    expect(within(rail).getByTestId("scan-count")).toHaveTextContent("packets in this batch — unchanged");
   });
 
   it("puts Print slip in the End session step, and ends only when asked", async () => {
@@ -257,15 +265,36 @@ describe("Store page — the scan rail, in three zones", () => {
     expect(closeRawMaterialReceivingSession).toHaveBeenCalledWith("rs-1");
   });
 
-  it("shows the scanner's box only when Type a code is pressed", async () => {
+  it("keeps the scanner's box in view under the strip: off and saying why until a batch starts, then live", async () => {
+    installApi({ receivingOpen: false });
+    renderPage();
+    const rail = screen.getByRole("complementary", { name: "Receiving scanner" });
+    const box = within(rail).getByLabelText("Scanner input");
+    expect(box).toBeVisible();
+    expect(box).toBeDisabled();
+    expect(box).toHaveAttribute("placeholder", "Choose the supplier first");
+    expect(within(rail).queryByRole("button", { name: "Type a code" })).toBeNull();
+  });
+
+  it("gives the box the focus by itself when a batch is open, and back after the Machine programs dialog", async () => {
     installApi();
     renderPage();
     const rail = screen.getByRole("complementary", { name: "Receiving scanner" });
-    const box = await within(rail).findByLabelText("Scanner input");
-    expect(box.closest(".sp-capture")).toHaveClass("sp-capture--unseen");
-    fireEvent.click(within(rail).getByRole("button", { name: "Type a code" }));
-    expect(box.closest(".sp-capture")).not.toHaveClass("sp-capture--unseen");
-    expect(within(rail).getByRole("button", { name: "Hide the box" })).toHaveAttribute("aria-pressed", "true");
+    const box = within(rail).getByLabelText("Scanner input");
+    await waitFor(() => expect(box).toHaveFocus());
+    expect(box).toHaveAttribute("placeholder", "Scan a packet");
+
+    fireEvent.click(screen.getByRole("button", { name: "Machine programs" }));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(within(dialog).getAllByRole("button", { name: /close|cancel/i })[0]);
+    await waitFor(() => expect(box).toHaveFocus());
+  });
+
+  it("says one packet, not 1 packets", async () => {
+    installApi({ receivedPackets: 1 });
+    renderPage();
+    const rail = screen.getByRole("complementary", { name: "Receiving scanner" });
+    await waitFor(() => expect(within(rail).getByTestId("scan-count")).toHaveTextContent("1packet in this batch"));
   });
 
   it("on Scan out waits asking who it is for, with the type against each party, Start issuing, and the last session to reprint", async () => {

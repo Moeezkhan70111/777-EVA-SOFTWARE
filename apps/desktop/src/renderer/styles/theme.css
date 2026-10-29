@@ -191,10 +191,10 @@
   --store-field-bg:        #fbfcfd;      /* a hair off-white: reads as fillable without a heavy border */
   --store-line:            #e3e8ee;      /* cards and inputs */
   --store-divider:         #eef1f5;      /* lines inside a card */
-  --store-radius-card:     12px;
-  --store-radius-control:  9px;         /* inputs and buttons */
-  --store-card-pad:        26px;
-  --store-state-pad:       30px;         /* the scan rail's state block */
+  --store-radius-card:     10px;
+  --store-radius-control:  7px;         /* inputs and buttons */
+  --store-card-pad:        22px;
+  --store-rail-pad:        18px;         /* each block on the scan rail */
   /* Field and section labels. #8591a0 was asked for; it is 3.2:1 on white, so this is the nearest
      grey that reaches 4.5:1 for 11px text (4.75 on white, 4.51 on the page background). */
   --store-label:           #687483;
@@ -7662,7 +7662,7 @@ tr.has-error .gp-qty-stepper input { color: var(--err); }
 .sp-mode--issuing[aria-pressed="true"] { border: 2px solid var(--store-issuing); padding: 13px 19px; }
 .sp-mode:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
 
-.sp-body { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(400px, 452px); gap: 14px; }
+.sp-body { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(380px, 430px); gap: 14px; }
 .sp-work-slot { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
 .sp-work-slot > .sp-work { flex: 1; }
 /* The inactive mode stays mounted (its session, its form) but is not shown. hidden must win over
@@ -7723,9 +7723,14 @@ tr.has-error .gp-qty-stepper input { color: var(--err); }
 .sp-work--issuing .tab-strip-btn.is-active { background: var(--store-issuing-tint); color: var(--store-issuing-ink); box-shadow: none; }
 
 /* Field and section labels: small mono caps. Required fields say so in their error, not an asterisk. */
-.sp-page .input-label, .sp-page .mo-field-label, .sp-page .form-group label, .sp-page .section-label,
+/* Field labels: plain sentence case, 13px — mono caps read too quietly on a form. */
+.sp-page .input-label, .sp-page .mo-field-label, .sp-page .form-group label,
 .sp-page .qr-step-title, .sp-page .rm-preview-label, .sp-page .mo-in-store-label {
-  font-family: var(--font-mono); font-size: 11px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--store-label);
+  font-size: 13px; font-weight: 600; color: var(--foreground-muted);
+}
+/* Small section markers — FROM, GOING TO, BEFORE THAT, LAST BATCH — in mono caps. */
+.sp-marker, .sp-page .section-label {
+  margin: 0; font-family: var(--font-mono); font-size: 11px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--store-label);
 }
 .sp-page .required-mark { display: none; }
 
@@ -7736,79 +7741,94 @@ tr.has-error .gp-qty-stepper input { color: var(--err); }
 .sp-page .btn-secondary { background: var(--white); border-color: var(--store-line); color: var(--foreground); box-shadow: none; }
 .sp-page .btn-secondary:hover:not(:disabled) { background: var(--store-field-bg); }
 
-/* ── THE SCAN RAIL (0.3.9): three zones. The operator scans, hears the beep, glances up for half a
-   second, and needs one answer — did it take, and was it the right packet. ── */
+/* ── THE SCAN RAIL (0.3.9). The operator scans, hears the beep, glances up for half a second, and
+   needs one answer — did it take, and was it the right packet. ── */
 .sp-who {
   display: flex; align-items: center; gap: 10px; flex-wrap: wrap; flex-shrink: 0;
-  padding: 14px var(--store-card-pad); background: var(--white); color: var(--foreground); border-bottom: 1px solid var(--store-divider);
+  padding: 12px var(--store-rail-pad); background: var(--white); color: var(--foreground); border-bottom: 1px solid var(--store-divider);
 }
-.sp-who-label { font-family: var(--font-mono); font-size: 11px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--store-label); }
 .sp-who-name { font-size: 1rem; font-weight: 800; overflow-wrap: anywhere; }
 /* The party's type as a soft pill in the mode's tint. */
 .sp-who .party-type-badge { margin: 0; border: 0; border-radius: 999px; padding: 3px 10px; font-weight: 700; }
 .sp-who--in .party-type-badge { background: var(--store-receiving-tint); color: var(--store-receiving-ink); }
 .sp-who--out .party-type-badge { background: var(--store-issuing-tint); color: var(--store-issuing-ink); }
-.sp-rail-scan { flex: 1; display: flex; flex-direction: column; gap: 20px; padding: var(--store-card-pad); }
+
+/* The scanner's box: always visible, and plainly live when it holds the focus. */
+.sp-scan-field { flex-shrink: 0; padding: 14px var(--store-rail-pad) 0; }
+.sp-scan-input {
+  width: 100%; height: 52px; padding: 0 14px;
+  font-family: var(--font-mono); font-size: 16px; color: var(--foreground);
+  background: var(--store-field-bg); border: 1px solid var(--store-line); border-radius: var(--store-radius-control);
+}
+.sp-scan-input::placeholder { color: var(--neutral-600); }
+.sp-scan-input:focus { outline: 3px solid var(--primary); outline-offset: 1px; border-color: var(--primary); background: var(--white); }
+.sp-scan-input:disabled { background: var(--store-divider); cursor: not-allowed; }
+
+.sp-rail-scan { flex: 1; display: flex; flex-direction: column; gap: 12px; padding: 14px var(--store-rail-pad) var(--store-rail-pad); }
 .sp-rail-actions { display: flex; gap: var(--space-2); flex-wrap: wrap; }
 .sp-rail-actions .btn { min-height: var(--touch-target); flex: 1; }
 
-.sz {
-  display: flex; flex-direction: column; align-items: center; gap: 6px; text-align: center;
-  padding: var(--store-state-pad); border: 1px solid var(--store-line); border-radius: var(--store-radius-card); background: var(--white);
+/* The scan: a full-width verdict band, the detail under it, everything left aligned. */
+.sz { display: flex; flex-direction: column; overflow: hidden; text-align: left; background: var(--white); border: 1px solid var(--store-line); border-radius: var(--store-radius-card); }
+.sz--refused { border-left: 5px solid var(--danger-strong); }
+.sz-band {
+  display: flex; align-items: center; gap: 8px; margin: 0; padding: 9px var(--store-rail-pad);
+  font-family: var(--font-mono); font-size: 12px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: var(--white);
 }
-.sz--accepted { background: var(--store-accepted-bg); }
-.sz--refused { background: var(--store-refused-bg); border-left: 5px solid var(--danger-strong); }
-.sz-kicker {
-  display: inline-flex; align-items: center; gap: 8px; margin: 0;
-  font-family: var(--font-mono); font-size: .78rem; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: var(--neutral-600);
-}
-.sz--accepted .sz-kicker { color: var(--success-strong); }
-.sz--refused .sz-kicker { color: var(--danger-strong); }
-.sz-icon { width: 26px; height: 26px; flex-shrink: 0; }
-.sz-material, .sz-reason { margin: 0; font-size: 25px; font-weight: 700; line-height: 1.2; color: var(--foreground); overflow-wrap: anywhere; }
-.sz-quantity { margin: 0; font-size: 19px; font-weight: 600; }
+.sz--accepted .sz-band { background: var(--success-strong); }
+.sz--refused .sz-band { background: var(--danger-strong); }
+.sz-icon { width: 20px; height: 20px; flex-shrink: 0; }
+.sz-detail { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; padding: var(--store-rail-pad); }
+.sz--accepted .sz-detail { background: var(--store-accepted-bg); }
+.sz--refused .sz-detail { background: var(--store-refused-bg); }
+.sz-category { margin: 0; font-size: 12px; color: var(--neutral-600); }
+.sz-material, .sz-reason { margin: 0; font-size: 21px; font-weight: 700; line-height: 1.25; color: var(--foreground); overflow-wrap: anywhere; }
+.sz-quantity { margin: 0; font-size: 17px; font-weight: 600; }
 .sz--in .sz-quantity { color: var(--store-receiving-ink); }
 .sz--out .sz-quantity { color: var(--store-issuing-ink); }
 .sz-code { margin: 0; font-family: var(--font-mono); font-size: 14px; color: var(--neutral-600); overflow-wrap: anywhere; }
-.sz-happened, .sz-note, .sz-line { margin: 0; font-size: .92rem; color: var(--foreground-muted); }
-.sz-todo { margin: 4px 0 0; font-size: 1rem; font-weight: 700; color: var(--foreground); }
-.sz-question { margin: 6px 0 0; font-size: 22px; font-weight: 700; line-height: 1.25; color: var(--foreground); }
-/* The waiting state opens with a barcode in a large soft-grey rounded square. */
+.sz-happened, .sz-note, .sz-line { margin: 0; font-size: .9rem; color: var(--foreground-muted); }
+.sz-todo { margin: 2px 0 0; font-size: .95rem; font-weight: 700; color: var(--foreground); }
+.sz-question { margin: 8px 0 0; font-size: 20px; font-weight: 700; line-height: 1.25; color: var(--foreground); }
+/* The waiting state opens with a barcode in a soft-grey rounded square. */
 .sz-well {
-  display: inline-flex; align-items: center; justify-content: center; width: 76px; height: 76px;
-  border-radius: 20px; background: var(--store-icon-well); color: var(--neutral-600);
+  display: inline-flex; align-items: center; justify-content: center; width: 60px; height: 60px;
+  border-radius: 16px; background: var(--store-icon-well); color: var(--neutral-600);
 }
-.sz-well svg { width: 38px; height: 38px; }
-.sz-start { align-self: stretch; display: flex; flex-direction: column; gap: 12px; margin-top: 14px; text-align: left; }
+.sz-well svg { width: 32px; height: 32px; }
+.sz-start { align-self: stretch; display: flex; flex-direction: column; gap: 10px; margin-top: 10px; }
 .sz-start-btn { min-height: 52px; font-size: 1.05rem; }
 
-.sz-count { display: flex; flex-direction: column; align-items: center; }
-.sz-count-number { font-size: 52px; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; color: var(--foreground); }
-.sz-count-label { font-size: .9rem; color: var(--foreground-muted); }
-.sz-count--unchanged .sz-count-number { color: var(--neutral-500); }
-.sz-last-title { margin: 0 0 6px; font-family: var(--font-mono); font-size: .72rem; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--neutral-600); }
-.sz-last-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
-.sz-last-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr); gap: 10px; font-size: .84rem; }
-.sz-last-code { font-family: var(--font-mono); font-size: 14px; color: var(--neutral-600); overflow-wrap: anywhere; }
-.sz-last-what { color: var(--foreground); text-align: right; overflow-wrap: anywhere; }
+/* The batch's count: one compact tinted row, the quantity total on the right. */
+.sz-count {
+  display: flex; align-items: baseline; gap: 8px; padding: 10px 14px;
+  background: var(--store-icon-well); border-radius: var(--store-radius-control);
+}
+.sz-count-number { font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--foreground); }
+.sz-count-label { font-size: .88rem; color: var(--foreground-muted); }
+.sz-count-quantity { margin-left: auto; font-size: .9rem; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--foreground); }
+.sz-count--unchanged .sz-count-number { color: var(--neutral-600); }
 
-/* The scanner's box, unseen until "Type a code": still labelled, still able to take the focus. */
-.sp-capture--unseen { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+/* BEFORE THAT: the three packets before the one in the zone. */
+.sz-before { display: flex; flex-direction: column; gap: 6px; }
+.sz-before-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.sz-before-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr); gap: 10px; font-size: .84rem; }
+.sz-before-code { font-family: var(--font-mono); font-size: 13px; color: var(--neutral-600); overflow-wrap: anywhere; }
+.sz-before-what { color: var(--foreground); text-align: right; overflow-wrap: anywhere; }
 
-.sp-foot { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); flex-wrap: wrap; padding: 10px 16px; border-top: 1px solid var(--line-soft); }
+.sp-foot { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); flex-wrap: wrap; padding: 10px var(--store-rail-pad); border-top: 1px solid var(--store-divider); }
 .sp-foot-line { font-family: var(--font-mono); font-size: 13px; color: var(--neutral-600); }
-.sp-foot-actions { display: flex; align-items: center; gap: var(--space-2); }
 .sp-foot .btn { min-height: var(--touch-target); }
 .sp-text-btn {
   min-height: var(--touch-target); padding: 0 10px; cursor: pointer;
   background: none; border: 0; font: inherit; font-size: .88rem; font-weight: 700; color: var(--primary-dark); text-decoration: underline;
 }
 .sp-text-btn:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
-.sp-end { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-4); border-top: 1px solid var(--line-soft); }
+.sp-end { display: flex; flex-direction: column; gap: var(--space-2); padding: 14px var(--store-rail-pad); border-top: 1px solid var(--store-divider); }
 .sp-end-title { margin: 0; font-size: 1rem; font-weight: 800; }
 .sp-end-line { margin: 0; font-size: .84rem; color: var(--foreground-muted); }
 .sp-end .sp-text-btn { align-self: center; }
-/* The full-screen stations: the same answer, with their box always shown under it. */
+/* The full-screen stations: the same answer, with their own box under it. */
 .ssn-zone { display: flex; flex-direction: column; gap: var(--space-3); min-width: 0; }
 .mp-open-actions { display: inline-flex; gap: var(--space-2); }
 .sp-issued-code { font-family: Consolas, "Courier New", monospace; font-weight: 700; }

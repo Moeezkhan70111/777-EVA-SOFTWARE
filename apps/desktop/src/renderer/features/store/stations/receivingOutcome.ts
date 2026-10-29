@@ -1,6 +1,6 @@
 import { copy } from "../../../config/copy";
 import type { RawMaterialReceiptResult } from "../../../types/desktopApi";
-import { earlierInSession, quantityOf, type ScanOutcome, type SessionScan } from "./scanOutcome";
+import { earlierInSession, quantityOf, type NameSplitter, type ScanOutcome, type SessionScan } from "./scanOutcome";
 
 // What the receiving station says after a scan (0.3.9): the business layer's answer as the rail
 // reads it. A refusal is a sentence, what happened, and what to do — never a colour alone.
@@ -38,12 +38,12 @@ const refusalFor = (result: RawMaterialReceiptResult, scans: readonly SessionSca
 };
 
 /** The answer to one receipt scan. `scans` is the session as it stood, to explain a double scan. */
-export const receivingOutcomeFor = (result: RawMaterialReceiptResult, scans: readonly SessionScan[], seq: number): ScanOutcome => {
+export const receivingOutcomeFor = (result: RawMaterialReceiptResult, scans: readonly SessionScan[], seq: number, split: NameSplitter): ScanOutcome => {
   if (result.accepted) {
     return {
       kind: "accepted",
       seq,
-      material: result.itemDisplayName ?? "—",
+      material: split(result.itemDisplayName ?? "—"),
       quantity: quantityOf(result.packingQuantity, result.packingUnitCode),
       code: result.qrId ?? null,
       note: null,
