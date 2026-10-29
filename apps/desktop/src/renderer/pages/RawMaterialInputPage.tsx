@@ -9,6 +9,7 @@ import type {
 import type { AppRoute } from "../app/routes";
 import { SearchableCombobox } from "../components/shared/SearchableCombobox";
 import { PartyTypeBadge } from "../features/parties/PartyTypeBadge";
+import { partyOption } from "../features/parties/partyOption";
 import { useNotifications } from "../state/NotificationsContext";
 import { playScanSound } from "../utils/playScanSound";
 import { copy } from "../config/copy";
@@ -183,7 +184,7 @@ export const RawMaterialInputPage: React.FC<RawMaterialInputPageProps> = ({ toke
   }, [scannerReady, feedback.seq, focusScanner]);
 
   const supplierOptions = useMemo(
-    () => suppliers.map((party) => ({ value: party.id, label: `${party.partyCode} — ${party.partyName}` })),
+    () => suppliers.map(partyOption),
     [suppliers]
   );
 

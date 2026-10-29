@@ -937,3 +937,25 @@ test("a Machine Program batch on the session, which names no party, does not dec
     f.cleanup();
   }
 });
+
+test("the Move Out slip's summary names the party and totals each material, as the Move In receipt does", async () => {
+  const f = createFixture();
+  try {
+    const empty = f.db.getRawMaterialIssueSessionSummary(f.issueSession.id);
+    assert.equal(empty?.partyName, null);
+    assert.deepEqual(empty?.byMaterial, []);
+
+    const m = readyMaterial(f, "7/10", 3);
+    for (const label of m.labels) await f.scanIn(label);
+    for (const label of m.labels) await f.scanOutTo(label, f.otherSupplier);
+
+    const summary = f.db.getRawMaterialIssueSessionSummary(f.issueSession.id);
+    assert.equal(summary?.partyName, f.db.getParty(f.otherSupplier)?.partyName);
+    assert.equal(summary?.byMaterial.length, 1, "one material, one line");
+    assert.equal(summary?.byMaterial[0].packets, 3);
+    const bySectionQuantity = summary?.bySection.flatMap((section) => section.materials).reduce((sum, row) => sum + row.quantity, 0);
+    assert.equal(summary?.byMaterial[0].quantity, bySectionQuantity, "the same quantity, however it is grouped");
+  } finally {
+    f.cleanup();
+  }
+});

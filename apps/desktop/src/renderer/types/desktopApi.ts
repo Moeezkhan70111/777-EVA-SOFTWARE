@@ -2735,7 +2735,11 @@ export interface RawMaterialIssueSessionSummary {
   session: RawMaterialIssueSession;
   /** Who the session's packets go to: its first scan's party, or null before the first scan. */
   partyId: string | null;
+  /** That party's name, for the printed slip; null when the session has no party yet. */
+  partyName: string | null;
   totalPackets: number;
+  /** One line per material and unit — what the printed slip totals. */
+  byMaterial: Array<{ itemDisplayName: string; packets: number; quantity: number; unitCode: string }>;
   bySection: Array<{
     sectionName: string;
     packets: number;

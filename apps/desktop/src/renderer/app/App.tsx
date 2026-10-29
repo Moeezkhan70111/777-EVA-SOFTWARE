@@ -413,6 +413,7 @@ export const App = () => {
         return (
           <StoreOutPage
             token={sessionToken ?? ""}
+            username={session.username}
             onBack={() => setRoute("store-home")}
             onOpenReport={() => setRoute("store-out-daily-report")}
             onOpenQrGenerator={canOpenRoute(session, "qr-generator") ? () => setRoute("qr-generator") : undefined}

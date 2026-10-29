@@ -1320,6 +1320,8 @@ export const rawMaterialQrMethods = {
       string,
       { sectionName: string; packets: number; materials: Map<string, { itemDisplayName: string; packets: number; quantity: number; unitCode: string }> }
     >();
+    // The slip's summary: one line per material and unit, whatever section it went through.
+    const byMaterial = new Map<string, { itemDisplayName: string; packets: number; quantity: number; unitCode: string }>();
 
     for (const row of rows) {
       // Nothing carries a destination since routes were removed, so the slip is one list.
@@ -1336,12 +1338,22 @@ export const rawMaterialQrMethods = {
         section.materials.set(`${name}|${unitCode}`, { itemDisplayName: name, packets: 1, quantity: Number(row.quantity), unitCode });
       }
       bySection.set(sectionName, section);
+      const total = byMaterial.get(`${name}|${unitCode}`);
+      if (total) {
+        total.packets += 1;
+        total.quantity += Number(row.quantity);
+      } else {
+        byMaterial.set(`${name}|${unitCode}`, { itemDisplayName: name, packets: 1, quantity: Number(row.quantity), unitCode });
+      }
     }
 
+    const partyId = this.rawMaterialIssueSessionPartyId(session.id);
     return {
       session,
-      partyId: this.rawMaterialIssueSessionPartyId(session.id),
+      partyId,
+      partyName: partyId ? (this.getParty(partyId)?.partyName ?? null) : null,
       totalPackets: rows.length,
+      byMaterial: [...byMaterial.values()].sort((a, b) => a.itemDisplayName.localeCompare(b.itemDisplayName)),
       bySection: [...bySection.values()]
         .sort((a, b) => a.sectionName.localeCompare(b.sectionName))
         .map((section) => ({

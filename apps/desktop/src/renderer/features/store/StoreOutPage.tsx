@@ -38,6 +38,8 @@ import { ScanInIcon, StockIcon } from "./StoreIcons";
 
 interface StoreOutPageProps {
   token: string;
+  /** Who is signed in, printed on the Move Out slip as who printed it. */
+  username?: string;
   onBack: () => void;
   /** Opens Daily Report Store Out. */
   onOpenReport: () => void;
@@ -57,6 +59,7 @@ interface StoreOutPageProps {
 
 export const StoreOutPage: React.FC<StoreOutPageProps> = ({
   token,
+  username,
   onBack,
   onOpenReport,
   onOpenQrGenerator,
@@ -150,6 +153,7 @@ export const StoreOutPage: React.FC<StoreOutPageProps> = ({
               remounting it would throw that session away mid-delivery. */}
           <RawMaterialOutputPage
             token={token}
+            username={username}
             embedded
             onSessionChange={setSessionId}
             onMachineProgramScan={(code) => void programOut.open(code)}

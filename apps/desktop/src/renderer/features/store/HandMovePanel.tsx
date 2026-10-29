@@ -5,6 +5,7 @@ import { useDesktopApi } from "../../hooks/useDesktopApi";
 import { useNotifications } from "../../state/NotificationsContext";
 import { SearchableCombobox } from "../../components/shared/SearchableCombobox";
 import { PartyTypeBadge } from "../parties/PartyTypeBadge";
+import { partyOption } from "../parties/partyOption";
 import { StateView } from "../../components/shared/StateView";
 import { StepHeading } from "../../components/shared/StepHeading";
 import { copy } from "../../config/copy";
@@ -120,7 +121,7 @@ export const HandMovePanel: React.FC<HandMovePanelProps> = ({ direction, token, 
     [items]
   );
   const supplierOptions = useMemo(
-    () => suppliers.map((party) => ({ value: party.id, label: `${party.partyCode} — ${party.partyName}` })),
+    () => suppliers.map(partyOption),
     [suppliers]
   );
 

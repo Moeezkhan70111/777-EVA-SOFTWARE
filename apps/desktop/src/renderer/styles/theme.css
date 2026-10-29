@@ -8699,6 +8699,9 @@ tr.has-error .gp-qty-stepper input { color: var(--err); }
 /* Store movements (0.3.8): what kind of party is chosen, and the party a Move Out session is locked to. */
 .party-type-badge { margin-top: 6px; align-self: flex-start; }
 .ssn-toolbar .party-type-badge { margin-top: 0; }
+/* A tag beside an option's label in a picker list: the label wraps, the tag keeps its width. */
+.city-option-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+.city-option-badge { flex-shrink: 0; }
 .mo-locked-party { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .mo-locked-party .field-help { flex-basis: 100%; margin: 0; }
 
