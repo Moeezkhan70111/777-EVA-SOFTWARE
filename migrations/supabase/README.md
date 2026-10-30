@@ -1,11 +1,12 @@
 # Cloud schema — apply order
 
-**Where each project stands (30 Oct 2026):**
+**Where each project stands (31 Oct 2026):**
 
 - **Test** (`wpkrhgqsizjjdaztijwv`): the baseline and `002`–`018` are applied.
-  `verify_applied_state.sql` passes 33/33, and `check_number_blocks.sql` passes.
-- **Production** (`ykhvbmhmeefdtrzqeoxm`): untouched until cutover. Nothing in this folder is
-  applied there without the owner's explicit go-ahead.
+  `verify_applied_state.sql` passes 34/34, and `check_number_blocks.sql` passes.
+- **Production** (`ykhvbmhmeefdtrzqeoxm`): the baseline and `002`–`018` applied 31 Oct, `factory-777`
+  seeded, `verify_applied_state.sql` 34/34. No devices enrolled and no business data yet. The
+  `check_*.sql` scripts are never run here.
 
 Apply in this order, in the Supabase SQL editor, on an **empty** project, one file at a time:
 

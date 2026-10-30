@@ -357,32 +357,40 @@ them current, and fill a row in only once it has been checked by query.
 
 `https://ykhvbmhmeefdtrzqeoxm.supabase.co`, region ap-south-1 (Mumbai). Created 2026-10-23.
 
-**Status: EMPTY. Nothing applied yet** (checked by query 2026-10-30: no public tables, no migrations,
-no Auth users; extensions the same as test). Set it up by §7.1, in order.
+**Status: SET UP, 2026-10-31.** The baseline and 002–018 applied in order by the owner in the SQL editor,
+each checked by query before the next; `factory-777` seeded; `verify_applied_state.sql` 34/34. **No
+Auth users, no enrolled devices, no leases granted, no business rows.** Next: Advisors (step 22),
+then §7.2 per computer and §10 cutover. The `check_*.sql` scripts are for test only and were not
+run here.
+
+Two slips on the way, both caught by the per-step check: the baseline, and later 007 and 008, were
+first pasted into **test**. Re-running 007 and 008 there changed nothing; re-running the baseline
+put back test's `trg_qr_master_updated_at` and unpinned `set_updated_at`, both repaired the same
+day (002's and 007's own lines). Verification check 34 now catches the first.
 
 | Step | File / action | How | Applied? | Verified? |
 |---|---|---|---|---|
-| 1 | `supabase/schema.sql` | agent, `apply_migration` → `erp_000_baseline_schema` | — | — |
-| 2 | `002_align_with_local_model.up.sql` | **by hand**, SQL editor | — | — |
-| 3 | `003_sync_event_log.up.sql` | **by hand**, SQL editor | — | — |
-| 4 | `004_rls_policies.up.sql` | **by hand**, SQL editor | — | — |
-| 5 | `005_sync_event_log_factory_scope.up.sql` | **by hand**, SQL editor | — | — |
-| 6 | `006_device_claims.up.sql` | **by hand**, SQL editor | — | — |
-| 7 | `007_close_leftover_grants.up.sql` | **by hand**, SQL editor | — | — |
-| 8 | `008_push_product_variant.up.sql` | agent, `apply_migration` → `erp_008_push_product_variant` | — | — |
-| 9 | `009_sync_event_log_any_type.up.sql` | **by hand**, SQL editor | — | — |
-| 10 | `010_close_maintain.up.sql` | **by hand**, SQL editor | — | — |
-| 11 | `011_domain_leases.up.sql` | **by hand**, SQL editor | — | — |
-| 12 | `012_raw_material_identity.up.sql` | **by hand**, SQL editor | — | — |
-| 13 | `013_leased_records.up.sql` | **by hand**, SQL editor | — | — |
-| 14 | `014_device_sync_health.up.sql` | **by hand**, SQL editor | — | — |
-| 15 | `015_stock_events.up.sql` | **by hand**, SQL editor | — | — |
-| 16 | `016_sync_log_doorbell.up.sql` | **by hand**, SQL editor | — | — |
-| 17 | `017_product_variant_log.up.sql` | **by hand**, SQL editor | — | — |
-| 18 | `018_number_block_registry.up.sql` | **by hand**, SQL editor | — | — |
-| 19 | Seed: `factory-777` | agent, `execute_sql` | — | — |
+| 1 | `supabase/schema.sql` | **by hand**, SQL editor. The MCP tool's confirmation came back declined twice (its `drop trigger` lines), so the agent's step was pasted instead; there is no `supabase_migrations` row | **YES**, 2026-10-31 | **YES**, by query |
+| 2 | `002_align_with_local_model.up.sql` | **by hand**, SQL editor | **YES**, 2026-10-31 | **YES**, by query |
+| 3 | `003_sync_event_log.up.sql` | **by hand**, SQL editor | **YES**, 2026-10-31 | **YES**, by query |
+| 4 | `004_rls_policies.up.sql` | **by hand**, SQL editor | **YES**, 2026-10-31 | **YES**, by query |
+| 5 | `005_sync_event_log_factory_scope.up.sql` | **by hand**, SQL editor | **YES**, 2026-10-31 | **YES**, by query |
+| 6 | `006_device_claims.up.sql` | **by hand**, SQL editor | **YES**, 2026-10-31 | **YES**, by query |
+| 7 | `007_close_leftover_grants.up.sql` | **by hand**, SQL editor | **YES**, 2026-10-31 | **YES**, by query |
+| 8 | `008_push_product_variant.up.sql` | **by hand**, SQL editor (pasted with 007; no `supabase_migrations` row) | **YES**, 2026-10-31 | **YES**, by query |
+| 9 | `009_sync_event_log_any_type.up.sql` | **by hand**, SQL editor | **YES**, 2026-10-31 | **YES**, by query |
+| 10 | `010_close_maintain.up.sql` | **by hand**, SQL editor | **YES**, 2026-10-31 | **YES**, by query |
+| 11 | `011_domain_leases.up.sql` | **by hand**, SQL editor | **YES**, 2026-10-31 | **YES**, by query |
+| 12 | `012_raw_material_identity.up.sql` | **by hand**, SQL editor | **YES**, 2026-10-31 | **YES**, by query |
+| 13 | `013_leased_records.up.sql` | **by hand**, SQL editor | **YES**, 2026-10-31 | **YES**, by query |
+| 14 | `014_device_sync_health.up.sql` | **by hand**, SQL editor | **YES**, 2026-10-31 | **YES**, by query |
+| 15 | `015_stock_events.up.sql` | **by hand**, SQL editor | **YES**, 2026-10-31 | **YES**, by query |
+| 16 | `016_sync_log_doorbell.up.sql` | **by hand**, SQL editor | **YES**, 2026-10-31 | **YES**, by query |
+| 17 | `017_product_variant_log.up.sql` | **by hand**, SQL editor | **YES**, 2026-10-31 | **YES**, by query |
+| 18 | `018_number_block_registry.up.sql` | **by hand**, SQL editor | **YES**, 2026-10-31 | **YES**, by query |
+| 19 | Seed: `factory-777` | agent, `execute_sql` | **YES**, 2026-10-31 | **YES**: same row as test |
 | 20 | ~~Master data mirror from test~~ | **not done: superseded by §10.8.** The real database exists (PC2), so production's master data comes from its backfill, never from test | n/a | n/a |
-| 21 | `verify_applied_state.sql`: all 33 checks `ok` | agent, `execute_sql` | — | — |
+| 21 | `verify_applied_state.sql`: all 34 checks `ok` | agent, `execute_sql` | **YES**, 2026-10-31 | **34/34** |
 | 22 | Advisors: the same set as §6a.2, nothing new | **by hand**, dashboard → Advisors (the MCP servers do not enable the `debugging` feature) | — | — |
 
 **Why some steps are by hand, and which ones.** The split is the same as on test, for the same
@@ -425,6 +433,7 @@ assumed. **Last checked 2026-10-23.**
 | `016_sync_log_doorbell.up.sql` | **YES**, 2026-10-27 (verify 32/32, check_doorbell passed) | by hand, Supabase SQL editor (owner) |
 | `017_product_variant_log.up.sql` | **YES**, 2026-10-30 | by hand, Supabase SQL editor (owner) |
 | `018_number_block_registry.up.sql` | **YES**, 2026-10-30 (verify 33/33, check_number_blocks passed) | by hand, Supabase SQL editor (owner) |
+| `supabase/schema.sql`, **re-run by mistake** | 2026-10-31: put back `trg_qr_master_updated_at` and unpinned `set_updated_at`. **Repaired the same day** with 002's and 007's own lines; verify 34/34 | by hand (owner) |
 
 **Verified 2026-10-25, after 013:** `verify_applied_state.sql`, all 29 checks `ok`. And
 `check_leased_records.sql` passed all 6 steps, leaving test as it was (no records, lease events,
