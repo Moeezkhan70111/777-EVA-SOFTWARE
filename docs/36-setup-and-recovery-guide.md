@@ -388,14 +388,15 @@ day (002's and 007's own lines). Verification check 34 now catches the first.
 | 16 | `016_sync_log_doorbell.up.sql` | **by hand**, SQL editor | **YES**, 2026-10-31 | **YES**, by query |
 | 17 | `017_product_variant_log.up.sql` | **by hand**, SQL editor | **YES**, 2026-10-31 | **YES**, by query |
 | 18 | `018_number_block_registry.up.sql` | **by hand**, SQL editor | **YES**, 2026-10-31 | **YES**, by query |
+| 18a | `019_close_rls_auto_enable.up.sql` | **by hand**, SQL editor | — | — |
 | 19 | Seed: `factory-777` | agent, `execute_sql` | **YES**, 2026-10-31 | **YES**: same row as test |
 | 20 | ~~Master data mirror from test~~ | **not done: superseded by §10.8.** The real database exists (PC2), so production's master data comes from its backfill, never from test | n/a | n/a |
-| 21 | `verify_applied_state.sql`: all 34 checks `ok` | agent, `execute_sql` | **YES**, 2026-10-31 | **34/34** |
+| 21 | `verify_applied_state.sql`: all 35 checks `ok` | agent, `execute_sql` | **34/34** at 018, 2026-10-31 | 35 fails until 019 |
 | 22 | Advisors: the same set as §6a.2, nothing new | **by hand**, dashboard → Advisors (the MCP servers do not enable the `debugging` feature) | — | — |
 
 **Why some steps are by hand, and which ones.** The split is the same as on test, for the same
-reason (§6a.2): the MCP write tools refuse SQL containing destructive statements. Sixteen files are
-pasted by hand: **002–007 and 009–018**. 002 drops and re-adds foreign keys, and 003–007 and
+reason (§6a.2): the MCP write tools refuse SQL containing destructive statements. Seventeen files are
+pasted by hand: **002–007 and 009–019**. 002 drops and re-adds foreign keys, and 003–007 and
 009–018 contain the `drop`s and `revoke`s that *are* the access model. The baseline, 008, the seed,
 the mirror and the verification all went through the tool on test, or are plain inserts and selects.
 
@@ -556,28 +557,65 @@ be superseded. Re-check that specifically after any change to that table.
 
 #### Advisories that remain, and why each is correct
 
-No WARN-level advisory remains that is not intended:
+**The expected set for a project at 018** (production, read from its dashboard and accounted for by
+query on 2026-10-31; test holds the same schema). The list written on 2026-10-23 counted a project at
+008. Every difference since is a table or function that 009–018 added on purpose, named below.
 
-* **8 × "signed-in users can execute SECURITY DEFINER function"** — these are `claim_device`,
-  `heartbeat_device`, `push_qr_master`, `push_production_produced`, `current_factory_id`,
-  `current_workstation_id`, `is_enrolled_device`. A device **must** be able to call them; that is
-  the architecture 006 exists to create. Not findings.
-* **1 × "anon can execute SECURITY DEFINER function"** — `public.rls_auto_enable()`, which is
-  **Supabase's own**: owned by `postgres`, `search_path` already pinned, and it returns
-  `event_trigger`, so it cannot be invoked as an RPC whatever `EXECUTE` says. Not ours to revoke.
-* **14 × "RLS enabled, no policy"** (INFO) — those tables deny everything on purpose. Nothing
-  synchronises them, so no policy is the correct policy.
-* **9 × unindexed foreign key** (INFO) — these cover parent-side deletes, which this schema never
-  performs: history is corrected with a new event, never by editing an old one.
-* **14 × unused index** (INFO) — meaningless on a database with no traffic yet. Re-read this one
-  after the pilot has run, not before.
+* **16 × "signed-in users can execute SECURITY DEFINER function"** (WARN). Fifteen are the device
+  API, and a device **must** be able to call them: the claim (`claim_device`, `heartbeat_device`),
+  the policy helpers (`is_enrolled_device`, `current_factory_id`, `current_workstation_id`), the
+  pushes (`push_qr_master`, `push_production_produced`, `push_product_variant`,
+  `push_raw_material_qr_batch`, `push_raw_material_qr`, `push_leased_record`, `push_stock_event`),
+  the leases (`current_leases`, `release_domain_lease`) and `report_sync_health`. Each checks the
+  claim, or answers only about the caller. The sixteenth is `rls_auto_enable` (next item).
+* **1 × "anon can execute SECURITY DEFINER function"** (WARN): `public.rls_auto_enable()`. **A
+  finding, small.** See "rls_auto_enable" below.
+* **25 × "RLS enabled, no policy"** (INFO). They deny every client on purpose. The 14 of the
+  baseline and 006 (`app_settings`, `audit_log`, `backup_history`, `device_claim_events`,
+  `devices`, `metrics_counters`, `metrics_timeseries`, `report_daily_summary`,
+  `role_permissions`, `roles`, `stock_projection_by_location`, `stock_projection_by_variant`,
+  `sync_outbox`, `system_health_snapshots`), plus 11 since: `sync_aggregate_types` (009),
+  `lease_domains`, `domain_leases`, `domain_lease_events` (011), `raw_material_qr_batches`,
+  `raw_material_qrs` (012), `leased_record_types`, `leased_records` (013),
+  `inventory_stock_events` (015), `number_blocks`, `number_block_events` (018). Only the
+  owner-run push functions and triggers touch them; computers read what they need from the log.
+* **14 × unindexed foreign key** (INFO). The 9 of 2026-10-23 plus 5 since:
+  `sync_event_log.aggregate_type` (009), `domain_lease_events.domain` (011),
+  `leased_record_types.lease_domain` (013), `device_sync_health.factory_id` (014),
+  `sync_log_doorbell.factory_id` (016). Every one points at a small reference table
+  (factories, workstations, operators, product variants, the lease domains, the log's types) whose
+  rows are never deleted, so the index the lint asks for would only ever serve a parent delete that
+  does not happen.
+* **15 or 16 × unused index** (INFO). Meaningless before any traffic: production has no rows.
+  The 14 of 2026-10-23 plus `raw_material_qrs.idx_raw_material_qrs_batch_id` (012) and
+  `inventory_stock_events.idx_inventory_stock_events_item_id` (015) make 16, all with zero scans
+  by query on 2026-10-31; the dashboard said 15. One index is counted differently, and which one
+  does not matter until there is traffic. Re-read this after the pilot has run, not before.
 
-Deliberately **not** changed: the 8 "signed-in users can execute SECURITY DEFINER function"
-advisories (those are the claim and push RPCs — a device must be able to call them), the 14 "RLS
-enabled, no policy" advisories (those tables deny everything on purpose), and
-`public.rls_auto_enable()` (Supabase's own event-trigger function; it returns `event_trigger` so
-it cannot be invoked as an RPC whatever `EXECUTE` says).
+#### rls_auto_enable — what it is, and why anon should not hold EXECUTE
 
+**What it is.** Supabase's own, not ours: present on both projects before any migration here,
+owned by `postgres`, `SECURITY DEFINER`, `search_path` pinned to `pg_catalog`, and fired by
+the event trigger `ensure_rls` on every `CREATE TABLE` in `public`, where it switches row level
+security on for the new table. That is why every table here has RLS from the moment it exists.
+
+**Why anon can execute it.** Its access list is empty, which in PostgreSQL means the default:
+`EXECUTE` for `PUBLIC`, which every role inherits.
+
+**What was wrong in this guide.** It said the function "cannot be invoked as an RPC whatever
+EXECUTE says", because it returns `event_trigger`. **Tested on test, 2026-10-31: false.** As
+`anon`, `select public.rls_auto_enable()` runs, as `postgres`, and returns.
+
+**Why it is harmless anyway.** Its only action is `alter table ... enable row level security`
+on the tables created by the DDL command currently firing. Called directly there is no such
+command, so it does nothing. It can never switch RLS off, read a row or write one.
+
+**Why it should still be closed.** Nothing but the event trigger needs to call it, and "a client
+holds nothing it does not need" is the rule 007 and 010 enforce. **Revoking it does not stop the
+event trigger:** proved on test, rolled back -- with `EXECUTE` revoked from `public`, `anon` and
+`authenticated`, a role holding no `EXECUTE` created a table and RLS was still switched on. An
+event trigger does not check the creator's `EXECUTE`. Migration 019 makes the revoke; once it is
+applied, this item and the sixteenth "signed-in" item leave the expected set (15 and 0).
 ---
 
 ## 7. What has to happen before any two-PC test — the owner's checklist
@@ -621,10 +659,11 @@ The project is `ykhvbmhmeefdtrzqeoxm` (created 2026-10-23). Record progress in �
    | 16 | `migrations/supabase/016_sync_log_doorbell.up.sql` | **you, SQL editor** |
    | 17 | `migrations/supabase/017_product_variant_log.up.sql` | **you, SQL editor** |
    | 18 | `migrations/supabase/018_number_block_registry.up.sql` | **you, SQL editor** |
+   | 19 | `migrations/supabase/019_close_rls_auto_enable.up.sql` | **you, SQL editor** |
 
    Paste each file **whole**. **Never through a script that splits on semicolons** — `003`, `009`,
-   and `011`–`018` define `$$`-quoted function bodies containing semicolons, and a splitter shreds
-   them. The sixteen by-hand files are the ones the MCP tools refuse, because they contain `drop` or `revoke`
+   and `011`–`019` contain `$$`-quoted bodies with semicolons inside, and a splitter shreds
+   them. The seventeen by-hand files are the ones the MCP tools refuse, because they contain `drop` or `revoke`
    (§6a.2).
 
    **Never re-run `005` after `009`.** 005 re-adds its two-type factory CHECK, the one 009 replaced

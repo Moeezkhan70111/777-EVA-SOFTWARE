@@ -44,6 +44,9 @@
 -- carton updated_at trigger 002 removed and unpins set_updated_at (check 14). Check 34 catches the
 -- first, which nothing here looked at.
 --
+-- Updated for 019 (2026-10-31): check 35, rls_auto_enable executable by no client. A project at 018
+-- fails exactly 35.
+--
 -- It turns docs/36 section 6a's verified state into something that can be re-run instead of
 -- re-read. Run it after setting up a project, and again after ANY change to its schema or grants.
 --
@@ -289,6 +292,13 @@ checks(n, check_name, expected, actual) as (
   --     set_updated_at pin if this or check 14 fails.
   union all select 34, 'baseline-after-002: the cloud does not rewrite a carton''s updated_at', '0',
     (select count(*)::text from pg_trigger where not tgisinternal and tgname = 'trg_qr_master_updated_at')
+
+  -- 35. SUPABASE'S rls_auto_enable (019): no client may execute it. It ran when called as anon
+  --     (tested 2026-10-31), harmlessly; the event trigger that uses it does not need clients to hold it.
+  union all select 35, 'rls_auto_enable: executable by anon or authenticated', 'false',
+    coalesce((select (has_function_privilege('anon', p.oid, 'EXECUTE')
+                   or has_function_privilege('authenticated', p.oid, 'EXECUTE'))::text
+              from pg_proc p where p.pronamespace = 'public'::regnamespace and p.proname = 'rls_auto_enable'), 'false')
 )
 select n, check_name, expected, actual, actual = expected as ok
 from checks

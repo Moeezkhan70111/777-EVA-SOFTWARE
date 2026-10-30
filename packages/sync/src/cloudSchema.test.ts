@@ -1187,7 +1187,7 @@ test("both new files are one transaction, and the README states the order and th
     assert.ok(sqlOnly(file).trimStart().startsWith("begin;"));
     assert.ok(file.trimEnd().endsWith("commit;"));
   }
-  assert.match(MIGRATION_README, /`schema\.sql` → `002` → `003` → … → `018`/);
+  assert.match(MIGRATION_README, /`schema\.sql` → `002` → `003` → … → `019`/);
   // A migration that cuts off older clients has to say so where the order is read.
   assert.match(MIGRATION_README, /A client from before 018 cannot sync once it is applied/);
 });
