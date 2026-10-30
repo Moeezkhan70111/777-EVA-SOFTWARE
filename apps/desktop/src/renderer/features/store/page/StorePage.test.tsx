@@ -189,6 +189,18 @@ describe("Store page — the scan panels, as released", () => {
     expect(within(rail).getByLabelText("Scanner input")).toBeDisabled();
   });
 
+  it("offers contractors as well as suppliers to receive from, each with its type (0.4.1)", async () => {
+    installApi({ receivingOpen: false });
+    renderPage();
+    const rail = screen.getByRole("complementary", { name: "Scan Material" });
+    await act(async () => {
+      // A search box: its list opens on focus.
+      fireEvent.focus(await within(rail).findByRole("combobox", { name: "Supplier" }));
+    });
+    expect(await screen.findByRole("option", { name: /SHEHZAD RUBBER/ })).toHaveTextContent("Supplier");
+    expect(screen.getByRole("option", { name: /DANIYAL/ })).toHaveTextContent("Contractor");
+  });
+
   it("hosts Scan Out as Store Out had it: the party with its type, New session, End session, Print slip", async () => {
     installApi();
     renderPage({ start: "issuing" });

@@ -1079,7 +1079,7 @@ export const rawMaterialQrMethods = {
       .get(partyId) as { id: string; party_name: string; party_type: string } | undefined;
     if (!party) throw new Error("That supplier was not found.");
     if (!isRawMaterialReceiptPartyType(party.party_type)) {
-      throw new Error(`Only a supplier's delivery is received here, and ${party.party_name} is not a supplier. Nothing was started.`);
+      throw new Error(`Only a supplier's or a contractor's delivery is received here, and ${party.party_name} is neither. Nothing was started.`);
     }
 
     const now = new Date().toISOString();

@@ -960,37 +960,47 @@ test("the Move Out slip's summary names the party and totals each material, as t
   }
 });
 
-// ─── RECEIVING FROM SUPPLIERS ONLY (owner, 0.3.9) ───────────────────────────────
-// Labels are printed for suppliers alone and a packet is received only into its own supplier's
-// session, so a session for anyone else could never receive. Return Upper has its own path.
+// ─── RECEIVING FROM SUPPLIERS AND CONTRACTORS (owner, 0.4.1; suppliers only in 0.3.9) ─────────
+// A packet is received only into a session for the party its label names, and labels follow the
+// same rule. Anyone else -- a customer, a dealer -- is still refused. Return Upper has its own path.
 
-test("a receiving session is only ever started for a supplier", () => {
+test("a receiving session is started for a supplier or a contractor, never anyone else", () => {
   const f = createFixture();
   try {
-    const contractor = f.db.createParty({ partyName: "ASLAM UPPER MAKER", partyType: "CONTRACTOR", city: "Lahore", mobileNumber: "0300-9999999", status: "ACTIVE" });
+    const customer = f.db.createParty({ partyName: "WALK-IN BUYER", partyType: "CUSTOMER", city: "Lahore", mobileNumber: "0300-8888888", status: "ACTIVE" });
     const before = f.countRows("raw_material_receiving_sessions");
     assert.throws(
-      () => f.db.startRawMaterialReceivingSession({ partyId: contractor, deviceId: "device-1", startedBy: "aslam" }),
-      /ASLAM UPPER MAKER is not a supplier\. Nothing was started\./
+      () => f.db.startRawMaterialReceivingSession({ partyId: customer, deviceId: "device-1", startedBy: "aslam" }),
+      /WALK-IN BUYER is neither\. Nothing was started\./
     );
     assert.equal(f.countRows("raw_material_receiving_sessions"), before, "nothing was started, and no number was used");
+
+    const contractor = f.db.createParty({ partyName: "ASLAM UPPER MAKER", partyType: "CONTRACTOR", city: "Lahore", mobileNumber: "0300-9999999", status: "ACTIVE" });
+    const forContractor = f.db.startRawMaterialReceivingSession({ partyId: contractor, deviceId: "device-1", startedBy: "aslam" });
+    assert.ok(forContractor.id, "a contractor's delivery is received (0.4.1)");
+    f.db.closeRawMaterialReceivingSession(forContractor.id);
     assert.ok(f.db.startRawMaterialReceivingSession({ partyId: f.otherSupplier, deviceId: "device-1", startedBy: "aslam" }).id);
   } finally {
     f.cleanup();
   }
 });
 
-test("material is moved in by hand only from a supplier", () => {
+test("material is moved in by hand from a supplier or a contractor, never anyone else", () => {
   const f = createFixture();
   try {
     const m = readyMaterial(f, "7/10", 2);
     const unitCode = f.db.inventoryItemStockUnit(m.itemId)?.code ?? "DOZEN";
+    const customer = f.db.createParty({ partyName: "WALK-IN BUYER", partyType: "CUSTOMER", city: "Lahore", mobileNumber: "0300-8888888", status: "ACTIVE" });
     const contractor = f.db.createParty({ partyName: "ASLAM UPPER MAKER", partyType: "CONTRACTOR", city: "Lahore", mobileNumber: "0300-9999999", status: "ACTIVE" });
 
-    const refused = f.db.moveRawMaterialByHand({ itemId: m.itemId, direction: "IN", quantity: 2, unitCode, partyId: contractor, actor: "aslam" });
+    const refused = f.db.moveRawMaterialByHand({ itemId: m.itemId, direction: "IN", quantity: 2, unitCode, partyId: customer, actor: "aslam" });
     assert.equal(refused.outcome, "NO_SUPPLIER");
-    assert.match(refused.reason ?? "", /ASLAM UPPER MAKER is not a supplier/);
+    assert.match(refused.reason ?? "", /WALK-IN BUYER is neither/);
     assert.equal(f.stockOf(m.itemId), 0, "nothing was moved");
+
+    const fromContractor = f.db.moveRawMaterialByHand({ itemId: m.itemId, direction: "IN", quantity: 2, unitCode, partyId: contractor, actor: "aslam" });
+    assert.equal(fromContractor.outcome, "MOVED", fromContractor.reason);
+    assert.equal(f.stockOf(m.itemId), 2, "a contractor's delivery is moved in (0.4.1)");
 
     const moved = f.db.moveRawMaterialByHand({ itemId: m.itemId, direction: "IN", quantity: 2, unitCode, partyId: f.supplier, actor: "aslam" });
     assert.equal(moved.outcome, "MOVED", moved.reason);
