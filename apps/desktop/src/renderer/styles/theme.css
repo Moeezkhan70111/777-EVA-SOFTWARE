@@ -7684,7 +7684,20 @@ tr.has-error .gp-qty-stepper input { color: var(--err); }
 .sp-mode[aria-pressed="true"] .sp-mode-state { padding: 4px 11px; border-radius: 999px; background: rgba(255, 255, 255, 0.16); color: var(--white); }
 .sp-mode:focus-visible { outline: 3px solid var(--sp-navy-2); outline-offset: 2px; }
 
-.sp-body { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(330px, 400px); gap: 16px; }
+/* Work area | handle | scan rail (0.4.1). The rail's width is --sp-rail-width: this default, or the
+   share the operator dragged it to (StorePage sets it, clamped). Every child is placed by column, so
+   the modes and an open program can swap without the grid reflowing. */
+.sp-body { --sp-rail-width: clamp(330px, 30%, 400px); flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) 16px var(--sp-rail-width); }
+.sp-body > .sp-work-slot, .sp-body > .sp-work { grid-column: 1; grid-row: 1; }
+.sp-body > .sp-split { grid-column: 2; grid-row: 1; }
+.sp-body > .sp-rail { grid-column: 3; grid-row: 1; }
+.split-handle { position: relative; cursor: col-resize; touch-action: none; border-radius: var(--sp-radius-tab); }
+.split-handle::after {
+  content: ""; position: absolute; top: 50%; left: 50%; width: 4px; height: 48px; transform: translate(-50%, -50%);
+  border-radius: 999px; background: var(--sp-line); transition: background 120ms ease, height 120ms ease;
+}
+.split-handle:hover::after, .split-handle:active::after { background: var(--sp-muted); height: 72px; }
+.split-handle:focus-visible { outline: 2px solid var(--sp-navy); outline-offset: -2px; }
 .sp-work-slot { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
 .sp-work-slot > .sp-work { flex: 1; }
 /* The inactive mode stays mounted (its session, its form) but is not shown. hidden must win over
@@ -7759,7 +7772,9 @@ tr.has-error .gp-qty-stepper input { color: var(--err); }
 @media (max-width: 900px) {
   .sp-page { overflow-y: auto; height: auto; padding: 16px; }
   .sp-head { padding-right: 0; flex-wrap: wrap; }
-  .sp-body { grid-template-columns: minmax(0, 1fr); }
+  .sp-body { grid-template-columns: minmax(0, 1fr); gap: 16px; }
+  .sp-body > .sp-work-slot, .sp-body > .sp-work, .sp-body > .sp-rail { grid-column: 1; grid-row: auto; }
+  .sp-body > .sp-split { display: none; }
   .sp-rail { order: -1; }
   .sp-issued-row { grid-template-columns: minmax(0, 1fr) auto; }
 }

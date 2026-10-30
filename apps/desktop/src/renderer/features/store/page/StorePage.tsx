@@ -1,6 +1,7 @@
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useRef, useState } from "react";
 import type { AppRoute } from "../../../app/routes";
 import { copy } from "../../../config/copy";
+import { SplitHandle, splitWidth, useSplitFraction } from "../../../components/shared/SplitHandle";
 import { useRawMaterialLookups } from "../../rawMaterial/useRawMaterialLookups";
 import { SCAN_STATION_CSS } from "../../scanStation/scanStation";
 import { IssuingWorkArea } from "./IssuingWorkArea";
@@ -27,12 +28,19 @@ import { NO_SESSION, type StationStatus } from "./stationStatus";
 // dialog stays: showMachinePrograms puts the button back. A program still opens from a scanned
 // program sheet on Scan Out, and from a notification.
 //
+// THE SPLIT between the work area and the scan rail can be dragged (0.4.1). The rail's width is a
+// share of the page, clamped so neither side drops below a usable width, so it follows the window;
+// each computer remembers its own. On a narrow screen the page stacks and the handle goes.
+//
 // BOTH STATIONS LIVE HERE, for as long as the page does: each keeps its session whichever mode is on
 // screen, and the switch shows both. Both rails stay mounted; the inactive one is hidden and its scan
 // box disarmed (the stations' `active`), so a scan can only land in the mode being looked at.
 //
 // AN OPEN MACHINE PROGRAM takes the work area and the rail (ProgramSlot). Both stations stay mounted
 // and disarmed meanwhile: the program's own scanner is the one box listening.
+
+/** The scan rail's share of the page: its limits, and the default the CSS starts from (theme.css). */
+const RAIL = { min: 0.2, max: 0.6, default: 0.3, minPx: 300, workMinPx: 420, storageKey: "erp.store.rail-width" } as const;
 
 interface StorePageProps {
   mode: StoreMode;
@@ -63,6 +71,10 @@ export const StorePage: React.FC<StorePageProps> = (props) => {
   const free = !programs.isOpen && !programs.dialogOpen;
   const lookups = useRawMaterialLookups();
   useModeKeys(onModeChange);
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const [railFraction, setRailFraction] = useSplitFraction(RAIL.storageKey, RAIL.min, RAIL.max);
+  const bodyStyle =
+    railFraction === null ? undefined : ({ ["--sp-rail-width"]: splitWidth(railFraction, RAIL.minPx, RAIL.workMinPx) } as React.CSSProperties);
 
   // Receipts → Continue opened the full-screen station; here the open session is already on the rail.
   const navigate = useCallback((route: AppRoute) => (route === "raw-material-input" ? onModeChange("receiving") : onNavigate(route)), [onModeChange, onNavigate]);
@@ -94,7 +106,7 @@ export const StorePage: React.FC<StorePageProps> = (props) => {
         onSelect={onModeChange}
       />
 
-      <div className="sp-body">
+      <div className="sp-body" ref={bodyRef} style={bodyStyle}>
         <div hidden={!showing("receiving")} className="sp-work-slot">
           <ReceivingWorkArea {...shared} />
         </div>
@@ -102,6 +114,16 @@ export const StorePage: React.FC<StorePageProps> = (props) => {
           <IssuingWorkArea {...shared} sessionKey={issuingKey} />
         </div>
         {programs.isOpen ? <ProgramWork store={programs} mode={mode} /> : null}
+        <SplitHandle
+          label={copy.storePage.resizeRail}
+          containerRef={bodyRef}
+          fraction={railFraction}
+          defaultFraction={RAIL.default}
+          min={RAIL.min}
+          max={RAIL.max}
+          onChange={setRailFraction}
+          className="sp-split"
+        />
         <ScanInRail token={token} username={username} hidden={!showing("receiving")} active={mode === "receiving" && free} onStatus={setReceivingStatus} />
         <ScanOutRail
           token={token}

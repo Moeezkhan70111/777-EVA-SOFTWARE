@@ -109,6 +109,23 @@ describe("Store page — layout", () => {
     expect(screen.queryByRole("button", { name: "Machine programs" })).toBeNull();
   });
 
+  it("has a splitter between the work area and the scan rail, and lays out the width remembered here", async () => {
+    window.localStorage.setItem("erp.store.rail-width", "0.45");
+    try {
+      installApi();
+      const { container } = renderPage();
+      const splitter = screen.getByRole("separator", { name: "Resize the scan panel" });
+      expect(splitter).toHaveAttribute("aria-valuenow", "45");
+      const body = container.querySelector(".sp-body") as HTMLElement;
+      expect(body.style.getPropertyValue("--sp-rail-width")).toBe("clamp(300px, 45.00%, calc(100% - 420px))");
+      fireEvent.doubleClick(splitter);
+      expect(body.style.getPropertyValue("--sp-rail-width")).toBe("");
+      expect(window.localStorage.getItem("erp.store.rail-width")).toBeNull();
+    } finally {
+      window.localStorage.removeItem("erp.store.rail-width");
+    }
+  });
+
   it("shows the Machine programs button again only when asked to", async () => {
     installApi();
     renderPage({ showMachinePrograms: true });

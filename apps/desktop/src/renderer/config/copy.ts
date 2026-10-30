@@ -1775,6 +1775,7 @@ export const copy = {
     // own heading is not there to say where it belongs.
     stationEyebrow: "Store · Raw Material",
     machinePrograms: "Machine programs",
+    resizeRail: "Resize the scan panel",
     modesLabel: "What the store is doing",
     receiving: "Receiving",
     issuing: "Issuing",
