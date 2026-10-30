@@ -358,9 +358,10 @@ them current, and fill a row in only once it has been checked by query.
 `https://ykhvbmhmeefdtrzqeoxm.supabase.co`, region ap-south-1 (Mumbai). Created 2026-10-23.
 
 **Status: SET UP, 2026-10-31.** The baseline and 002–018 applied in order by the owner in the SQL editor,
-each checked by query before the next; `factory-777` seeded; `verify_applied_state.sql` 34/34. **No
-Auth users, no enrolled devices, no leases granted, no business rows.** Next: Advisors (step 22),
-then §7.2 per computer and §10 cutover. The `check_*.sql` scripts are for test only and were not
+each checked by query before the next; `factory-777` seeded; `verify_applied_state.sql` 34/34, then 019 (35/35). **PC2 enrolled 2026-10-31** (§7.6):
+Auth user `store@gmail.com` (`c06feecb-…`), workstation `0727f22b-7c01-4ff6-94db-1471ac5dfbab`,
+device `47c0dace-fe68-42cb-989c-e94f69c62c0f`, label "PC2 - store (DESKTOP-R1V8)", not yet claimed.
+**No leases granted, no business rows.** Next: §10 cutover. The `check_*.sql` scripts are for test only and were not
 run here.
 
 Two slips on the way, both caught by the per-step check: the baseline, and later 007 and 008, were
@@ -762,6 +763,13 @@ minute (the pass interval since 2026-10-25), or immediately on **Send Now**.
 
 **Precondition: production is set up and verified** — §6a.1 steps 1–11 all ticked.
 
+**Today's PC2 (2026-10-31).** Written on 2026-10-23 for an earlier "PC 2" that had been on test.
+Today's PC2, the store machine (`47c0dace…`, DESKTOP-R1V8, running 0.4.0), was **never enrolled on
+test**: its identity is in neither test table, and it matches the workstation row in its own
+database. So A–C apply, D is covered by 0.4.0 and by the clean-up (§10.5), and F does not apply.
+A and B were done on 2026-10-31. **C waits for the cutover** (§10): PC2 is not given production
+credentials before its test-era state is cleared and the paper baseline exists.
+
 **This is the interim procedure** (owner, 2026-10-23) until in-app enrolment (`docs/37 §U.1`)
 replaces it. The same steps enrol **PCs 3–5**, which were never on test: A, B and C apply as
 written, and D and F do not apply. **Who does what:**
@@ -1025,6 +1033,12 @@ the step happened and how you go back if a later step fails.
 The real database belongs to the machine whose `device-identity.json` sits beside it.
 
 1. **Read PC 2's `device-identity.json`**: `deviceId`, `workstationId`.
+**No longer applies (checked 2026-10-31).** 087 was changed before release to stamp the running
+computer's own id, bound from `device-identity.json`, not `'desktop-main'`. Copies of PC2's and
+PC3's files show PC2's id on the pre-existing numbered rows, and the app rewrites `device.id` from
+`device-identity.json` on every start, so a database carried over from PC3 takes PC2's id when it
+starts on PC2. Step 1 below still applies; step 2 is kept for the record.
+
 2. **Check it against migration 087's hard-coded stamp.** 087 stamps every pre-existing numbered
    row with `origin_device_id = 'desktop-main'`, and seeds `device.id = 'desktop-main'`. That was
    right for the original installation. **If PC 2's `deviceId` is not `desktop-main`**, 087 has
@@ -1077,11 +1091,31 @@ of it is business data:
 How: by an admin action in the release, or by the agent with the app closed, through a reviewed,
 rehearsed script. **Never by hand-typed SQL on the day.**
 
+**The script: `scripts/clear-test-state.mjs`** (`packages/data/src/database/testStateClear.ts`).
+It works on a copy and writes a new file; the copy it is given is hashed and never written. It
+deletes queue rows already sent (`SYNCED`), **retires** the 868 legacy rows (marks them `SYNCED`
+with a note, deletes none), removes `sync.pull.cursor`, `.deferred`, `.project`,
+`sync.leases.unsupported` and `sync.backfill.last`, and empties the lease cache. It keeps queue
+rows written since without a lease epoch, which the backfill re-queues. It **refuses**, changing
+nothing, on another computer's database, a schema other than 0.4.0's (099), and anything it was not
+built for: rows stamped with a lease epoch, rows in flight, failed or dead-lettered, events parked
+from test's log, displaced names. Then it checks: nothing sent is left, every legacy row is retired,
+only those settings went, the lease cache is empty, **every other table holds exactly the rows it
+did**, `quick_check` ok. A failed check renames the output `*.FAILED`.
+
+**Rehearsed 2026-10-31** on PC2's 27 Oct file, upgraded to 099: 2 sent rows deleted, 868 retired,
+`sync.pull.cursor` removed, 107 other tables identical; a second run changed nothing; the result
+opens at 099 and its backfill plan shows **0 stock mismatches** (1,073 master records, 6,788
+movements, 1,134 label runs, 5,002 packets, 31 products). **The real run** is the same command on a
+fresh copy of PC2's database taken with 777 ERP closed (with its `-wal` and `-shm`), then the
+output swapped into PC2's data folder, before step C of §7.6.
+
 ### 10.6 Production enrolment and leases
 
 1. **Enrol the machine** in production (§7.6 A–C), keeping its identity.
-2. **Grant it the leases it holds:** Raw material store, Master data, and Accounts (the last one
-   so ledger balances are shown only where the vouchers are). Record who granted them, and when.
+2. **Grant it the leases it holds:** Raw material store and Master data. **Not Accounts** (owner,
+   2026-10-31): PC2 is the store and raw material stock only, so its party ledgers stay hidden.
+   Record who granted them, and when.
 3. **Point its four variables at production** (§7.6 C). Remove anything pointing at test.
 
 ### 10.7 Backfill and verify
