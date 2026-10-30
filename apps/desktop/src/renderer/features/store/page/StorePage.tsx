@@ -1,5 +1,6 @@
 import React, { useCallback, useRef, useState } from "react";
 import type { AppRoute } from "../../../app/routes";
+import { BRAND_LOGO_URL } from "../../../config/branding";
 import { copy } from "../../../config/copy";
 import { SplitHandle, splitWidth, useSplitFraction } from "../../../components/shared/SplitHandle";
 import { useRawMaterialLookups } from "../../rawMaterial/useRawMaterialLookups";
@@ -19,8 +20,7 @@ import { NO_SESSION, type StationStatus } from "./stationStatus";
 // THE STORE PAGE (0.3.9) — Receiving and Issuing on one page, in place of Store Station, Store In
 // and Store Out.
 //
-//   Store
-//   Raw material in and out
+//   [777 SEVEN]                    STORE                     [bell] [avatar]
 //   [ Receiving · Session open · 12 packets ][ Issuing · Nothing started ]     (keys 1 and 2)
 //   ┌ the active mode's work area ─────────────────┬ its scan rail, ~380px ┐
 //
@@ -52,6 +52,11 @@ interface StorePageProps {
   onNavigate: (route: AppRoute) => void;
   /** Absent when this account may not open the Carton QR Generator. */
   onOpenCartonQr?: () => void;
+  /**
+   * The header's right-hand side: the bell and the profile avatar, for a store operator, who has no
+   * navbar (App builds them). Everyone else has both in the navbar, so this is left empty.
+   */
+  headerActions?: React.ReactNode;
   /** Shows the Machine programs button (hidden since 0.4.1). */
   showMachinePrograms?: boolean;
   /** A machine program to open on arrival, from a notification or the Machine Program page. */
@@ -85,18 +90,19 @@ export const StorePage: React.FC<StorePageProps> = (props) => {
   return (
     <div className="sp-page">
       <style>{SCAN_STATION_CSS}</style>
+      {/* The owner's header design (0.4.1): the brand on the left, STORE in the middle, the bell and
+          the profile on the right, on the sky that runs down the page. */}
       <header className="sp-head">
-        <div className="sp-head-text">
-          <h1 className="sp-title">{copy.storePage.title}</h1>
-          <p className="sp-sub">{copy.storePage.subtitle}</p>
-        </div>
-        {props.showMachinePrograms ? (
-          <div className="sp-head-actions">
+        <img className="sp-logo" src={BRAND_LOGO_URL} alt={copy.app.brandLine} />
+        <h1 className="sp-title">{copy.storePage.title}</h1>
+        <div className="sp-head-actions">
+          {props.showMachinePrograms ? (
             <button type="button" className="btn btn-secondary" aria-haspopup="dialog" onClick={programs.openDialog}>
               {copy.storePage.machinePrograms}
             </button>
-          </div>
-        ) : null}
+          ) : null}
+          {props.headerActions}
+        </div>
       </header>
 
       <ModeSwitch

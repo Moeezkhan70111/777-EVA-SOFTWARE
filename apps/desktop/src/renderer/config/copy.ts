@@ -1770,12 +1770,13 @@ export const copy = {
   // and Store Out.
   storePage: {
     title: "Store",
-    subtitle: "Raw material in and out",
     // Above a raw material station opened on its own (its direct link), where the Store page's
     // own heading is not there to say where it belongs.
     stationEyebrow: "Store · Raw Material",
     machinePrograms: "Machine programs",
     resizeRail: "Resize the scan panel",
+    notifications: "Notifications",
+    noNotifications: "Nothing new.",
     modesLabel: "What the store is doing",
     receiving: "Receiving",
     issuing: "Issuing",

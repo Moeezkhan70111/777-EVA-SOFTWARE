@@ -211,9 +211,13 @@ describe("App", () => {
     const modes = screen.getByRole("group", { name: "What the store is doing" });
     expect(within(modes).getByRole("button", { name: /Receiving/ })).toHaveAttribute("aria-pressed", "true");
 
-    // No navbar (0.4.1): the Store page alone, with the floating profile menu to sign out or switch.
+    // No navbar (0.4.1): the Store page alone. Its header carries the bell and the profile, so there
+    // is exactly one profile button -- the header's portrait, not the floating pill.
     expect(screen.queryByRole("navigation", { name: /main navigation/i })).toBeNull();
-    expect(screen.getByRole("button", { name: "User Profile" })).toBeInTheDocument();
+    const header = screen.getByRole("heading", { level: 1, name: "Store" }).closest("header") as HTMLElement;
+    expect(within(header).getByRole("button", { name: "Notifications" })).toBeInTheDocument();
+    expect(within(header).getByRole("button", { name: "User Profile" })).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: "User Profile" })).toHaveLength(1);
 
     // Issuing, then Escape: the page stays on Issuing — Escape never switches mode.
     await userEvent.click(within(modes).getByRole("button", { name: /Issuing/ }));

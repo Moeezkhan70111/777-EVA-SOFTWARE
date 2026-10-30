@@ -4,6 +4,7 @@ import type { AppRoute } from "../../app/routes";
 import type { AuthUser } from "../../types/desktopApi";
 import { SidebarNav } from "../../features/navigation/SidebarNav";
 import { useDismissOnOutsideClick } from "../../hooks/useDismissOnOutsideClick";
+import { NotificationBell, UserNotificationList, unreadCount } from "./NotificationBell";
 import { SyncStatusIndicator } from "../../features/sync/SyncStatusIndicator";
 
 /* ── Icon helpers ─────────────────────────────────────── */
@@ -246,7 +247,6 @@ export const Navbar = ({
   onAddAccount,
 }: NavbarProps) => {
   const [openProfile, setOpenProfile] = useState(false);
-  const [openNotifications, setOpenNotifications] = useState(false);
   const [requestPermissions, setRequestPermissions] = useState<
     Record<string, string[]>
   >({});
@@ -257,13 +257,15 @@ export const Navbar = ({
     Record<string, boolean>
   >({});
   const profileRef = useRef<HTMLDivElement | null>(null);
-  const notificationsRef = useRef<HTMLDivElement | null>(null);
 
-  // Both pop-ups close on a click anywhere else on the screen, or on Escape.
+  // The profile pop-up closes on a click anywhere else on the screen, or on Escape (the bell's does too).
   const closeProfile = useCallback(() => setOpenProfile(false), []);
-  const closeNotifications = useCallback(() => setOpenNotifications(false), []);
   useDismissOnOutsideClick(profileRef, openProfile, closeProfile);
-  useDismissOnOutsideClick(notificationsRef, openNotifications, closeNotifications);
+
+  // Waiting for an administrator: shown on the bell beside the user's own unread notifications.
+  const pendingRequests =
+    accessRequests.filter((request) => request.status === "PENDING").length +
+    permissionRequests.filter((pr) => pr.status === "PENDING").length;
 
   return (
     <nav className="navbar">
@@ -287,372 +289,316 @@ export const Navbar = ({
             and this file is long enough already. */}
         {user && <SyncStatusIndicator onOpenSettings={() => onSelect("settings")} />}
         {user && (
-          <div className="notification-menu-wrap" ref={notificationsRef}>
-            <button
-              type="button"
-              className="notification-trigger"
-              aria-label="Access requests"
-              title="Access requests"
-              aria-expanded={openNotifications}
-              onClick={() => setOpenNotifications((value) => !value)}
-            >
-              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                <path
-                  d="M18 9a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9Zm-8 12h4"
-                  stroke="currentColor"
-                  strokeWidth="1.8"
-                  strokeLinecap="round"
-                />
-              </svg>
-              {accessRequests.filter((request) => request.status === "PENDING")
-                .length +
-                permissionRequests.filter((pr) => pr.status === "PENDING").length +
-                notifications.filter((notification) => !notification.readAt)
-                  .length >
-                0 && (
-                <span className="notification-badge">
-                  {accessRequests.filter(
-                    (request) => request.status === "PENDING",
-                  ).length +
-                    permissionRequests.filter((pr) => pr.status === "PENDING").length +
-                    notifications.filter((notification) => !notification.readAt)
-                      .length}
-                </span>
-              )}
-            </button>
-            {openNotifications && (
-              <div className="notification-panel">
-                <div className="notification-panel-title">Notifications</div>
-                {notifications.map((notification) => (
-                  <div
-                    className={`user-notification${notification.readAt ? " read" : ""}${notification.severity === "CRITICAL" ? " is-critical" : notification.severity === "WARNING" ? " is-warning" : ""}`}
-                    key={notification.id}
-                    role="button"
-                    tabIndex={0}
-                    onClick={() => onNotificationClick?.(notification)}
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter" || event.key === " ") {
-                        event.preventDefault();
-                        onNotificationClick?.(notification);
-                      }
-                    }}
-                  >
-                    <strong>
-                      {notification.severity === "CRITICAL" ? "⚠ " : ""}
-                      {notification.title}
-                    </strong>
-                    <span>{notification.message}</span>
-                  </div>
-                ))}{" "}
-                {user.role === "ADMIN" && (accessRequests.length > 0 || permissionRequests.length > 0) && (
-                  <div className="notification-panel-title notification-panel-subtitle">
-                    Access Requests
-                  </div>
-                )}
-                {accessRequests.map((request) => (
-                  <div className="access-request" key={request.id}>
-                    <div className="access-request-head">
-                      <strong>{request.username}</strong>
-                      <span
-                        className={`access-request-status ${request.status.toLowerCase()}`}
-                      >
-                        {request.status}
-                      </span>
-                    </div>
-                    {request.status === "PENDING" && onReviewAccessRequest && (
-                      <>
-                        <label className="member-role-field" style={{ margin: "8px 0", display: "block" }}>
-                          <span style={{ fontSize: "12px", color: "var(--text-3)", display: "block", marginBottom: "4px" }}>Role</span>
-                          <select
-                            value={requestRoleCodes[request.id] ?? ""}
-                            onChange={(event) => {
-                              const nextCode = event.target.value;
-                              setRequestRoleCodes((current) => ({
-                                ...current,
-                                [request.id]: nextCode,
-                              }));
-                              const nextRole = roleOptions.find((role) => role.code === nextCode);
-                              if (nextRole) {
-                                setRequestPermissions((current) => ({
-                                  ...current,
-                                  [request.id]: [...nextRole.permissions],
-                                }));
-                              }
-                            }}
-                            style={{
-                              width: "100%",
-                              padding: "6px 10px",
-                              borderRadius: "8px",
-                              border: "1px solid #e5e7eb",
-                              fontSize: "13px",
-                              background: "var(--white)",
-                            }}
-                          >
-                            <option value="">Select a role…</option>
-                            {roleOptions.map((role) => (
-                              <option value={role.code} key={role.code}>
-                                {role.name}
-                              </option>
-                            ))}
-                          </select>
-                        </label>
-                        <button
-                          type="button"
-                          className="btn btn-ghost btn-sm"
-                          style={{
-                            width: "100%",
-                            marginBottom: "8px",
-                            fontSize: "12px",
-                            color: "#4b5563",
-                          }}
-                          onClick={() =>
-                            setExpandedRequests((current) => ({
-                              ...current,
-                              [request.id]: !current[request.id],
-                            }))
-                          }
-                        >
-                          {expandedRequests[request.id]
-                            ? "▾ Additional Access (override)"
-                            : "▸ Additional Access (override)"}
-                        </button>
-                        {expandedRequests[request.id] && (
-                          <div
-                            className="permission-selector"
-                            style={{
-                              background: "var(--surface-faint)",
-                              padding: "10px",
-                              borderRadius: "8px",
-                              marginBottom: "8px",
-                            }}
-                          >
-                            {NAV_PERMISSION_MODULES.map((module) => {
-                              const hasChildren = module.children.length > 0;
-                              const moduleEnabled =
-                                (requestPermissions[request.id] ?? []).includes(
-                                  module.id,
-                                ) ||
-                                module.children.some(([childId]) =>
-                                  (requestPermissions[request.id] ?? []).includes(
-                                    childId,
-                                  ),
-                                );
-                              return (
-                                <div
-                                  key={module.id}
-                                  style={{ marginBottom: "4px" }}
-                                >
-                                  <label
-                                    style={{
-                                      display: "flex",
-                                      alignItems: "center",
-                                      gap: "6px",
-                                      fontSize: "12px",
-                                    }}
-                                  >
-                                    <span
-                                      style={{
-                                        fontWeight: hasChildren
-                                          ? 600
-                                          : 400,
-                                      }}
-                                    >
-                                      {module.label}
-                                    </span>
-                                    {!hasChildren && (
-                                      <input
-                                        type="checkbox"
-                                        checked={(
-                                          requestPermissions[request.id] ?? []
-                                        ).includes(module.id)}
-                                        onChange={(event) =>
-                                          setRequestPermissions(
-                                            (current) => ({
-                                              ...current,
-                                              [request.id]: event.target.checked
-                                                ? [
-                                                    ...new Set([
-                                                      ...(current[
-                                                        request.id
-                                                      ] ?? []),
-                                                      module.id,
-                                                    ]),
-                                                  ]
-                                                : (current[request.id] ??
-                                                    []
-                                                  ).filter(
-                                                    (item) =>
-                                                      item !== module.id,
-                                                  ),
-                                            }),
-                                          )
-                                        }
-                                      />
-                                    )}
-                                  </label>
-                                  {hasChildren && (
-                                    <div
-                                      style={{
-                                        paddingLeft: "16px",
-                                        display: "grid",
-                                        gridTemplateColumns: "1fr 1fr",
-                                        gap: "2px 12px",
-                                      }}
-                                    >
-                                      {module.children.map(
-                                        ([childId, childLabel]) => (
-                                          <label
-                                            key={childId}
-                                            style={{
-                                              display: "flex",
-                                              alignItems: "center",
-                                              gap: "4px",
-                                              fontSize: "11px",
-                                              color: "#4b5563",
-                                            }}
-                                          >
-                                            <input
-                                              type="checkbox"
-                                              checked={(
-                                                requestPermissions[
-                                                  request.id
-                                                ] ?? []
-                                              ).includes(childId)}
-                                              onChange={(event) =>
-                                                setRequestPermissions(
-                                                  (current) => ({
-                                                    ...current,
-                                                    [request.id]: event.target
-                                                      .checked
-                                                      ? [
-                                                          ...new Set([
-                                                            ...(current[
-                                                              request.id
-                                                            ] ?? []),
-                                                            childId,
-                                                          ]),
-                                                        ]
-                                                      : (current[
-                                                          request.id
-                                                        ] ?? []
-                                                      ).filter(
-                                                        (item) =>
-                                                          item !== childId,
-                                                      ),
-                                                  }),
-                                                )
-                                              }
-                                            />
-                                            {childLabel}
-                                          </label>
-                                        ),
-                                      )}
-                                    </div>
-                                  )}
-                                </div>
-                              );
-                            })}
-                          </div>
-                        )}
-                        <div className="access-request-actions">
-                          <button
-                            type="button"
-                            className="btn btn-primary btn-sm"
-                            onClick={() =>
-                              onReviewAccessRequest(
-                                request.id,
-                                "APPROVED",
-                                requestPermissions[request.id] ?? [],
-                                requestRoleCodes[request.id] || undefined,
-                              )
-                            }
-                          >
-                            Approve Access
-                          </button>
-                          <button
-                            type="button"
-                            className="btn btn-secondary btn-sm"
-                            onClick={() =>
-                              onReviewAccessRequest(
-                                request.id,
-                                "REJECTED",
-                                requestPermissions[request.id] ?? [],
-                                requestRoleCodes[request.id] || undefined,
-                              )
-                            }
-                          >
-                            Reject Access
-                          </button>
-                        </div>
-                      </>
-                    )}
-                  </div>
-                ))}
-                {user.role === "ADMIN" && permissionRequests.length > 0 && (
-                  <div className="notification-panel-title notification-panel-subtitle">
-                    Permission Requests
-                  </div>
-                )}
-                {permissionRequests.map((pr) => (
-                  <div className="access-request" key={pr.id}>
-                    <div className="access-request-head">
-                      <div>
-                        <strong>{pr.username}</strong>
-                        <div
-                          style={{
-                            fontSize: "12px",
-                            color: "#4b5563",
-                            marginTop: "2px",
-                          }}
-                        >
-                          needs <strong>{describePermission(pr.permissionCode)}</strong>
-                        </div>
-                        {pr.reason && (
-                          <div
-                            style={{
-                              fontSize: "11px",
-                              color: "var(--text-3)",
-                              marginTop: "4px",
-                              fontStyle: "italic",
-                            }}
-                          >
-                            “{pr.reason}”
-                          </div>
-                        )}
-                      </div>
-                      <span
-                        className={`access-request-status ${pr.status.toLowerCase()}`}
-                      >
-                        {pr.status}
-                      </span>
-                    </div>
-                    {pr.status === "PENDING" && onReviewPermissionRequest && (
-                      <div className="access-request-actions">
-                        <button
-                          type="button"
-                          className="btn btn-primary btn-sm"
-                          onClick={() =>
-                            onReviewPermissionRequest(pr.id, "APPROVED")
-                          }
-                        >
-                          Approve
-                        </button>
-                        <button
-                          type="button"
-                          className="btn btn-secondary btn-sm"
-                          onClick={() =>
-                            onReviewPermissionRequest(pr.id, "REJECTED")
-                          }
-                        >
-                          Reject
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                ))}
+          <NotificationBell label="Access requests" count={pendingRequests + unreadCount(notifications)}>
+            <div className="notification-panel-title">Notifications</div>
+            <UserNotificationList notifications={notifications} onNotificationClick={onNotificationClick} />{" "}
+            {user.role === "ADMIN" && (accessRequests.length > 0 || permissionRequests.length > 0) && (
+              <div className="notification-panel-title notification-panel-subtitle">
+                Access Requests
               </div>
             )}
-          </div>
+            {accessRequests.map((request) => (
+              <div className="access-request" key={request.id}>
+                <div className="access-request-head">
+                  <strong>{request.username}</strong>
+                  <span
+                    className={`access-request-status ${request.status.toLowerCase()}`}
+                  >
+                    {request.status}
+                  </span>
+                </div>
+                {request.status === "PENDING" && onReviewAccessRequest && (
+                  <>
+                    <label className="member-role-field" style={{ margin: "8px 0", display: "block" }}>
+                      <span style={{ fontSize: "12px", color: "var(--text-3)", display: "block", marginBottom: "4px" }}>Role</span>
+                      <select
+                        value={requestRoleCodes[request.id] ?? ""}
+                        onChange={(event) => {
+                          const nextCode = event.target.value;
+                          setRequestRoleCodes((current) => ({
+                            ...current,
+                            [request.id]: nextCode,
+                          }));
+                          const nextRole = roleOptions.find((role) => role.code === nextCode);
+                          if (nextRole) {
+                            setRequestPermissions((current) => ({
+                              ...current,
+                              [request.id]: [...nextRole.permissions],
+                            }));
+                          }
+                        }}
+                        style={{
+                          width: "100%",
+                          padding: "6px 10px",
+                          borderRadius: "8px",
+                          border: "1px solid #e5e7eb",
+                          fontSize: "13px",
+                          background: "var(--white)",
+                        }}
+                      >
+                        <option value="">Select a role…</option>
+                        {roleOptions.map((role) => (
+                          <option value={role.code} key={role.code}>
+                            {role.name}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-sm"
+                      style={{
+                        width: "100%",
+                        marginBottom: "8px",
+                        fontSize: "12px",
+                        color: "#4b5563",
+                      }}
+                      onClick={() =>
+                        setExpandedRequests((current) => ({
+                          ...current,
+                          [request.id]: !current[request.id],
+                        }))
+                      }
+                    >
+                      {expandedRequests[request.id]
+                        ? "▾ Additional Access (override)"
+                        : "▸ Additional Access (override)"}
+                    </button>
+                    {expandedRequests[request.id] && (
+                      <div
+                        className="permission-selector"
+                        style={{
+                          background: "var(--surface-faint)",
+                          padding: "10px",
+                          borderRadius: "8px",
+                          marginBottom: "8px",
+                        }}
+                      >
+                        {NAV_PERMISSION_MODULES.map((module) => {
+                          const hasChildren = module.children.length > 0;
+                          const moduleEnabled =
+                            (requestPermissions[request.id] ?? []).includes(
+                              module.id,
+                            ) ||
+                            module.children.some(([childId]) =>
+                              (requestPermissions[request.id] ?? []).includes(
+                                childId,
+                              ),
+                            );
+                          return (
+                            <div
+                              key={module.id}
+                              style={{ marginBottom: "4px" }}
+                            >
+                              <label
+                                style={{
+                                  display: "flex",
+                                  alignItems: "center",
+                                  gap: "6px",
+                                  fontSize: "12px",
+                                }}
+                              >
+                                <span
+                                  style={{
+                                    fontWeight: hasChildren
+                                      ? 600
+                                      : 400,
+                                  }}
+                                >
+                                  {module.label}
+                                </span>
+                                {!hasChildren && (
+                                  <input
+                                    type="checkbox"
+                                    checked={(
+                                      requestPermissions[request.id] ?? []
+                                    ).includes(module.id)}
+                                    onChange={(event) =>
+                                      setRequestPermissions(
+                                        (current) => ({
+                                          ...current,
+                                          [request.id]: event.target.checked
+                                            ? [
+                                                ...new Set([
+                                                  ...(current[
+                                                    request.id
+                                                  ] ?? []),
+                                                  module.id,
+                                                ]),
+                                              ]
+                                            : (current[request.id] ??
+                                                []
+                                              ).filter(
+                                                (item) =>
+                                                  item !== module.id,
+                                              ),
+                                        }),
+                                      )
+                                    }
+                                  />
+                                )}
+                              </label>
+                              {hasChildren && (
+                                <div
+                                  style={{
+                                    paddingLeft: "16px",
+                                    display: "grid",
+                                    gridTemplateColumns: "1fr 1fr",
+                                    gap: "2px 12px",
+                                  }}
+                                >
+                                  {module.children.map(
+                                    ([childId, childLabel]) => (
+                                      <label
+                                        key={childId}
+                                        style={{
+                                          display: "flex",
+                                          alignItems: "center",
+                                          gap: "4px",
+                                          fontSize: "11px",
+                                          color: "#4b5563",
+                                        }}
+                                      >
+                                        <input
+                                          type="checkbox"
+                                          checked={(
+                                            requestPermissions[
+                                              request.id
+                                            ] ?? []
+                                          ).includes(childId)}
+                                          onChange={(event) =>
+                                            setRequestPermissions(
+                                              (current) => ({
+                                                ...current,
+                                                [request.id]: event.target
+                                                  .checked
+                                                  ? [
+                                                      ...new Set([
+                                                        ...(current[
+                                                          request.id
+                                                        ] ?? []),
+                                                        childId,
+                                                      ]),
+                                                    ]
+                                                  : (current[
+                                                      request.id
+                                                    ] ?? []
+                                                  ).filter(
+                                                    (item) =>
+                                                      item !== childId,
+                                                  ),
+                                              }),
+                                            )
+                                          }
+                                        />
+                                        {childLabel}
+                                      </label>
+                                    ),
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                    <div className="access-request-actions">
+                      <button
+                        type="button"
+                        className="btn btn-primary btn-sm"
+                        onClick={() =>
+                          onReviewAccessRequest(
+                            request.id,
+                            "APPROVED",
+                            requestPermissions[request.id] ?? [],
+                            requestRoleCodes[request.id] || undefined,
+                          )
+                        }
+                      >
+                        Approve Access
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-secondary btn-sm"
+                        onClick={() =>
+                          onReviewAccessRequest(
+                            request.id,
+                            "REJECTED",
+                            requestPermissions[request.id] ?? [],
+                            requestRoleCodes[request.id] || undefined,
+                          )
+                        }
+                      >
+                        Reject Access
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
+            ))}
+            {user.role === "ADMIN" && permissionRequests.length > 0 && (
+              <div className="notification-panel-title notification-panel-subtitle">
+                Permission Requests
+              </div>
+            )}
+            {permissionRequests.map((pr) => (
+              <div className="access-request" key={pr.id}>
+                <div className="access-request-head">
+                  <div>
+                    <strong>{pr.username}</strong>
+                    <div
+                      style={{
+                        fontSize: "12px",
+                        color: "#4b5563",
+                        marginTop: "2px",
+                      }}
+                    >
+                      needs <strong>{describePermission(pr.permissionCode)}</strong>
+                    </div>
+                    {pr.reason && (
+                      <div
+                        style={{
+                          fontSize: "11px",
+                          color: "var(--text-3)",
+                          marginTop: "4px",
+                          fontStyle: "italic",
+                        }}
+                      >
+                        “{pr.reason}”
+                      </div>
+                    )}
+                  </div>
+                  <span
+                    className={`access-request-status ${pr.status.toLowerCase()}`}
+                  >
+                    {pr.status}
+                  </span>
+                </div>
+                {pr.status === "PENDING" && onReviewPermissionRequest && (
+                  <div className="access-request-actions">
+                    <button
+                      type="button"
+                      className="btn btn-primary btn-sm"
+                      onClick={() =>
+                        onReviewPermissionRequest(pr.id, "APPROVED")
+                      }
+                    >
+                      Approve
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-secondary btn-sm"
+                      onClick={() =>
+                        onReviewPermissionRequest(pr.id, "REJECTED")
+                      }
+                    >
+                      Reject
+                    </button>
+                  </div>
+                )}
+              </div>
+            ))}
+          </NotificationBell>
         )}
         <button
           type="button"

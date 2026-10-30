@@ -100,11 +100,11 @@ const modeButton = (name: RegExp) => within(screen.getByRole("group", { name: "W
 describe("Store page — layout", () => {
   afterEach(() => vi.restoreAllMocks());
 
-  it("is titled Store, with nothing in its header: Daily report is a tab, Machine programs hidden (0.4.1)", async () => {
+  it("has the header design: the brand, STORE, and no buttons -- Daily report is a tab, Machine programs hidden (0.4.1)", async () => {
     installApi();
     renderPage();
+    expect(screen.getByRole("img", { name: "777 SEVEN" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { level: 1, name: "Store" })).toBeInTheDocument();
-    expect(screen.getByText("Raw material in and out")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Daily report" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Machine programs" })).toBeNull();
   });

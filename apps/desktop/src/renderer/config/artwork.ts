@@ -15,3 +15,9 @@ export const CREATE_GATEPASS_ARTWORK_URL = "./assets/gatepass/create-gatepass.pn
  * a vector (SVG), so it stays sharp at any size; the card draws its green cloud and sparks.
  */
 export const GATEPASS_LIST_ARTWORK_URL = "./assets/gatepass/gatepass-list.svg";
+
+/**
+ * The portrait on the Store page header's profile button (0.4.1): one picture for every user, cut from
+ * the owner's header design (60px). Replace the file with the original artwork for a sharper one.
+ */
+export const STORE_AVATAR_URL = "./assets/store/avatar.png";
