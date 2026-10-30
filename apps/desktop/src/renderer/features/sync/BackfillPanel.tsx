@@ -90,6 +90,7 @@ const PlanView: React.FC<{ plan: BackfillPlan; lastAt: string | null; sent: bool
         <li>{copy.backfill.masterRecords(records)}</li>
         <li>{copy.backfill.stockMovements(plan.stockMovements)}</li>
         <li>{copy.backfill.labels(plan.labelRunsToQueue, plan.packetsToQueue)}</li>
+        {plan.variantsToQueue > 0 ? <li>{copy.backfill.variants(plan.variantsToQueue)}</li> : null}
         {plan.unstampedQueued > 0 ? <li>{copy.backfill.unstamped(plan.unstampedQueued)}</li> : null}
       </ul>
       {!hasLeases ? <p className="text-small" role="status">🔒 {copy.backfill.noLease}</p> : null}

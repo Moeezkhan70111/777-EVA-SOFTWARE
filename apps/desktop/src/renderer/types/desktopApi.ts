@@ -127,6 +127,7 @@ export interface BackfillPlan {
   stockMovements: number;
   labelRunsToQueue: number;
   packetsToQueue: number;
+  variantsToQueue: number;
   unstampedQueued: number;
   mismatches: BackfillMismatch[];
 }

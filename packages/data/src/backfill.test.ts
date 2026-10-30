@@ -208,3 +208,67 @@ test("labels queued without an epoch before syncing are marked and queued again,
     assert.deepEqual([payload.batchId, payload.itemId, payload.quantity], ["b-1", "i-1", 2], "rebuilt whole from the run itself");
   });
 });
+
+/** Cartons made before variants travelled (017): their qr_master queued, their variant never. */
+function seedCartons(run: (sql: string, ...params: Array<string | number | null>) => void): void {
+  const variant = (id: string, color: string, replicatedAt: string | null) =>
+    run(
+      `INSERT INTO product_variants (id, article, color, size, description, status, created_at, updated_at, replicated_at)
+       VALUES (?, '777', ?, '7', NULL, 'ACTIVE', '2025-01-01T00:00:00.000Z', ?, ?)`,
+      id, color, NOW, replicatedAt
+    );
+  variant("v-black", "Black", null); // labelled here: must travel
+  variant("v-brown", "Brown", null); // never labelled: need not travel
+  variant("v-blue", "Blue", NOW); // received from another computer: already in the cloud
+  for (const [qrId, variantId] of [["Q-1", "v-black"], ["Q-2", "v-black"], ["Q-3", "v-blue"]]) {
+    run(
+      `INSERT INTO qr_master (qr_id, product_variant_id, current_status, current_location_type, created_at, updated_at)
+       VALUES (?, ?, 'PRODUCED', 'FACTORY', ?, ?)`,
+      qrId, variantId, NOW, NOW
+    );
+  }
+}
+
+const variantRows = (db: SqliteDatabase) =>
+  db.db.prepare("SELECT dedupe_key, lease_epoch, created_at, payload_json FROM sync_outbox WHERE aggregate_type = 'PRODUCT_VARIANT'").all() as Array<Record<string, unknown>>;
+
+test("the products of cartons made before variants travelled are planned and queued once -- not the unlabelled, not the received", () => {
+  withStore((db, run) => {
+    seedHistory(run);
+    seedCartons(run);
+    grantBoth(run);
+    assert.equal(db.planBackfill().variantsToQueue, 1);
+
+    assert.equal(db.runBackfill(NOW).done, true);
+    const rows = variantRows(db);
+    assert.deepEqual(rows.map((row) => row.dedupe_key), ["PRODUCT_VARIANT:v-black"]);
+    assert.equal(rows[0]?.lease_epoch, null, "a variant is not leased: it travels with the cartons");
+    assert.equal(rows[0]?.created_at, "2025-01-01T00:00:00.000Z", "dated as production would have dated it");
+    assert.deepEqual(JSON.parse(String(rows[0]?.payload_json)), {
+      variantId: "v-black", article: "777", color: "Black", size: "7", description: null, createdAt: "2025-01-01T00:00:00.000Z",
+    });
+    assert.equal(db.planBackfill().variantsToQueue, 0);
+
+    assert.equal(db.runBackfill(NOW).done, true);
+    assert.equal(variantRows(db).length, 1, "run twice, queued once");
+  });
+});
+
+test("a variant production already queued is not queued again, and a refused backfill queues none", () => {
+  withStore((db, run) => {
+    seedHistory(run);
+    seedCartons(run);
+    run(
+      `INSERT INTO sync_outbox (id, aggregate_type, aggregate_id, operation, dedupe_key, payload_json, status, available_at, attempts, created_at, updated_at)
+       VALUES ('o-1', 'PRODUCT_VARIANT', 'v-black', 'INSERT', 'PRODUCT_VARIANT:v-black', '{}', 'SYNCED', ?, 1, ?, ?)`,
+      NOW, NOW, NOW
+    );
+    assert.equal(db.planBackfill().variantsToQueue, 0);
+    run("DELETE FROM sync_outbox");
+
+    assert.equal(db.planBackfill().variantsToQueue, 1);
+    const outcome = db.runBackfill(NOW);
+    assert.deepEqual([outcome.done, outcome.done ? null : outcome.reason], [false, "NO_LEASE"]);
+    assert.equal(variantRows(db).length, 0);
+  });
+});

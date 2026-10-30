@@ -21,10 +21,15 @@
 //
 // Safe to run twice: a movement, run or packet already sent is a duplicate everywhere, and a master
 // record simply travels as its next revision.
+//
+// THE PRODUCTS OF CARTONS MADE BEFORE VARIANTS TRAVELLED (017). A carton queued then names a variant
+// the cloud has never been given, and waits on it (UNKNOWN_PRODUCT_VARIANT) for ever, because
+// production queues a variant only with a NEW carton. The backfill queues each such variant once.
+// Variants are claimed before cartons (outboxQueue's CLAIM_TIERS), so the waiting cartons follow.
 
 import { stockEventBalanceDelta } from "@erp/domain";
 import { MASTER_RECORD_TYPES, MASTER_RECORDS, type BuildHandle, type MasterRecordType } from "./masterRecords.js";
-import { heldLeaseEpoch, LEASE_DOMAIN, SYNC_AGGREGATE } from "./syncEvents.js";
+import { enqueueProductVariant, heldLeaseEpoch, LEASE_DOMAIN, SYNC_AGGREGATE } from "./syncEvents.js";
 
 /** Where the last completed backfill is recorded (app_settings: per computer, never replicated). */
 export const BACKFILL_SETTING_KEY = "sync.backfill.last";
@@ -51,6 +56,8 @@ export interface BackfillPlan {
   readonly stockMovements: number;
   readonly labelRunsToQueue: number;
   readonly packetsToQueue: number;
+  /** Products named by a carton here that were never queued: cartons made before variants travelled. */
+  readonly variantsToQueue: number;
   /** Runs and packets already queued without an epoch, which the backfill stamps. */
   readonly unstampedQueued: number;
   readonly mismatches: readonly StockMismatch[];
@@ -68,6 +75,11 @@ const UNQUEUED_RUNS = `SELECT * FROM raw_material_qr_batches b WHERE b.replicate
   AND NOT EXISTS (SELECT 1 FROM sync_outbox o WHERE o.dedupe_key = 'RAW_MATERIAL_QR_BATCH:' || b.id)`;
 const UNQUEUED_PACKETS = `SELECT * FROM raw_material_qrs q WHERE q.replicated_at IS NULL
   AND NOT EXISTS (SELECT 1 FROM sync_outbox o WHERE o.dedupe_key = 'RAW_MATERIAL_QR:' || q.id)`;
+/** Own variants a carton here names, never queued. A variant nothing has labelled need not travel. */
+const UNQUEUED_VARIANTS = `SELECT v.id, v.article, v.color, v.size, v.description, v.created_at FROM product_variants v
+  WHERE v.replicated_at IS NULL
+    AND EXISTS (SELECT 1 FROM qr_master m WHERE m.product_variant_id = v.id)
+    AND NOT EXISTS (SELECT 1 FROM sync_outbox o WHERE o.dedupe_key = 'PRODUCT_VARIANT:' || v.id)`;
 const UNSTAMPED_QUEUED = `FROM sync_outbox WHERE aggregate_type IN ('RAW_MATERIAL_QR_BATCH', 'RAW_MATERIAL_QR')
   AND lease_epoch IS NULL AND status IN ('PENDING', 'FAILED')`;
 
@@ -127,6 +139,7 @@ export function planBackfill(db: BuildHandle): BackfillPlan {
     stockMovements: count(db, "SELECT COUNT(*) AS n FROM inventory_stock_events WHERE replicated_at IS NULL"),
     labelRunsToQueue: count(db, `SELECT COUNT(*) AS n FROM (${UNQUEUED_RUNS})`),
     packetsToQueue: count(db, `SELECT COUNT(*) AS n FROM (${UNQUEUED_PACKETS})`),
+    variantsToQueue: count(db, `SELECT COUNT(*) AS n FROM (${UNQUEUED_VARIANTS})`),
     unstampedQueued: count(db, `SELECT COUNT(*) AS n ${UNSTAMPED_QUEUED}`),
     mismatches: stockMismatches(db),
   };
@@ -147,6 +160,7 @@ export function runBackfill(db: BuildHandle, nowIso: string): BackfillOutcome {
   try {
     markEverything(db, plan.masterEpoch, plan.storeEpoch, nowIso);
     markLabels(db, plan.storeEpoch, nowIso);
+    queueVariants(db);
     db.prepare(
       `INSERT INTO app_settings (setting_key, setting_value, value_type, is_encrypted, updated_by, updated_at)
        VALUES (?, ?, 'json', 0, 'backfill', ?)
@@ -189,6 +203,27 @@ function markLabels(db: BuildHandle, storeEpoch: number, nowIso: string): void {
     db.prepare(
       `DELETE FROM sync_outbox WHERE aggregate_type = ? AND lease_epoch IS NULL AND status IN ('PENDING', 'FAILED')`
     ).run(type);
+  }
+}
+
+/**
+ * Queues the products of cartons made before variants travelled, as production would have queued
+ * them (production.ts insertProduced): the row as it stands, dated when the variant was created.
+ */
+function queueVariants(db: BuildHandle): void {
+  for (const row of db.prepare(UNQUEUED_VARIANTS).all() as Row[]) {
+    enqueueProductVariant(
+      db,
+      {
+        variantId: String(row.id),
+        article: String(row.article),
+        color: String(row.color),
+        size: String(row.size),
+        description: row.description === null ? null : String(row.description),
+        createdAt: String(row.created_at),
+      },
+      crypto.randomUUID()
+    );
   }
 }
 

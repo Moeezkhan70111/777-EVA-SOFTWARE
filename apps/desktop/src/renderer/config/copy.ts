@@ -565,6 +565,7 @@ export const copy = {
     masterRecords: (count: number) => `${count} master ${count === 1 ? "record" : "records"} (materials, categories, units, parties, machines, work sections)`,
     stockMovements: (count: number) => `${count} stock ${count === 1 ? "movement" : "movements"}`,
     labels: (runs: number, packets: number) => `${runs} label ${runs === 1 ? "run" : "runs"} and ${packets} ${packets === 1 ? "packet" : "packets"} never queued`,
+    variants: (count: number) => `${count} ${count === 1 ? "product" : "products"} of cartons made before products were sent`,
     unstamped: (count: number) => `${count} queued ${count === 1 ? "label" : "labels"} waiting for a lease`,
     noLease: "This computer does not hold both the master-data and the store leases, so it cannot send its history. Only the store computer can.",
     mismatchTitle: "Stock that does not add up — nothing will be sent until it is decided",

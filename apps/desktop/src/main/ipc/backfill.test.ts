@@ -21,7 +21,7 @@ vi.mock("../leaseGuard", () => ({
 
 const PLAN = {
   masterEpoch: 2, storeEpoch: 3, masterRecords: { INVENTORY_ITEM: 903 }, stockMovements: 4100,
-  labelRunsToQueue: 12, packetsToQueue: 300, unstampedQueued: 0, mismatches: [],
+  labelRunsToQueue: 12, packetsToQueue: 300, variantsToQueue: 0, unstampedQueued: 0, mismatches: [],
 };
 
 const windowEvent = { sender: { id: 1 } } as unknown as IpcMainInvokeEvent;

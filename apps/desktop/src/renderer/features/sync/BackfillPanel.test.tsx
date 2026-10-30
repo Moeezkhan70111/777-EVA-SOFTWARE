@@ -10,7 +10,7 @@ import type { BackfillPlan } from "../../types/desktopApi";
 
 const PLAN: BackfillPlan = {
   masterEpoch: 2, storeEpoch: 3, masterRecords: { INVENTORY_ITEM: 900, PARTY: 3 }, stockMovements: 4100,
-  labelRunsToQueue: 12, packetsToQueue: 300, unstampedQueued: 0, mismatches: [],
+  labelRunsToQueue: 12, packetsToQueue: 300, variantsToQueue: 0, unstampedQueued: 0, mismatches: [],
 };
 
 const withApi = (plan: BackfillPlan, runBackfill = vi.fn().mockResolvedValue({ accepted: true, plan })) => {
@@ -30,12 +30,18 @@ describe("sending the store's history", () => {
     const { runBackfill } = withApi(PLAN);
     expect(await screen.findByText(/903 master records/)).toBeTruthy();
     expect(screen.getByText("4100 stock movements")).toBeTruthy();
+    expect(screen.queryByText(/products of cartons/)).toBeNull();
     await userEvent.click(screen.getByRole("button", { name: "Send History" }));
     expect(runBackfill).not.toHaveBeenCalled();
     const buttons = await screen.findAllByRole("button", { name: "Send History" });
     await userEvent.click(buttons[buttons.length - 1]!);
     await waitFor(() => expect(runBackfill).toHaveBeenCalledTimes(1));
     expect(await screen.findByText(/Marked\. It goes over the next syncs/)).toBeTruthy();
+  });
+
+  it("names the products of old cartons only when there are some", async () => {
+    withApi({ ...PLAN, variantsToQueue: 14 });
+    expect(await screen.findByText("14 products of cartons made before products were sent")).toBeTruthy();
   });
 
   it("lists stock that does not add up, and will not send", async () => {
