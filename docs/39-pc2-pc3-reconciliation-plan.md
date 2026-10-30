@@ -239,10 +239,10 @@ So the script inserts counters for PTY-000006 × **PC3's** RM-000965 at 5, 966 a
 
 ### 4.4 The root cause: both PCs hold number block 1
 
-Both PCs hold number block 1 because PC3 was made by copying PC2's database. PC2 is retired, so
-this stops mattering once PC2 never prints again. When PC2 comes back, it must be **provisioned
-fresh from the cloud with its own block** (docs/37), never from a copy of either file. §7 explains
-why the software doesn't yet enforce that.
+Both PCs hold number block 1 because PC3 was made by copying PC2's database. PC3 is retired (§8), so
+this stops mattering once PC3 never prints again. If PC3 ever comes back, it must be **provisioned
+fresh from the cloud with its own block** (docs/37), never from a copy of either file. For a PC that
+syncs, the cloud now enforces this (migration 018, §7 item 3): a second PC claiming block 1 is refused.
 
 ---
 

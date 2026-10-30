@@ -1187,10 +1187,19 @@ test("both new files are one transaction, and the README states the order and th
     assert.ok(sqlOnly(file).trimStart().startsWith("begin;"));
     assert.ok(file.trimEnd().endsWith("commit;"));
   }
-  assert.match(MIGRATION_README, /002.*→.*003.*→.*004.*→.*005.*→.*006/s);
-  assert.match(MIGRATION_README, /`005` and `006` are unapplied/);
-  // The client depends on the privilege 006 revokes, and the README has to say so.
-  assert.match(MIGRATION_README, /Breaks the current transport until it is changed to call the RPCs/);
+  assert.match(MIGRATION_README, /`schema\.sql` → `002` → `003` → … → `018`/);
+  // A migration that cuts off older clients has to say so where the order is read.
+  assert.match(MIGRATION_README, /A client from before 018 cannot sync once it is applied/);
+});
+
+test("the README's apply order names every migration in the folder", () => {
+  // It once stopped at 006 while twelve more were applied to test. Every up file is a row.
+  const folder = path.join(ROOT, "migrations/supabase");
+  const ups = fs.readdirSync(folder).filter((name) => /^0\d\d_.*\.up\.sql$/.test(name) && !name.startsWith("001_"));
+  assert.ok(ups.length >= 17, "the folder holds 002 onwards");
+  for (const name of ups) {
+    assert.ok(MIGRATION_README.includes(`\`${name}\``), `${name} is missing from the README's apply order`);
+  }
 });
 
 // ─── the claim holder is not readable through an ordinary query ─────────────
