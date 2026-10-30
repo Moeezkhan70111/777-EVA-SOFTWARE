@@ -1,9 +1,10 @@
-import React from "react";
-import { render, screen } from "@testing-library/react";
+import React, { useState } from "react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import type { QrJourney, WriteLeaseStatus } from "../../types/desktopApi";
 import { readOnlyReason } from "../../components/shared/ReadOnlyNotice";
 import { LeasedStation } from "./LeasedStation";
+import { WriteLeasesProvider } from "../sync/useWriteLease";
 import { lookupFeedback } from "./PacketLookup";
 
 // The store's scan stations on a READER (docs/37 section W): the holder gets the station, a reader
@@ -66,6 +67,39 @@ describe("LeasedStation", () => {
     );
     expect(await screen.findByText(/The raw material store is written on Store PC -- Aslam only/)).toBeTruthy();
     expect(screen.queryByText("hand move form")).toBeNull();
+  });
+});
+
+describe("one lease answer for the whole app", () => {
+  // A station opened after the app has its answer reads that answer: it does not ask again, so it
+  // is never "read only" for a moment on a computer that writes the store.
+  const Later: React.FC = () => {
+    const [open, setOpen] = useState(false);
+    return (
+      <WriteLeasesProvider>
+        <button type="button" onClick={() => setOpen(true)}>Open</button>
+        {open ? (
+          <LeasedStation domain="RAW_MATERIAL_STORE">
+            <div>receiving station</div>
+          </LeasedStation>
+        ) : null}
+      </WriteLeasesProvider>
+    );
+  };
+
+  it("asks once, and a station opened later shows at once", async () => {
+    withLeases(async () => [{ domain: "RAW_MATERIAL_STORE", canWrite: true, reason: null, holderLabel: null }]);
+    render(<Later />);
+    const api = (window as unknown as { desktop: { api: { getWriteLeases: ReturnType<typeof vi.fn> } } }).desktop.api;
+    await vi.waitFor(() => expect(api.getWriteLeases).toHaveBeenCalledTimes(1));
+    // Let the answer land in the provider before anything is opened.
+    await act(async () => undefined);
+
+    fireEvent.click(screen.getByRole("button", { name: "Open" }));
+    // Synchronously: no loading state between the click and the station.
+    expect(screen.getByText("receiving station")).toBeTruthy();
+    expect(screen.queryByRole("status")).toBeNull();
+    expect(api.getWriteLeases).toHaveBeenCalledTimes(1);
   });
 });
 

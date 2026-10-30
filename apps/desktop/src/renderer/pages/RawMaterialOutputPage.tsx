@@ -158,7 +158,7 @@ interface RawMaterialOutputPageProps {
   /** Session token; the main process authorises every issue call with it. */
   token: string;
   username?: string;
-  /** Returns to the Store Station chooser. Hidden when not provided. */
+  /** Returns to where the station was opened from. Hidden when not provided. */
   onBack?: () => void;
   onNavigate?: (route: AppRoute) => void;
   /** Set when the station is a pane of the Store Out page rather than the whole screen. */
@@ -454,9 +454,9 @@ const RawMaterialOutputStation: React.FC<RawMaterialOutputPageProps> = ({
     >
       <style>{SCAN_STATION_CSS}</style>
 
-      {/* Embedded on the Store Out page the pane above already names the station. */}
+      {/* Embedded on the Store page the rail above already names the station. */}
       <StationToolbar
-        eyebrow={embedded ? undefined : "Store Station · Raw Material"}
+        eyebrow={embedded ? undefined : copy.storePage.stationEyebrow}
         title={embedded ? undefined : "Raw Material Output"}
         onBack={onBack}
         scannerPill={scannerConnected ? { text: "Scanner ready", color: "#16a34a" } : { text: "Keyboard input", color: "#94a3b8" }}
@@ -584,7 +584,7 @@ export const RawMaterialOutputPage: React.FC<RawMaterialOutputPageProps> = (prop
         status={status}
         embedded={props.embedded}
         onBack={props.onBack}
-        eyebrow={props.embedded ? undefined : "Store Station · Raw Material"}
+        eyebrow={props.embedded ? undefined : copy.storePage.stationEyebrow}
         title={props.embedded ? undefined : "Raw Material Output"}
       />
     )}

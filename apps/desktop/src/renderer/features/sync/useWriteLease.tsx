@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import React, { createContext, useContext, useEffect, useMemo, useState } from "react";
 import type { LeaseDomain } from "@erp/domain";
 import { useDesktopApi } from "../../hooks/useDesktopApi";
 import type { WriteLeaseStatus } from "../../types/desktopApi";
@@ -9,7 +9,10 @@ import type { WriteLeaseStatus } from "../../types/desktopApi";
 // refuses the write itself (leaseGuard.ts), whatever the screen shows. So when the answer cannot be
 // read at all, nothing is hidden -- the gate still decides, and says why.
 //
-// Re-read every 30 seconds, so a lease granted or taken over shows up without leaving the screen.
+// ONE ANSWER FOR THE WHOLE APP. WriteLeasesProvider asks once when the app starts and re-reads every
+// 30 seconds, so a lease granted or taken over shows up without leaving the screen. A pane opened
+// later reads the answer already held: it is not "read only" for a moment while it asks again.
+// Outside the provider (a screen rendered on its own, as in a test) the hook asks for itself.
 
 const REFRESH_MS = 30_000;
 
@@ -20,12 +23,14 @@ export interface WriteLeases {
   readonly statuses: readonly WriteLeaseStatus[] | null;
 }
 
-export const useWriteLeases = (): WriteLeases => {
+/** Asks, and keeps asking every REFRESH_MS, while `enabled`. */
+const usePolledWriteLeases = (enabled: boolean): WriteLeases => {
   const api = useDesktopApi();
   const [statuses, setStatuses] = useState<readonly WriteLeaseStatus[] | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    if (!enabled) return undefined;
     let alive = true;
     const read = async () => {
       try {
@@ -43,9 +48,24 @@ export const useWriteLeases = (): WriteLeases => {
       alive = false;
       clearInterval(timer);
     };
-  }, [api]);
+  }, [api, enabled]);
 
-  return { loading, statuses };
+  // The same object until the answer changes, so the provider does not redraw every screen with it.
+  return useMemo(() => ({ loading, statuses }), [loading, statuses]);
+};
+
+const WriteLeasesContext = createContext<WriteLeases | null>(null);
+
+/** Holds the one answer every screen reads. Mounted once, around the app. */
+export const WriteLeasesProvider = ({ children }: { children: React.ReactNode }) => {
+  const leases = usePolledWriteLeases(true);
+  return <WriteLeasesContext.Provider value={leases}>{children}</WriteLeasesContext.Provider>;
+};
+
+export const useWriteLeases = (): WriteLeases => {
+  const shared = useContext(WriteLeasesContext);
+  const own = usePolledWriteLeases(shared === null);
+  return shared ?? own;
 };
 
 export interface WriteLease {
