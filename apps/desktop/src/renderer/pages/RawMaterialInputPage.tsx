@@ -370,6 +370,7 @@ const RawMaterialInputStation: React.FC<RawMaterialInputPageProps> = ({ token, u
                 value={partyId}
                 options={supplierOptions}
                 onChange={setPartyId}
+                ariaLabel={copy.columns.supplier}
                 placeholder={supplierOptions.length === 0 ? "No suppliers yet" : "Choose supplier…"}
               />
             </div>

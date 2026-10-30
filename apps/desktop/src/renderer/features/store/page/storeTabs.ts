@@ -34,8 +34,9 @@ export interface StoreAccess {
 
 type Needs = keyof StoreAccess | null;
 
-export type ReceivingTab = "material" | "labels" | "stock" | "receipts" | "byHand" | "setup";
-export type IssuingTab = "byHand" | "issuedToday" | "stock";
+// The Daily report is a tab in each mode (0.4.1), last, for everyone who can see the page.
+export type ReceivingTab = "material" | "labels" | "stock" | "receipts" | "byHand" | "setup" | "report";
+export type IssuingTab = "byHand" | "issuedToday" | "stock" | "report";
 
 interface TabDef<T extends string> {
   id: T;
@@ -52,12 +53,14 @@ export const RECEIVING_TABS: readonly TabDef<ReceivingTab>[] = [
   { id: "receipts", label: t.receipts, needs: "stock" },
   { id: "byHand", label: t.byHand, needs: null },
   { id: "setup", label: t.setup, needs: "settings" },
+  { id: "report", label: t.dailyReport, needs: null },
 ];
 
 export const ISSUING_TABS: readonly TabDef<IssuingTab>[] = [
   { id: "byHand", label: t.byHand, needs: null },
   { id: "issuedToday", label: t.issuedToday, needs: null },
   { id: "stock", label: t.stock, needs: "stock" },
+  { id: "report", label: t.dailyReport, needs: null },
 ];
 
 /** The tabs this account may open, in order. */

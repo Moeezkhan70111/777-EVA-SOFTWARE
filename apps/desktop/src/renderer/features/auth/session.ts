@@ -232,3 +232,10 @@ export const STORE_LANDING_ROUTE: AppRoute = "store-receiving";
 
 export const landingRoute = (user: AuthUser | null | undefined): AppRoute =>
   user && !isAdmin(user) && hasPermission(user, PERMISSION.STORE_SCANNING) ? STORE_LANDING_ROUTE : HOME_ROUTE;
+
+/**
+ * A store operator: anyone but an administrator who holds Store Scanning -- the built-in Store
+ * Operator role, or any role given that permission. They start on the Store page and work there
+ * without the navbar (0.4.1); the floating profile menu still signs them out or switches account.
+ */
+export const isStoreOperator = (user: AuthUser | null | undefined): boolean => landingRoute(user) === STORE_LANDING_ROUTE;

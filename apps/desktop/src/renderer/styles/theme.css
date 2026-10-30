@@ -7,6 +7,8 @@
 @import "@fontsource/ibm-plex-mono/400.css";
 @import "@fontsource/ibm-plex-mono/500.css";
 @import "@fontsource/ibm-plex-mono/600.css";
+/* The Store header's STORE (0.4.1): Jomhuria, Latin letters only (its Arabic subset is not loaded). */
+@import "@fontsource/jomhuria/latin-400.css";
 
 /* ─── Tokens ─────────────────────────────────────────── */
 /* Visually hidden but announced — text alternative for colour-only cues (R18). */
@@ -188,7 +190,7 @@
   --sp-red:                #D92D20;      /* white text on it: 4.8:1 */
   --sp-red-hover:          #B42318;
   --sp-ground:             #F2F5FA;      /* the page, and panels set into a card */
-  --sp-line:               #E2E8F2;      /* input borders */
+  --sp-line:               #DEE5F0;      /* every border on the Store page. 0.4.1: 1% darker than #E2E8F2 (HSL lightness 91.8% -> 90.8%) */
   --sp-muted:              #5E6E8A;      /* secondary text: 5.2:1 on white, 4.7:1 on the ground */
   /* #8D9AB2 was asked for labels and hints; it is 2.8:1 on white, too faint for 10px text, so those
      use --sp-muted. It stays for what is not text: dividers, disabled outlines. */
@@ -203,6 +205,17 @@
   --sp-control-height:     46px;
   --sp-font:               "Archivo Variable", "Archivo", "Segoe UI", sans-serif;
   --sp-font-code:          "IBM Plex Mono", Consolas, "Courier New", monospace;
+  /* The Store header (0.4.1), sampled from the owner's design: the sky down the page, STORE's blue
+     and its cyan underline, the bell and its badge. */
+  --sp-font-display:       "Jomhuria", var(--sp-font);
+  --sp-sky-top:            #EAF8FC;
+  --sp-sky-bottom:         #FEFFFF;
+  --sp-title-top:          #01529A;
+  --sp-title-bottom:       #023382;
+  --sp-title-rule:         #54CEE6;
+  --sp-bell:               #0087BF;
+  --sp-badge:              #00B4D8;      /* white number on it: 2.6:1, as designed */
+  --sp-avatar-shadow:      0 4px 14px rgba(1, 71, 145, 0.18);
   --radius-tab:            var(--sp-radius-tab);
   --danger-tint:        #fee2e2;
   --danger-strong:      #b91c1c;
@@ -619,6 +632,7 @@ html, body { margin: 0; height: 100%; overflow-x: hidden; background: var(--bg);
 /* ── Notifications panel ───────────────────────────────────────────────── */
 
 .notification-panel { top: calc(100% + 6px); right: 0; width: 320px; }
+.notification-panel-empty { margin: 0; padding: 4px 9px 9px; color: var(--text-3); font-size: 0.8rem; }
 .notification-panel-title {
   padding: 6px 9px 7px;
   color: var(--text-3);
@@ -7656,17 +7670,45 @@ tr.has-error .gp-qty-stepper input { color: var(--err); }
   --mono: var(--sp-font-code);
   display: flex; flex-direction: column; height: 100%; min-height: 0;
   padding: 22px 28px 18px; gap: 16px; overflow: hidden;
-  background: var(--sp-ground); color: var(--sp-navy);
+  background: linear-gradient(180deg, var(--sp-sky-top) 0%, var(--sp-sky-bottom) 100%); color: var(--sp-navy);
   font-family: var(--sp-font); font-size: 14px; font-weight: 400;
 }
 .sp-page button, .sp-page input, .sp-page select, .sp-page textarea { font-family: inherit; }
 
-/* Right padding keeps the head clear of the app's floating profile menu. */
-.sp-head { display: flex; align-items: center; gap: var(--space-3); flex-shrink: 0; padding-right: 180px; }
-.sp-head-text { flex: 1; min-width: 0; }
-.sp-title { margin: 0; font-size: 30px; font-weight: 800; letter-spacing: -0.035em; line-height: 1.1; color: var(--sp-navy); }
-.sp-sub { margin: 4px 0 0; font-size: 14px; color: var(--sp-muted); }
-.sp-head-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+/* The header (0.4.1): brand left, STORE centred on the page, bell and profile right. Three columns,
+   the outer two equal, so STORE stays in the middle whatever sits beside it. */
+.sp-head { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: var(--space-3); flex-shrink: 0; min-height: 72px; }
+.sp-logo { justify-self: start; display: block; height: 50px; width: auto; }
+.sp-title {
+  justify-self: center; position: relative; margin: 0; padding: 0 6px 10px;
+  font-family: var(--sp-font-display); font-weight: 400; font-size: 76px; line-height: 0.62; letter-spacing: 0.03em;
+  text-transform: uppercase; transform: skewX(-6deg);
+  background: linear-gradient(180deg, var(--sp-title-top), var(--sp-title-bottom));
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+.sp-title::after {
+  content: ""; position: absolute; left: -10px; right: -10px; bottom: 0; height: 2px;
+  background: linear-gradient(90deg, transparent, var(--sp-title-rule) 12%, var(--sp-title-rule) 88%, transparent);
+}
+.sp-head-actions { justify-self: end; display: flex; align-items: center; gap: 22px; }
+.sp-head .notification-trigger {
+  display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; padding: 0;
+  border: 0; border-radius: 50%; background: transparent; color: var(--sp-bell); box-shadow: none;
+}
+.sp-head .notification-trigger svg { width: 24px; height: 24px; }
+.sp-head .notification-trigger svg path { fill: currentColor; }
+.sp-head .notification-trigger:hover, .sp-head .notification-trigger[aria-expanded="true"] { background: var(--white); color: var(--sp-bell); }
+.sp-head .notification-badge {
+  top: 2px; right: 3px; min-width: 14px; height: 14px; padding: 0 3px;
+  background: var(--sp-badge); color: var(--white); font-size: 9px; font-weight: 700; line-height: 14px;
+}
+.profile-avatar-wrap { position: relative; }
+.profile-avatar {
+  display: block; width: 48px; height: 48px; padding: 0; border: 0; border-radius: 50%;
+  background: transparent; box-shadow: var(--sp-avatar-shadow); cursor: pointer;
+}
+.profile-avatar img { display: block; width: 100%; height: 100%; border-radius: 50%; }
+.profile-avatar:focus-visible, .sp-head .notification-trigger:focus-visible { outline: 3px solid var(--sp-navy-2); outline-offset: 2px; }
 
 /* The mode switch: two filled cards. Active Receiving navy, active Issuing red, both with white
    text; the inactive one white. Each shows its session state — the active one in a pill. */
@@ -7684,7 +7726,20 @@ tr.has-error .gp-qty-stepper input { color: var(--err); }
 .sp-mode[aria-pressed="true"] .sp-mode-state { padding: 4px 11px; border-radius: 999px; background: rgba(255, 255, 255, 0.16); color: var(--white); }
 .sp-mode:focus-visible { outline: 3px solid var(--sp-navy-2); outline-offset: 2px; }
 
-.sp-body { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(330px, 400px); gap: 16px; }
+/* Work area | handle | scan rail (0.4.1). The rail's width is --sp-rail-width: this default, or the
+   share the operator dragged it to (StorePage sets it, clamped). Every child is placed by column, so
+   the modes and an open program can swap without the grid reflowing. */
+.sp-body { --sp-rail-width: clamp(330px, 30%, 400px); flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) 16px var(--sp-rail-width); }
+.sp-body > .sp-work-slot, .sp-body > .sp-work { grid-column: 1; grid-row: 1; }
+.sp-body > .sp-split { grid-column: 2; grid-row: 1; }
+.sp-body > .sp-rail { grid-column: 3; grid-row: 1; }
+.split-handle { position: relative; cursor: col-resize; touch-action: none; border-radius: var(--sp-radius-tab); }
+.split-handle::after {
+  content: ""; position: absolute; top: 50%; left: 50%; width: 4px; height: 48px; transform: translate(-50%, -50%);
+  border-radius: 999px; background: var(--sp-line); transition: background 120ms ease, height 120ms ease;
+}
+.split-handle:hover::after, .split-handle:active::after { background: var(--sp-muted); height: 72px; }
+.split-handle:focus-visible { outline: 2px solid var(--sp-navy); outline-offset: -2px; }
 .sp-work-slot { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
 .sp-work-slot > .sp-work { flex: 1; }
 /* The inactive mode stays mounted (its session, its form) but is not shown. hidden must win over
@@ -7758,8 +7813,13 @@ tr.has-error .gp-qty-stepper input { color: var(--err); }
 /* Tablet and narrower: the scan rail first, the work area under it. */
 @media (max-width: 900px) {
   .sp-page { overflow-y: auto; height: auto; padding: 16px; }
-  .sp-head { padding-right: 0; flex-wrap: wrap; }
-  .sp-body { grid-template-columns: minmax(0, 1fr); }
+  .sp-head { min-height: 0; }
+  .sp-logo { height: 34px; }
+  .sp-title { font-size: 58px; }
+  .sp-head-actions { gap: 16px; }
+  .sp-body { grid-template-columns: minmax(0, 1fr); gap: 16px; }
+  .sp-body > .sp-work-slot, .sp-body > .sp-work, .sp-body > .sp-rail { grid-column: 1; grid-row: auto; }
+  .sp-body > .sp-split { display: none; }
   .sp-rail { order: -1; }
   .sp-issued-row { grid-template-columns: minmax(0, 1fr) auto; }
 }

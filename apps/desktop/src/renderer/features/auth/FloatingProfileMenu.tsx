@@ -10,6 +10,7 @@ export const FloatingProfileMenu = ({
   onLogout,
   onChangePassword,
   onProfile,
+  avatarSrc,
 }: {
   user: AuthUser;
   savedProfiles: SavedProfile[];
@@ -18,6 +19,11 @@ export const FloatingProfileMenu = ({
   onLogout: () => void;
   onChangePassword: () => void;
   onProfile: () => void;
+  /**
+   * A picture to show instead of the pill: the menu then sits where it is placed, not floating
+   * (the Store page header, 0.4.1). The menu it opens is the same.
+   */
+  avatarSrc?: string;
 }) => {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -35,7 +41,12 @@ export const FloatingProfileMenu = ({
   }, [open]);
 
   return (
-    <div className="floating-profile-wrap" ref={ref}>
+    <div className={avatarSrc ? "profile-avatar-wrap" : "floating-profile-wrap"} ref={ref}>
+      {avatarSrc ? (
+        <button type="button" className="profile-avatar" onClick={() => setOpen((prev) => !prev)} aria-label="User Profile" aria-expanded={open}>
+          <img src={avatarSrc} alt="" />
+        </button>
+      ) : (
       <button
         type="button"
         className="floating-profile-pill"
@@ -71,6 +82,7 @@ export const FloatingProfileMenu = ({
         </span>
         <span style={{ fontSize: "0.6rem", opacity: 0.6 }}>▼</span>
       </button>
+      )}
 
       {open && (
         <div

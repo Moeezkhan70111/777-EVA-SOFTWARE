@@ -78,6 +78,8 @@ const Page: React.FC<{ start?: StoreMode; initialProgramId?: string; onOpenCarto
       onNavigate={() => undefined}
       onOpenCartonQr={onOpenCartonQr}
       initialProgramId={initialProgramId}
+      // The pick-list opens from the Machine programs button, hidden in the app since 0.4.1.
+      showMachinePrograms
     />
   );
 };

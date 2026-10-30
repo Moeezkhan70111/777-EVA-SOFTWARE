@@ -11,9 +11,9 @@ import { ManualEntry } from "../sections/ManualEntry";
 import { NewMaterialForm } from "../sections/NewMaterialForm";
 import { RECEIVING_TABS, allowedTabs, shownTab, type ReceivingTab, type StoreAccess } from "./storeTabs";
 
-// RECEIVING's work area: Add material | Labels | Stock | Receipts | By hand | Setup — the sections
-// Store In had, under their 0.3.9 names, each with the permission it always needed. The Daily report
-// (a header button) takes the pane in their place until a tab is chosen.
+// RECEIVING's work area: Add material | Labels | Stock | Receipts | By hand | Setup | Daily report --
+// the sections Store In had, under their 0.3.9 names, each with the permission it always needed, and
+// the day's receipts (a tab since 0.4.1).
 
 interface ReceivingWorkAreaProps {
   token: string;
@@ -21,14 +21,11 @@ interface ReceivingWorkAreaProps {
   isAdmin: boolean;
   access: StoreAccess;
   lookups: ReturnType<typeof useRawMaterialLookups>;
-  /** The Daily report is open in place of the tabs. */
-  reportOpen: boolean;
-  onCloseReport: () => void;
   onNavigate: (route: AppRoute) => void;
 }
 
 export const ReceivingWorkArea: React.FC<ReceivingWorkAreaProps> = (props) => {
-  const { token, username, isAdmin, access, lookups, reportOpen, onCloseReport, onNavigate } = props;
+  const { token, username, isAdmin, access, lookups, onNavigate } = props;
   const [chosen, setChosen] = useState<ReceivingTab>("material");
   // A fresh, empty form after each material is created — the desk stays open for the next one.
   const [formKey, setFormKey] = useState(0);
@@ -36,20 +33,17 @@ export const ReceivingWorkArea: React.FC<ReceivingWorkAreaProps> = (props) => {
   const allowed = allowedTabs(RECEIVING_TABS, access);
   const tab = shownTab(chosen, allowed);
 
-  const select = (next: ReceivingTab) => {
-    setChosen(next);
-    onCloseReport();
-  };
+  const select = setChosen;
   const openLabelsFor = (itemId: string) => {
     setLabelsItemId(itemId);
     select("labels");
   };
 
   const pane = (() => {
-    if (reportOpen) return <StoreDailyReport direction={STORE_DIRECTION.IN} token={token} />;
     if (!tab) return <StateView kind="empty" title={copy.storePage.noTabs} hint={copy.storePage.noTabsHint} />;
     if (tab === "material") return <NewMaterialForm lookups={lookups} formKey={formKey} onDone={() => setFormKey((key) => key + 1)} />;
     if (tab === "byHand") return <ManualEntry token={token} />;
+    if (tab === "report") return <StoreDailyReport direction={STORE_DIRECTION.IN} token={token} />;
     return (
       <RawMaterialSection
         tab={tab}
@@ -69,12 +63,12 @@ export const ReceivingWorkArea: React.FC<ReceivingWorkAreaProps> = (props) => {
       {allowed.length > 0 ? (
         <TabStrip
           items={allowed.map((entry) => ({ id: entry.id, label: entry.label }))}
-          active={reportOpen ? null : tab}
+          active={tab}
           onSelect={select}
           label={copy.storePage.receivingSections}
         />
       ) : null}
-      <section className="sp-work-pane" aria-label={reportOpen ? copy.storePage.reportFor(copy.storePage.receiving) : copy.storePage.receivingSections}>
+      <section className="sp-work-pane" aria-label={tab === "report" ? copy.storePage.reportFor(copy.storePage.receiving) : copy.storePage.receivingSections}>
         {pane}
       </section>
     </div>

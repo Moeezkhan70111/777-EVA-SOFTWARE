@@ -10,8 +10,8 @@ import { HandMovePanel } from "../HandMovePanel";
 import { IssuedToday } from "./IssuedToday";
 import { ISSUING_TABS, allowedTabs, shownTab, type IssuingTab, type StoreAccess } from "./storeTabs";
 
-// ISSUING's work area: By hand | Issued today | Stock. By hand is Move Out by Hand, Stock the same
-// section Receiving shows. The Daily report (a header button) takes the pane until a tab is chosen.
+// ISSUING's work area: By hand | Issued today | Stock | Daily report. By hand is Move Out by Hand,
+// Stock the same section Receiving shows, and Daily report the day's issues (a tab since 0.4.1).
 
 interface IssuingWorkAreaProps {
   token: string;
@@ -19,26 +19,19 @@ interface IssuingWorkAreaProps {
   isAdmin: boolean;
   access: StoreAccess;
   lookups: ReturnType<typeof useRawMaterialLookups>;
-  reportOpen: boolean;
-  onCloseReport: () => void;
   /** Changes whenever this computer's issue session moves, so Issued today follows it. */
   sessionKey: string;
   onNavigate: (route: AppRoute) => void;
 }
 
 export const IssuingWorkArea: React.FC<IssuingWorkAreaProps> = (props) => {
-  const { token, username, isAdmin, access, lookups, reportOpen, onCloseReport, sessionKey, onNavigate } = props;
+  const { token, username, isAdmin, access, lookups, sessionKey, onNavigate } = props;
   const [chosen, setChosen] = useState<IssuingTab>("byHand");
   const allowed = allowedTabs(ISSUING_TABS, access);
   const tab = shownTab(chosen, allowed) ?? "byHand";
 
-  const select = (next: IssuingTab) => {
-    setChosen(next);
-    onCloseReport();
-  };
-
   const pane = (() => {
-    if (reportOpen) return <StoreDailyReport direction={STORE_DIRECTION.OUT} token={token} />;
+    if (tab === "report") return <StoreDailyReport direction={STORE_DIRECTION.OUT} token={token} />;
     if (tab === "issuedToday") return <IssuedToday refreshKey={sessionKey} username={username} />;
     if (tab === "stock") {
       return (
@@ -67,11 +60,11 @@ export const IssuingWorkArea: React.FC<IssuingWorkAreaProps> = (props) => {
     <div className="sp-work sp-work--issuing">
       <TabStrip
         items={allowed.map((entry) => ({ id: entry.id, label: entry.label }))}
-        active={reportOpen ? null : tab}
-        onSelect={select}
+        active={tab}
+        onSelect={setChosen}
         label={copy.storePage.issuingSections}
       />
-      <section className="sp-work-pane" aria-label={reportOpen ? copy.storePage.reportFor(copy.storePage.issuing) : copy.storePage.issuingSections}>
+      <section className="sp-work-pane" aria-label={tab === "report" ? copy.storePage.reportFor(copy.storePage.issuing) : copy.storePage.issuingSections}>
         {pane}
       </section>
     </div>

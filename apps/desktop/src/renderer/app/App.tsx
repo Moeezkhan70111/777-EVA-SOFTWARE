@@ -20,6 +20,7 @@ import { DispatchHistoryPage } from "../pages/DispatchHistoryPage";
 import { LiveReturnPage } from "../pages/LiveReturnPage";
 import { ReturnHistoryPage } from "../pages/ReturnHistoryPage";
 import { StorePage } from "../features/store/page/StorePage";
+import { StoreHeaderActions } from "../features/store/page/StoreHeaderActions";
 import { STORE_MODE_ROUTE, isStoreRoute, storeModeOfRoute, type StoreMode } from "../features/store/page/storeTabs";
 import { StoreWorkspacePage } from "../features/store/StoreWorkspacePage";
 import { StoreScanningPage } from "../pages/StoreScanningPage";
@@ -69,7 +70,7 @@ import { FloatingProfileMenu } from "../features/auth/FloatingProfileMenu";
 import { SessionProvider } from "../features/auth/SessionContext";
 import { WriteLeasesProvider } from "../features/sync/useWriteLease";
 import { useAuthSession } from "../features/auth/useAuthSession";
-import { canOpenRoute, hasPermission, HOME_ROUTE, landingRoute } from "../features/auth/session";
+import { canOpenRoute, hasPermission, HOME_ROUTE, isStoreOperator, landingRoute } from "../features/auth/session";
 import { hiddenLedgerRoutes, useLedgersShown } from "../features/parties/ledgerVisibility";
 import type { AuthUser } from "../types/desktopApi";
 import { MunshiHomePage } from "../features/munshi/MunshiHomePage";
@@ -232,9 +233,29 @@ export const App = () => {
     setRoute(next);
   }, []);
 
-  // Every approved role gets the sidebar; what it lists comes from the role's permissions.
-  // A user still waiting for access sees only the Rookie screen and the floating profile menu.
-  const showNavbar = !!session && NAV_ACTIVE && session.accessStatus === ACCESS_STATUS.APPROVED;
+  // A store operator has no navbar: their bell and profile ride in the Store page header (0.4.1).
+  const storeHeaderActions = useMemo(
+    () =>
+      session && isStoreOperator(session) ? (
+        <StoreHeaderActions
+          user={session}
+          notifications={admin.userNotifications}
+          onNotificationClick={onNotificationClick}
+          savedProfiles={savedProfiles}
+          onSwitchProfile={auth.handleSwitchProfile}
+          onAddAccount={auth.handleAddAccount}
+          onLogout={auth.handleLogout}
+          onChangePassword={() => setRoute("change-password")}
+          onProfile={() => setRoute("profile")}
+        />
+      ) : undefined,
+    [session, admin.userNotifications, onNotificationClick, savedProfiles, auth]
+  );
+
+  // Every approved role gets the sidebar; what it lists comes from the role's permissions. Two do
+  // not, and have the floating profile menu instead: a user still waiting for access (the Rookie
+  // screen), and a store operator, who works on the Store page alone (0.4.1).
+  const showNavbar = !!session && NAV_ACTIVE && session.accessStatus === ACCESS_STATUS.APPROVED && !isStoreOperator(session);
 
   const content = useMemo(() => {
     if (needsBootstrap) {
@@ -397,6 +418,7 @@ export const App = () => {
             onOpenCartonQr={canOpenRoute(session, "qr-generator") ? () => setRoute("qr-generator") : undefined}
             initialProgramId={storeProgramId}
             onInitialProgramConsumed={() => setStoreProgramId(undefined)}
+            headerActions={storeHeaderActions}
           />
         );
       // The Munshi's station, and the raw material Stock section opened from it. Stock is the
@@ -620,6 +642,7 @@ export const App = () => {
     selectedProductId,
     session,
     sessionToken,
+    storeHeaderActions,
     storeProgramId,
     workspaceTab,
   ]);
@@ -653,7 +676,7 @@ export const App = () => {
             />
           )}
 
-          {session && !showNavbar && !isAddingAccount && (
+          {session && !showNavbar && !isAddingAccount && !(isStoreOperator(session) && isStoreRoute(route)) && (
             <FloatingProfileMenu
               user={session}
               savedProfiles={savedProfiles}
