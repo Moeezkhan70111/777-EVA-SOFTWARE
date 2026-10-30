@@ -1775,7 +1775,6 @@ export const copy = {
     // own heading is not there to say where it belongs.
     stationEyebrow: "Store · Raw Material",
     machinePrograms: "Machine programs",
-    dailyReport: "Daily report",
     modesLabel: "What the store is doing",
     receiving: "Receiving",
     issuing: "Issuing",
@@ -1790,6 +1789,7 @@ export const copy = {
       byHand: "By hand",
       setup: "Setup",
       issuedToday: "Issued today",
+      dailyReport: "Daily report",
     },
     noTabs: "Nothing here for your account",
     noTabsHint: "Ask an administrator for stock, label or setup access.",

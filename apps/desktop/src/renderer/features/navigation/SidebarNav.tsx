@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import type { AppRoute } from "../../app/routes";
 import { copy } from "../../config/copy";
 import type { AuthUser } from "../../types/desktopApi";
-import { HOME_ROUTE, STORE_LANDING_ROUTE, landingRoute } from "../auth/session";
+import { HOME_ROUTE, isStoreOperator } from "../auth/session";
 import { isNavItemActive, visibleNavSections, type NavSection, type NavSectionId } from "./navCatalogue";
 import { HOME_ICON, SECTION_ICONS } from "./NavIcons";
 import { RailLink } from "./RailLink";
@@ -80,7 +80,7 @@ export const SidebarNav: React.FC<SidebarNavProps> = ({ user, current, onSelect,
   const [collapsed, setCollapsed] = useState<ReadonlySet<NavSectionId>>(new Set());
   const sections = visibleNavSections(user, hiddenRoutes);
 
-  if (landingRoute(user) === STORE_LANDING_ROUTE) {
+  if (isStoreOperator(user)) {
     return <StoreNav current={current} onSelect={onSelect} />;
   }
 

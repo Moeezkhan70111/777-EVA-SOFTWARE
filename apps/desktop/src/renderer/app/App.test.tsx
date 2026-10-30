@@ -195,7 +195,7 @@ describe("App", () => {
     expect(screen.getByRole("navigation", { name: /main navigation/i })).toBeInTheDocument();
   });
 
-  it("starts a store operator on the Store page in Receiving, with one sidebar row, and Escape stays there (0.3.9)", async () => {
+  it("starts a store operator on the Store page in Receiving, with no navbar, and Escape stays there (0.3.9, 0.4.1)", async () => {
     const api = makeApi();
     api.getSession.mockResolvedValue(null);
     renderApp(api);
@@ -211,9 +211,9 @@ describe("App", () => {
     const modes = screen.getByRole("group", { name: "What the store is doing" });
     expect(within(modes).getByRole("button", { name: /Receiving/ })).toHaveAttribute("aria-pressed", "true");
 
-    // The sidebar is one row: Store.
-    const rail = screen.getByRole("navigation", { name: /main navigation/i });
-    expect(within(rail).getAllByRole("button").map((button) => button.textContent)).toEqual(["Store"]);
+    // No navbar (0.4.1): the Store page alone, with the floating profile menu to sign out or switch.
+    expect(screen.queryByRole("navigation", { name: /main navigation/i })).toBeNull();
+    expect(screen.getByRole("button", { name: "User Profile" })).toBeInTheDocument();
 
     // Issuing, then Escape: the page stays on Issuing — Escape never switches mode.
     await userEvent.click(within(modes).getByRole("button", { name: /Issuing/ }));

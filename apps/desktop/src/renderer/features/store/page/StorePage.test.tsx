@@ -64,7 +64,12 @@ function installApi({ receivingOpen = true, receivedPackets = 2 } = {}) {
 const ALL: StoreAccess = { stock: true, labels: true, settings: true };
 
 /** The page with its mode held the way App holds it: in the route. */
-const Page: React.FC<{ start?: StoreMode; access?: StoreAccess; onModeChange?: (mode: StoreMode) => void }> = ({ start = "receiving", access = ALL, onModeChange }) => {
+const Page: React.FC<{ start?: StoreMode; access?: StoreAccess; onModeChange?: (mode: StoreMode) => void; showMachinePrograms?: boolean }> = ({
+  start = "receiving",
+  access = ALL,
+  onModeChange,
+  showMachinePrograms,
+}) => {
   const [mode, setMode] = useState<StoreMode>(start);
   return (
     <StorePage
@@ -78,6 +83,7 @@ const Page: React.FC<{ start?: StoreMode; access?: StoreAccess; onModeChange?: (
         setMode(next);
       }}
       onNavigate={() => undefined}
+      showMachinePrograms={showMachinePrograms}
     />
   );
 };
@@ -94,12 +100,19 @@ const modeButton = (name: RegExp) => within(screen.getByRole("group", { name: "W
 describe("Store page — layout", () => {
   afterEach(() => vi.restoreAllMocks());
 
-  it("is titled Store, with Daily report in the header", async () => {
+  it("is titled Store, with nothing in its header: Daily report is a tab, Machine programs hidden (0.4.1)", async () => {
     installApi();
     renderPage();
     expect(screen.getByRole("heading", { level: 1, name: "Store" })).toBeInTheDocument();
     expect(screen.getByText("Raw material in and out")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Daily report" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Daily report" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Machine programs" })).toBeNull();
+  });
+
+  it("shows the Machine programs button again only when asked to", async () => {
+    installApi();
+    renderPage({ showMachinePrograms: true });
+    expect(screen.getByRole("button", { name: "Machine programs" })).toBeInTheDocument();
   });
 
   it("shows each mode's session in words, the inactive one too", async () => {
@@ -111,22 +124,22 @@ describe("Store page — layout", () => {
     expect(modeButton(/Issuing/)).toHaveAttribute("aria-pressed", "false");
   });
 
-  it("offers Receiving's six tabs, and Issuing's three, in order", async () => {
+  it("offers Receiving's seven tabs, and Issuing's four, in order, Daily report last in each", async () => {
     installApi();
     renderPage();
     const tabsOf = (label: string) => within(screen.getByRole("tablist", { name: label })).getAllByRole("tab").map((tab) => tab.textContent);
-    expect(tabsOf("Receiving sections")).toEqual(["Add material", "Labels", "Stock", "Receipts", "By hand", "Setup"]);
+    expect(tabsOf("Receiving sections")).toEqual(["Add material", "Labels", "Stock", "Receipts", "By hand", "Setup", "Daily report"]);
     // The inactive mode is hidden, from assistive technology too: Issuing's tabs appear with Issuing.
     expect(screen.queryByRole("tablist", { name: "Issuing sections" })).toBeNull();
     fireEvent.click(modeButton(/Issuing/));
-    expect(tabsOf("Issuing sections")).toEqual(["By hand", "Issued today", "Stock"]);
+    expect(tabsOf("Issuing sections")).toEqual(["By hand", "Issued today", "Stock", "Daily report"]);
   });
 
   it("shows only the tabs the account may open", async () => {
     installApi();
     renderPage({ access: { stock: false, labels: false, settings: false } });
     const receivingTabs = within(screen.getByRole("tablist", { name: "Receiving sections" })).getAllByRole("tab").map((tab) => tab.textContent);
-    expect(receivingTabs).toEqual(["By hand"]);
+    expect(receivingTabs).toEqual(["By hand", "Daily report"]);
     expect(screen.getByTestId("hand-IN")).toBeInTheDocument();
   });
 });
@@ -149,14 +162,16 @@ describe("Store page — the two modes", () => {
     expect(api.getOpenRawMaterialReceivingSession).toHaveBeenCalledTimes(1);
   });
 
-  it("opens the Daily report for the mode on screen, in place of its tabs", async () => {
+  it("opens the Daily report for the mode on screen as its tab, and leaves it for another tab", async () => {
     installApi();
     renderPage();
-    fireEvent.click(screen.getByRole("button", { name: "Daily report" }));
+    const tab = (list: string, name: string) => within(screen.getByRole("tablist", { name: list })).getByRole("tab", { name });
+    fireEvent.click(tab("Receiving sections", "Daily report"));
+    expect(tab("Receiving sections", "Daily report")).toHaveAttribute("aria-selected", "true");
     expect(screen.getAllByTestId("daily-report").map((node) => node.textContent)).toEqual(["report:IN"]);
 
     fireEvent.click(modeButton(/Issuing/));
-    fireEvent.click(screen.getByRole("button", { name: "Daily report" }));
+    fireEvent.click(tab("Issuing sections", "Daily report"));
     expect(screen.getAllByTestId("daily-report").map((node) => node.textContent)).toEqual(["report:IN", "report:OUT"]);
 
     fireEvent.click(within(screen.getByRole("tablist", { name: "Issuing sections" })).getByRole("tab", { name: "By hand" }));
@@ -204,7 +219,7 @@ describe("Store page — the scan panels, as released", () => {
 
   it("gives the scanner's focus to the mode on screen only, and back after the Machine programs dialog", async () => {
     installApi();
-    renderPage();
+    renderPage({ showMachinePrograms: true });
     const box = within(screen.getByRole("complementary", { name: "Scan Material" })).getByLabelText("Scanner input");
     await waitFor(() => expect(box).toHaveFocus());
 

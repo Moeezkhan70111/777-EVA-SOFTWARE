@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useState } from "react";
 import type { AppRoute } from "../../../app/routes";
 import { copy } from "../../../config/copy";
 import { useRawMaterialLookups } from "../../rawMaterial/useRawMaterialLookups";
@@ -18,10 +18,14 @@ import { NO_SESSION, type StationStatus } from "./stationStatus";
 // THE STORE PAGE (0.3.9) — Receiving and Issuing on one page, in place of Store Station, Store In
 // and Store Out.
 //
-//   Store                                        [Machine programs] [Daily report]
+//   Store
 //   Raw material in and out
 //   [ Receiving · Session open · 12 packets ][ Issuing · Nothing started ]     (keys 1 and 2)
 //   ┌ the active mode's work area ─────────────────┬ its scan rail, ~380px ┐
+//
+// 0.4.1: the Daily report is each mode's last tab, and the Machine programs button is hidden. Its
+// dialog stays: showMachinePrograms puts the button back. A program still opens from a scanned
+// program sheet on Scan Out, and from a notification.
 //
 // BOTH STATIONS LIVE HERE, for as long as the page does: each keeps its session whichever mode is on
 // screen, and the switch shows both. Both rails stay mounted; the inactive one is hidden and its scan
@@ -40,6 +44,8 @@ interface StorePageProps {
   onNavigate: (route: AppRoute) => void;
   /** Absent when this account may not open the Carton QR Generator. */
   onOpenCartonQr?: () => void;
+  /** Shows the Machine programs button (hidden since 0.4.1). */
+  showMachinePrograms?: boolean;
   /** A machine program to open on arrival, from a notification or the Machine Program page. */
   initialProgramId?: string;
   onInitialProgramConsumed?: () => void;
@@ -56,11 +62,8 @@ export const StorePage: React.FC<StorePageProps> = (props) => {
   // page — a machine program, or the pick-list. When that ends, it takes the focus back by itself.
   const free = !programs.isOpen && !programs.dialogOpen;
   const lookups = useRawMaterialLookups();
-  const [reportOpen, setReportOpen] = useState<Record<StoreMode, boolean>>({ receiving: false, issuing: false });
   useModeKeys(onModeChange);
 
-
-  const closeReport = useCallback((which: StoreMode) => setReportOpen((open) => ({ ...open, [which]: false })), []);
   // Receipts → Continue opened the full-screen station; here the open session is already on the rail.
   const navigate = useCallback((route: AppRoute) => (route === "raw-material-input" ? onModeChange("receiving") : onNavigate(route)), [onModeChange, onNavigate]);
   const shared = { token, username, isAdmin, access, lookups, onNavigate: navigate };
@@ -75,14 +78,13 @@ export const StorePage: React.FC<StorePageProps> = (props) => {
           <h1 className="sp-title">{copy.storePage.title}</h1>
           <p className="sp-sub">{copy.storePage.subtitle}</p>
         </div>
-        <div className="sp-head-actions">
-          <button type="button" className="btn btn-secondary" aria-haspopup="dialog" onClick={programs.openDialog}>
-            {copy.storePage.machinePrograms}
-          </button>
-          <button type="button" className="btn btn-secondary" aria-pressed={reportOpen[mode]} onClick={() => setReportOpen((open) => ({ ...open, [mode]: !open[mode] }))}>
-            {copy.storePage.dailyReport}
-          </button>
-        </div>
+        {props.showMachinePrograms ? (
+          <div className="sp-head-actions">
+            <button type="button" className="btn btn-secondary" aria-haspopup="dialog" onClick={programs.openDialog}>
+              {copy.storePage.machinePrograms}
+            </button>
+          </div>
+        ) : null}
       </header>
 
       <ModeSwitch
@@ -94,15 +96,10 @@ export const StorePage: React.FC<StorePageProps> = (props) => {
 
       <div className="sp-body">
         <div hidden={!showing("receiving")} className="sp-work-slot">
-          <ReceivingWorkArea {...shared} reportOpen={reportOpen.receiving} onCloseReport={() => closeReport("receiving")} />
+          <ReceivingWorkArea {...shared} />
         </div>
         <div hidden={!showing("issuing")} className="sp-work-slot">
-          <IssuingWorkArea
-            {...shared}
-            reportOpen={reportOpen.issuing}
-            onCloseReport={() => closeReport("issuing")}
-            sessionKey={issuingKey}
-          />
+          <IssuingWorkArea {...shared} sessionKey={issuingKey} />
         </div>
         {programs.isOpen ? <ProgramWork store={programs} mode={mode} /> : null}
         <ScanInRail token={token} username={username} hidden={!showing("receiving")} active={mode === "receiving" && free} onStatus={setReceivingStatus} />
