@@ -188,7 +188,7 @@
   --sp-red:                #D92D20;      /* white text on it: 4.8:1 */
   --sp-red-hover:          #B42318;
   --sp-ground:             #F2F5FA;      /* the page, and panels set into a card */
-  --sp-line:               #E2E8F2;      /* input borders */
+  --sp-line:               #DEE5F0;      /* every border on the Store page. 0.4.1: 1% darker than #E2E8F2 (HSL lightness 91.8% -> 90.8%) */
   --sp-muted:              #5E6E8A;      /* secondary text: 5.2:1 on white, 4.7:1 on the ground */
   /* #8D9AB2 was asked for labels and hints; it is 2.8:1 on white, too faint for 10px text, so those
      use --sp-muted. It stays for what is not text: dividers, disabled outlines. */
