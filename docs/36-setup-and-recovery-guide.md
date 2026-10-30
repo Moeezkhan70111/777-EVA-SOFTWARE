@@ -357,7 +357,8 @@ them current, and fill a row in only once it has been checked by query.
 
 `https://ykhvbmhmeefdtrzqeoxm.supabase.co`, region ap-south-1 (Mumbai). Created 2026-10-23.
 
-**Status: EMPTY. Nothing applied yet.** Set it up by §7.1, in order.
+**Status: EMPTY. Nothing applied yet** (checked by query 2026-10-30: no public tables, no migrations,
+no Auth users; extensions the same as test). Set it up by §7.1, in order.
 
 | Step | File / action | How | Applied? | Verified? |
 |---|---|---|---|---|
@@ -377,15 +378,17 @@ them current, and fill a row in only once it has been checked by query.
 | 14 | `014_device_sync_health.up.sql` | **by hand**, SQL editor | — | — |
 | 15 | `015_stock_events.up.sql` | **by hand**, SQL editor | — | — |
 | 16 | `016_sync_log_doorbell.up.sql` | **by hand**, SQL editor | — | — |
-| 17 | Seed: `factory-777` | agent, `execute_sql` | — | — |
-| 18 | Master data mirror: `workstations`, `operators`, `product_variants` | agent, `execute_sql`, after owner approval of the row list | — | — |
-| 19 | `verify_applied_state.sql`: all 32 checks `ok` | agent, `execute_sql` | — | — |
-| 20 | Advisors: the same set as §6a.2, nothing new | **by hand**, dashboard → Advisors (the MCP servers do not enable the `debugging` feature) | — | — |
+| 17 | `017_product_variant_log.up.sql` | **by hand**, SQL editor | — | — |
+| 18 | `018_number_block_registry.up.sql` | **by hand**, SQL editor | — | — |
+| 19 | Seed: `factory-777` | agent, `execute_sql` | — | — |
+| 20 | ~~Master data mirror from test~~ | **not done: superseded by §10.8.** The real database exists (PC2), so production's master data comes from its backfill, never from test | n/a | n/a |
+| 21 | `verify_applied_state.sql`: all 33 checks `ok` | agent, `execute_sql` | — | — |
+| 22 | Advisors: the same set as §6a.2, nothing new | **by hand**, dashboard → Advisors (the MCP servers do not enable the `debugging` feature) | — | — |
 
 **Why some steps are by hand, and which ones.** The split is the same as on test, for the same
-reason (§6a.2): the MCP write tools refuse SQL containing destructive statements. Fourteen files are
-pasted by hand: **002–007 and 009–016**. 002 drops and re-adds foreign keys, and 003–007 and
-009–016 contain the `drop`s and `revoke`s that *are* the access model. The baseline, 008, the seed,
+reason (§6a.2): the MCP write tools refuse SQL containing destructive statements. Sixteen files are
+pasted by hand: **002–007 and 009–018**. 002 drops and re-adds foreign keys, and 003–007 and
+009–018 contain the `drop`s and `revoke`s that *are* the access model. The baseline, 008, the seed,
 the mirror and the verification all went through the tool on test, or are plain inserts and selects.
 
 **011 before 012, 013 and 015**: their push RPCs call 011's `lease_holds`. 014 needs only 006. On a
@@ -420,6 +423,8 @@ assumed. **Last checked 2026-10-23.**
 | `014_device_sync_health.up.sql` | **YES**, 2026-10-26 (verify 30/30, check_sync_health passed) | by hand, Supabase SQL editor (owner) |
 | `015_stock_events.up.sql` | **YES**, 2026-10-26 (verify 31/31, check_stock_events passed) | by hand, Supabase SQL editor (owner) |
 | `016_sync_log_doorbell.up.sql` | **YES**, 2026-10-27 (verify 32/32, check_doorbell passed) | by hand, Supabase SQL editor (owner) |
+| `017_product_variant_log.up.sql` | **YES**, 2026-10-30 | by hand, Supabase SQL editor (owner) |
+| `018_number_block_registry.up.sql` | **YES**, 2026-10-30 (verify 33/33, check_number_blocks passed) | by hand, Supabase SQL editor (owner) |
 
 **Verified 2026-10-25, after 013:** `verify_applied_state.sql`, all 29 checks `ok`. And
 `check_leased_records.sql` passed all 6 steps, leaving test as it was (no records, lease events,
@@ -605,10 +610,12 @@ The project is `ykhvbmhmeefdtrzqeoxm` (created 2026-10-23). Record progress in �
    | 14 | `migrations/supabase/014_device_sync_health.up.sql` | **you, SQL editor** |
    | 15 | `migrations/supabase/015_stock_events.up.sql` | **you, SQL editor** |
    | 16 | `migrations/supabase/016_sync_log_doorbell.up.sql` | **you, SQL editor** |
+   | 17 | `migrations/supabase/017_product_variant_log.up.sql` | **you, SQL editor** |
+   | 18 | `migrations/supabase/018_number_block_registry.up.sql` | **you, SQL editor** |
 
    Paste each file **whole**. **Never through a script that splits on semicolons** — `003`, `009`,
-   and `011`–`016` define `$$`-quoted function bodies containing semicolons, and a splitter shreds
-   them. The fourteen by-hand files are the ones the MCP tools refuse, because they contain `drop` or `revoke`
+   and `011`–`018` define `$$`-quoted function bodies containing semicolons, and a splitter shreds
+   them. The sixteen by-hand files are the ones the MCP tools refuse, because they contain `drop` or `revoke`
    (§6a.2).
 
    **Never re-run `005` after `009`.** 005 re-adds its two-type factory CHECK, the one 009 replaced
