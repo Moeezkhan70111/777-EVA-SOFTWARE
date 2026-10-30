@@ -193,7 +193,7 @@ export const NUMBER_SITES = {
 export type NumberSiteKey = keyof typeof NUMBER_SITES;
 
 /** The SQL expression that reads the series number out of the column, for one audited site. */
-function numberExpression(site: NumberSite): string {
+export function numberExpression(site: NumberSite): string {
   return site.parse.kind === "INT"
     ? `CAST(COALESCE(NULLIF(TRIM(CAST(${site.column} AS TEXT)), ''), '0') AS INTEGER)`
     : `CAST(SUBSTR(${site.column}, ${site.parse.from}) AS INTEGER)`;
