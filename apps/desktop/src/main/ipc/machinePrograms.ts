@@ -107,7 +107,18 @@ export function registerMachineProgramHandlers(ctx: IpcContext): void {
   // runs, uppers and their writes — was retired in Phase 1 and its channels are not registered.
 
   read(IPC.listMachineDayPrograms, { rows: [] }, (programDate) => ({ rows: db.listMachineDayPrograms(asString(programDate)) }));
-  read(IPC.listOpenMachinePrograms, { rows: [] }, () => ({ rows: db.listOpenMachinePrograms() }));
+  // Read from the Machine Program page, and from the store's Machine programs pick-list (0.3.9):
+  // a store operator can already open any program by its number, so seeing which are open
+  // grants nothing new. Read-only; deleting stays an administrator's.
+  ipcMain.handle(IPC.listOpenMachinePrograms, (event: IpcMainInvokeEvent) => {
+    try {
+      authorizer.requireAnyPermission(event, [PERMISSION.MACHINE_PROGRAM, PERMISSION.STORE_SCANNING]);
+      return { accepted: true, rows: db.listOpenMachinePrograms() };
+    } catch (error) {
+      log("WARNING", IPC.listOpenMachinePrograms, error instanceof Error ? error.message : String(error));
+      return { accepted: false, rows: [], reason: error instanceof Error ? error.message : "The open programs could not be read." };
+    }
+  });
 
   // DELETING A PROGRAM (0.3.8): administrators only, and never without a reason, which the use case
   // checks and keeps in the audit record. A hidden button is not the rule: this is.

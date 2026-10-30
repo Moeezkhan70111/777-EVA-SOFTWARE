@@ -3,7 +3,9 @@ import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { NOTIFICATION_KIND } from "@erp/domain";
-import { StoreOutPage } from "../StoreOutPage";
+import { ProgramLookupField } from "./ProgramLookupField";
+import { ProgramWork } from "../page/ProgramSlot";
+import { useStoreProgram } from "../page/useStoreProgram";
 import { NotificationsProvider } from "../../../state/NotificationsContext";
 import { notificationTarget } from "../../users/notificationTarget";
 import type {
@@ -19,28 +21,26 @@ import type {
 // backend decides everything, ONE SCAN IS ONE MOVEMENT, and the cartons the machine owes back
 // are offered for exactly what went out — never typed and never guessed.
 //
-// The two Move Out panes are mocked away: they are existing screens with their own tests, and
-// mounting their scanners here would put a second armed scan box on the page. The mock keeps the
-// one seam that matters — a program code scanned into the station is handed up to the lookup.
-vi.mock("../../../pages/RawMaterialOutputPage", () => ({
-  RawMaterialOutputPage: ({
-    onSessionChange,
-    onMachineProgramScan,
-  }: {
-    onSessionChange?: (id: string | null) => void;
-    onMachineProgramScan?: (code: string) => void;
-  }) => {
-    React.useEffect(() => onSessionChange?.("session-1"), [onSessionChange]);
-    return (
+// Hosted the way the Store page's Issuing mode hosts it (0.3.9): the program hook, the lookup box the
+// Machine programs pick-list holds, and the Issuing program slot. The Scan out station is a stand-in
+// with the one seam that matters — a program sheet scanned into it opens the program — and this
+// computer's open issue session, which program packets ride.
+const IssuingHost: React.FC<{ initialProgramId?: string }> = ({ initialProgramId }) => {
+  const store = useStoreProgram({ token: "t-1", issueSessionId: "session-1", initialProgramId });
+  if (store.isOpen) return <ProgramWork store={store} mode="issuing" />;
+  return (
+    <>
+      <ProgramLookupField onOpen={store.openProgram} busy={store.program.loading} error={store.program.error} />
       <div data-testid="rm-output-station">
         Raw Material Output
-        <button type="button" onClick={() => onMachineProgramScan?.("MP-000001")}>
+        <button type="button" onClick={() => store.openProgram("MP-000001")}>
           station scan MP-000001
         </button>
       </div>
-    );
-  },
-}));
+    </>
+  );
+};
+
 vi.mock("../../HandMovePanel", () => ({ HandMovePanel: () => <div data-testid="hand-move">Move Out by Hand</div> }));
 vi.mock("../HandMovePanel", () => ({ HandMovePanel: () => <div data-testid="hand-move">Move Out by Hand</div> }));
 vi.mock("../../../utils/playScanSound", () => ({ playScanSound: () => undefined }));
@@ -335,7 +335,7 @@ function installApi(
 const renderPage = (props: { initialProgramId?: string } = {}) =>
   render(
     <NotificationsProvider>
-      <StoreOutPage token="t-1" onBack={() => undefined} onOpenReport={() => undefined} {...props} />
+      <IssuingHost {...props} />
     </NotificationsProvider>
   );
 
@@ -386,9 +386,9 @@ afterEach(() => {
 });
 
 describe("notificationTarget", () => {
-  it("sends a machine-program notice to Store Out, carrying the program's stored id", () => {
+  it("sends a machine-program notice to the Store page in Issuing, carrying the program's stored id", () => {
     expect(notificationTarget({ kind: NOTIFICATION_KIND.MACHINE_PROGRAM_ISSUED, entityId: "prog-1" })).toEqual({
-      route: "store-out-operator",
+      route: "store-issuing",
       programId: "prog-1",
     });
   });
@@ -445,7 +445,7 @@ describe("Machine Move Out — opening a program", () => {
 
     expect(await screen.findByRole("alert")).toHaveTextContent("MP-000999 does not exist.");
     expect(screen.queryByRole("heading", { name: "Machine Program Issue" })).not.toBeInTheDocument();
-    // The ordinary Store Out page is still there, untouched.
+    // The Issuing work area is still there, untouched.
     expect(screen.getByTestId("rm-output-station")).toBeInTheDocument();
   });
 

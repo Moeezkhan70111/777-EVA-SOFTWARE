@@ -66,11 +66,9 @@ interface ProgramIssueHeaderProps {
   /** The ← button's accessible name: where it goes back to. */
   backLabel: string;
   onBack: () => void;
-  /** Leaves the station for the job chooser. Omitted where there is no job to change. */
-  onChangeJob?: () => void;
 }
 
-export const ProgramIssueHeader: React.FC<ProgramIssueHeaderProps> = ({ program, title, backLabel, onBack, onChangeJob }) => (
+export const ProgramIssueHeader: React.FC<ProgramIssueHeaderProps> = ({ program, title, backLabel, onBack }) => (
   <header className="mpi-head">
     <div className="mpi-title-row">
       <button type="button" className="mpi-back" onClick={onBack} aria-label={backLabel}>
@@ -82,11 +80,6 @@ export const ProgramIssueHeader: React.FC<ProgramIssueHeaderProps> = ({ program,
         <span className="mpi-pill-dot" aria-hidden="true" />
         {programStatusLabel(program.displayStatus)}
       </span>
-      {onChangeJob ? (
-        <button type="button" className="mpi-change-job" onClick={onChangeJob}>
-          {copy.store.changeJob}
-        </button>
-      ) : null}
     </div>
 
     <dl className="mpi-meta">

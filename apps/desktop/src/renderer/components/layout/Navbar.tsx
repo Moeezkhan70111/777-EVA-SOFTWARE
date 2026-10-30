@@ -3,7 +3,6 @@ import React, { useCallback, useRef, useState } from "react";
 import type { AppRoute } from "../../app/routes";
 import type { AuthUser } from "../../types/desktopApi";
 import { SidebarNav } from "../../features/navigation/SidebarNav";
-import type { StoreDirection } from "../../features/store/storeOperators";
 import { useDismissOnOutsideClick } from "../../hooks/useDismissOnOutsideClick";
 import { SyncStatusIndicator } from "../../features/sync/SyncStatusIndicator";
 
@@ -156,8 +155,6 @@ interface NavbarProps {
   onBackup: () => void;
   /** The signed-in user. The sidebar lists only the pages their role has been given. */
   user: AuthUser | null;
-  /** For a store operator: the job they have picked, whose pages the sidebar lists. */
-  storeJob?: StoreDirection | null;
   onProfile: () => void;
   onChangePassword: () => void;
   onLogout: () => void;
@@ -231,7 +228,6 @@ export const Navbar = ({
   appVersion,
   onBackup,
   user,
-  storeJob = null,
   onProfile,
   onChangePassword,
   onLogout,
@@ -278,7 +274,7 @@ export const Navbar = ({
       </div>
 
       {/* Home and the pages this user's role has been given — the same cards Home shows. */}
-      {user && <SidebarNav user={user} current={current} onSelect={onSelect} storeJob={storeJob} />}
+      {user && <SidebarNav user={user} current={current} onSelect={onSelect} />}
 
       {/* Right side */}
       <div className="navbar-right">

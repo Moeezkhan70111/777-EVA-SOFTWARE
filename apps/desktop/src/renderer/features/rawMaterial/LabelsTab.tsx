@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { buildRawMaterialQrId } from "@erp/domain";
+import { buildRawMaterialQrId, isRawMaterialReceiptPartyType } from "@erp/domain";
 import { useDesktopApi } from "../../hooks/useDesktopApi";
 import type { Party, RawMaterialMovementConfigRow, RawMaterialQrBatchRow, RawMaterialQrRow } from "../../types/desktopApi";
 import { useNotifications } from "../../state/NotificationsContext";
@@ -89,7 +89,7 @@ export const LabelsTab: React.FC<LabelsTabProps> = ({ username, configByItem, pr
   const loadLookups = useCallback(async () => {
     try {
       const [partyResult, itemRows] = await Promise.all([api.listParties({ pageSize: 1000 }), api.listInventoryItems({})]);
-      setSuppliers(partyResult.rows.filter((party) => party.partyType === "SUPPLIER"));
+      setSuppliers(partyResult.rows.filter((party) => isRawMaterialReceiptPartyType(party.partyType)));
       setItems(itemRows);
     } catch (error) {
       push("error", copy.toast.loadFailed, error instanceof Error ? error.message : "Could not load");

@@ -1237,7 +1237,12 @@ export const copy = {
   cartonProgram: {
     // Open programs and deleting one (0.3.8): administrators only, with a typed reason.
     openProgramsTitle: "Open programs",
-    openProgramsLine: "Every program still open, whatever its date. Delete one that can never be honestly completed; a program that can be is completed from Store In.",
+    openProgramsLine: "Every program still open, whatever its date. Open one in the Store page to issue against it or complete it; delete one that can never be honestly completed.",
+    openInStore: "Open in Store",
+    openInReceiving: "Receiving",
+    openInIssuing: "Issuing",
+    openInReceivingFor: (code: string) => `Open ${code} in Store · Receiving`,
+    openInIssuingFor: (code: string) => `Open ${code} in Store · Issuing`,
     openProgramsEmpty: "No machine program is open.",
     openProgramsFailed: "The open programs could not be loaded.",
     openProgramsLoading: "Loading open programs…",
@@ -1589,49 +1594,89 @@ export const copy = {
     offline: "Not updating — the last refresh failed. It will try again.",
   },
 
-  // Store Station — the operator says which side of the store they work, then lands on it.
+  // What the store's other screens still say: the Munshi's stock station, the program screens.
   // Kept short on purpose: this screen is read by new operators at a glance.
   store: {
-    title: "Store",
-    question: "What is your job today?",
-    moveInTitle: "Move In",
-    moveInLine: "Goods coming into the store",
-    moveOutTitle: "Move Out",
-    moveOutLine: "Goods going out of the store",
-    operator: "Operator",
-    start: "Start",
-    keyHint: "Press 1 or 2",
-    changeJob: "Change job",
-    comingNext: "This screen is being built.",
-    // The one Store In page
-    storeInTitle: "Store In",
-    storeInLine: "Add new materials, generate QR codes and manage stock.",
-    storeInSections: "Store In sections",
     scanMaterialTitle: "Scan Material",
     scanMaterialLine: "Scan a QR code to receive material into stock.",
-    or: "OR",
-    manualEntry: "Manual Entry",
-    manualEntryLine: "Type in material that came without labels",
-    noAccessTitle: "Nothing here for your account",
-    noAccessHint: "Ask an administrator for stock, label or setup access.",
-    addMaterialTitle: "Add New Material",
-    addMaterialLine: "Make a new raw material",
-    needsStockAccess: "Ask an admin for Stock access to use this",
+    moveInTitle: "Move In",
+    operator: "Operator",
     qrTitle: "Raw Material QR",
-    /** What the Store In tab strip calls it — shorter, because the page is already Store In. */
-    qrTabTitle: "QR Generator",
-    qrLine: "Print QR labels for packets",
-    needsQrAccess: "Ask an admin for QR Generator access to use this",
-    scannerTitle: "Raw Material Move In",
-    scannerLine: "Scan packets into the store",
-    deskSwitch: "Show on the left",
     stockTitle: "Stock",
-    stockLine: "See what is in the store",
     receiptsTitle: "Receipts",
-    receiptsLine: "Bills and deliveries received",
     setupTitle: "Setup",
-    setupLine: "Categories, units and destinations",
-    needsSettingsAccess: "Ask an admin for Raw Material Setup access to use this",
+  },
+
+  // The Store page's words about a scan panel's session, outside the panels themselves (0.3.9). The
+  // panels say "session", as released, and so does everything around them.
+  storeStation: {
+    sessionOpen: (n: number) => `Session open · ${n.toLocaleString()} packet${n === 1 ? "" : "s"}`,
+    nothingStarted: "Nothing started",
+    packets: (n: number) => `${n.toLocaleString()} packet${n === 1 ? "" : "s"}`,
+    reprintSlip: "Reprint slip",
+    popupBlocked: "Allow popups to print the slip",
+  },
+
+  // RECEIPTS — the deliveries received, on the Store page's Receipts tab and the Raw Material workspace.
+  receiptsTab: {
+    note: "Every delivery received into the store, scanned packet by packet.",
+    openHere: "A session is open on this computer",
+    continueSession: "Continue session",
+    sessionColumn: "Session",
+    emptyHint: "Widen the dates, clear the status filter, or scan one in under Receiving.",
+  },
+
+  // THE STORE PAGE (0.3.9) — Receiving and Issuing on one page, in place of Store Station, Store In
+  // and Store Out.
+  storePage: {
+    title: "Store",
+    subtitle: "Raw material in and out",
+    machinePrograms: "Machine programs",
+    dailyReport: "Daily report",
+    modesLabel: "What the store is doing",
+    receiving: "Receiving",
+    issuing: "Issuing",
+    keyHint: "Press 1 or 2",
+    receivingSections: "Receiving sections",
+    issuingSections: "Issuing sections",
+    tabs: {
+      addMaterial: "Add material",
+      labels: "Labels",
+      stock: "Stock",
+      receipts: "Receipts",
+      byHand: "By hand",
+      setup: "Setup",
+      issuedToday: "Issued today",
+    },
+    noTabs: "Nothing here for your account",
+    noTabsHint: "Ask an administrator for stock, label or setup access.",
+    reportFor: (mode: string) => `Daily report · ${mode}`,
+    programs: {
+      title: "Machine programs",
+      subtitle: "Choose an open program, or scan or type its number.",
+      listTitle: "Open programs",
+      loading: "Loading open programs…",
+      failed: "The open programs could not be loaded.",
+      empty: "No machine program is open.",
+      openFor: (code: string) => `Open ${code}`,
+      cartonQr: "Carton QR Generator",
+      /** The Scan out rail while a program is open in Issuing: its uppers are scanned in the program. */
+      pausedTitle: (code: string) => `Scanning out is paused while ${code} is open`,
+      scanOutPaused: "Its uppers are scanned in the program, on the left.",
+      closeToResume: "Close the program to scan packets out here again. Nothing scanned so far is lost.",
+    },
+    issuedToday: {
+      title: "Issued today",
+      line: "Every session started today, on every computer.",
+      loading: "Loading today's sessions…",
+      failed: "Today's sessions could not be loaded.",
+      empty: "Nothing has been issued today.",
+      emptyHint: "Choose who the packets are going to on the right, then press Start scanning.",
+      open: "Open",
+      closed: "Closed",
+      noParty: "No packets yet",
+      reprintFor: (code: string) => `Reprint slip for ${code}`,
+    },
   },
 
   // STORE OUT — the two ways material leaves the store, side by side.
@@ -2186,8 +2231,6 @@ export const copy = {
   nav: {
     home: "Dashboard",
     homeTitle: "Dashboard",
-    /** A store operator's first sidebar row: back to Store Station to pick their job. */
-    selectJob: "Select Job",
     /** The Dashboard title for an administrator who has no role of their own. */
     adminTitle: "Administrator",
     emptyTitle: "No pages assigned yet",
@@ -2211,9 +2254,10 @@ export const copy = {
       liveProduction: { label: "Live Production", line: "Scan and record production" },
       liveDispatch: { label: "Live Dispatch", line: "Dispatch cartons by scanning" },
       liveReturn: { label: "Return Scanning", line: "Record returned cartons" },
-      storeHome: { label: "Store Station", line: "Move In / Move Out chooser" },
-      storeMoveIn: { label: "Move In", line: "Receive cartons into the store" },
-      storeMoveOut: { label: "Move Out", line: "Send cartons to the gate" },
+      storeHome: { label: "Store", line: "Raw material in and out" },
+      // Finished cartons, not raw material: named so, beside Store (owner, 0.3.9).
+      storeMoveIn: { label: "Carton Move In", line: "Receive cartons into the store" },
+      storeMoveOut: { label: "Carton Move Out", line: "Send cartons to the gate" },
       rawMaterialInput: { label: "Raw Material Input", line: "Receive raw material packets" },
       rawMaterialOutput: { label: "Raw Material Output", line: "Issue raw material packets" },
       munshiHome: { label: "Munshi Station", line: "The gatepass desk" },

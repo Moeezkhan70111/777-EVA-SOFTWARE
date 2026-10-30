@@ -9,13 +9,15 @@ import type {
 import type { AppRoute } from "../app/routes";
 import { SearchableCombobox } from "../components/shared/SearchableCombobox";
 import { PartyTypeBadge } from "../features/parties/PartyTypeBadge";
+import { partyOption } from "../features/parties/partyOption";
 import { useNotifications } from "../state/NotificationsContext";
 import { playScanSound } from "../utils/playScanSound";
 import { copy } from "../config/copy";
 import { formatDateTime } from "../utils/dates";
 import { openReceivingReceiptPrintWindow } from "../features/rawMaterial/receivingReceipt";
 import { isCompleteQr, sanitizeScanInput } from "../utils/qr";
-import { isValidRawMaterialQrId } from "@erp/domain";
+import { isRawMaterialReceiptPartyType, isValidRawMaterialQrId } from "@erp/domain";
+import type { StationStatus } from "../features/store/page/stationStatus";
 import {
   LastScanCard,
   PlusIcon,
@@ -108,9 +110,16 @@ interface RawMaterialInputPageProps {
    * generator. Same station and the same session — only the layout stacks to fit the pane.
    */
   embedded?: boolean;
+  /**
+   * False while this panel's mode is not the one on the Store page (or a machine program has the
+   * page): it then never takes the scanner's focus, so a scan can only land in the mode on screen.
+   */
+  active?: boolean;
+  /** Where this panel's session stands, for the Store page's mode switch. */
+  onStatus?: (status: StationStatus) => void;
 }
 
-export const RawMaterialInputPage: React.FC<RawMaterialInputPageProps> = ({ token, username, onBack, onNavigate, embedded = false }) => {
+export const RawMaterialInputPage: React.FC<RawMaterialInputPageProps> = ({ token, username, onBack, onNavigate, embedded = false, active = true, onStatus }) => {
   const api = useDesktopApi();
   const { push } = useNotifications();
 
@@ -129,6 +138,9 @@ export const RawMaterialInputPage: React.FC<RawMaterialInputPageProps> = ({ toke
   const queueRef = useRef<string[]>([]);
   const processingRef = useRef(false);
   const focusScanner = useCallback(() => inputRef.current?.focus(), []);
+  // Read when a scan finishes: the Store page may have switched mode while it was being saved.
+  const activeRef = useRef(active);
+  activeRef.current = active;
 
   const open = session?.status === "OPEN";
   const scannerReady = Boolean(open);
@@ -143,7 +155,7 @@ export const RawMaterialInputPage: React.FC<RawMaterialInputPageProps> = ({ toke
         api.listParties({ search: "", status: "ACTIVE", page: 1, pageSize: 500 }),
         api.getOpenRawMaterialReceivingSession(),
       ]);
-      setSuppliers(parties.rows.filter((party) => party.partyType !== "CUSTOMER"));
+      setSuppliers(parties.rows.filter((party) => isRawMaterialReceiptPartyType(party.partyType)));
       setSession(openSession);
       if (openSession) {
         setPartyId(openSession.partyId);
@@ -179,11 +191,17 @@ export const RawMaterialInputPage: React.FC<RawMaterialInputPageProps> = ({ toke
 
   // The scanner types into whichever field has focus, so the scan box keeps it.
   useEffect(() => {
-    if (scannerReady) focusScanner();
-  }, [scannerReady, feedback.seq, focusScanner]);
+    if (scannerReady && active) focusScanner();
+  }, [scannerReady, active, feedback.seq, focusScanner]);
+
+  // The Store page's mode switch shows this panel's session state, even while it is hidden.
+  useEffect(() => {
+    onStatus?.({ sessionId: open ? (session?.id ?? null) : null, open: open, packets: summary?.totalPackets ?? 0 });
+  }, [onStatus, session, summary]);
+
 
   const supplierOptions = useMemo(
-    () => suppliers.map((party) => ({ value: party.id, label: `${party.partyCode} — ${party.partyName}` })),
+    () => suppliers.map(partyOption),
     [suppliers]
   );
 
@@ -250,7 +268,7 @@ export const RawMaterialInputPage: React.FC<RawMaterialInputPageProps> = ({ toke
       }
     } finally {
       processingRef.current = false;
-      focusScanner();
+      if (activeRef.current) focusScanner();
     }
   }, [runScan, focusScanner]);
 

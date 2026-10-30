@@ -76,6 +76,7 @@ export const IPC = {
   // Raw Material Output: packets leaving the store for the section that consumes them.
   startRawMaterialIssueSession: "erp:start-raw-material-issue-session",
   getOpenRawMaterialIssueSession: "erp:get-open-raw-material-issue-session",
+  listRawMaterialIssueSessions: "erp:list-raw-material-issue-sessions",
   closeRawMaterialIssueSession: "erp:close-raw-material-issue-session",
   getRawMaterialIssueSessionSummary: "erp:get-raw-material-issue-session-summary",
   rawMaterialIssueScan: "erp:raw-material-issue-scan",

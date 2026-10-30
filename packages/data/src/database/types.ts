@@ -1598,12 +1598,25 @@ export interface RawMaterialIssueSession {
   closedAt: string | null;
 }
 
+/** One issue session in a list: who its packets went to and how many (Issued today, last session). */
+export interface RawMaterialIssueSessionRow {
+  session: RawMaterialIssueSession;
+  /** Its first scanned packet's party; null while it has none. */
+  partyId: string | null;
+  partyName: string | null;
+  packets: number;
+}
+
 /** What an issue session sent out, grouped the way the printed slip is read. */
 export interface RawMaterialIssueSessionSummary {
   session: RawMaterialIssueSession;
   /** Who the session's packets go to: its first scan's party, or null before the first scan. */
   partyId: string | null;
+  /** That party's name, for the printed slip; null when the session has no party yet. */
+  partyName: string | null;
   totalPackets: number;
+  /** One line per material and unit — what the printed slip totals. */
+  byMaterial: Array<{ itemDisplayName: string; packets: number; quantity: number; unitCode: string }>;
   bySection: Array<{
     sectionName: string;
     packets: number;

@@ -86,6 +86,7 @@ contextBridge.exposeInMainWorld("desktop", {
     startRawMaterialIssueSession: (opts?: Record<string, unknown>) =>
       ipcRenderer.invoke(IPC.startRawMaterialIssueSession, opts),
     getOpenRawMaterialIssueSession: () => ipcRenderer.invoke(IPC.getOpenRawMaterialIssueSession),
+    listRawMaterialIssueSessions: (filters?: Record<string, unknown>) => ipcRenderer.invoke(IPC.listRawMaterialIssueSessions, filters),
     closeRawMaterialIssueSession: (sessionId: string) =>
       ipcRenderer.invoke(IPC.closeRawMaterialIssueSession, sessionId),
     getRawMaterialIssueSessionSummary: (sessionId: string) =>

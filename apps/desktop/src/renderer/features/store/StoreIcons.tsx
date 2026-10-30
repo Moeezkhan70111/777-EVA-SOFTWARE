@@ -1,27 +1,9 @@
 import React from "react";
-import type { StoreDirection } from "./storeOperators";
 
 // The store's two pictures: a box with an arrow going into the store, and a box with an arrow
 // leaving it. Drawn with plain strokes so they read at any size and in any colour.
 
 /** A store (a simple building) with a box arrow going in or coming out. */
-export const StoreDirectionIcon: React.FC<{ direction: StoreDirection }> = ({ direction }) => (
-  <svg viewBox="0 0 64 64" fill="none" aria-hidden="true">
-    {/* The store */}
-    <path d="M8 26L32 10l24 16" stroke="currentColor" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round" />
-    <path d="M13 23v31h38V23" stroke="currentColor" strokeWidth="3.5" strokeLinejoin="round" />
-    {/* The box */}
-    <rect x="24" y="34" width="16" height="14" rx="2" stroke="currentColor" strokeWidth="3" />
-    <path d="M24 39h16" stroke="currentColor" strokeWidth="3" />
-    {/* The arrow: down into the store, or up and out of it */}
-    {direction === "in" ? (
-      <path d="M32 16v13M26.5 23.5L32 29l5.5-5.5" stroke="currentColor" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round" />
-    ) : (
-      <path d="M32 29V16M26.5 21.5L32 16l5.5 5.5" stroke="currentColor" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round" />
-    )}
-  </svg>
-);
-
 /** The arrow on the card's Start button. */
 export const ArrowRightIcon: React.FC = () => (
   <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">

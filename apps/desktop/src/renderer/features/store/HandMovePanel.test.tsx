@@ -9,6 +9,8 @@ import { NotificationsProvider } from "../../state/NotificationsContext";
 
 const ITEM = { id: "item-nawaar", item_code: "RM-0001", display_name: "NAWAAR — 5 SOOTAR — BLACK" };
 
+const SUPPLIER = { id: "party-1", partyCode: "PTY000001", partyName: "SHEHZAD RUBBER TOPPING", partyType: "SUPPLIER", status: "ACTIVE" };
+
 const OPTIONS = {
   itemId: ITEM.id,
   itemCode: ITEM.item_code,
@@ -28,7 +30,7 @@ function createFakeBackend() {
   }));
   const api = {
     listInventoryItems: vi.fn(async () => [ITEM]),
-    listParties: vi.fn(async () => ({ rows: [], total: 0, page: 1, pageSize: 1000 })),
+    listParties: vi.fn(async () => ({ rows: [SUPPLIER], total: 1, page: 1, pageSize: 1000 })),
     getRawMaterialHandMoveOptions: vi.fn(async () => OPTIONS),
     moveRawMaterialByHand,
   };
@@ -100,6 +102,16 @@ describe("HandMovePanel — What for", () => {
       fireEvent.change(screen.getByLabelText(/What for/), { target: { value: "   " } });
     });
     expect(screen.getByRole("button", { name: "Move Out" })).toBeDisabled();
+  });
+
+  it("Manual Entry shows each supplier's type in the list, while choosing", async () => {
+    createFakeBackend();
+    renderPanel("IN");
+    const box = await screen.findByRole("combobox", { name: "Select Supplier" });
+    await act(async () => {
+      fireEvent.click(box);
+    });
+    expect(await screen.findByRole("option", { name: /SHEHZAD RUBBER TOPPING/ })).toHaveTextContent("Supplier");
   });
 
   it("moving IN keeps its Reference optional", async () => {

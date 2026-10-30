@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useDesktopApi } from "../hooks/useDesktopApi";
 import type { Party, RawMaterialIssueResult, RawMaterialIssueSession, RawMaterialIssueSessionSummary } from "../types/desktopApi";
 import { PartyTypeBadge } from "../features/parties/PartyTypeBadge";
+import { partyOption } from "../features/parties/partyOption";
 import { SearchableCombobox } from "../components/shared/SearchableCombobox";
 import { StateView } from "../components/shared/StateView";
 import { StepHeading } from "../components/shared/StepHeading";
@@ -9,11 +10,11 @@ import type { AppRoute } from "../app/routes";
 import { useNotifications } from "../state/NotificationsContext";
 import { playScanSound } from "../utils/playScanSound";
 import { copy } from "../config/copy";
-import { openPrintDocument } from "../platform/print";
-import { escapeHtml } from "../utils/html";
+import { openIssueSlipPrintWindow } from "../features/rawMaterial/issueSlip";
 import { formatDateTime } from "../utils/dates";
 import { isCompleteQr, sanitizeScanInput } from "../utils/qr";
 import { isMachineProgramCodeScan, isRawMaterialIssuePartyType, isValidRawMaterialQrId } from "@erp/domain";
+import type { StationStatus } from "../features/store/page/stationStatus";
 import {
   LastScanCard,
   PlusIcon,
@@ -135,67 +136,6 @@ const feedbackFor = (result: RawMaterialIssueResult, seq: number): ScanStationFe
   }
 };
 
-/** The printed issue slip: what left the store, one destination at a time. */
-const buildSlipHtml = (summary: RawMaterialIssueSessionSummary): string => {
-  const e = escapeHtml;
-  const sections = summary.bySection
-    .map(
-      (section) =>
-        `<h3>${e(section.sectionName)} — ${section.packets} packet${section.packets === 1 ? "" : "s"}</h3>` +
-        `<table><thead><tr><th>Raw material</th><th class="num">Packets</th><th class="num">Quantity</th></tr></thead><tbody>` +
-        section.materials
-          .map((m) => `<tr><td>${e(m.itemDisplayName)}</td><td class="num">${m.packets}</td><td class="num">${m.quantity} ${e(m.unitCode)}</td></tr>`)
-          .join("") +
-        `</tbody></table>`
-    )
-    .join("");
-
-  const scans = summary.scans
-    .map(
-      (scan, index) =>
-        `<tr><td class="num">${index + 1}</td><td class="code">${e(scan.qrId)}</td><td>${e(scan.itemDisplayName)}</td>` +
-        `<td class="num">${scan.quantity} ${e(scan.unitCode)}</td><td>${e(scan.sectionName ?? "—")}</td><td>${e(formatDateTime(scan.issuedAt))}</td></tr>`
-    )
-    .join("");
-
-  return `<!DOCTYPE html>
-<html lang="en"><head><meta charset="UTF-8" /><title>${e(summary.session.code)} — Raw material issued</title>
-<style>
-  body { font-family: "Segoe UI", Arial, sans-serif; padding: 28px; color: #111; }
-  h1 { font-size: 18px; margin: 0 0 4px; }
-  h3 { font-size: 13px; margin: 20px 0 6px; }
-  .meta { color: #555; font-size: 12px; margin-bottom: 18px; }
-  .meta span { margin-right: 18px; }
-  h2 { font-size: 14px; margin: 22px 0 8px; }
-  table { border-collapse: collapse; width: 100%; font-size: 12px; }
-  th, td { padding: 6px 8px; border-bottom: 1px solid #ddd; text-align: left; }
-  th { background: #f3f5f8; }
-  .num { text-align: right; font-variant-numeric: tabular-nums; }
-  .code { font-family: Consolas, "Courier New", monospace; }
-  .actions { text-align: center; margin-bottom: 18px; }
-  .actions button { padding: 10px 26px; font-size: 13px; font-weight: 600; background: #17365d; color: #fff; border: none; border-radius: 4px; cursor: pointer; }
-  @media print { .actions { display: none; } body { padding: 0; } }
-</style></head>
-<body>
-  <div class="actions"><button onclick="window.print()">${e(copy.reports.printOrSave)}</button></div>
-  <h1>Raw Material Issued</h1>
-  <div class="meta">
-    <span>Session ${e(summary.session.code)}</span>
-    <span>Started ${e(formatDateTime(summary.session.startedAt))}</span>
-    ${summary.session.closedAt ? `<span>Closed ${e(formatDateTime(summary.session.closedAt))}</span>` : ""}
-    <span>Issued by ${e(summary.session.startedBy ?? "—")}</span>
-    <span>${summary.totalPackets} packet${summary.totalPackets === 1 ? "" : "s"}</span>
-  </div>
-
-  <h2>By destination</h2>
-  ${sections || "<p>Nothing was issued in this session.</p>"}
-
-  <h2>Every packet</h2>
-  <table><thead><tr><th class="num">#</th><th>QR</th><th>Raw material</th><th class="num">Quantity</th><th>Destination</th><th>Issued</th></tr></thead>
-  <tbody>${scans || '<tr><td colspan="6">Nothing was issued in this session.</td></tr>'}</tbody></table>
-</body></html>`;
-};
-
 /** What the scan box says while it is waiting: the next step of choose party, New session, scan. */
 function scanHintFor(partyId: string, session: RawMaterialIssueSession | null): string {
   if (!partyId) return copy.moveOut.scanStartHint;
@@ -236,15 +176,25 @@ interface RawMaterialOutputPageProps {
    * Only the unmistakable MP form is passed on; a bare number is a mis-scan, not a program.
    */
   onMachineProgramScan?: (code: string) => void;
+  /**
+   * False while this panel's mode is not the one on the Store page (or a machine program has the
+   * page): it then never takes the scanner's focus, so a scan can only land in the mode on screen.
+   */
+  active?: boolean;
+  /** Where this panel's session stands, for the Store page's mode switch. */
+  onStatus?: (status: StationStatus) => void;
 }
 
 export const RawMaterialOutputPage: React.FC<RawMaterialOutputPageProps> = ({
   token,
+  username,
   onBack,
   onNavigate,
   embedded = false,
   onSessionChange,
   onMachineProgramScan,
+  active = true,
+  onStatus,
 }) => {
   const api = useDesktopApi();
   const { push } = useNotifications();
@@ -268,6 +218,9 @@ export const RawMaterialOutputPage: React.FC<RawMaterialOutputPageProps> = ({
   const queueRef = useRef<string[]>([]);
   const processingRef = useRef(false);
   const focusScanner = useCallback(() => inputRef.current?.focus(), []);
+  // Read when a scan finishes: the Store page may have switched mode while it was being saved.
+  const activeRef = useRef(active);
+  activeRef.current = active;
 
   const refreshSummary = useCallback(
     async (sessionId: string) => setSummary(await api.getRawMaterialIssueSessionSummary(sessionId)),
@@ -334,7 +287,7 @@ export const RawMaterialOutputPage: React.FC<RawMaterialOutputPageProps> = ({
   }, [loadParties]);
 
   const partyOptions = useMemo(
-    () => parties.map((party) => ({ value: party.id, label: `${party.partyCode} — ${party.partyName}` })),
+    () => parties.map(partyOption),
     [parties]
   );
   const chosenParty = parties.find((party) => party.id === partyId);
@@ -370,8 +323,14 @@ export const RawMaterialOutputPage: React.FC<RawMaterialOutputPageProps> = ({
 
   // The scanner types into whichever field has focus, so the scan box keeps it.
   useEffect(() => {
-    if (scannerReady) focusScanner();
-  }, [scannerReady, feedback.seq, focusScanner]);
+    if (scannerReady && active) focusScanner();
+  }, [scannerReady, active, feedback.seq, focusScanner]);
+
+  // The Store page's mode switch shows this panel's session state, even while it is hidden.
+  useEffect(() => {
+    onStatus?.({ sessionId: session?.status === "OPEN" ? (session?.id ?? null) : null, open: session?.status === "OPEN", packets: summary?.totalPackets ?? 0 });
+  }, [onStatus, session, summary]);
+
 
   const runScan = useCallback(
     async (code: string) => {
@@ -402,7 +361,7 @@ export const RawMaterialOutputPage: React.FC<RawMaterialOutputPageProps> = ({
       }
     } finally {
       processingRef.current = false;
-      focusScanner();
+      if (activeRef.current) focusScanner();
     }
   }, [runScan, focusScanner]);
 
@@ -461,7 +420,7 @@ export const RawMaterialOutputPage: React.FC<RawMaterialOutputPageProps> = ({
 
   const print = () => {
     if (!summary) return;
-    if (!openPrintDocument(buildSlipHtml(summary)).opened) {
+    if (!openIssueSlipPrintWindow(summary, username)) {
       push("error", copy.toast.popupBlocked, "Allow popups to print the issue slip");
     }
   };

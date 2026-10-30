@@ -1,5 +1,6 @@
 import React from "react";
 import { copy } from "../../config/copy";
+import { partyTypeLabel } from "./partyOption";
 
 // What kind of party this is -- a supplier, a contractor -- shown beside a party wherever one is
 // chosen for a store movement (Move In, Move Out, Manual Entry). Said in words, never by colour
@@ -12,7 +13,7 @@ interface PartyTypeBadgeProps {
 
 export const PartyTypeBadge: React.FC<PartyTypeBadgeProps> = ({ partyType }) => {
   if (!partyType) return null;
-  const label = copy.parties.typeLabel[partyType] ?? partyType;
+  const label = partyTypeLabel(partyType);
   return (
     <span className="badge badge-info party-type-badge" aria-label={copy.parties.typeBadgeName(label)} data-testid="party-type-badge">
       {label}

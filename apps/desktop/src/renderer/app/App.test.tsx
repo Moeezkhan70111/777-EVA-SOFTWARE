@@ -195,7 +195,7 @@ describe("App", () => {
     expect(screen.getByRole("navigation", { name: /main navigation/i })).toBeInTheDocument();
   });
 
-  it("starts a store operator on Store Station — pick the job — not on the Dashboard", async () => {
+  it("starts a store operator on the Store page in Receiving, with one sidebar row, and Escape stays there (0.3.9)", async () => {
     const api = makeApi();
     api.getSession.mockResolvedValue(null);
     renderApp(api);
@@ -207,23 +207,18 @@ describe("App", () => {
     await userEvent.type(screen.getByLabelText(/password/i), "Password123");
     await userEvent.click(screen.getByRole("button", { name: /login/i }));
 
-    expect(await screen.findByRole("heading", { name: "What is your job today?" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { level: 1, name: "Store" })).toBeInTheDocument();
+    const modes = screen.getByRole("group", { name: "What the store is doing" });
+    expect(within(modes).getByRole("button", { name: /Receiving/ })).toHaveAttribute("aria-pressed", "true");
 
-    // No job yet: the sidebar holds Select Job and nothing else.
+    // The sidebar is one row: Store.
     const rail = screen.getByRole("navigation", { name: /main navigation/i });
-    expect(within(rail).getAllByRole("button").map((button) => button.textContent)).toEqual(["Select Job"]);
+    expect(within(rail).getAllByRole("button").map((button) => button.textContent)).toEqual(["Store"]);
 
-    // Picking Move In opens the job, and its pages join the sidebar.
-    await userEvent.click(screen.getByRole("button", { name: /Move In/ }));
-    await waitFor(() =>
-      expect(within(screen.getByRole("navigation", { name: /main navigation/i })).getByRole("button", { name: "Raw Material Move In" })).toBeInTheDocument()
-    );
-
-    // Select Job takes them back, and the sidebar empties again.
-    await userEvent.click(within(screen.getByRole("navigation", { name: /main navigation/i })).getByRole("button", { name: "Select Job" }));
-    await waitFor(() =>
-      expect(within(screen.getByRole("navigation", { name: /main navigation/i })).getAllByRole("button")).toHaveLength(1)
-    );
+    // Issuing, then Escape: the page stays on Issuing — Escape never switches mode.
+    await userEvent.click(within(modes).getByRole("button", { name: /Issuing/ }));
+    await userEvent.keyboard("{Escape}");
+    expect(within(screen.getByRole("group", { name: "What the store is doing" })).getByRole("button", { name: /Issuing/ })).toHaveAttribute("aria-pressed", "true");
   });
 
   it("creates an access request from the Rookie screen", async () => {

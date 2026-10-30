@@ -2,28 +2,23 @@ import React, { useState } from "react";
 import type { AppRoute } from "../../app/routes";
 import { copy } from "../../config/copy";
 import type { AuthUser } from "../../types/desktopApi";
-import { HOME_ROUTE, landingRoute } from "../auth/session";
-import type { StoreDirection } from "../store/storeOperators";
-import { STORE_STATION_ROUTE } from "../store/useStoreJob";
+import { HOME_ROUTE, STORE_LANDING_ROUTE, landingRoute } from "../auth/session";
 import { isNavItemActive, visibleNavSections, type NavSection, type NavSectionId } from "./navCatalogue";
 import { HOME_ICON, SECTION_ICONS } from "./NavIcons";
 import { RailLink } from "./RailLink";
-import { StoreJobNav } from "./StoreJobNav";
+import { StoreNav } from "./StoreNav";
 
 // The sidebar's list: Home, then the same cards Home shows, as rows under their section.
 // Each section folds open and shut from its heading so a role with many pages can keep the
 // rail short; the rows are plain buttons in the rail (no hover flyouts), which also works
 // for touch. A standalone section (Machine Program) is one top-level row, like Home.
 //
-// A store operator gets a different rail (StoreJobNav): only Select Job until they pick a job,
-// then that job and its pages.
+// A store operator gets a different rail (StoreNav): one row, Store (0.3.9).
 
 interface SidebarNavProps {
   user: AuthUser;
   current: AppRoute;
   onSelect: (route: AppRoute) => void;
-  /** The job a store operator has picked (useStoreJob); null before they pick one. */
-  storeJob?: StoreDirection | null;
 }
 
 const Chevron = () => (
@@ -79,12 +74,12 @@ const NavGroup: React.FC<NavGroupProps> = ({ section, open, current, onToggle, o
   );
 };
 
-export const SidebarNav: React.FC<SidebarNavProps> = ({ user, current, onSelect, storeJob = null }) => {
+export const SidebarNav: React.FC<SidebarNavProps> = ({ user, current, onSelect }) => {
   const [collapsed, setCollapsed] = useState<ReadonlySet<NavSectionId>>(new Set());
   const sections = visibleNavSections(user);
 
-  if (landingRoute(user) === STORE_STATION_ROUTE) {
-    return <StoreJobNav user={user} job={storeJob} current={current} onSelect={onSelect} />;
+  if (landingRoute(user) === STORE_LANDING_ROUTE) {
+    return <StoreNav current={current} onSelect={onSelect} />;
   }
 
   const toggle = (id: NavSectionId) =>

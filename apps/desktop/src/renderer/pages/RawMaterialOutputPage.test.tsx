@@ -50,7 +50,11 @@ function createFakeBackend(options: { open?: RawMaterialIssueSession | null; ope
   const summary = (): RawMaterialIssueSessionSummary => ({
     session: SESSION,
     partyId: party,
+    partyName: PARTIES.find((p) => p.id === party)?.partyName ?? null,
     totalPackets: issued.length,
+    byMaterial: issued.length
+      ? [{ itemDisplayName: "RUBBER UPPER — SK6 — RED — 7/10", packets: issued.length, quantity: issued.length * 2, unitCode: "DOZ" }]
+      : [],
     bySection: issued.length
       ? [
           {
@@ -192,6 +196,32 @@ describe("RawMaterialOutputPage", () => {
     expect(newSessionButton()).toBeDisabled();
     expect(endSessionButton()).toBeDisabled();
     expect(screen.getByLabelText("Scanner input")).toBeDisabled();
+  });
+
+  it("shows each party's type in the list, while choosing", async () => {
+    createFakeBackend();
+    renderPage();
+    await ready();
+
+    await openPartyList();
+    expect(await screen.findByRole("option", { name: /ABC UPPER/ })).toHaveTextContent("Supplier");
+    expect(screen.getByRole("option", { name: /ASLAM UPPER MAKER/ })).toHaveTextContent("Contractor");
+  });
+
+  it("finds the contractors when their type is typed", async () => {
+    createFakeBackend();
+    renderPage();
+    await ready();
+
+    const box = screen.getByRole("combobox", { name: "Moving out to" });
+    await act(async () => {
+      fireEvent.click(box);
+    });
+    await act(async () => {
+      fireEvent.change(box, { target: { value: "contractor" } });
+    });
+    expect(await screen.findByRole("option", { name: /ASLAM UPPER MAKER/ })).toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: /ABC UPPER/ })).toBeNull();
   });
 
   it("shows what kind of party is chosen, before the session starts", async () => {

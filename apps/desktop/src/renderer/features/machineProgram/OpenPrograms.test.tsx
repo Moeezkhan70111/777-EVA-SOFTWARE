@@ -32,10 +32,10 @@ function installApi(
   return api;
 }
 
-const renderList = (onDeleted = vi.fn()) =>
+const renderList = (onDeleted = vi.fn(), options: { canDelete?: boolean; onOpenInStore?: (programId: string, mode: "receiving" | "issuing") => void } = {}) =>
   render(
     <NotificationsProvider>
-      <OpenPrograms onDeleted={onDeleted} />
+      <OpenPrograms canDelete={options.canDelete ?? true} onOpenInStore={options.onOpenInStore} onDeleted={onDeleted} />
     </NotificationsProvider>
   );
 
@@ -47,6 +47,23 @@ describe("Open programs", () => {
     renderList();
     expect(await screen.findByText("MP-000001")).toBeInTheDocument();
     expect(screen.getByText("MP-000003")).toBeInTheDocument();
+  });
+
+  it("opens a program in the Store page, in Receiving or Issuing (0.3.9)", async () => {
+    installApi();
+    const onOpenInStore = vi.fn();
+    renderList(vi.fn(), { onOpenInStore });
+    await userEvent.click(await screen.findByRole("button", { name: "Open MP-000003 in Store · Receiving" }));
+    expect(onOpenInStore).toHaveBeenLastCalledWith("p-3", "receiving");
+    await userEvent.click(screen.getByRole("button", { name: "Open MP-000003 in Store · Issuing" }));
+    expect(onOpenInStore).toHaveBeenLastCalledWith("p-3", "issuing");
+  });
+
+  it("offers Delete to an administrator only", async () => {
+    installApi();
+    renderList(vi.fn(), { canDelete: false, onOpenInStore: vi.fn() });
+    expect(await screen.findByRole("button", { name: "Open MP-000001 in Store · Issuing" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Delete MP-000001…" })).toBeNull();
   });
 
   it("says so when no program is open", async () => {

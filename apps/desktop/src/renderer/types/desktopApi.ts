@@ -1707,6 +1707,17 @@ export interface DesktopApi {
   ): Promise<{ accepted: boolean; session?: RawMaterialIssueSession; reason?: string }>;
   /** This terminal's open issue session from today, or null. Never starts one. */
   getOpenRawMaterialIssueSession(): Promise<RawMaterialIssueSession | null>;
+  /**
+   * Issue sessions, newest first, with their party and packet count. thisComputerOnly limits them
+   * to this computer's (the last session it closed); otherwise every computer's (Issued today).
+   */
+  listRawMaterialIssueSessions(filters?: {
+    status?: "OPEN" | "CLOSED";
+    thisComputerOnly?: boolean;
+    dateFrom?: string;
+    dateTo?: string;
+    limit?: number;
+  }): Promise<RawMaterialIssueSessionRow[]>;
   closeRawMaterialIssueSession(sessionId: string): Promise<RawMaterialIssueSession | null>;
   getRawMaterialIssueSessionSummary(sessionId: string): Promise<RawMaterialIssueSessionSummary | null>;
   rawMaterialIssueScan(
@@ -2731,11 +2742,24 @@ export interface RawMaterialIssueSession {
   closedAt: string | null;
 }
 
+/** One issue session in a list: who its packets went to and how many (Issued today, last session). */
+export interface RawMaterialIssueSessionRow {
+  session: RawMaterialIssueSession;
+  /** Its first scanned packet's party; null while it has none. */
+  partyId: string | null;
+  partyName: string | null;
+  packets: number;
+}
+
 export interface RawMaterialIssueSessionSummary {
   session: RawMaterialIssueSession;
   /** Who the session's packets go to: its first scan's party, or null before the first scan. */
   partyId: string | null;
+  /** That party's name, for the printed slip; null when the session has no party yet. */
+  partyName: string | null;
   totalPackets: number;
+  /** One line per material and unit — what the printed slip totals. */
+  byMaterial: Array<{ itemDisplayName: string; packets: number; quantity: number; unitCode: string }>;
   bySection: Array<{
     sectionName: string;
     packets: number;

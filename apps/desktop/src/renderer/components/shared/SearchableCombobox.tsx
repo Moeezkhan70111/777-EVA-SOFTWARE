@@ -13,6 +13,8 @@ export interface SearchableComboboxOption {
   detail?: string;
   /** Extra words the search should find this option by, without showing them. */
   keywords?: string;
+  /** A short tag beside the label in the list, in words (e.g. a party's type: "Supplier"). */
+  badge?: string;
 }
 
 /** Lower-case, with the separators labels use (— · , |) turned into plain spaces. */
@@ -226,7 +228,14 @@ export const SearchableCombobox: React.FC<{
                 onMouseDown={(e) => e.preventDefault()}
                 onClick={() => select(opt)}
               >
-                <span className="city-option-label">{opt.label}</span>
+                {opt.badge ? (
+                  <span className="city-option-head">
+                    <span className="city-option-label">{opt.label}</span>
+                    <span className="badge badge-info city-option-badge">{opt.badge}</span>
+                  </span>
+                ) : (
+                  <span className="city-option-label">{opt.label}</span>
+                )}
                 {opt.detail ? <span className="city-option-detail">{opt.detail}</span> : null}
               </button>
             ))

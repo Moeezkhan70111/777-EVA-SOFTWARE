@@ -149,6 +149,19 @@ export function registerStoreHandlers(ctx: IpcContext): void {
   // the operator presses New session for a chosen party (0.3.8).
   ipcMain.handle(IPC.getOpenRawMaterialIssueSession, () => db.getOpenRawMaterialIssueSession(deviceId));
 
+  // Issued today (every computer, as Receipts) and the last session this computer closed. The
+  // screen never names a computer: "this computer" is resolved here.
+  ipcMain.handle(IPC.listRawMaterialIssueSessions, (_event, filters?: unknown) => {
+    const input = isRecord(filters) ? filters : {};
+    return db.listRawMaterialIssueSessions({
+      status: optionalOneOf(input.status, ["OPEN", "CLOSED"] as const),
+      deviceId: input.thisComputerOnly === true ? deviceId : undefined,
+      dateFrom: asOptionalString(input.dateFrom),
+      dateTo: asOptionalString(input.dateTo),
+      limit: asOptionalNumber(input.limit),
+    });
+  });
+
   ipcMain.handle(IPC.closeRawMaterialIssueSession, (_event, sessionId?: string) =>
     db.closeRawMaterialIssueSession(String(sessionId ?? ""))
   );

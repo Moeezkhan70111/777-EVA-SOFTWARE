@@ -56,6 +56,10 @@ export const useScanBox = ({ armed, onScan, refocusKey, autoSubmit = "complete-l
   const typedRef = useRef(false);
   const lastChangeRef = useRef(0);
   const focusScanner = useCallback(() => inputRef.current?.focus(), []);
+  // Read when a scan finishes: a box disarmed meanwhile (the Store page switched mode) must not
+  // take the focus back from the box that is armed now.
+  const armedRef = useRef(armed);
+  armedRef.current = armed;
 
   const setInputVal = useCallback((value: string) => {
     const now = Date.now();
@@ -90,7 +94,7 @@ export const useScanBox = ({ armed, onScan, refocusKey, autoSubmit = "complete-l
       }
     } finally {
       processingRef.current = false;
-      focusScanner();
+      if (armedRef.current) focusScanner();
     }
   }, [focusScanner, onScan]);
 
@@ -134,7 +138,10 @@ export const useScanBox = ({ armed, onScan, refocusKey, autoSubmit = "complete-l
         event.preventDefault();
         submitScan(valueRef.current);
       } else if (event.key === "Escape") {
+        // Escape here clears the box and nothing else: it must not also reach the app-wide Escape,
+        // which would leave the page (or, on the Store page, switch mode).
         event.preventDefault();
+        event.stopPropagation();
         setInputVal("");
       }
     },
