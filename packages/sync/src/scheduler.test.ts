@@ -363,7 +363,7 @@ test("state reports what is pending, for a panel to show", async () => {
 // ─── Push on save: the nudge ─────────────────────────────────────────────────
 
 /** The default bundling delay (DEFAULT_SAVE_NUDGE_DELAY_MS): distinct from every other delay here. */
-const NUDGE_MS = 1_500;
+const NUDGE_MS = 500;
 
 test("a save is sent within seconds, and the ordinary rhythm is left exactly as it was", async () => {
   const h = harness();
@@ -445,7 +445,7 @@ test("stopping cancels a nudge that was about to run", () => {
 // ─── Realtime: the doorbell's wake ───────────────────────────────────────────
 
 /** The default doorbell delay (DEFAULT_WAKE_DELAY_MS). */
-const WAKE_MS = 250;
+const WAKE_MS = 100;
 
 test("a ring starts a pass within a quarter of a second, recorded as realtime, and a burst shares it", async () => {
   const h = harness();
@@ -477,6 +477,55 @@ test("a ring during a pass gets exactly one more pass after it, for the ring", a
   assert.deepEqual(h.timers.delays(), [WAKE_MS, 90_000]);
   await h.timers.fireDelay(WAKE_MS);
   assert.deepEqual(passes, ["MANUAL", "REALTIME"]);
+});
+
+// ─── Backlog: a pass that stopped at its budget is followed at once ───────────
+
+/** The default follow-up delay (DEFAULT_BACKLOG_DELAY_MS). */
+const BACKLOG_MS = 100;
+
+test("a pass that stopped at its budget with more waiting is followed at once, recorded as backlog, until it runs dry", async () => {
+  const passes: SyncTrigger[] = [];
+  const h = harness({
+    runPass: async (trigger) => {
+      passes.push(trigger);
+      return { outcome: "OK", moreWaiting: passes.length < 3 };
+    },
+  });
+  h.scheduler.start();
+  await h.scheduler.runNow("STARTUP");
+  assert.ok(h.timers.delays().includes(BACKLOG_MS), "the next pass is coming at once, not at the minute");
+  await h.timers.fireDelay(BACKLOG_MS);
+  await h.timers.fireDelay(BACKLOG_MS);
+  assert.deepEqual(passes, ["STARTUP", "BACKLOG", "BACKLOG"]);
+  assert.ok(!h.timers.delays().includes(BACKLOG_MS), "the third pass ran dry: back to the ordinary rhythm");
+});
+
+test("no follow-up after a pass that failed, even with more waiting: the backoff decides", async () => {
+  const h = harness({ runPass: async () => ({ outcome: "FAILED", reason: "boom", moreWaiting: true }) });
+  h.scheduler.start();
+  await h.scheduler.runNow("MANUAL");
+  assert.ok(!h.timers.delays().includes(BACKLOG_MS));
+});
+
+test("a save made during a pass still gets its own pass first; that pass carries the backlog on", async () => {
+  let release: () => void = () => undefined;
+  const passes: SyncTrigger[] = [];
+  const h = harness({
+    runPass: async (trigger) => {
+      passes.push(trigger);
+      if (passes.length === 1) await new Promise<void>((resolve) => (release = resolve));
+      return { outcome: "OK", moreWaiting: passes.length === 1 };
+    },
+  });
+  h.scheduler.start();
+  const first = h.scheduler.runNow("STARTUP");
+  h.scheduler.nudge();
+  release();
+  await first;
+  assert.deepEqual(h.timers.delays().filter((d) => d === NUDGE_MS || d === BACKLOG_MS), [NUDGE_MS], "one pass coming, for the save");
+  await h.timers.fireDelay(NUDGE_MS);
+  assert.deepEqual(passes, ["STARTUP", "SAVE"]);
 });
 
 test("a ring never forces a pass while the scheduler backs off a failed network", async () => {

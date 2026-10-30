@@ -522,6 +522,8 @@ export async function runCloudSyncPass(
       refusedEvents: pulled.refused.map((problem) => ({ reason: problem.reason })),
       waitingFor: pulled.waitingFor?.reason,
       outbox: pushed.counts,
+      // Stopped at a budget with more behind it: the scheduler starts the next pass at once.
+      moreWaiting: pushed.moreWaiting || pulled.moreWaiting,
     };
     // A pass that delivered some rows and then lost the network is still a transport failure:
     // it is the thing the backoff exists for, and calling it OK would hide a dead connection.

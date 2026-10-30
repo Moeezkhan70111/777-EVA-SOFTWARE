@@ -16,7 +16,7 @@ const readBridge = (): ChangeBridge | null => {
 };
 
 /** How long a burst of changes is collected before the screen reloads once. */
-export const DATA_CHANGE_SETTLE_MS = 300;
+export const DATA_CHANGE_SETTLE_MS = 150;
 
 export const useDataChanged = (kinds: readonly DataKind[], onChange: () => void): void => {
   const latest = useRef(onChange);

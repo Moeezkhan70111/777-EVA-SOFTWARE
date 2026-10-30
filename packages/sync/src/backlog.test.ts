@@ -76,3 +76,28 @@ test("the pull stops at an unreached service, and keeps the restart flag of the 
   assert.equal(result.transportError, "offline");
   assert.equal(result.restartedForProject, true);
 });
+
+// ─── More waiting: the scheduler starts the next pass at once (migration 099, trigger BACKLOG) ───
+
+test("a backlog stopped by its budget says more is waiting; one that ran dry does not", async () => {
+  const capped = await drainBacklog(drainOf(Array.from({ length: 50 }, () => batch(100))), { ...BUDGET, maxBatches: 5 });
+  assert.equal(capped.moreWaiting, true, "five full batches, and the sixth would have been full too");
+
+  let clock = 0;
+  const timed = drainOf(Array.from({ length: 50 }, () => batch(100)));
+  const late = await drainBacklog({ runOnce: async () => { clock += 15_000; return timed.runOnce(); } }, { ...BUDGET, now: () => clock });
+  assert.equal(late.moreWaiting, true, "stopped by the time limit with the last batch full");
+
+  assert.equal((await drainBacklog(drainOf([batch(100), batch(37)]), BUDGET)).moreWaiting, false, "a short batch: the queue is empty");
+  assert.equal((await drainBacklog(drainOf([batch(100, 0)]), BUDGET)).moreWaiting, false, "all refused: the same rows would be refused again");
+  assert.equal((await drainBacklog(drainOf([batch(0, 0, { transportError: "offline" })]), BUDGET)).moreWaiting, false, "unreached: the backoff carries it");
+});
+
+test("a pull stopped by its budget says more is waiting; one that read the end of the log does not", async () => {
+  const full = { runOnce: async () => page(200) };
+  assert.equal((await pullBacklog(full, { ...BUDGET, batchSize: 200, maxBatches: 3 })).moreWaiting, true);
+  const pages = [page(200), page(12)];
+  let calls = 0;
+  assert.equal((await pullBacklog({ runOnce: async () => pages[calls++] ?? page(0) }, { ...BUDGET, batchSize: 200 })).moreWaiting, false);
+  assert.equal((await pullBacklog({ runOnce: async () => page(200, { transportError: "offline" }) }, { ...BUDGET, batchSize: 200 })).moreWaiting, false);
+});

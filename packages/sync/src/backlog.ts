@@ -14,6 +14,9 @@
 import type { DrainResult } from "./drain.js";
 import type { PullResult } from "./pull.js";
 
+/** A backlog's total, and whether it stopped at the budget with more still behind it. */
+export type BacklogTotal<T> = T & { readonly moreWaiting: boolean };
+
 export interface BacklogBudget {
   /** Rows a full batch holds: a batch that comes back with fewer means the backlog is done. */
   readonly batchSize: number;
@@ -36,36 +39,37 @@ export async function drainBacklog(
   drain: { runOnce(): Promise<DrainResult> },
   budget: BacklogBudget,
   between: () => void = () => {}
-): Promise<DrainResult> {
+): Promise<BacklogTotal<DrainResult>> {
   const now = budget.now ?? Date.now;
   const stopAt = now() + budget.withinMs;
+  // Short: the queue is empty. Nothing sent: everything was refused or failed, and sending the
+  // same rows again this minute will not change that. Unreached: the next pass retries.
+  const more = (batch: DrainResult): boolean => batch.transportError === undefined && batch.leased === budget.batchSize && batch.synced > 0;
   let last = await drain.runOnce();
   let total = last;
   for (let batch = 1; batch < budget.maxBatches; batch += 1) {
-    // Short: the queue is empty. Nothing sent: everything was refused or failed, and sending the
-    // same rows again this minute will not change that. Unreached: the next pass retries.
-    const more = last.transportError === undefined && last.leased === budget.batchSize && last.synced > 0;
-    if (!more || now() >= stopAt) break;
+    if (!more(last) || now() >= stopAt) break;
     between();
     last = await drain.runOnce();
     total = mergeDrain(total, last);
   }
-  return total;
+  return { ...total, moreWaiting: more(last) };
 }
 
 /** Reads page after page while each comes back full. */
-export async function pullBacklog(pull: { runOnce(): Promise<PullResult> }, budget: BacklogBudget): Promise<PullResult> {
+export async function pullBacklog(pull: { runOnce(): Promise<PullResult> }, budget: BacklogBudget): Promise<BacklogTotal<PullResult>> {
   const now = budget.now ?? Date.now;
   const stopAt = now() + budget.withinMs;
   let total = await pull.runOnce();
   let lastFetched = total.fetched;
+  const more = (): boolean => total.transportError === undefined && lastFetched >= budget.batchSize;
   for (let page = 1; page < budget.maxBatches; page += 1) {
-    if (total.transportError !== undefined || lastFetched < budget.batchSize || now() >= stopAt) break;
+    if (!more() || now() >= stopAt) break;
     const next = await pull.runOnce();
     lastFetched = next.fetched;
     total = mergePull(total, next);
   }
-  return total;
+  return { ...total, moreWaiting: more() };
 }
 
 function mergeDrain(total: DrainResult, next: DrainResult): DrainResult {

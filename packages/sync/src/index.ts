@@ -6,6 +6,7 @@
 export * from "./sqlPort.js";
 export * from "./contract.js";
 export * from "./outboxQueue.js";
+export * from "./pushOnSave.js";
 export * from "./applyContract.js";
 export * from "./applyEnvelope.js";
 export * from "./leasedRecordContracts.js";

@@ -290,7 +290,31 @@ async function startSyncScheduler(deps: {
     // Let the process exit without waiting for this timer.
     connectivityTimer.unref?.();
 
-    // PUSH ON SAVE. Anything queued is sent within seconds rather than at the next timer pass.
+    // PUSH ON SAVE, AS IT HAPPENS (@erp/sync pushOnSave.ts). A save that queues something to send
+    // signals from inside its own transaction; the nudge itself waits until the save has finished
+    // (setImmediate), one per burst. Not during a pass: the pass queues rows of its own while it
+    // builds, and a save made during a pass is still caught by the watcher below.
+    let signalled = false;
+    try {
+      sync.installPushOnSaveSignal(db.db, sync.SUPABASE_PUSHABLE_AGGREGATES, () => {
+        if (signalled) return;
+        signalled = true;
+        setImmediate(() => {
+          signalled = false;
+          if (!scheduler.state().running) scheduler.nudge();
+        });
+      });
+    } catch (error) {
+      logger.log({
+        module: "sync",
+        severity: "WARNING",
+        operation: "sync-scheduler",
+        deviceId: scanContext.deviceId,
+        message: `Push on save falls back to the one-second check: ${error instanceof Error ? error.message : String(error)}`,
+      });
+    }
+
+    // PUSH ON SAVE, THE SAFETY NET. Anything queued is sent within seconds rather than at the next timer pass.
     // Watched here rather than called from each write path, so every path that queues is covered
     // and the data layer knows nothing of the scheduler. A save never waits for this: it reads
     // what the save has already written, and the pass it may start runs in the background.

@@ -32,7 +32,7 @@
  * What started a pass. Recorded so "the timer worked" is distinguishable from "somebody retried".
  * SAVE: something was just queued and is being sent without waiting for the timer (push on save).
  */
-export type SyncTrigger = "STARTUP" | "TIMER" | "RECONNECT" | "MANUAL" | "SAVE" | "REALTIME";
+export type SyncTrigger = "STARTUP" | "TIMER" | "RECONNECT" | "MANUAL" | "SAVE" | "REALTIME" | "BACKLOG";
 
 /** How a pass ended, in the only four shapes the caller has to tell apart. */
 export type SyncOutcome =
@@ -48,6 +48,8 @@ export type SyncOutcome =
 export interface SyncPassResult {
   readonly outcome: SyncOutcome;
   readonly reason?: string;
+  /** The pass stopped at its budget with more still to send or read: the next one starts at once. */
+  readonly moreWaiting?: boolean;
 }
 
 export interface SyncSchedulerOptions {
@@ -77,18 +79,23 @@ export interface SyncSchedulerOptions {
   /**
    * How long a nudge waits before its pass, so a burst of saves -- a run of scans -- shares one
    * pass instead of starting one each. Measured from the FIRST nudge of a burst, so a steady stream
-   * of saves cannot postpone the pass for ever. Default 1500.
+   * of saves cannot postpone the pass for ever. Default 500 (owner, 2026-10-28): short enough for a
+   * change to show elsewhere in 2-3 seconds, long enough to batch fast scanning. To be lowered once
+   * passes run off the main thread, if the store PC shows no stalls while scanning fast.
    */
   readonly saveNudgeDelayMs?: number;
   /**
    * How long a doorbell ring waits before its pass (wake), so a burst of rings shares one pass.
-   * Short: a ring means another computer's work is already in the cloud. Default 250.
+   * Short: a ring means another computer's work is already in the cloud. Default 100.
    */
   readonly wakeDelayMs?: number;
+  /** How long after a pass that stopped at its budget the next one starts. Default 100. */
+  readonly backlogDelayMs?: number;
 }
 
-const DEFAULT_SAVE_NUDGE_DELAY_MS = 1_500;
-const DEFAULT_WAKE_DELAY_MS = 250;
+const DEFAULT_SAVE_NUDGE_DELAY_MS = 500;
+const DEFAULT_WAKE_DELAY_MS = 100;
+const DEFAULT_BACKLOG_DELAY_MS = 100;
 
 export interface SyncSchedulerState {
   readonly running: boolean;
@@ -254,6 +261,11 @@ export class SyncScheduler {
     this.afterPass = null;
     if (again === "REALTIME") this.wake();
     else if (again !== null) this.nudge();
+    // A pass that stopped at its budget with more waiting is followed at once, not at the next timer:
+    // a new computer's first sync, or a backfill, goes straight through. Only after a completed pass.
+    else if (result.outcome === "OK" && result.moreWaiting === true) {
+      this.soon("BACKLOG", this.options.backlogDelayMs ?? DEFAULT_BACKLOG_DELAY_MS);
+    }
     return result;
   }
 
