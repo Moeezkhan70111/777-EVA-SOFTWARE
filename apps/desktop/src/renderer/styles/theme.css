@@ -7677,11 +7677,11 @@ tr.has-error .gp-qty-stepper input { color: var(--err); }
 
 /* The header (0.4.1): brand left, STORE centred on the page, bell and profile right. Three columns,
    the outer two equal, so STORE stays in the middle whatever sits beside it. */
-.sp-head { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: var(--space-3); flex-shrink: 0; min-height: 96px; }
-.sp-logo { justify-self: start; display: block; height: 84px; width: auto; }
+.sp-head { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: var(--space-3); flex-shrink: 0; min-height: 72px; }
+.sp-logo { justify-self: start; display: block; height: 50px; width: auto; }
 .sp-title {
   justify-self: center; position: relative; margin: 0; padding: 0 6px 10px;
-  font-family: var(--sp-font-display); font-weight: 400; font-size: 92px; line-height: 0.62; letter-spacing: 0.03em;
+  font-family: var(--sp-font-display); font-weight: 400; font-size: 76px; line-height: 0.62; letter-spacing: 0.03em;
   text-transform: uppercase; transform: skewX(-6deg);
   background: linear-gradient(180deg, var(--sp-title-top), var(--sp-title-bottom));
   -webkit-background-clip: text; background-clip: text; color: transparent;
@@ -7690,12 +7690,12 @@ tr.has-error .gp-qty-stepper input { color: var(--err); }
   content: ""; position: absolute; left: -10px; right: -10px; bottom: 0; height: 2px;
   background: linear-gradient(90deg, transparent, var(--sp-title-rule) 12%, var(--sp-title-rule) 88%, transparent);
 }
-.sp-head-actions { justify-self: end; display: flex; align-items: center; gap: 28px; }
+.sp-head-actions { justify-self: end; display: flex; align-items: center; gap: 22px; }
 .sp-head .notification-trigger {
-  display: inline-flex; align-items: center; justify-content: center; width: 40px; height: 40px; padding: 0;
+  display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; padding: 0;
   border: 0; border-radius: 50%; background: transparent; color: var(--sp-bell); box-shadow: none;
 }
-.sp-head .notification-trigger svg { width: 28px; height: 28px; }
+.sp-head .notification-trigger svg { width: 24px; height: 24px; }
 .sp-head .notification-trigger svg path { fill: currentColor; }
 .sp-head .notification-trigger:hover, .sp-head .notification-trigger[aria-expanded="true"] { background: var(--white); color: var(--sp-bell); }
 .sp-head .notification-badge {
@@ -7704,7 +7704,7 @@ tr.has-error .gp-qty-stepper input { color: var(--err); }
 }
 .profile-avatar-wrap { position: relative; }
 .profile-avatar {
-  display: block; width: 58px; height: 58px; padding: 0; border: 0; border-radius: 50%;
+  display: block; width: 48px; height: 48px; padding: 0; border: 0; border-radius: 50%;
   background: transparent; box-shadow: var(--sp-avatar-shadow); cursor: pointer;
 }
 .profile-avatar img { display: block; width: 100%; height: 100%; border-radius: 50%; }
@@ -7814,8 +7814,8 @@ tr.has-error .gp-qty-stepper input { color: var(--err); }
 @media (max-width: 900px) {
   .sp-page { overflow-y: auto; height: auto; padding: 16px; }
   .sp-head { min-height: 0; }
-  .sp-logo { height: 56px; }
-  .sp-title { font-size: 68px; }
+  .sp-logo { height: 34px; }
+  .sp-title { font-size: 58px; }
   .sp-head-actions { gap: 16px; }
   .sp-body { grid-template-columns: minmax(0, 1fr); gap: 16px; }
   .sp-body > .sp-work-slot, .sp-body > .sp-work, .sp-body > .sp-rail { grid-column: 1; grid-row: auto; }
