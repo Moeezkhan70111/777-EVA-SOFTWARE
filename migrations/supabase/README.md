@@ -1,16 +1,21 @@
 # Cloud schema — apply order
 
-Nothing here has been applied to the Supabase project. These files are reviewed SQL waiting for
-a decision, not a record of what the project contains.
+**Where each project stands (30 Oct 2026):**
 
-**`005` and `006` are unapplied and stay that way until explicitly authorized.** Neither has
-been run against any project, disposable or otherwise. `006` additionally **cannot** be applied
-before the client changes: it revokes the direct `insert` the current transport relies on (see
-step 6 below).
+- **Test** (`wpkrhgqsizjjdaztijwv`): the baseline and `002`–`018` are applied.
+  `verify_applied_state.sql` passes 33/33, and `check_number_blocks.sql` passes.
+- **Production** (`ykhvbmhmeefdtrzqeoxm`): untouched until cutover. Nothing in this folder is
+  applied there without the owner's explicit go-ahead.
 
-Apply in this order, in the Supabase SQL editor, on an **empty** project:
+Apply in this order, in the Supabase SQL editor, on an **empty** project, one file at a time:
 
-`002` → `003` → `004` → `005` → `006`
+`schema.sql` → `002` → `003` → … → `018`
+
+After each one, run `verify_applied_state.sql`. Its header lists exactly which checks a project
+one migration behind fails, so a half-applied project is diagnosed rather than guessed at. The
+`check_*.sql` files are functional checks for one migration each, **for the test project only**:
+each one leaves nothing behind (it ends by raising, so everything rolls back) and reports
+`..._CHECK_PASSED` on success.
 
 **Once `005` has been applied, never run `003` again.** This is an ordering hazard, not a fault
 in either file and not a reason to rerun or edit a migration that is already applied.
@@ -37,14 +42,27 @@ guarded by `factory_id is null`), and its function block is what puts the correc
 | 2 | `002_align_with_local_model.up.sql` | Makes the tables able to hold what the local SQLite tables contain: ids as text, the gate statuses, timestamps and `metadata_json` as text, and stops the cloud rewriting `qr_master.updated_at`. |
 | 3 | `003_sync_event_log.up.sql` | The ordered log a second computer reads from, filled by triggers on `qr_master` and `production_events` and append-only. **Do not re-run this after `005`** — it would reinstate a `log_production_produced_insert()` that omits `factory_id` and make later production scans fail at the check constraint. See the warning above. |
 | 4 | `004_rls_policies.up.sql` | Who may read and write what. Creates `device_accounts`, the two policy helper functions, and every policy. **Nothing works before this.** |
-| 5 | `005_sync_event_log_factory_scope.up.sql` (**unapplied**) | Gives `sync_event_log` a `factory_id` of its own, written by the production trigger and required by a check constraint, and filters the read policy by it. Without this a device can read another factory's production events out of the log, which 004 denies on the table itself. |
-| 6 | `006_device_claims.up.sql` (**unapplied**) | Binds each enrolled account to one device id and one workstation, adds a monotonic claim epoch and holder, and moves both supported writes behind `push_qr_master` / `push_production_produced`, which validate the claim in the same transaction as the write. Revokes the direct `insert` on `qr_master` and `production_events`. **Breaks the current transport until it is changed to call the RPCs.** |
+| 5 | `005_sync_event_log_factory_scope.up.sql` | Gives `sync_event_log` a `factory_id` of its own, written by the production trigger and required by a check constraint, and filters the read policy by it. Without this a device can read another factory's production events out of the log, which 004 denies on the table itself. |
+| 6 | `006_device_claims.up.sql` | Binds each enrolled account to one device id and one workstation, adds a monotonic claim epoch and holder, and moves both supported writes behind `push_qr_master` / `push_production_produced`, which validate the claim in the same transaction as the write. Revokes the direct `insert` on `qr_master` and `production_events`. |
+| 7 | `007_close_leftover_grants.up.sql` | Closes three grants found by verifying the applied schema rather than trusting it. |
+| 8 | `008_push_product_variant.up.sql` | `push_product_variant`: a computer may send the products its cartons belong to. |
+| 9 | `009_sync_event_log_any_type.up.sql` | The log stops being hard-wired to two event types: its types become rows in `sync_aggregate_types`, and the factory scope a trigger. |
+| 10 | `010_close_maintain.up.sql` | Closes the PostgreSQL 17 `MAINTAIN` privilege, which 007 could not have known about. |
+| 11 | `011_domain_leases.up.sql` | The write lease: one computer at a time writes each leased domain. Check: `check_leases.sql`. |
+| 12 | `012_raw_material_identity.up.sql` | Raw-material label runs and packets reach the cloud from the store computer. Check: `check_raw_material_identity.sql`. |
+| 13 | `013_leased_records.up.sql` | Master data travels as whole records, replaced by revision. Check: `check_leased_records.sql`. |
+| 14 | `014_device_sync_health.up.sql` | Each computer reports, in one row, whether it is waiting on anything. Check: `check_sync_health.sql`. |
+| 15 | `015_stock_events.up.sql` | Raw-material stock movements reach the other computers. Check: `check_stock_events.sql`. |
+| 16 | `016_sync_log_doorbell.up.sql` | A doorbell on the log, so a reading computer pulls within seconds. Check: `check_doorbell.sql`. |
+| 17 | `017_product_variant_log.up.sql` | Product variants reach the log, so a new computer can hold the cartons of them. |
+| 18 | `018_number_block_registry.up.sql` | The number-block registry: the cloud refuses a second computer on a number block already taken (the PC2/PC3 incident, docs/39 §4.4). Check: `check_number_blocks.sql`. **A client from before 018 cannot sync once it is applied.** |
 
 Each file is a single transaction and each has a matching `.down.sql`. The down files are only
 safe on a project that has never been written to — once real rows exist, reversing the type
 changes would have to discard data to succeed, and they are written to fail instead.
 
-**Reverse in the opposite order: `006` → `005` → `004` → `003` → `002`.** Reversing `005`
+**Reverse in the opposite order: `018` → `017` → … → `003` → `002`.** Each down file's header
+says what reversing it costs: `018`'s re-opens the PC2/PC3 failure, for example. Reversing `005`
 re-opens the cross-factory read, and reversing `006` re-opens unbound access, re-enables any
 device revoked before the rollback and discards the claim audit. Both headers say so. `004_rls_policies.down.sql` revokes a
 privilege on `sync_event_log`, which `003` created — running `003`'s down first drops the table

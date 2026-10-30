@@ -155,6 +155,8 @@ interface NavbarProps {
   onBackup: () => void;
   /** The signed-in user. The sidebar lists only the pages their role has been given. */
   user: AuthUser | null;
+  /** Pages this computer does not offer whatever the role: the ledgers, off the Accounts holder. */
+  hiddenRoutes?: ReadonlySet<AppRoute>;
   onProfile: () => void;
   onChangePassword: () => void;
   onLogout: () => void;
@@ -228,6 +230,7 @@ export const Navbar = ({
   appVersion,
   onBackup,
   user,
+  hiddenRoutes,
   onProfile,
   onChangePassword,
   onLogout,
@@ -274,7 +277,7 @@ export const Navbar = ({
       </div>
 
       {/* Home and the pages this user's role has been given — the same cards Home shows. */}
-      {user && <SidebarNav user={user} current={current} onSelect={onSelect} />}
+      {user && <SidebarNav user={user} current={current} onSelect={onSelect} hiddenRoutes={hiddenRoutes} />}
 
       {/* Right side */}
       <div className="navbar-right">

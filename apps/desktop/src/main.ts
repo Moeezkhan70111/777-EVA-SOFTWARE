@@ -15,6 +15,7 @@ import {
 } from "./main/runtimePaths";
 import { reportFatalStartupError, type StartupFailure } from "./main/startupFailure";
 import { describeInstallation, readStoredIdentity, resolveInstallation } from "./main/deviceIdentity";
+import { refreshRealtimeWake, stopRealtimeWake } from "./main/realtimeWake";
 import { DeviceCredentialStore } from "./main/deviceCredentialStore";
 import { describeBuildInfo, readBuildInfo } from "./main/buildInfo";
 import { createIpcContext, registerIpcHandlers } from "./main/ipc";
@@ -166,8 +167,13 @@ async function startUpdateService(
 
 /** How long after launch the first sync pass waits, so it never competes with the first scan. */
 const SYNC_STARTUP_DELAY_MS = 120_000;
-/** Then every five minutes: often enough that three computers feel current to each other. */
-const SYNC_INTERVAL_MS = 5 * 60 * 1000;
+/**
+ * Then every minute, so a reader is at most a minute behind the holder (owner decision, 2026-10-25,
+ * until the realtime wake-up is built). An idle pass is three small requests -- heartbeat, an empty
+ * read of the log, the leases -- about 6 KB, roughly 10 MB a day per computer. Idle passes are not
+ * logged, and sync_runs prunes them after a day (pruneSyncRuns), so neither grows with the rate.
+ */
+const SYNC_INTERVAL_MS = 60 * 1000;
 /**
  * After a transport failure, doubling to the cap.
  *
@@ -192,6 +198,14 @@ const SYNC_MAX_BACKOFF_MS = 60_000;
  * nothing at all unless the answer has changed from offline to online.
  */
 const CONNECTIVITY_POLL_MS = 20_000;
+/**
+ * How often the queue is checked for something new to send (push on save).
+ *
+ * One second, plus the scheduler's own short bundling delay, puts new work in the cloud within a
+ * few seconds instead of at the next five-minute pass. Each check is one local SELECT; it never
+ * touches the network, and a save never waits for it.
+ */
+const OUTBOX_WATCH_MS = 1_000;
 
 /**
  * Starts the background sync loop, or returns null with the reason logged.
@@ -220,8 +234,16 @@ async function startSyncScheduler(deps: {
       dataRoot: paths.dataRoot,
     };
 
+    // The scheduler is created below; the doorbell's ring reaches it through this.
+    let wake = (): void => undefined;
     const scheduler = new sync.SyncScheduler({
-      runPass: (trigger) => runCloudSyncPass(passDeps, trigger),
+      // After every pass the realtime doorbell is matched to the pass's session (realtimeWake.ts):
+      // started once there is one, so another computer's work arrives within seconds of a ring.
+      runPass: async (trigger) => {
+        const result = await runCloudSyncPass(passDeps, trigger);
+        await refreshRealtimeWake({ logger, deviceId: scanContext.deviceId, wake }).catch(() => undefined);
+        return result;
+      },
       // Asked before every pass rather than cached: a computer provisioned at lunchtime must
       // start syncing without a restart.
       isConfigured: () => isCloudSyncConfigured({ deviceId: scanContext.deviceId, dataRoot: paths.dataRoot }),
@@ -244,6 +266,7 @@ async function startSyncScheduler(deps: {
       clearTimer: (timer) => clearTimeout(timer),
     });
 
+    wake = () => scheduler.wake();
     scheduler.start();
 
     // THE MOMENT A WAITING QUEUE CAN DRAIN. The office internet is unreliable, so a computer
@@ -267,12 +290,58 @@ async function startSyncScheduler(deps: {
     // Let the process exit without waiting for this timer.
     connectivityTimer.unref?.();
 
+    // PUSH ON SAVE, AS IT HAPPENS (@erp/sync pushOnSave.ts). A save that queues something to send
+    // signals from inside its own transaction; the nudge itself waits until the save has finished
+    // (setImmediate), one per burst. Not during a pass: the pass queues rows of its own while it
+    // builds, and a save made during a pass is still caught by the watcher below.
+    let signalled = false;
+    try {
+      sync.installPushOnSaveSignal(db.db, sync.SUPABASE_PUSHABLE_AGGREGATES, () => {
+        if (signalled) return;
+        signalled = true;
+        setImmediate(() => {
+          signalled = false;
+          if (!scheduler.state().running) scheduler.nudge();
+        });
+      });
+    } catch (error) {
+      logger.log({
+        module: "sync",
+        severity: "WARNING",
+        operation: "sync-scheduler",
+        deviceId: scanContext.deviceId,
+        message: `Push on save falls back to the one-second check: ${error instanceof Error ? error.message : String(error)}`,
+      });
+    }
+
+    // PUSH ON SAVE, THE SAFETY NET. Anything queued is sent within seconds rather than at the next timer pass.
+    // Watched here rather than called from each write path, so every path that queues is covered
+    // and the data layer knows nothing of the scheduler. A save never waits for this: it reads
+    // what the save has already written, and the pass it may start runs in the background.
+    // A master-data edit leaves a mark rather than a queue row (the pass builds it), so marks are
+    // watched too.
+    let newestSeen = sync.newestSendableRow(db.db, sync.SUPABASE_PUSHABLE_AGGREGATES);
+    let newestMarkSeen = sync.newestStampedMark(db.db);
+    const outboxWatch = setInterval(() => {
+      try {
+        const newest = sync.newestSendableRow(db.db, sync.SUPABASE_PUSHABLE_AGGREGATES);
+        const newestMark = sync.newestStampedMark(db.db);
+        if (newest > newestSeen || newestMark > newestMarkSeen) scheduler.nudge();
+        // Lowered too, when sent rows leave the count, so the next new row is still noticed.
+        newestSeen = newest;
+        newestMarkSeen = newestMark;
+      } catch {
+        // A check that cannot read the queue skips one beat; the timer pass still carries the row.
+      }
+    }, OUTBOX_WATCH_MS);
+    outboxWatch.unref?.();
+
     logger.log({
       module: "sync",
       severity: "INFO",
       operation: "sync-scheduler",
       deviceId: scanContext.deviceId,
-      message: `Background cloud sync is on: first pass in ${String(Math.round(SYNC_STARTUP_DELAY_MS / 1000))}s, then every ${String(Math.round(SYNC_INTERVAL_MS / 60000))} minutes.`,
+      message: `Background cloud sync is on: first pass in ${String(Math.round(SYNC_STARTUP_DELAY_MS / 1000))}s, then every ${String(Math.round(SYNC_INTERVAL_MS / 1000))}s, and within seconds of anything new being queued.`,
     });
     return scheduler;
   } catch (error) {
@@ -716,6 +785,7 @@ app.on("window-all-closed", () => {
 });
 
 app.on("before-quit", async () => {
+  stopRealtimeWake();
   // A startup failure already exited; there is no database handle to close in that case.
   const services = await servicesPromise.catch(() => null);
   // Before the database: a check firing into a closing process has nothing useful to do, and an

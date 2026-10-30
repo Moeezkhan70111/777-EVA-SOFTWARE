@@ -1,6 +1,8 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { useDesktopApi } from "../../hooks/useDesktopApi";
+import { useDataChanged } from "../../hooks/useDataChanged";
+import { DATA_KIND } from "../../../shared/dataChange";
 import { useNotifications } from "../../state/NotificationsContext";
 import type { InventoryStockEventRow, ItemUnitLadder, RawMaterialMovementConfigRow, WorkSection } from "../../types/desktopApi";
 import { StateView } from "../../components/shared/StateView";
@@ -93,21 +95,29 @@ export const MaterialDrawer: React.FC<MaterialDrawerProps> = ({
   const [price, setPrice] = useState(item.cost_price == null ? "" : String(item.cost_price));
   const [savingPrice, setSavingPrice] = useState(false);
 
-  const loadHistory = useCallback(async () => {
-    setHistoryLoading(true);
-    setHistoryError(null);
+  /** Quiet when data changed underneath the open drawer: the history updates without a loading state. */
+  const loadHistory = useCallback(async (quiet = false) => {
+    if (!quiet) {
+      setHistoryLoading(true);
+      setHistoryError(null);
+    }
     try {
       setEvents(await api.listInventoryStockEvents(id, HISTORY_LIMIT));
     } catch (error) {
-      setHistoryError(error instanceof Error ? error.message : copy.states.loadFailedBody);
+      if (!quiet) setHistoryError(error instanceof Error ? error.message : copy.states.loadFailedBody);
     } finally {
-      setHistoryLoading(false);
+      if (!quiet) setHistoryLoading(false);
     }
   }, [api, id]);
 
   useEffect(() => {
     void loadHistory();
   }, [loadHistory]);
+
+  // The material itself comes from the Stock list, which reloads on its own. Its movements and its
+  // ladder are read here, so they follow changes from another computer here too.
+  useDataChanged([DATA_KIND.STOCK], () => void loadHistory(true));
+  useDataChanged([DATA_KIND.MATERIALS], () => void loadLadder());
 
   useEffect(() => {
     const handle = (event: KeyboardEvent) => {

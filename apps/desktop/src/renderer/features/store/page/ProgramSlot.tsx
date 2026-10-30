@@ -1,5 +1,8 @@
 import React from "react";
+import { LEASE_DOMAIN } from "@erp/domain";
 import { copy } from "../../../config/copy";
+import { ReadOnlyNotice } from "../../../components/shared/ReadOnlyNotice";
+import { useWriteLease } from "../../sync/useWriteLease";
 import { CartonInStation } from "../programOut/CartonInStation";
 import { ProgramOutPanel } from "../programOut/ProgramOutPanel";
 import { isProgramClosed } from "../programClose/useProgramClose";
@@ -15,14 +18,24 @@ import type { StoreProgram } from "./useStoreProgram";
 //   Issuing    Machine Move Out: Dana Issue and Upper Out. Upper Out has its own scanner in the
 //              program, so the Scan out rail is paused — one armed box on the page, never two.
 
-/** The work area while a program is open. Closing it brings back the tabs as they were. */
-export const ProgramWork: React.FC<{ store: StoreProgram; mode: StoreMode }> = ({ store, mode }) => (
-  <div className="sp-work">
-    <section className="sp-work-pane" aria-label={store.program.program?.code ?? copy.storePage.programs.title}>
-      <ProgramOutPanel state={store.program} onClose={store.program.close} viewOnly={mode === "receiving"} close={store.close} />
-    </section>
-  </div>
-);
+/**
+ * The work area while a program is open. Closing it brings back the tabs as they were.
+ *
+ * Issuing against a program writes the raw material store, so on a computer that does not hold the
+ * store lease the program is read, not issued against, and says why (docs/37 section W). The main
+ * process refuses the write itself whatever the screen shows.
+ */
+export const ProgramWork: React.FC<{ store: StoreProgram; mode: StoreMode }> = ({ store, mode }) => {
+  const storeLease = useWriteLease(LEASE_DOMAIN.RAW_MATERIAL_STORE);
+  return (
+    <div className="sp-work">
+      <section className="sp-work-pane" aria-label={store.program.program?.code ?? copy.storePage.programs.title}>
+        {mode === "issuing" ? <ReadOnlyNotice status={storeLease.status} /> : null}
+        <ProgramOutPanel state={store.program} onClose={store.program.close} viewOnly={mode === "receiving" || !storeLease.canWrite} close={store.close} />
+      </section>
+    </div>
+  );
+};
 
 /** The rail while a program is open: Carton In for Receiving, a paused Scan out for Issuing. */
 export const ProgramRail: React.FC<{ store: StoreProgram; mode: StoreMode; token: string }> = ({ store, mode, token }) => {

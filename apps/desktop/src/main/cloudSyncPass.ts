@@ -27,9 +27,11 @@
 
 import { app } from "electron";
 import type { SqliteDatabase, StructuredLogger, SyncRunOutcome, SyncRunTrigger } from "@erp/data";
-import type { SupabaseSyncTransport, SyncPassResult } from "@erp/sync";
+import type { DeviceSyncHealth, LastReport, SupabaseSyncTransport, SyncPassResult } from "@erp/sync";
 import { describeCloudSyncConfig, readCloudSyncConfig } from "./cloudConfig";
 import { DeviceCredentialStore } from "./deviceCredentialStore";
+import { announceDataChanged } from "./dataChanged";
+import { dataKindsOf } from "../shared/dataChange";
 
 export interface CloudSyncPassOutcome extends SyncPassResult {
   /** Carton identities and production events sent and acknowledged this pass. */
@@ -99,6 +101,14 @@ interface CachedTransport {
 
 let cachedTransport: CachedTransport | null = null;
 
+/**
+ * The last sync-health report this process sent, per project and device, so a report goes only when
+ * it says something new or as a 15-minute keepalive (healthReport.ts). In memory: a restart sends one
+ * at once, which is what a restart should do. A project without the report (no cloud migration 014)
+ * is remembered too, and not asked again until the next start.
+ */
+let healthReporting: { key: string; last: LastReport | null; unsupported: boolean } | null = null;
+
 /** Whether this computer is set up to sync at all. Cheap, read-only, no network. */
 export function isCloudSyncConfigured(deps: Pick<CloudSyncPassDeps, "deviceId" | "dataRoot">): boolean {
   const credentials = new DeviceCredentialStore(deps.dataRoot);
@@ -111,6 +121,170 @@ export function describeCloudSync(deps: Pick<CloudSyncPassDeps, "deviceId" | "da
   return describeCloudSyncConfig(
     readCloudSyncConfig(process.env, { hasStoredCredential: credentials.matchesDevice(deps.deviceId) })
   );
+}
+
+/**
+ * The session the realtime doorbell listens with (realtimeWake.ts): this computer's project and its
+ * signed-in transport, or null before a pass has made one. Nothing secret leaves here but the token
+ * function, which the doorbell hands only to the cloud.
+ */
+export function doorbellSession(): { url: string; anonKey: string; deviceId: string; accessToken: () => Promise<string> } | null {
+  const held = cachedTransport;
+  if (held === null) return null;
+  return { url: held.url, anonKey: held.anonKey, deviceId: held.deviceId, accessToken: () => held.transport.accessToken() };
+}
+
+/**
+ * Every computer's last sync-health report, read through the transport the passes signed in with,
+ * or null before the first pass has made one. On demand only (the Health page), never per pass.
+ */
+export async function readFactorySyncHealth(): Promise<DeviceSyncHealth[] | null> {
+  const held = cachedTransport;
+  if (held === null) return null;
+  return held.transport.fetchFactorySyncHealth();
+}
+
+/** Builds marked master records into queued revisions. Never throws: a pass reports, it does not crash. */
+/**
+ * What an operator is told about a refused number range (cloud migration 018), after the reason
+ * itself. Empty for every other refusal. "Number range" is the operator's word for a block (copy.ts).
+ */
+function numberRangeAdvice(claim: { reason: string; block?: number }): string {
+  const range = claim.block === undefined ? "" : ` ${String(claim.block)}`;
+  switch (claim.reason) {
+    case "NUMBER_BLOCK_TAKEN":
+      return ` Number range${range} already belongs to another computer, and two computers on one range issue the same codes and QR serials. This computer sends nothing until the owner gives it its own range.`;
+    case "NUMBER_BLOCK_CHANGED":
+      return ` The cloud has this computer on number range${range}, and this database says another. It may have been copied from another computer. Nothing is sent until the owner decides.`;
+    case "NUMBER_BLOCK_MISSING":
+      return " This computer has no number range recorded. An administrator sets it in Settings.";
+    default:
+      return "";
+  }
+}
+
+function buildMasterRecords(db: SqliteDatabase, logger: StructuredLogger, deviceId: string): void {
+  try {
+    const built = db.buildLeasedRecordRevisions(new Date().toISOString());
+    if (built.unqueued > 0) {
+      logger.log({
+        module: "sync", severity: "WARNING", operation: "master-records", deviceId,
+        message: `${String(built.unqueued)} changed master record(s) could not be queued and stay marked for the next pass.`,
+      });
+    }
+  } catch (error) {
+    logger.log({
+      module: "sync", severity: "ERROR", operation: "master-records", deviceId,
+      message: `Changed master records could not be built: ${error instanceof Error ? error.message : String(error)}. They stay marked.`,
+    });
+  }
+}
+
+/**
+ * Builds the label runs and packets the backfill marked, after the master records so a material and
+ * its supplier are queued ahead of their labels. Never throws.
+ */
+function buildLabelRuns(db: SqliteDatabase, logger: StructuredLogger, deviceId: string): void {
+  try {
+    const built = db.buildLabelRuns(new Date().toISOString());
+    if (built.unqueued > 0) {
+      logger.log({
+        module: "sync", severity: "WARNING", operation: "label-runs", deviceId,
+        message: `${String(built.unqueued)} label run(s) or packet(s) could not be queued and stay marked.`,
+      });
+    }
+  } catch (error) {
+    logger.log({
+      module: "sync", severity: "ERROR", operation: "label-runs", deviceId,
+      message: `Label runs could not be built: ${error instanceof Error ? error.message : String(error)}. They stay marked.`,
+    });
+  }
+}
+
+/**
+ * Builds marked stock movements into queued events, after the master records so a material is
+ * queued ahead of its stock. Never throws.
+ */
+function buildStockEvents(db: SqliteDatabase, logger: StructuredLogger, deviceId: string): void {
+  try {
+    const built = db.buildStockEvents(new Date().toISOString());
+    if (built.unqueued > 0 || built.vanished > 0) {
+      logger.log({
+        module: "sync", severity: "WARNING", operation: "stock-events", deviceId,
+        message:
+          `${String(built.unqueued)} stock movement(s) could not be queued and stay marked` +
+          `${built.vanished > 0 ? `, and ${String(built.vanished)} were removed before they could be sent` : ""}.`,
+      });
+    }
+  } catch (error) {
+    logger.log({
+      module: "sync", severity: "ERROR", operation: "stock-events", deviceId,
+      message: `Stock movements could not be built: ${error instanceof Error ? error.message : String(error)}. They stay marked.`,
+    });
+  }
+}
+
+/** Sends this computer's sync health when it changed, or as a keepalive. Never throws. */
+async function reportSyncHealth(
+  sync: typeof import("@erp/sync"),
+  transport: SupabaseSyncTransport,
+  db: SqliteDatabase,
+  key: string
+): Promise<void> {
+  if (healthReporting === null || healthReporting.key !== key) healthReporting = { key, last: null, unsupported: false };
+  const state = healthReporting;
+  if (state.unsupported) return;
+  try {
+    const nowMs = Date.now();
+    const report = sync.buildHealthReport(
+      sync.waitingSummary(db.db, nowMs),
+      sync.outboxCounts(db.db).DEAD_LETTER,
+      sync.unsentMarkCount(db.db)
+    );
+    if (!sync.shouldReport(state.last, report, nowMs)) return;
+    const sent = await transport.reportSyncHealth(report);
+    if (sent === "NOT_SUPPORTED") state.unsupported = true;
+    else if (sent === "REPORTED") state.last = { report, sentAtMs: nowMs };
+  } catch {
+    // Unreachable, or refused: the next pass tries again, because nothing was recorded as sent.
+  }
+}
+
+/**
+ * Replaces the lease cache with the cloud's answer. Returns a transport failure's reason, or
+ * undefined when the pass may call itself fine. Never throws: a pass reports, it does not crash.
+ */
+async function refreshLeaseCache(
+  sync: typeof import("@erp/sync"),
+  transport: SupabaseSyncTransport,
+  db: SqliteDatabase,
+  projectUrl: string,
+  deviceId: string,
+  logger: StructuredLogger
+): Promise<string | undefined> {
+  try {
+    const fetched = await transport.fetchLeases();
+    if (fetched.ok) {
+      sync.replaceLeaseCache(db.db, projectUrl, fetched.leases, new Date().toISOString());
+      return undefined;
+    }
+    // NOT_SUPPORTED is the normal state of a project without leases, and says so every pass, so it
+    // is not logged. It is recorded: such a project cannot enforce a lease, so the gate lets this
+    // computer write as it did before leases rather than lock it out. UNREADABLE is a fault worth seeing.
+    if (fetched.reason === "NOT_SUPPORTED") {
+      sync.markLeasesUnsupported(db.db, projectUrl);
+      return undefined;
+    }
+    if (fetched.reason === "UNREADABLE") {
+      logger.log({
+        module: "sync", severity: "WARNING", operation: "leases", deviceId,
+        message: "The cloud's answer about who holds each write lease was unreadable. The last good answer is kept.",
+      });
+    }
+    return undefined;
+  } catch (error) {
+    return error instanceof Error ? error.message : "The write leases could not be read.";
+  }
 }
 
 /**
@@ -233,7 +407,7 @@ export async function runCloudSyncPass(
 
     const claim = beat.ok
       ? { ok: true as const, reason: undefined }
-      : await transport.claimDevice({ deviceId, workstationId, appVersion: app.getVersion() });
+      : await transport.claimDevice({ deviceId, workstationId, appVersion: app.getVersion(), numberBlock: db.getNumberBlock() });
     if (!claim.ok) {
       logger.log({
         module: "sync",
@@ -248,26 +422,85 @@ export async function runCloudSyncPass(
           `the cloud did not accept this computer (${claim.reason})`,
       });
       return finish("REFUSED", {
-        reason: `The cloud did not accept this computer: ${claim.reason}. Nothing was sent, and nothing in the queue changed.`,
+        reason:
+          `The cloud did not accept this computer: ${claim.reason}.${numberRangeAdvice(claim)}` +
+          " Nothing was sent, and nothing in the queue changed.",
         outbox: queueNow(),
       });
     }
 
+    // MASTER DATA FIRST: every record changed under this computer's master-data lease becomes a
+    // queued revision (masterRecords.ts), so this pass's drain carries it. A failure here is logged
+    // and the pass goes on: the marks stay, and the next pass builds them.
+    buildMasterRecords(db, logger, deviceId);
+    // Then the labels the backfill marked, then the stock movements, each behind its material.
+    buildLabelRuns(db, logger, deviceId);
+    buildStockEvents(db, logger, deviceId);
+
     const drain = new sync.OutboxDrain(db.db, transport, {
       deviceId,
       aggregateTypes: sync.SUPABASE_PUSHABLE_AGGREGATES,
+      batchSize: sync.DRAIN_BUDGET.batchSize,
     });
-    const pushed = await drain.runOnce();
+    // BATCH AFTER BATCH while each comes back full, within the budget (backlog.ts): a backfill's
+    // thousands of rows go in minutes, not hours. What was marked meanwhile is built between
+    // batches, so a backfill's later master records and their stock join this pass.
+    const pushed = await sync.drainBacklog(drain, sync.DRAIN_BUDGET, () => {
+      buildMasterRecords(db, logger, deviceId);
+      buildLabelRuns(db, logger, deviceId);
+      buildStockEvents(db, logger, deviceId);
+    });
 
-    const pull = new sync.SyncPull(db.db, transport);
-    const pulled = await pull.runOnce();
+    // The project goes with the cursor: a computer moved to another project (test -> production)
+    // starts reading that project's log from the beginning instead of from a position that only
+    // meant something in the old one.
+    const pull = new sync.SyncPull(db.db, transport, { project: identity.url, batchSize: sync.PULL_BUDGET.batchSize });
+    // Page after page while each comes back full: a new computer reads the log in minutes.
+    const pulled = await sync.pullBacklog(pull, sync.PULL_BUDGET);
+    // Open screens showing what just arrived reload in place: a figure that is current in the
+    // database but stale on the screen is no better than a slow sync. Anything read can also settle
+    // or start a wait, so a read that applied nothing still tells the waiting lists.
+    if (pulled.applied > 0 || pulled.fetched > 0) announceDataChanged(dataKindsOf(pulled.appliedTypes ?? []));
+    if (pulled.restartedForProject) {
+      logger.log({
+        module: "sync",
+        severity: "INFO",
+        operation: "pull-cursor",
+        deviceId,
+        message: `Reading ${describeCloudSyncConfig(settings).host ?? "this project"} from the beginning: the saved position belonged to another project, or to none.`,
+      });
+    }
+
+    // WHO HOLDS WHAT (docs/37 section W), read after the pull so the catch-up barrier is judged
+    // against what this computer has just read. The local write gate reads this cache, offline too.
+    // A project without leases (no cloud migration 011) is not a failure: carton sync carries on,
+    // and the cache keeps whatever it had. A failure to reach the cloud is one, like any other call.
+    const leaseError = await refreshLeaseCache(sync, transport, db, identity.url, deviceId, logger);
+
+    // WHETHER THIS COMPUTER IS WAITING ON ANYTHING, told to the cloud (migration 014), so a wait that
+    // lasts is seen somewhere other than this computer's own Health page. Never fails the pass.
+    await reportSyncHealth(sync, transport, db, `${identity.url}|${deviceId}`);
 
     // Read through a default. The drain always supplies this, but a pass must not be able to
     // throw on the SHAPE of its own result -- that would turn a reported refusal into an
     // unreported crash, which is the opposite of what the field is for.
     const pushRefusals = pushed.refusals ?? [];
+    const transportError = pushed.transportError ?? pulled.transportError ?? leaseError;
 
-    logger.log({
+    // A PASS THAT DID NOTHING IS NOT LOGGED. At one pass a minute, logging every one added about
+    // 1,440 identical lines a day to app.log, which is never rotated, and buried the passes that
+    // mattered. sync_runs still records it (pruned after a day), and Sync Now is always logged: a
+    // person asked, and the log says who.
+    const didNothing =
+      trigger !== "MANUAL" &&
+      transportError === undefined &&
+      pushed.synced === 0 &&
+      pushRefusals.length === 0 &&
+      pulled.fetched === 0 &&
+      pulled.applied === 0 &&
+      pulled.refused.length === 0;
+
+    if (!didNothing) logger.log({
       module: "sync",
       severity: "INFO",
       operation: "cloud-sync",
@@ -283,8 +516,6 @@ export async function runCloudSyncPass(
           : `; cloud refused ${String(pushRefusals.length)}: ` +
             pushRefusals.map((r) => `${r.aggregateType} ${r.aggregateId} (${r.reason})`).join(", ")),
     });
-
-    const transportError = pushed.transportError ?? pulled.transportError;
 
     // THE CAUSE, NOT JUST THE COUNT. `reason` is what sync_runs records and what the panel
     // reads back as the newest verdict, so a refusal with no transport error has to put its
@@ -311,6 +542,8 @@ export async function runCloudSyncPass(
       refusedEvents: pulled.refused.map((problem) => ({ reason: problem.reason })),
       waitingFor: pulled.waitingFor?.reason,
       outbox: pushed.counts,
+      // Stopped at a budget with more behind it: the scheduler starts the next pass at once.
+      moreWaiting: pushed.moreWaiting || pulled.moreWaiting,
     };
     // A pass that delivered some rows and then lost the network is still a transport failure:
     // it is the thing the backoff exists for, and calling it OK would hide a dead connection.

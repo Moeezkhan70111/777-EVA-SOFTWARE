@@ -24,12 +24,18 @@ import { registerContractorLedgerHandlers } from "./contractorLedger";
 import { registerUpperMoveOutHandlers } from "./upperMoveOut";
 import { registerManualProductionHandlers } from "./manualProduction";
 import { registerUpdateHandlers } from "./updates";
+import { installLeaseGate } from "../leaseGuard";
+import { registerLeaseHandlers } from "./leases";
+import { registerSyncWaitingHandlers } from "./syncWaiting";
+import { registerBackfillHandlers } from "./backfill";
 
 export type { IpcContext } from "./context";
 export { createIpcContext } from "./context";
 
 /** Registers every IPC handler. One module per feature; see shared/ipcChannels.ts for the channel list. */
 export function registerIpcHandlers(ctx: IpcContext): void {
+  // Before any handler exists: a leased channel called before this would be refused (fails closed).
+  installLeaseGate({ db: ctx.db, deviceId: ctx.deviceId, dataRoot: ctx.paths.dataRoot });
   registerSessionHandlers(ctx);
   registerUsersHandlers(ctx);
   registerWorkspaceHandlers(ctx);
@@ -55,4 +61,7 @@ export function registerIpcHandlers(ctx: IpcContext): void {
   registerUpperMoveOutHandlers(ctx);
   registerManualProductionHandlers(ctx);
   registerUpdateHandlers(ctx);
+  registerLeaseHandlers(ctx);
+  registerSyncWaitingHandlers(ctx);
+  registerBackfillHandlers(ctx);
 }

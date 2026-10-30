@@ -4,6 +4,13 @@ import type { AppRoute } from "../app/routes";
 import { copy } from "../config/copy";
 import { UrduInput } from "../components/shared/UrduInput";
 import { learnUrduWords, transliterateWithLearnedWords } from "../utils/urdu";
+import { LEASE_DOMAIN } from "@erp/domain";
+import { LeaseNotices } from "../features/sync/LeaseNotices";
+import { desktopApi } from "../hooks/useDesktopApi";
+import { leaseRefusalText } from "../../shared/leaseRefusal";
+
+/** Parties and machines are master data: written on one computer, read on the others (docs/37 section W). */
+const MASTER_DATA_ONLY = [LEASE_DOMAIN.MASTER_DATA] as const;
 
 const MAJOR_PAKISTAN_CITIES = [
   "Karachi",
@@ -127,7 +134,7 @@ export const PartyFormPage: React.FC<PartyFormPageProps> = ({ partyId, onNavigat
     if (partyId) {
       loadParty();
     } else {
-      void window.desktop.api.getNextPartyCode().then((partyCode) => {
+      void desktopApi().getNextPartyCode().then((partyCode) => {
         setFormData((prev) => ({ ...prev, partyCode }));
       });
     }
@@ -135,10 +142,10 @@ export const PartyFormPage: React.FC<PartyFormPageProps> = ({ partyId, onNavigat
 
   const loadGroupsAndCities = async () => {
     try {
-      const groupsResult = await window.desktop.api.listPartyGroups();
+      const groupsResult = await desktopApi().listPartyGroups();
       setGroups(groupsResult);
 
-      const citiesResult = await window.desktop.api.listCities();
+      const citiesResult = await desktopApi().listCities();
       const allCities = [...new Set([...MAJOR_PAKISTAN_CITIES, ...citiesResult])].sort();
       setCities(allCities);
       setFilteredCities(allCities);
@@ -151,7 +158,7 @@ export const PartyFormPage: React.FC<PartyFormPageProps> = ({ partyId, onNavigat
     if (!partyId) return;
     try {
       setLoading(true);
-      const party = await window.desktop.api.getParty(partyId);
+      const party = await desktopApi().getParty(partyId);
       if (party) {
         setFormData({
           partyCode: party.partyCode,
@@ -319,7 +326,7 @@ export const PartyFormPage: React.FC<PartyFormPageProps> = ({ partyId, onNavigat
     }
 
     try {
-      const result = await window.desktop.api.createPartyGroup({
+      const result = await desktopApi().createPartyGroup({
         groupName: newGroupName.trim(),
       });
 
@@ -338,7 +345,7 @@ export const PartyFormPage: React.FC<PartyFormPageProps> = ({ partyId, onNavigat
       }
     } catch (error) {
       console.error("Failed to create group:", error);
-      alert("Error creating group");
+      alert(leaseRefusalText(error) ?? "Error creating group");
     }
   };
 
@@ -384,12 +391,12 @@ export const PartyFormPage: React.FC<PartyFormPageProps> = ({ partyId, onNavigat
 
       let result;
       if (partyId) {
-        result = await window.desktop.api.updateParty({
+        result = await desktopApi().updateParty({
           id: partyId,
           ...payload,
         } as unknown as Record<string, unknown>);
       } else {
-        result = await window.desktop.api.createParty(payload as unknown as Record<string, unknown>);
+        result = await desktopApi().createParty(payload as unknown as Record<string, unknown>);
       }
 
       if (result.accepted) {
@@ -400,7 +407,7 @@ export const PartyFormPage: React.FC<PartyFormPageProps> = ({ partyId, onNavigat
       }
     } catch (error) {
       console.error("Form submission error:", error);
-      alert("Error processing request");
+      alert(leaseRefusalText(error) ?? "Error processing request");
     } finally {
       setLoading(false);
     }
@@ -414,10 +421,10 @@ export const PartyFormPage: React.FC<PartyFormPageProps> = ({ partyId, onNavigat
       setLoading(true);
       const balanceLimitValue = formData.balanceLimit.trim() !== "" ? parseFloat(formData.balanceLimit) : null;
       const payload = { ...formData, balanceLimit: balanceLimitValue != null && Number.isFinite(balanceLimitValue) ? balanceLimitValue : null };
-      const result = await window.desktop.api.createParty(payload as unknown as Record<string, unknown>);
+      const result = await desktopApi().createParty(payload as unknown as Record<string, unknown>);
       if (!result.accepted) { alert(result.reason || "Operation failed"); return; }
       // Reset for the next party, keeping the chosen type for fast repeated entry.
-      const nextCode = await window.desktop.api.getNextPartyCode();
+      const nextCode = await desktopApi().getNextPartyCode();
       setFormData({
         partyCode: nextCode,
         partyName: "",
@@ -441,7 +448,7 @@ export const PartyFormPage: React.FC<PartyFormPageProps> = ({ partyId, onNavigat
       alert("Party saved. Add another.");
     } catch (error) {
       console.error("Quick-add error:", error);
-      alert("Error processing request");
+      alert(leaseRefusalText(error) ?? "Error processing request");
     } finally {
       setLoading(false);
     }
@@ -453,6 +460,7 @@ export const PartyFormPage: React.FC<PartyFormPageProps> = ({ partyId, onNavigat
 
   return (
     <div className="page party-form-page">
+      <LeaseNotices domains={MASTER_DATA_ONLY} />
       <div className="party-form-heading">
         <div className="headingAddParty">
         

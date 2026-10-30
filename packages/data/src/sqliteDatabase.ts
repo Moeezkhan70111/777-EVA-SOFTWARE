@@ -3,6 +3,11 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import { dropCaptureTriggers, installCaptureTriggers } from "./database/masterCapture.js";
+import { buildLeasedRecordRevisions, markRecordToSendAgain, type BuildResult, type SendAgainOutcome } from "./database/masterRecords.js";
+import { buildStockEvents, type StockEventBuildResult } from "./database/stockEventSync.js";
+import { buildLabelRuns, type LabelBuildResult } from "./database/labelRunSync.js";
+import { lastBackfillAt, planBackfill, runBackfill, type BackfillOutcome, type BackfillPlan } from "./database/backfill.js";
 import type {
   DuplicateChecker,
   OutboxRepository,
@@ -86,6 +91,21 @@ export {
   readQrMasterPayload,
   readProductVariantPayload,
   readProductionProducedPayload,
+  RAW_MATERIAL_QR_OPENING_STATE,
+  LEASE_DOMAIN,
+  LEASED_AGGREGATE_DOMAIN,
+  leaseDomainOf,
+  heldLeaseEpoch,
+  rawMaterialQrBatchDedupeKey,
+  rawMaterialQrDedupeKey,
+  readRawMaterialQrBatchPayload,
+  readRawMaterialQrPayload,
+  stockEventDedupeKey,
+  readStockEventPayload,
+  enqueueRawMaterialQrBatch,
+  enqueueRawMaterialQr,
+  withdrawUnsentSyncEvents,
+  rawMaterialQrBatchDedupeKeys,
   enqueueSyncEvent,
   enqueueQrMaster,
   enqueueProductVariant,
@@ -93,10 +113,61 @@ export {
 } from "./database/syncEvents.js";
 export type {
   SyncAggregateType,
+  LeaseDomain,
   QrMasterPayload,
   ProductVariantPayload,
   ProductionProducedPayload,
+  RawMaterialQrBatchPayload,
+  RawMaterialQrPayload,
+  StockEventPayload,
+  SyncQueueHandle,
+  WithdrawOutcome,
 } from "./database/syncEvents.js";
+export {
+  MASTER_CAPTURE,
+  EVENT_CAPTURE,
+  eventCaptureTriggerSql,
+  CAPTURE_TRIGGER_PREFIX,
+  captureTriggerName,
+  captureTriggerSql,
+  installCaptureTriggers,
+  dropCaptureTriggers,
+  withCaptureSuppressed,
+} from "./database/masterCapture.js";
+export type { CaptureHandle, MasterTableCapture } from "./database/masterCapture.js";
+export {
+  MASTER_RECORDS,
+  MASTER_RECORD_TYPES,
+  isMasterRecordType,
+  specTables,
+  snapshotRecord,
+  readLeasedRecordPayload,
+  leasedRecordDedupeKey,
+  buildLeasedRecordRevisions,
+  markRecordToSendAgain,
+} from "./database/masterRecords.js";
+export { buildStockEvents, stockEventPayloadOf } from "./database/stockEventSync.js";
+export type { StockEventBuildResult } from "./database/stockEventSync.js";
+export { buildLabelRuns } from "./database/labelRunSync.js";
+export type { LabelBuildResult } from "./database/labelRunSync.js";
+export { BACKFILL_SETTING_KEY, lastBackfillAt, planBackfill, runBackfill, stockMismatches } from "./database/backfill.js";
+export type { BackfillOutcome, BackfillPlan, StockMismatch } from "./database/backfill.js";
+export type {
+  MasterRecordType,
+  RecordReference,
+  RecordReadHandle,
+  RecordTableSpec,
+  RecordNode,
+  LeasedRecordPayload,
+  BuildHandle,
+  BuildResult,
+  SendAgainOutcome,
+} from "./database/masterRecords.js";
+export {
+  REPLICATION_EXCLUSIONS,
+  REPLICATION_EXCLUDED_TABLES,
+  isReplicationExcluded,
+} from "./database/replicationScope.js";
 export {
   PRODUCT_VARIANT_SEED_FORMAT,
   PRODUCT_VARIANT_SEED_VERSION,
@@ -145,11 +216,15 @@ export interface PreMigrationBackup {
   readonly recordError?: string;
 }
 
-/** What started a sync pass. Mirrors the CHECK on sync_runs.trigger. */
-export type SyncRunTrigger = "STARTUP" | "TIMER" | "RECONNECT" | "MANUAL";
+/** What started a sync pass. Mirrors the CHECK on sync_runs.trigger (SAVE since migration 092). */
+export type SyncRunTrigger = "STARTUP" | "TIMER" | "RECONNECT" | "MANUAL" | "SAVE" | "REALTIME" | "BACKLOG";
 
 /** How a sync pass ended. Mirrors the CHECK on sync_runs.outcome. */
 export type SyncRunOutcome = "OK" | "REFUSED" | "TRANSPORT_ERROR" | "FAILED";
+
+/** How long sync_runs keeps an idle pass, and any other pass (pruneSyncRuns). */
+export const SYNC_RUN_IDLE_RETENTION_MS = 24 * 60 * 60 * 1000;
+export const SYNC_RUN_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
 
 /**
  * One recorded sync attempt.
@@ -307,6 +382,11 @@ export class SqliteDatabase
 
     this.ensureSchemaCompatibility();
     this.ensureDefaultRoles();
+
+    // LAST, after every migration and every startup fix, so none of them counts as a change to
+    // master data. Replaces the capture triggers with the current definitions -- and restores any a
+    // table-rebuild migration dropped along with its table (database/masterCapture.ts).
+    installCaptureTriggers(this.db);
   }
 
   /** Where the backups for this database live. One derivation, shared with seedDefaultSettings. */
@@ -658,6 +738,10 @@ export class SqliteDatabase
     if (pending.length > 0) {
       this.db.exec("PRAGMA foreign_keys = OFF;");
       this.db.exec("BEGIN IMMEDIATE TRANSACTION");
+      // No migration may fire the master-data capture triggers, or trip over one that names a table
+      // it is rebuilding. Dropped inside this transaction, so a failed run puts them back. They are
+      // installed again at the end of the constructor.
+      dropCaptureTriggers(this.db);
     }
     try {
       for (const file of pending) {
@@ -1107,6 +1191,76 @@ export class SqliteDatabase
         reason ?? null,
         id
       );
+    this.pruneSyncRuns(Date.now());
+  }
+
+  /**
+   * Queues a revision of every master record changed under this computer's master-data lease
+   * (masterRecords.ts). Called by each sync pass just before it pushes, so a change travels on the
+   * next pass whatever path made it.
+   */
+  buildLeasedRecordRevisions(nowIso: string): BuildResult {
+    return buildLeasedRecordRevisions(this.db, nowIso);
+  }
+
+  /**
+   * Queues every stock event recorded under this computer's store lease, with the change it made to
+   * the balance (stockEventSync.ts). Called by each pass after the master records, so a material is
+   * queued ahead of its stock.
+   */
+  buildStockEvents(nowIso: string): StockEventBuildResult {
+    return buildStockEvents(this.db, nowIso);
+  }
+
+  /** Queues the label runs and packets the backfill marked, behind their materials (labelRunSync.ts). */
+  buildLabelRuns(nowIso: string): LabelBuildResult {
+    return buildLabelRuns(this.db, nowIso);
+  }
+
+  /** What the one-time backfill would send from here, and whether it can (backfill.ts). Reads only. */
+  planBackfill(): BackfillPlan {
+    return planBackfill(this.db);
+  }
+
+  /** When the last backfill finished here, or null (backfill.ts). */
+  lastBackfillAt(): string | null {
+    return lastBackfillAt(this.db);
+  }
+
+  /** Marks everything this computer held before it synced, for the passes to send (backfill.ts). */
+  runBackfill(nowIso: string): BackfillOutcome {
+    return runBackfill(this.db, nowIso);
+  }
+
+  /** Marks one master record to be sent again as a new revision on the next pass (masterRecords.ts). */
+  markRecordToSendAgain(type: string, recordId: string, nowIso: string): SendAgainOutcome {
+    return markRecordToSendAgain(this.db, type, recordId, nowIso);
+  }
+
+  /**
+   * Keeps sync_runs bounded. A pass runs every minute, so the table would otherwise grow by about
+   * 1,440 rows a day on every computer, for ever.
+   *
+   *   idle passes (OK, nothing pushed, fetched or refused)  kept 24 hours
+   *   every other pass, open ones included                  kept 30 days
+   *   the latest successful pass                            never deleted: the Health panel's
+   *                                                         "last synced" must survive a long silence
+   *
+   * Exported for its test. Uses idx_sync_runs_started.
+   */
+  pruneSyncRuns(nowMs: number): number {
+    const idleCutoff = new Date(nowMs - SYNC_RUN_IDLE_RETENTION_MS).toISOString();
+    const cutoff = new Date(nowMs - SYNC_RUN_RETENTION_MS).toISOString();
+    const result = this.db
+      .prepare(
+        `DELETE FROM sync_runs
+          WHERE id IS NOT (SELECT id FROM sync_runs WHERE outcome = 'OK' ORDER BY started_at DESC LIMIT 1)
+            AND (started_at < ?
+                 OR (started_at < ? AND outcome = 'OK'
+                     AND COALESCE(pushed, 0) = 0 AND COALESCE(fetched, 0) = 0 AND COALESCE(refused, 0) = 0))`
+      )
+      .run(cutoff, idleCutoff);
+    return Number(result.changes);
   }
 
   /** The most recent attempt, and the most recent one that completed. Either may be null. */

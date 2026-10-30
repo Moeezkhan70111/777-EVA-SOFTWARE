@@ -49,6 +49,8 @@ import { CashVoucherFormPage } from "../pages/CashVoucherFormPage";
 import { CashVoucherListPage } from "../pages/CashVoucherListPage";
 import { SettingsPage } from "../pages/SettingsPage";
 import { HealthPage } from "../pages/HealthPage";
+import { rememberRoute, routeBeforeReload } from "../features/navigation/resumeRoute";
+import { SyncWaitingNotice } from "../features/sync/SyncWaitingNotice";
 import { LogsPage } from "../pages/LogsPage";
 import { WorkspacePage } from "../pages/WorkspacePage";
 import type { AppRoute } from "./routes";
@@ -65,8 +67,10 @@ import { ProfilePage } from "../features/auth/ProfilePage";
 import { ChangePasswordPage } from "../features/auth/ChangePasswordPage";
 import { FloatingProfileMenu } from "../features/auth/FloatingProfileMenu";
 import { SessionProvider } from "../features/auth/SessionContext";
+import { WriteLeasesProvider } from "../features/sync/useWriteLease";
 import { useAuthSession } from "../features/auth/useAuthSession";
 import { canOpenRoute, hasPermission, HOME_ROUTE, landingRoute } from "../features/auth/session";
+import { hiddenLedgerRoutes, useLedgersShown } from "../features/parties/ledgerVisibility";
 import type { AuthUser } from "../types/desktopApi";
 import { MunshiHomePage } from "../features/munshi/MunshiHomePage";
 import { HomePage } from "../features/navigation/HomePage";
@@ -97,7 +101,14 @@ export const App = () => {
   // Automatic updates: silent until a downloaded version is waiting, then one "Restart Now"
   // prompt. Mounted here because it belongs to the application, not to any one screen.
   useAppUpdate();
-  const [route, setRoute] = useState<AppRoute>(HOME_ROUTE);
+  // Party ledgers and balances open only on the Accounts holder (ledgerVisibility.ts).
+  const ledgersShown = useLedgersShown();
+  const hiddenRoutes = hiddenLedgerRoutes(ledgersShown);
+  // A reload of this window comes back to the screen it showed (resumeRoute.ts); a fresh start does not.
+  const [route, setRoute] = useState<AppRoute>(() => routeBeforeReload() ?? HOME_ROUTE);
+  React.useEffect(() => {
+    rememberRoute(route);
+  }, [route]);
   const [workspaceTab] = useState<WorkspaceTab>("tasks");
   const [selectedProductId, setSelectedProductId] = useState<string | undefined>(undefined);
   const [selectedPartyId, setSelectedPartyId] = useState<string | undefined>(undefined);
@@ -248,8 +259,8 @@ export const App = () => {
 
     // A page this role has not been given (a keyboard shortcut, a stale route after the
     // role changed) falls back to Home rather than to any one page.
-    const home = <HomePage user={session} onNavigate={setRoute} />;
-    if (!canOpenRoute(session, route)) return home;
+    const home = <HomePage user={session} onNavigate={setRoute} hiddenRoutes={hiddenRoutes} />;
+    if (!canOpenRoute(session, route) || hiddenRoutes.has(route)) return home;
 
     const canOpenRawMaterial = canOpenRoute(session, "raw-material");
 
@@ -597,6 +608,7 @@ export const App = () => {
     authView,
     isAddingAccount,
     needsBootstrap,
+    hiddenRoutes,
     leaveForm,
     leavePartyForm,
     navigateTo,
@@ -614,48 +626,53 @@ export const App = () => {
 
   return (
     <SessionProvider user={session} token={sessionToken}>
-      <div className="app-shell">
-        {session && showNavbar && !isAddingAccount && (
-          <Navbar
-            current={route}
-            onSelect={setRoute}
-            appVersion={appVersion}
-            onBackup={onBackup}
-            user={session}
-            onProfile={() => setRoute("profile")}
-            onChangePassword={() => setRoute("change-password")}
-            onLogout={auth.handleLogout}
-            accessRequests={admin.accessRequests}
-            onReviewAccessRequest={admin.handleReviewAccessRequest}
-            notifications={admin.userNotifications}
-            onNotificationClick={onNotificationClick}
-            roleOptions={admin.roleOptions}
-            permissionRequests={admin.permissionRequests}
-            onReviewPermissionRequest={admin.handleReviewPermissionRequest}
-            savedProfiles={savedProfiles}
-            onSwitchProfile={auth.handleSwitchProfile}
-            onAddAccount={auth.handleAddAccount}
-          />
-        )}
+      {/* One lease answer for every screen (useWriteLease): no "read only" flash as a pane opens. */}
+      <WriteLeasesProvider>
+        <div className="app-shell">
+          {session && showNavbar && !isAddingAccount && (
+            <Navbar
+              current={route}
+              onSelect={setRoute}
+              appVersion={appVersion}
+              onBackup={onBackup}
+              user={session}
+              hiddenRoutes={hiddenRoutes}
+              onProfile={() => setRoute("profile")}
+              onChangePassword={() => setRoute("change-password")}
+              onLogout={auth.handleLogout}
+              accessRequests={admin.accessRequests}
+              onReviewAccessRequest={admin.handleReviewAccessRequest}
+              notifications={admin.userNotifications}
+              onNotificationClick={onNotificationClick}
+              roleOptions={admin.roleOptions}
+              permissionRequests={admin.permissionRequests}
+              onReviewPermissionRequest={admin.handleReviewPermissionRequest}
+              savedProfiles={savedProfiles}
+              onSwitchProfile={auth.handleSwitchProfile}
+              onAddAccount={auth.handleAddAccount}
+            />
+          )}
 
-        {session && !showNavbar && !isAddingAccount && (
-          <FloatingProfileMenu
-            user={session}
-            savedProfiles={savedProfiles}
-            onSwitchProfile={auth.handleSwitchProfile}
-            onAddAccount={auth.handleAddAccount}
-            onLogout={auth.handleLogout}
-            onChangePassword={() => setRoute("change-password")}
-            onProfile={() => setRoute("profile")}
-          />
-        )}
+          {session && !showNavbar && !isAddingAccount && (
+            <FloatingProfileMenu
+              user={session}
+              savedProfiles={savedProfiles}
+              onSwitchProfile={auth.handleSwitchProfile}
+              onAddAccount={auth.handleAddAccount}
+              onLogout={auth.handleLogout}
+              onChangePassword={() => setRoute("change-password")}
+              onProfile={() => setRoute("profile")}
+            />
+          )}
 
-        <main className={`page-content${!showNavbar || FULLSCREEN_ROUTES.has(route) ? " page-content--fullscreen" : ""}`}>
-          {content}
-        </main>
+          <main className={`page-content${!showNavbar || FULLSCREEN_ROUTES.has(route) ? " page-content--fullscreen" : ""}`}>
+            {session && !isAddingAccount ? <SyncWaitingNotice onOpenHealth={() => setRoute("health")} /> : null}
+            {content}
+          </main>
 
-        <NotificationCenter />
-      </div>
+          <NotificationCenter />
+        </div>
+      </WriteLeasesProvider>
     </SessionProvider>
   );
 };

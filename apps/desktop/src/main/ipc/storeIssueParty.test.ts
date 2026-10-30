@@ -23,6 +23,16 @@ vi.mock("electron", () => ({
   },
 }));
 
+// The scan is a store-leased write. The lease gate is proved in leaseGuard.test.ts; here the
+// handler is reached directly, so this tests the party rule alone.
+vi.mock("../leaseGuard", () => ({
+  ipcMain: {
+    handle: (channel: string, handler: (event: IpcMainInvokeEvent, ...args: unknown[]) => unknown) => {
+      handlers.set(channel, handler);
+    },
+  },
+}));
+
 const event = {} as IpcMainInvokeEvent;
 const OPEN = { id: "session-1", status: "OPEN" };
 const ISSUED = { accepted: true, outcome: "ISSUED" };

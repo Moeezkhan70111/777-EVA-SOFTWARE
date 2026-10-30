@@ -1,4 +1,10 @@
-import React, { createContext, useCallback, useContext, useMemo, useState } from "react";
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { withoutIpcPrefix } from "../utils/ipcError";
+import { copy } from "../config/copy";
+import { onLeaseRefusal } from "./leaseRefusals";
+
+/** How long a lease refusal stays up: long enough to read who writes the domain. */
+const LEASE_REFUSAL_TTL_MS = 8000;
 
 export type NoticeKind = "success" | "error" | "warning" | "info";
 
@@ -41,7 +47,9 @@ export const NotificationsProvider = ({ children }: { children: React.ReactNode 
 
   const push = useCallback((kind: NoticeKind, title: string, message?: string, ttlMs = 3800) => {
     const id = crypto.randomUUID();
-    setNotices((prev) => [{ id, kind, title, message }, ...prev].slice(0, 6));
+    // A message passed straight from a refused IPC call reads as the main process wrote it.
+    const body = message === undefined ? undefined : withoutIpcPrefix(message);
+    setNotices((prev) => [{ id, kind, title, message: body }, ...prev].slice(0, 6));
     // 0 means "leave it there": a notice that asks a question must not vanish while the operator
     // is reading it.
     if (ttlMs > 0) window.setTimeout(() => dismiss(id), ttlMs);
@@ -54,6 +62,18 @@ export const NotificationsProvider = ({ children }: { children: React.ReactNode 
       setNotices((prev) => [{ id: key, kind, title, message, action }, ...prev.filter((n) => n.id !== key)].slice(0, 6));
     },
     []
+  );
+
+  // EVERY REFUSED LEASED WRITE IS SHOWN, whatever the screen that made it did with the error
+  // (state/leaseRefusals.ts). Keyed by the sentence, so a burst of refused scans is one notice.
+  useEffect(
+    () =>
+      onLeaseRefusal((sentence) => {
+        const id = `lease-refusal:${sentence}`;
+        setNotices((prev) => [{ id, kind: "warning" as const, title: copy.writeLease.readOnlyTitle, message: sentence }, ...prev.filter((n) => n.id !== id)].slice(0, 6));
+        window.setTimeout(() => dismiss(id), LEASE_REFUSAL_TTL_MS);
+      }),
+    [dismiss]
   );
 
   const value = useMemo(() => ({ notices, push, pushAction, dismiss }), [notices, push, pushAction, dismiss]);

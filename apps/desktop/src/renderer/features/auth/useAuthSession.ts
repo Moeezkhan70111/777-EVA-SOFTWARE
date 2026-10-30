@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { routeBeforeReload } from "../navigation/resumeRoute";
 import { ACCESS_STATUS } from "@erp/domain";
 import type { AppRoute } from "../../app/routes";
 import { copy } from "../../config/copy";
@@ -125,8 +126,9 @@ export const useAuthSession = ({ api, push, route, setRoute }: UseAuthSessionArg
       }
       const user = normalizeAuthUser(result);
       await activate(user, persisted.activeToken);
-      // Opening the app is a fresh start: the user lands on their starting screen.
-      landOn(user, false);
+      // Opening the app is a fresh start: the user lands on their starting screen. A RELOAD of the
+      // window comes back to the screen it showed, if the user may still open it (resumeRoute.ts).
+      landOn(user, routeBeforeReload() !== null);
     })();
     // Boot only once; `activate`/`landOn` are stable for the initial render.
     // eslint-disable-next-line react-hooks/exhaustive-deps

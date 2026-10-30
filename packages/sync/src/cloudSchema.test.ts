@@ -4,7 +4,20 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { SYNC_AGGREGATE, qrMasterDedupeKey, productionProducedDedupeKey } from "@erp/data";
+import {
+  LEASE_DOMAIN,
+  LEASED_AGGREGATE_DOMAIN,
+  MASTER_CAPTURE,
+  SYNC_AGGREGATE,
+  qrMasterDedupeKey,
+  productionProducedDedupeKey,
+  rawMaterialQrBatchDedupeKey,
+  rawMaterialQrDedupeKey,
+  readRawMaterialQrBatchPayload,
+  readRawMaterialQrPayload,
+  readStockEventPayload,
+  stockEventDedupeKey,
+} from "@erp/data";
 
 // IS THE CLOUD SCHEMA ABLE TO HOLD WHAT THE LOCAL ONE CONTAINS?
 //
@@ -1174,10 +1187,19 @@ test("both new files are one transaction, and the README states the order and th
     assert.ok(sqlOnly(file).trimStart().startsWith("begin;"));
     assert.ok(file.trimEnd().endsWith("commit;"));
   }
-  assert.match(MIGRATION_README, /002.*→.*003.*→.*004.*→.*005.*→.*006/s);
-  assert.match(MIGRATION_README, /`005` and `006` are unapplied/);
-  // The client depends on the privilege 006 revokes, and the README has to say so.
-  assert.match(MIGRATION_README, /Breaks the current transport until it is changed to call the RPCs/);
+  assert.match(MIGRATION_README, /`schema\.sql` → `002` → `003` → … → `018`/);
+  // A migration that cuts off older clients has to say so where the order is read.
+  assert.match(MIGRATION_README, /A client from before 018 cannot sync once it is applied/);
+});
+
+test("the README's apply order names every migration in the folder", () => {
+  // It once stopped at 006 while twelve more were applied to test. Every up file is a row.
+  const folder = path.join(ROOT, "migrations/supabase");
+  const ups = fs.readdirSync(folder).filter((name) => /^0\d\d_.*\.up\.sql$/.test(name) && !name.startsWith("001_"));
+  assert.ok(ups.length >= 17, "the folder holds 002 onwards");
+  for (const name of ups) {
+    assert.ok(MIGRATION_README.includes(`\`${name}\``), `${name} is missing from the README's apply order`);
+  }
 });
 
 // ─── the claim holder is not readable through an ordinary query ─────────────
@@ -1440,4 +1462,510 @@ test("the rollback removes the pair constraint before either side of it", () => 
   assert.ok(fk < column, "and before the column it references is dropped");
   // The rollback restores nothing in workstations because 006 changed nothing there.
   assert.ok(!/insert into workstations|update workstations/.test(restored), "there is no workstation row to restore");
+});
+
+// ─── 009: the log's types are rows, and 010 closes MAINTAIN ─────────────────────
+
+const ANY_TYPE = read("migrations/supabase/009_sync_event_log_any_type.up.sql");
+const CLOSE_MAINTAIN = read("migrations/supabase/010_close_maintain.up.sql");
+
+/** The (type, factory_scoped) rows 009 seeds, read out of its insert. */
+const seededTypes = (): Map<string, boolean> => {
+  const seeds = new Map<string, boolean>();
+  for (const match of ANY_TYPE.matchAll(/\('([A-Z_]+)', (true|false), '/g)) {
+    seeds.set(match[1] ?? "", match[2] === "true");
+  }
+  return seeds;
+};
+
+test("009: every event type this computer can apply is a type the cloud log accepts", async () => {
+  // Read at test time from the applier's own registry, so a contract added without its cloud row
+  // fails here rather than as a refused log insert on a real computer.
+  const { APPLY_CONTRACTS } = await import("./applyEnvelope.js");
+  // Every cloud migration that seeds the log's types: 009 the first five, 013 the eight master
+  // records, 015 stock movements.
+  const seeds = new Set(seededTypes().keys());
+  for (const migration of [LEASED_RECORDS, STOCK_EVENTS]) {
+    const insert = migration.slice(migration.indexOf("insert into public.sync_aggregate_types"));
+    for (const match of insert.slice(0, insert.indexOf(";")).matchAll(/\('([A-Z_]+)', (true|false), '/g)) {
+      seeds.add(match[1] ?? "");
+    }
+  }
+  for (const contract of APPLY_CONTRACTS) {
+    assert.ok(seeds.has(contract.aggregateType), `${contract.aggregateType} has an apply contract but no row in sync_aggregate_types`);
+  }
+});
+
+test("009: the scope rule is 005's, generalised -- the two original types keep their rule", () => {
+  const seeds = seededTypes();
+  assert.equal(seeds.get(SYNC_AGGREGATE.PRODUCTION_PRODUCED), true, "a production scan names its factory");
+  assert.equal(seeds.get(SYNC_AGGREGATE.QR_MASTER), false, "a carton identity is global (2026-10-17)");
+  // The hard-wired constraints go only in the transaction that installs their replacement.
+  const sql = sqlOnly(ANY_TYPE);
+  const dropScope = sql.indexOf("drop constraint if exists sync_event_log_factory_scope");
+  const trigger = sql.indexOf("create trigger trg_sync_event_log_scope");
+  assert.ok(sql.indexOf("begin;") < dropScope && dropScope < trigger && trigger < sql.indexOf("commit;"));
+  // The read policy reads "your factory, or none" -- the trigger is what makes "none" mean global.
+  assert.match(sql, /factory_id = public\.current_factory_id\(\) or factory_id is null/);
+  assert.doesNotMatch(sql, /aggregate_type = 'QR_MASTER'\s*\)\s*\)\s*;/, "no type is named in the policy any more");
+});
+
+test("009: no client can read or write the list of types", () => {
+  const sql = sqlOnly(ANY_TYPE);
+  assert.match(sql, /alter table public\.sync_aggregate_types enable row level security/);
+  assert.match(sql, /revoke all on table public\.sync_aggregate_types from public, anon, authenticated/);
+  assert.match(sql, /revoke all on function public\.enforce_sync_event_log_scope\(\) from public, anon, authenticated/);
+});
+
+test("010: MAINTAIN is revoked from the client roles, and new tables stop inheriting it", () => {
+  const sql = sqlOnly(CLOSE_MAINTAIN);
+  assert.match(sql, /revoke maintain on all tables in schema public from anon, authenticated/);
+  assert.match(sql, /alter default privileges for role postgres in schema public\s+revoke truncate, references, trigger, maintain on tables from anon, authenticated/);
+});
+
+// ─── 011: the write lease ───────────────────────────────────────────────────
+
+const LEASES = read("migrations/supabase/011_domain_leases.up.sql");
+const LEASES_DOWN = read("migrations/supabase/011_domain_leases.down.sql");
+const LEASE_FUNCTIONS = ["last_seq_written_by", "lease_holds", "current_leases", "release_domain_lease", "grant_domain_lease"];
+
+/** One function's whole declaration, header to closing `$$;`, comments stripped. */
+const declarationOf = (sql: string, name: string): string => {
+  const found = new RegExp(String.raw`create or replace function public\.${name}\([\s\S]*?\n\$\$;`).exec(sqlOnly(sql));
+  assert.ok(found, `${name} must be declared, schema-qualified`);
+  return found?.[0] ?? "";
+};
+
+test("011: the cloud's lease domains are exactly this computer's", () => {
+  const seeded = [...LEASES.matchAll(/^\s+\('([A-Z_]+)', '/gm)].map((match) => match[1]);
+  assert.deepEqual([...seeded].sort(), Object.values(LEASE_DOMAIN).sort());
+  // Carton flows stay multi-writer (owner, 2026-10-23): no carton type may ever gain a lease.
+  for (const carton of [SYNC_AGGREGATE.QR_MASTER, SYNC_AGGREGATE.PRODUCTION_PRODUCED]) {
+    assert.ok(!seeded.includes(carton), `${carton} must stay unleased`);
+  }
+});
+
+test("011: every lease function is security definer with an empty search path", () => {
+  for (const fn of LEASE_FUNCTIONS) {
+    const declaration = declarationOf(LEASES, fn);
+    assert.match(declaration, /security definer/, `${fn} must be security definer`);
+    assert.match(declaration, /set search_path = ''/, `${fn} must pin an empty search path`);
+    assert.doesNotMatch(declaration, /(from|into|join|update)\s+(?!public\.)(domain_leases|lease_domains|domain_lease_events|sync_event_log|device_accounts)\b/,
+      `${fn} must name every table by its full name`);
+  }
+});
+
+test("011: the lease check locks the row it reads, so it must be volatile", () => {
+  // A grant or release must not slip between a push's check and its write. PostgreSQL refuses a
+  // row lock inside a stable function, so stable here fails at the first push, not at apply time.
+  const holds = declarationOf(LEASES, "lease_holds");
+  assert.match(holds, /for share/);
+  assert.match(holds, /\bvolatile\b/);
+  assert.doesNotMatch(holds, /\bstable\b/);
+  // The device alone is not enough: a lease that went A to B and back to A would accept A's
+  // unpushed first-tenure writes on top of B's. The write's own lease epoch must still be current.
+  assert.match(holds, /lease\.holder_device_id = p_device_id/);
+  assert.match(holds, /lease\.epoch = p_lease_epoch/);
+});
+
+test("011: a device may read leases and release its own, and never grant one", () => {
+  const sql = sqlOnly(LEASES);
+  for (const fn of LEASE_FUNCTIONS) {
+    assert.match(sql, new RegExp(String.raw`revoke all on function public\.${fn}\([^)]*\) from public, anon, authenticated;`),
+      `${fn} must be taken from every client role first`);
+  }
+  const granted = [...sql.matchAll(/grant execute on function public\.([a-z_]+)\(/g)].map((match) => match[1]);
+  assert.deepEqual(granted.sort(), ["current_leases", "release_domain_lease"]);
+  assert.doesNotMatch(sql, /to anon/, "nothing is granted to anon");
+  // Releasing proves the device first, with the same claim every push uses.
+  const release = declarationOf(LEASES, "release_domain_lease");
+  assert.ok(release.indexOf("public.claim_is_current(p_epoch, p_holder)") < release.indexOf("update public.domain_leases"));
+  assert.match(release, /for update/);
+  // Reading names who holds what: enrolled devices only.
+  assert.match(declarationOf(LEASES, "current_leases"), /if not public\.is_enrolled_device\(\) then\s+return;/);
+});
+
+test("011: the tables are closed to clients and the lease history cannot be rewritten", () => {
+  const sql = sqlOnly(LEASES);
+  for (const table of ["lease_domains", "domain_leases", "domain_lease_events"]) {
+    assert.match(sql, new RegExp(String.raw`alter table public\.${table} enable row level security`));
+    assert.match(sql, new RegExp(String.raw`revoke all on table public\.${table} from public, anon, authenticated`));
+  }
+  assert.match(sql, /revoke all on sequence public\.domain_lease_events_seq_seq from public, anon, authenticated/);
+  assert.match(sql, /before update or delete on public\.domain_lease_events/);
+  // A grant may only name a device that is still enrolled and bound.
+  assert.match(declarationOf(LEASES, "grant_domain_lease"), /is_active and revoked_at is null and workstation_id is not null/);
+  // A takeover is recorded as one, with the barrier where the old holder stopped writing.
+  assert.match(declarationOf(LEASES, "grant_domain_lease"), /'TAKEN_OVER'/);
+});
+
+test("011: one transaction each way, and the rollback drops the functions before the tables", () => {
+  for (const sql of [sqlOnly(LEASES), sqlOnly(LEASES_DOWN)]) {
+    assert.ok(sql.trim().startsWith("begin;") && sql.includes("commit;"));
+  }
+  const down = sqlOnly(LEASES_DOWN);
+  assert.ok(down.indexOf("drop function if exists public.grant_domain_lease") < down.indexOf("drop table if exists public.domain_leases"));
+  assert.match(LEASES_DOWN, /WHAT THIS COSTS/);
+});
+
+// ─── 012: raw-material label runs and packets ───────────────────────────────
+
+const RM_IDENTITY = read("migrations/supabase/012_raw_material_identity.up.sql");
+const RM_IDENTITY_DOWN = read("migrations/supabase/012_raw_material_identity.down.sql");
+const RM_PUSHES = ["push_raw_material_qr_batch", "push_raw_material_qr"] as const;
+
+/**
+ * The payload a log trigger would write for `row`, built from the trigger's own
+ * jsonb_build_object pairs. A key the trigger names, mapped to the column it reads.
+ */
+const payloadFromTrigger = (trigger: string, row: Record<string, unknown>, migration: string = RM_IDENTITY): Record<string, unknown> => {
+  const body = functionBody(migration, trigger);
+  const built = body.slice(body.indexOf("jsonb_build_object("));
+  const payload: Record<string, unknown> = {};
+  for (const [, key, column] of built.matchAll(/'([A-Za-z]+)', new\.([a-z_]+)/g)) {
+    assert.ok(key !== undefined && column !== undefined);
+    assert.ok(column in row, `${trigger} reads new.${column}, which the sample row does not have`);
+    payload[key] = row[column];
+  }
+  return payload;
+};
+
+test("012: the cloud log's payloads are ones the receiving computer accepts, field for field", () => {
+  // Column values as PostgreSQL would hand them to jsonb_build_object: integers and double
+  // precision as JSON numbers, text as strings, null as null.
+  const run = {
+    id: "rmb-1", party_id: "party-1", item_id: "item-1", start_sequence: 11, end_sequence: 13, quantity: 3,
+    created_at: "2026-10-25T05:00:00.000Z", created_by: "user-1", requested_by: null,
+  };
+  assert.deepEqual(readRawMaterialQrBatchPayload(payloadFromTrigger("log_raw_material_qr_batch_insert", run)), {
+    batchId: "rmb-1", partyId: "party-1", itemId: "item-1", startSequence: 11, endSequence: 13, quantity: 3,
+    createdAt: "2026-10-25T05:00:00.000Z", createdBy: "user-1", requestedBy: null,
+  });
+
+  const packet = {
+    id: "rmq-12", batch_id: "rmb-1", party_id: "party-1", item_id: "item-1", sequence: 12,
+    packing_quantity: 2.5, packing_unit_id: "unit-kg", created_at: "2026-10-25T05:00:00.000Z",
+  };
+  assert.deepEqual(readRawMaterialQrPayload(payloadFromTrigger("log_raw_material_qr_insert", packet)), {
+    qrId: "rmq-12", batchId: "rmb-1", partyId: "party-1", itemId: "item-1", sequence: 12,
+    packingQuantity: 2.5, packingUnitId: "unit-kg", createdAt: "2026-10-25T05:00:00.000Z",
+  });
+  // A packet printed before packing existed travels with both halves null, and is still accepted.
+  const oldPacket = { ...packet, packing_quantity: null, packing_unit_id: null };
+  assert.notEqual(readRawMaterialQrPayload(payloadFromTrigger("log_raw_material_qr_insert", oldPacket)), null);
+});
+
+test("012: the cloud builds the same dedupe keys the local outbox builds, unscoped as 009 seeded", () => {
+  assert.equal(rawMaterialQrBatchDedupeKey("rmb-1"), "RAW_MATERIAL_QR_BATCH:rmb-1");
+  assert.equal(rawMaterialQrDedupeKey("rmq-12"), "RAW_MATERIAL_QR:rmq-12");
+  assert.ok(RM_IDENTITY.includes("'RAW_MATERIAL_QR_BATCH:' || new.id"));
+  assert.ok(RM_IDENTITY.includes("'RAW_MATERIAL_QR:' || new.id"));
+  // factory_id null, which the 009 scope trigger accepts only for an unscoped type.
+  const seeds = seededTypes();
+  assert.equal(seeds.get(SYNC_AGGREGATE.RAW_MATERIAL_QR_BATCH), false);
+  assert.equal(seeds.get(SYNC_AGGREGATE.RAW_MATERIAL_QR), false);
+  for (const trigger of ["log_raw_material_qr_batch_insert", "log_raw_material_qr_insert"]) {
+    const body = functionBody(RM_IDENTITY, trigger);
+    assert.ok(body.indexOf("pg_advisory_xact_lock(777, 1)") < body.indexOf("insert into public.sync_event_log"),
+      `${trigger} must take the log lock before it takes a position`);
+    assert.match(body, /on conflict \(dedupe_key\) do nothing/);
+  }
+});
+
+test("012: every push proves the device, then the store lease, before it writes anything", () => {
+  for (const push of RM_PUSHES) {
+    const body = functionBody(RM_IDENTITY, push);
+    const claim = body.indexOf("public.claim_is_current(p_epoch, p_holder)");
+    const lease = body.indexOf(`public.lease_holds('${LEASE_DOMAIN.RAW_MATERIAL_STORE}', account.device_id, (item->>'lease_epoch')::bigint)`);
+    const write = body.indexOf("insert into public.");
+    assert.ok(claim >= 0 && lease > claim && write > lease, `${push}: claim, then lease, then write`);
+    // The origin is the proven device, never a value the client sends.
+    assert.ok(!body.includes("item->>'origin_device_id'"), `${push} must not take the origin from the client`);
+    // Nothing in the loop raises: one bad row must not stall the rows beside it.
+    assert.ok(!body.slice(body.indexOf("for item in")).includes("raise exception"), `${push} must refuse per row`);
+  }
+});
+
+test("012: the mirrors are closed to every client, and only the two pushes are callable", () => {
+  const sql = sqlOnly(RM_IDENTITY);
+  for (const table of ["raw_material_qr_batches", "raw_material_qrs"]) {
+    assert.match(sql, new RegExp(String.raw`alter table public\.${table} enable row level security`));
+    assert.match(sql, new RegExp(String.raw`revoke all on table public\.${table} from public, anon, authenticated`));
+  }
+  assert.doesNotMatch(sql, /create policy/, "computers read the log, not the mirrors");
+  assert.doesNotMatch(sql, /grant (select|insert|update|delete)/);
+  const granted = [...sql.matchAll(/grant execute on function public\.([a-z_]+)\(/g)].map((match) => match[1]);
+  assert.deepEqual(granted.sort(), [...RM_PUSHES].sort());
+  // The revokes follow the triggers: EXECUTE is checked when a trigger is created.
+  assert.ok(sql.lastIndexOf("create trigger") < sql.indexOf("revoke all on function"));
+});
+
+test("012: the cloud relays runs without judging master data it does not hold", () => {
+  // Owner decision "wait for it": a run naming a supplier the cloud has not seen is relayed, and the
+  // receiving computer parks it until the supplier arrives. A foreign key here would refuse it.
+  assert.doesNotMatch(sqlOnly(RM_IDENTITY), /references public\.(parties|inventory_items|inventory_units)/);
+  // What the cloud does judge is the event itself.
+  for (const reason of ["RUN_DOES_NOT_ADD_UP", "PACKET_OUTSIDE_ITS_RUN", "SERIAL_CLASH", "IDENTITY_CONFLICT", "NOT_LEASE_HOLDER"]) {
+    assert.ok(RM_IDENTITY.includes(`'${reason}'`), `refuses ${reason}`);
+  }
+});
+
+test("012: one transaction each way, and the rollback leaves the log alone", () => {
+  for (const sql of [sqlOnly(RM_IDENTITY), sqlOnly(RM_IDENTITY_DOWN)]) {
+    assert.ok(sql.trim().startsWith("begin;") && sql.includes("commit;"));
+  }
+  const down = sqlOnly(RM_IDENTITY_DOWN);
+  assert.ok(down.indexOf("drop function if exists public.push_raw_material_qr(") < down.indexOf("drop table if exists public.raw_material_qrs"));
+  assert.ok(down.indexOf("drop table if exists public.raw_material_qrs;") < down.indexOf("drop table if exists public.raw_material_qr_batches;"));
+  assert.doesNotMatch(down, /sync_event_log/, "the log is append-only and stays");
+  assert.match(RM_IDENTITY_DOWN, /WHAT THIS COSTS/);
+});
+
+// ─── 013: leased records -- master data, whole, by revision ─────────────────
+
+const LEASED_RECORDS = read("migrations/supabase/013_leased_records.up.sql");
+const LEASED_RECORDS_DOWN = read("migrations/supabase/013_leased_records.down.sql");
+
+/** The (type, lease domain) rows 013 seeds into leased_record_types. */
+const leasedRecordTypes = (): Map<string, string> => {
+  const types = new Map<string, string>();
+  const insert = LEASED_RECORDS.slice(LEASED_RECORDS.indexOf("insert into public.leased_record_types"));
+  for (const match of insert.slice(0, insert.indexOf(";")).matchAll(/\('([A-Z_]+)', '([A-Z_]+)'\)/g)) {
+    types.set(match[1] ?? "", match[2] ?? "");
+  }
+  return types;
+};
+
+test("013: every record type is a log type, unscoped, under a lease this computer knows", () => {
+  const types = leasedRecordTypes();
+  assert.equal(types.size, 8, "the eight master-data record types of docs/37 W.1");
+  const logTypes = LEASED_RECORDS.slice(LEASED_RECORDS.indexOf("insert into public.sync_aggregate_types"));
+  for (const [type, domain] of types) {
+    assert.match(logTypes, new RegExp(String.raw`\('${type}', false, '`), `${type} is seeded into the log's types, unscoped`);
+    assert.ok((Object.values(LEASE_DOMAIN) as string[]).includes(domain), `${type}'s domain ${domain} is a lease domain`);
+  }
+  assert.ok([...types.values()].every((domain) => domain === LEASE_DOMAIN.MASTER_DATA), "Milestone 1 records are all master data");
+  // This computer captures exactly these records, each under the same lease the cloud checks.
+  const local = Object.fromEntries(
+    Object.entries(LEASED_AGGREGATE_DOMAIN).filter(([, domain]) => domain === LEASE_DOMAIN.MASTER_DATA)
+  );
+  assert.deepEqual(local, Object.fromEntries(types));
+  const captured = new Set(MASTER_CAPTURE.map((capture) => capture.record as string));
+  assert.deepEqual([...captured].sort(), [...types.keys()].sort(), "every cloud record type is captured here, and nothing else");
+});
+
+test("013: the push proves the device, then the record type's own lease, before it writes", () => {
+  const body = functionBody(LEASED_RECORDS, "push_leased_record");
+  const claim = body.indexOf("public.claim_is_current(p_epoch, p_holder)");
+  const type = body.indexOf("from public.leased_record_types");
+  const lease = body.indexOf("public.lease_holds(v_domain, account.device_id, (item->>'lease_epoch')::bigint)");
+  const write = body.indexOf("insert into public.leased_records");
+  assert.ok(claim >= 0 && type > claim && lease > type && write > lease, "claim, then the type's domain, then the lease, then write");
+  assert.ok(!body.slice(body.indexOf("for item in")).includes("raise exception"), "refuses per row");
+  assert.ok(!body.includes("item->>'origin_device_id'"), "the origin is the proven device");
+  // The row is locked before its revision is compared, so two pushes cannot both pass the check.
+  assert.ok(body.indexOf("for update") < body.indexOf("update public.leased_records"));
+});
+
+test("013: a revision only moves forward, and an older one is acknowledged, never applied", () => {
+  const body = functionBody(LEASED_RECORDS, "push_leased_record");
+  const older = body.indexOf("if v_revision < existing.revision then");
+  const same = body.indexOf("elsif v_revision = existing.revision then");
+  const update = body.indexOf("update public.leased_records");
+  assert.ok(older >= 0 && same > older && update > same, "older, then equal, then newer -- only newer writes");
+  assert.ok(body.slice(older, same).includes("'SUPERSEDED'") && !body.slice(older, same).includes("update "));
+  assert.ok(body.slice(same, update).includes("'DUPLICATE'") && body.slice(same, update).includes("'REVISION_CONFLICT'"));
+  // Every revision is its own log event, so a reader that missed one converges on the next.
+  assert.ok(LEASED_RECORDS.includes("new.aggregate_type || ':' || new.record_id || ':' || new.revision::text"));
+  assert.match(sqlOnly(LEASED_RECORDS), /after insert or update of revision on public\.leased_records/);
+});
+
+test("013: no variable in the push shares a name with a column", () => {
+  // PL/pgSQL refuses an ambiguous reference at RUN time, not when the function is created: a
+  // variable named revision, deleted or body would pass the paste and fail the first push.
+  const body = functionBody(LEASED_RECORDS, "push_leased_record");
+  const declared = body.slice(body.indexOf("declare"), body.indexOf("begin"));
+  const variables = [...declared.matchAll(/^\s+([a-z_]+)\s/gm)].map((match) => match[1]);
+  for (const column of ["aggregate_type", "record_id", "revision", "deleted", "body", "lease_epoch", "origin_device_id", "domain", "lease_domain"]) {
+    assert.ok(!variables.includes(column), `the variable ${column} would be ambiguous with a column`);
+  }
+});
+
+test("013: the records are closed to clients, and only the push is callable", () => {
+  const sql = sqlOnly(LEASED_RECORDS);
+  for (const table of ["leased_record_types", "leased_records"]) {
+    assert.match(sql, new RegExp(String.raw`alter table public\.${table} enable row level security`));
+    assert.match(sql, new RegExp(String.raw`revoke all on table public\.${table} from public, anon, authenticated`));
+  }
+  assert.doesNotMatch(sql, /create policy/);
+  const granted = [...sql.matchAll(/grant execute on function public\.([a-z_]+)\(/g)].map((match) => match[1]);
+  assert.deepEqual(granted, ["push_leased_record"]);
+  assert.ok(sql.lastIndexOf("create trigger") < sql.indexOf("revoke all on function"));
+  assert.match(sql, /octet_length\(v_body::text\) > 262144/, "a record's size is bounded");
+});
+
+test("013: the rollback keeps the log and the types the log refers to", () => {
+  const down = sqlOnly(LEASED_RECORDS_DOWN);
+  assert.ok(down.trim().startsWith("begin;") && down.includes("commit;"));
+  assert.ok(down.indexOf("drop function if exists public.push_leased_record") < down.indexOf("drop table if exists public.leased_records"));
+  assert.ok(down.indexOf("drop table if exists public.leased_records;") < down.indexOf("drop table if exists public.leased_record_types;"));
+  assert.doesNotMatch(down, /sync_event_log|sync_aggregate_types/);
+  assert.match(LEASED_RECORDS_DOWN, /WHAT THIS COSTS/);
+});
+
+// ─── 014: each computer's sync health, one row each ─────────────────────────
+
+const SYNC_HEALTH = read("migrations/supabase/014_device_sync_health.up.sql");
+const SYNC_HEALTH_DOWN = read("migrations/supabase/014_device_sync_health.down.sql");
+
+test("014: one row per computer, overwritten -- a report can never add a row or touch another computer's", () => {
+  const sql = sqlOnly(SYNC_HEALTH);
+  assert.match(sql, /device_id text primary key,/, "keyed by the device alone");
+  assert.doesNotMatch(sql, /\b(bigserial|serial|identity|nextval)\b/i, "nothing sequence-fed: it is not a log");
+  const report = functionBody(SYNC_HEALTH, "report_sync_health");
+  assert.match(report, /on conflict \(device_id\) do update set/);
+  // Whose row is written comes from the proven claim, never from the report.
+  assert.ok(report.indexOf("public.claim_is_current(p_epoch, p_holder)") < report.indexOf("insert into public.device_sync_health"));
+  assert.match(report, /account\.device_id, account\.factory_id, account\.label/);
+  assert.doesNotMatch(report, /p_report->>'(deviceId|device_id|factoryId|factory_id)'/);
+});
+
+test("014: a report is bounded and validated whole", () => {
+  const report = functionBody(SYNC_HEALTH, "report_sync_health");
+  assert.match(report, /octet_length\(p_report::text\) > 8192/);
+  assert.match(report, /limit 5/, "at most five items kept");
+  assert.match(sqlOnly(SYNC_HEALTH), /jsonb_array_length\(sample\) <= 5/, "and the table refuses more anyway");
+  assert.match(report, /jsonb_typeof\(item->'needs'\) = 'string' and length\(item->>'needs'\) <= 200/, "the record that would end a wait is kept only as short text");
+  for (const field of ["waiting", "stuck", "stale", "deadLetters", "unsentMarks"]) {
+    assert.match(report, new RegExp(String.raw`public\.sync_health_count\(p_report->'${field}'\)`), `${field} is checked`);
+  }
+});
+
+test("014: read by the computers of one factory, written only through the report", () => {
+  const sql = sqlOnly(SYNC_HEALTH);
+  assert.match(sql, /revoke all on table public\.device_sync_health from public, anon, authenticated/);
+  assert.match(sql, /grant select on table public\.device_sync_health to authenticated/);
+  assert.doesNotMatch(sql, /grant (insert|update|delete)/);
+  assert.match(sql, /using \(public\.is_enrolled_device\(\) and factory_id = public\.current_factory_id\(\)\)/);
+  const granted = [...sql.matchAll(/grant execute on function public\.([a-z_]+)\(/g)].map((match) => match[1]);
+  assert.deepEqual(granted, ["report_sync_health"]);
+  assert.match(sql, /revoke all on function public\.sync_health_count\(jsonb\) from public, anon, authenticated/);
+  const down = sqlOnly(SYNC_HEALTH_DOWN);
+  assert.ok(down.indexOf("drop function if exists public.report_sync_health") < down.indexOf("drop table if exists public.device_sync_health"));
+});
+
+// ─── 015: stock movements, with the balance change their origin made ────────
+
+const STOCK_EVENTS = read("migrations/supabase/015_stock_events.up.sql");
+const STOCK_EVENTS_DOWN = read("migrations/supabase/015_stock_events.down.sql");
+
+test("015: the cloud log's payload is one the receiving computer accepts, field for field", () => {
+  const scanOut = {
+    id: "e-1", item_id: "i-1", event_type: "TRANSFER_OUT", quantity: 2, unit_id: "u-kg", note: "Issued", created_by: "user-1",
+    created_at: "2026-10-26T05:00:00.000Z", party_id: null, machine_program_id: "mp-9", balance_delta: -2,
+  };
+  assert.deepEqual(readStockEventPayload(payloadFromTrigger("log_stock_event_insert", scanOut, STOCK_EVENTS)), {
+    eventId: "e-1", itemId: "i-1", eventType: "TRANSFER_OUT", quantity: 2, unitId: "u-kg", note: "Issued", createdBy: "user-1",
+    createdAt: "2026-10-26T05:00:00.000Z", partyId: null, machineProgramId: "mp-9", balanceDelta: -2,
+  });
+});
+
+test("015: the cloud builds the local dedupe key, unscoped, and the type is under the store lease here too", () => {
+  assert.equal(stockEventDedupeKey("e-1"), "STOCK_EVENT:e-1");
+  assert.ok(STOCK_EVENTS.includes("'STOCK_EVENT:' || new.id"));
+  assert.match(sqlOnly(STOCK_EVENTS), /\('STOCK_EVENT', false, '/, "seeded unscoped: factory_id is null");
+  assert.equal(LEASED_AGGREGATE_DOMAIN[SYNC_AGGREGATE.STOCK_EVENT], LEASE_DOMAIN.RAW_MATERIAL_STORE);
+  const body = functionBody(STOCK_EVENTS, "log_stock_event_insert");
+  assert.ok(body.indexOf("pg_advisory_xact_lock(777, 1)") < body.indexOf("insert into public.sync_event_log"));
+  assert.match(body, /on conflict \(dedupe_key\) do nothing/);
+});
+
+test("015: the push proves the device, then the store lease, before it writes, and refuses per row", () => {
+  const body = functionBody(STOCK_EVENTS, "push_stock_event");
+  const claim = body.indexOf("public.claim_is_current(p_epoch, p_holder)");
+  const lease = body.indexOf(`public.lease_holds('${LEASE_DOMAIN.RAW_MATERIAL_STORE}', account.device_id, (item->>'lease_epoch')::bigint)`);
+  const write = body.indexOf("insert into public.");
+  assert.ok(claim >= 0 && lease > claim && write > lease, "claim, then lease, then write");
+  assert.ok(!body.includes("item->>'origin_device_id'"), "the origin is the proven device");
+  assert.ok(!body.slice(body.indexOf("for item in")).includes("raise exception"), "one bad row must not stall the rest");
+  for (const reason of ["PAYLOAD_INCOMPLETE", "DELTA_DOES_NOT_MATCH", "NOT_LEASE_HOLDER", "IDENTITY_CONFLICT"]) {
+    assert.ok(body.includes(`'${reason}'`), `refuses ${reason}`);
+  }
+});
+
+test("015: the sign is the origin's -- the cloud checks only the delta's size, and never the unit as identity", () => {
+  const sql = sqlOnly(STOCK_EVENTS);
+  assert.match(sql, /check \(abs\(balance_delta\) = abs\(quantity\)\)/);
+  const body = functionBody(STOCK_EVENTS, "push_stock_event");
+  assert.match(body, /if abs\(v_delta\) <> abs\(v_quantity\) then/);
+  assert.doesNotMatch(body, /TRANSFER_OUT'? and/, "no sign rule is re-derived in the cloud");
+  const identity = body.slice(body.indexOf("if found then"), body.indexOf("continue;", body.indexOf("if found then")));
+  assert.doesNotMatch(identity, /unit_id/, "a unit correction on the store PC must not make its movements conflict");
+  // The cloud relays movements without judging master data it does not hold: they wait on arrival.
+  assert.doesNotMatch(sql, /references public\.(parties|inventory_items|inventory_units|machine_programs)/);
+});
+
+test("015: no variable in the push shares a name with a column", () => {
+  const body = functionBody(STOCK_EVENTS, "push_stock_event");
+  const declared = body.slice(body.indexOf("declare"), body.indexOf("begin"));
+  const variables = [...declared.matchAll(/^\s+([a-z_]+)\s/gm)].map((match) => match[1]);
+  for (const column of ["id", "item_id", "event_type", "quantity", "unit_id", "note", "created_by", "created_at",
+    "party_id", "machine_program_id", "balance_delta", "origin_device_id", "received_at"]) {
+    assert.ok(!variables.includes(column), `the variable ${column} would be ambiguous with a column`);
+  }
+});
+
+test("015: the movements are closed to every client, only the push is callable, and the rollback keeps the log", () => {
+  const sql = sqlOnly(STOCK_EVENTS);
+  assert.match(sql, /alter table public\.inventory_stock_events enable row level security/);
+  assert.match(sql, /revoke all on table public\.inventory_stock_events from public, anon, authenticated/);
+  assert.doesNotMatch(sql, /create policy/);
+  assert.doesNotMatch(sql, /grant (select|insert|update|delete)/);
+  const granted = [...sql.matchAll(/grant execute on function public\.([a-z_]+)\(/g)].map((match) => match[1]);
+  assert.deepEqual(granted, ["push_stock_event"]);
+  assert.ok(sql.lastIndexOf("create trigger") < sql.indexOf("revoke all on function"));
+  for (const text of [sql, sqlOnly(STOCK_EVENTS_DOWN)]) assert.ok(text.trim().startsWith("begin;") && text.includes("commit;"));
+  const down = sqlOnly(STOCK_EVENTS_DOWN);
+  assert.ok(down.indexOf("drop function if exists public.push_stock_event") < down.indexOf("drop table if exists public.inventory_stock_events"));
+  assert.doesNotMatch(down, /sync_event_log|sync_aggregate_types/);
+  assert.match(STOCK_EVENTS_DOWN, /WHAT THIS COSTS/);
+});
+
+// ─── 016: the realtime doorbell ─────────────────────────────────────────────
+
+const DOORBELL = read("migrations/supabase/016_sync_log_doorbell.up.sql");
+const DOORBELL_DOWN = read("migrations/supabase/016_sync_log_doorbell.down.sql");
+
+test("016: only the doorbell is published to Realtime, never the log and its payloads", () => {
+  const sql = sqlOnly(DOORBELL);
+  const published = [...sql.matchAll(/alter publication supabase_realtime add table public\.([a-z_]+)/g)].map((match) => match[1]);
+  assert.deepEqual(published, ["sync_log_doorbell"]);
+  assert.doesNotMatch(sql, /add table public\.sync_event_log/);
+  // A position and a device: nothing a reader could act on without the validated pull.
+  const table = sql.slice(sql.indexOf("create table if not exists public.sync_log_doorbell"), sql.indexOf(");", sql.indexOf("create table if not exists public.sync_log_doorbell")));
+  assert.doesNotMatch(table, /payload|jsonb/);
+});
+
+test("016: the log rings once per transaction per scope, after the row is written", () => {
+  const sql = sqlOnly(DOORBELL);
+  assert.match(sql, /create trigger trg_sync_event_log_doorbell\s+after insert on public\.sync_event_log\s+for each row/);
+  const ring = functionBody(DOORBELL, "ring_sync_log_doorbell");
+  assert.match(ring, /current_setting\('erp\.doorbell_rung', true\)/);
+  assert.match(ring, /set_config\('erp\.doorbell_rung', v_rung \|\| '\|' \|\| v_scope \|\| '\|', true\)/, "transaction-local, per scope");
+  assert.match(ring, /greatest\(public\.sync_log_doorbell\.last_seq, excluded\.last_seq\)/, "never moves backwards");
+});
+
+test("016: read by the computers of one factory, written only by the trigger", () => {
+  const sql = sqlOnly(DOORBELL);
+  assert.match(sql, /alter table public\.sync_log_doorbell enable row level security/);
+  assert.match(sql, /revoke all on table public\.sync_log_doorbell from public, anon, authenticated/);
+  assert.match(sql, /grant select on table public\.sync_log_doorbell to authenticated/);
+  assert.doesNotMatch(sql, /grant (insert|update|delete)/);
+  assert.match(sql, /using \(public\.is_enrolled_device\(\) and \(factory_id = public\.current_factory_id\(\) or factory_id is null\)\)/);
+  assert.doesNotMatch(sql, /grant execute/);
+  assert.match(sql, /revoke all on function public\.ring_sync_log_doorbell\(\) from public, anon, authenticated/);
+  for (const text of [sql, sqlOnly(DOORBELL_DOWN)]) assert.ok(text.trim().startsWith("begin;") && text.includes("commit;"));
+  const down = sqlOnly(DOORBELL_DOWN);
+  assert.ok(down.indexOf("alter publication supabase_realtime drop table public.sync_log_doorbell") < down.indexOf("drop table if exists public.sync_log_doorbell"));
+  assert.doesNotMatch(down, /delete from/, "the rollback removes the doorbell, never log rows");
 });

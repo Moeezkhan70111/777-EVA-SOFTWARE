@@ -61,6 +61,8 @@ const MIGRATION_086 = path.resolve(
   import.meta.dirname,
   "../../../migrations/sqlite/086_sync_outbox_product_variant.up.sql"
 );
+const MIGRATION_088 = path.resolve(import.meta.dirname, "../../../migrations/sqlite/088_replicated_at.up.sql");
+const MIGRATION_093 = path.resolve(import.meta.dirname, "../../../migrations/sqlite/093_domain_leases.up.sql");
 
 const FAST_RETRY: OutboxRetryPolicy = { maxAttempts: 4, baseBackoffMs: 1_000, maxBackoffMs: 60_000, staleInFlightMs: 60_000 };
 
@@ -93,6 +95,8 @@ function createNode(root: string, name: string): Node {
   runMigration(raw, MIGRATION_082);
   runMigration(raw, MIGRATION_083);
   runMigration(raw, MIGRATION_086);
+  runMigration(raw, MIGRATION_088);
+  runMigration(raw, MIGRATION_093);
   raw.exec("PRAGMA foreign_keys = ON;");
 
   // The master data a computer is given when it is set up. None of it is synchronised by this
@@ -1117,6 +1121,58 @@ function handleThatFailsOn(node: Node, failOn: RegExp): SyncSqlHandle {
     },
   };
 }
+
+/** When a row was made at its origin, and when it arrived here (null: recorded here). */
+const stampsOf = (
+  node: Node,
+  select: string,
+  id: string
+): { created_at: string; replicated_at: string | null } | undefined => {
+  const row = node.raw.prepare(select).get(id) as { created_at: string; replicated_at: string | null } | undefined;
+  // node:sqlite rows have a null prototype, which strict deepEqual counts as a difference.
+  return row === undefined ? undefined : { created_at: row.created_at, replicated_at: row.replicated_at };
+};
+
+const CARTON_STAMPS = "SELECT created_at, replicated_at FROM qr_master WHERE qr_id = ?";
+const EVENT_STAMPS = "SELECT created_at, replicated_at FROM production_events WHERE id = ?";
+
+test("an arrival keeps the origin's created_at, and records its own arrival time once", () => {
+  const fixture = createFixture("replicated-at");
+  try {
+    const at = "2026-10-01T11:30:00.000Z";
+    const qrId = "SK9_BLACK_7/10_000002";
+    const { eventId } = recordScan(fixture.a, { qrId, serial: "000002", occurredAt: at });
+    const [identity, scan] = envelopesFor(fixture.a, at);
+    assert.ok(identity !== undefined && scan !== undefined);
+
+    const arrived = "2026-10-02T09:00:00.000Z";
+    assert.equal(applyEnvelope(fixture.b.sql, identity, arrived).status, "APPLIED");
+    assert.equal(applyEnvelope(fixture.b.sql, scan, arrived).status, "APPLIED");
+
+    // The origin recorded it, so on the origin there is no arrival time.
+    const originCarton = stampsOf(fixture.a, CARTON_STAMPS, qrId);
+    const originEvent = stampsOf(fixture.a, EVENT_STAMPS, eventId);
+    assert.equal(originCarton?.replicated_at, null);
+    assert.equal(originEvent?.replicated_at, null);
+
+    // The receiver keeps the origin's business time, and the arrival time beside it.
+    assert.deepEqual(stampsOf(fixture.b, CARTON_STAMPS, qrId), {
+      created_at: originCarton?.created_at,
+      replicated_at: arrived,
+    });
+    assert.deepEqual(stampsOf(fixture.b, EVENT_STAMPS, eventId), {
+      created_at: originEvent?.created_at,
+      replicated_at: arrived,
+    });
+
+    // A second arrival is a no-op, and does not move the first arrival's time.
+    const later = "2026-10-03T09:00:00.000Z";
+    assert.equal(applyEnvelope(fixture.b.sql, scan, later).status, "DUPLICATE");
+    assert.equal(stampsOf(fixture.b, EVENT_STAMPS, eventId)?.replicated_at, arrived);
+  } finally {
+    fixture.cleanup();
+  }
+});
 
 const firstEventIdOf = (node: Node, qrId: string): string | null => {
   const row = node.raw.prepare("SELECT first_event_id FROM qr_master WHERE qr_id = ?").get(qrId) as

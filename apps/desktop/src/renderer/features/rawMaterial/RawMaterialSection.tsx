@@ -1,6 +1,8 @@
 import React from "react";
+import { LEASE_DOMAIN, type LeaseDomain } from "@erp/domain";
 import type { AppRoute } from "../../app/routes";
 import { StateView } from "../../components/shared/StateView";
+import { LeaseNotices } from "../sync/LeaseNotices";
 import { copy } from "../../config/copy";
 import { StockTab } from "./StockTab";
 import { LabelsTab } from "./LabelsTab";
@@ -36,7 +38,7 @@ export interface RawMaterialSectionProps {
   onNavigate: (route: AppRoute) => void;
 }
 
-export const RawMaterialSection: React.FC<RawMaterialSectionProps> = ({
+const RawMaterialSectionBody: React.FC<RawMaterialSectionProps> = ({
   tab,
   lookups,
   username,
@@ -98,3 +100,22 @@ export const RawMaterialSection: React.FC<RawMaterialSectionProps> = ({
     />
   );
 };
+
+/**
+ * What each section writes (docs/37 section W). Stock moves stock and edits materials, Labels prints
+ * label runs, Setup is master data, Receipts only reads. Shown as notices on a reader; the main
+ * process refuses the writes themselves.
+ */
+const SECTION_WRITES: Readonly<Record<WorkspaceTab, readonly LeaseDomain[]>> = {
+  stock: [LEASE_DOMAIN.RAW_MATERIAL_STORE, LEASE_DOMAIN.MASTER_DATA],
+  labels: [LEASE_DOMAIN.RAW_MATERIAL_STORE],
+  receipts: [],
+  setup: [LEASE_DOMAIN.MASTER_DATA],
+};
+
+export const RawMaterialSection: React.FC<RawMaterialSectionProps> = (props) => (
+  <>
+    <LeaseNotices domains={SECTION_WRITES[props.tab]} />
+    <RawMaterialSectionBody {...props} />
+  </>
+);

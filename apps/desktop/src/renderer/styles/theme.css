@@ -8863,6 +8863,38 @@ tr.has-error .gp-qty-stepper input { color: var(--err); }
   .mpr-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
+/* ── Read-only on this computer (docs/37 section W): a leased domain written elsewhere ── */
+.read-only-notice {
+  display: flex; gap: var(--space-3); align-items: flex-start;
+  background: var(--warn-bg); border: 1px solid var(--warn); border-left-width: 5px;
+  border-radius: var(--radius-lg); padding: var(--space-3) var(--space-4); margin-bottom: var(--space-3);
+  color: var(--text);
+}
+.read-only-notice-icon { font-size: 1.1rem; line-height: 1.4; }
+.read-only-notice-title { font-weight: 800; font-size: 0.9rem; }
+.read-only-notice-body { font-size: 0.85rem; color: var(--text-2); }
+
+/* ── Waiting on this computer (features/sync): a record sent here that has not arrived ── */
+.sync-notice {
+  display: flex; flex-wrap: wrap; gap: var(--space-3); align-items: flex-start;
+  border: 1px solid var(--warn); border-left-width: 5px; background: var(--warn-bg);
+  border-radius: var(--radius-lg); padding: var(--space-3) var(--space-4); margin-bottom: var(--space-3);
+  color: var(--text);
+}
+.sync-notice.is-error { border-color: var(--err); background: var(--err-bg); }
+.sync-notice-icon { font-size: 1.1rem; line-height: 1.4; }
+.sync-notice-body { flex: 1 1 240px; margin: 0; font-size: 0.85rem; }
+.sync-notice-body p { margin: 0 0 var(--space-2); }
+.sync-notice-title { font-weight: 800; }
+.sync-notice-actions { display: flex; gap: var(--space-2); flex-wrap: wrap; }
+.sync-notice-actions .btn { min-height: var(--touch-target); }
+.sync-wait-list { margin: 0; padding-left: var(--space-4); display: flex; flex-direction: column; gap: var(--space-1); }
+.sync-wait-list li { font-size: 0.85rem; }
+.sync-wait-tier { font-weight: 700; margin-right: var(--space-2); }
+.sync-device { padding: var(--space-3) 0; border-top: 1px solid var(--border-soft); }
+.sync-device-head { display: flex; flex-wrap: wrap; justify-content: space-between; gap: var(--space-2); }
+.sync-device-sample { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-2); }
+
 /* Store movements (0.3.8): what kind of party is chosen, and the party a Move Out session is locked to. */
 .party-type-badge { margin-top: 6px; align-self: flex-start; }
 .ssn-toolbar .party-type-badge { margin-top: 0; }

@@ -82,7 +82,8 @@ export const buildMaterialsSheet = (
         String(item.unit_code ?? ""),
         item.cost_price == null ? "" : Number(item.cost_price),
         String(item.item_code ?? ""),
-        config?.packetsInStore ?? 0,
+        // Blank, not 0, where no packet is counted: off the store computer that is no count at all.
+        packetsInStore(config) ?? "",
         formatQuantity(Number(item.quantity_on_hand ?? 0)),
       ];
     }),

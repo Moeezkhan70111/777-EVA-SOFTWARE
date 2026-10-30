@@ -224,6 +224,10 @@ export const IPC = {
   searchQrCodes: "erp:search-qr-codes",
   getQrDetail: "erp:get-qr-detail",
   getQrJourney: "erp:get-qr-journey",
+  /** Whether this computer may write each leased domain now, and who does (docs/37 section W). */
+  getWriteLeases: "erp:get-write-leases",
+  /** The lease domains this computer holds now: synced, named the holder, caught up. */
+  getHeldLeases: "erp:get-held-leases",
   getQrGenerationOverview: "erp:get-qr-generation-overview",
   listQrGenerationFilterOptions: "erp:list-qr-generation-filter-options",
   listQrBatchMembers: "erp:list-qr-batch-members",
@@ -296,6 +300,19 @@ export const IPC = {
   // automatic, and not a sync trigger -- see main/ipc/deadLetters.ts.
   listDeadLetterEvents: "erp:list-dead-letter-events",
   requeueDeadLetterEvent: "erp:requeue-dead-letter-event",
+
+  // What this computer and the others are waiting on, and sending one master record again for
+  // a computer that waits for it -- see main/ipc/syncWaiting.ts.
+  getSyncWaiting: "erp:get-sync-waiting",
+  getFactorySyncHealth: "erp:get-factory-sync-health",
+  sendMasterRecordAgain: "erp:send-master-record-again",
+
+  // Main to renderer, not a request: what kind of data a sync just changed (shared/dataChange.ts).
+  dataChanged: "erp:data-changed",
+
+  // The one-time backfill: what the store PC held before it synced -- see main/ipc/backfill.ts.
+  getBackfillPlan: "erp:get-backfill-plan",
+  runBackfill: "erp:run-backfill",
 
   // This computer's document-number range: read-only status, the one-time adoption for the
   // existing-data machine, and the one-time assignment for a second computer.

@@ -26,6 +26,11 @@
 // Until a shared database exists there is no central authority to ask. The protections are the
 // written assignment the operator keeps, the out-of-range check below, and the UNIQUE constraints
 // that turn a collision into a refused save rather than two documents with one number.
+//
+// FOR A COMPUTER THAT SYNCS, THE CLOUD IS THAT AUTHORITY (cloud migration 018, after the PC2/PC3
+// incident, docs/39 section 4.4). Its claim sends this block; the first computer to claim a block
+// holds it, and a second is refused and sends nothing. A computer that never syncs is still
+// protected only by the measures above.
 
 import type { SqliteDatabase } from "../sqliteDatabase.js";
 
@@ -193,7 +198,7 @@ export const NUMBER_SITES = {
 export type NumberSiteKey = keyof typeof NUMBER_SITES;
 
 /** The SQL expression that reads the series number out of the column, for one audited site. */
-function numberExpression(site: NumberSite): string {
+export function numberExpression(site: NumberSite): string {
   return site.parse.kind === "INT"
     ? `CAST(COALESCE(NULLIF(TRIM(CAST(${site.column} AS TEXT)), ''), '0') AS INTEGER)`
     : `CAST(SUBSTR(${site.column}, ${site.parse.from}) AS INTEGER)`;

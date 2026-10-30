@@ -8,6 +8,7 @@ import { Authorizer, type SessionUser } from "../authorize";
 import { IPC } from "../../shared/ipcChannels";
 import type { IpcContext } from "./context";
 import { registerCloudSyncHandlers } from "./cloudSync";
+import { runCloudSyncPass } from "../cloudSyncPass";
 
 // WHAT THE RENDERER CAN MAKE THIS COMPUTER DO TO THE CLOUD.
 //
@@ -27,6 +28,12 @@ import { registerCloudSyncHandlers } from "./cloudSync";
 // project.
 
 const handlers = new Map<string, (event: IpcMainInvokeEvent, ...args: unknown[]) => unknown>();
+
+/** What the pass told the open windows had changed (main/dataChanged.ts), one entry per announcement. */
+const announced: string[][] = [];
+vi.mock("../dataChanged", () => ({
+  announceDataChanged: (kinds: readonly string[]) => announced.push([...kinds]),
+}));
 
 vi.mock("electron", () => ({
   ipcMain: {
@@ -61,6 +68,7 @@ interface DrainResultStub {
 interface PullResultStub {
   fetched: number;
   applied: number;
+  appliedTypes?: string[];
   duplicates: number;
   refused: Array<{ reason: string }>;
   transportError?: string;
@@ -118,6 +126,16 @@ vi.mock("@erp/sync", () => {
       if (heartbeatOutcome.ok !== true) this.claimed = false;
       return heartbeatOutcome;
     }
+    /** The sync-health report (migration 014). Recorded, so how often it is sent shows. */
+    async reportSyncHealth(report: Record<string, unknown>): Promise<string> {
+      healthReports.push(report);
+      return "REPORTED";
+    }
+    /** Who holds each write lease. A project without leases unless a test says otherwise. */
+    async fetchLeases(): Promise<Record<string, unknown>> {
+      if (leaseThrows !== null) throw leaseThrows;
+      return leaseFetch;
+    }
   }
   class OutboxDrain {
     constructor(_sql: unknown, _transport: unknown, options: Record<string, unknown>) {
@@ -142,6 +160,11 @@ vi.mock("@erp/sync", () => {
     SupabaseSyncTransport,
     OutboxDrain,
     SyncPull,
+    // One batch and one page: the looping itself is proved in packages/sync (backlog.test.ts).
+    DRAIN_BUDGET: { batchSize: 100, maxBatches: 20, withinMs: 40_000 },
+    PULL_BUDGET: { batchSize: 200, maxBatches: 25, withinMs: 40_000 },
+    drainBacklog: (drain: { runOnce(): Promise<unknown> }) => drain.runOnce(),
+    pullBacklog: (pull: { runOnce(): Promise<unknown> }) => pull.runOnce(),
     SUPABASE_PUSHABLE_AGGREGATES: ["QR_MASTER"] as readonly string[],
     // The status reads the queue. These stand in for the real SELECTs, which are proved against
     // disposable databases in packages/sync; what matters here is that the handler asks for them
@@ -155,9 +178,21 @@ vi.mock("@erp/sync", () => {
       sql.prepare("SELECT setting_value FROM app_settings WHERE setting_key = ? LIMIT 1");
       return 7;
     },
-    readPullDeferral: (sql: { prepare: (text: string) => unknown }) => {
-      sql.prepare("SELECT setting_value FROM app_settings WHERE setting_key = ? LIMIT 1");
-      return deferral;
+    replaceLeaseCache: (_sql: unknown, projectUrl: string, leases: unknown[]) => {
+      leaseCalls.push({ what: "replace", projectUrl, leases });
+    },
+    // The health report's helpers: nothing waiting, and the real "only when new or old" rule in small.
+    waitingSummary: () => ({ entries: [], waiting: 0, stuck: 0, stale: 0, oldestSince: null }),
+    outboxCounts: () => ({ PENDING: 0, IN_FLIGHT: 0, FAILED: 0, DEAD_LETTER: 0, SYNCED: 0 }),
+    unsentMarkCount: () => 0,
+    buildHealthReport: (summary: Record<string, unknown>, deadLetters: number, unsentMarks: number) => ({ ...summary, deadLetters, unsentMarks }),
+    shouldReport: (last: unknown, report: unknown) => last === null || JSON.stringify((last as { report: unknown }).report) !== JSON.stringify(report),
+    markLeasesUnsupported: (_sql: unknown, projectUrl: string) => {
+      leaseCalls.push({ what: "unsupported", projectUrl });
+    },
+    parkedSummary: (sql: { prepare: (text: string) => unknown }) => {
+      sql.prepare("SELECT COUNT(*) AS n FROM sync_inbox_parked");
+      return parked;
     },
   };
 });
@@ -171,7 +206,10 @@ const QUEUE = {
   lastSyncedAt: "2026-10-01T10:00:00.000Z",
   lastFailureAt: "2026-10-01T11:00:00.000Z",
 };
-let deferral: { seq: number; until: number; attempts: number } | null;
+let parked: {
+  count: number;
+  oldest: { seq: number; dedupeKey: string; reason: string; attempts: number; nextTryAt: number } | null;
+};
 let summaryCalls: Array<Record<string, unknown>>;
 /** What the stubbed claim answers, and what it was asked for. */
 let claimOutcome: Record<string, unknown>;
@@ -181,6 +219,15 @@ let claimRequests: Array<Record<string, unknown>>;
 let heartbeatOutcome: Record<string, unknown>;
 let heartbeatThrows: Error | null;
 let heartbeats: number;
+/** What the stubbed transport's fetchLeases answers, or throws. */
+let leaseFetch: Record<string, unknown>;
+let leaseThrows: Error | null;
+/** What building master records does on the next pass. */
+let buildThrows: Error | null;
+/** Every health report the pass sent. */
+let healthReports: Array<Record<string, unknown>> = [];
+/** What the pass did with the answer. */
+let leaseCalls: Array<Record<string, unknown>>;
 
 const windowEvent = { sender: { id: 1 } } as unknown as IpcMainInvokeEvent;
 
@@ -256,6 +303,23 @@ const buildContext = (): IpcContext => {
         if (syncRuns[index]) Object.assign(syncRuns[index], { outcome, counts, reason });
       },
       syncRunSummary: () => ({ lastAttempt: null, lastSuccess: null }),
+      // This computer's number block, sent with the claim (cloud migration 018).
+      getNumberBlock: () => 2,
+      // Master records are built before every drain (masterRecords.ts). Recorded, so the order shows.
+      buildLeasedRecordRevisions: () => {
+        built.push({ what: "master-records" });
+        if (buildThrows !== null) throw buildThrows;
+        return { queued: 0, unqueued: 0 };
+      },
+      // Then the labels the backfill marked (labelRunSync.ts), then the stock movements.
+      buildLabelRuns: () => {
+        built.push({ what: "label-runs" });
+        return { queued: 0, unqueued: 0, vanished: 0 };
+      },
+      buildStockEvents: () => {
+        built.push({ what: "stock-events" });
+        return { queued: 0, unqueued: 0, vanished: 0 };
+      },
     },
     // No background loop in these tests: the manual button then calls the pass directly, which
     // is exactly the path being exercised.
@@ -336,7 +400,7 @@ beforeEach(() => {
   built = [];
   prepared = [];
   syncRuns = [];
-  deferral = null;
+  parked = { count: 0, oldest: null };
   summaryCalls = [];
   drainThrows = null;
   drainGate = null;
@@ -348,6 +412,11 @@ beforeEach(() => {
   heartbeatOutcome = { ok: true, epoch: 4, holder: "holder-4" };
   heartbeatThrows = null;
   heartbeats = 0;
+  leaseFetch = { ok: false, reason: "NOT_SUPPORTED" };
+  leaseThrows = null;
+  leaseCalls = [];
+  buildThrows = null;
+  healthReports = [];
   drainResult = { synced: 2, counts: { PENDING: 0, SYNCED: 2 } };
   pullResult = { fetched: 3, applied: 2, duplicates: 1, refused: [] };
   setEnv(GOOD_ENV);
@@ -396,6 +465,8 @@ describe("cloud sync at the process boundary", () => {
       running: false,
       queue: QUEUE,
       pullCursor: 7,
+      // The realtime doorbell has not started in this process: no pass has made a session.
+      realtime: "OFF",
       waitingFor: undefined,
       // Added with the background loop (Phase 4). `schedule` is absent because this context has
       // no scheduler; the two run records come from sync_runs (migration 085) and are null here
@@ -485,14 +556,25 @@ describe("cloud sync at the process boundary", () => {
     expect(typeof summaryCalls[0]?.nowIso).toBe("string");
   });
 
-  it("reports what a pull is waiting at, and says nothing when it is not waiting", async () => {
+  it("reports what pulled events are parked waiting for, and says nothing when none is", async () => {
     expect((await status()).waitingFor).toBeUndefined();
 
-    deferral = { seq: 12, until: Date.parse("2026-10-01T12:30:00.000Z"), attempts: 3 };
+    parked = {
+      count: 2,
+      oldest: {
+        seq: 12,
+        dedupeKey: "QR_MASTER:q-1",
+        reason: "UNKNOWN_PRODUCT_VARIANT:v-1",
+        attempts: 3,
+        nextTryAt: Date.parse("2026-10-01T12:30:00.000Z"),
+      },
+    };
     expect((await status()).waitingFor).toEqual({
       seq: 12,
       attempts: 3,
       retryAfter: "2026-10-01T12:30:00.000Z",
+      parked: 2,
+      reason: "UNKNOWN_PRODUCT_VARIANT:v-1",
     });
   });
 
@@ -520,7 +602,10 @@ describe("cloud sync at the process boundary", () => {
     // it. What the real list CONTAINS (now QR_MASTER and PRODUCTION_PRODUCED) is pinned in
     // packages/sync/src/supabaseTransport.test.ts; it cannot be re-checked here, because the real
     // module reaches node:sqlite and vite cannot load it in this environment.
-    expect(Object.keys(drain?.options ?? {}).sort()).toEqual(["aggregateTypes", "deviceId"]);
+    // batchSize is how many rows a batch takes, never which types: it matches the budget the pass
+    // loops on, so a full batch is recognised as one (backlog.ts).
+    expect(Object.keys(drain?.options ?? {}).sort()).toEqual(["aggregateTypes", "batchSize", "deviceId"]);
+    expect(drain?.options?.batchSize).toBe(100);
   });
 
   // ─── one pass at a time ───────────────────────────────────────────────────
@@ -572,6 +657,70 @@ describe("cloud sync at the process boundary", () => {
 
   // ─── what comes back ──────────────────────────────────────────────────────
 
+  // At one pass a minute, an idle pass logged every time added ~1,440 identical lines a day to a log
+  // that is never rotated. A background pass that did nothing is recorded in sync_runs, not logged.
+  const timerPass = () => {
+    const ctx = buildContext();
+    return runCloudSyncPass(
+      { db: ctx.db, logger: ctx.logger, deviceId: ctx.deviceId, workstationId: ctx.scanContext.workstationId, dataRoot: ctx.paths.dataRoot },
+      "TIMER"
+    );
+  };
+
+  it("reports this computer's sync health, and does not send the same report again on the next pass", async () => {
+    // The report state is per process, so take a fresh project to start from nothing.
+    setEnv({ ...GOOD_ENV, ERP_SUPABASE_URL: "https://zzhealth.supabase.co" });
+    await run();
+    await run();
+    expect(healthReports).toHaveLength(1);
+    expect(healthReports[0]).toMatchObject({ stale: 0, deadLetters: 0, unsentMarks: 0 });
+  });
+
+  it("tells the open screens what a pass applied, and stays quiet when it read nothing", async () => {
+    announced.length = 0;
+    pullResult = { fetched: 3, applied: 2, appliedTypes: ["STOCK_EVENT", "INVENTORY_ITEM"], duplicates: 1, refused: [] };
+    await run();
+    expect(announced).toEqual([["MATERIALS", "STOCK", "SYNC"]]);
+
+    announced.length = 0;
+    pullResult = { fetched: 0, applied: 0, duplicates: 0, refused: [] };
+    await run();
+    // An idle pass reloads nothing.
+    expect(announced).toEqual([]);
+  });
+
+  it("builds changed master records, then stock movements, before the drain, so the same pass carries them", async () => {
+    await run();
+    const order = built.map((entry) => entry.what).filter((what) => ["master-records", "label-runs", "stock-events", "drain"].includes(what));
+    expect(order).toEqual(["master-records", "label-runs", "stock-events", "drain"]);
+  });
+
+  it("a failure to build master records is logged, and the pass still sends and reads", async () => {
+    buildThrows = new Error("disk full");
+    await expect(run()).resolves.toMatchObject({ accepted: true, pushed: 2, fetched: 3 });
+    expect(logged.find((entry) => entry.operation === "master-records")).toMatchObject({ severity: "ERROR" });
+  });
+
+  it("does not log a background pass that did nothing, but still records it", async () => {
+    drainResult = { synced: 0, counts: { PENDING: 0 } };
+    pullResult = { fetched: 0, applied: 0, duplicates: 0, refused: [] };
+    await expect(timerPass()).resolves.toMatchObject({ outcome: "OK" });
+    expect(logged.filter((entry) => entry.operation === "cloud-sync")).toEqual([]);
+    expect(syncRuns.at(-1)).toMatchObject({ trigger: "TIMER", outcome: "OK" });
+  });
+
+  it("logs a background pass that sent, read or failed", async () => {
+    drainResult = { synced: 0, counts: { PENDING: 0 } };
+    pullResult = { fetched: 11, applied: 11, duplicates: 0, refused: [] };
+    await timerPass();
+    drainResult = { synced: 0, counts: { PENDING: 3 }, transportError: "the cloud could not be reached" };
+    pullResult = { fetched: 0, applied: 0, duplicates: 0, refused: [] };
+    await timerPass();
+    const lines = logged.filter((entry) => entry.operation === "cloud-sync").map((entry) => entry.message);
+    expect(lines).toHaveLength(2);
+    expect(lines[0]).toContain("read 11");
+  });
+
   it("returns the counts of a completed pass and records who ran it", async () => {
     pullResult = { fetched: 3, applied: 2, duplicates: 1, refused: [] };
     await expect(run()).resolves.toEqual({
@@ -591,6 +740,27 @@ describe("cloud sync at the process boundary", () => {
     expect(logged).toHaveLength(1);
     expect(logged[0]).toMatchObject({ severity: "INFO", operation: "cloud-sync", userId: "u-admin" });
     expect(logged[0]?.message).toContain("owner");
+  });
+
+  it("keeps the cloud's answer about who holds each write lease, for this project", async () => {
+    const leases = [{ domain: "RAW_MATERIAL_STORE", holderDeviceId: "desktop-main", holderLabel: "Store PC", epoch: 7, barrierSeq: 0, grantedAt: null }];
+    leaseFetch = { ok: true, leases };
+    await expect(run()).resolves.toMatchObject({ accepted: true });
+    expect(leaseCalls).toEqual([{ what: "replace", projectUrl: GOOD_ENV.ERP_SUPABASE_URL, leases }]);
+  });
+
+  it("records a project with no leases, so the store is not locked by a missing migration", async () => {
+    await expect(run()).resolves.toMatchObject({ accepted: true });
+    expect(leaseCalls).toEqual([{ what: "unsupported", projectUrl: GOOD_ENV.ERP_SUPABASE_URL }]);
+  });
+
+  it("a failure to read the leases is a transport failure, and the cache is left alone", async () => {
+    leaseThrows = new Error("the cloud could not be reached");
+    const answer = await run();
+    expect(answer.accepted).toBe(false);
+    expect(answer.reason).toBe("the cloud could not be reached");
+    expect(answer.pushed).toBe(2);
+    expect(leaseCalls).toEqual([]);
   });
 
   it("reports a transport failure as not accepted, while still handing back what did happen", async () => {
@@ -638,7 +808,7 @@ describe("cloud sync at the process boundary", () => {
     await expect(run()).resolves.toMatchObject({ accepted: true });
 
     expect(claimRequests).toEqual([
-      { deviceId: "device-under-test", workstationId: "ws-prod-01", appVersion: "0.3.0" },
+      { deviceId: "device-under-test", workstationId: "ws-prod-01", appVersion: "0.3.0", numberBlock: 2 },
     ]);
     // The ORDER is the control: a drain reclaims stale rows and leases a batch the moment it
     // runs, so it must not exist until the claim has succeeded.
@@ -757,7 +927,10 @@ describe("cloud sync at the process boundary", () => {
   });
 
   it("names every refusal the migration can give, and treats none of them as an event failure", async () => {
-    for (const reason of ["NOT_ENROLLED", "REVOKED", "BINDING_INCOMPLETE", "DEVICE_MISMATCH", "WORKSTATION_MISMATCH"]) {
+    for (const reason of [
+      "NOT_ENROLLED", "REVOKED", "BINDING_INCOMPLETE", "DEVICE_MISMATCH", "WORKSTATION_MISMATCH",
+      "NUMBER_BLOCK_MISSING", "NUMBER_BLOCK_TAKEN", "NUMBER_BLOCK_CHANGED",
+    ]) {
       claimOutcome = { ok: false, reason };
       built = [];
       const answer = await run();
@@ -767,6 +940,16 @@ describe("cloud sync at the process boundary", () => {
       // The queue is reported back so an operator can see it is intact, not lost.
       expect(answer.outbox).toEqual(QUEUE.counts);
     }
+  });
+
+  it("says plainly when the number range is another computer's, and sends nothing", async () => {
+    claimOutcome = { ok: false, reason: "NUMBER_BLOCK_TAKEN", block: 2 };
+    const answer = await run();
+    expect(answer.accepted).toBe(false);
+    expect(String(answer.reason)).toContain("NUMBER_BLOCK_TAKEN");
+    expect(String(answer.reason)).toContain("Number range 2 already belongs to another computer");
+    expect(String(answer.reason)).toContain("nothing in the queue changed");
+    expect(built.filter((entry) => entry.what === "drain")).toEqual([]);
   });
 
   it("records a refused claim against the administrator who asked for the pass", async () => {

@@ -1,4 +1,4 @@
-import type { ClaimPartyRole, ContractorLedger, ContractorRole, ReceiveProductionOutcome, StoreDailyReport, StoreDirection, UpperIssueOutcome, UpperProductionComparison, UpperReconciliation } from "@erp/domain";
+import type { ClaimPartyRole, ContractorLedger, ContractorRole, LeaseDomain, ReceiveProductionOutcome, StoreDailyReport, StoreDirection, UpperIssueOutcome, UpperProductionComparison, UpperReconciliation } from "@erp/domain";
 
 export type SortOrder = "ASC" | "DESC";
 
@@ -41,8 +41,13 @@ export interface CloudSyncStatus {
   queue: SyncQueueSummary;
   /** How far through the cloud log this computer has read. 0 = it has applied nothing. */
   pullCursor: number;
-  /** Present only while a pull is waiting for something that has not arrived yet. */
-  waitingFor?: { seq: number; attempts: number; retryAfter: string };
+  /** The realtime doorbell (cloud migration 016). LISTENING: other computers' work arrives in seconds. */
+  realtime?: "OFF" | "CONNECTING" | "LISTENING" | "RECONNECTING";
+  /**
+   * Present only while pulled events are parked, waiting for something that has not arrived yet:
+   * how many, and the one at the earliest log position with why and when it is next tried.
+   */
+  waitingFor?: { seq: number; attempts: number; retryAfter: string; parked: number; reason: string };
   /** The background loop's state. Absent on a computer with no scheduler. */
   schedule?: { nextPassInMs: number | null; consecutiveFailures: number };
   /** The most recent pass attempted, from sync_runs. Null if none has ever run here. */
@@ -51,12 +56,90 @@ export interface CloudSyncStatus {
   lastSuccess?: SyncRunSummary | null;
 }
 
+/** How long a wait has lasted: under an hour, over an hour, over a day (packages/sync/src/waiting.ts). */
+export type SyncWaitTier = "WAITING" | "STUCK" | "STALE";
+
+/** What a wait needs. Mirrors WaitCause in @erp/sync. */
+export type SyncWaitCause =
+  | { kind: "MISSING"; record: string; id: string }
+  | { kind: "IN_USE"; record: string; id: string }
+  | { kind: "NAME_TAKEN"; column: string }
+  | { kind: "DISPLACED"; columns: string[] }
+  | { kind: "OTHER"; code: string };
+
+/** One thing this computer is waiting on. Mirrors WaitingEntry in @erp/sync. */
+export interface SyncWaitingEntry {
+  dedupeKey: string;
+  aggregateType: string;
+  aggregateId: string;
+  name: string | null;
+  cause: SyncWaitCause;
+  since: string;
+  ageMs: number;
+  tier: SyncWaitTier;
+  /** The material this leaves incomplete on this computer, when there is one. */
+  itemId: string | null;
+  /** Whether that material is on this computer at all. Null when there is no material. */
+  itemHere: boolean | null;
+}
+
+/** Everything this computer is waiting on, and what it has not been able to send. */
+export interface SyncWaiting {
+  entries: SyncWaitingEntry[];
+  waiting: number;
+  stuck: number;
+  stale: number;
+  oldestSince: string | null;
+  /** Master-data changes made without a lease epoch: only the backfill will send them. */
+  unsentMarks: number;
+  deadLetters: number;
+}
+
+/** Another computer's last report (cloud migration 014). Mirrors DeviceSyncHealth in @erp/sync. */
+export interface DeviceSyncHealthReport {
+  deviceId: string;
+  label: string;
+  reportedAt: string;
+  waiting: number;
+  stuck: number;
+  stale: number;
+  oldestWaitingSince: string | null;
+  /** Up to five waits in words; needs is the record ("TYPE:id") whose sending would end one. */
+  sample: Array<{ subject: string; waitingFor: string; since: string; needs?: string }>;
+  deadLetters: number;
+  unsentMarks: number;
+}
+
+/** A material whose movements do not add up to its stock. Mirrors StockMismatch in @erp/data. */
+export interface BackfillMismatch {
+  itemId: string;
+  displayName: string;
+  balance: number;
+  fromMovements: number;
+  unitDiffers: boolean;
+}
+
+/** What the one-time backfill would send from this computer. Mirrors BackfillPlan in @erp/data. */
+export interface BackfillPlan {
+  masterEpoch: number | null;
+  storeEpoch: number | null;
+  masterRecords: Record<string, number>;
+  stockMovements: number;
+  labelRunsToQueue: number;
+  packetsToQueue: number;
+  variantsToQueue: number;
+  unstampedQueued: number;
+  mismatches: BackfillMismatch[];
+}
+
+export type SyncReply<T> = { accepted: true; value: T } | { accepted: false; reason?: string };
+
 /** One recorded pass, as the renderer sees it. Mirrors SyncRunRecord in @erp/data. */
 export interface SyncRunSummary {
   id: string;
   startedAt: string;
   finishedAt: string | null;
-  trigger: "STARTUP" | "TIMER" | "RECONNECT" | "MANUAL";
+  trigger: "STARTUP" | "TIMER" | "RECONNECT" | "MANUAL" | "SAVE" | "REALTIME" | "BACKLOG";
   outcome: "OK" | "REFUSED" | "TRANSPORT_ERROR" | "FAILED" | null;
   pushed: number | null;
   fetched: number | null;
@@ -701,6 +784,20 @@ export interface QrJourney {
   /** Total time spent in each status (ms); the current status is counted up to `asOf`. */
   dwellMs: Record<string, number>;
   asOf: string;
+}
+
+// ─── Write leases (docs/37 section W) ────────────────────────────────────────
+
+/** Why this computer may not write a domain now. */
+export type LeaseRefusalReason = "NOT_READY" | "NO_LEASE_INFO" | "NOT_HELD" | "HELD_ELSEWHERE" | "CATCHING_UP";
+
+export interface WriteLeaseStatus {
+  domain: LeaseDomain;
+  canWrite: boolean;
+  /** Null when it may write. */
+  reason: LeaseRefusalReason | null;
+  /** Who writes it, in words, when another computer does. */
+  holderLabel: string | null;
 }
 
 // ─── Store Scanning ──────────────────────────────────────────────────────────
@@ -2026,6 +2123,10 @@ export interface DesktopApi {
   searchQrCodes(query: string, limit?: number): Promise<QrSearchRow[]>;
   getQrDetail(qrId: string): Promise<QrDetail | null>;
   getQrJourney(qrId: string): Promise<QrJourney | null>;
+  /** Whether this computer may write each leased domain now, and who does (docs/37 section W). */
+  getWriteLeases(): Promise<WriteLeaseStatus[]>;
+  /** The lease domains this computer holds now. Empty on a computer that does not sync. */
+  getHeldLeases(): Promise<LeaseDomain[]>;
   getQrGenerationOverview(filter?: QrGenerationFilter): Promise<QrGenerationOverview>;
   listQrGenerationFilterOptions(): Promise<QrGenerationFilterOptions>;
   listProductListEntries(kind: ProductListKind): Promise<ProductListEntry[]>;
@@ -2172,6 +2273,21 @@ export interface DesktopApi {
     reason?: string;
     entry?: DeadLetterEvent;
   }>;
+  /** What this computer is waiting on. Any signed-in user: the stock screen marks rows from it. */
+  getSyncWaiting(): Promise<SyncReply<SyncWaiting>>;
+  /** Every computer's last sync-health report. Administrators. Reads the cloud. */
+  getFactorySyncHealth(): Promise<SyncReply<DeviceSyncHealthReport[]>>;
+  /** Marks one master record ("TYPE:id") to be sent again on the next pass. Leased: holder only. */
+  sendMasterRecordAgain(recordKey: string): Promise<{ accepted: boolean; reason?: string }>;
+  /**
+   * Hears what kind of data a sync just changed (shared/dataChange.ts). Returns the way to stop
+   * listening. Read through hooks/useDataChanged, which checks each message.
+   */
+  onDataChanged?(listener: (change: unknown) => void): () => void;
+  /** What the one-time backfill would send, and when it last ran here. Administrators. */
+  getBackfillPlan(): Promise<SyncReply<{ plan: BackfillPlan; lastAt: string | null }>>;
+  /** Marks this computer's history for the passes to send. Administrators, holder of both leases. */
+  runBackfill(): Promise<{ accepted: boolean; reason?: string; plan?: BackfillPlan }>;
   /** Read-only: which document-number range this computer holds, or why it holds none. */
   getNumberBlockStatus(): Promise<NumberBlockStatus>;
   /**

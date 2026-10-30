@@ -43,6 +43,10 @@ const RECEIVING = {
   deviceId: "d1", startedBy: "store", status: "OPEN" as const, startedAt: "2026-10-30T04:00:00.000Z", closedAt: null,
 };
 
+// The stations wait for the lease answer before they mount (LeasedStation, useWriteLease): one more
+// hop than 0.3.9 had, which can outlast the default second when the whole suite runs at once.
+const LEASE_SETTLES = { timeout: 3000 };
+
 function installApi() {
   const api = {
     listParties: vi.fn(async () => ({ rows: [], total: 0, page: 1, pageSize: 1000 })),
@@ -55,6 +59,8 @@ function installApi() {
     openMachineProgramStoreOut: vi.fn(async () => ({ accepted: true, program: PROGRAM })),
     listMachineProgramIssueBatches: vi.fn(async () => ({ accepted: true, rows: [] })),
     listMachineProgramCartonPackets: vi.fn(async () => ({ accepted: true, rows: [], progress: [], fixRuns: [] })),
+    // No lease named: this computer may write the store (useWriteLease).
+    getWriteLeases: vi.fn(async () => []),
   };
   Object.defineProperty(window, "desktop", { value: { versions: { node: "22", chrome: "128", electron: "43" }, api }, configurable: true });
   return api;
@@ -109,7 +115,7 @@ describe("Machine programs on the Store page", () => {
   it("in Receiving, opens the program to read, with Carton In on the rail and Scan in disarmed", async () => {
     const api = installApi();
     renderPage();
-    await waitFor(() => expect(screen.getByRole("button", { name: /Receiving/ })).toHaveTextContent("Session open"));
+    await waitFor(() => expect(screen.getByRole("button", { name: /Receiving/ })).toHaveTextContent("Session open"), LEASE_SETTLES);
     await openFromPickList();
 
     expect(api.openMachineProgramStoreOut).toHaveBeenCalledWith("p-3", expect.anything());
@@ -124,7 +130,9 @@ describe("Machine programs on the Store page", () => {
     renderPage({ start: "issuing" });
     await openFromPickList();
 
-    expect(await screen.findByTestId("program-panel")).toHaveTextContent("MP-000003 issue");
+    // Read only until the store lease is known (useWriteLease), then open for issue.
+    const panel = await screen.findByTestId("program-panel");
+    await waitFor(() => expect(panel).toHaveTextContent("MP-000003 issue"), LEASE_SETTLES);
     const rail = screen.getByRole("complementary", { name: "Scan Out" });
     expect(rail).toHaveTextContent("Scanning out is paused while MP-000003 is open");
     // The Scan Out panel waits behind the program, mounted: its box is not on screen.
@@ -144,7 +152,9 @@ describe("Machine programs on the Store page", () => {
   it("opens the program a notification names, on arrival", async () => {
     const api = installApi();
     renderPage({ start: "issuing", initialProgramId: "p-3" });
-    expect(await screen.findByTestId("program-panel")).toHaveTextContent("MP-000003 issue");
+    // Read only until the store lease is known (useWriteLease), then open for issue.
+    const panel = await screen.findByTestId("program-panel");
+    await waitFor(() => expect(panel).toHaveTextContent("MP-000003 issue"), LEASE_SETTLES);
     expect(api.openMachineProgramStoreOut).toHaveBeenCalledTimes(1);
   });
 });

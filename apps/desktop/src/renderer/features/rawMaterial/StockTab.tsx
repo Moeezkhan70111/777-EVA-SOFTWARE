@@ -10,6 +10,11 @@ import { MaterialDrawer } from "./MaterialDrawer";
 import { NewMaterialModal } from "./NewMaterialModal";
 import { ImportMaterialsModal } from "./ImportMaterialsModal";
 import { ActionMenu } from "./ActionMenu";
+import { useSyncWaiting } from "../sync/useSyncWaiting";
+import { incompleteMaterials } from "../sync/syncWaiting";
+import { IncompleteMaterials, IncompleteRowMark } from "../sync/IncompleteMaterials";
+import { useDataChanged } from "../../hooks/useDataChanged";
+import { DATA_KIND } from "../../../shared/dataChange";
 import { downloadCsv, exportFileName } from "../../utils/exportFile";
 import { quantityInBaseUnit } from "@erp/domain";
 import type { ItemUnitLadderStep } from "../../types/desktopApi";
@@ -98,9 +103,16 @@ export const StockTab: React.FC<StockTabProps> = ({
 
   const attributeKey = JSON.stringify(attributeFilters);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
+  /**
+   * Reads the list and its totals. QUIET when data changed underneath an open screen: no loading
+   * state, so the table, the page, the scroll position and an open drawer all stay where they are,
+   * and the figures simply change. A quiet read that fails keeps what is shown.
+   */
+  const load = useCallback(async (quiet = false) => {
+    if (!quiet) {
+      setLoading(true);
+      setError(null);
+    }
     try {
       const attributes = Object.fromEntries(
         Object.entries(JSON.parse(attributeKey) as Record<string, string>).filter(([, value]) => value.trim() !== "")
@@ -128,15 +140,18 @@ export const StockTab: React.FC<StockTabProps> = ({
       }
       setPendingCorrections(await api.listStockCorrectionRequests({ status: "PENDING" }));
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : copy.states.loadFailedBody);
+      if (!quiet) setError(cause instanceof Error ? cause.message : copy.states.loadFailedBody);
     } finally {
-      setLoading(false);
+      if (!quiet) setLoading(false);
     }
   }, [api, search, categoryId, subCategoryId, attributeKey, equivalentUnitId, showDisabled]);
 
   useEffect(() => {
     void load();
   }, [load]);
+
+  // Stock, materials or labels arriving from another computer: the same read, in place.
+  useDataChanged([DATA_KIND.STOCK, DATA_KIND.MATERIALS, DATA_KIND.LABELS], () => void load(true));
 
   useEffect(() => {
     setPage(1);
@@ -156,6 +171,10 @@ export const StockTab: React.FC<StockTabProps> = ({
   // include everything it inherits, so narrowing never loses a filter.
   const scopeCategory = categories.find((row) => String(row.id) === (subCategoryId || categoryId));
   const filterFields = useMemo(() => identityFields(scopeCategory), [scopeCategory]);
+
+  // Materials incomplete on this computer because something sent here has not arrived.
+  const { value: syncWaiting } = useSyncWaiting();
+  const incomplete = useMemo(() => incompleteMaterials(syncWaiting), [syncWaiting]);
 
   const awaitingItemIds = useMemo(
     () => new Set(pendingCorrections.map((request) => request.itemId)),
@@ -411,6 +430,8 @@ export const StockTab: React.FC<StockTabProps> = ({
         </div>
       ) : null}
 
+      <IncompleteMaterials incomplete={incomplete} />
+
       {/* ── The list ─────────────────────────────────────────────── */}
       {loading || lookupsLoading ? (
         <StateView kind="loading" message="Loading raw materials…" />
@@ -463,6 +484,7 @@ export const StockTab: React.FC<StockTabProps> = ({
                           <span className="rm-awaiting">⚠ {copy.removal.disabledBadge}</span>
                         ) : null}
                         {awaitingItemIds.has(id) ? <span className="rm-awaiting">⏳ Correction waiting</span> : null}
+                        <IncompleteRowMark entry={incomplete.get(id)} />
                       </td>
                       {/* What the storekeeper counts on the shelf: labelled packets, counted
                           one by one because each holds what its own label says. No packets

@@ -228,6 +228,8 @@ contextBridge.exposeInMainWorld("desktop", {
     searchQrCodes: (query: string, limit?: number) => ipcRenderer.invoke(IPC.searchQrCodes, query, limit),
     getQrDetail: (qrId: string) => ipcRenderer.invoke(IPC.getQrDetail, qrId),
     getQrJourney: (qrId: string) => ipcRenderer.invoke(IPC.getQrJourney, qrId),
+    getWriteLeases: () => ipcRenderer.invoke(IPC.getWriteLeases),
+    getHeldLeases: () => ipcRenderer.invoke(IPC.getHeldLeases),
     getQrGenerationOverview: (filter?: Record<string, unknown>) =>
       ipcRenderer.invoke(IPC.getQrGenerationOverview, filter),
     listQrGenerationFilterOptions: () => ipcRenderer.invoke(IPC.listQrGenerationFilterOptions),
@@ -315,6 +317,20 @@ contextBridge.exposeInMainWorld("desktop", {
     // Parked events. The requeue takes ONE id: there is no bulk recovery to invoke by mistake.
     listDeadLetterEvents: () => ipcRenderer.invoke(IPC.listDeadLetterEvents),
     requeueDeadLetterEvent: (outboxId: string) => ipcRenderer.invoke(IPC.requeueDeadLetterEvent, outboxId),
+    getSyncWaiting: () => ipcRenderer.invoke(IPC.getSyncWaiting),
+    getFactorySyncHealth: () => ipcRenderer.invoke(IPC.getFactorySyncHealth),
+    sendMasterRecordAgain: (recordKey: string) => ipcRenderer.invoke(IPC.sendMasterRecordAgain, recordKey),
+    getBackfillPlan: () => ipcRenderer.invoke(IPC.getBackfillPlan),
+    runBackfill: () => ipcRenderer.invoke(IPC.runBackfill),
+    // A subscription, not a call: the listener hears every change the main process announces, and
+    // the returned function stops it. The event object never reaches the renderer.
+    onDataChanged: (listener: (change: unknown) => void) => {
+      const handler = (_event: unknown, change: unknown) => listener(change);
+      ipcRenderer.on(IPC.dataChanged, handler);
+      return () => {
+        ipcRenderer.removeListener(IPC.dataChanged, handler);
+      };
+    },
     getNumberBlockStatus: () => ipcRenderer.invoke(IPC.getNumberBlockStatus),
     adoptNumberBlock: () => ipcRenderer.invoke(IPC.adoptNumberBlock),
     assignNumberBlock: (block: number) => ipcRenderer.invoke(IPC.assignNumberBlock, block),

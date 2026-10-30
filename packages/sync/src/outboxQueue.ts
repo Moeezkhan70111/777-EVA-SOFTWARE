@@ -12,7 +12,7 @@
 //     straight to DEAD_LETTER where it can be seen, instead of being retried for ever.
 //   * Nothing is ever deleted here. A sent row keeps its history.
 
-import { SYNC_AGGREGATE, enqueueQrMaster, type QrMasterPayload } from "@erp/data";
+import { LEASED_AGGREGATE_DOMAIN, MASTER_RECORD_TYPES, SYNC_AGGREGATE, enqueueQrMaster, type QrMasterPayload } from "@erp/data";
 import { QR_MASTER_OPENING_STATE, type SyncEnvelope } from "./contract.js";
 import { asRow, changedRows, type SqlValue, type SyncSqlHandle } from "./sqlPort.js";
 
@@ -87,10 +87,30 @@ interface OutboxRow {
   operation: string;
   dedupe_key: string;
   payload_json: string;
+  lease_epoch: number | bigint | null;
   attempts: number;
   transient_attempts: number;
   created_at: string;
 }
+
+/**
+ * LEASED WORK WITH NO LEASE EPOCH IS NOT SENDABLE. Such a row was queued before this computer knew
+ * its lease, or while it ran standalone (migration 093). Sent as it is, the cloud would refuse every
+ * one NOT_LEASE_HOLDER and the queue would walk them into the dead letters, which looks exactly like
+ * losing them. So it is never claimed, never offered and never counted as pushable: it waits,
+ * PENDING, for the backfill to decide it (docs/37 section 3.1, RM backfill).
+ */
+const LEASED_TYPES: readonly string[] = Object.keys(LEASED_AGGREGATE_DOMAIN);
+const STAMPED_IF_LEASED = ` AND NOT (aggregate_type IN (${LEASED_TYPES.map(() => "?").join(", ")}) AND lease_epoch IS NULL)`;
+
+/** The claim order, prerequisites first. Types not listed come last (LAST_TIER). */
+const CLAIM_TIERS: ReadonlyArray<readonly [string, number]> = [
+  [SYNC_AGGREGATE.PRODUCT_VARIANT, 0],
+  [SYNC_AGGREGATE.QR_MASTER, 1],
+  ...MASTER_RECORD_TYPES.map((type) => [type, 1] as const),
+  [SYNC_AGGREGATE.RAW_MATERIAL_QR_BATCH, 2],
+];
+const LAST_TIER = 3;
 
 export interface LeasedEvent {
   readonly outboxId: string;
@@ -126,11 +146,17 @@ export function leaseBatch(
   }
 ): LeasedEvent[] {
   // PREREQUISITES ARE CLAIMED BEFORE WHAT NEEDS THEM, which is why the ORDER BY below sorts by
-  // aggregate type ahead of created_at rather than after it. Three tiers:
+  // aggregate type ahead of created_at rather than after it. Four tiers (CLAIM_TIERS):
   //
   //   0  PRODUCT_VARIANT  -- a carton of an unknown product is refused UNKNOWN_PRODUCT_VARIANT
   //   1  QR_MASTER        -- a scan of an unregistered carton is refused QR_NOT_REGISTERED_YET
-  //   2  everything else
+  //      master records   -- a label run or movement whose material or party has not arrived waits
+  //   2  RAW_MATERIAL_QR_BATCH -- a packet of an unregistered run is refused RUN_NOT_REGISTERED_YET
+  //   3  everything else  -- packets, stock movements, scans
+  //
+  // Master records were in "everything else" until 2026-10-27: a backfill then sent every label
+  // run and packet ahead of the materials and parties they name, and a new computer parked
+  // thousands of them on its first sync (the gate test froze for minutes).
   //
   // So a variant travels in the same call as its carton, or an earlier one, and the carton in
   // the same call as its scan, or an earlier one. The chain is variant -> carton -> scan, and
@@ -158,8 +184,8 @@ export function leaseBatch(
         WHERE id IN (
           SELECT id FROM sync_outbox
            WHERE status IN ('PENDING', 'FAILED')
-             AND available_at <= ?${typeFilter}
-           ORDER BY CASE aggregate_type WHEN ? THEN 0 WHEN ? THEN 1 ELSE 2 END ASC,
+             AND available_at <= ?${typeFilter}${STAMPED_IF_LEASED}
+           ORDER BY CASE aggregate_type ${CLAIM_TIERS.map(() => "WHEN ? THEN ?").join(" ")} ELSE ${String(LAST_TIER)} END ASC,
                     created_at ASC, rowid ASC
            LIMIT ?
         )`
@@ -169,14 +195,14 @@ export function leaseBatch(
       options.nowIso,
       options.nowIso,
       ...typeValues,
-      SYNC_AGGREGATE.PRODUCT_VARIANT,
-      SYNC_AGGREGATE.QR_MASTER,
+      ...LEASED_TYPES,
+      ...CLAIM_TIERS.flatMap(([type, tier]) => [type, tier]),
       options.limit
     );
 
   const rows = sql
     .prepare(
-      `SELECT id, aggregate_type, aggregate_id, operation, dedupe_key, payload_json, attempts, transient_attempts, created_at
+      `SELECT id, aggregate_type, aggregate_id, operation, dedupe_key, payload_json, lease_epoch, attempts, transient_attempts, created_at
          FROM sync_outbox
         WHERE status = 'IN_FLIGHT' AND lock_token = ?
         ORDER BY created_at ASC, rowid ASC`
@@ -202,6 +228,7 @@ export function leaseBatch(
         payload,
         originDeviceId: options.deviceId,
         createdAt: row.created_at,
+        leaseEpoch: row.lease_epoch === null ? null : Number(row.lease_epoch),
       },
     });
   }
@@ -418,8 +445,8 @@ export function outboxSummary(
       : scalar(
           sql,
           `SELECT COUNT(*) AS n FROM sync_outbox
-            WHERE ${unsent} AND aggregate_type IN (${placeholders}) AND available_at <= ?`,
-          [...types, options.nowIso]
+            WHERE ${unsent} AND aggregate_type IN (${placeholders}) AND available_at <= ?${STAMPED_IF_LEASED}`,
+          [...types, options.nowIso, ...LEASED_TYPES]
         );
   const pushableTotal =
     types.length === 0
@@ -427,8 +454,8 @@ export function outboxSummary(
       : scalar(
           sql,
           `SELECT COUNT(*) AS n FROM sync_outbox
-            WHERE ${unsent} AND aggregate_type IN (${placeholders})`,
-          [...types]
+            WHERE ${unsent} AND aggregate_type IN (${placeholders})${STAMPED_IF_LEASED}`,
+          [...types, ...LEASED_TYPES]
         );
   const unsentTotal = scalar(sql, `SELECT COUNT(*) AS n FROM sync_outbox WHERE ${unsent}`, []);
 
@@ -578,3 +605,43 @@ export function requeueDeadLetter(sql: SyncSqlHandle, outboxId: string, nowIso: 
 // The opening state is carried nowhere on purpose: insertProduced always writes the same four
 // values, so the receiver sets them itself.
 export { QR_MASTER_OPENING_STATE };
+
+/**
+ * The newest row a pass could send right now, as a number that grows with every enqueue (its
+ * rowid), or 0 when there is none. Pure SELECT.
+ *
+ * For push on save: the host compares it with the last value it saw and nudges the scheduler when
+ * it grows. Watching the queue rather than calling out from each write means every path that queues
+ * -- scans, label runs, production -- is covered, including ones not written yet, and the data
+ * layer never has to know a scheduler exists.
+ *
+ * Only PENDING rows of types the transport can carry count: a row of a type with no cloud contract
+ * yet would start a pass that sends nothing.
+ */
+export function newestSendableRow(sql: SyncSqlHandle, pushableTypes: readonly string[]): number {
+  if (pushableTypes.length === 0) return 0;
+  const placeholders = pushableTypes.map(() => "?").join(", ");
+  return scalar(
+    sql,
+    `SELECT COALESCE(MAX(rowid), 0) AS n FROM sync_outbox
+      WHERE status = 'PENDING' AND aggregate_type IN (${placeholders})${STAMPED_IF_LEASED}`,
+    [...pushableTypes, ...LEASED_TYPES]
+  );
+}
+
+/**
+ * When the newest master-data change still to be built was marked, or "" when there is none.
+ *
+ * For push on save, beside newestSendableRow: a master-data edit leaves a MARK (migration 094), not
+ * a queue row -- the pass builds the row -- so the watch looks at marks too. Only marks carrying a
+ * lease epoch count: one without is never built (it waits for the backfill), and would start a pass
+ * that sends nothing. "" too before migration 094, so an older database is simply not watched.
+ */
+export function newestStampedMark(sql: SyncSqlHandle): string {
+  try {
+    const row = asRow(sql.prepare("SELECT MAX(marked_at) AS at FROM sync_dirty_records WHERE lease_epoch IS NOT NULL").get());
+    return typeof row?.at === "string" ? row.at : "";
+  } catch {
+    return "";
+  }
+}

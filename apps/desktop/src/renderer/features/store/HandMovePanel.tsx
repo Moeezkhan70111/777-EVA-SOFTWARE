@@ -1,9 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { convertOnLadder, isRawMaterialReceiptPartyType, type UnitLadderStep } from "@erp/domain";
+import { LEASE_DOMAIN, convertOnLadder, isRawMaterialReceiptPartyType, type UnitLadderStep } from "@erp/domain";
 import type { HandMoveDirection, Party, RawMaterialHandMoveOptions } from "../../types/desktopApi";
 import { useDesktopApi } from "../../hooks/useDesktopApi";
 import { useNotifications } from "../../state/NotificationsContext";
 import { SearchableCombobox } from "../../components/shared/SearchableCombobox";
+import { LeasedStation } from "./LeasedStation";
 import { PartyTypeBadge } from "../parties/PartyTypeBadge";
 import { partyOption } from "../parties/partyOption";
 import { StateView } from "../../components/shared/StateView";
@@ -42,7 +43,7 @@ interface HandMovePanelProps {
   onMoved?: () => void;
 }
 
-export const HandMovePanel: React.FC<HandMovePanelProps> = ({ direction, token, onMoved }) => {
+const HandMoveForm: React.FC<HandMovePanelProps> = ({ direction, token, onMoved }) => {
   const api = useDesktopApi();
   const { push } = useNotifications();
 
@@ -397,3 +398,10 @@ const problemOf = (input: {
   if (tooMuch) return copy.moveOut.notEnough(formatQuantity(options.quantityOnHand), stockUnit, formatQuantity(Number(inStockUnit.toFixed(3))));
   return null;
 };
+
+/** A hand move changes stock: only where this computer writes the raw material store (docs/37 section W). */
+export const HandMovePanel: React.FC<HandMovePanelProps> = (props) => (
+  <LeasedStation domain={LEASE_DOMAIN.RAW_MATERIAL_STORE}>
+    <HandMoveForm {...props} />
+  </LeasedStation>
+);

@@ -484,8 +484,116 @@ export const copy = {
     openSettings: "Open Settings",
   },
 
+  // What this computer is waiting on (features/sync/syncWaiting.ts). A wait under an hour is
+  // ordinary and only marks the rows it touches; over an hour it is stuck, over a day stale.
+  syncWaiting: {
+    record: {
+      PARTY_GROUP: "party group",
+      PARTY: "party",
+      INVENTORY_UNIT: "unit",
+      UNIT_LADDER_PRESET: "unit ladder",
+      INVENTORY_CATEGORY: "category",
+      INVENTORY_ITEM: "material",
+      WORK_SECTION: "work section",
+      MACHINE: "machine",
+      RAW_MATERIAL_QR_BATCH: "label run",
+      RAW_MATERIAL_QR: "packet",
+      PRODUCT_VARIANT: "product",
+      QR_MASTER: "carton",
+      STOCK_EVENT: "stock movement",
+    } as Readonly<Record<string, string>>,
+    cause: {
+      missing: (record: string, id: string) => `a ${record} that has not reached this computer (${id})`,
+      inUse: "removal — it is still in use on this computer",
+      nameTaken: "its name, still held by an out-of-date record here",
+      displaced: "its own update — its name was lent to another record",
+      other: (code: string) => `something this computer cannot name (${code})`,
+    },
+    tier: { WAITING: "Arriving", STUCK: "Stuck", STALE: "Stale" },
+    subject: (record: string, name: string) => `${record.charAt(0).toUpperCase()}${record.slice(1)} ${name}`,
+    waitedFor: (duration: string) => `for ${duration}`,
+
+    // On the stock screen: each affected row says so, in words.
+    rowMark: "Incomplete here",
+    rowMarkArriving: "Still arriving",
+    rowMarkTitle: (waitingFor: string, duration: string) => `Not complete on this computer: waiting for ${waitingFor}, for ${duration}.`,
+    stockNotice: (count: number, duration: string) =>
+      `Stock on this computer is incomplete: ${count} ${count === 1 ? "material is" : "materials are"} waiting for records that have not arrived, the oldest for ${duration}. Details on Health.`,
+    notHereTitle: "Not on this computer yet",
+    notHereHint: "These materials were changed on the store computer and have not fully arrived here. Their stock is not in the list below.",
+
+    // Across the app, once a wait has lasted.
+    stuckNotice: (count: number, duration: string) =>
+      `${count} ${count === 1 ? "record has" : "records have"} been waiting over an hour to arrive on this computer (the oldest for ${duration}). What it shows may be incomplete.`,
+    staleNotice: (count: number, duration: string) =>
+      `${count} ${count === 1 ? "record has" : "records have"} been waiting over a day to arrive on this computer (the oldest for ${duration}). What it shows is incomplete until the store computer sends ${count === 1 ? "it" : "them"}.`,
+    openHealth: "Open Health",
+    dismiss: "Dismiss",
+    noticeLabel: "Sync warning",
+
+    // The Health page.
+    hereTitle: "Waiting on this computer",
+    hereEmpty: "Nothing is waiting. Everything sent to this computer has arrived.",
+    hereLoading: "Reading what this computer is waiting on…",
+    hereFailed: "What this computer is waiting on could not be read.",
+    unsentMarks: (count: number) =>
+      `${count} master-data ${count === 1 ? "change was" : "changes were"} made here before this computer could send ${count === 1 ? "it" : "them"}. The backfill sends ${count === 1 ? "it" : "them"}.`,
+    deadLetters: (count: number) =>
+      `${count} ${count === 1 ? "item" : "items"} could not be sent and stopped being retried — see Settings.`,
+    othersTitle: "Other computers",
+    othersEmpty: "No other computer has reported yet.",
+    othersLoading: "Reading the other computers' reports…",
+    othersFailed: "The other computers' reports could not be read.",
+    othersHealthy: "Nothing waiting",
+    othersCounts: (stuck: number, stale: number) => `${stuck} stuck · ${stale} stale`,
+    reportedAgo: (age: string) => `Reported ${age}`,
+    sendAgain: "Send Again",
+    sendAgainLabel: (subject: string) => `Send again what ${subject} is waiting for`,
+    sentAgain: "Marked. It goes with the next sync, within a minute.",
+    sendAgainFailed: "It could not be marked to send again.",
+  },
+
+  // The one-time backfill (features/sync/BackfillPanel.tsx): the store PC sends what it held
+  // before it synced.
+  backfill: {
+    title: "Send This Computer's History",
+    intro:
+      "Everything written on this computer before it started syncing — materials, parties, units, stock movements and label runs — has never been sent. The other computers fill their stock from it. Send it once, from the store computer.",
+    loading: "Working out what would be sent…",
+    failed: "What would be sent could not be worked out.",
+    willSend: "What will be sent",
+    masterRecords: (count: number) => `${count} master ${count === 1 ? "record" : "records"} (materials, categories, units, parties, machines, work sections)`,
+    stockMovements: (count: number) => `${count} stock ${count === 1 ? "movement" : "movements"}`,
+    labels: (runs: number, packets: number) => `${runs} label ${runs === 1 ? "run" : "runs"} and ${packets} ${packets === 1 ? "packet" : "packets"} never queued`,
+    variants: (count: number) => `${count} ${count === 1 ? "product" : "products"} of cartons made before products were sent`,
+    unstamped: (count: number) => `${count} queued ${count === 1 ? "label" : "labels"} waiting for a lease`,
+    noLease: "This computer does not hold both the master-data and the store leases, so it cannot send its history. Only the store computer can.",
+    mismatchTitle: "Stock that does not add up — nothing will be sent until it is decided",
+    mismatchHint:
+      "For each material below, the recorded movements do not add up to its stock. Sent as they are, every other computer would show a different number. Correct each one, then send.",
+    mismatchBalance: "Stock",
+    mismatchMovements: "Movements add up to",
+    mismatchUnit: "Recorded in another unit",
+    lastSent: (when: string) => `Last sent ${when}. Sending again is safe: nothing already sent is sent twice.`,
+    send: "Send History",
+    sending: "Marking…",
+    confirmTitle: "Send this computer's history?",
+    confirmExplain:
+      "Everything listed is marked and goes over the next syncs, a few hundred records a minute. The store keeps working meanwhile.",
+    confirmWarning: "Do this on the store computer only. Another computer is refused.",
+    sent: "Marked. It goes over the next syncs — the other computers' screens fill as it arrives.",
+  },
+
   sync: {
     title: "Cloud Sync",
+    // The realtime doorbell, as the Health page says it.
+    realtimeLabel: "Live Updates",
+    realtime: {
+      LISTENING: "On — other computers' work arrives within seconds",
+      CONNECTING: "Connecting…",
+      RECONNECTING: "Reconnecting — updates arrive every minute meanwhile",
+      OFF: "Off — updates arrive every minute",
+    } as Readonly<Record<"OFF" | "CONNECTING" | "LISTENING" | "RECONNECTING", string>>,
     notConfiguredTitle: "Not set up on this computer",
     notConfiguredHint:
       "This computer works normally without cloud sync. Nothing is sent until it is set up.",
@@ -1596,6 +1704,38 @@ export const copy = {
 
   // What the store's other screens still say: the Munshi's stock station, the program screens.
   // Kept short on purpose: this screen is read by new operators at a glance.
+  // Single-writer leases (docs/37 section W): a domain is written on one computer and read on the
+  // others. Shown by components/shared/ReadOnlyNotice and features/store/PacketLookup.
+  writeLease: {
+    readOnlyTitle: "Read-only on this computer",
+    /** The domain as it reads inside a sentence. */
+    domainName: {
+      RAW_MATERIAL_STORE: "the raw material store",
+      MASTER_DATA: "master data (materials, units, parties and machines)",
+      SALES_DISPATCH: "sales and dispatch",
+      ACCOUNTS: "accounts",
+      MACHINE_PROGRAMS: "machine programs",
+      APPROVALS: "approvals",
+    },
+    heldElsewhere: (what: string, holder: string | null) =>
+      `${what.charAt(0).toUpperCase()}${what.slice(1)} is written on ${holder ?? "another computer"} only. You can look things up here, but not change them.`,
+    notHeld: (what: string) => `No computer may write ${what} right now. The owner grants it to one computer.`,
+    noLeaseInfo: (what: string) =>
+      `This computer has not yet learned from the cloud who writes ${what}. Run Sync Now once while online.`,
+    catchingUp: (what: string) =>
+      `This computer writes ${what}, but is still catching up with the work done before it took over. Run Sync Now, then try again.`,
+    notReady: "This computer is still starting. Try again in a moment.",
+    lookupTitle: "Look a packet up",
+    lookupHint: "Scan a packet to see where it is. Nothing is received or issued on this computer.",
+    lookupLabel: "Packet code",
+    lookupPlaceholder: "Scan or type a packet code",
+    lookupNotFound: (code: string) => `No packet ${code} is known on this computer.`,
+    lookupFailed: "The packet could not be looked up. Try again.",
+    lookupSupplier: "Supplier",
+    lookupWhere: "Where it is",
+    lookupLastMove: "Last moved",
+  },
+
   store: {
     scanMaterialTitle: "Scan Material",
     scanMaterialLine: "Scan a QR code to receive material into stock.",
@@ -1631,6 +1771,9 @@ export const copy = {
   storePage: {
     title: "Store",
     subtitle: "Raw material in and out",
+    // Above a raw material station opened on its own (its direct link), where the Store page's
+    // own heading is not there to say where it belongs.
+    stationEyebrow: "Store · Raw Material",
     machinePrograms: "Machine programs",
     dailyReport: "Daily report",
     modesLabel: "What the store is doing",

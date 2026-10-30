@@ -37,6 +37,12 @@ import {
 } from "@erp/domain";
 import { KIND_JOINS, KIND_SQL } from "./machineProgramSql.js";
 import { allocateNumberInRange, requireSerialRange, reserveSerialRange } from "./numberRange.js";
+import {
+  enqueueRawMaterialQr,
+  enqueueRawMaterialQrBatch,
+  rawMaterialQrBatchDedupeKeys,
+  withdrawUnsentSyncEvents,
+} from "./syncEvents.js";
 
 export const rawMaterialQrMethods = {
   /**
@@ -161,6 +167,14 @@ export const rawMaterialQrMethods = {
         )
         .run(batchId, party.id, item.id, startSequence, endSequence, quantity, now, createdBy, requestedBy);
 
+      // Queued for other computers in this same transaction, the run ahead of its packets, so a
+      // label run and its record of having to be sent are committed together or not at all.
+      enqueueRawMaterialQrBatch(
+        this.db,
+        { batchId, partyId: party.id, itemId: item.id, startSequence, endSequence, quantity, createdAt: now, createdBy, requestedBy },
+        crypto.randomUUID()
+      );
+
       // What this run's packets hold is written onto each label, so every scan of it moves
       // exactly that much stock — two packets of one material can hold different amounts.
       const insertQr = this.db.prepare(
@@ -177,6 +191,14 @@ export const rawMaterialQrMethods = {
           RAW_MATERIAL_QR_STATUS.GENERATED,
           packingQuantity, item.stock_unit_id,
           now, now
+        );
+        enqueueRawMaterialQr(
+          this.db,
+          {
+            qrId: id, batchId, partyId: party.id, itemId: item.id, sequence,
+            packingQuantity, packingUnitId: item.stock_unit_id, createdAt: now,
+          },
+          crypto.randomUUID()
         );
         qrCodes.push({ id, batchId, partyId: party.id, itemId: item.id, sequence, status: "GENERATED", createdAt: now });
       }
@@ -348,6 +370,22 @@ export const rawMaterialQrMethods = {
       }
 
       const ids = this.db.prepare("SELECT id FROM raw_material_qrs WHERE batch_id = ? ORDER BY sequence ASC").all(input.batchId) as Array<{ id: string }>;
+
+      // The run was queued for other computers when it was printed. Erasing it is only a local
+      // act while none of that queue can have left this computer -- then the queue goes with the
+      // run, and a reprint of the same serials queues afresh. Once any of it may be elsewhere,
+      // the erase has to travel too (docs/37 section W.5), and until that correction exists the
+      // honest answer is no.
+      const withdrawal = withdrawUnsentSyncEvents(
+        this.db,
+        rawMaterialQrBatchDedupeKeys(input.batchId, ids.map((row) => row.id))
+      );
+      if (withdrawal.kind === "MAY_HAVE_LEFT") {
+        throw new Error(
+          "This run cannot be erased — it has already been sent to the other computers, and erasing a sent run is not supported yet."
+        );
+      }
+
       this.db.prepare("DELETE FROM raw_material_qrs WHERE batch_id = ?").run(input.batchId);
       this.db.prepare("DELETE FROM raw_material_qr_batches WHERE id = ?").run(input.batchId);
 

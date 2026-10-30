@@ -16,7 +16,9 @@ import { copy } from "../config/copy";
 import { formatDateTime } from "../utils/dates";
 import { openReceivingReceiptPrintWindow } from "../features/rawMaterial/receivingReceipt";
 import { isCompleteQr, sanitizeScanInput } from "../utils/qr";
-import { isRawMaterialReceiptPartyType, isValidRawMaterialQrId } from "@erp/domain";
+import { LEASE_DOMAIN, isRawMaterialReceiptPartyType, isValidRawMaterialQrId } from "@erp/domain";
+import { LeasedStation } from "../features/store/LeasedStation";
+import { ReaderStation } from "../features/store/ReaderStation";
 import type { StationStatus } from "../features/store/page/stationStatus";
 import {
   LastScanCard,
@@ -102,7 +104,7 @@ interface RawMaterialInputPageProps {
   /** Session token; the main process authorises every receipt call with it. */
   token: string;
   username?: string;
-  /** Returns to the Store Station chooser. Hidden when not provided. */
+  /** Returns to where the station was opened from. Hidden when not provided. */
   onBack?: () => void;
   onNavigate?: (route: AppRoute) => void;
   /**
@@ -119,7 +121,7 @@ interface RawMaterialInputPageProps {
   onStatus?: (status: StationStatus) => void;
 }
 
-export const RawMaterialInputPage: React.FC<RawMaterialInputPageProps> = ({ token, username, onBack, onNavigate, embedded = false, active = true, onStatus }) => {
+const RawMaterialInputStation: React.FC<RawMaterialInputPageProps> = ({ token, username, onBack, onNavigate, embedded = false, active = true, onStatus }) => {
   const api = useDesktopApi();
   const { push } = useNotifications();
 
@@ -342,10 +344,10 @@ export const RawMaterialInputPage: React.FC<RawMaterialInputPageProps> = ({ toke
     >
       <style>{SCAN_STATION_CSS}</style>
 
-      {/* Embedded on the Store In page the pane above already says what this is, so the
+      {/* Embedded on the Store page the rail above already says what this is, so the
           station drops its own title rather than saying it twice. */}
       <StationToolbar
-        eyebrow={embedded ? undefined : "Store Station · Raw Material"}
+        eyebrow={embedded ? undefined : copy.storePage.stationEyebrow}
         title={embedded ? undefined : "Raw Material Input"}
         onBack={onBack}
         scannerPill={scannerPill}
@@ -450,3 +452,24 @@ export const RawMaterialInputPage: React.FC<RawMaterialInputPageProps> = ({ toke
     </div>
   );
 };
+
+/**
+ * Raw Material Input: the station where this computer writes the raw material store, and a packet lookup
+ * where another computer does (docs/37 section W). The station itself is unchanged.
+ */
+export const RawMaterialInputPage: React.FC<RawMaterialInputPageProps> = (props) => (
+  <LeasedStation
+    domain={LEASE_DOMAIN.RAW_MATERIAL_STORE}
+    reader={(status) => (
+      <ReaderStation
+        status={status}
+        embedded={props.embedded}
+        onBack={props.onBack}
+        eyebrow={props.embedded ? undefined : copy.storePage.stationEyebrow}
+        title={props.embedded ? undefined : "Raw Material Input"}
+      />
+    )}
+  >
+    <RawMaterialInputStation {...props} />
+  </LeasedStation>
+);

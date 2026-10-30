@@ -2,6 +2,9 @@ import React, { useEffect, useState } from "react";
 import { useDesktopApi } from "../hooks/useDesktopApi";
 import type { CloudSyncStatus, HealthSnapshot } from "../types/desktopApi";
 import { copy } from "../config/copy";
+import { useSession } from "../features/auth/SessionContext";
+import { WaitingHere } from "../features/sync/WaitingHere";
+import { OtherComputers } from "../features/sync/OtherComputers";
 
 const bytes = (n: number): string => {
   if (n >= 1e9) return `${(n / 1e9).toFixed(2)} GB`;
@@ -41,6 +44,7 @@ const when = (iso: string | null): string => (iso === null ? "Never" : new Date(
 
 export const HealthPage = () => {
   const api = useDesktopApi();
+  const { isAdmin } = useSession();
   const [health, setHealth] = useState<HealthSnapshot | null>(null);
   const [sync, setSync] = useState<CloudSyncStatus | null>(null);
   const [loading, setLoading] = useState(true);
@@ -116,14 +120,31 @@ export const HealthPage = () => {
             <HealthItem label="Last Sent"      value={when(sync.queue.lastSyncedAt)} />
             <HealthItem label="Last Failure"   value={when(sync.queue.lastFailureAt)} tone={sync.queue.lastFailureAt === null ? "ok" : "warn"} />
             <HealthItem label="Cloud Log Read To" value={sync.pullCursor} />
+            <HealthItem
+              label={copy.sync.realtimeLabel}
+              value={copy.sync.realtime[sync.realtime ?? "OFF"]}
+              tone={sync.realtime === "LISTENING" ? "ok" : sync.realtime === "RECONNECTING" ? "warn" : "default"}
+            />
             {sync.waitingFor !== undefined && (
               <HealthItem
                 label="Pull Waiting At"
-                value={`position ${String(sync.waitingFor.seq)}, retry after ${when(sync.waitingFor.retryAfter)}`}
+                value={`${String(sync.waitingFor.parked)} parked — oldest at position ${String(sync.waitingFor.seq)} (${sync.waitingFor.reason}), retry after ${when(sync.waitingFor.retryAfter)}`}
                 tone="warn"
               />
             )}
           </div>
+        </div>
+      )}
+
+      <div>
+        <div className="section-label mb-8">{copy.syncWaiting.hereTitle}</div>
+        <WaitingHere />
+      </div>
+
+      {isAdmin && (
+        <div>
+          <div className="section-label mb-8">{copy.syncWaiting.othersTitle}</div>
+          <OtherComputers />
         </div>
       )}
 

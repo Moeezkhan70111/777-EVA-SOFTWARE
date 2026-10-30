@@ -16,6 +16,8 @@
 //   startup     once, after a delay, so a sync never competes with the first scan of the day
 //   timer       on an interval while things are working
 //   reconnect   as soon as the machine looks online again after looking offline
+//   save        shortly after something is queued (nudge), so new work reaches the cloud in
+//               seconds, not at the next timer pass -- the save itself never waits for it
 //
 // WHEN IT DOES NOT
 //
@@ -26,8 +28,11 @@
 // THE RULE THAT OUTRANKS ALL OF IT: a pass that cannot run is not an error. The ERP is local
 // first, the scan path never waits on this, and a week offline is a week of ordinary work.
 
-/** What started a pass. Recorded so "the timer worked" is distinguishable from "somebody retried". */
-export type SyncTrigger = "STARTUP" | "TIMER" | "RECONNECT" | "MANUAL";
+/**
+ * What started a pass. Recorded so "the timer worked" is distinguishable from "somebody retried".
+ * SAVE: something was just queued and is being sent without waiting for the timer (push on save).
+ */
+export type SyncTrigger = "STARTUP" | "TIMER" | "RECONNECT" | "MANUAL" | "SAVE" | "REALTIME" | "BACKLOG";
 
 /** How a pass ended, in the only four shapes the caller has to tell apart. */
 export type SyncOutcome =
@@ -43,6 +48,8 @@ export type SyncOutcome =
 export interface SyncPassResult {
   readonly outcome: SyncOutcome;
   readonly reason?: string;
+  /** The pass stopped at its budget with more still to send or read: the next one starts at once. */
+  readonly moreWaiting?: boolean;
 }
 
 export interface SyncSchedulerOptions {
@@ -69,7 +76,26 @@ export interface SyncSchedulerOptions {
   readonly clearTimer: (timer: NodeJS.Timeout) => void;
   /** Called on every state change, for logging. Never throws back into the scheduler. */
   readonly onStateChange?: (state: SyncSchedulerState) => void;
+  /**
+   * How long a nudge waits before its pass, so a burst of saves -- a run of scans -- shares one
+   * pass instead of starting one each. Measured from the FIRST nudge of a burst, so a steady stream
+   * of saves cannot postpone the pass for ever. Default 500 (owner, 2026-10-28): short enough for a
+   * change to show elsewhere in 2-3 seconds, long enough to batch fast scanning. To be lowered once
+   * passes run off the main thread, if the store PC shows no stalls while scanning fast.
+   */
+  readonly saveNudgeDelayMs?: number;
+  /**
+   * How long a doorbell ring waits before its pass (wake), so a burst of rings shares one pass.
+   * Short: a ring means another computer's work is already in the cloud. Default 100.
+   */
+  readonly wakeDelayMs?: number;
+  /** How long after a pass that stopped at its budget the next one starts. Default 100. */
+  readonly backlogDelayMs?: number;
 }
+
+const DEFAULT_SAVE_NUDGE_DELAY_MS = 500;
+const DEFAULT_WAKE_DELAY_MS = 100;
+const DEFAULT_BACKLOG_DELAY_MS = 100;
 
 export interface SyncSchedulerState {
   readonly running: boolean;
@@ -99,6 +125,10 @@ export class SyncScheduler {
   /** When the pending timer was set and for how long, so nextPassInMs can be reported. */
   private scheduledAt = 0;
   private scheduledDelay: number | null = null;
+  /** A nudge's pending pass. Separate from `timer`, which keeps the ordinary rhythm. */
+  private nudgeTimer: NodeJS.Timeout | null = null;
+  /** A nudge or wake arrived while a pass was running: run once more when it finishes, for that reason. */
+  private afterPass: SyncTrigger | null = null;
 
   constructor(private readonly options: SyncSchedulerOptions) {}
 
@@ -127,7 +157,52 @@ export class SyncScheduler {
   stop(): void {
     this.stopped = true;
     this.cancelTimer();
+    this.cancelNudge();
     this.announce();
+  }
+
+  /**
+   * Something was just queued: send it soon, without waiting for the timer (push on save).
+   *
+   * THE SAVE NEVER WAITS FOR THIS. The queue row was written in the save's own transaction; this
+   * only starts a background pass a moment later, and nothing calls it before that save commits.
+   *
+   * Ignored while there is nothing it could do: stopped, not configured, looking offline, or backing
+   * off after a transport failure -- the backoff's own pass, or the reconnect, carries the row then,
+   * and nudging would only hammer a network that just failed. During a pass it is remembered, and
+   * exactly one more pass follows, because the running one may have leased before the row existed.
+   */
+  nudge(): void {
+    this.soon("SAVE", this.options.saveNudgeDelayMs ?? DEFAULT_SAVE_NUDGE_DELAY_MS);
+  }
+
+  /**
+   * The cloud's doorbell rang: another computer's work has reached the log (cloud migration 016).
+   * Starts a pass a moment later, sharing a pass with any nudge or ring already coming, and under the
+   * same guards -- a ring never forces a pass while the scheduler is backing off a failed network.
+   */
+  wake(): void {
+    this.soon("REALTIME", this.options.wakeDelayMs ?? DEFAULT_WAKE_DELAY_MS);
+  }
+
+  /** A pass shortly, for `trigger`: shared with one already coming, or remembered during a pass. */
+  private soon(trigger: SyncTrigger, delayMs: number): void {
+    if (this.stopped || !this.options.isConfigured()) return;
+    if (this.consecutiveFailures > 0 || !this.options.isOnline()) return;
+    if (this.running) {
+      this.afterPass ??= trigger;
+      return;
+    }
+    // Already coming: this one rides on it.
+    if (this.nudgeTimer !== null) return;
+    this.nudgeTimer = this.options.setTimer(() => {
+      this.nudgeTimer = null;
+      if (this.running) {
+        this.afterPass ??= trigger;
+        return;
+      }
+      void this.runNow(trigger);
+    }, delayMs);
   }
 
   /**
@@ -180,6 +255,17 @@ export class SyncScheduler {
     // sooner or later will not change, and a completed pass means things work.
     this.consecutiveFailures = result.outcome === "TRANSPORT_ERROR" ? this.consecutiveFailures + 1 : 0;
     this.announce();
+    // A save or ring that came in while this pass ran gets its own pass now -- unless this one just
+    // failed to reach the cloud, in which case soon() declines and the backoff carries it.
+    const again = this.afterPass;
+    this.afterPass = null;
+    if (again === "REALTIME") this.wake();
+    else if (again !== null) this.nudge();
+    // A pass that stopped at its budget with more waiting is followed at once, not at the next timer:
+    // a new computer's first sync, or a backfill, goes straight through. Only after a completed pass.
+    else if (result.outcome === "OK" && result.moreWaiting === true) {
+      this.soon("BACKLOG", this.options.backlogDelayMs ?? DEFAULT_BACKLOG_DELAY_MS);
+    }
     return result;
   }
 
@@ -223,6 +309,12 @@ export class SyncScheduler {
     if (this.timer !== null) this.options.clearTimer(this.timer);
     this.timer = null;
     this.scheduledDelay = null;
+  }
+
+  private cancelNudge(): void {
+    if (this.nudgeTimer !== null) this.options.clearTimer(this.nudgeTimer);
+    this.nudgeTimer = null;
+    this.afterPass = null;
   }
 
   private announce(): void {

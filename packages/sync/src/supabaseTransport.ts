@@ -30,7 +30,14 @@ import {
   readProductVariantPayload,
   readProductionProducedPayload,
   readQrMasterPayload,
+  readRawMaterialQrBatchPayload,
+  readRawMaterialQrPayload,
+  readStockEventPayload,
+  MASTER_RECORD_TYPES,
+  isMasterRecordType,
+  readLeasedRecordPayload,
 } from "@erp/data";
+import { readDomainLeases, type DomainLease } from "./leases.js";
 import type { SyncEnvelope } from "./contract.js";
 import { HttpError, readServiceError, redactSecrets, requestJson } from "./httpJson.js";
 import type { FailureKind } from "./outboxQueue.js";
@@ -57,12 +64,23 @@ export interface ClaimRequest {
   readonly deviceId: string;
   readonly workstationId: string;
   readonly appVersion?: string;
+  /**
+   * This computer's document-number block (numberRange.ts), or null when none is recorded. The
+   * cloud registers it on the first claim and refuses a second computer on it (migration 018).
+   */
+  readonly numberBlock: number | null;
 }
 
 export type ClaimOutcome = { readonly ok: true; readonly epoch: number; readonly holder: string } | {
   readonly ok: false;
-  /** The server's own word: NOT_ENROLLED, REVOKED, BINDING_INCOMPLETE, DEVICE_MISMATCH, WORKSTATION_MISMATCH. */
+  /**
+   * The server's own word: NOT_ENROLLED, REVOKED, BINDING_INCOMPLETE, DEVICE_MISMATCH,
+   * WORKSTATION_MISMATCH, or one of 018's NUMBER_BLOCK_MISSING, NUMBER_BLOCK_TAKEN,
+   * NUMBER_BLOCK_CHANGED.
+   */
   readonly reason: string;
+  /** For a number-block refusal: the block taken, or the one this computer holds in the cloud. */
+  readonly block?: number;
 };
 
 /**
@@ -76,6 +94,8 @@ const CLAIM_REFUSALS = new Set([
   "BINDING_INCOMPLETE",
   "NOT_CLAIMED",
   "CLAIM_SUPERSEDED",
+  // 018: this computer holds no number block, so every write is refused until a claim registers one.
+  "NUMBER_BLOCK_NOT_REGISTERED",
 ]);
 
 /**
@@ -101,7 +121,43 @@ export const SUPABASE_PUSHABLE_AGGREGATES: readonly string[] = [
   SYNC_AGGREGATE.PRODUCT_VARIANT,
   SYNC_AGGREGATE.QR_MASTER,
   SYNC_AGGREGATE.PRODUCTION_PRODUCED,
+  // Leased (cloud migration 012): sent only with the lease epoch they were written under, and a
+  // row queued without one is never claimed (outboxQueue.ts). A run travels before its packets.
+  SYNC_AGGREGATE.RAW_MATERIAL_QR_BATCH,
+  SYNC_AGGREGATE.RAW_MATERIAL_QR,
+  // Master data, whole by revision (cloud migration 013), prerequisites first.
+  ...MASTER_RECORD_TYPES,
+  // Raw-material stock movements (cloud migration 015), after the materials they move.
+  SYNC_AGGREGATE.STOCK_EVENT,
 ];
+
+/** What one computer reports about itself (cloud migration 014). Counts and words only. */
+export interface SyncHealthReport {
+  readonly waiting: number;
+  readonly stuck: number;
+  readonly stale: number;
+  readonly oldestWaitingSince: string | null;
+  /** Up to five waits, in words, each with the record that would end it when there is one ("TYPE:id"). */
+  readonly sample: ReadonlyArray<{ readonly subject: string; readonly waitingFor: string; readonly since: string; readonly needs?: string }>;
+  readonly deadLetters: number;
+  readonly unsentMarks: number;
+}
+
+/** One computer's last report, as another computer of the factory reads it. */
+export interface DeviceSyncHealth extends SyncHealthReport {
+  readonly deviceId: string;
+  readonly label: string;
+  readonly reportedAt: string;
+}
+
+/** What fetchLeases learned. Not knowing is an answer too: the cache then keeps what it had. */
+export type LeaseFetch =
+  | { readonly ok: true; readonly leases: DomainLease[] }
+  | {
+      readonly ok: false;
+      /** NOT_SUPPORTED: the project has no current_leases (no cloud migration 011). UNREADABLE: malformed. */
+      readonly reason: "NOT_SUPPORTED" | "UNREADABLE";
+    };
 
 /**
  * PostgreSQL error codes that mean "sending this again will fail in exactly the same way".
@@ -117,6 +173,14 @@ export class SupabaseSyncTransport implements SyncTransport, SyncPullTransport {
   private held: ClaimHeld | null = null;
 
   constructor(private readonly options: SupabaseTransportOptions) {}
+
+  /**
+   * A current access token for this computer's session -- for the realtime doorbell, which joins its
+   * channel as this computer, through the same policies the pull reads under.
+   */
+  accessToken(): Promise<string> {
+    return this.options.auth.accessToken();
+  }
 
   // ─── The claim ────────────────────────────────────────────────────────────
 
@@ -141,6 +205,7 @@ export class SupabaseSyncTransport implements SyncTransport, SyncPullTransport {
           p_device_id: request.deviceId,
           p_workstation_id: request.workstationId,
           p_app_version: request.appVersion ?? null,
+          p_number_block: request.numberBlock,
         }),
         timeoutMs: this.options.timeoutMs,
       }));
@@ -156,7 +221,8 @@ export class SupabaseSyncTransport implements SyncTransport, SyncPullTransport {
     if (answer.ok !== true) {
       const reason = typeof answer.reason === "string" ? answer.reason : "CLAIM_REFUSED";
       this.held = null;
-      return { ok: false, reason };
+      const block = Number(answer.block);
+      return Number.isSafeInteger(block) && block >= 1 ? { ok: false, reason, block } : { ok: false, reason };
     }
 
     const epoch = Number(answer.epoch);
@@ -260,6 +326,10 @@ export class SupabaseSyncTransport implements SyncTransport, SyncPullTransport {
     const variants: SyncEnvelope[] = [];
     const cartons: SyncEnvelope[] = [];
     const scans: SyncEnvelope[] = [];
+    const runs: SyncEnvelope[] = [];
+    const packets: SyncEnvelope[] = [];
+    const records: SyncEnvelope[] = [];
+    const movements: SyncEnvelope[] = [];
 
     for (const envelope of envelopes) {
       if (envelope.aggregateType === SYNC_AGGREGATE.PRODUCT_VARIANT) {
@@ -268,6 +338,14 @@ export class SupabaseSyncTransport implements SyncTransport, SyncPullTransport {
         cartons.push(envelope);
       } else if (envelope.aggregateType === SYNC_AGGREGATE.PRODUCTION_PRODUCED) {
         scans.push(envelope);
+      } else if (envelope.aggregateType === SYNC_AGGREGATE.RAW_MATERIAL_QR_BATCH) {
+        runs.push(envelope);
+      } else if (envelope.aggregateType === SYNC_AGGREGATE.RAW_MATERIAL_QR) {
+        packets.push(envelope);
+      } else if (isMasterRecordType(envelope.aggregateType)) {
+        records.push(envelope);
+      } else if (envelope.aggregateType === SYNC_AGGREGATE.STOCK_EVENT) {
+        movements.push(envelope);
       } else {
         acks.push({
           dedupeKey: envelope.dedupeKey,
@@ -287,6 +365,13 @@ export class SupabaseSyncTransport implements SyncTransport, SyncPullTransport {
     if (variants.length > 0) acks.push(...(await this.pushVariants(held, variants)));
     if (cartons.length > 0) acks.push(...(await this.pushCartons(held, cartons)));
     if (scans.length > 0) acks.push(...(await this.pushScans(held, scans)));
+    // The same rule for raw material: the materials and parties a run names, then the run, then its
+    // packets -- so a computer reading the log receives each before what needs it.
+    if (records.length > 0) acks.push(...(await this.pushLeasedRecords(held, records)));
+    if (runs.length > 0) acks.push(...(await this.pushRuns(held, runs)));
+    if (packets.length > 0) acks.push(...(await this.pushPackets(held, packets)));
+    // A material's revision before a movement of it.
+    if (movements.length > 0) acks.push(...(await this.pushStockEvents(held, movements)));
     return acks;
   }
 
@@ -407,6 +492,296 @@ export class SupabaseSyncTransport implements SyncTransport, SyncPullTransport {
 
     const results = await this.callPush("push_production_produced", held, rows);
     return [...acks, ...matchResults(results, byAggregate, "id")];
+  }
+
+  /**
+   * Raw-material label runs, through push_raw_material_qr_batch (cloud migration 012).
+   *
+   * LEASED: each row carries the lease epoch it was written under, and the cloud accepts it only
+   * while that is still this computer's lease. A row without one is never claimed (outboxQueue.ts),
+   * so the guard below is a backstop: it waits rather than being refused into the dead letters.
+   */
+  private async pushRuns(held: ClaimHeld, envelopes: readonly SyncEnvelope[]): Promise<SyncAck[]> {
+    const rows: Array<Record<string, unknown>> = [];
+    const byAggregate = new Map<string, SyncEnvelope>();
+    const waiting: SyncAck[] = [];
+
+    for (const envelope of envelopes) {
+      const run = readRawMaterialQrBatchPayload(envelope.payload);
+      if (run === null) {
+        byAggregate.set(`!payload:${envelope.dedupeKey}`, envelope);
+        continue;
+      }
+      const leaseEpoch = envelope.leaseEpoch ?? null;
+      if (leaseEpoch === null) {
+        waiting.push(unstampedLeasedRow(envelope));
+        continue;
+      }
+      byAggregate.set(run.batchId, envelope);
+      rows.push({
+        id: run.batchId,
+        party_id: run.partyId,
+        item_id: run.itemId,
+        start_sequence: run.startSequence,
+        end_sequence: run.endSequence,
+        quantity: run.quantity,
+        created_at: run.createdAt,
+        created_by: run.createdBy,
+        requested_by: run.requestedBy,
+        lease_epoch: leaseEpoch,
+      });
+    }
+
+    const acks = [...waiting, ...envelopesWithUnreadablePayloads(byAggregate)];
+    if (rows.length === 0) return acks;
+    const results = await this.callPush("push_raw_material_qr_batch", held, rows);
+    return [...acks, ...matchResults(results, byAggregate, "id")];
+  }
+
+  /**
+   * Raw-material packets, through push_raw_material_qr (cloud migration 012). Leased, exactly as
+   * runs are. Packing travels as a pair, or as two nulls on a packet printed before packing existed.
+   */
+  private async pushPackets(held: ClaimHeld, envelopes: readonly SyncEnvelope[]): Promise<SyncAck[]> {
+    const rows: Array<Record<string, unknown>> = [];
+    const byAggregate = new Map<string, SyncEnvelope>();
+    const waiting: SyncAck[] = [];
+
+    for (const envelope of envelopes) {
+      const packet = readRawMaterialQrPayload(envelope.payload);
+      if (packet === null) {
+        byAggregate.set(`!payload:${envelope.dedupeKey}`, envelope);
+        continue;
+      }
+      const leaseEpoch = envelope.leaseEpoch ?? null;
+      if (leaseEpoch === null) {
+        waiting.push(unstampedLeasedRow(envelope));
+        continue;
+      }
+      byAggregate.set(packet.qrId, envelope);
+      rows.push({
+        id: packet.qrId,
+        batch_id: packet.batchId,
+        party_id: packet.partyId,
+        item_id: packet.itemId,
+        sequence: packet.sequence,
+        packing_quantity: packet.packingQuantity,
+        packing_unit_id: packet.packingUnitId,
+        created_at: packet.createdAt,
+        lease_epoch: leaseEpoch,
+      });
+    }
+
+    const acks = [...waiting, ...envelopesWithUnreadablePayloads(byAggregate)];
+    if (rows.length === 0) return acks;
+    const results = await this.callPush("push_raw_material_qr", held, rows);
+    return [...acks, ...matchResults(results, byAggregate, "id")];
+  }
+
+  /**
+   * Raw-material stock movements, through push_stock_event (cloud migration 015). Leased under the
+   * store lease, exactly as label runs are. Each carries balanceDelta, which the cloud checks only
+   * for size against the quantity: the sign is the origin's to decide.
+   */
+  private async pushStockEvents(held: ClaimHeld, envelopes: readonly SyncEnvelope[]): Promise<SyncAck[]> {
+    const rows: Array<Record<string, unknown>> = [];
+    const byAggregate = new Map<string, SyncEnvelope>();
+    const waiting: SyncAck[] = [];
+
+    for (const envelope of envelopes) {
+      const event = readStockEventPayload(envelope.payload);
+      if (event === null) {
+        byAggregate.set(`!payload:${envelope.dedupeKey}`, envelope);
+        continue;
+      }
+      const leaseEpoch = envelope.leaseEpoch ?? null;
+      if (leaseEpoch === null) {
+        waiting.push(unstampedLeasedRow(envelope));
+        continue;
+      }
+      byAggregate.set(event.eventId, envelope);
+      rows.push({
+        id: event.eventId,
+        item_id: event.itemId,
+        event_type: event.eventType,
+        quantity: event.quantity,
+        unit_id: event.unitId,
+        note: event.note,
+        created_by: event.createdBy,
+        created_at: event.createdAt,
+        party_id: event.partyId,
+        machine_program_id: event.machineProgramId,
+        balance_delta: event.balanceDelta,
+        lease_epoch: leaseEpoch,
+      });
+    }
+
+    const acks = [...waiting, ...envelopesWithUnreadablePayloads(byAggregate)];
+    if (rows.length === 0) return acks;
+    const results = await this.callPush("push_stock_event", held, rows);
+    return [...acks, ...matchResults(results, byAggregate, "id")];
+  }
+
+  /**
+   * Master-data revisions, through push_leased_record (cloud migration 013).
+   *
+   * LEASED like label runs: each carries the epoch it was written under. The answer names a record
+   * by type AND id, and one batch can hold two revisions of the same record (edited twice between
+   * passes is one mark, but a revision can be retried beside its successor), so answers are matched
+   * to envelopes per key, in order.
+   *
+   * INSERTED, UPDATED and DUPLICATE are delivered. SUPERSEDED is delivered too: the cloud already
+   * holds a newer revision of the record, so this one has nothing left to say.
+   */
+  private async pushLeasedRecords(held: ClaimHeld, envelopes: readonly SyncEnvelope[]): Promise<SyncAck[]> {
+    const rows: Array<Record<string, unknown>> = [];
+    const byKey = new Map<string, SyncEnvelope[]>();
+    const acks: SyncAck[] = [];
+
+    for (const envelope of envelopes) {
+      const revision = readLeasedRecordPayload(envelope.aggregateType, envelope.payload);
+      if (revision === null) {
+        acks.push({ dedupeKey: envelope.dedupeKey, accepted: false, reason: "PAYLOAD_INCOMPLETE", failure: "REFUSED" });
+        continue;
+      }
+      const leaseEpoch = envelope.leaseEpoch ?? null;
+      if (leaseEpoch === null) {
+        acks.push(unstampedLeasedRow(envelope));
+        continue;
+      }
+      const key = `${envelope.aggregateType}:${revision.recordId}`;
+      byKey.set(key, [...(byKey.get(key) ?? []), envelope]);
+      rows.push({
+        aggregate_type: envelope.aggregateType,
+        record_id: revision.recordId,
+        revision: revision.revision,
+        deleted: revision.deleted,
+        body: revision.body,
+        lease_epoch: leaseEpoch,
+      });
+    }
+    if (rows.length === 0) return acks;
+
+    const results = await this.callPush("push_leased_record", held, rows);
+    for (const result of results) {
+      const key = `${String(result.aggregate_type ?? "")}:${String(result.record_id ?? "")}`;
+      const envelope = byKey.get(key)?.shift();
+      if (envelope === undefined) continue;
+      const outcome = String(result.outcome ?? "");
+      if (outcome === "INSERTED" || outcome === "UPDATED" || outcome === "DUPLICATE" || outcome === "SUPERSEDED") {
+        acks.push({ dedupeKey: envelope.dedupeKey, accepted: true });
+        continue;
+      }
+      // Every refusal 013 gives is a verdict on the revision: NOT_LEASE_HOLDER (a lease lost, W.3),
+      // REVISION_CONFLICT, UNKNOWN_RECORD_TYPE, RECORD_TOO_LARGE. Bounded, and visible as a dead letter.
+      acks.push({
+        dedupeKey: envelope.dedupeKey,
+        accepted: false,
+        reason: typeof result.reason === "string" ? result.reason : outcome || "REFUSED",
+        failure: "REFUSED",
+      });
+    }
+    return acks;
+  }
+
+  // ─── Leases ───────────────────────────────────────────────────────────────
+
+  /**
+   * Who holds each write lease, from current_leases() (cloud migration 011).
+   *
+   * A project without that function answers 404: not knowing is reported, not thrown, so carton
+   * sync on such a project carries on exactly as before. A malformed answer is reported the same
+   * way, and the caller keeps the cache it had -- a half-trusted answer about who may write is
+   * worse than the last good one. Anything else (unreachable, refused) throws like every call.
+   */
+  async fetchLeases(): Promise<LeaseFetch> {
+    let response;
+    try {
+      response = await this.authedRequest((headers) => ({
+        url: `${this.base()}/rest/v1/rpc/current_leases`,
+        method: "POST",
+        headers,
+        body: "{}",
+        timeoutMs: this.options.timeoutMs,
+      }));
+    } catch (error) {
+      throw asTransportError(error);
+    }
+    if (response.status === 404) return { ok: false, reason: "NOT_SUPPORTED" };
+    if (response.status < 200 || response.status >= 300) {
+      throw asTransportError(readServiceError(response.status, response.text));
+    }
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(response.text);
+    } catch {
+      return { ok: false, reason: "UNREADABLE" };
+    }
+    const leases = readDomainLeases(parsed);
+    return leases === null ? { ok: false, reason: "UNREADABLE" } : { ok: true, leases };
+  }
+
+  // ─── Sync health (cloud migration 014) ───────────────────────────────────
+
+  /**
+   * Overwrites this computer's one row in device_sync_health. "NOT_SUPPORTED" when the project has
+   * no report (404, before 014): the caller simply stops reporting there. Anything else unreachable
+   * or refused throws, like every call.
+   */
+  async reportSyncHealth(report: SyncHealthReport): Promise<"REPORTED" | "NOT_SUPPORTED" | "REFUSED"> {
+    const held = this.held;
+    if (held === null) throw new SyncTransportError("this computer has not claimed its device identity");
+    let response;
+    try {
+      response = await this.authedRequest((headers) => ({
+        url: `${this.base()}/rest/v1/rpc/report_sync_health`,
+        method: "POST",
+        headers,
+        body: JSON.stringify({ p_epoch: held.epoch, p_holder: held.holder, p_report: report }),
+        timeoutMs: this.options.timeoutMs,
+      }));
+    } catch (error) {
+      throw asTransportError(error);
+    }
+    if (response.status === 404) return "NOT_SUPPORTED";
+    if (response.status < 200 || response.status >= 300) {
+      throw asTransportError(readServiceError(response.status, response.text));
+    }
+    const answer = parseJsonObject(response.text, "the health report answer was not readable");
+    return answer.accepted === true ? "REPORTED" : "REFUSED";
+  }
+
+  /**
+   * Every computer of this factory's last report, for the store PC's view of who is waiting on what.
+   * Validated row by row (R25): a row that is not shaped like a report is left out, not guessed at.
+   */
+  async fetchFactorySyncHealth(): Promise<DeviceSyncHealth[]> {
+    const query = new URLSearchParams({
+      select: "device_id,label,waiting,stuck,stale,oldest_waiting_since,sample,dead_letters,unsent_marks,reported_at",
+      order: "label.asc",
+    });
+    let response;
+    try {
+      response = await this.authedRequest((headers) => ({
+        url: `${this.base()}/rest/v1/device_sync_health?${query.toString()}`,
+        method: "GET",
+        headers,
+        timeoutMs: this.options.timeoutMs,
+      }));
+    } catch (error) {
+      throw asTransportError(error);
+    }
+    if (response.status === 404) return [];
+    if (response.status < 200 || response.status >= 300) {
+      throw asTransportError(readServiceError(response.status, response.text));
+    }
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(response.text);
+    } catch {
+      throw new SyncTransportError("the sync health answer was not readable");
+    }
+    return Array.isArray(parsed) ? parsed.map(readDeviceSyncHealth).filter((row): row is DeviceSyncHealth => row !== null) : [];
   }
 
   /** One RPC call carrying the claim. Throws, so the drain gives the whole batch back. */
@@ -571,6 +946,40 @@ function classify(error: HttpError): FailureKind {
   return "TRANSIENT";
 }
 
+const wholeCount = (value: unknown): number | null =>
+  typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : null;
+
+/** One device_sync_health row, validated, or null. */
+function readDeviceSyncHealth(value: unknown): DeviceSyncHealth | null {
+  const row = asRow(value);
+  if (row === null || typeof row.device_id !== "string" || typeof row.label !== "string" || typeof row.reported_at !== "string") return null;
+  const counts = [row.waiting, row.stuck, row.stale, row.dead_letters, row.unsent_marks].map(wholeCount);
+  if (counts.some((count) => count === null)) return null;
+  const [waiting, stuck, stale, deadLetters, unsentMarks] = counts as number[];
+  const sample = (Array.isArray(row.sample) ? row.sample : [])
+    .map(asRow)
+    .filter((item): item is Record<string, unknown> => item !== null)
+    .filter((item) => typeof item.subject === "string" && typeof item.waitingFor === "string" && typeof item.since === "string")
+    .map((item) => ({
+      subject: String(item.subject),
+      waitingFor: String(item.waitingFor),
+      since: String(item.since),
+      ...(typeof item.needs === "string" ? { needs: item.needs } : {}),
+    }));
+  return {
+    deviceId: row.device_id,
+    label: row.label,
+    reportedAt: row.reported_at,
+    waiting: waiting ?? 0,
+    stuck: stuck ?? 0,
+    stale: stale ?? 0,
+    deadLetters: deadLetters ?? 0,
+    unsentMarks: unsentMarks ?? 0,
+    oldestWaitingSince: typeof row.oldest_waiting_since === "string" ? row.oldest_waiting_since : null,
+    sample,
+  };
+}
+
 /** A JSON object body, or a transport error naming what was unreadable. */
 function parseJsonObject(text: string, complaint: string): Record<string, unknown> {
   let parsed: unknown;
@@ -643,7 +1052,18 @@ function matchResults(
  * Deliberately a closed list. Anything the service invents later is REFUSED and bounded, because
  * an unrecognised reason must stop visibly in the dead-letter queue rather than retry for ever.
  */
-const TRANSIENT_PUSH_REASONS = new Set(["QR_NOT_REGISTERED_YET"]);
+const TRANSIENT_PUSH_REASONS = new Set(["QR_NOT_REGISTERED_YET", "RUN_NOT_REGISTERED_YET"]);
+
+/**
+ * A leased row with no lease epoch: waits, never refused. The drain does not claim such rows, so
+ * this is a backstop, and it must not spend the row's bounded refusal budget if it is ever reached.
+ */
+const unstampedLeasedRow = (envelope: SyncEnvelope): SyncAck => ({
+  dedupeKey: envelope.dedupeKey,
+  accepted: false,
+  reason: "NO_LEASE_EPOCH",
+  failure: "TRANSIENT",
+});
 
 const asTransportError = (error: unknown): SyncTransportError =>
   error instanceof SyncTransportError

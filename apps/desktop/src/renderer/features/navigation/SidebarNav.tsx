@@ -19,6 +19,8 @@ interface SidebarNavProps {
   user: AuthUser;
   current: AppRoute;
   onSelect: (route: AppRoute) => void;
+  /** Pages this computer does not offer whatever the role: the ledgers, off the Accounts holder. */
+  hiddenRoutes?: ReadonlySet<AppRoute>;
 }
 
 const Chevron = () => (
@@ -74,9 +76,9 @@ const NavGroup: React.FC<NavGroupProps> = ({ section, open, current, onToggle, o
   );
 };
 
-export const SidebarNav: React.FC<SidebarNavProps> = ({ user, current, onSelect }) => {
+export const SidebarNav: React.FC<SidebarNavProps> = ({ user, current, onSelect, hiddenRoutes }) => {
   const [collapsed, setCollapsed] = useState<ReadonlySet<NavSectionId>>(new Set());
-  const sections = visibleNavSections(user);
+  const sections = visibleNavSections(user, hiddenRoutes);
 
   if (landingRoute(user) === STORE_LANDING_ROUTE) {
     return <StoreNav current={current} onSelect={onSelect} />;

@@ -39,6 +39,10 @@ export const REPLICATION_EXCLUSIONS: ReadonlyArray<{ readonly table: string; rea
     why: "This computer's queue of what it still has to send. Replicating a queue would have every computer try to send every other computer's work.",
   },
   {
+    table: "sync_inbox_parked",
+    why: "Events this computer pulled but cannot apply yet. A statement about this computer's own progress through one project's log, like sync_outbox -- never shared.",
+  },
+  {
     table: "user_sessions",
     why: "Live sign-ins on this machine, including login_date. A session is not transferable.",
   },
@@ -63,10 +67,16 @@ export const REPLICATION_EXCLUSIONS: ReadonlyArray<{ readonly table: string; rea
     why: "Same: the row describing this workstation is local truth. See the note below on partial exclusion.",
   },
 
-  // ── Logins: the owner's decision of 2026-10-21, permanent ────────────────────────
+  // ── Logins ───────────────────────────────────────────────────────────────────────
+  //
+  // app_users NEVER replicates: it holds the hashes. That part is permanent, and the owner
+  // re-affirmed it on 2026-10-23. What changed that day is how logins reach other PCs: docs/37
+  // section U.2 makes accounts cloud-authoritative, replicating only non-secret facts. When that is
+  // built, the three companion tables below may receive those facts through a contract of their
+  // own. Until then all four stay excluded.
   {
     table: "app_users",
-    why: "Holds password_hash and password_salt. Replicating puts every user's credential on every machine, and last-write-wins could resurrect a revoked account. Each PC keeps its own accounts (docs/38 section 2).",
+    why: "Holds password_hash and password_salt. Replicating puts every user's credential on every machine, including a stolen one. Under docs/37 section U.2 each PC caches a verifier only for people who logged in on it, and no hash ever replicates.",
   },
   {
     table: "user_role_assignments",

@@ -31,6 +31,8 @@ function setupDesktop(overrides: Record<string, unknown> = {}) {
     getSaleVoucher: vi.fn(async (id: string) => (id === "v-1" ? voucher("v-1", "7") : id === "v-2" ? voucher("v-2", "8") : null)),
     getParty: vi.fn(async () => party),
     getCurrentPartyBalance: vi.fn(async () => 12000),
+    // This computer holds Accounts, so balances show (features/parties/ledgerVisibility.ts).
+    getHeldLeases: vi.fn(async () => ["ACCOUNTS"]),
     resolveProductDiscountWithPrice: vi.fn(async () => ({ discountPerPair: 0, source: "NONE" })),
     updateSaleVoucher: vi.fn(async () => ({ accepted: true })),
     updateVoucherLineItem: vi.fn(async () => ({ accepted: true })),

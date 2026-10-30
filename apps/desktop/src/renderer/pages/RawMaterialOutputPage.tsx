@@ -13,7 +13,9 @@ import { copy } from "../config/copy";
 import { openIssueSlipPrintWindow } from "../features/rawMaterial/issueSlip";
 import { formatDateTime } from "../utils/dates";
 import { isCompleteQr, sanitizeScanInput } from "../utils/qr";
-import { isMachineProgramCodeScan, isRawMaterialIssuePartyType, isValidRawMaterialQrId } from "@erp/domain";
+import { LEASE_DOMAIN, isMachineProgramCodeScan, isRawMaterialIssuePartyType, isValidRawMaterialQrId } from "@erp/domain";
+import { LeasedStation } from "../features/store/LeasedStation";
+import { ReaderStation } from "../features/store/ReaderStation";
 import type { StationStatus } from "../features/store/page/stationStatus";
 import {
   LastScanCard,
@@ -156,7 +158,7 @@ interface RawMaterialOutputPageProps {
   /** Session token; the main process authorises every issue call with it. */
   token: string;
   username?: string;
-  /** Returns to the Store Station chooser. Hidden when not provided. */
+  /** Returns to where the station was opened from. Hidden when not provided. */
   onBack?: () => void;
   onNavigate?: (route: AppRoute) => void;
   /** Set when the station is a pane of the Store Out page rather than the whole screen. */
@@ -185,7 +187,7 @@ interface RawMaterialOutputPageProps {
   onStatus?: (status: StationStatus) => void;
 }
 
-export const RawMaterialOutputPage: React.FC<RawMaterialOutputPageProps> = ({
+const RawMaterialOutputStation: React.FC<RawMaterialOutputPageProps> = ({
   token,
   username,
   onBack,
@@ -452,9 +454,9 @@ export const RawMaterialOutputPage: React.FC<RawMaterialOutputPageProps> = ({
     >
       <style>{SCAN_STATION_CSS}</style>
 
-      {/* Embedded on the Store Out page the pane above already names the station. */}
+      {/* Embedded on the Store page the rail above already names the station. */}
       <StationToolbar
-        eyebrow={embedded ? undefined : "Store Station · Raw Material"}
+        eyebrow={embedded ? undefined : copy.storePage.stationEyebrow}
         title={embedded ? undefined : "Raw Material Output"}
         onBack={onBack}
         scannerPill={scannerConnected ? { text: "Scanner ready", color: "#16a34a" } : { text: "Keyboard input", color: "#94a3b8" }}
@@ -569,3 +571,24 @@ export const RawMaterialOutputPage: React.FC<RawMaterialOutputPageProps> = ({
     </div>
   );
 };
+
+/**
+ * Raw Material Output: the station where this computer writes the raw material store, and a packet lookup
+ * where another computer does (docs/37 section W). The station itself is unchanged.
+ */
+export const RawMaterialOutputPage: React.FC<RawMaterialOutputPageProps> = (props) => (
+  <LeasedStation
+    domain={LEASE_DOMAIN.RAW_MATERIAL_STORE}
+    reader={(status) => (
+      <ReaderStation
+        status={status}
+        embedded={props.embedded}
+        onBack={props.onBack}
+        eyebrow={props.embedded ? undefined : copy.storePage.stationEyebrow}
+        title={props.embedded ? undefined : "Raw Material Output"}
+      />
+    )}
+  >
+    <RawMaterialOutputStation {...props} />
+  </LeasedStation>
+);

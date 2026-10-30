@@ -8,7 +8,9 @@
 // through a use case, which re-checks it inside the write lock. Hiding a button in the renderer is
 // not authorisation, so the permission is checked again here.
 
-import { ipcMain, type IpcMainInvokeEvent } from "electron";
+import type { IpcMainInvokeEvent } from "electron";
+// Leased channels pass the write gate first (leaseGuard.ts, leaseChannels.ts).
+import { ipcMain } from "../leaseGuard";
 import { IPC } from "../../shared/ipcChannels";
 import type { IpcContext } from "./context";
 import { CARTON_GRADE, PERMISSION, asRecord, asString, isMachineContractorRole } from "@erp/domain";

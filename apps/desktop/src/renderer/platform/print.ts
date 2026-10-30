@@ -5,6 +5,7 @@
 // planned Android/iOS shell this module is the single place to swap in a native bridge.
 
 import { BRAND_LOGO_URL } from "../config/branding";
+import { desktopApi } from "../hooks/useDesktopApi";
 
 export interface PrintDocumentOptions {
   /** Popup features string (only meaningful in a desktop browser/Electron). */
@@ -55,7 +56,7 @@ export type PrintDirectResult = { printed: true } | { printed: false; reason: st
  */
 export const printDocumentDirect = async (html: string, pageSize?: PrintPageSize): Promise<PrintDirectResult> => {
   try {
-    const result = await window.desktop.api.printDocument({ html, pageSize });
+    const result = await desktopApi().printDocument({ html, pageSize });
     return result.accepted ? { printed: true } : { printed: false, reason: result.reason ?? "The printer did not accept the job" };
   } catch (error) {
     return { printed: false, reason: error instanceof Error ? error.message : "Could not print" };

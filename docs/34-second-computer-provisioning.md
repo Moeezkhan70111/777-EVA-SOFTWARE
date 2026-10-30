@@ -20,6 +20,17 @@ Stock is never carried as a value; a receiving computer recomputes it from the e
 - QR **generation** stays on the one designated workstation. Carton serials come from per-article
   counters that are not covered by the range scheme, so two machines generating labels can issue
   the same serial. Every other machine can scan, produce, store, dispatch and return.
+- **Verify the clock before enrolling.** A replicated row keeps the time the origin PC wrote, so a
+  wrong clock writes wrong business times, and a badly wrong one breaks TLS to the cloud. On
+  2026-10-23 a newly moved PC was 22h 42m slow and on Pacific time. All three must pass:
+  1. `tzutil /g` prints `Pakistan Standard Time`.
+  2. `w32tm /query /status` shows a real `Source` and a `Last Successful Sync Time` from today,
+     not `Leap Indicator: 3(not synchronized)`. Fix it with `w32tm /resync /force` in an admin
+     shell.
+  3. `(Get-Date).ToUniversalTime()` is within a minute of the `Date` header from
+     `curl -sI https://<project-ref>.supabase.co`.
+
+  Why, and what the arrival-time column records: `docs/37 §0.3`.
 
 ---
 
