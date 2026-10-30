@@ -112,7 +112,7 @@ export const rawMaterialHandMoveMethods = {
         .get(partyId) as { id: string; party_name: string; party_type: string } | undefined;
       if (!party) return refuse("NO_SUPPLIER", "That supplier is not in the Party Master.");
       if (!isRawMaterialReceiptPartyType(party.party_type)) {
-        return refuse("NO_SUPPLIER", `Only a supplier's delivery is moved in, and ${party.party_name} is not a supplier. Nothing was moved.`);
+        return refuse("NO_SUPPLIER", `Only a supplier's or a contractor's delivery is moved in, and ${party.party_name} is neither. Nothing was moved.`);
       }
     }
 
