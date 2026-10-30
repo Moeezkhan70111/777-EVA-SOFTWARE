@@ -26,6 +26,11 @@
 // Until a shared database exists there is no central authority to ask. The protections are the
 // written assignment the operator keeps, the out-of-range check below, and the UNIQUE constraints
 // that turn a collision into a refused save rather than two documents with one number.
+//
+// FOR A COMPUTER THAT SYNCS, THE CLOUD IS THAT AUTHORITY (cloud migration 018, after the PC2/PC3
+// incident, docs/39 section 4.4). Its claim sends this block; the first computer to claim a block
+// holds it, and a second is refused and sends nothing. A computer that never syncs is still
+// protected only by the measures above.
 
 import type { SqliteDatabase } from "../sqliteDatabase.js";
 

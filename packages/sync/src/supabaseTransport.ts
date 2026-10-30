@@ -64,12 +64,23 @@ export interface ClaimRequest {
   readonly deviceId: string;
   readonly workstationId: string;
   readonly appVersion?: string;
+  /**
+   * This computer's document-number block (numberRange.ts), or null when none is recorded. The
+   * cloud registers it on the first claim and refuses a second computer on it (migration 018).
+   */
+  readonly numberBlock: number | null;
 }
 
 export type ClaimOutcome = { readonly ok: true; readonly epoch: number; readonly holder: string } | {
   readonly ok: false;
-  /** The server's own word: NOT_ENROLLED, REVOKED, BINDING_INCOMPLETE, DEVICE_MISMATCH, WORKSTATION_MISMATCH. */
+  /**
+   * The server's own word: NOT_ENROLLED, REVOKED, BINDING_INCOMPLETE, DEVICE_MISMATCH,
+   * WORKSTATION_MISMATCH, or one of 018's NUMBER_BLOCK_MISSING, NUMBER_BLOCK_TAKEN,
+   * NUMBER_BLOCK_CHANGED.
+   */
   readonly reason: string;
+  /** For a number-block refusal: the block taken, or the one this computer holds in the cloud. */
+  readonly block?: number;
 };
 
 /**
@@ -83,6 +94,8 @@ const CLAIM_REFUSALS = new Set([
   "BINDING_INCOMPLETE",
   "NOT_CLAIMED",
   "CLAIM_SUPERSEDED",
+  // 018: this computer holds no number block, so every write is refused until a claim registers one.
+  "NUMBER_BLOCK_NOT_REGISTERED",
 ]);
 
 /**
@@ -192,6 +205,7 @@ export class SupabaseSyncTransport implements SyncTransport, SyncPullTransport {
           p_device_id: request.deviceId,
           p_workstation_id: request.workstationId,
           p_app_version: request.appVersion ?? null,
+          p_number_block: request.numberBlock,
         }),
         timeoutMs: this.options.timeoutMs,
       }));
@@ -207,7 +221,8 @@ export class SupabaseSyncTransport implements SyncTransport, SyncPullTransport {
     if (answer.ok !== true) {
       const reason = typeof answer.reason === "string" ? answer.reason : "CLAIM_REFUSED";
       this.held = null;
-      return { ok: false, reason };
+      const block = Number(answer.block);
+      return Number.isSafeInteger(block) && block >= 1 ? { ok: false, reason, block } : { ok: false, reason };
     }
 
     const epoch = Number(answer.epoch);

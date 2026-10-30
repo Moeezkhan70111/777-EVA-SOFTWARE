@@ -34,6 +34,11 @@
 -- table published to Realtime -- never the log itself, whose rows carry whole payloads. A project at
 -- 015 fails exactly 3, 7, 15 and 32.
 --
+-- Updated for 018 (2026-10-30): the number-block registry and its history (check 3 goes to 35), and
+-- check 33: one claim_device, taking the block; every write refusing a computer that holds none; and
+-- the owner-only move no client can call. A project at 017 fails exactly 3 and 33. (017 changes no
+-- figure here.)
+--
 -- It turns docs/36 section 6a's verified state into something that can be re-run instead of
 -- re-read. Run it after setting up a project, and again after ANY change to its schema or grants.
 --
@@ -74,7 +79,7 @@ checks(n, check_name, expected, actual) as (
     (select count(*)::text from pg_constraint
      where conname = 'sync_event_log_factory_scope' and conrelid = to_regclass('public.sync_event_log'))
 
-  union all select 3, 'tables in public', '33',
+  union all select 3, 'tables in public', '35',
     (select count(*)::text from pg_class c join pg_namespace n on n.oid = c.relnamespace
      where n.nspname = 'public' and c.relkind = 'r')
 
@@ -259,6 +264,19 @@ checks(n, check_name, expected, actual) as (
       || '|' ||
     coalesce((select string_agg(tablename, ',' order by tablename) from pg_publication_tables
                where pubname = 'supabase_realtime' and schemaname = 'public'), '')
+
+  -- 33. THE NUMBER-BLOCK REGISTRY (018): one claim_device, and it takes the block; every write
+  --     refuses a computer holding none; and only the owner can move a block. Its tables' grants
+  --     are covered by 5-7 and their RLS by 4.
+  union all select 33, 'claim takes the number block, writes refuse a computer without one, moves are owner-only', '1|true|false',
+    (select count(*)::text from pg_proc p where p.pronamespace = 'public'::regnamespace and p.proname = 'claim_device'
+       and pg_get_function_identity_arguments(p.oid) = 'p_device_id text, p_workstation_id text, p_app_version text, p_number_block integer')
+      || '|' ||
+    coalesce((select (position('NUMBER_BLOCK_NOT_REGISTERED' in p.prosrc) > 0)::text from pg_proc p
+              where p.pronamespace = 'public'::regnamespace and p.proname = 'claim_is_current'), 'missing')
+      || '|' ||
+    coalesce((select has_function_privilege('authenticated', p.oid, 'EXECUTE')::text from pg_proc p
+              where p.pronamespace = 'public'::regnamespace and p.proname = 'reassign_number_block'), 'missing')
 )
 select n, check_name, expected, actual, actual = expected as ok
 from checks

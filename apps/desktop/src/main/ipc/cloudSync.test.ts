@@ -303,6 +303,8 @@ const buildContext = (): IpcContext => {
         if (syncRuns[index]) Object.assign(syncRuns[index], { outcome, counts, reason });
       },
       syncRunSummary: () => ({ lastAttempt: null, lastSuccess: null }),
+      // This computer's number block, sent with the claim (cloud migration 018).
+      getNumberBlock: () => 2,
       // Master records are built before every drain (masterRecords.ts). Recorded, so the order shows.
       buildLeasedRecordRevisions: () => {
         built.push({ what: "master-records" });
@@ -806,7 +808,7 @@ describe("cloud sync at the process boundary", () => {
     await expect(run()).resolves.toMatchObject({ accepted: true });
 
     expect(claimRequests).toEqual([
-      { deviceId: "device-under-test", workstationId: "ws-prod-01", appVersion: "0.3.0" },
+      { deviceId: "device-under-test", workstationId: "ws-prod-01", appVersion: "0.3.0", numberBlock: 2 },
     ]);
     // The ORDER is the control: a drain reclaims stale rows and leases a batch the moment it
     // runs, so it must not exist until the claim has succeeded.
@@ -925,7 +927,10 @@ describe("cloud sync at the process boundary", () => {
   });
 
   it("names every refusal the migration can give, and treats none of them as an event failure", async () => {
-    for (const reason of ["NOT_ENROLLED", "REVOKED", "BINDING_INCOMPLETE", "DEVICE_MISMATCH", "WORKSTATION_MISMATCH"]) {
+    for (const reason of [
+      "NOT_ENROLLED", "REVOKED", "BINDING_INCOMPLETE", "DEVICE_MISMATCH", "WORKSTATION_MISMATCH",
+      "NUMBER_BLOCK_MISSING", "NUMBER_BLOCK_TAKEN", "NUMBER_BLOCK_CHANGED",
+    ]) {
       claimOutcome = { ok: false, reason };
       built = [];
       const answer = await run();
@@ -935,6 +940,16 @@ describe("cloud sync at the process boundary", () => {
       // The queue is reported back so an operator can see it is intact, not lost.
       expect(answer.outbox).toEqual(QUEUE.counts);
     }
+  });
+
+  it("says plainly when the number range is another computer's, and sends nothing", async () => {
+    claimOutcome = { ok: false, reason: "NUMBER_BLOCK_TAKEN", block: 2 };
+    const answer = await run();
+    expect(answer.accepted).toBe(false);
+    expect(String(answer.reason)).toContain("NUMBER_BLOCK_TAKEN");
+    expect(String(answer.reason)).toContain("Number range 2 already belongs to another computer");
+    expect(String(answer.reason)).toContain("nothing in the queue changed");
+    expect(built.filter((entry) => entry.what === "drain")).toEqual([]);
   });
 
   it("records a refused claim against the administrator who asked for the pass", async () => {

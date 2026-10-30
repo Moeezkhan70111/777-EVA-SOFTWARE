@@ -295,7 +295,7 @@ const scan = (eventId: string, qrId: string): SyncEnvelope => ({
 /** A transport that has already claimed, which is the precondition for every push. */
 const claimed = async (fake: Fake): Promise<SupabaseSyncTransport> => {
   const { transport } = build(fake);
-  const outcome = await transport.claimDevice({ deviceId: "desktop-main", workstationId: "ws-prod-01" });
+  const outcome = await transport.claimDevice({ deviceId: "desktop-main", workstationId: "ws-prod-01", numberBlock: 1 });
   assert.ok(outcome.ok, "the fixture must be able to claim");
   return transport;
 };
@@ -543,6 +543,7 @@ test("a device claims its identity before anything is sent, and holds the epoch 
       deviceId: "desktop-main",
       workstationId: "ws-prod-01",
       appVersion: "0.3.0",
+      numberBlock: 1,
     });
 
     assert.deepEqual(outcome, { ok: true, epoch: 1, holder: "holder-1" });
@@ -555,6 +556,7 @@ test("a device claims its identity before anything is sent, and holds the epoch 
       p_device_id: "desktop-main",
       p_workstation_id: "ws-prod-01",
       p_app_version: "0.3.0",
+      p_number_block: 1,
     });
   } finally {
     await fake.close();
@@ -567,13 +569,42 @@ test("a refused claim is an answer about the computer, and sends nothing", async
     const { transport } = build(fake);
     fake.reply("/rest/v1/rpc/claim_device", 200, { ok: false, reason: "REVOKED" });
 
-    const outcome = await transport.claimDevice({ deviceId: "desktop-main", workstationId: "ws-prod-01" });
+    const outcome = await transport.claimDevice({ deviceId: "desktop-main", workstationId: "ws-prod-01", numberBlock: 1 });
     assert.deepEqual(outcome, { ok: false, reason: "REVOKED" });
     assert.equal(transport.claimed, false);
 
     // And nothing may be offered without one.
     await assert.rejects(() => transport.send([carton("SK9_BLACK_7/10_000001")]), SyncTransportError);
     assert.equal(fake.calls.filter((entry) => entry.path.includes("push_qr_master")).length, 0);
+  } finally {
+    await fake.close();
+  }
+});
+
+test("a computer on a number range another computer holds is refused, and told which range", async () => {
+  const fake = await startFakeSupabase();
+  try {
+    const { transport } = build(fake);
+    fake.reply("/rest/v1/rpc/claim_device", 200, { ok: false, reason: "NUMBER_BLOCK_TAKEN", block: 1 });
+
+    const outcome = await transport.claimDevice({ deviceId: "desktop-main", workstationId: "ws-prod-01", numberBlock: 1 });
+    assert.deepEqual(outcome, { ok: false, reason: "NUMBER_BLOCK_TAKEN", block: 1 });
+    assert.equal(transport.claimed, false);
+  } finally {
+    await fake.close();
+  }
+});
+
+test("a computer with no number range still asks, and the cloud decides (migration 018)", async () => {
+  const fake = await startFakeSupabase();
+  try {
+    const { transport } = build(fake);
+    fake.reply("/rest/v1/rpc/claim_device", 200, { ok: false, reason: "NUMBER_BLOCK_MISSING" });
+
+    const outcome = await transport.claimDevice({ deviceId: "desktop-main", workstationId: "ws-prod-01", numberBlock: null });
+    assert.deepEqual(outcome, { ok: false, reason: "NUMBER_BLOCK_MISSING" });
+    const call = fake.calls.find((entry) => entry.path === "/rest/v1/rpc/claim_device");
+    assert.equal(JSON.parse(call?.body ?? "{}").p_number_block, null, "sent as null, never left out or guessed");
   } finally {
     await fake.close();
   }
@@ -1078,6 +1109,26 @@ test("a claim refusal thrown from a push is still transient, whatever its errcod
 
     await assert.rejects(
       () => transport.send([carton("SK9_BLACK_7/10_000010")]),
+      (error: unknown) => {
+        assert.ok(error instanceof SyncTransportError);
+        assert.notEqual(error.failure, "REFUSED", "a device problem must never park an event");
+        return true;
+      }
+    );
+  } finally {
+    await fake.close();
+  }
+});
+
+test("a write refused for want of a number range is the device's problem, never the event's", async () => {
+  const fake = await startFakeSupabase();
+  try {
+    const transport = await claimed(fake);
+    // A claim taken before 018 was applied: every write is refused until the next claim registers one.
+    fake.reply("/rest/v1/rpc/push_qr_master", 403, { code: "42501", message: "NUMBER_BLOCK_NOT_REGISTERED" });
+
+    await assert.rejects(
+      () => transport.send([carton("SK9_BLACK_7/10_000011")]),
       (error: unknown) => {
         assert.ok(error instanceof SyncTransportError);
         assert.notEqual(error.failure, "REFUSED", "a device problem must never park an event");

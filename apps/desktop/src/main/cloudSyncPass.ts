@@ -145,6 +145,24 @@ export async function readFactorySyncHealth(): Promise<DeviceSyncHealth[] | null
 }
 
 /** Builds marked master records into queued revisions. Never throws: a pass reports, it does not crash. */
+/**
+ * What an operator is told about a refused number range (cloud migration 018), after the reason
+ * itself. Empty for every other refusal. "Number range" is the operator's word for a block (copy.ts).
+ */
+function numberRangeAdvice(claim: { reason: string; block?: number }): string {
+  const range = claim.block === undefined ? "" : ` ${String(claim.block)}`;
+  switch (claim.reason) {
+    case "NUMBER_BLOCK_TAKEN":
+      return ` Number range${range} already belongs to another computer, and two computers on one range issue the same codes and QR serials. This computer sends nothing until the owner gives it its own range.`;
+    case "NUMBER_BLOCK_CHANGED":
+      return ` The cloud has this computer on number range${range}, and this database says another. It may have been copied from another computer. Nothing is sent until the owner decides.`;
+    case "NUMBER_BLOCK_MISSING":
+      return " This computer has no number range recorded. An administrator sets it in Settings.";
+    default:
+      return "";
+  }
+}
+
 function buildMasterRecords(db: SqliteDatabase, logger: StructuredLogger, deviceId: string): void {
   try {
     const built = db.buildLeasedRecordRevisions(new Date().toISOString());
@@ -389,7 +407,7 @@ export async function runCloudSyncPass(
 
     const claim = beat.ok
       ? { ok: true as const, reason: undefined }
-      : await transport.claimDevice({ deviceId, workstationId, appVersion: app.getVersion() });
+      : await transport.claimDevice({ deviceId, workstationId, appVersion: app.getVersion(), numberBlock: db.getNumberBlock() });
     if (!claim.ok) {
       logger.log({
         module: "sync",
@@ -404,7 +422,9 @@ export async function runCloudSyncPass(
           `the cloud did not accept this computer (${claim.reason})`,
       });
       return finish("REFUSED", {
-        reason: `The cloud did not accept this computer: ${claim.reason}. Nothing was sent, and nothing in the queue changed.`,
+        reason:
+          `The cloud did not accept this computer: ${claim.reason}.${numberRangeAdvice(claim)}` +
+          " Nothing was sent, and nothing in the queue changed.",
         outbox: queueNow(),
       });
     }

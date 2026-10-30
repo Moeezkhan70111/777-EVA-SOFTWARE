@@ -358,6 +358,10 @@ Assumption: both PCs enrolled, syncing, on the 0.4.0 build.
    refused at print time, because the packet already exists locally. That is safe, but printing is
    stuck until it's fixed. **Recommended addition before go-live:** the cloud records each enrolled
    PC's block and refuses an enrolment whose block is already taken.
+   **Built, 30 Oct (not yet applied):** cloud migration 018. The claim carries the PC's block; the
+   first PC to claim a block holds it, a second is refused `NUMBER_BLOCK_TAKEN` and every write it
+   tries is refused too. Only the owner can move a block (`reassign_number_block`, with a reason).
+   `check_number_blocks.sql` proves it on test once 018 is applied.
 4. **Domains not enforced yet** (sales and dispatch, accounts, machine programs, approvals) are
    unprotected until Milestone 2. This incident didn't touch them.
 
