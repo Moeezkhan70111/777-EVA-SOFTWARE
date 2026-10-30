@@ -11,14 +11,14 @@ import type { UserNotification } from "./types";
 // open: that is where the administrator can see the current count and the movement history
 // before approving, and where the requester can see what happened.
 //
-// A machine-program notice opens that program on Store Out, where the storekeeper issues its
-// uppers against it.
+// A machine-program notice opens that program on the Store page in Issuing (0.3.9), where the
+// storekeeper issues its uppers against it.
 
 export type NotificationTarget =
   | { route: "sale-voucher-form"; gatepassId: string }
   | { route: "gatepass-list"; gatepassId: string }
   | { route: "raw-material"; itemId: string }
-  | { route: "store-out-operator"; programId: string };
+  | { route: "store-issuing"; programId: string };
 
 const STOCK_CORRECTION_KINDS: ReadonlySet<string> = new Set([
   NOTIFICATION_KIND.STOCK_CORRECTION_REQUESTED,
@@ -44,12 +44,12 @@ export const notificationTarget = (notification: Pick<UserNotification, "kind" |
   if (notification.kind && STOCK_CORRECTION_KINDS.has(notification.kind)) {
     return { route: "raw-material", itemId: entityId };
   }
-  // A machine program notice opens that program on STORE OUT, which is where its uppers are
+  // A machine program notice opens that program on the Store page in ISSUING, which is where its uppers are
   // fetched — not on the Machine Program screen, which is where Production plans them. The id
   // travels, never the printed number: the number is a label, the id is the record.
   // A reconciliation notice opens the same program, where its reconciliation is shown line by line.
   if (notification.kind === NOTIFICATION_KIND.MACHINE_PROGRAM_ISSUED || notification.kind === NOTIFICATION_KIND.MACHINE_PROGRAM_RECONCILED) {
-    return { route: "store-out-operator", programId: entityId };
+    return { route: "store-issuing", programId: entityId };
   }
   return null;
 };

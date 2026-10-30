@@ -3,7 +3,6 @@ import React, { useCallback, useRef, useState } from "react";
 import type { AppRoute } from "../../app/routes";
 import type { AuthUser } from "../../types/desktopApi";
 import { SidebarNav } from "../../features/navigation/SidebarNav";
-import type { StoreDirection } from "../../features/store/storeOperators";
 import { useDismissOnOutsideClick } from "../../hooks/useDismissOnOutsideClick";
 import { SyncStatusIndicator } from "../../features/sync/SyncStatusIndicator";
 
@@ -156,8 +155,6 @@ interface NavbarProps {
   onBackup: () => void;
   /** The signed-in user. The sidebar lists only the pages their role has been given. */
   user: AuthUser | null;
-  /** For a store operator: the job they have picked, whose pages the sidebar lists. */
-  storeJob?: StoreDirection | null;
   /** Pages this computer does not offer whatever the role: the ledgers, off the Accounts holder. */
   hiddenRoutes?: ReadonlySet<AppRoute>;
   onProfile: () => void;
@@ -233,7 +230,6 @@ export const Navbar = ({
   appVersion,
   onBackup,
   user,
-  storeJob = null,
   hiddenRoutes,
   onProfile,
   onChangePassword,
@@ -281,7 +277,7 @@ export const Navbar = ({
       </div>
 
       {/* Home and the pages this user's role has been given — the same cards Home shows. */}
-      {user && <SidebarNav user={user} current={current} onSelect={onSelect} storeJob={storeJob} hiddenRoutes={hiddenRoutes} />}
+      {user && <SidebarNav user={user} current={current} onSelect={onSelect} hiddenRoutes={hiddenRoutes} />}
 
       {/* Right side */}
       <div className="navbar-right">

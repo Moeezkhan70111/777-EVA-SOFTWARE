@@ -354,6 +354,15 @@ export interface CartonProgramLine {
 }
 
 /** A machine's program for one business day — MP-000123 — with its contractors as opened. */
+/** A program still open, as the administrator's list of what is left to delete shows it (0.3.8). */
+export interface OpenMachineProgram {
+  programId: string;
+  code: string;
+  programDate: string;
+  machineName: string;
+  contractorName: string;
+}
+
 export interface MachineDayProgram {
   programId: string;
   programNumber: number;
@@ -1792,6 +1801,19 @@ export interface DesktopApi {
   startRawMaterialIssueSession(
     opts?: { token?: string; startNew?: boolean }
   ): Promise<{ accepted: boolean; session?: RawMaterialIssueSession; reason?: string }>;
+  /** This terminal's open issue session from today, or null. Never starts one. */
+  getOpenRawMaterialIssueSession(): Promise<RawMaterialIssueSession | null>;
+  /**
+   * Issue sessions, newest first, with their party and packet count. thisComputerOnly limits them
+   * to this computer's (the last session it closed); otherwise every computer's (Issued today).
+   */
+  listRawMaterialIssueSessions(filters?: {
+    status?: "OPEN" | "CLOSED";
+    thisComputerOnly?: boolean;
+    dateFrom?: string;
+    dateTo?: string;
+    limit?: number;
+  }): Promise<RawMaterialIssueSessionRow[]>;
   closeRawMaterialIssueSession(sessionId: string): Promise<RawMaterialIssueSession | null>;
   getRawMaterialIssueSessionSummary(sessionId: string): Promise<RawMaterialIssueSessionSummary | null>;
   rawMaterialIssueScan(
@@ -1812,6 +1834,10 @@ export interface DesktopApi {
   setProductSubGroupHasNoUpper(id: string, hasNoUpper: boolean): Promise<{ accepted: boolean; reason?: string }>;
   /** Every machine's program for one business date (YYYY-MM-DD). */
   listMachineDayPrograms(programDate: string): Promise<{ accepted: boolean; rows: MachineDayProgram[]; reason?: string }>;
+  /** Every program still open, whatever its date (0.3.8). */
+  listOpenMachinePrograms(): Promise<{ accepted: boolean; rows: OpenMachineProgram[]; reason?: string }>;
+  /** Deletes (cancels) one program. Administrators only; the reason is required and audited. */
+  deleteMachineProgram(programId: string, reason: string): Promise<{ accepted: boolean; outcome: string; reason?: string }>;
   /** The runs behind one program line, each kept on its own. */
   listCartonProgramBatches(input: {
     programId: string;
@@ -2831,9 +2857,24 @@ export interface RawMaterialIssueSession {
   closedAt: string | null;
 }
 
+/** One issue session in a list: who its packets went to and how many (Issued today, last session). */
+export interface RawMaterialIssueSessionRow {
+  session: RawMaterialIssueSession;
+  /** Its first scanned packet's party; null while it has none. */
+  partyId: string | null;
+  partyName: string | null;
+  packets: number;
+}
+
 export interface RawMaterialIssueSessionSummary {
   session: RawMaterialIssueSession;
+  /** Who the session's packets go to: its first scan's party, or null before the first scan. */
+  partyId: string | null;
+  /** That party's name, for the printed slip; null when the session has no party yet. */
+  partyName: string | null;
   totalPackets: number;
+  /** One line per material and unit — what the printed slip totals. */
+  byMaterial: Array<{ itemDisplayName: string; packets: number; quantity: number; unitCode: string }>;
   bySection: Array<{
     sectionName: string;
     packets: number;

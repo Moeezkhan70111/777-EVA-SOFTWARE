@@ -151,7 +151,7 @@ const feedbackFor = (result: StoreExitScanResult, seq: number): Feedback => {
 // ─── Styles ────────────────────────────────────────────────────────────────
 // The same station layout as Store Scanning. The base is neutral (white surfaces, cool
 // grey text and lines) and the only colour is a single "outbound" orange accent — the
-// same one the Store Station chooser uses for "Move Out" — so the two stations read as
+// same one the store used for "Move Out" — so the two stations read as
 // one product yet are told apart at a glance (In = blue, Out = orange). Amber/yellow is
 // reserved for the WARN tone. Scoped entirely under `.smo` so it never leaks into (or
 // is affected by) the app's shared theme.
@@ -766,7 +766,7 @@ interface StoreMoveOutPageProps {
   /** Session token; the main process authorises every store-exit call with it. */
   token: string;
   username?: string;
-  /** Returns to the Store Station chooser (Move In / Move Out). Hidden when not provided. */
+  /** Returns to where this user starts — the Store page, or the Dashboard. Hidden when not provided. */
   onBack?: () => void;
 }
 
@@ -1110,8 +1110,8 @@ export const StoreMoveOutPage: React.FC<StoreMoveOutPageProps> = ({
               type="button"
               className="smo-btn smo-btn--ghost"
               onClick={onBack}
-              title="Back to Store Station"
-              aria-label="Back to Store Station"
+              title="Back"
+              aria-label="Back"
             >
               <ChevronLeftIcon />
               Store
@@ -1121,7 +1121,7 @@ export const StoreMoveOutPage: React.FC<StoreMoveOutPageProps> = ({
             <BrandIcon />
           </div>
           <div className="smo-brand-text">
-            <span className="smo-eyebrow">Store Station · Move Out</span>
+            <span className="smo-eyebrow">Store · Carton Move Out</span>
             <h1 className="smo-title">Store Move Out</h1>
           </div>
         </div>

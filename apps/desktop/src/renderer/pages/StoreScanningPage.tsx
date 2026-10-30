@@ -146,7 +146,7 @@ const feedbackFor = (result: StoreEntryScanResult, seq: number): Feedback => {
 };
 
 // ─── Styles ────────────────────────────────────────────────────────────────
-// A light sky-blue / white design system (the Store Station's "Move In" accent), scoped
+// A light sky-blue / white design system (the store's "Move In" accent), scoped
 // entirely under `.ssn` so it never leaks into (or is affected by) the app's shared theme.
 //
 // Layout is three zones in one flex column:
@@ -191,7 +191,7 @@ interface StoreScanningPageProps {
   /** Session token; the main process authorises every store-entry call with it. */
   token: string;
   username?: string;
-  /** Returns to the Store Station chooser (Move In / Move Out). Hidden when not provided. */
+  /** Returns to where this user starts — the Store page, or the Dashboard. Hidden when not provided. */
   onBack?: () => void;
 }
 
@@ -529,7 +529,7 @@ export const StoreScanningPage: React.FC<StoreScanningPageProps> = ({
       <style>{SCAN_STATION_CSS}</style>
 
       <StationToolbar
-        eyebrow="Store Station · Move In"
+        eyebrow="Store · Carton Move In"
         title="Store Receiving"
         onBack={onBack}
         scannerPill={scannerPill}

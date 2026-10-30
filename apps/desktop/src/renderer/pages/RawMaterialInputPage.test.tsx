@@ -80,7 +80,7 @@ function createFakeBackend() {
       page: 1,
       pageSize: 500,
     })),
-    getOpenRawMaterialReceivingSession: vi.fn(async () => SESSION),
+    getOpenRawMaterialReceivingSession: vi.fn(async (): Promise<RawMaterialReceivingSession | null> => SESSION),
     getRawMaterialReceivingSessionSummary: vi.fn(async () => summary()),
     startRawMaterialReceivingSession: vi.fn(async () => ({ accepted: true, session: SESSION })),
     closeRawMaterialReceivingSession: vi.fn(async () => ({ ...SESSION, status: "CLOSED" as const })),
@@ -120,6 +120,18 @@ describe("RawMaterialInputPage", () => {
   afterEach(() => {
     vi.useRealTimers();
     vi.restoreAllMocks();
+  });
+
+  it("shows each supplier's type in the list, while choosing", async () => {
+    const { api } = createFakeBackend();
+    api.getOpenRawMaterialReceivingSession.mockResolvedValue(null);
+    renderPage();
+
+    const box = await screen.findByPlaceholderText("Choose supplier…");
+    await act(async () => {
+      fireEvent.focus(box);
+    });
+    expect(await screen.findByRole("option", { name: /SHEHZAD RUBBER TOPPING/ })).toHaveTextContent("Supplier");
   });
 
   it("submits a scanned packet on its own, with no Enter key", async () => {

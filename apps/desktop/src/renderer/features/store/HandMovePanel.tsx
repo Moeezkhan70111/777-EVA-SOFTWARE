@@ -1,13 +1,15 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { LEASE_DOMAIN, convertOnLadder, type UnitLadderStep } from "@erp/domain";
+import { LEASE_DOMAIN, convertOnLadder, isRawMaterialReceiptPartyType, type UnitLadderStep } from "@erp/domain";
 import type { HandMoveDirection, Party, RawMaterialHandMoveOptions } from "../../types/desktopApi";
 import { useDesktopApi } from "../../hooks/useDesktopApi";
 import { useNotifications } from "../../state/NotificationsContext";
 import { SearchableCombobox } from "../../components/shared/SearchableCombobox";
+import { LeasedStation } from "./LeasedStation";
+import { PartyTypeBadge } from "../parties/PartyTypeBadge";
+import { partyOption } from "../parties/partyOption";
 import { StateView } from "../../components/shared/StateView";
 import { StepHeading } from "../../components/shared/StepHeading";
 import { copy } from "../../config/copy";
-import { LeasedStation } from "./LeasedStation";
 import { materialPickerOption, formatQuantity, type InventoryItemRow } from "../rawMaterial/rawMaterial";
 
 // MOVING MATERIAL BY HAND — for loose stock that carries no label, in either direction.
@@ -69,7 +71,7 @@ const HandMoveForm: React.FC<HandMovePanelProps> = ({ direction, token, onMoved 
         movingIn ? api.listParties({ pageSize: 1000 }) : Promise.resolve({ rows: [] as Party[] }),
       ]);
       setItems(materials);
-      setSuppliers(parties.rows.filter((party) => party.partyType === "SUPPLIER"));
+      setSuppliers(parties.rows.filter((party) => isRawMaterialReceiptPartyType(party.partyType)));
     } catch (error) {
       setLoadError(error instanceof Error ? error.message : copy.states.loadFailedBody);
     }
@@ -120,7 +122,7 @@ const HandMoveForm: React.FC<HandMovePanelProps> = ({ direction, token, onMoved 
     [items]
   );
   const supplierOptions = useMemo(
-    () => suppliers.map((party) => ({ value: party.id, label: `${party.partyCode} — ${party.partyName}` })),
+    () => suppliers.map(partyOption),
     [suppliers]
   );
 
@@ -209,6 +211,7 @@ const HandMoveForm: React.FC<HandMovePanelProps> = ({ direction, token, onMoved 
               ariaLabel={copy.moveOut.stepSupplier}
               onChange={setPartyId}
             />
+            <PartyTypeBadge partyType={suppliers.find((party) => party.id === partyId)?.partyType} />
             <p className="field-help">{copy.moveOut.supplierHelp}</p>
           </div>
         </section>

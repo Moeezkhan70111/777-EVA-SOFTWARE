@@ -7,6 +7,8 @@ import { ReportDayPicker } from "../store/dailyReport/ReportDayPicker";
 import { DayPrograms } from "./DayPrograms";
 import { MachineCards } from "./MachineCards";
 import { MachineDialog } from "./MachineDialog";
+import { OpenPrograms } from "./OpenPrograms";
+import type { StoreMode } from "../store/page/storeTabs";
 import { useDayPrograms, useMachines } from "./useCartonProgram";
 
 // MACHINE PROGRAM
@@ -40,9 +42,13 @@ interface MachineProgramPageProps {
   onMachinesChanged?: () => void;
   /** Opens Reconciliation on one program; absent when this user cannot open it. */
   onStartReconciliation?: (programId: string) => void;
+  /** An administrator also sees every open program, to delete (0.3.8). The main process checks it again. */
+  isAdmin?: boolean;
+  /** Opens a program on the Store page, in Receiving or Issuing. Absent when this user cannot open it. */
+  onOpenInStore?: (programId: string, mode: StoreMode) => void;
 }
 
-export const MachineProgramPage: React.FC<MachineProgramPageProps> = ({ onOpenQrGenerator, embedded = false, onMachinesChanged, onStartReconciliation }) => {
+export const MachineProgramPage: React.FC<MachineProgramPageProps> = ({ onOpenQrGenerator, embedded = false, onMachinesChanged, onStartReconciliation, isAdmin = false, onOpenInStore }) => {
   const { push } = useNotifications();
   const [date, setDate] = useState(toIsoDate());
   const [dialog, setDialog] = useState<Dialog>(null);
@@ -72,6 +78,8 @@ export const MachineProgramPage: React.FC<MachineProgramPageProps> = ({ onOpenQr
         <h2 id="mp-machines-title" className="section-label">{text.machinesTitle}</h2>
         <MachineCards machines={machines} onAdd={() => setDialog({ kind: "add" })} onEdit={(machine) => setDialog({ kind: "edit", machine })} />
       </section>
+
+      {isAdmin || onOpenInStore ? <OpenPrograms canDelete={isAdmin} onOpenInStore={onOpenInStore} onDeleted={() => void programs.reload()} /> : null}
 
       <section className="mp-section" aria-labelledby="mp-programs-title">
         <div className="mp-section-head">

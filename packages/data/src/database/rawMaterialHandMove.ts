@@ -27,7 +27,7 @@
 //
 // These methods are merged onto SqliteDatabase (see sqliteDatabase.ts, "Feature modules").
 
-import { STOCK_EVENT_NOTE, convertOnLadder, unitsForCount, type UnitLadderStep } from "@erp/domain";
+import { STOCK_EVENT_NOTE, convertOnLadder, isRawMaterialReceiptPartyType, unitsForCount, type UnitLadderStep } from "@erp/domain";
 import type { SqliteDatabase } from "../sqliteDatabase.js";
 import type { HandMoveDirection, RawMaterialHandMoveInput, RawMaterialHandMoveOptions, RawMaterialHandMoveResult } from "./types.js";
 
@@ -107,8 +107,13 @@ export const rawMaterialHandMoveMethods = {
     if (direction === "IN") {
       partyId = String(input.partyId ?? "").trim() || null;
       if (!partyId) return refuse("NO_SUPPLIER", "Choose the supplier this delivery came from.");
-      const party = this.db.prepare("SELECT id FROM parties WHERE id = ? AND deleted_at IS NULL LIMIT 1").get(partyId) as { id: string } | undefined;
+      const party = this.db
+        .prepare("SELECT id, party_name, party_type FROM parties WHERE id = ? AND deleted_at IS NULL LIMIT 1")
+        .get(partyId) as { id: string; party_name: string; party_type: string } | undefined;
       if (!party) return refuse("NO_SUPPLIER", "That supplier is not in the Party Master.");
+      if (!isRawMaterialReceiptPartyType(party.party_type)) {
+        return refuse("NO_SUPPLIER", `Only a supplier's delivery is moved in, and ${party.party_name} is not a supplier. Nothing was moved.`);
+      }
     }
 
     const typedUnit = String(input.unitCode ?? "").trim().toUpperCase();

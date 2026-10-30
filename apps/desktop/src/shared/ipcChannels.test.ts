@@ -6,6 +6,10 @@ import { IPC } from "./ipcChannels";
 // the main process and not exposed by the preload, so nothing — screen, devtools or a later AI
 // feature — can plan a program through them. Phase 1.1 gave the Machine Program its machines back
 // (Add Machine, change contractors); a program itself only opens from a QR run.
+//
+// 0.3.8 brought ONE of these back: deleteMachineProgram (owner), to close a program that can never
+// honestly be completed. It plans nothing: administrators only, and never without a typed reason,
+// which is audited (main/ipc/machinePrograms.ts).
 
 const RETIRED_PLANNING_CHANNELS = [
   "listMachineProgramBoard",
@@ -19,7 +23,6 @@ const RETIRED_PLANNING_CHANNELS = [
   "saveMachineProgramArticleRates",
   "removeMachineProgramLine",
   "removeMachineProgramRun",
-  "deleteMachineProgram",
   "setMachineProgramShift",
   "setMachineProgramSoleSlot",
 ];
@@ -37,5 +40,10 @@ describe("Machine Program IPC channels", () => {
     expect(IPC.listMachineProgramDana).toBeDefined();
     expect(IPC.openMachineProgramStoreOut).toBeDefined();
     expect(IPC.generateQrBatch).toBeDefined();
+  });
+
+  it("0.3.8: an administrator can delete a program left open, and see every one still open", () => {
+    expect(IPC.deleteMachineProgram).toBe("erp:delete-machine-program");
+    expect(IPC.listOpenMachinePrograms).toBe("erp:list-open-machine-programs");
   });
 });

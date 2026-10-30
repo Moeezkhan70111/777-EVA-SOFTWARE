@@ -2,6 +2,11 @@
 
 /* The preset font, bundled rather than fetched: this app has to work offline. */
 @import "@fontsource-variable/inter";
+/* The Store page's typefaces (0.3.9): Archivo for its text, IBM Plex Mono for codes and small labels. */
+@import "@fontsource-variable/archivo";
+@import "@fontsource/ibm-plex-mono/400.css";
+@import "@fontsource/ibm-plex-mono/500.css";
+@import "@fontsource/ibm-plex-mono/600.css";
 
 /* ─── Tokens ─────────────────────────────────────────── */
 /* Visually hidden but announced — text alternative for colour-only cues (R18). */
@@ -98,11 +103,11 @@
      darkest step so the chrome belongs to the same family as the action blue, and so changing
      the company's chrome colour is these five lines (R3). */
   --sidebar-w:          216px;
-  --sidebar-bg:         var(--accent-navy);
+  --sidebar-bg:         var(--sp-navy);
   --sidebar-ink:        #ffffff;
   --sidebar-ink-dim:    rgba(255, 255, 255, 0.72);
   --sidebar-hover:      rgba(255, 255, 255, 0.10);
-  --sidebar-active:     rgba(255, 255, 255, 0.16);
+  --sidebar-active:     var(--sp-navy-2);
   --sidebar-line:       rgba(255, 255, 255, 0.12);
   --sidebar-mark:       var(--accent-mid);
   --ink-2:              var(--sc-muted-foreground);
@@ -163,6 +168,7 @@
   --neutral-200:        #e2e8f0;
   --neutral-300:        #cbd5e1;
   --neutral-400:        #94a3b8;
+  --neutral-500:        #64748b;      /* the lightest grey that still reads at 4.5:1 on white */
   --neutral-600:        #475569;
   --neutral-700:        #334155;
   --neutral-750:        #2d3748;
@@ -175,6 +181,29 @@
   --warning-tint:       #fef3c7;
   --warning-strong:     #92400e;
   --warning-deep:       #b45309;
+  /* THE STORE PAGE's palette (0.3.9): white, navy, red. Navy is the app's chrome and Receiving; red
+     is Issuing, the main action on a card, and a refusal. */
+  --sp-navy:               #0C1B38;
+  --sp-navy-2:             #1D3769;      /* the active sidebar row */
+  --sp-red:                #D92D20;      /* white text on it: 4.8:1 */
+  --sp-red-hover:          #B42318;
+  --sp-ground:             #F2F5FA;      /* the page, and panels set into a card */
+  --sp-line:               #E2E8F2;      /* input borders */
+  --sp-muted:              #5E6E8A;      /* secondary text: 5.2:1 on white, 4.7:1 on the ground */
+  /* #8D9AB2 was asked for labels and hints; it is 2.8:1 on white, too faint for 10px text, so those
+     use --sp-muted. It stays for what is not text: dividers, disabled outlines. */
+  --sp-faint:              #8D9AB2;
+  --sp-small-label:        var(--sp-muted);
+  --sp-field-label:        #35486B;
+  --sp-card-shadow:        0 1px 2px rgba(12, 27, 56, 0.06), 0 10px 28px rgba(12, 27, 56, 0.04);
+  --sp-radius-card:        14px;
+  --sp-radius-mode:        13px;
+  --sp-radius-control:     10px;         /* inputs, selects, buttons */
+  --sp-radius-tab:         9px;          /* tabs and sidebar rows */
+  --sp-control-height:     46px;
+  --sp-font:               "Archivo Variable", "Archivo", "Segoe UI", sans-serif;
+  --sp-font-code:          "IBM Plex Mono", Consolas, "Courier New", monospace;
+  --radius-tab:            var(--sp-radius-tab);
   --danger-tint:        #fee2e2;
   --danger-strong:      #b91c1c;
   --danger-deep:        #7f1d1d;
@@ -394,6 +423,7 @@ html, body { margin: 0; height: 100%; overflow-x: hidden; background: var(--bg);
   transition: background-color .12s ease, color .12s ease;
 }
 .nav-item:hover { background: var(--sidebar-hover); color: var(--sidebar-ink); }
+.nav-item, .nav-top-btn { border-radius: var(--radius-tab); }
 
 /* ── Popovers: profile menu, notifications ─────────────────────────────── */
 
@@ -7597,6 +7627,143 @@ tr.has-error .gp-qty-stepper input { color: var(--err); }
 }
 .si-manual-close:hover { border-color: var(--primary); color: var(--primary-dark); }
 .si-manual-open .mo-manual { padding: 0 14px 14px; }
+/* ── THE STORE PAGE (0.3.9): Receiving | Issuing, the work area on the left, the active mode's scan
+   panel on the right. Like Store In, the page never scrolls: each pane scrolls inside itself, so the
+   scan box is always on screen.
+
+   Its sections are shared components that read the theme's tokens, so the page redefines those
+   tokens for everything inside it; the same sections elsewhere in the app keep their look. The two
+   scan panels are 0.3.7's and keep their own inside. ── */
+.sp-page {
+  --background: var(--sp-ground);
+  --foreground: var(--sp-navy);
+  --foreground-muted: var(--sp-muted);
+  --text: var(--sp-navy);
+  --radius-sm: var(--sp-radius-control);
+  --radius-md: var(--sp-radius-control);
+  --radius-lg: var(--sp-radius-card);
+  --radius-xl: var(--sp-radius-card);
+  --radius-2xl: var(--sp-radius-card);
+  --border: var(--sp-line);
+  --line: var(--sp-line);
+  --line-soft: var(--sp-line);
+  --border-soft: var(--sp-line);
+  --glass-60: var(--sp-line);
+  --neutral-175: var(--white);
+  --shadow-sm: var(--sp-card-shadow);
+  --shadow-md: var(--sp-card-shadow);
+  --font-mono: var(--sp-font-code);
+  --mono: var(--sp-font-code);
+  display: flex; flex-direction: column; height: 100%; min-height: 0;
+  padding: 22px 28px 18px; gap: 16px; overflow: hidden;
+  background: var(--sp-ground); color: var(--sp-navy);
+  font-family: var(--sp-font); font-size: 14px; font-weight: 400;
+}
+.sp-page button, .sp-page input, .sp-page select, .sp-page textarea { font-family: inherit; }
+
+/* Right padding keeps the head clear of the app's floating profile menu. */
+.sp-head { display: flex; align-items: center; gap: var(--space-3); flex-shrink: 0; padding-right: 180px; }
+.sp-head-text { flex: 1; min-width: 0; }
+.sp-title { margin: 0; font-size: 30px; font-weight: 800; letter-spacing: -0.035em; line-height: 1.1; color: var(--sp-navy); }
+.sp-sub { margin: 4px 0 0; font-size: 14px; color: var(--sp-muted); }
+.sp-head-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+
+/* The mode switch: two filled cards. Active Receiving navy, active Issuing red, both with white
+   text; the inactive one white. Each shows its session state — the active one in a pill. */
+.sp-modes { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; flex-shrink: 0; }
+.sp-mode {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  min-height: 56px; padding: 12px 18px; cursor: pointer; text-align: left;
+  background: var(--white); color: var(--sp-navy); border: 0; border-radius: var(--sp-radius-mode); box-shadow: var(--sp-card-shadow);
+}
+.sp-mode-name { font-size: 16px; font-weight: 700; }
+.sp-mode-state { font-size: 13px; color: var(--sp-muted); font-variant-numeric: tabular-nums; }
+.sp-mode-state--open { font-weight: 600; color: var(--sp-navy); }
+.sp-mode--receiving[aria-pressed="true"] { background: var(--sp-navy); color: var(--white); box-shadow: none; }
+.sp-mode--issuing[aria-pressed="true"] { background: var(--sp-red); color: var(--white); box-shadow: none; }
+.sp-mode[aria-pressed="true"] .sp-mode-state { padding: 4px 11px; border-radius: 999px; background: rgba(255, 255, 255, 0.16); color: var(--white); }
+.sp-mode:focus-visible { outline: 3px solid var(--sp-navy-2); outline-offset: 2px; }
+
+.sp-body { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(330px, 400px); gap: 16px; }
+.sp-work-slot { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+.sp-work-slot > .sp-work { flex: 1; }
+/* The inactive mode stays mounted (its session, its form) but is not shown. hidden must win over
+   the display these blocks set, or both modes would show at once. */
+.sp-work-slot[hidden], .sp-rail[hidden] { display: none; }
+.sp-work { min-width: 0; min-height: 0; display: flex; flex-direction: column; gap: 14px; }
+.sp-work-pane { flex: 1; min-height: 0; overflow-y: auto; padding: 2px 4px 2px 2px; }
+.sp-work-pane .rm-new-page { max-width: none; }
+.sp-work-pane > .mpi-page { overflow: visible; overscroll-behavior: auto; }
+
+/* Cards: white, 14px, no border — the ground and a soft shadow set them apart. */
+.sp-rail, .sp-page .card, .sp-page .form-card, .sp-page .table-container, .sp-page .stock-table-panel,
+.sp-page .qr-input-card, .sp-page .si-manual-open, .sp-page .rm-new-page, .sp-page .sp-issued-row, .sp-page .workspace-panel {
+  background: var(--white); border: 0; border-radius: var(--sp-radius-card); box-shadow: var(--sp-card-shadow);
+}
+.sp-rail { position: relative; display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+.sp-rail .ssn { min-height: 0; flex: 1; }
+.sp-page .si-manual-open, .sp-page .rm-new-page { padding: 22px 24px; }
+.sp-page .si-manual-open .mo-manual, .sp-page .si-manual-head { padding-left: 0; padding-right: 0; }
+.sp-paused { display: flex; flex-direction: column; gap: 8px; padding: 18px 20px; }
+.sp-paused p { margin: 0; }
+
+/* Card headings, field labels, small labels: a real hierarchy. */
+.sp-page .rm-section-title, .sp-page .si-scan-title, .sp-page .si-manual-title, .sp-page .sdr-section-title {
+  font-size: 17px; font-weight: 700; letter-spacing: -0.02em; color: var(--sp-navy);
+}
+.sp-page .input-label, .sp-page .mo-field-label, .sp-page .form-group label,
+.sp-page .qr-step-title, .sp-page .rm-preview-label, .sp-page .mo-in-store-label {
+  font-size: 13px; font-weight: 600; color: var(--sp-field-label);
+}
+.sp-marker, .sp-page .section-label {
+  margin: 0; font-family: var(--sp-font-code); font-size: 10px; font-weight: 600; letter-spacing: 0.14em;
+  text-transform: uppercase; color: var(--sp-small-label);
+}
+.sp-page .required-mark { display: none; }
+/* Numbers that line up in columns. */
+.sp-page td, .sp-page .rm-num, .sp-page .cell-mono, .sp-issued-row { font-variant-numeric: tabular-nums; }
+.sp-page .cell-mono, .sp-issued-code { font-family: var(--sp-font-code); }
+
+/* Tabs: rounded segments. The active one solid navy with white text; the rest plain muted text. */
+.sp-page .tab-strip {
+  display: flex; flex-wrap: wrap; gap: 4px; padding: 5px; flex-shrink: 0;
+  background: var(--white); border: 0; border-radius: var(--sp-radius-card); box-shadow: var(--sp-card-shadow);
+}
+.sp-page .tab-strip-btn {
+  min-height: 40px; padding: 8px 16px; border: 0; border-radius: var(--sp-radius-tab);
+  background: transparent; color: var(--sp-muted); font-size: 14px; font-weight: 600; box-shadow: none;
+}
+.sp-page .tab-strip-btn:hover { color: var(--sp-navy); background: var(--sp-ground); }
+.sp-page .tab-strip-btn.is-active { background: var(--sp-navy); color: var(--white); box-shadow: none; }
+
+/* Inputs and selects. */
+.sp-page .form-input, .sp-page select {
+  min-height: var(--sp-control-height); border: 1.5px solid var(--sp-line); border-radius: var(--sp-radius-control);
+  background: var(--white); color: var(--sp-navy); font-size: 14px;
+}
+.sp-page .form-input:focus, .sp-page select:focus { border-color: var(--sp-navy-2); box-shadow: 0 0 0 3px rgba(29, 55, 105, 0.14); }
+
+/* Buttons: the main action solid red; secondary white with a light border and a soft shadow. */
+.sp-page .btn { min-height: 44px; border-radius: var(--sp-radius-control); font-weight: 600; }
+.sp-page .btn-primary { background: var(--sp-red); border-color: var(--sp-red); color: var(--white); box-shadow: none; }
+.sp-page .btn-primary:hover:not(:disabled) { background: var(--sp-red-hover); border-color: var(--sp-red-hover); }
+.sp-page .btn-secondary { background: var(--white); border: 1.5px solid var(--sp-line); color: var(--sp-navy); box-shadow: var(--sp-card-shadow); }
+.sp-page .btn-secondary:hover:not(:disabled) { background: var(--sp-ground); }
+
+.sp-issued-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.sp-issued-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto auto; gap: var(--space-3); align-items: center; padding: 14px 18px; }
+.mp-open-actions { display: inline-flex; gap: var(--space-2); }
+.sp-issued-code { font-weight: 600; }
+
+/* Tablet and narrower: the scan rail first, the work area under it. */
+@media (max-width: 900px) {
+  .sp-page { overflow-y: auto; height: auto; padding: 16px; }
+  .sp-head { padding-right: 0; flex-wrap: wrap; }
+  .sp-body { grid-template-columns: minmax(0, 1fr); }
+  .sp-rail { order: -1; }
+  .sp-issued-row { grid-template-columns: minmax(0, 1fr) auto; }
+}
+
 
 @media (max-width: 1100px) {
   .si-page { overflow-y: auto; }
@@ -8727,3 +8894,17 @@ tr.has-error .gp-qty-stepper input { color: var(--err); }
 .sync-device { padding: var(--space-3) 0; border-top: 1px solid var(--border-soft); }
 .sync-device-head { display: flex; flex-wrap: wrap; justify-content: space-between; gap: var(--space-2); }
 .sync-device-sample { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-2); }
+
+/* Store movements (0.3.8): what kind of party is chosen, and the party a Move Out session is locked to. */
+.party-type-badge { margin-top: 6px; align-self: flex-start; }
+.ssn-toolbar .party-type-badge { margin-top: 0; }
+/* A tag beside an option's label in a picker list: the label wraps, the tag keeps its width. */
+.city-option-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+.city-option-badge { flex-shrink: 0; }
+.mo-locked-party { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.mo-locked-party .field-help { flex-basis: 100%; margin: 0; }
+
+/* Machine Program — open programs an administrator can delete (0.3.8). */
+.mp-open-list { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 8px; }
+.mp-open-row { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--radius-xl); }
+.mp-open-row .btn { margin-left: auto; }

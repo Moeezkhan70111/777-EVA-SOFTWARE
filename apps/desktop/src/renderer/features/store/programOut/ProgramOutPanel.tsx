@@ -50,8 +50,6 @@ interface ProgramOutPanelProps {
   state: ProgramOutState;
   /** Closes the program and goes back to the page it was opened from. */
   onClose: () => void;
-  /** Leaves Store Out altogether, for the Store Station job chooser. */
-  onChangeJob?: () => void;
   /** Store In: read the program and complete it; nothing can be issued. Its cartons are scanned
    *  in on the page's own scan station on the right (CartonInStation), not here. */
   viewOnly?: boolean;
@@ -59,7 +57,7 @@ interface ProgramOutPanelProps {
   close: ProgramCloseState;
 }
 
-export const ProgramOutPanel: React.FC<ProgramOutPanelProps> = ({ state, onClose, onChangeJob, viewOnly = false, close }) => {
+export const ProgramOutPanel: React.FC<ProgramOutPanelProps> = ({ state, onClose, viewOnly = false, close }) => {
   const { program, cartonRuns, printedRuns, blockedCartons, printingKey, history } = state;
   const { cartonProgress } = state;
   const bands = useMemo(() => (program ? programBands(program, cartonProgress) : []), [program, cartonProgress]);
@@ -80,7 +78,6 @@ export const ProgramOutPanel: React.FC<ProgramOutPanelProps> = ({ state, onClose
         title={viewOnly ? copy.programOut.viewTitle : copy.programOut.issueTitle}
         backLabel={viewOnly ? copy.programOut.viewBack : copy.programOut.back}
         onBack={onClose}
-        onChangeJob={onChangeJob}
       />
 
       {state.error ? (

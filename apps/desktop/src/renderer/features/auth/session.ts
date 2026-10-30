@@ -113,19 +113,10 @@ export const routePermission: Partial<Record<AppRoute, PermissionCode>> = {
   "live-return": PERMISSION.LIVE_RETURN,
   "return-history": PERMISSION.RETURN_HISTORY,
 
-  // The whole store station — the home screen and both directions — is one job, so it
-  // shares the single store-scanning permission.
-  "store-home": PERMISSION.STORE_SCANNING,
-  "store-in-operator": PERMISSION.STORE_SCANNING,
-  "store-in-new-material": PERMISSION.STOCK,
-  "store-in-qr-generator": PERMISSION.RAW_MATERIAL_QR_GENERATOR,
-  "store-in-scanner": PERMISSION.STORE_SCANNING,
-  "store-in-stock": PERMISSION.STOCK,
-  "store-in-receipts": PERMISSION.STOCK,
-  // The day's movements are read by whoever works the store, the same as the stations.
-  "store-in-daily-report": PERMISSION.STORE_SCANNING,
-  "store-out-operator": PERMISSION.STORE_SCANNING,
-  "store-out-daily-report": PERMISSION.STORE_SCANNING,
+  // The Store page (0.3.9): Receiving and Issuing on one page, in place of Store Station, Store In
+  // and Store Out — the store's one permission, as they had. Its tabs keep their own (StorePage).
+  "store-receiving": PERMISSION.STORE_SCANNING,
+  "store-issuing": PERMISSION.STORE_SCANNING,
 
   // The Munshi's station. Only the station screen itself is the Munshi's permission; the
   // stock section keeps the Stock permission its page has always required.
@@ -198,7 +189,6 @@ export const routeAnyPermission: Partial<Record<AppRoute, PermissionCode[]>> = {
   "raw-material": [PERMISSION.STOCK, PERMISSION.RAW_MATERIAL_QR_GENERATOR, PERMISSION.SETTINGS, PERMISSION.RAW_MATERIAL_SETUP],
   // Raw material setup: the whole of Settings, or just this part of it.
   "raw-material-setup": [PERMISSION.SETTINGS, PERMISSION.RAW_MATERIAL_SETUP],
-  "store-in-setup": [PERMISSION.SETTINGS, PERMISSION.RAW_MATERIAL_SETUP],
   // The raw material scanners belong to the store station, so a store operator always has
   // them; the page's own permission offers them to someone who is not a store operator.
   "raw-material-input": [PERMISSION.STORE_SCANNING, PERMISSION.RAW_MATERIAL_INPUT],
@@ -234,9 +224,11 @@ export const HOME_ROUTE: AppRoute = "home";
 /**
  * Where a user starts after signing in, and where Escape takes them.
  *
- * A store operator (anyone but an administrator who holds Store Scanning) starts on Store
- * Station — "What is your job today?" — and the job they pick opens its own screen. Everyone
- * else starts on their Dashboard. The Dashboard stays one click away in the sidebar for all.
+ * A store operator (anyone but an administrator who holds Store Scanning) starts on the Store page
+ * in Receiving (0.3.9); its switch shows Issuing's state at a glance. Everyone else starts on their
+ * Dashboard.
  */
+export const STORE_LANDING_ROUTE: AppRoute = "store-receiving";
+
 export const landingRoute = (user: AuthUser | null | undefined): AppRoute =>
-  user && !isAdmin(user) && hasPermission(user, PERMISSION.STORE_SCANNING) ? "store-home" : HOME_ROUTE;
+  user && !isAdmin(user) && hasPermission(user, PERMISSION.STORE_SCANNING) ? STORE_LANDING_ROUTE : HOME_ROUTE;

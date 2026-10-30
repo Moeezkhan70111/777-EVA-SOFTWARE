@@ -30,7 +30,7 @@ const READS = new Set([
   "getRawMaterialQrSequenceState",
   // store
   "getOpenRawMaterialReceivingSession", "getRawMaterialReceivingSessionSummary", "listRawMaterialReceivingSessions",
-  "getRawMaterialIssueSessionSummary", "openMachineProgramStoreOut", "machineProgramStoreOutCheckScan",
+  "getRawMaterialIssueSessionSummary", "getOpenRawMaterialIssueSession", "listRawMaterialIssueSessions", "openMachineProgramStoreOut", "machineProgramStoreOutCheckScan",
   "listMachineProgramIssueBatches", "listMachineProgramCartonPackets", "getMachineProgramReconciliation",
   "listMachineProgramDanaOptions", "listMachineProgramDanaIssues", "getRawMaterialHandMoveOptions",
   "storeReceivingSessionSummary", "storeMoveOutSessionSummary", "getStoreDailyReport",
@@ -39,6 +39,7 @@ const READS = new Set([
   "getCustomerLedger", "listCustomerBalances", "listCities",
   // machinePrograms
   "listMachines", "listMachineProgramDana", "listMachineDayPrograms", "listCartonProgramBatches", "listReconcilablePrograms",
+  "listOpenMachinePrograms",
   // upperMoveOut
   "listUpperStock",
   // syncWaiting

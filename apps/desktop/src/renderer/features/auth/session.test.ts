@@ -12,9 +12,9 @@ const user = (permissions: string[], role: AuthUser["role"] = "USER"): AuthUser 
 });
 
 describe("landingRoute — the first screen after signing in", () => {
-  it("starts a store operator on Store Station, where they pick their job", () => {
-    expect(landingRoute(user(["store-scanning"]))).toBe("store-home");
-    expect(landingRoute(user(["store-scanning", "stock", "raw-material-qr-generator"]))).toBe("store-home");
+  it("starts a store operator on the Store page, in Receiving (0.3.9)", () => {
+    expect(landingRoute(user(["store-scanning"]))).toBe("store-receiving");
+    expect(landingRoute(user(["store-scanning", "stock", "raw-material-qr-generator"]))).toBe("store-receiving");
   });
 
   it("starts everyone else on their Dashboard", () => {

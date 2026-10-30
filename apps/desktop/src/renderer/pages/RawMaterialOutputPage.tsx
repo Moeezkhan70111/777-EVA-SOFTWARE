@@ -1,6 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useDesktopApi } from "../hooks/useDesktopApi";
 import type { Party, RawMaterialIssueResult, RawMaterialIssueSession, RawMaterialIssueSessionSummary } from "../types/desktopApi";
+import { PartyTypeBadge } from "../features/parties/PartyTypeBadge";
+import { partyOption } from "../features/parties/partyOption";
 import { SearchableCombobox } from "../components/shared/SearchableCombobox";
 import { StateView } from "../components/shared/StateView";
 import { StepHeading } from "../components/shared/StepHeading";
@@ -8,11 +10,13 @@ import type { AppRoute } from "../app/routes";
 import { useNotifications } from "../state/NotificationsContext";
 import { playScanSound } from "../utils/playScanSound";
 import { copy } from "../config/copy";
-import { openPrintDocument } from "../platform/print";
-import { escapeHtml } from "../utils/html";
+import { openIssueSlipPrintWindow } from "../features/rawMaterial/issueSlip";
 import { formatDateTime } from "../utils/dates";
 import { isCompleteQr, sanitizeScanInput } from "../utils/qr";
 import { LEASE_DOMAIN, isMachineProgramCodeScan, isRawMaterialIssuePartyType, isValidRawMaterialQrId } from "@erp/domain";
+import { LeasedStation } from "../features/store/LeasedStation";
+import { ReaderStation } from "../features/store/ReaderStation";
+import type { StationStatus } from "../features/store/page/stationStatus";
 import {
   LastScanCard,
   PlusIcon,
@@ -24,8 +28,6 @@ import {
   StationToolbar,
 } from "../features/scanStation/scanStation";
 import type { ScanStationFeedback, StationScanRow } from "../features/scanStation/scanStation";
-import { LeasedStation } from "../features/store/LeasedStation";
-import { ReaderStation } from "../features/store/ReaderStation";
 
 // Raw Material Output — issuing packets out of the store to the section that consumes them.
 //
@@ -136,66 +138,21 @@ const feedbackFor = (result: RawMaterialIssueResult, seq: number): ScanStationFe
   }
 };
 
-/** The printed issue slip: what left the store, one destination at a time. */
-const buildSlipHtml = (summary: RawMaterialIssueSessionSummary): string => {
-  const e = escapeHtml;
-  const sections = summary.bySection
-    .map(
-      (section) =>
-        `<h3>${e(section.sectionName)} — ${section.packets} packet${section.packets === 1 ? "" : "s"}</h3>` +
-        `<table><thead><tr><th>Raw material</th><th class="num">Packets</th><th class="num">Quantity</th></tr></thead><tbody>` +
-        section.materials
-          .map((m) => `<tr><td>${e(m.itemDisplayName)}</td><td class="num">${m.packets}</td><td class="num">${m.quantity} ${e(m.unitCode)}</td></tr>`)
-          .join("") +
-        `</tbody></table>`
-    )
-    .join("");
+/** What the scan box says while it is waiting: the next step of choose party, New session, scan. */
+function scanHintFor(partyId: string, session: RawMaterialIssueSession | null): string {
+  if (!partyId) return copy.moveOut.scanStartHint;
+  if (session?.status === "CLOSED") return copy.moveOut.scanSessionClosed;
+  return copy.moveOut.scanPressNew;
+}
 
-  const scans = summary.scans
-    .map(
-      (scan, index) =>
-        `<tr><td class="num">${index + 1}</td><td class="code">${e(scan.qrId)}</td><td>${e(scan.itemDisplayName)}</td>` +
-        `<td class="num">${scan.quantity} ${e(scan.unitCode)}</td><td>${e(scan.sectionName ?? "—")}</td><td>${e(formatDateTime(scan.issuedAt))}</td></tr>`
-    )
-    .join("");
-
-  return `<!DOCTYPE html>
-<html lang="en"><head><meta charset="UTF-8" /><title>${e(summary.session.code)} — Raw material issued</title>
-<style>
-  body { font-family: "Segoe UI", Arial, sans-serif; padding: 28px; color: #111; }
-  h1 { font-size: 18px; margin: 0 0 4px; }
-  h3 { font-size: 13px; margin: 20px 0 6px; }
-  .meta { color: #555; font-size: 12px; margin-bottom: 18px; }
-  .meta span { margin-right: 18px; }
-  h2 { font-size: 14px; margin: 22px 0 8px; }
-  table { border-collapse: collapse; width: 100%; font-size: 12px; }
-  th, td { padding: 6px 8px; border-bottom: 1px solid #ddd; text-align: left; }
-  th { background: #f3f5f8; }
-  .num { text-align: right; font-variant-numeric: tabular-nums; }
-  .code { font-family: Consolas, "Courier New", monospace; }
-  .actions { text-align: center; margin-bottom: 18px; }
-  .actions button { padding: 10px 26px; font-size: 13px; font-weight: 600; background: #17365d; color: #fff; border: none; border-radius: 4px; cursor: pointer; }
-  @media print { .actions { display: none; } body { padding: 0; } }
-</style></head>
-<body>
-  <div class="actions"><button onclick="window.print()">${e(copy.reports.printOrSave)}</button></div>
-  <h1>Raw Material Issued</h1>
-  <div class="meta">
-    <span>Session ${e(summary.session.code)}</span>
-    <span>Started ${e(formatDateTime(summary.session.startedAt))}</span>
-    ${summary.session.closedAt ? `<span>Closed ${e(formatDateTime(summary.session.closedAt))}</span>` : ""}
-    <span>Issued by ${e(summary.session.startedBy ?? "—")}</span>
-    <span>${summary.totalPackets} packet${summary.totalPackets === 1 ? "" : "s"}</span>
+/** The party a running session is locked to: its name and type, and why it cannot be changed. */
+const LockedParty: React.FC<{ party: Party | undefined }> = ({ party }) => (
+  <div className="mo-locked-party" data-testid="locked-party">
+    <strong>{party ? `${party.partyCode} — ${party.partyName}` : "—"}</strong>
+    <PartyTypeBadge partyType={party?.partyType} />
+    <p className="field-help">🔒 {copy.moveOut.scanPartyLocked}</p>
   </div>
-
-  <h2>By destination</h2>
-  ${sections || "<p>Nothing was issued in this session.</p>"}
-
-  <h2>Every packet</h2>
-  <table><thead><tr><th class="num">#</th><th>QR</th><th>Raw material</th><th class="num">Quantity</th><th>Destination</th><th>Issued</th></tr></thead>
-  <tbody>${scans || '<tr><td colspan="6">Nothing was issued in this session.</td></tr>'}</tbody></table>
-</body></html>`;
-};
+);
 
 interface RawMaterialOutputPageProps {
   /** Session token; the main process authorises every issue call with it. */
@@ -221,15 +178,25 @@ interface RawMaterialOutputPageProps {
    * Only the unmistakable MP form is passed on; a bare number is a mis-scan, not a program.
    */
   onMachineProgramScan?: (code: string) => void;
+  /**
+   * False while this panel's mode is not the one on the Store page (or a machine program has the
+   * page): it then never takes the scanner's focus, so a scan can only land in the mode on screen.
+   */
+  active?: boolean;
+  /** Where this panel's session stands, for the Store page's mode switch. */
+  onStatus?: (status: StationStatus) => void;
 }
 
 const RawMaterialOutputStation: React.FC<RawMaterialOutputPageProps> = ({
   token,
+  username,
   onBack,
   onNavigate,
   embedded = false,
   onSessionChange,
   onMachineProgramScan,
+  active = true,
+  onStatus,
 }) => {
   const api = useDesktopApi();
   const { push } = useNotifications();
@@ -240,10 +207,12 @@ const RawMaterialOutputStation: React.FC<RawMaterialOutputPageProps> = ({
   const [inputVal, setInputVal] = useState("");
   const [sessionError, setSessionError] = useState<string | null>(null);
   const [scannerConnected, setScannerConnected] = useState(false);
-  // Who the packets are going to. Kept for the life of the screen, so a run of scans to one
-  // party needs one choice, not one per packet.
+  // ONE SESSION, ONE PARTY (0.3.8): choose the party, New session, scan, End session. partyId is
+  // the choice; sessionPartyId is the party the open session was started for, and while it is set
+  // the choice is locked. The main process holds the same rule on every scan.
   const [parties, setParties] = useState<Party[]>([]);
   const [partyId, setPartyId] = useState("");
+  const [sessionPartyId, setSessionPartyId] = useState<string | null>(null);
   const [partiesError, setPartiesError] = useState<string | null>(null);
 
   const seq = useRef(0);
@@ -251,38 +220,57 @@ const RawMaterialOutputStation: React.FC<RawMaterialOutputPageProps> = ({
   const queueRef = useRef<string[]>([]);
   const processingRef = useRef(false);
   const focusScanner = useCallback(() => inputRef.current?.focus(), []);
+  // Read when a scan finishes: the Store page may have switched mode while it was being saved.
+  const activeRef = useRef(active);
+  activeRef.current = active;
 
   const refreshSummary = useCallback(
     async (sessionId: string) => setSummary(await api.getRawMaterialIssueSessionSummary(sessionId)),
     [api]
   );
 
-  // The session opens by itself: there is nothing to pick, so making the operator press a
-  // button first would only be in the way.
-  const openSession = useCallback(
-    async (startNew: boolean) => {
-      setSessionError(null);
-      try {
-        const result = await api.startRawMaterialIssueSession({ token, startNew });
-        if (!result.accepted || !result.session) {
-          setSessionError(result.reason ?? "The session could not be started.");
-          setSession(null);
-          return;
-        }
-        setSession(result.session);
-        setFeedback(IDLE);
-        await refreshSummary(result.session.id);
-      } catch (error) {
-        setSessionError(error instanceof Error ? error.message : copy.states.loadFailedBody);
-        setSession(null);
+  // On arrival: today's open session, if this terminal has one, never a new one. A session with
+  // packets in it is locked to their party again, so a restart mid-session picks up where it was.
+  const loadOpenSession = useCallback(async () => {
+    setSessionError(null);
+    try {
+      const open = await api.getOpenRawMaterialIssueSession();
+      setSession(open);
+      if (!open) return;
+      const current = await api.getRawMaterialIssueSessionSummary(open.id);
+      setSummary(current);
+      if (current?.partyId) {
+        setPartyId(current.partyId);
+        setSessionPartyId(current.partyId);
       }
-    },
-    [api, refreshSummary, token]
-  );
+    } catch (error) {
+      setSessionError(error instanceof Error ? error.message : copy.states.loadFailedBody);
+    }
+  }, [api]);
 
   useEffect(() => {
-    void openSession(false);
-  }, [openSession]);
+    void loadOpenSession();
+  }, [loadOpenSession]);
+
+  // New session, for the chosen party. Any session still open on this terminal is closed first by
+  // the main process, so one terminal has one session at a time.
+  const startSession = useCallback(async () => {
+    if (!partyId) return;
+    setSessionError(null);
+    try {
+      const result = await api.startRawMaterialIssueSession({ token, startNew: true });
+      if (!result.accepted || !result.session) {
+        setSessionError(result.reason ?? "The session could not be started.");
+        return;
+      }
+      setSession(result.session);
+      setSessionPartyId(partyId);
+      setFeedback(IDLE);
+      await refreshSummary(result.session.id);
+    } catch (error) {
+      setSessionError(error instanceof Error ? error.message : copy.states.loadFailedBody);
+    }
+  }, [api, partyId, refreshSummary, token]);
 
   // Only active suppliers and contractors may receive packets — the same domain rule the main
   // process enforces, so the list cannot offer a party the scan would be refused for.
@@ -301,9 +289,10 @@ const RawMaterialOutputStation: React.FC<RawMaterialOutputPageProps> = ({
   }, [loadParties]);
 
   const partyOptions = useMemo(
-    () => parties.map((party) => ({ value: party.id, label: `${party.partyCode} — ${party.partyName}` })),
+    () => parties.map(partyOption),
     [parties]
   );
+  const chosenParty = parties.find((party) => party.id === partyId);
 
   // The session is a database row, not this component's state, so the page above is told
   // which one is open rather than being handed a copy of it.
@@ -330,29 +319,37 @@ const RawMaterialOutputStation: React.FC<RawMaterialOutputPageProps> = ({
     };
   }, [api]);
 
-  const scannerReady = session?.status === "OPEN";
+  // Scanning only in a session started for a party.
+  const locked = session?.status === "OPEN" && sessionPartyId !== null;
+  const scannerReady = locked;
 
   // The scanner types into whichever field has focus, so the scan box keeps it.
   useEffect(() => {
-    if (scannerReady) focusScanner();
-  }, [scannerReady, feedback.seq, focusScanner]);
+    if (scannerReady && active) focusScanner();
+  }, [scannerReady, active, feedback.seq, focusScanner]);
+
+  // The Store page's mode switch shows this panel's session state, even while it is hidden.
+  useEffect(() => {
+    onStatus?.({ sessionId: session?.status === "OPEN" ? (session?.id ?? null) : null, open: session?.status === "OPEN", packets: summary?.totalPackets ?? 0 });
+  }, [onStatus, session, summary]);
+
 
   const runScan = useCallback(
     async (code: string) => {
       if (!session || session.status !== "OPEN") return;
       seq.current += 1;
       // No party, no move: turned away here without a call. The main process refuses it too.
-      if (!partyId) {
+      if (!sessionPartyId) {
         setFeedback(choosePartyFirst(seq.current));
         playScanSound("error");
         return;
       }
-      const result = await api.rawMaterialIssueScan(code, { token, sessionId: session.id, issuedToPartyId: partyId });
+      const result = await api.rawMaterialIssueScan(code, { token, sessionId: session.id, issuedToPartyId: sessionPartyId });
       setFeedback(feedbackFor(result, seq.current));
       playScanSound(result.accepted ? "success" : "error");
       if (result.accepted) await refreshSummary(session.id);
     },
-    [api, partyId, refreshSummary, session, token]
+    [api, refreshSummary, session, sessionPartyId, token]
   );
 
   // Scans are serialised: a wedge scanner can fire the next code before the last one has
@@ -366,7 +363,7 @@ const RawMaterialOutputStation: React.FC<RawMaterialOutputPageProps> = ({
       }
     } finally {
       processingRef.current = false;
-      focusScanner();
+      if (activeRef.current) focusScanner();
     }
   }, [runScan, focusScanner]);
 
@@ -417,13 +414,15 @@ const RawMaterialOutputStation: React.FC<RawMaterialOutputPageProps> = ({
     if (!session) return;
     const closed = await api.closeRawMaterialIssueSession(session.id);
     setSession(closed);
+    // The party is free again: the next session can be for anyone.
+    setSessionPartyId(null);
     await refreshSummary(session.id);
     push("success", "Session closed", `${summary?.totalPackets ?? 0} packet(s) issued`);
   };
 
   const print = () => {
     if (!summary) return;
-    if (!openPrintDocument(buildSlipHtml(summary)).opened) {
+    if (!openIssueSlipPrintWindow(summary, username)) {
       push("error", copy.toast.popupBlocked, "Allow popups to print the issue slip");
     }
   };
@@ -439,7 +438,8 @@ const RawMaterialOutputStation: React.FC<RawMaterialOutputPageProps> = ({
       badge: scan.sectionName ?? "Issued",
     }));
 
-  const blocked = !session && Boolean(sessionError);
+  const blocked = Boolean(sessionError);
+  const scanHint = scanHintFor(partyId, session);
 
   return (
     <div
@@ -461,11 +461,11 @@ const RawMaterialOutputStation: React.FC<RawMaterialOutputPageProps> = ({
         onBack={onBack}
         scannerPill={scannerConnected ? { text: "Scanner ready", color: "#16a34a" } : { text: "Keyboard input", color: "#94a3b8" }}
       >
-        <button type="button" className="ssn-btn" onClick={() => void openSession(true)} disabled={!session}>
+        <button type="button" className="ssn-btn" onClick={() => void startSession()} disabled={locked || !partyId}>
           <PlusIcon />
           New session
         </button>
-        <button type="button" className="ssn-btn" onClick={() => void endSession()} disabled={session?.status !== "OPEN"}>
+        <button type="button" className="ssn-btn" onClick={() => void endSession()} disabled={!locked}>
           End session
         </button>
         <button type="button" className="ssn-btn" onClick={print} disabled={!summary || summary.totalPackets === 0}>
@@ -489,6 +489,8 @@ const RawMaterialOutputStation: React.FC<RawMaterialOutputPageProps> = ({
           <div className="qr-step-body">
             {partiesError ? (
               <StateView kind="error" compact message={partiesError} onRetry={() => void loadParties()} />
+            ) : locked ? (
+              <LockedParty party={parties.find((party) => party.id === sessionPartyId)} />
             ) : (
               <>
                 <SearchableCombobox
@@ -505,6 +507,7 @@ const RawMaterialOutputStation: React.FC<RawMaterialOutputPageProps> = ({
                     setTimeout(focusScanner, 0);
                   }}
                 />
+                <PartyTypeBadge partyType={chosenParty?.partyType} />
                 <p className="field-help">{copy.moveOut.scanPartyHelp}</p>
               </>
             )}
@@ -517,7 +520,7 @@ const RawMaterialOutputStation: React.FC<RawMaterialOutputPageProps> = ({
           <StationBlocked
             title="Raw Material Output is not available"
             message={sessionError ?? ""}
-            onRetry={() => void openSession(false)}
+            onRetry={() => void loadOpenSession()}
           />
         ) : (
           <>
@@ -529,7 +532,7 @@ const RawMaterialOutputStation: React.FC<RawMaterialOutputPageProps> = ({
               onKeyDown={handleKeyDown}
               onFocusScanner={focusScanner}
               disabled={!scannerReady}
-              disabledHint={session ? "Session closed — start a new one" : "Starting session…"}
+              disabledHint={scanHint}
             />
             <aside className="ssn-side">
               <SessionCard
@@ -537,7 +540,7 @@ const RawMaterialOutputStation: React.FC<RawMaterialOutputPageProps> = ({
                 meta={
                   session
                     ? `Started ${formatDateTime(session.startedAt)}${session.startedBy ? ` · ${session.startedBy}` : ""}`
-                    : (sessionError ?? "Starting…")
+                    : copy.moveOut.scanStartHint
                 }
                 tallies={(summary?.bySection ?? []).map((section) => ({
                   key: section.sectionName,

@@ -2,12 +2,13 @@ import React from "react";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { StoreInPage } from "./StoreInPage";
-import type { StoreInTab } from "./storeOperators";
-import { NotificationsProvider } from "../../state/NotificationsContext";
-import type { MachineProgramCartonPacket, MachineProgramReconciliation, MachineProgramRecord } from "../../types/desktopApi";
+import { ProgramLookupField } from "../programOut/ProgramLookupField";
+import { ProgramRail, ProgramWork } from "./ProgramSlot";
+import { useStoreProgram } from "./useStoreProgram";
+import { NotificationsProvider } from "../../../state/NotificationsContext";
+import type { MachineProgramCartonPacket, MachineProgramReconciliation, MachineProgramRecord } from "../../../types/desktopApi";
 
-// STORE IN — the machine program lookup.
+// A MACHINE PROGRAM IN RECEIVING — the Store page (0.3.9), as Store In had it.
 //
 // What matters here: Store In can open ANY machine program to read it (fully issued included),
 // can print the cartons it is owed, and can never issue against it — no Dana Issue, no Upper Out
@@ -17,20 +18,20 @@ import type { MachineProgramCartonPacket, MachineProgramReconciliation, MachineP
 //
 // The sections and the receiving station are existing screens with their own tests; they are
 // mocked so only the lookup and the program view are under test here.
-vi.mock("../../pages/RawMaterialInputPage", () => ({
+vi.mock("../../../pages/RawMaterialInputPage", () => ({
   RawMaterialInputPage: () => <div data-testid="rm-input-station">Raw Material Input</div>,
 }));
-vi.mock("../rawMaterial/RawMaterialSection", () => ({
+vi.mock("../../rawMaterial/RawMaterialSection", () => ({
   RawMaterialSection: () => <div data-testid="rm-section">Stock section</div>,
 }));
-vi.mock("../rawMaterial/useRawMaterialLookups", () => ({
+vi.mock("../../rawMaterial/useRawMaterialLookups", () => ({
   useRawMaterialLookups: () => ({ loading: false, error: null, categories: [], units: [], reload: async () => undefined }),
 }));
-vi.mock("./HandMovePanel", () => ({ HandMovePanel: () => <div>Move In by Hand</div> }));
-vi.mock("../../utils/playScanSound", () => ({ playScanSound: () => undefined }));
+vi.mock("../HandMovePanel", () => ({ HandMovePanel: () => <div data-testid="hand-move-in">Move In by Hand</div> }));
+vi.mock("../../../utils/playScanSound", () => ({ playScanSound: () => undefined }));
 
 const printWindow = vi.fn((_opts: { ids: string[] }) => true);
-vi.mock("../../utils/qrLabels", () => ({
+vi.mock("../../../utils/qrLabels", () => ({
   openCartonLabelPrintWindow: (opts: { ids: string[] }) => printWindow(opts) as boolean,
 }));
 
@@ -171,17 +172,29 @@ function installApi(
   return api;
 }
 
-const renderPage = (onNavigate: (route: string) => void = () => undefined, tab: StoreInTab = "stock") =>
+/**
+ * Receiving with a program, hosted the way the Store page hosts it: the lookup box the Machine
+ * programs pick-list holds, the Receiving program slot, and its Carton In rail. The section and
+ * the Scan in station are stand-ins; the station stays mounted, hidden, while a program is open.
+ */
+const ReceivingHost: React.FC = () => {
+  const store = useStoreProgram({ token: "t-1", issueSessionId: null });
+  return (
+    <>
+      <ProgramLookupField onOpen={store.openProgram} busy={store.program.loading} error={store.isOpen ? null : store.program.error} autoFocus={false} />
+      {store.isOpen ? <ProgramWork store={store} mode="receiving" /> : <div data-testid="rm-section">Stock section</div>}
+      {store.isOpen ? <ProgramRail store={store} mode="receiving" token="t-1" /> : null}
+      <div data-testid="rm-input-station" hidden={store.isOpen}>
+        Raw Material Input
+      </div>
+    </>
+  );
+};
+
+const renderPage = () =>
   render(
     <NotificationsProvider>
-      <StoreInPage
-        tab={tab}
-        token="t-1"
-        username="aslam"
-        isAdmin={false}
-        access={{ stock: true, labels: true, settings: true, report: true }}
-        onNavigate={onNavigate}
-      />
+      <ReceivingHost />
     </NotificationsProvider>
   );
 
@@ -195,19 +208,7 @@ afterEach(() => {
   printWindow.mockClear();
 });
 
-describe("Store In — Daily Report tab", () => {
-  it("shows the day's Store In report on the left while the scan station stays on the right", async () => {
-    const api = installApi();
-    renderPage(undefined, "report");
-
-    expect(await screen.findByText("Nothing came into the store on this day")).toBeInTheDocument();
-    expect(api.getStoreDailyReport).toHaveBeenCalledWith(expect.objectContaining({ direction: "IN", token: "t-1" }));
-    expect(screen.getByRole("tab", { name: "Daily Report Store In" })).toHaveAttribute("aria-selected", "true");
-    expect(screen.getByTestId("rm-input-station")).toBeInTheDocument();
-  });
-});
-
-describe("Store In — machine program lookup", () => {
+describe("Receiving — a machine program", () => {
   it("opens a fully issued program to read, with no way to issue anything against it", async () => {
     const api = installApi();
     renderPage();
@@ -342,22 +343,6 @@ describe("Store In — machine program lookup", () => {
     expect(row).toHaveTextContent("34");
   });
 
-  it("puts the program away when a section tab is chosen", async () => {
-    installApi();
-    const navigate = vi.fn();
-    renderPage(navigate);
-    await openProgram("MP-000001");
-    await screen.findByRole("heading", { name: "Machine Program" });
-
-    await userEvent.click(screen.getByRole("tab", { name: "Stock" }));
-
-    expect(await screen.findByTestId("rm-section")).toBeInTheDocument();
-    expect(screen.queryByRole("heading", { name: "Machine Program" })).not.toBeInTheDocument();
-    expect(navigate).toHaveBeenCalledWith("store-in-stock");
-  });
-  // Reported 2026-10-12: 1 of 20 EVR FIX cartons back read "0 of 0 cartons back — every carton due
-  // is back". A fix run's cartons are counted — and (owner, 2026-10-12) the program cannot be
-  // completed at all until every carton is back: Complete stays disabled and says why.
   it("counts an EVR FIX program's cartons, and will not complete until every carton is back", async () => {
     const fixStanding: MachineProgramReconciliation = {
       ...standing(0),

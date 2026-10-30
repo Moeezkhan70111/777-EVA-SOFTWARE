@@ -25,17 +25,8 @@ export const APP_ROUTES = [
   "dispatch-history",
   "live-return",
   "return-history",
-  "store-home",
-  "store-in-operator",
-  "store-in-new-material",
-  "store-in-qr-generator",
-  "store-in-scanner",
-  "store-in-stock",
-  "store-in-receipts",
-  "store-in-setup",
-  "store-in-daily-report",
-  "store-out-operator",
-  "store-out-daily-report",
+  "store-receiving",
+  "store-issuing",
   // The Munshi's station: tile cards instead of the navbar. Its cards open the Gatepass
   // screens that already exist; munshi-stock is the raw material Stock section with the
   // Munshi's own way back.

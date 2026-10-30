@@ -11,8 +11,9 @@ import type {
 
 // Same station contract as Raw Material Input: a hardware scanner drops the whole code into
 // the focused input in one burst with no Enter, and the page has to submit on its own.
-// The session opens by itself. Since 0.3.6 the operator first chooses who the packets go to — a
-// supplier or a contractor — and a packet scanned before that is turned away without a call.
+// Since 0.3.8 a session belongs to one party: choose the party (a supplier or a contractor), press
+// New session, scan, End session. The session no longer opens by itself, and the party cannot be
+// changed while one runs.
 
 vi.mock("../utils/playScanSound", () => ({ playScanSound: vi.fn() }));
 
@@ -41,13 +42,19 @@ const PARTIES = [
   party("party-retired", "PTY-0004", "OLD CONTRACTOR", "CONTRACTOR", "INACTIVE"),
 ];
 
-function createFakeBackend() {
+function createFakeBackend(options: { open?: RawMaterialIssueSession | null; openParty?: string | null } = {}) {
   const issued: RawMaterialIssueSessionSummary["scans"] = [];
   let clock = 0;
+  let party: string | null = options.openParty ?? null;
 
   const summary = (): RawMaterialIssueSessionSummary => ({
     session: SESSION,
+    partyId: party,
+    partyName: PARTIES.find((p) => p.id === party)?.partyName ?? null,
     totalPackets: issued.length,
+    byMaterial: issued.length
+      ? [{ itemDisplayName: "RUBBER UPPER — SK6 — RED — 7/10", packets: issued.length, quantity: issued.length * 2, unitCode: "DOZ" }]
+      : [],
     bySection: issued.length
       ? [
           {
@@ -76,6 +83,7 @@ function createFakeBackend() {
       if (issued.some((scan) => scan.qrId === raw)) {
         return { accepted: false, outcome: "NOT_IN_STORE", qrId: raw, reason: "This packet has already been issued to PACKING." };
       }
+      party ??= opts?.issuedToPartyId ?? null;
       issued.push({
         qrId: raw,
         itemDisplayName: "RUBBER UPPER — SK6 — RED — 7/10",
@@ -102,6 +110,7 @@ function createFakeBackend() {
   );
 
   const api = {
+    getOpenRawMaterialIssueSession: vi.fn(async () => options.open ?? null),
     startRawMaterialIssueSession: vi.fn(async () => ({ accepted: true, session: SESSION })),
     closeRawMaterialIssueSession: vi.fn(async () => ({ ...SESSION, status: "CLOSED" as const })),
     getRawMaterialIssueSessionSummary: vi.fn(async () => summary()),
@@ -150,10 +159,21 @@ const chooseParty = async (name: RegExp) => {
   });
 };
 
-/** The page is up: session open and the party list loaded. */
+/** The page is up: the party list loaded. No session is opened on arrival. */
 const ready = async () => {
-  await waitFor(() => expect(screen.getByTestId("session-code")).toBeInTheDocument());
   await screen.findByRole("combobox", { name: "Moving out to" });
+};
+
+const newSessionButton = () => screen.getByRole("button", { name: /New session/ });
+const endSessionButton = () => screen.getByRole("button", { name: /End session/ });
+
+/** The whole sequence: choose the party, then New session. */
+const startFor = async (name: RegExp) => {
+  await chooseParty(name);
+  await act(async () => {
+    fireEvent.click(newSessionButton());
+  });
+  await screen.findByTestId("locked-party");
 };
 
 describe("RawMaterialOutputPage", () => {
@@ -166,23 +186,137 @@ describe("RawMaterialOutputPage", () => {
     vi.restoreAllMocks();
   });
 
-  it("opens its session by itself", async () => {
+  it("does not open a session by itself: New session waits for a party, and nothing can be scanned", async () => {
     const { api } = createFakeBackend();
     renderPage();
+    await ready();
 
-    await waitFor(() => expect(screen.getByTestId("session-code")).toHaveTextContent("RMO-000007"));
-    expect(api.startRawMaterialIssueSession).toHaveBeenCalled();
+    expect(api.getOpenRawMaterialIssueSession).toHaveBeenCalled();
+    expect(api.startRawMaterialIssueSession).not.toHaveBeenCalled();
+    expect(newSessionButton()).toBeDisabled();
+    expect(endSessionButton()).toBeDisabled();
+    expect(screen.getByLabelText("Scanner input")).toBeDisabled();
   });
 
-  it("a packet scanned before a party is chosen is turned away, and nothing is sent", async () => {
+  it("shows each party's type in the list, while choosing", async () => {
+    createFakeBackend();
+    renderPage();
+    await ready();
+
+    await openPartyList();
+    expect(await screen.findByRole("option", { name: /ABC UPPER/ })).toHaveTextContent("Supplier");
+    expect(screen.getByRole("option", { name: /ASLAM UPPER MAKER/ })).toHaveTextContent("Contractor");
+  });
+
+  it("finds the contractors when their type is typed", async () => {
+    createFakeBackend();
+    renderPage();
+    await ready();
+
+    const box = screen.getByRole("combobox", { name: "Moving out to" });
+    await act(async () => {
+      fireEvent.click(box);
+    });
+    await act(async () => {
+      fireEvent.change(box, { target: { value: "contractor" } });
+    });
+    expect(await screen.findByRole("option", { name: /ASLAM UPPER MAKER/ })).toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: /ABC UPPER/ })).toBeNull();
+  });
+
+  it("shows what kind of party is chosen, before the session starts", async () => {
+    createFakeBackend();
+    renderPage();
+    await ready();
+
+    await chooseParty(/ABC UPPER/);
+    expect(screen.getByTestId("party-type-badge")).toHaveTextContent("Supplier");
+    expect(newSessionButton()).toBeEnabled();
+  });
+
+  it("New session locks the session to the chosen party: the picker gives way to the party, its type and the lock", async () => {
+    const { api } = createFakeBackend();
+    renderPage();
+    await ready();
+
+    await startFor(/ASLAM UPPER MAKER/);
+
+    expect(api.startRawMaterialIssueSession).toHaveBeenCalledWith(expect.objectContaining({ startNew: true }));
+    const locked = screen.getByTestId("locked-party");
+    expect(locked).toHaveTextContent("ASLAM UPPER MAKER");
+    expect(locked).toHaveTextContent("Contractor");
+    expect(screen.queryByRole("combobox", { name: "Moving out to" })).toBeNull();
+    expect(newSessionButton()).toBeDisabled();
+    expect(endSessionButton()).toBeEnabled();
+    await waitFor(() => expect(screen.getByTestId("session-code")).toHaveTextContent("RMO-000007"));
+  });
+
+  it("every scan is sent with the session's party, and says who it went to", async () => {
     const { rawMaterialIssueScan } = createFakeBackend();
     renderPage();
     await ready();
 
+    await startFor(/ASLAM UPPER MAKER/);
     await scanCode(LABEL);
 
-    await waitFor(() => expect(screen.getByTestId("scan-status")).toHaveTextContent("CHOOSE A PARTY FIRST"));
-    expect(rawMaterialIssueScan).not.toHaveBeenCalled();
+    expect(rawMaterialIssueScan).toHaveBeenCalledTimes(1);
+    expect(rawMaterialIssueScan.mock.calls[0][1]).toMatchObject({ issuedToPartyId: "party-contractor" });
+    await waitFor(() => expect(screen.getByTestId("scan-status")).toHaveTextContent("ISSUED"));
+    expect(screen.getByText(/sent to ASLAM UPPER MAKER/i)).toBeInTheDocument();
+  });
+
+  it("End session frees the party: the picker comes back and scanning stops", async () => {
+    const { api } = createFakeBackend();
+    renderPage();
+    await ready();
+    await startFor(/ABC UPPER/);
+
+    await act(async () => {
+      fireEvent.click(endSessionButton());
+    });
+
+    expect(api.closeRawMaterialIssueSession).toHaveBeenCalledWith("session-1");
+    expect(await screen.findByRole("combobox", { name: "Moving out to" })).toBeInTheDocument();
+    expect(screen.queryByTestId("locked-party")).toBeNull();
+    expect(screen.getByLabelText("Scanner input")).toBeDisabled();
+    expect(newSessionButton()).toBeEnabled();
+  });
+
+  it("after a restart mid-session, the open session comes back locked to the party of its packets", async () => {
+    const { api } = createFakeBackend({ open: SESSION, openParty: "party-contractor" });
+    renderPage();
+
+    const locked = await screen.findByTestId("locked-party");
+    expect(locked).toHaveTextContent("ASLAM UPPER MAKER");
+    expect(api.startRawMaterialIssueSession).not.toHaveBeenCalled();
+    expect(screen.getByLabelText("Scanner input")).toBeEnabled();
+  });
+
+  it("an open session with nothing in it yet comes back unlocked: choose the party and start", async () => {
+    createFakeBackend({ open: SESSION, openParty: null });
+    renderPage();
+    await ready();
+
+    expect(screen.queryByTestId("locked-party")).toBeNull();
+    expect(screen.getByLabelText("Scanner input")).toBeDisabled();
+  });
+
+  it("shows the main process refusing a packet for another party, and nothing moves", async () => {
+    const { rawMaterialIssueScan } = createFakeBackend();
+    rawMaterialIssueScan.mockResolvedValueOnce({
+      accepted: false,
+      outcome: "NO_PARTY",
+      qrId: LABEL,
+      reason: "This session's packets go to ABC UPPER. End the session and start a new one to move packets out to someone else. Nothing was moved.",
+    });
+    renderPage();
+    await ready();
+    await startFor(/ABC UPPER/);
+
+    await scanCode(LABEL);
+
+    await waitFor(() => expect(screen.getByTestId("scan-status")).toHaveTextContent("CHOOSE A PARTY"));
+    expect(screen.getByText(/End the session and start a new one/)).toBeInTheDocument();
   });
 
   it("offers only active suppliers and contractors to move out to", async () => {
@@ -198,25 +332,11 @@ describe("RawMaterialOutputPage", () => {
     expect(screen.queryByRole("option", { name: /OLD CONTRACTOR/ })).toBeNull();
   });
 
-  it("every scan is sent with the chosen party, and says who it went to", async () => {
-    const { rawMaterialIssueScan } = createFakeBackend();
-    renderPage();
-    await ready();
-
-    await chooseParty(/ASLAM UPPER MAKER/);
-    await scanCode(LABEL);
-
-    expect(rawMaterialIssueScan).toHaveBeenCalledTimes(1);
-    expect(rawMaterialIssueScan.mock.calls[0][1]).toMatchObject({ issuedToPartyId: "party-contractor" });
-    await waitFor(() => expect(screen.getByTestId("scan-status")).toHaveTextContent("ISSUED"));
-    expect(screen.getByText(/sent to ASLAM UPPER MAKER/i)).toBeInTheDocument();
-  });
-
   it("submits a scanned packet on its own, with no Enter key", async () => {
     const { rawMaterialIssueScan } = createFakeBackend();
     renderPage();
     await ready();
-    await chooseParty(/ABC UPPER/);
+    await startFor(/ABC UPPER/);
 
     await scanCode(LABEL);
 
@@ -230,7 +350,7 @@ describe("RawMaterialOutputPage", () => {
     const { rawMaterialIssueScan } = createFakeBackend();
     renderPage();
     await ready();
-    await chooseParty(/ABC UPPER/);
+    await startFor(/ABC UPPER/);
 
     await scanCode("RMQR_PTY000001_RM000001_000001");
     await scanCode("RMQR_PTY000001_RM000001_000002");
@@ -244,7 +364,7 @@ describe("RawMaterialOutputPage", () => {
     createFakeBackend();
     renderPage();
     await ready();
-    await chooseParty(/ABC UPPER/);
+    await startFor(/ABC UPPER/);
 
     await scanCode("SK6_RED_7/10_000001");
 
@@ -256,7 +376,7 @@ describe("RawMaterialOutputPage", () => {
     const { rawMaterialIssueScan } = createFakeBackend();
     renderPage();
     await ready();
-    await chooseParty(/ABC UPPER/);
+    await startFor(/ABC UPPER/);
 
     await scanCode(LABEL);
     await scanCode(LABEL);
@@ -266,22 +386,40 @@ describe("RawMaterialOutputPage", () => {
     expect((screen.getByLabelText("Scanner input") as HTMLInputElement).value).toBe("");
   });
 
-  it("a machine program sheet still reaches the program lookup, with no party chosen", async () => {
+  it("a machine program sheet scanned into a running session reaches the program lookup, and moves nothing", async () => {
     const { rawMaterialIssueScan } = createFakeBackend();
     const onMachineProgramScan = vi.fn();
     renderPage({ onMachineProgramScan });
     await ready();
 
+    await startFor(/ASLAM UPPER MAKER/);
     await scanCode("MP-000012", 200);
 
     expect(onMachineProgramScan).toHaveBeenCalledWith("MP-000012");
     expect(rawMaterialIssueScan).not.toHaveBeenCalled();
   });
 
+  it("tells Store Out which session is open, so a program batch prints on the same slip", async () => {
+    createFakeBackend();
+    const onSessionChange = vi.fn();
+    renderPage({ onSessionChange });
+    await ready();
+    expect(onSessionChange).toHaveBeenLastCalledWith(null);
+
+    await startFor(/ASLAM UPPER MAKER/);
+    await waitFor(() => expect(onSessionChange).toHaveBeenLastCalledWith(expect.any(String)));
+
+    await act(async () => {
+      fireEvent.click(endSessionButton());
+    });
+    await waitFor(() => expect(onSessionChange).toHaveBeenLastCalledWith(null));
+  });
+
   it("Escape clears a part-typed code without submitting it", async () => {
     const { rawMaterialIssueScan } = createFakeBackend();
     renderPage();
     await ready();
+    await startFor(/ABC UPPER/);
 
     const input = screen.getByLabelText("Scanner input") as HTMLInputElement;
     await act(async () => {

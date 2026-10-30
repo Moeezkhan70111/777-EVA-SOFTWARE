@@ -94,11 +94,7 @@ export const NAV_SECTIONS: readonly NavSection[] = [
     label: s.store,
     tone: "action",
     items: [
-      item("store-home", t.storeHome, "store", [
-        "store-in-operator", "store-in-new-material", "store-in-qr-generator", "store-in-scanner",
-        "store-in-stock", "store-in-receipts", "store-in-setup", "store-in-daily-report",
-        "store-out-operator", "store-out-daily-report",
-      ]),
+      item("store-receiving", t.storeHome, "store", ["store-issuing"]),
       item("store-scanning", t.storeMoveIn, "scan"),
       item("store-move-out", t.storeMoveOut, "dispatch"),
       item("raw-material-input", t.rawMaterialInput, "scan"),

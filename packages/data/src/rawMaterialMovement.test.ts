@@ -883,3 +883,161 @@ test("the party is kept on the packet's exit and named in its journey", async ()
     f.cleanup();
   }
 });
+
+// ─── ONE SESSION, ONE PARTY (0.3.8) ─────────────────────────────────────────
+// Move Out starts a session only for a chosen party, and the session's party is its first packet's.
+
+test("the open issue session is found without starting one, and none is made when there is none", () => {
+  const f = createFixture();
+  try {
+    assert.equal(f.db.getOpenRawMaterialIssueSession("device-1")?.id, f.issueSession.id);
+    f.db.closeRawMaterialIssueSession(f.issueSession.id);
+    assert.equal(f.db.getOpenRawMaterialIssueSession("device-1"), null);
+    assert.equal(f.countRows("raw_material_issue_sessions"), 1, "looking did not open a session");
+  } finally {
+    f.cleanup();
+  }
+});
+
+test("a session's party is its first packet's, and a session with nothing in it has none", async () => {
+  const f = createFixture();
+  try {
+    assert.equal(f.db.rawMaterialIssueSessionPartyId(f.issueSession.id), null);
+    assert.equal(f.db.getRawMaterialIssueSessionSummary(f.issueSession.id)?.partyId, null);
+
+    const m = readyMaterial(f, "7/10", 2);
+    await f.scanIn(m.labels[0]);
+    await f.scanIn(m.labels[1]);
+    await f.scanOutTo(m.labels[0], f.otherSupplier);
+    await f.scanOutTo(m.labels[1], f.supplier);
+
+    assert.equal(f.db.rawMaterialIssueSessionPartyId(f.issueSession.id), f.otherSupplier, "the first packet decides");
+    assert.equal(f.db.getRawMaterialIssueSessionSummary(f.issueSession.id)?.partyId, f.otherSupplier);
+  } finally {
+    f.cleanup();
+  }
+});
+
+test("a Machine Program batch on the session, which names no party, does not decide the session's party", async () => {
+  const f = createFixture();
+  try {
+    const m = readyMaterial(f, "7/10", 2);
+    await f.scanIn(m.labels[0]);
+    await f.scanIn(m.labels[1]);
+    await f.scanOutTo(m.labels[0], f.otherSupplier);
+    // A program batch rides this session with no party stamped: the first exit, recorded that way.
+    f.raw
+      .prepare("UPDATE raw_material_qr_events SET metadata_json = json_remove(metadata_json, '$.issuedToPartyId') WHERE qr_id = ? AND event_type = 'STORE_EXIT'")
+      .run(m.labels[0]);
+    assert.equal(f.db.rawMaterialIssueSessionPartyId(f.issueSession.id), null, "a program batch alone does not lock the session");
+
+    await f.scanOutTo(m.labels[1], f.supplier);
+    assert.equal(f.db.rawMaterialIssueSessionPartyId(f.issueSession.id), f.supplier, "the first scanned packet decides");
+  } finally {
+    f.cleanup();
+  }
+});
+
+test("the Move Out slip's summary names the party and totals each material, as the Move In receipt does", async () => {
+  const f = createFixture();
+  try {
+    const empty = f.db.getRawMaterialIssueSessionSummary(f.issueSession.id);
+    assert.equal(empty?.partyName, null);
+    assert.deepEqual(empty?.byMaterial, []);
+
+    const m = readyMaterial(f, "7/10", 3);
+    for (const label of m.labels) await f.scanIn(label);
+    for (const label of m.labels) await f.scanOutTo(label, f.otherSupplier);
+
+    const summary = f.db.getRawMaterialIssueSessionSummary(f.issueSession.id);
+    assert.equal(summary?.partyName, f.db.getParty(f.otherSupplier)?.partyName);
+    assert.equal(summary?.byMaterial.length, 1, "one material, one line");
+    assert.equal(summary?.byMaterial[0].packets, 3);
+    const bySectionQuantity = summary?.bySection.flatMap((section) => section.materials).reduce((sum, row) => sum + row.quantity, 0);
+    assert.equal(summary?.byMaterial[0].quantity, bySectionQuantity, "the same quantity, however it is grouped");
+  } finally {
+    f.cleanup();
+  }
+});
+
+// ─── RECEIVING FROM SUPPLIERS ONLY (owner, 0.3.9) ───────────────────────────────
+// Labels are printed for suppliers alone and a packet is received only into its own supplier's
+// session, so a session for anyone else could never receive. Return Upper has its own path.
+
+test("a receiving session is only ever started for a supplier", () => {
+  const f = createFixture();
+  try {
+    const contractor = f.db.createParty({ partyName: "ASLAM UPPER MAKER", partyType: "CONTRACTOR", city: "Lahore", mobileNumber: "0300-9999999", status: "ACTIVE" });
+    const before = f.countRows("raw_material_receiving_sessions");
+    assert.throws(
+      () => f.db.startRawMaterialReceivingSession({ partyId: contractor, deviceId: "device-1", startedBy: "aslam" }),
+      /ASLAM UPPER MAKER is not a supplier\. Nothing was started\./
+    );
+    assert.equal(f.countRows("raw_material_receiving_sessions"), before, "nothing was started, and no number was used");
+    assert.ok(f.db.startRawMaterialReceivingSession({ partyId: f.otherSupplier, deviceId: "device-1", startedBy: "aslam" }).id);
+  } finally {
+    f.cleanup();
+  }
+});
+
+test("material is moved in by hand only from a supplier", () => {
+  const f = createFixture();
+  try {
+    const m = readyMaterial(f, "7/10", 2);
+    const unitCode = f.db.inventoryItemStockUnit(m.itemId)?.code ?? "DOZEN";
+    const contractor = f.db.createParty({ partyName: "ASLAM UPPER MAKER", partyType: "CONTRACTOR", city: "Lahore", mobileNumber: "0300-9999999", status: "ACTIVE" });
+
+    const refused = f.db.moveRawMaterialByHand({ itemId: m.itemId, direction: "IN", quantity: 2, unitCode, partyId: contractor, actor: "aslam" });
+    assert.equal(refused.outcome, "NO_SUPPLIER");
+    assert.match(refused.reason ?? "", /ASLAM UPPER MAKER is not a supplier/);
+    assert.equal(f.stockOf(m.itemId), 0, "nothing was moved");
+
+    const moved = f.db.moveRawMaterialByHand({ itemId: m.itemId, direction: "IN", quantity: 2, unitCode, partyId: f.supplier, actor: "aslam" });
+    assert.equal(moved.outcome, "MOVED", moved.reason);
+  } finally {
+    f.cleanup();
+  }
+});
+
+// ─── ISSUE SESSIONS, LISTED (0.3.9): Issued today, and the last session ───────────
+
+test("issue sessions are listed newest first, each with its party and packet count", async () => {
+  const f = createFixture();
+  try {
+    const m = readyMaterial(f, "7/10", 2);
+    for (const label of m.labels) await f.scanIn(label);
+    await f.scanOutTo(m.labels[0], f.otherSupplier);
+    await f.scanOutTo(m.labels[1], f.otherSupplier);
+    f.db.closeRawMaterialIssueSession(f.issueSession.id);
+    // Another computer's session today, with nothing in it yet.
+    const elsewhere = f.db.startOrResumeRawMaterialIssueSession({ deviceId: "device-2", startedBy: "babar" });
+
+    const today = f.db.localYmd(new Date());
+    const rows = f.db.listRawMaterialIssueSessions({ dateFrom: today, dateTo: today });
+    assert.deepEqual(rows.map((row) => row.session.id), [elsewhere.id, f.issueSession.id], "every computer's, newest first");
+    const mine = rows[1];
+    assert.equal(mine.packets, 2);
+    assert.equal(mine.partyId, f.otherSupplier);
+    assert.equal(mine.partyName, f.db.getParty(f.otherSupplier)?.partyName);
+    assert.equal(rows[0].packets, 0);
+    assert.equal(rows[0].partyName, null, "a session with nothing in it has no party yet");
+
+    const last = f.db.listRawMaterialIssueSessions({ deviceId: "device-1", status: "CLOSED", limit: 1 });
+    assert.deepEqual(last.map((row) => row.session.id), [f.issueSession.id], "this computer's last closed session");
+    assert.deepEqual(f.db.listRawMaterialIssueSessions({ deviceId: "device-2", status: "CLOSED" }), []);
+  } finally {
+    f.cleanup();
+  }
+});
+
+test("a session started yesterday is not issued today", () => {
+  const f = createFixture();
+  try {
+    const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    f.raw.prepare("UPDATE raw_material_issue_sessions SET started_at = ? WHERE id = ?").run(yesterday, f.issueSession.id);
+    const today = f.db.localYmd(new Date());
+    assert.deepEqual(f.db.listRawMaterialIssueSessions({ dateFrom: today, dateTo: today }), []);
+  } finally {
+    f.cleanup();
+  }
+});

@@ -25,6 +25,7 @@ import type {
   MachineProgramRunRecord,
   MachineProgramUpperLineRecord,
   MachineRecord,
+  OpenMachineProgram,
 } from "./types.js";
 import { allocateNumberInRange } from "./numberRange.js";
 
@@ -303,6 +304,27 @@ export const machineProgramsMethods = {
       | Record<string, unknown>
       | undefined;
     return row ? this.mapProgramWithRates(row) : null;
+  },
+
+  /**
+   * Every program still open, whatever its date, oldest first (0.3.8). The day list shows only
+   * programs with carton runs, so a program with none is listed only here: this is where an
+   * administrator finds what is left open to delete.
+   */
+  listOpenMachinePrograms(this: SqliteDatabase): OpenMachineProgram[] {
+    const rows = this.db
+      .prepare(
+        `SELECT id, program_number, program_date, machine_name_snapshot, contractor_name_snapshot
+           FROM machine_programs WHERE status = ? ORDER BY program_date ASC, program_number ASC`
+      )
+      .all(MACHINE_PROGRAM_STATUS.PROGRAMMED) as Array<Record<string, unknown>>;
+    return rows.map((row) => ({
+      programId: text(row.id),
+      code: formatMachineProgramCode(Number(row.program_number)),
+      programDate: text(row.program_date),
+      machineName: text(row.machine_name_snapshot),
+      contractorName: text(row.contractor_name_snapshot),
+    }));
   },
 
   getMachineProgram(this: SqliteDatabase, programId: string): MachineProgramRecord | null {

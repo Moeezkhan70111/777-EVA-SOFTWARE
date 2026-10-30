@@ -19,11 +19,7 @@ const makeUser = (overrides: Partial<AuthUser>): AuthUser => ({
 
 const ADMIN = makeUser({ id: "admin-1", username: "admin", role: "ADMIN" });
 
-const renderNavbar = (
-  user: AuthUser,
-  current: React.ComponentProps<typeof Navbar>["current"] = "home",
-  storeJob: React.ComponentProps<typeof Navbar>["storeJob"] = null
-) => {
+const renderNavbar = (user: AuthUser, current: React.ComponentProps<typeof Navbar>["current"] = "home") => {
   const onSelect = vi.fn();
   render(
     <Navbar
@@ -32,7 +28,6 @@ const renderNavbar = (
       appVersion="1.0.0"
       onBackup={vi.fn()}
       user={user}
-      storeJob={storeJob}
       onProfile={vi.fn()}
       onChangePassword={vi.fn()}
       onLogout={vi.fn()}
@@ -50,14 +45,19 @@ describe("Navbar sidebar", () => {
 
   it("shows an administrator every section, and a row opens its page", () => {
     const { onSelect, rail } = renderNavbar(ADMIN);
-    for (const section of ["Overview", "Scanning", "Store", "Munshi", "Gatepass", "Inventory", "Setup", "Billing", "System"]) {
+    for (const section of ["Overview", "Scanning", "Munshi", "Gatepass", "Inventory", "Setup", "Billing", "System"]) {
       expect(within(rail).getByRole("button", { name: section })).toBeInTheDocument();
     }
+    // The Store section heading and its Store page row share the name; the heading is the one that folds.
+    expect(within(rail).getAllByRole("button", { name: "Store" }).filter((button) => button.hasAttribute("aria-expanded"))).toHaveLength(1);
 
     fireEvent.click(within(rail).getByRole("button", { name: "Return Scanning" }));
     expect(onSelect).toHaveBeenCalledWith("live-return");
-    fireEvent.click(within(rail).getByRole("button", { name: "Move In" }));
+    // The carton rows say cartons (0.3.9), so Store and Move In never mean two things.
+    fireEvent.click(within(rail).getByRole("button", { name: "Carton Move In" }));
     expect(onSelect).toHaveBeenCalledWith("store-scanning");
+    fireEvent.click(within(rail).getByRole("button", { name: "Carton Move Out" }));
+    expect(onSelect).toHaveBeenCalledWith("store-move-out");
     fireEvent.click(within(rail).getByRole("button", { name: "Supplier Ledger" }));
     expect(onSelect).toHaveBeenCalledWith("supplier-ledger");
   });
@@ -74,42 +74,22 @@ describe("Navbar sidebar", () => {
     const storeOp = makeUser({ username: "store-op", permissions: ["store-scanning", "stock"] });
     const rowNames = (rail: HTMLElement) => within(rail).getAllByRole("button").map((button) => button.textContent);
 
-    it("holds only Select Job until a job is picked — no Dashboard, no other pages", () => {
-      const { onSelect, rail } = renderNavbar(storeOp, "store-home", null);
-      expect(rowNames(rail)).toEqual(["Select Job"]);
-      expect(within(rail).getByRole("button", { name: "Select Job" })).toHaveAttribute("aria-current", "page");
-      fireEvent.click(within(rail).getByRole("button", { name: "Select Job" }));
-      expect(onSelect).toHaveBeenCalledWith("store-home");
+    it("holds one row, Store — Receiving and Issuing are the page's own switch (0.3.9)", () => {
+      const { onSelect, rail } = renderNavbar(storeOp, "store-receiving");
+      expect(rowNames(rail)).toEqual(["Store"]);
+      expect(within(rail).getByRole("button", { name: "Store" })).toHaveAttribute("aria-current", "page");
+      fireEvent.click(within(rail).getByRole("button", { name: "Store" }));
+      expect(onSelect).toHaveBeenCalledWith("store-receiving");
     });
 
-    it("lists the picked job and the pages of it their role may open", () => {
-      const { onSelect, rail } = renderNavbar(storeOp, "store-in-operator", "in");
-      // Raw Material QR needs the label permission and Setup the setup one; this operator has neither.
-      // The Store In page's own tabs, in tab order, then the full-screen scan station.
-      expect(rowNames(rail)).toEqual([
-        "Select Job", "Move In", "Add New Material", "Stock", "Receipts", "Daily Report Store In", "Raw Material Move In",
-      ]);
-      expect(within(rail).getByRole("button", { name: "Move In" })).toHaveAttribute("aria-current", "page");
-
-      fireEvent.click(within(rail).getByRole("button", { name: "Raw Material Move In" }));
-      expect(onSelect).toHaveBeenCalledWith("store-in-scanner");
+    it("marks Store in either mode", () => {
+      const { rail } = renderNavbar(storeOp, "store-issuing");
+      expect(within(rail).getByRole("button", { name: "Store" })).toHaveAttribute("aria-current", "page");
     });
 
-    it("marks the job page that is open", () => {
-      const { rail } = renderNavbar(storeOp, "store-in-stock", "in");
-      expect(within(rail).getByRole("button", { name: "Stock" })).toHaveAttribute("aria-current", "page");
-      expect(within(rail).getByRole("button", { name: "Move In" })).not.toHaveAttribute("aria-current");
-    });
-
-    it("lists Move Out with its pages: the daily report and the carton QR Generator", () => {
-      const { onSelect, rail } = renderNavbar(storeOp, "store-out-operator", "out");
-      expect(rowNames(rail)).toEqual(["Select Job", "Move Out", "Daily Report Store Out", "QR Generator"]);
-
-      fireEvent.click(within(rail).getByRole("button", { name: "Daily Report Store Out" }));
-      expect(onSelect).toHaveBeenCalledWith("store-out-daily-report");
-      // A store operator holds no QR Generator permission of their own: store scanning grants it.
-      fireEvent.click(within(rail).getByRole("button", { name: "QR Generator" }));
-      expect(onSelect).toHaveBeenCalledWith("qr-generator");
+    it("leaves Store unmarked on a page reached from Home", () => {
+      const { rail } = renderNavbar(storeOp, "stock");
+      expect(within(rail).getByRole("button", { name: "Store" })).not.toHaveAttribute("aria-current");
     });
   });
 
@@ -150,10 +130,12 @@ describe("Navbar sidebar", () => {
     expect(within(rail).getByRole("button", { name: "Machine Program" })).toHaveAttribute("aria-current", "page");
   });
 
-  it("marks the open page, including a station's inner screens", () => {
-    const { rail } = renderNavbar(ADMIN, "store-in-operator");
-    expect(within(rail).getByRole("button", { name: "Store Station" })).toHaveAttribute("aria-current", "page");
-    expect(within(rail).getByRole("button", { name: "Move In" })).not.toHaveAttribute("aria-current");
+  it("marks the open page, including the Store page in either mode", () => {
+    const { rail } = renderNavbar(ADMIN, "store-issuing");
+    // The Store section heading and its Store row share the name; the row is the one marked.
+    const marked = within(rail).getAllByRole("button", { name: "Store" }).filter((button) => button.getAttribute("aria-current") === "page");
+    expect(marked).toHaveLength(1);
+    expect(within(rail).getByRole("button", { name: "Carton Move In" })).not.toHaveAttribute("aria-current");
   });
 });
 

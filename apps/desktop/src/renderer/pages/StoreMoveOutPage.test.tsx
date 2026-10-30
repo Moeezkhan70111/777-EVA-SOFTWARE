@@ -319,7 +319,7 @@ describe("StoreMoveOutPage", () => {
     fireEvent.keyDown(input, { key: "Escape" });
     expect(input).toHaveValue("");
 
-    fireEvent.click(screen.getByRole("button", { name: "Back to Store Station" }));
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
     expect(onBack).toHaveBeenCalledTimes(1);
   });
 

@@ -106,6 +106,8 @@ export const UNLEASED_WRITE_CHANNELS: Readonly<Record<string, string>> = {
   [IPC.printMachineProgramCartons]: "Carton labels: multi-writer.",
   [IPC.convertMachineProgramCartonsToB]: "Carton labels: multi-writer.",
   [IPC.convertMachineProgramUpperCartonsToB]: "Carton labels: multi-writer.",
+  [IPC.deleteMachineProgram]:
+    "Machine programs are leased in Milestone 2, with their creation and edits. Deleting one only marks the program CANCELLED: no stock moves.",
   [IPC.createItemRemovalRequest]: "A request only: approvals are leased in Milestone 2. Approving it is leased.",
   [IPC.createCategoryRemovalRequest]: "A request only: approvals are leased in Milestone 2. Approving it is leased.",
   [IPC.createStockCorrectionRequest]: "A request only: approvals are leased in Milestone 2. Approving it is leased.",
