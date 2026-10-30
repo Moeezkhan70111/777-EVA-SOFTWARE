@@ -32,7 +32,15 @@ import { changedRows, type SyncSqlHandle } from "./sqlPort.js";
  *
  * ON CONFLICT DO NOTHING, so a variant that already exists -- seeded by hand, or carried by an
  * earlier carton -- is a no-op rather than an overwrite. A local edit to a description is
- * therefore never clobbered by a replay.
+ * therefore never clobbered by a replay. Any conflict, not only the id's: a variant's id is derived
+ * from its article, colour and size (productIdentity.ts), so the same identity here is the same
+ * variant, and a clash must not throw and fail the whole pull.
+ *
+ * ONLY THE IDENTITY COLUMNS ARE NAMED. Everything else takes its default, so the insert cannot
+ * depend on how this computer's prices or groups are stored. Until 2026-10-28 it named
+ * cost_price and selling_price, which the local table does not have (they are *_paisa), and the
+ * first variant to arrive would have thrown. Nothing had ever arrived: the cloud did not log
+ * variants until cloud migration 017.
  */
 export const productVariantContract = defineContract({
   aggregateType: SYNC_AGGREGATE.PRODUCT_VARIANT,
@@ -44,11 +52,9 @@ export const productVariantContract = defineContract({
     changedRows(
       sql
         .prepare(
-          `INSERT INTO product_variants (
-             id, article, color, size, description, cost_price, selling_price,
-             status, created_at, updated_at, deleted_at, deleted_by, delete_reason, replicated_at
-           ) VALUES (?, ?, ?, ?, ?, NULL, NULL, 'ACTIVE', ?, ?, NULL, NULL, NULL, ?)
-           ON CONFLICT(id) DO NOTHING`
+          `INSERT INTO product_variants (id, article, color, size, description, status, created_at, updated_at, replicated_at)
+           VALUES (?, ?, ?, ?, ?, 'ACTIVE', ?, ?, ?)
+           ON CONFLICT DO NOTHING`
         )
         .run(
           variant.variantId,
