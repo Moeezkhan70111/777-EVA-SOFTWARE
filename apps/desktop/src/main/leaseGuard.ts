@@ -84,6 +84,24 @@ export async function writeLeaseStatuses(domains: readonly LeaseDomain[]): Promi
   });
 }
 
+/**
+ * The domains this computer HOLDS now: it syncs, the cloud names it the holder, and it has caught up.
+ *
+ * Not the same as "may write". A computer without sync may write every domain and holds none. A
+ * screen whose figures are only right where a domain's records are kept asks this instead: party
+ * ledgers and balances show only on the Accounts holder, where the vouchers are.
+ */
+export async function heldLeaseDomains(domains: readonly LeaseDomain[]): Promise<LeaseDomain[]> {
+  const deps = gate;
+  if (deps === null || !isCloudSyncConfigured({ deviceId: deps.deviceId, dataRoot: deps.dataRoot })) return [];
+  const sync = await import("@erp/sync");
+  return domains.filter((domain) => {
+    const decision = sync.leaseWriteDecision(deps.db.db, { domain, deviceId: deps.deviceId, syncConfigured: true });
+    // An epoch is only given for a lease actually held; a project without leases allows with none.
+    return decision.allowed && decision.epoch !== null;
+  });
+}
+
 /** Throws a LeaseError unless this computer may write every one of `domains` now. */
 export async function requireLeases(domains: readonly LeaseDomain[]): Promise<void> {
   for (const status of await writeLeaseStatuses(domains)) {

@@ -138,7 +138,7 @@ export interface SyncRunSummary {
   id: string;
   startedAt: string;
   finishedAt: string | null;
-  trigger: "STARTUP" | "TIMER" | "RECONNECT" | "MANUAL" | "SAVE";
+  trigger: "STARTUP" | "TIMER" | "RECONNECT" | "MANUAL" | "SAVE" | "REALTIME" | "BACKLOG";
   outcome: "OK" | "REFUSED" | "TRANSPORT_ERROR" | "FAILED" | null;
   pushed: number | null;
   fetched: number | null;
@@ -2098,6 +2098,8 @@ export interface DesktopApi {
   getQrJourney(qrId: string): Promise<QrJourney | null>;
   /** Whether this computer may write each leased domain now, and who does (docs/37 section W). */
   getWriteLeases(): Promise<WriteLeaseStatus[]>;
+  /** The lease domains this computer holds now. Empty on a computer that does not sync. */
+  getHeldLeases(): Promise<LeaseDomain[]>;
   getQrGenerationOverview(filter?: QrGenerationFilter): Promise<QrGenerationOverview>;
   listQrGenerationFilterOptions(): Promise<QrGenerationFilterOptions>;
   listProductListEntries(kind: ProductListKind): Promise<ProductListEntry[]>;

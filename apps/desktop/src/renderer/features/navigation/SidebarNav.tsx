@@ -24,6 +24,8 @@ interface SidebarNavProps {
   onSelect: (route: AppRoute) => void;
   /** The job a store operator has picked (useStoreJob); null before they pick one. */
   storeJob?: StoreDirection | null;
+  /** Pages this computer does not offer whatever the role: the ledgers, off the Accounts holder. */
+  hiddenRoutes?: ReadonlySet<AppRoute>;
 }
 
 const Chevron = () => (
@@ -79,9 +81,9 @@ const NavGroup: React.FC<NavGroupProps> = ({ section, open, current, onToggle, o
   );
 };
 
-export const SidebarNav: React.FC<SidebarNavProps> = ({ user, current, onSelect, storeJob = null }) => {
+export const SidebarNav: React.FC<SidebarNavProps> = ({ user, current, onSelect, storeJob = null, hiddenRoutes }) => {
   const [collapsed, setCollapsed] = useState<ReadonlySet<NavSectionId>>(new Set());
-  const sections = visibleNavSections(user);
+  const sections = visibleNavSections(user, hiddenRoutes);
 
   if (landingRoute(user) === STORE_STATION_ROUTE) {
     return <StoreJobNav user={user} job={storeJob} current={current} onSelect={onSelect} />;

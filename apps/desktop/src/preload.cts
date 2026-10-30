@@ -225,6 +225,7 @@ contextBridge.exposeInMainWorld("desktop", {
     getQrDetail: (qrId: string) => ipcRenderer.invoke(IPC.getQrDetail, qrId),
     getQrJourney: (qrId: string) => ipcRenderer.invoke(IPC.getQrJourney, qrId),
     getWriteLeases: () => ipcRenderer.invoke(IPC.getWriteLeases),
+    getHeldLeases: () => ipcRenderer.invoke(IPC.getHeldLeases),
     getQrGenerationOverview: (filter?: Record<string, unknown>) =>
       ipcRenderer.invoke(IPC.getQrGenerationOverview, filter),
     listQrGenerationFilterOptions: () => ipcRenderer.invoke(IPC.listQrGenerationFilterOptions),

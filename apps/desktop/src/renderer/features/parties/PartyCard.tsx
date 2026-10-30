@@ -23,7 +23,7 @@ const PartyIcon = () => (
 
 /** Rupees, whole — a credit balance (the party has paid ahead) is marked as such. */
 const formatBalance = (state: PartyBalanceState): string => {
-  if (state.status === "loading" || state.status === "idle") return "…";
+  if (state.status === "loading" || state.status === "idle" || state.status === "hidden") return "…";
   if (state.status === "error") return copy.parties.balanceUnavailable;
   const amount = `Rs ${formatWholeMoney(Math.abs(state.value))}`;
   return state.value < 0 ? `${amount} Cr` : amount;
@@ -45,10 +45,13 @@ export const PartyCard: React.FC<PartyCardProps> = ({ party, balance, detail }) 
       <span className="gp-party-name">{party.partyName}</span>
       <span className="gp-party-meta">{[party.partyCode, party.city].filter(Boolean).join(" · ")}</span>
     </div>
-    <div className="gp-party-balance">
-      <span className="gp-party-meta">{copy.parties.currentBalance}</span>
-      <strong data-testid="party-balance">{formatBalance(balance)}</strong>
-    </div>
+    {/* Not shown at all off the Accounts holder: a balance there would be wrong (ledgerVisibility.ts). */}
+    {balance.status !== "hidden" && (
+      <div className="gp-party-balance">
+        <span className="gp-party-meta">{copy.parties.currentBalance}</span>
+        <strong data-testid="party-balance">{formatBalance(balance)}</strong>
+      </div>
+    )}
     {detail && <div className="gp-party-detail">{detail}</div>}
   </div>
 );

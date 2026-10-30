@@ -75,6 +75,8 @@ function createFakeBackend(opts: { stock?: GatepassStockRow[]; createResult?: (i
     listParties: vi.fn(async () => ({ rows: PARTIES, total: PARTIES.length, page: 1, pageSize: 1000 })),
     listGatepassStoreStock: vi.fn(async () => ({ accepted: true, rows: stock.map((r) => ({ ...r })) })),
     getCurrentPartyBalance: vi.fn(async (partyId: string) => (partyId === "p-abc" ? 185000 : -2500)),
+    // This computer holds Accounts, so balances show (features/parties/ledgerVisibility.ts).
+    getHeldLeases: vi.fn(async () => ["ACCOUNTS"]),
     getProductImage: vi.fn(async (article: string) => (article === "SK6" ? SK6_IMAGE : null)),
     createGatepass,
     getGatepass: vi.fn(async (id: string): Promise<Gatepass | null> => [...documents.values()].find((d) => d.id === id) ?? null),

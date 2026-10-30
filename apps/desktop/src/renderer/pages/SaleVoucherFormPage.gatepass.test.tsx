@@ -47,6 +47,8 @@ function setupDesktop(overrides: Record<string, unknown> = {}) {
     listSaleVouchers: vi.fn(async () => ({ rows: [], total: 0, page: 1, pageSize: 1000 })),
     getParty: vi.fn(async () => ({ ...PARTY, balanceLimit: 250000 })),
     getCurrentPartyBalance: vi.fn(async () => 185000),
+    // This computer holds Accounts, so balances show (features/parties/ledgerVisibility.ts).
+    getHeldLeases: vi.fn(async () => ["ACCOUNTS"]),
     getSaleableVariant: vi.fn(async (id: string) => {
       const p = PRODUCTS.find((row) => row.id === id);
       return p ? { id, article: p.article, size: p.size, color: p.color, sellingPrice: p.sellingPrice, stockQuantity: 100, articleSeriesId: null, productGroupId: null } : null;

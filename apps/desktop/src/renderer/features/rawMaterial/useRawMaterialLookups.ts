@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { LEASE_DOMAIN } from "@erp/domain";
 import { useDesktopApi } from "../../hooks/useDesktopApi";
+import { useWriteLease } from "../sync/useWriteLease";
 import type { RawMaterialMovementConfigRow, WorkSection } from "../../types/desktopApi";
 import { copy } from "../../config/copy";
 import type { CategoryRow } from "./rawMaterial";
@@ -67,9 +69,14 @@ export const useRawMaterialLookups = (): RawMaterialLookups => {
   // including each material's packets in store -- so they are read again in place.
   useDataChanged([DATA_KIND.MATERIALS, DATA_KIND.STOCK, DATA_KIND.LABELS], () => void reload({ quiet: true }));
 
+  // A packet count is only known where the packets are scanned. Scans do not travel to other
+  // computers, so on one that does not keep the store, every packet it has received still reads as
+  // unscanned and the "count" would be made up from the balance. Dropped here, every screen and
+  // export shows the measured balance instead, as it already does for stock without labels.
+  const countsPackets = useWriteLease(LEASE_DOMAIN.RAW_MATERIAL_STORE).canWrite;
   const configByItem = useMemo(
-    () => new Map(configRows.map((row) => [row.itemId, row])),
-    [configRows]
+    () => new Map(configRows.map((row) => [row.itemId, countsPackets ? row : { ...row, packetsInStore: 0 }])),
+    [configRows, countsPackets]
   );
 
   return { categories, units, configByItem, sections, loading, error, reload };

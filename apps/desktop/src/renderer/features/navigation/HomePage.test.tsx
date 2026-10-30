@@ -3,6 +3,7 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { HomePage } from "./HomePage";
 import type { AuthUser } from "../../types/desktopApi";
+import { LEDGER_ROUTES } from "../parties/ledgerVisibility";
 
 const user = (permissions: string[], role: AuthUser["role"] = "USER"): AuthUser => ({
   id: "u-1",
@@ -32,6 +33,11 @@ describe("HomePage", () => {
       "Sale Voucher",
       "Customer Ledger",
     ]);
+  });
+
+  it("leaves out the pages this computer does not offer, whatever the role: the ledgers off the Accounts holder", () => {
+    render(<HomePage user={user(["sale-voucher-form", "customer-ledger", "supplier-balance"])} onNavigate={vi.fn()} hiddenRoutes={LEDGER_ROUTES} />);
+    expect(screen.getAllByRole("button").map((tile) => tile.querySelector("strong")?.textContent)).toEqual(["Sale Voucher"]);
   });
 
   it("opens the page behind a tile", () => {

@@ -105,3 +105,36 @@ describe("the lease gate", () => {
     expect(listener).not.toHaveBeenCalled();
   });
 });
+
+describe("the leases this computer holds (party ledgers show only on the Accounts holder)", () => {
+  const office = { db, deviceId: "desktop-office", dataRoot: "C:/erp" };
+
+  it("holds the domains the cloud names it holder of, caught up -- an epoch is the proof", async () => {
+    const { installLeaseGate, heldLeaseDomains } = await loadGuard();
+    installLeaseGate(office);
+    decisions.ACCOUNTS = { allowed: true, domain: "ACCOUNTS", epoch: 4 };
+    decisions.RAW_MATERIAL_STORE = { allowed: false, domain: "RAW_MATERIAL_STORE", reason: "HELD_ELSEWHERE", holderLabel: "Store PC" };
+    decisions.MASTER_DATA = { allowed: false, domain: "MASTER_DATA", reason: "CATCHING_UP", holderLabel: "Office" };
+    expect(await heldLeaseDomains(["ACCOUNTS", "RAW_MATERIAL_STORE", "MASTER_DATA"])).toEqual(["ACCOUNTS"]);
+  });
+
+  it("holds nothing without sync, though it may write everything", async () => {
+    const { installLeaseGate, heldLeaseDomains } = await loadGuard();
+    installLeaseGate(office);
+    syncConfigured = false;
+    expect(await heldLeaseDomains(["ACCOUNTS"])).toEqual([]);
+    expect(asked).toEqual([]);
+  });
+
+  it("holds nothing on a project without leases, where writes are allowed with no epoch", async () => {
+    const { installLeaseGate, heldLeaseDomains } = await loadGuard();
+    installLeaseGate(office);
+    decisions.ACCOUNTS = { allowed: true, domain: "ACCOUNTS", epoch: null };
+    expect(await heldLeaseDomains(["ACCOUNTS"])).toEqual([]);
+  });
+
+  it("holds nothing before the gate is installed", async () => {
+    const { heldLeaseDomains } = await loadGuard();
+    expect(await heldLeaseDomains(["ACCOUNTS"])).toEqual([]);
+  });
+});

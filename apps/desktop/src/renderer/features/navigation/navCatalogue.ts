@@ -197,11 +197,14 @@ export const NAV_SECTIONS: readonly NavSection[] = [
   },
 ];
 
-/** The sections this user has at least one page in, each holding only those pages. */
-export const visibleNavSections = (user: AuthUser | null | undefined): NavSection[] =>
+/**
+ * The sections this user has at least one page in, each holding only those pages. `hidden` drops
+ * pages this computer does not offer whatever the role (the ledgers, off the Accounts holder).
+ */
+export const visibleNavSections = (user: AuthUser | null | undefined, hidden: ReadonlySet<AppRoute> = new Set()): NavSection[] =>
   NAV_SECTIONS.map((section) => ({
     ...section,
-    items: section.items.filter((entry) => canOpenRoute(user, entry.route)),
+    items: section.items.filter((entry) => canOpenRoute(user, entry.route) && !hidden.has(entry.route)),
   })).filter((section) => section.items.length > 0);
 
 /** Whether a card is the one for the screen currently open. */

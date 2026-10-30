@@ -32,10 +32,12 @@ export const dashboardTitle = (user: AuthUser): string =>
 interface HomePageProps {
   user: AuthUser;
   onNavigate: (route: AppRoute) => void;
+  /** Pages this computer does not offer whatever the role: the ledgers, off the Accounts holder. */
+  hiddenRoutes?: ReadonlySet<AppRoute>;
 }
 
-export const HomePage: React.FC<HomePageProps> = ({ user, onNavigate }) => {
-  const sections = visibleNavSections(user);
+export const HomePage: React.FC<HomePageProps> = ({ user, onNavigate, hiddenRoutes }) => {
+  const sections = visibleNavSections(user, hiddenRoutes);
   const featured = sections.flatMap((section) => section.items.flatMap((item) => (item.feature ? [{ item, feature: item.feature }] : [])));
   const tileSections = sections
     .map((section) => ({ ...section, items: section.items.filter((item) => !item.feature) }))

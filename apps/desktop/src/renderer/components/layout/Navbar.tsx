@@ -158,6 +158,8 @@ interface NavbarProps {
   user: AuthUser | null;
   /** For a store operator: the job they have picked, whose pages the sidebar lists. */
   storeJob?: StoreDirection | null;
+  /** Pages this computer does not offer whatever the role: the ledgers, off the Accounts holder. */
+  hiddenRoutes?: ReadonlySet<AppRoute>;
   onProfile: () => void;
   onChangePassword: () => void;
   onLogout: () => void;
@@ -232,6 +234,7 @@ export const Navbar = ({
   onBackup,
   user,
   storeJob = null,
+  hiddenRoutes,
   onProfile,
   onChangePassword,
   onLogout,
@@ -278,7 +281,7 @@ export const Navbar = ({
       </div>
 
       {/* Home and the pages this user's role has been given — the same cards Home shows. */}
-      {user && <SidebarNav user={user} current={current} onSelect={onSelect} storeJob={storeJob} />}
+      {user && <SidebarNav user={user} current={current} onSelect={onSelect} storeJob={storeJob} hiddenRoutes={hiddenRoutes} />}
 
       {/* Right side */}
       <div className="navbar-right">

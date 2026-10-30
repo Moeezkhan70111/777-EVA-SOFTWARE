@@ -4,7 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { RawMaterialWorkspace } from "./RawMaterialWorkspace";
 import { NotificationsProvider } from "../../state/NotificationsContext";
-import type { RawMaterialMovementConfigRow } from "../../types/desktopApi";
+import type { RawMaterialMovementConfigRow, WriteLeaseStatus } from "../../types/desktopApi";
 
 // The workspace replaced six separately-permissioned pages, so the two things worth pinning
 // down are (a) that a user still sees exactly what their permissions used to open, and
@@ -93,8 +93,9 @@ const CONFIG: RawMaterialMovementConfigRow[] = [
   },
 ];
 
-function installApi() {
+function installApi(storeLease: WriteLeaseStatus | null = null) {
   const api = {
+    getWriteLeases: vi.fn(async () => (storeLease ? [storeLease] : [])),
     listInventoryCategories: vi.fn(async () => CATEGORIES),
     listInventoryUnits: vi.fn(async () => UNITS),
     listRawMaterialMovementConfig: vi.fn(async () => CONFIG),
@@ -145,6 +146,17 @@ describe("RawMaterialWorkspace", () => {
     // Raw material routes were removed on 2026-10-07, so no row names a destination.
     const bare = screen.getByText("RAGZINE — BLACK").closest("tr")!;
     expect(bare).not.toHaveTextContent("No route");
+  });
+
+  it("on a computer that does not keep the store, shows the measured balance, never a packet count", async () => {
+    // Scans do not travel, so a reader's packets all read as unscanned: its "count" would be made up.
+    installApi({ domain: "RAW_MATERIAL_STORE", canWrite: false, reason: "HELD_ELSEWHERE", holderLabel: "Store PC" });
+    renderWorkspace(["stock"]);
+
+    await waitFor(() => expect(screen.getByText("RUBBER UPPER — SK6 — RED — 7/10")).toBeInTheDocument());
+    const ready = screen.getByText("RUBBER UPPER — SK6 — RED — 7/10").closest("tr")!;
+    await waitFor(() => expect(ready).not.toHaveTextContent("PACKETS"));
+    expect(ready.querySelectorAll("td")[1]).toHaveTextContent("12DOZ");
   });
 
   it("no longer asks for setup: routes are gone and a packet's contents are typed per label run", async () => {

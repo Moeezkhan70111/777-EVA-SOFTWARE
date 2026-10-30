@@ -72,6 +72,7 @@ import { FloatingProfileMenu } from "../features/auth/FloatingProfileMenu";
 import { SessionProvider } from "../features/auth/SessionContext";
 import { useAuthSession } from "../features/auth/useAuthSession";
 import { canOpenRoute, hasPermission, HOME_ROUTE, landingRoute } from "../features/auth/session";
+import { hiddenLedgerRoutes, useLedgersShown } from "../features/parties/ledgerVisibility";
 import type { AuthUser } from "../types/desktopApi";
 import { MunshiHomePage } from "../features/munshi/MunshiHomePage";
 import { HomePage } from "../features/navigation/HomePage";
@@ -112,6 +113,9 @@ export const App = () => {
   // Automatic updates: silent until a downloaded version is waiting, then one "Restart Now"
   // prompt. Mounted here because it belongs to the application, not to any one screen.
   useAppUpdate();
+  // Party ledgers and balances open only on the Accounts holder (ledgerVisibility.ts).
+  const ledgersShown = useLedgersShown();
+  const hiddenRoutes = hiddenLedgerRoutes(ledgersShown);
   // A reload of this window comes back to the screen it showed (resumeRoute.ts); a fresh start does not.
   const [route, setRoute] = useState<AppRoute>(() => routeBeforeReload() ?? HOME_ROUTE);
   React.useEffect(() => {
@@ -260,8 +264,8 @@ export const App = () => {
 
     // A page this role has not been given (a keyboard shortcut, a stale route after the
     // role changed) falls back to Home rather than to any one page.
-    const home = <HomePage user={session} onNavigate={setRoute} />;
-    if (!canOpenRoute(session, route)) return home;
+    const home = <HomePage user={session} onNavigate={setRoute} hiddenRoutes={hiddenRoutes} />;
+    if (!canOpenRoute(session, route) || hiddenRoutes.has(route)) return home;
 
     const canOpenRawMaterial = canOpenRoute(session, "raw-material");
 
@@ -633,6 +637,7 @@ export const App = () => {
     authView,
     isAddingAccount,
     needsBootstrap,
+    hiddenRoutes,
     leaveForm,
     leavePartyForm,
     navigateTo,
@@ -659,6 +664,7 @@ export const App = () => {
             onBackup={onBackup}
             user={session}
             storeJob={storeJob}
+            hiddenRoutes={hiddenRoutes}
             onProfile={() => setRoute("profile")}
             onChangePassword={() => setRoute("change-password")}
             onLogout={auth.handleLogout}
