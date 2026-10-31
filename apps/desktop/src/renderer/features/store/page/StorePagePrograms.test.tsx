@@ -117,7 +117,7 @@ describe("Machine programs on the Store page", () => {
   it("in Receiving, opens the program to read, with Carton In on the rail and Scan in disarmed", async () => {
     const api = installApi();
     renderPage();
-    await waitFor(() => expect(screen.getByRole("button", { name: /Receiving/ })).toHaveTextContent("Session open"), LEASE_SETTLES);
+    await waitFor(() => expect(screen.getByRole("button", { name: /Move in/ })).toHaveTextContent("Session open"), LEASE_SETTLES);
     await openFromPickList();
 
     expect(api.openMachineProgramStoreOut).toHaveBeenCalledWith("p-3", expect.anything());
@@ -146,9 +146,9 @@ describe("Machine programs on the Store page", () => {
     renderPage();
     await openFromPickList();
     fireEvent.click(await screen.findByRole("button", { name: "Close program" }));
-    expect(screen.getByRole("tablist", { name: "Receiving sections" })).toBeInTheDocument();
+    expect(screen.getByRole("tablist", { name: "Move in sections" })).toBeInTheDocument();
     expect(screen.getByRole("complementary", { name: "Scan Material" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /Receiving/ })).toHaveTextContent("Session open");
+    expect(screen.getByRole("button", { name: /Move in/ })).toHaveTextContent("Session open");
   });
 
   it("opens the program a notification names, on arrival", async () => {

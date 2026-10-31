@@ -53,16 +53,16 @@ describe("Open programs", () => {
     installApi();
     const onOpenInStore = vi.fn();
     renderList(vi.fn(), { onOpenInStore });
-    await userEvent.click(await screen.findByRole("button", { name: "Open MP-000003 in Store · Receiving" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Open MP-000003 in Store · Move in" }));
     expect(onOpenInStore).toHaveBeenLastCalledWith("p-3", "receiving");
-    await userEvent.click(screen.getByRole("button", { name: "Open MP-000003 in Store · Issuing" }));
+    await userEvent.click(screen.getByRole("button", { name: "Open MP-000003 in Store · Move out" }));
     expect(onOpenInStore).toHaveBeenLastCalledWith("p-3", "issuing");
   });
 
   it("offers Delete to an administrator only", async () => {
     installApi();
     renderList(vi.fn(), { canDelete: false, onOpenInStore: vi.fn() });
-    expect(await screen.findByRole("button", { name: "Open MP-000001 in Store · Issuing" })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "Open MP-000001 in Store · Move out" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Delete MP-000001…" })).toBeNull();
   });
 
