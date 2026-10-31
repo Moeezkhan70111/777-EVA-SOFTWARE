@@ -7738,16 +7738,27 @@ tr.has-error .gp-qty-stepper input { color: var(--err); }
 .profile-avatar:focus-visible, .sp-head .notification-trigger:focus-visible { outline: 3px solid var(--sp-navy-2); outline-offset: 2px; }
 
 /* Move in | Move out (0.4.2, the owner's design): one white pill centred under STORE, the active
-   half a blue pill inside it with a white icon and name. An open session shows as a chip. */
+   half a blue pill inside it with a white icon and name. An open session shows as a chip.
+   The blue pill is one thumb behind both halves (0.4.3): changing mode slides it across while the
+   names and icons cross-fade between navy and white, so the switch moves rather than blinks. */
 .sp-modes {
-  align-self: center; flex-shrink: 0; display: grid; grid-template-columns: 1fr 1fr; width: min(100%, 460px);
+  --sp-mode-slide: 380ms cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative; align-self: center; flex-shrink: 0; display: grid; grid-template-columns: 1fr 1fr; width: min(100%, 460px);
   border-radius: 999px; background: var(--white); box-shadow: var(--sp-mode-shadow);
 }
+.sp-modes::before {
+  content: ""; position: absolute; top: 0; bottom: 0; left: 0; width: 50%; border-radius: 999px;
+  background: linear-gradient(90deg, var(--sp-mode-on-start), var(--sp-mode-on-end)); box-shadow: var(--sp-mode-on-shadow);
+  transition: transform var(--sp-mode-slide);
+}
+.sp-modes[data-mode="issuing"]::before { transform: translateX(100%); }
 .sp-mode {
+  position: relative; z-index: 1;
   display: inline-flex; align-items: center; justify-content: center; gap: 12px; min-height: 58px; padding: 0 20px;
   border: 0; border-radius: 999px; background: transparent; color: var(--sp-mode-off-text); cursor: pointer;
-  transition: background 160ms ease, color 160ms ease, box-shadow 160ms ease;
+  transition: background 160ms ease, color var(--sp-mode-slide);
 }
+.sp-mode-icon, .sp-mode-chip { transition: color var(--sp-mode-slide), background var(--sp-mode-slide); }
 .sp-mode-icon { display: inline-flex; color: var(--sp-mode-off-icon); }
 .sp-mode-icon svg { width: 26px; height: 26px; }
 .sp-mode-name { font-size: 19px; font-weight: 700; letter-spacing: -0.01em; white-space: nowrap; }
@@ -7756,13 +7767,13 @@ tr.has-error .gp-qty-stepper input { color: var(--err); }
   font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap;
 }
 .sp-mode:not([aria-pressed="true"]):hover { background: var(--sp-sky-bottom); }
-.sp-mode[aria-pressed="true"] {
-  background: linear-gradient(90deg, var(--sp-mode-on-start), var(--sp-mode-on-end)); color: var(--white); box-shadow: var(--sp-mode-on-shadow);
-}
+.sp-mode[aria-pressed="true"] { color: var(--white); }
 .sp-mode[aria-pressed="true"] .sp-mode-icon { color: var(--white); }
 .sp-mode[aria-pressed="true"] .sp-mode-chip { background: rgba(255, 255, 255, 0.2); color: var(--white); }
 .sp-mode:focus-visible { outline: 3px solid var(--sp-navy-2); outline-offset: 2px; }
-@media (prefers-reduced-motion: reduce) { .sp-mode { transition: none; } }
+@media (prefers-reduced-motion: reduce) {
+  .sp-modes::before, .sp-mode, .sp-mode-icon, .sp-mode-chip { transition: none; }
+}
 
 /* Work area | handle | scan rail (0.4.1). The rail's width is --sp-rail-width: this default, or the
    share the operator dragged it to (StorePage sets it, clamped). Every child is placed by column, so
