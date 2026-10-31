@@ -4,7 +4,8 @@ import { copy } from "../../../config/copy";
 // THE STORE PAGE'S WORDS (0.3.9), around its two scan panels — the switch, Issued today, Receipts,
 // the machine programs. Operators read English as a second language, standing in a noisy store: a
 // session is a SESSION, as the 0.3.7 panels call it (owner), there is no jargon, and the only mode
-// names are Receiving and Issuing. The panels themselves are 0.3.7's, words included.
+// names are Move in and Move out (owner, 0.4.2; Receiving and Issuing before). The panels themselves
+// are 0.3.7's, words included.
 
 /** Every string in a copy section, functions called with a sample argument. */
 const textsOf = (section: unknown): string[] => {
@@ -28,8 +29,8 @@ describe("the Store page's wording", () => {
     ["initialize", /initiali[sz]/i],
     ["entity", /\bentit(y|ies)\b/i],
     ["transaction", /\btransactions?\b/i],
-    // The carton pages are named Carton Move In / Out; a refusal pointing there is right.
-    ["a third name for a mode", /\b(scan in|scan out|store in|store out)\b|(?<!carton )\bmove (in|out)\b/i],
+    // Receiving and Issuing were the modes' names until 0.4.2; a page still saying them names a mode twice.
+    ["a third name for a mode", /\b(scan in|scan out|store in|store out|receiving|issuing)\b/i],
   ])("never says %s", (_word, pattern) => {
     expect(texts.filter((text) => pattern.test(text))).toEqual([]);
   });

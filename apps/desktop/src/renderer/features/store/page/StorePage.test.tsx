@@ -135,27 +135,27 @@ describe("Store page — layout", () => {
   it("shows each mode's session in words, the inactive one too", async () => {
     installApi();
     renderPage();
-    await waitFor(() => expect(modeButton(/Receiving/)).toHaveTextContent("Session open · 2 packets"));
-    expect(modeButton(/Receiving/)).toHaveAttribute("aria-pressed", "true");
-    expect(modeButton(/Issuing/)).toHaveTextContent("Nothing started");
-    expect(modeButton(/Issuing/)).toHaveAttribute("aria-pressed", "false");
+    await waitFor(() => expect(modeButton(/Move in/)).toHaveTextContent("Session open · 2 packets"));
+    expect(modeButton(/Move in/)).toHaveAttribute("aria-pressed", "true");
+    expect(modeButton(/Move out/)).toHaveTextContent("Nothing started");
+    expect(modeButton(/Move out/)).toHaveAttribute("aria-pressed", "false");
   });
 
   it("offers Receiving's seven tabs, and Issuing's four, in order, Daily report last in each", async () => {
     installApi();
     renderPage();
     const tabsOf = (label: string) => within(screen.getByRole("tablist", { name: label })).getAllByRole("tab").map((tab) => tab.textContent);
-    expect(tabsOf("Receiving sections")).toEqual(["Add material", "Labels", "Stock", "Receipts", "By hand", "Setup", "Daily report"]);
+    expect(tabsOf("Move in sections")).toEqual(["Add material", "Labels", "Stock", "Receipts", "By hand", "Setup", "Daily report"]);
     // The inactive mode is hidden, from assistive technology too: Issuing's tabs appear with Issuing.
-    expect(screen.queryByRole("tablist", { name: "Issuing sections" })).toBeNull();
-    fireEvent.click(modeButton(/Issuing/));
-    expect(tabsOf("Issuing sections")).toEqual(["By hand", "Issued today", "Stock", "Daily report"]);
+    expect(screen.queryByRole("tablist", { name: "Move out sections" })).toBeNull();
+    fireEvent.click(modeButton(/Move out/));
+    expect(tabsOf("Move out sections")).toEqual(["By hand", "Issued today", "Stock", "Daily report"]);
   });
 
   it("shows only the tabs the account may open", async () => {
     installApi();
     renderPage({ access: { stock: false, labels: false, settings: false } });
-    const receivingTabs = within(screen.getByRole("tablist", { name: "Receiving sections" })).getAllByRole("tab").map((tab) => tab.textContent);
+    const receivingTabs = within(screen.getByRole("tablist", { name: "Move in sections" })).getAllByRole("tab").map((tab) => tab.textContent);
     expect(receivingTabs).toEqual(["By hand", "Daily report"]);
     expect(screen.getByTestId("hand-IN")).toBeInTheDocument();
   });
@@ -167,15 +167,15 @@ describe("Store page — the two modes", () => {
   it("switches to Issuing: Scan out on the right, Scan in hidden, and neither session lost", async () => {
     const api = installApi();
     renderPage();
-    await waitFor(() => expect(modeButton(/Receiving/)).toHaveTextContent("Session open"));
+    await waitFor(() => expect(modeButton(/Move in/)).toHaveTextContent("Session open"));
 
-    fireEvent.click(modeButton(/Issuing/));
+    fireEvent.click(modeButton(/Move out/));
     expect(screen.getByRole("complementary", { name: "Scan Out" })).toBeVisible();
     expect(screen.queryByRole("complementary", { name: "Scan Material" })).toBeNull();
 
-    fireEvent.click(modeButton(/Receiving/));
+    fireEvent.click(modeButton(/Move in/));
     expect(screen.getByRole("complementary", { name: "Scan Material" })).toBeVisible();
-    expect(modeButton(/Receiving/)).toHaveTextContent("Session open · 2 packets");
+    expect(modeButton(/Move in/)).toHaveTextContent("Session open · 2 packets");
     expect(api.getOpenRawMaterialReceivingSession).toHaveBeenCalledTimes(1);
   });
 
@@ -183,22 +183,22 @@ describe("Store page — the two modes", () => {
     installApi();
     renderPage();
     const tab = (list: string, name: string) => within(screen.getByRole("tablist", { name: list })).getByRole("tab", { name });
-    fireEvent.click(tab("Receiving sections", "Daily report"));
-    expect(tab("Receiving sections", "Daily report")).toHaveAttribute("aria-selected", "true");
+    fireEvent.click(tab("Move in sections", "Daily report"));
+    expect(tab("Move in sections", "Daily report")).toHaveAttribute("aria-selected", "true");
     expect(screen.getAllByTestId("daily-report").map((node) => node.textContent)).toEqual(["report:IN"]);
 
-    fireEvent.click(modeButton(/Issuing/));
-    fireEvent.click(tab("Issuing sections", "Daily report"));
+    fireEvent.click(modeButton(/Move out/));
+    fireEvent.click(tab("Move out sections", "Daily report"));
     expect(screen.getAllByTestId("daily-report").map((node) => node.textContent)).toEqual(["report:IN", "report:OUT"]);
 
-    fireEvent.click(within(screen.getByRole("tablist", { name: "Issuing sections" })).getByRole("tab", { name: "By hand" }));
+    fireEvent.click(within(screen.getByRole("tablist", { name: "Move out sections" })).getByRole("tab", { name: "By hand" }));
     expect(screen.getAllByTestId("daily-report").map((node) => node.textContent)).toEqual(["report:IN"]);
   });
 
   it("lists every session issued today, with its party, packets, and a reprint", async () => {
     const api = installApi();
     renderPage({ start: "issuing" });
-    fireEvent.click(within(screen.getByRole("tablist", { name: "Issuing sections" })).getByRole("tab", { name: "Issued today" }));
+    fireEvent.click(within(screen.getByRole("tablist", { name: "Move out sections" })).getByRole("tab", { name: "Issued today" }));
     const list = await screen.findByRole("list");
     const row = within(list).getByText("RMO-000173").closest("li") as HTMLElement;
     expect(row).toHaveTextContent("DANIYAL");

@@ -1347,10 +1347,10 @@ export const copy = {
     openProgramsTitle: "Open programs",
     openProgramsLine: "Every program still open, whatever its date. Open one in the Store page to issue against it or complete it; delete one that can never be honestly completed.",
     openInStore: "Open in Store",
-    openInReceiving: "Receiving",
-    openInIssuing: "Issuing",
-    openInReceivingFor: (code: string) => `Open ${code} in Store · Receiving`,
-    openInIssuingFor: (code: string) => `Open ${code} in Store · Issuing`,
+    openInReceiving: "Move in",
+    openInIssuing: "Move out",
+    openInReceivingFor: (code: string) => `Open ${code} in Store · Move in`,
+    openInIssuingFor: (code: string) => `Open ${code} in Store · Move out`,
     openProgramsEmpty: "No machine program is open.",
     openProgramsFailed: "The open programs could not be loaded.",
     openProgramsLoading: "Loading open programs…",
@@ -1763,7 +1763,7 @@ export const copy = {
     openHere: "A session is open on this computer",
     continueSession: "Continue session",
     sessionColumn: "Session",
-    emptyHint: "Widen the dates, clear the status filter, or scan one in under Receiving.",
+    emptyHint: "Widen the dates, clear the status filter, or scan one in under Move in.",
   },
 
   // THE STORE PAGE (0.3.9) — Receiving and Issuing on one page, in place of Store Station, Store In
@@ -1778,11 +1778,14 @@ export const copy = {
     notifications: "Notifications",
     noNotifications: "Nothing new.",
     modesLabel: "What the store is doing",
-    receiving: "Receiving",
-    issuing: "Issuing",
+    // The two modes, named Move in and Move out since 0.4.2 (the owner's design).
+    receiving: "Move in",
+    issuing: "Move out",
+    /** The chip on a mode whose session is open: its packets so far. */
+    modeOpen: (n: number) => `Open · ${n.toLocaleString()}`,
     keyHint: "Press 1 or 2",
-    receivingSections: "Receiving sections",
-    issuingSections: "Issuing sections",
+    receivingSections: "Move in sections",
+    issuingSections: "Move out sections",
     tabs: {
       addMaterial: "Add material",
       labels: "Labels",

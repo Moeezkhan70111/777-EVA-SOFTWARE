@@ -209,7 +209,7 @@ describe("App", () => {
 
     expect(await screen.findByRole("heading", { level: 1, name: "Store" })).toBeInTheDocument();
     const modes = screen.getByRole("group", { name: "What the store is doing" });
-    expect(within(modes).getByRole("button", { name: /Receiving/ })).toHaveAttribute("aria-pressed", "true");
+    expect(within(modes).getByRole("button", { name: /Move in/ })).toHaveAttribute("aria-pressed", "true");
 
     // No navbar (0.4.1): the Store page alone. Its header carries the bell and the profile, so there
     // is exactly one profile button -- the header's portrait, not the floating pill.
@@ -220,9 +220,9 @@ describe("App", () => {
     expect(screen.getAllByRole("button", { name: "User Profile" })).toHaveLength(1);
 
     // Issuing, then Escape: the page stays on Issuing — Escape never switches mode.
-    await userEvent.click(within(modes).getByRole("button", { name: /Issuing/ }));
+    await userEvent.click(within(modes).getByRole("button", { name: /Move out/ }));
     await userEvent.keyboard("{Escape}");
-    expect(within(screen.getByRole("group", { name: "What the store is doing" })).getByRole("button", { name: /Issuing/ })).toHaveAttribute("aria-pressed", "true");
+    expect(within(screen.getByRole("group", { name: "What the store is doing" })).getByRole("button", { name: /Move out/ })).toHaveAttribute("aria-pressed", "true");
   });
 
   it("creates an access request from the Rookie screen", async () => {
