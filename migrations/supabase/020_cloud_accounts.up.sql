@@ -671,7 +671,7 @@ begin
   end if;
   if not public.account_permissions_ok(p_permissions) then return public.account_refusal('PERMISSIONS_INVALID'); end if;
 
-  code := coalesce(p_role_code, btrim(both '-' from regexp_replace(lower(btrim(p_name)), '[^a-z0-9]+', '-', 'g')));
+  code := coalesce(p_role_code, btrim(regexp_replace(lower(btrim(p_name)), '[^a-z0-9]+', '-', 'g'), '-'));
   if code is null or code !~ '^[a-z0-9-]{1,64}$' then return public.account_refusal('ROLE_CODE_INVALID'); end if;
 
   if exists (select 1 from public.account_roles

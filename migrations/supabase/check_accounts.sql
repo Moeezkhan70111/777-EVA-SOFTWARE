@@ -83,6 +83,23 @@ begin
   end;
   if not refused then raise exception 'STEP 6: a second first admin was made'; end if;
 
+  -- 6b. Importing a PC's roles: all or nothing, and only into an empty catalogue. Its handler turns
+  --     any failure into ROLES_INVALID, so the success path is what proves the body runs.
+  if not exists (select 1 from public.account_roles) then
+    r := public.admin_import_roles(alice_token, '[{"code": "imp-a", "name": "Imported A", "permissions": ["dashboard"]},
+                                                  {"code": "BAD CODE", "name": "Imported B", "permissions": []}]'::jsonb);
+    if r->>'reason' is distinct from 'ROLES_INVALID' then raise exception 'STEP 6b: bad import: %', r; end if;
+    if exists (select 1 from public.account_roles) then raise exception 'STEP 6b: a failed import kept a role'; end if;
+    r := public.admin_import_roles(alice_token, '[{"code": "imp-a", "name": "Imported A", "description": "a", "loginPolicy": "DAILY_LOGIN", "permissions": ["dashboard"]},
+                                                  {"code": "imp-b", "name": "Imported B", "permissions": []}]'::jsonb);
+    if (r->>'ok')::boolean is distinct from true or (r->>'imported')::int <> 2 then raise exception 'STEP 6b: import: %', r; end if;
+    if (select count(*) from public.sync_event_log where aggregate_type = 'ACCOUNT_ROLE' and aggregate_id in ('imp-a', 'imp-b')) <> 2 then
+      raise exception 'STEP 6b: imported roles not logged';
+    end if;
+  end if;
+  r := public.admin_import_roles(alice_token, '[{"code": "imp-c", "name": "Imported C", "permissions": []}]'::jsonb);
+  if r->>'reason' is distinct from 'ROLES_ALREADY_PRESENT' then raise exception 'STEP 6b: import over a catalogue: %', r; end if;
+
   -- 7. The admin's existing token now works: a role is saved and logged.
   r := public.admin_save_role(alice_token, null, 'Check Munshi', 'check', 'DAILY_LOGIN', array['dashboard', 'live-production']);
   if (r->>'ok')::boolean is distinct from true or r->'role'->>'roleCode' <> 'check-munshi' then
@@ -140,6 +157,39 @@ begin
   if r->>'reason' is distinct from 'CANNOT_CHANGE_OWN_ACCESS' then raise exception 'STEP 12: self-revoke: %', r; end if;
   r := public.admin_delete_role(alice_token, 'check-munshi');
   if r->>'reason' is distinct from 'ROLE_IN_USE' then raise exception 'STEP 12: role in use deleted: %', r; end if;
+  r := public.admin_save_role(alice_token, null, 'Check Spare', null, 'ALWAYS_LOGGED_IN', array[]::text[]);
+  r := public.admin_delete_role(alice_token, 'check-spare');
+  if (r->>'ok')::boolean is distinct from true or (r->'role'->>'deleted')::boolean is distinct from true then
+    raise exception 'STEP 12: unused role not deleted: %', r;
+  end if;
+  if not exists (select 1 from public.sync_event_log
+                  where aggregate_id = 'check-spare' and payload->>'revision' = '2' and (payload->>'deleted')::boolean) then
+    raise exception 'STEP 12: deletion not logged';
+  end if;
+
+  -- 12b. An admin resets a password: the version rises, the lock clears, the old password stops.
+  update public.people set locked_until = now() + interval '1 hour' where id = bob_id;
+  r := public.admin_reset_password(alice_token, bob_id, 'reset4321');
+  if (r->>'ok')::boolean is distinct from true or (r->'person'->>'credentialVersion')::int <> bob_version + 2 then
+    raise exception 'STEP 12b: reset: %', r;
+  end if;
+  r := public.verify_login('bob@check.test', 'bobpass99');
+  if r->>'reason' is distinct from 'WRONG_CREDENTIALS' then raise exception 'STEP 12b: old password after reset: %', r; end if;
+  r := public.verify_login('bob@check.test', 'reset4321');
+  if r->>'reason' is distinct from 'ACCESS_REVOKED' then raise exception 'STEP 12b: new password (still revoked): %', r; end if;
+
+  -- 12c. An existing local account moves up with its own id, PENDING; its id and email are then taken.
+  r := public.claim_existing_account('legacy-check-1', 'legacy@check.test', 'legacy123', 'Legacy');
+  if (r->>'ok')::boolean is distinct from true or r->'person'->>'personId' <> 'legacy-check-1'
+     or r->'person'->>'status' <> 'PENDING' then
+    raise exception 'STEP 12c: claim: %', r;
+  end if;
+  r := public.claim_existing_account('legacy-check-1', 'other@check.test', 'legacy123', 'Legacy');
+  if r->>'reason' is distinct from 'ID_TAKEN' then raise exception 'STEP 12c: id claimed twice: %', r; end if;
+  r := public.claim_existing_account('legacy-check-2', 'LEGACY@check.test', 'legacy123', 'Legacy');
+  if r->>'reason' is distinct from 'EMAIL_TAKEN' then raise exception 'STEP 12c: email claimed twice: %', r; end if;
+  r := public.claim_existing_account('not an id!', 'x@check.test', 'legacy123', 'Legacy');
+  if r->>'reason' is distinct from 'ID_INVALID' then raise exception 'STEP 12c: bad id: %', r; end if;
 
   -- 13. Changing a password raises the version; the old one stops working.
   r := public.change_password(alice_token, 'abcd1234', 'newpass77');
@@ -178,6 +228,6 @@ begin
   if not refused then raise exception 'STEP 16: a client could make an admin'; end if;
   reset role;
 
-  raise exception 'ACCOUNTS_CHECK_PASSED: all 16 steps (rolled back, nothing kept)';
+  raise exception 'ACCOUNTS_CHECK_PASSED: steps 1-16 with 6b, 12b and 12c (rolled back, nothing kept)';
 end;
 $$;
