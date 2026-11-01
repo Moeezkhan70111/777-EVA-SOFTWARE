@@ -930,6 +930,16 @@ update path that needs nobody present.
 
 If the version did not change, the update did not install, whatever the app said.
 
+### 9b. Tags that were never built
+
+A version is shipped only when the "Release Windows installer" workflow has run for its tag:
+`npm run release -- --prepare-only` bumps, commits, tags and pushes, and builds nothing. A tag with
+no workflow run behind it has no installer and no GitHub release, and no PC ever ran it.
+
+| Tag | Commit | What happened |
+|---|---|---|
+| `v0.4.4` | `6b208b9` | Tagged 2026-11-02, **never built or published**. Its one change -- a person still waiting for access can sign out (`159808d`) -- shipped in **0.4.5**, which was published instead. After 0.4.3 the next release on the office PCs is 0.4.5. |
+
 ---
 
 ## 10. Cutover: bringing the real database onto production
