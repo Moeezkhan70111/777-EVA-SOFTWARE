@@ -10,7 +10,7 @@
 
 Apply in this order, in the Supabase SQL editor, on an **empty** project, one file at a time:
 
-`schema.sql` → `002` → `003` → … → `019` → `020` → `021`
+`schema.sql` → `002` → `003` → … → `019` → `020` → `021` → `022`
 
 After each one, run `verify_applied_state.sql`. Its header lists exactly which checks a project
 one migration behind fails, so a half-applied project is diagnosed rather than guessed at. The
@@ -60,12 +60,13 @@ guarded by `factory_id is null`), and its function block is what puts the correc
 | 19 | `019_close_rls_auto_enable.up.sql` | Takes `EXECUTE` on Supabase's own `rls_auto_enable()` away from `anon` and `authenticated`. Its event trigger still switches RLS on for every new table. |
 | 20 | `020_cloud_accounts.up.sql` | Cloud accounts (docs/41): people sign up on an enrolled PC, an admin approves them once, and the account works on every PC. Adds `people`, `account_roles`, `person_tokens`, `account_events` and the `PERSON` and `ACCOUNT_ROLE` log types. Check: `check_accounts.sql`. **Test only until after PC2's cutover**; production stays at `019`. Then `make_first_admin` is run once, by the owner, in the SQL editor. |
 | 21 | `021_permission_requests.up.sql` | Permission requests go to the cloud (docs/41 §8): a request for one more screen is made and decided here, and an approval reaches every PC as the person's next `PERSON` revision. Adds `account_permission_requests`, the `PERMISSION_REQUEST` log type, and `account_state()`: the whole account state, read once by a PC switching to cloud accounts. Check: `check_permission_requests.sql`. **Test only until after PC2's cutover.** |
+| 22 | `022_first_admin_designation.up.sql` | The first admin can be named before they exist, at the one enrolled computer they will claim from: `select make_first_admin('<email>', '<device id>')`. That claim arrives as an approved admin, once, while no admin exists; the same email anywhere else arrives PENDING. Lets the owner switch PC2 by hand with an admin already in place (docs/41 §12). Check: `check_first_admin.sql`. **Test only until after PC2's cutover.** |
 
 Each file is a single transaction and each has a matching `.down.sql`. The down files are only
 safe on a project that has never been written to — once real rows exist, reversing the type
 changes would have to discard data to succeed, and they are written to fail instead.
 
-**Reverse in the opposite order: `021` → `020` → `019` → `018` → … → `003` → `002`.** Each down file's header
+**Reverse in the opposite order: `022` → `021` → `020` → `019` → `018` → … → `003` → `002`.** Each down file's header
 says what reversing it costs: `018`'s re-opens the PC2/PC3 failure, for example. Reversing `005`
 re-opens the cross-factory read, and reversing `006` re-opens unbound access, re-enables any
 device revoked before the rollback and discards the claim audit. Both headers say so. `004_rls_policies.down.sql` revokes a
