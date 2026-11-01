@@ -52,6 +52,15 @@ export type SupportedAggregateType = SyncAggregateType;
 export const isSupportedAggregateType = (value: unknown): value is SupportedAggregateType =>
   typeof value === "string" && (SUPPORTED_AGGREGATE_TYPES as readonly string[]).includes(value);
 
+/** What an envelope read from the cloud says when its log row names no device (a carton, an account). */
+export const CLOUD_ORIGIN = "cloud";
+
+/** The envelope's sender as a device id, or null when it names none. */
+export const senderOf = (envelope: Pick<SyncEnvelope, "originDeviceId">): string | null => {
+  const origin = envelope.originDeviceId.trim();
+  return origin === "" || origin === CLOUD_ORIGIN ? null : origin;
+};
+
 /** One business event on the wire. */
 export interface SyncEnvelope {
   /** Globally unique for the business event. The receiver's protection against a repeat. */
@@ -60,7 +69,11 @@ export interface SyncEnvelope {
   readonly aggregateId: string;
   readonly operation: "INSERT" | "UPDATE";
   readonly payload: Record<string, unknown>;
-  /** Which installation produced it. Recorded for tracing, never used to decide a winner. */
+  /**
+   * Which installation produced it. Never used to decide a winner. It IS the provenance a replicated
+   * row is stamped with when the row itself carries none (applyContract.ts): the number-range guard
+   * counts an unstamped row as this computer's own. CLOUD_ORIGIN when the log names no device.
+   */
   readonly originDeviceId: string;
   /** UTC ISO 8601, as everything in this system is stored (R16). */
   readonly createdAt: string;

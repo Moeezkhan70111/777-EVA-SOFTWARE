@@ -106,6 +106,74 @@ test("a material waits for its category, then arrives whole -- and the reader do
   }
 });
 
+// ─── Provenance (2026-11-01 rehearsal: the reader refused its own range) ─────────────────────
+//
+// A record created on its computer after migration 087 carries no origin_device_id there, which the
+// number-range guard reads as "this computer's own" -- true where it was made. It must not arrive
+// that way: the receiver would count the sender's numbers as its own and refuse any range they do
+// not fit. A computer that synced before being given a range -- the order a new PC naturally follows
+// -- could then never be given one.
+
+const originOf = (pc: Pc, id: string): unknown =>
+  (pc.db.db.prepare("SELECT origin_device_id FROM inventory_items WHERE id = ?").get(id) as { origin_device_id: unknown }).origin_device_id;
+
+const receiveMaterial = (reader: Pc, revisions: Map<string, SyncEnvelope>) => {
+  for (const key of ["INVENTORY_UNIT:u-kg:1", "INVENTORY_CATEGORY:c-1:1", "INVENTORY_ITEM:i-1:1"]) apply(reader, revisions.get(key));
+};
+
+test("a record its sender left unstamped lands stamped with the sender, and the receiver can still take its own range", () => {
+  const holder = openHolder();
+  const reader = openPc("reader");
+  try {
+    seedMaterial(holder);
+    assert.equal(originOf(holder, "i-1"), null, "on the store it is unstamped: its own, made after 087");
+    run(reader, "INSERT INTO app_settings (setting_key, setting_value, value_type, is_encrypted, updated_by, updated_at) VALUES ('device.id', 'dev-reader', 'string', 0, 'test', ?) ON CONFLICT(setting_key) DO UPDATE SET setting_value = excluded.setting_value", NOW);
+    receiveMaterial(reader, sent(holder));
+
+    assert.equal(originOf(reader, "i-1"), "dev-holder", "the reader knows whose number RM-1 is");
+    assert.doesNotThrow(() => reader.db.assignNumberBlock(2, "test"), "RM-1 is the store's, so block 2 fits everything this reader issued");
+  } finally {
+    holder.close();
+    reader.close();
+  }
+});
+
+test("a record that landed unstamped before this fix is stamped when its revision is delivered again, and only then", () => {
+  const holder = openHolder();
+  const reader = openPc("reader");
+  try {
+    seedMaterial(holder);
+    const revisions = sent(holder);
+    receiveMaterial(reader, revisions);
+    run(reader, "UPDATE inventory_items SET origin_device_id = NULL WHERE id = 'i-1'"); // as the old applier left it
+    const marksBefore = marks(reader); // the line above is a local edit, and capture marked it
+
+    assert.equal(apply(reader, revisions.get("INVENTORY_ITEM:i-1:1")).status, "DUPLICATE", "nothing of the record is written again");
+    assert.equal(originOf(reader, "i-1"), "dev-holder");
+    assert.equal(marks(reader), marksBefore, "filling in provenance is not a change to send");
+  } finally {
+    holder.close();
+    reader.close();
+  }
+});
+
+test("a record that names its origin keeps it, whoever sent it", () => {
+  const holder = openHolder();
+  const reader = openPc("reader");
+  try {
+    seedMaterial(holder);
+    run(holder, "UPDATE inventory_items SET origin_device_id = 'pc2-before-087' WHERE id = 'i-1'");
+    const revisions = sent(holder);
+    receiveMaterial(reader, revisions);
+    assert.equal(originOf(reader, "i-1"), "pc2-before-087");
+    apply(reader, revisions.get("INVENTORY_ITEM:i-1:1"));
+    assert.equal(originOf(reader, "i-1"), "pc2-before-087", "a stamp is filled in, never replaced");
+  } finally {
+    holder.close();
+    reader.close();
+  }
+});
+
 test("a newer revision replaces the record and its children; an older one, arriving late, changes nothing", () => {
   const holder = openHolder();
   const reader = openPc("reader");

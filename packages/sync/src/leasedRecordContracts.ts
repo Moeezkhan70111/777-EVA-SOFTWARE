@@ -79,8 +79,26 @@ function firstMissing(sql: SyncSqlHandle, spec: RecordTableSpec, node: RecordNod
 const columnsOf = (sql: SyncSqlHandle, table: string): Set<string> =>
   new Set((sql.prepare(`PRAGMA table_info(${table})`).all() as Array<Record<string, unknown>>).map((column) => String(column.name)));
 
-function upsertRow(sql: SyncSqlHandle, table: string, row: RecordNode["row"]): void {
+/** Where a numbered record says which computer issued it (migration 087; numberRange.ts). */
+const ORIGIN_COLUMN = "origin_device_id";
+
+const unstamped = (value: unknown): boolean => value === null || value === undefined || value === "";
+
+/**
+ * The row as it should land here: a row its sender left unstamped is stamped with the sender. A row
+ * created on its computer after migration 087 carries no origin there -- the number-range guard reads
+ * that as "this computer's own", which it is THERE -- so arriving unstamped it would be counted as
+ * the RECEIVER's own, and the receiver would refuse its own range for a number it never issued.
+ * A row that already names its origin keeps it.
+ */
+function withSender(row: RecordNode["row"], known: Set<string>, sender: string | null): RecordNode["row"] {
+  if (sender === null || !known.has(ORIGIN_COLUMN) || !unstamped(row[ORIGIN_COLUMN])) return row;
+  return { ...row, [ORIGIN_COLUMN]: sender };
+}
+
+function upsertRow(sql: SyncSqlHandle, table: string, received: RecordNode["row"], sender: string | null): void {
   const known = columnsOf(sql, table);
+  const row = withSender(received, known, sender);
   const columns = Object.keys(row).filter((column) => known.has(column));
   const updates = columns.filter((column) => column !== "id").map((column) => `${column} = excluded.${column}`);
   sql
@@ -100,8 +118,8 @@ function deleteRow(sql: SyncSqlHandle, spec: RecordTableSpec, id: string): void 
 }
 
 /** The node and its children, replacing whatever this computer held for them. */
-function writeNode(sql: SyncSqlHandle, spec: RecordTableSpec, node: RecordNode): void {
-  upsertRow(sql, spec.table, node.row);
+function writeNode(sql: SyncSqlHandle, spec: RecordTableSpec, node: RecordNode, sender: string | null): void {
+  upsertRow(sql, spec.table, node.row, sender);
   const id = String(node.row.id);
   for (const child of spec.children ?? []) {
     const incoming = node.children[child.table] ?? [];
@@ -110,7 +128,7 @@ function writeNode(sql: SyncSqlHandle, spec: RecordTableSpec, node: RecordNode):
     for (const row of held) {
       if (!keep.has(String(row.id))) deleteRow(sql, child, String(row.id));
     }
-    for (const childNode of incoming) writeNode(sql, child, childNode);
+    for (const childNode of incoming) writeNode(sql, child, childNode, sender);
   }
 }
 
@@ -171,11 +189,11 @@ function displace(sql: SyncSqlHandle, type: MasterRecordType, spec: RecordTableS
 }
 
 /** The revision's writes, moving an out-of-date name aside when that is what stands in the way. */
-function writeRevision(sql: SyncSqlHandle, type: MasterRecordType, spec: RecordTableSpec, revision: LeasedRecordPayload): void {
+function writeRevision(sql: SyncSqlHandle, type: MasterRecordType, spec: RecordTableSpec, revision: LeasedRecordPayload, sender: string | null): void {
   for (let displaced = 0; ; displaced += 1) {
     try {
       if (revision.body === null) deleteRow(sql, spec, revision.recordId);
-      else writeNode(sql, spec, revision.body);
+      else writeNode(sql, spec, revision.body, sender);
       return;
     } catch (error) {
       const clash = displaced < MAX_DISPLACEMENTS ? rootNameClash(sql, spec, revision, error) : null;
@@ -190,11 +208,28 @@ function writeRevision(sql: SyncSqlHandle, type: MasterRecordType, spec: RecordT
   }
 }
 
-function applyRevision(sql: SyncSqlHandle, type: MasterRecordType, revision: LeasedRecordPayload): boolean {
-  if (heldRevision(sql, type, revision.recordId) >= revision.revision) return false;
+/**
+ * A revision this computer already holds, delivered again (a re-read of the log): nothing of it is
+ * written -- except that a record which landed before senders were stamped gets its sender now. That
+ * heals a receiver without asking anyone to edit its database. Only a missing stamp is ever filled,
+ * never one replaced; on the sender itself it stamps its own id, which is true. Capture suppressed:
+ * filling in provenance is not a change to the record.
+ */
+function stampHeldRecord(sql: SyncSqlHandle, spec: RecordTableSpec, recordId: string, sender: string | null): void {
+  if (sender === null || !columnsOf(sql, spec.table).has(ORIGIN_COLUMN)) return;
+  withCaptureSuppressed(sql as CaptureHandle, () => {
+    sql.prepare(`UPDATE ${spec.table} SET ${ORIGIN_COLUMN} = ? WHERE id = ? AND (${ORIGIN_COLUMN} IS NULL OR ${ORIGIN_COLUMN} = '')`).run(sender, recordId);
+  });
+}
+
+function applyRevision(sql: SyncSqlHandle, type: MasterRecordType, revision: LeasedRecordPayload, sender: string | null): boolean {
   const spec = MASTER_RECORDS[type];
+  if (heldRevision(sql, type, revision.recordId) >= revision.revision) {
+    stampHeldRecord(sql, spec, revision.recordId, sender);
+    return false;
+  }
   // Suppressed throughout, the moving aside included: none of it is this computer's own change.
-  withCaptureSuppressed(sql as CaptureHandle, () => writeRevision(sql, type, spec, revision));
+  withCaptureSuppressed(sql as CaptureHandle, () => writeRevision(sql, type, spec, revision, sender));
   // This record's own revision has applied, so anything of it moved aside has its real values back.
   sql.prepare("DELETE FROM sync_displaced_records WHERE aggregate_type = ? AND record_id = ?").run(type, revision.recordId);
   sql
@@ -219,7 +254,7 @@ function leasedRecordContract(type: MasterRecordType): RegisteredContract {
       idsIn(spec, revision.body, carried);
       return firstMissing(sql, spec, revision.body, carried);
     },
-    write: (sql, revision) => applyRevision(sql, type, revision),
+    write: (sql, revision, _replicatedAt, sender) => applyRevision(sql, type, revision, sender),
   });
 }
 

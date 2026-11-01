@@ -39,7 +39,7 @@ import {
 } from "@erp/data";
 import { readDomainLeases, type DomainLease } from "./leases.js";
 import type { AccountCall, AccountFunctionName } from "./accountsClient.js";
-import type { SyncEnvelope } from "./contract.js";
+import { CLOUD_ORIGIN, type SyncEnvelope } from "./contract.js";
 import { HttpError, readServiceError, redactSecrets, requestJson } from "./httpJson.js";
 import type { FailureKind } from "./outboxQueue.js";
 import { asRow } from "./sqlPort.js";
@@ -919,9 +919,9 @@ export class SupabaseSyncTransport implements SyncTransport, SyncPullTransport {
         aggregateId: String(row.aggregate_id ?? ""),
         operation: row.operation === "UPDATE" ? "UPDATE" : "INSERT",
         payload,
-        // A carton identity carries no device: qr_master has no column for one. "cloud" names
+        // A carton identity carries no device: qr_master has no column for one. CLOUD_ORIGIN names
         // where this copy came from, and nothing decides anything from it.
-        originDeviceId: typeof row.origin_device_id === "string" && row.origin_device_id !== "" ? row.origin_device_id : "cloud",
+        originDeviceId: typeof row.origin_device_id === "string" && row.origin_device_id !== "" ? row.origin_device_id : CLOUD_ORIGIN,
         createdAt: String(row.logged_at ?? ""),
       };
       return { seq, envelope };
