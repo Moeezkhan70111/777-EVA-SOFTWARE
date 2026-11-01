@@ -200,6 +200,25 @@ test("a run with a scanned label is refused — it is part of what happened in t
   } finally { f.cleanup(); }
 });
 
+test("a run that arrived from another computer is refused, and keeps its serials", () => {
+  // Rehearsal, 2 Nov: a received run has nothing in this computer's outbox, so the "already sent"
+  // check passed it as never sent -- erasable here, its serials handed out again.
+  const f = createFixture();
+  try {
+    const itemId = f.makeItem("COMMANDO", "6/9");
+    const batch = f.db.generateRawMaterialQrBatch({ partyId: f.supplier, itemId, quantity: 4, packingQuantity: 5 });
+    // As the applier writes a received run: marked on arrival, never queued here.
+    f.raw.prepare("UPDATE raw_material_qr_batches SET replicated_at = ? WHERE id = ?").run("2026-11-02T00:00:00.000Z", batch.batch.id);
+    f.raw.prepare("UPDATE raw_material_qrs SET replicated_at = ? WHERE batch_id = ?").run("2026-11-02T00:00:00.000Z", batch.batch.id);
+    f.raw.prepare("DELETE FROM sync_outbox WHERE dedupe_key LIKE 'RAW_MATERIAL_QR%'").run();
+
+    assert.deepEqual(f.db.rawMaterialQrBatchDeleteBlockers(batch.batch.id), ["it was printed on another computer"]);
+    assert.throws(() => f.db.deleteRawMaterialQrBatch({ batchId: batch.batch.id }), /printed on another computer/);
+    assert.equal(f.exists("raw_material_qrs", "batch_id = ?", batch.batch.id), 4);
+    assert.equal(f.db.getRawMaterialQrSequenceState({ partyId: f.supplier, itemId })?.nextSequence, 5);
+  } finally { f.cleanup(); }
+});
+
 // ─── Correcting the unit ──────────────────────────────────────────────────────
 
 test("a wrongly chosen unit is re-stated without changing a single figure", () => {
