@@ -137,9 +137,12 @@ PC2 holds the real accounts. On each person's **next online sign-in on PC2**:
 4. The admin approves them. The approval screen offers their **old role and permissions from this
    PC** as a starting point, so nobody has to remember them.
 
-**The first admin**, once, on each project: the owner signs in (or up) online, then runs
-`select public.make_first_admin('<email>');` in the SQL editor. On that admin's next online sign-in
-on PC2, the app offers to copy PC2's role catalogue up (`admin_import_roles`).
+**The first admin**, once, on each project, is named in the SQL editor **before** anyone moves up:
+`select public.make_first_admin('<email>', '<PC2 device id>');` (cloud 022). The claim of that email
+at that PC -- the owner pressing the switch (§7) -- arrives as an approved admin; the same email at
+any other PC arrives PENDING. Someone who already exists in the cloud can still be made the first
+admin with the email alone, as 020 did. Once switched, PC2 offers to copy its role catalogue up
+(`admin_import_roles`).
 
 **The switch ends every session of an account the cloud does not know** (one with no email). The
 cloud cannot revoke what it has never seen, so a remembered session that outlived the switch would
@@ -148,9 +151,22 @@ name and password, and moves up.
 
 ## 7. Two modes, one switch
 
-A PC stays in **local mode** (today's behaviour, unchanged) until it is enrolled **and** its cloud
-project answers the account functions. It then switches to **cloud mode** once, recorded in
-`app_settings` (`accounts.mode`), and never switches back by itself.
+A PC stays in **local mode** (today's behaviour, unchanged) until **an admin, standing at it, switches
+it** (owner, 2026-11-01). Never automatically: applying a migration must never be what signs a store
+out. It is recorded in `app_settings` (`accounts.mode`), and nothing switches it back.
+
+**The button** ("Switch to cloud accounts", for an admin signed in here, on a PC that is set up for
+the cloud) says plainly what it will do -- everyone signed in here is signed out, and nobody works
+until an administrator approves them -- and needs a confirmation. The admin then gives their cloud
+email and password:
+
+1. Their account is signed in to the cloud. If it is not there yet and it is this PC's own account,
+   it moves up (§6) -- as an **approved admin** when `make_first_admin` named that email at this PC
+   (cloud 022).
+2. **It must be an approved admin, or nothing changes.** The refusal gives the exact SQL to run,
+   with this PC's device id in it.
+3. The whole account state is loaded, the sessions of accounts only this PC knows end, and the PC
+   switches, in one transaction. The admin's own session carries on.
 
 **The switch loads the whole account state once** (`account_state()`, cloud 021), through the same
 writes the log uses, and the log keeps the PC current from then on. The log alone is not enough: a
@@ -228,7 +244,7 @@ Blocks 1–10 see no change. For blocks 11 and up:
 4. Cloud 021 (permission requests, §8) on test; the `accounts.mode` switch and the data layer's
    refusals in cloud mode (§7); the `PERSON`, `ACCOUNT_ROLE` and `PERMISSION_REQUEST` contracts.
    **Done; 021 passing on test (2026-11-01).**
-5. The switch on a sync pass and the sign-in rules (§4, §7) in the main process. **Done.**
+5. The switch, by an admin at the PC (§7, cloud 022), and the sign-in rules (§4), in the main process. **Done.**
 6. The screens: sign-in by email with the move-up prompt, sign-up with a name, the waiting screen
    without its button, the admin screen in cloud mode (people, roles, requests, resets), and
    changing one's own password through the cloud.
@@ -239,20 +255,22 @@ rehearsed cutover depends on (`docs/36 §10.5`).
 
 ## 12. Turning it on in production (after the cutover)
 
-The switch is automatic: the first sync pass after a project answers `account_state` switches that
-PC. On production that is a moment the store has to plan for, so it goes in this order, at a quiet
-time:
+The switch is by hand, at PC2, by an admin who already exists (owner, 2026-11-01). Applying the
+migrations changes nothing for anyone; the store stops only when the owner, standing at PC2, presses
+the button. In this order, at a quiet time:
 
-1. **The release with migration 100 is installed on every PC**, PC2 included. Production still at
-   019: every PC stays in local accounts and nothing changes for anyone.
-2. **Apply 020 and 021 to production.** Within a minute PC2 switches. Everyone signed in on it is
-   signed out (§6).
-3. **The owner signs in on PC2** with their old name and password and adds their email. They arrive
-   PENDING, and see the waiting screen.
-4. **The owner runs `make_first_admin`** in production's SQL editor, then signs in again: now an
-   admin. PC2 offers to copy its role catalogue up; accept it.
-5. **Everyone else signs in once** with their old name and password and adds their email. The owner
-   approves each, starting from the role and screens they had on PC2.
+1. **The release with migration 100 is installed on every PC**, PC2 included. Every PC stays in
+   local accounts and nothing changes for anyone.
+2. **Apply 020, 021 and 022 to production.** Still nothing changes anywhere.
+3. **Name the first admin** in production's SQL editor, at PC2:
+   `select public.make_first_admin('<email>', (select device_id from public.device_accounts where label = '<PC2''s label>'));`
+   The switch screen shows PC2's device id too.
+4. **Sign in on PC2** with your old name and password, as today.
+5. **Press "Switch to cloud accounts"**, read what it will do, confirm, and give your email and
+   password. Your account moves up as an approved admin, then PC2 switches. Everyone else signed in
+   on PC2 is signed out; you stay in. PC2 offers to copy its role catalogue up; accept it.
+6. **Everyone else signs in once** with their old name and password and adds their email. Approve
+   each, starting from the role and screens they had on PC2.
 
-The store is unusable for anyone not yet approved between steps 2 and 5. With the owner present and
-a handful of people, that is minutes, but it is not zero.
+The store is unusable for anyone not yet approved between steps 5 and 6. You are at the machine,
+with admin rights, for all of it.

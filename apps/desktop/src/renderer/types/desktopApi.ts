@@ -1643,6 +1643,19 @@ export interface Party {
   updatedAt?: string;
 }
 
+/** Which accounts this computer uses (docs/41 section 7), and whether it could reach a cloud at all. */
+export interface AccountsStatus {
+  mode: "LOCAL" | "CLOUD";
+  /** This computer is set up to sync (enrolled, configured). The switch is offered only then. */
+  cloudConfigured: boolean;
+  /** This computer's device id: the second argument of make_first_admin in the SQL editor. */
+  deviceId: string;
+}
+
+export type SwitchToCloudAccountsResult =
+  | { accepted: true; user: AuthUser | null; token: string; people: number }
+  | { accepted: false; reason: string };
+
 export interface AuthUser {
   id: string;
   username: string;
@@ -1742,6 +1755,10 @@ export interface DesktopApi {
   requestAccess(token?: string): Promise<{ accepted: boolean; status?: "PENDING" | "APPROVED" | "REJECTED"; reason?: string }>;
   getAccessRequests(token?: string): Promise<{ accepted: boolean; requests: Array<{ id: string; username: string; status: "PENDING" | "APPROVED" | "REJECTED"; requestedAt: string; reviewedAt: string | null }>; reason?: string }>;
   getMyAccessRequest?(token?: string): Promise<{ accepted: boolean; request?: { status: "PENDING" | "APPROVED" | "REJECTED" } | null; reason?: string }>;
+  /** Cloud accounts (docs/41): which this computer uses, and whether it is set up to reach its cloud at all. */
+  getAccountsStatus?(): Promise<AccountsStatus>;
+  /** An admin switching this computer to cloud accounts, by hand (docs/41 section 12). Signs everyone else out. */
+  switchToCloudAccounts?(token: string, email: string, password: string): Promise<SwitchToCloudAccountsResult>;
   reviewAccessRequest(token: string, requestId: string, decision: "APPROVED" | "REJECTED", permissions?: string[], roleCode?: string): Promise<{ accepted: boolean; reason?: string }>;
   listMembers?(token?: string): Promise<{ accepted: boolean; members: Array<{ id: string; username: string; role: "USER" | "ADMIN"; jobRole: string; authorityLevel: number; accessStatus: "PENDING" | "APPROVED" | "REJECTED"; permissions: string[]; lastLoginAt: string | null; accessRequestId: string | null; roleCode: string | null; roleName: string | null; additionalPermissions: string[] }>; reason?: string }>;
   createPermissionRequest?(token: string, permissionCode: string, reason?: string): Promise<{ accepted: boolean; id?: string; permissionCode?: string; status?: "PENDING" | "APPROVED" | "REJECTED"; reason?: string }>;

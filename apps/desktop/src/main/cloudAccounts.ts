@@ -1,10 +1,12 @@
 // Cloud accounts on this computer: the switch to them, and signing in under them (docs/41).
 //
-// THE SWITCH (section 7). A computer starts in local accounts. On a sync pass, once it is signed in
-// as its enrolled device and its project answers account_state (cloud 021), it loads the whole
-// account state through the same writes the log uses, ends the sessions of accounts only this
-// computer knows, and switches, in one transaction. A project without the account functions is
-// remembered until the next start, so it costs one request.
+// THE SWITCH (sections 7 and 12) IS AN ADMIN'S, AT THIS COMPUTER, NEVER AUTOMATIC (owner,
+// 2026-11-01): applying a migration must never be what signs a store out. An admin signed in here
+// presses the button and confirms. Their account is signed in to the cloud -- or moves up, if it is
+// this computer's own and not there yet -- and must come back an approved admin, so an admin exists
+// before anyone is locked out. Then the whole account state is loaded through the same writes the
+// log uses, the sessions of accounts only this computer knows end, and the computer switches, in
+// one transaction. Anything short of that changes nothing.
 //
 // SIGNING IN (section 4), under cloud accounts:
 //   reachable      the cloud decides, every time. A "no" is final: the cache is never tried after it.
@@ -44,6 +46,12 @@ export const ACCOUNT_MESSAGES = {
   CATCHING_UP: "This computer is still catching up with the cloud. Try again in a moment.",
   NEEDS_EMAIL: "Add your email to move this account to the cloud. You will use it to sign in from now on.",
   OTHER: (code: string) => `The cloud refused this (${code}).`,
+  ALREADY_CLOUD: "This computer already uses cloud accounts.",
+  SWITCH_OFFLINE: "Switching to cloud accounts needs an internet connection.",
+  CLOUD_HAS_NO_ACCOUNTS: "The cloud does not have accounts yet. Apply cloud migrations 020 to 022 first.",
+  NOT_FIRST_ADMIN: (deviceId: string) =>
+    `Your account is in the cloud, but it is not an approved administrator. Nothing was changed. In the SQL editor run: select make_first_admin('<your email>', '${deviceId}'); then press the button again.`,
+  STATE_WAITING: (reason: string) => `Nothing was changed: the cloud's accounts could not all be loaded here (${reason}). Try again in a moment.`,
 } as const;
 
 export type AccountOutcome =
@@ -66,51 +74,76 @@ export function forgetPersonToken(sessionToken: string): void {
   personTokens.delete(sessionToken);
 }
 
-// ─── The switch ─────────────────────────────────────────────────────────────
+// ─── The switch (an admin, at this computer) ────────────────────────────────
 
-const unsupportedProjects = new Set<string>();
+/** Who pressed the button: the local session they pressed it from, and the cloud account they gave. */
+export interface SwitchRequest {
+  readonly sessionToken: string;
+  readonly localUserId: string;
+  readonly localUsername: string;
+  readonly email: string;
+  readonly password: string;
+}
 
-export type AccountsSwitch = "ALREADY_CLOUD" | "SWITCHED" | "NOT_SUPPORTED" | "UNAVAILABLE" | "WAITING";
+export type SwitchOutcome =
+  | { readonly kind: "SWITCHED"; readonly userId: string; readonly sessionToken: string; readonly people: number }
+  | { readonly kind: "REFUSED"; readonly message: string };
 
-/** Switches this computer to cloud accounts when its project can. Never throws: a pass carries on. */
-export async function switchToCloudAccountsIfReady(
-  db: SqliteDatabase,
-  caller: AccountFunctionCaller,
-  project: string,
-  logger: StructuredLogger,
-  deviceId: string
-): Promise<AccountsSwitch> {
+export async function switchThisComputerToCloud(
+  deps: AccountDeps & { readonly logger: StructuredLogger; readonly deviceId: string },
+  request: SwitchRequest,
+  now = new Date()
+): Promise<SwitchOutcome> {
   const data = await import("@erp/data");
-  if (data.readAccountsMode(db.db) === data.ACCOUNTS_MODE.CLOUD) return "ALREADY_CLOUD";
-  if (unsupportedProjects.has(project)) return "NOT_SUPPORTED";
+  if (data.readAccountsMode(deps.db.db) === data.ACCOUNTS_MODE.CLOUD) return { kind: "REFUSED", message: ACCOUNT_MESSAGES.ALREADY_CLOUD };
+  if (deps.caller === null) return { kind: "REFUSED", message: ACCOUNT_MESSAGES.SWITCH_OFFLINE };
+
+  const admin = await signInSwitchingAdmin(deps.db, deps.caller, request);
+  if (admin.kind === "NOT_SUPPORTED") return { kind: "REFUSED", message: ACCOUNT_MESSAGES.CLOUD_HAS_NO_ACCOUNTS };
+  if (admin.kind === "UNREACHABLE") return { kind: "REFUSED", message: ACCOUNT_MESSAGES.SWITCH_OFFLINE };
+  if (admin.kind !== "SIGNED_IN") return { kind: "REFUSED", message: messageFor(admin) };
+  if (admin.person.status !== "APPROVED" || !admin.person.isAdmin) {
+    return { kind: "REFUSED", message: ACCOUNT_MESSAGES.NOT_FIRST_ADMIN(deps.deviceId) };
+  }
 
   const sync = await import("@erp/sync");
-  const state = await sync.fetchAccountState(caller);
-  if (state.kind === "NOT_SUPPORTED") {
-    unsupportedProjects.add(project);
-    return "NOT_SUPPORTED";
-  }
-  if (state.kind !== "STATE") {
-    logger.log({ module: "sync", severity: "WARNING", operation: "cloud-accounts", deviceId, message: `Cloud accounts are not switched on yet: ${describeFailure(state)}` });
-    return "UNAVAILABLE";
-  }
-  const waiting = loadStateAndSwitch(db, data, state);
-  if (waiting !== null) {
-    logger.log({ module: "sync", severity: "WARNING", operation: "cloud-accounts", deviceId, message: `Cloud accounts are not switched on yet: ${waiting}. Nothing was changed.` });
-    return "WAITING";
-  }
-  logger.log({
-    module: "sync", severity: "INFO", operation: "cloud-accounts", deviceId,
-    message: `This computer now uses cloud accounts: ${state.people.length} people, ${state.roles.length} roles.`,
+  const state = await sync.fetchAccountState(deps.caller);
+  if (state.kind === "NOT_SUPPORTED") return { kind: "REFUSED", message: ACCOUNT_MESSAGES.CLOUD_HAS_NO_ACCOUNTS };
+  if (state.kind !== "STATE") return { kind: "REFUSED", message: ACCOUNT_MESSAGES.STATE_WAITING(describeFailure(state)) };
+  const waiting = loadStateAndSwitch(deps.db, data, state);
+  if (waiting !== null) return { kind: "REFUSED", message: ACCOUNT_MESSAGES.STATE_WAITING(waiting) };
+
+  const person = admin.person;
+  deps.db.writeLocalCredential(person.personId, deps.db.hashPassword(request.password), person.credentialVersion, now.toISOString());
+  // The admin's own session carries on when it was their account that moved up. A local admin who
+  // switched with a different cloud account is given that account's session: theirs just ended.
+  const sessionToken = person.personId === request.localUserId ? request.sessionToken : deps.db.createUserSession(person.personId);
+  personTokens.set(sessionToken, { token: admin.token, expiresAt: admin.expiresAt });
+  deps.logger.log({
+    module: "auth", severity: "INFO", operation: "cloud-accounts", deviceId: deps.deviceId,
+    message: `This computer now uses cloud accounts, switched by ${person.email}: ${state.people.length} people, ${state.roles.length} roles. Everyone else here was signed out.`,
   });
-  return "SWITCHED";
+  return { kind: "SWITCHED", userId: person.personId, sessionToken, people: state.people.length };
+}
+
+/**
+ * The admin pressing the button, signed in to the cloud. An account not there yet is this
+ * computer's own: it moves up when this is its password (and comes back admin if make_first_admin
+ * named it at this computer, cloud 022).
+ */
+async function signInSwitchingAdmin(db: SqliteDatabase, caller: AccountFunctionCaller, request: SwitchRequest): Promise<SignInAnswer> {
+  const sync = await import("@erp/sync");
+  const online = await sync.verifyLogin(caller, request.email, request.password);
+  if (online.kind !== "DECLINED" || online.reason !== "WRONG_CREDENTIALS") return online;
+  if (!db.checkLocalCredential(request.localUserId, request.password)) return online;
+  return sync.claimExistingAccount(caller, request.localUserId, request.email, request.password, request.localUsername);
 }
 
 type DataModule = typeof import("@erp/data");
 
 /**
  * Everything, then the switch, in one transaction. A record that would have to wait is a reason to
- * change nothing and try on the next pass: a half-loaded account state is worse than none.
+ * change nothing: a half-loaded account state is worse than none.
  */
 function loadStateAndSwitch(db: SqliteDatabase, data: DataModule, state: Extract<AccountStateAnswer, { kind: "STATE" }>): string | null {
   db.db.exec("BEGIN IMMEDIATE TRANSACTION");

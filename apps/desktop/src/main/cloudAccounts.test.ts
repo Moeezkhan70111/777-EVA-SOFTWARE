@@ -11,7 +11,7 @@ import {
   cloudSignIn,
   cloudSignUp,
   personTokenFor,
-  switchToCloudAccountsIfReady,
+  switchThisComputerToCloud,
 } from "./cloudAccounts";
 
 // THE SIGN-IN RULES UNDER CLOUD ACCOUNTS (docs/41 section 4), and the switch to them (section 7).
@@ -65,49 +65,91 @@ afterEach(() => {
 const mode = async () => (await import("@erp/data")).readAccountsMode(db.db);
 const switched = async () => (await import("@erp/data")).enterCloudAccountsMode(db.db, "test");
 
-describe("the switch to cloud accounts", () => {
-  it("loads the whole state, then switches, once", async () => {
+describe("the switch to cloud accounts: by hand, by an admin, at this computer", () => {
+  const STATE = (people: Array<Record<string, unknown>>) => answered({ ok: true, roles: [], people, requests: [] });
+  const request = (sessionToken: string, localUserId: string, password = "owner1234") => ({
+    sessionToken, localUserId, localUsername: "Owner", email: "boss@777.pk", password,
+  });
+  const deps = (caller: AccountFunctionCaller | null) => ({ db, caller, logger: LOG, deviceId: "dev-pc2" });
+
+  it("moves the admin's own account up, keeps their session, and signs everyone else out", async () => {
+    const owner = db.createUserAccount("Owner", "owner1234");
+    const ownerSession = db.createUserSession(owner.id);
+    const munshi = db.createUserAccount("Munshi", "munshi5678");
+    const munshiSession = db.createUserSession(munshi.id);
+    const boss = { personId: owner.id, email: "boss@777.pk", displayName: "Owner", isAdmin: true };
     const cloud = new ScriptedCloud({
-      account_state: answered({
-        ok: true,
-        roles: [{ roleCode: "munshi", revision: 1, deleted: false, name: "Munshi", description: null, loginPolicy: "ALWAYS_LOGGED_IN", permissions: ["stock"] }],
-        people: [person({ roleCode: "munshi" })],
-        requests: [],
-      }),
+      verify_login: declined("WRONG_CREDENTIALS"),
+      claim_existing_account: signedIn(boss),
+      account_state: STATE([person(boss)]),
     });
-    expect(await switchToCloudAccountsIfReady(db, cloud, "https://test", LOG, "dev")).toBe("SWITCHED");
+
+    const outcome = await switchThisComputerToCloud(deps(cloud), request(ownerSession, owner.id));
+    expect(outcome).toMatchObject({ kind: "SWITCHED", userId: owner.id, sessionToken: ownerSession, people: 1 });
     expect(await mode()).toBe("CLOUD");
-    expect(db.db.prepare("SELECT email FROM app_users WHERE id = 'p-ali'").get()).toEqual({ email: "ali@777.pk" });
-    expect(await switchToCloudAccountsIfReady(db, cloud, "https://test", LOG, "dev")).toBe("ALREADY_CLOUD");
-    expect(cloud.calls).toEqual(["account_state"]);
+    expect(db.getUserBySessionToken(ownerSession)?.role).toBe("ADMIN");
+    expect(db.getUserBySessionToken(munshiSession)).toBeNull();
+    expect(personTokenFor(ownerSession)).toBe(TOKEN);
+    expect(db.checkLocalCredential(owner.id, "owner1234")).toBe(true);
   });
 
-  it("ends the open sessions of accounts the cloud does not know, and only those", async () => {
-    const local = db.createUserAccount("Munshi", "munshi5678");
-    const localSession = db.createUserSession(local.id);
-    const cloud = new ScriptedCloud({ account_state: answered({ ok: true, roles: [], people: [person()], requests: [] }) });
-    await switchToCloudAccountsIfReady(db, cloud, "https://sessions", LOG, "dev");
-    expect(db.getUserBySessionToken(localSession)).toBeNull();
-    // A person the cloud knows keeps theirs: their access is the cloud's to take away.
-    const cloudSession = db.createUserSession("p-ali");
-    expect(db.getUserBySessionToken(cloudSession)?.id).toBe("p-ali");
-  });
-
-  it("asks a project without account functions once, and stays local", async () => {
-    const cloud = new ScriptedCloud({ account_state: { kind: "NOT_SUPPORTED" } });
-    expect(await switchToCloudAccountsIfReady(db, cloud, "https://old", LOG, "dev")).toBe("NOT_SUPPORTED");
-    expect(await switchToCloudAccountsIfReady(db, cloud, "https://old", LOG, "dev")).toBe("NOT_SUPPORTED");
-    expect(cloud.calls).toEqual(["account_state"]);
+  it("a claim that comes back pending switches nothing, and says how to name the first admin", async () => {
+    const owner = db.createUserAccount("Owner", "owner1234");
+    const ownerSession = db.createUserSession(owner.id);
+    const cloud = new ScriptedCloud({
+      verify_login: declined("WRONG_CREDENTIALS"),
+      claim_existing_account: signedIn({ personId: owner.id, email: "boss@777.pk", status: "PENDING" }),
+    });
+    const outcome = await switchThisComputerToCloud(deps(cloud), request(ownerSession, owner.id));
+    expect(outcome).toEqual({ kind: "REFUSED", message: ACCOUNT_MESSAGES.NOT_FIRST_ADMIN("dev-pc2") });
+    expect(cloud.calls).not.toContain("account_state");
     expect(await mode()).toBe("LOCAL");
+    expect(db.getUserBySessionToken(ownerSession)?.id).toBe(owner.id);
   });
 
-  it("changes nothing when the state cannot be loaded whole", async () => {
-    const waits = new ScriptedCloud({ account_state: answered({ ok: true, roles: [], people: [person({ roleCode: "ghost" })], requests: [] }) });
-    expect(await switchToCloudAccountsIfReady(db, waits, "https://a", LOG, "dev")).toBe("WAITING");
-    const garbled = new ScriptedCloud({ account_state: answered({ ok: true, roles: [], people: [{ personId: "x" }], requests: [] }) });
-    expect(await switchToCloudAccountsIfReady(db, garbled, "https://b", LOG, "dev")).toBe("UNAVAILABLE");
+  it("a cloud admin who is not this computer's own account switches it with a session of their own", async () => {
+    const setup = db.createUserAccount("Setup", "setup1234");
+    const setupSession = db.createUserSession(setup.id);
+    const boss = { personId: "p-boss", email: "boss@777.pk", displayName: "Boss", isAdmin: true };
+    const cloud = new ScriptedCloud({ verify_login: signedIn(boss), account_state: STATE([person(boss)]) });
+    const outcome = await switchThisComputerToCloud(deps(cloud), request(setupSession, setup.id, "bosspass1"));
+    expect(outcome.kind).toBe("SWITCHED");
+    if (outcome.kind !== "SWITCHED") return;
+    expect(outcome.sessionToken).not.toBe(setupSession);
+    expect(db.getUserBySessionToken(outcome.sessionToken)?.id).toBe("p-boss");
+    expect(db.getUserBySessionToken(setupSession)).toBeNull();
+  });
+
+  it("a password that is neither the cloud's nor this account's moves nothing up", async () => {
+    const owner = db.createUserAccount("Owner", "owner1234");
+    const cloud = new ScriptedCloud({ verify_login: declined("WRONG_CREDENTIALS") });
+    const outcome = await switchThisComputerToCloud(deps(cloud), request(db.createUserSession(owner.id), owner.id, "guess1234"));
+    expect(outcome).toEqual({ kind: "REFUSED", message: ACCOUNT_MESSAGES.WRONG_CREDENTIALS });
+    expect(cloud.calls).toEqual(["verify_login"]);
+  });
+
+  it("offline, without accounts in the cloud, or when the state cannot be loaded whole, nothing changes", async () => {
+    const owner = db.createUserAccount("Owner", "owner1234");
+    const session = db.createUserSession(owner.id);
+    const admin = signedIn({ personId: owner.id, email: "boss@777.pk", isAdmin: true });
+    const cases: Array<[AccountFunctionCaller | null, string]> = [
+      [null, ACCOUNT_MESSAGES.SWITCH_OFFLINE],
+      [new ScriptedCloud({ verify_login: { kind: "NOT_SUPPORTED" } }), ACCOUNT_MESSAGES.CLOUD_HAS_NO_ACCOUNTS],
+      [new ScriptedCloud({ verify_login: UNREACHABLE }), ACCOUNT_MESSAGES.SWITCH_OFFLINE],
+      [new ScriptedCloud({ verify_login: admin, account_state: STATE([person({ roleCode: "ghost" })]) }),
+        ACCOUNT_MESSAGES.STATE_WAITING(`WAITING_FOR:ACCOUNT_ROLE:ghost`)],
+    ];
+    for (const [caller, message] of cases) {
+      expect(await switchThisComputerToCloud(deps(caller), request(session, owner.id))).toEqual({ kind: "REFUSED", message });
+    }
     expect(await mode()).toBe("LOCAL");
-    expect(db.db.prepare("SELECT COUNT(*) AS n FROM app_users").get()).toEqual({ n: 0 });
+    expect(db.getUserBySessionToken(session)?.id).toBe(owner.id);
+  });
+
+  it("is refused on a computer that already uses cloud accounts", async () => {
+    await switched();
+    const outcome = await switchThisComputerToCloud(deps(new ScriptedCloud({})), request("s", "u"));
+    expect(outcome).toEqual({ kind: "REFUSED", message: ACCOUNT_MESSAGES.ALREADY_CLOUD });
   });
 });
 

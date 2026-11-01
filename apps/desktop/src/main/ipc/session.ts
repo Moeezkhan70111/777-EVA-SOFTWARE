@@ -5,8 +5,8 @@
 
 import { ipcMain, type IpcMainInvokeEvent } from "electron";
 import { IPC } from "../../shared/ipcChannels";
-import { cloudClaim, cloudSignIn, cloudSignUp, forgetPersonToken, type AccountDeps, type AccountOutcome } from "../cloudAccounts";
-import { signedInTransport } from "../cloudSyncPass";
+import { cloudClaim, cloudSignIn, cloudSignUp, forgetPersonToken, switchThisComputerToCloud, type AccountDeps, type AccountOutcome } from "../cloudAccounts";
+import { isCloudSyncConfigured, signedInTransport } from "../cloudSyncPass";
 import type { IpcContext } from "./context";
 import type { StoredProfile } from "../sessionStore";
 import { USER_ROLE } from "@erp/domain";
@@ -77,6 +77,36 @@ export function registerSessionHandlers(ctx: IpcContext): void {
     authorizer.bind(event, outcome.sessionToken);
     return { accepted: true, user: db.getUserBySessionToken(outcome.sessionToken), token: outcome.sessionToken };
   };
+
+  ipcMain.handle(IPC.getAccountsStatus, async () => ({
+    mode: (await inCloudAccounts()) ? "CLOUD" : "LOCAL",
+    cloudConfigured: isCloudSyncConfigured({ deviceId, dataRoot: paths.dataRoot }),
+    deviceId,
+  }));
+
+  // THE SWITCH, BY HAND (docs/41 section 12): an admin signed in here, at this computer, after the
+  // screen has said what it does and they have confirmed. Never automatic: applying a migration must
+  // never be what signs a store out. Everyone else here is signed out by it.
+  ipcMain.handle(IPC.switchToCloudAccounts, async (event, token?: string, email?: string, password?: string) => {
+    let admin;
+    try {
+      admin = authorizer.requireAdmin(event, token);
+    } catch (error) {
+      return { accepted: false, reason: error instanceof Error ? error.message : "Administrator access required" };
+    }
+    const givenEmail = typeof email === "string" ? email.trim() : "";
+    const givenPassword = typeof password === "string" ? password : "";
+    if (!givenEmail || !givenPassword) return { accepted: false, reason: "Enter your email and password" };
+    const sessionToken = typeof token === "string" ? token.trim() : "";
+
+    const outcome = await switchThisComputerToCloud(
+      { ...(await accountDeps()), logger, deviceId },
+      { sessionToken, localUserId: admin.id, localUsername: admin.username, email: givenEmail, password: givenPassword }
+    );
+    if (outcome.kind === "REFUSED") return { accepted: false, reason: outcome.message };
+    authorizer.bind(event, outcome.sessionToken);
+    return { accepted: true, user: db.getUserBySessionToken(outcome.sessionToken), token: outcome.sessionToken, people: outcome.people };
+  });
 
   // Under cloud accounts there is no first admin to make here: the screen that asks must not appear.
   ipcMain.handle(IPC.hasAnyAdmin, async () => ({ hasAdmin: (await inCloudAccounts()) || db.hasAnyAdmin() }));

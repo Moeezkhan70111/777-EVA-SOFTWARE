@@ -34,6 +34,8 @@ contextBridge.exposeInMainWorld("desktop", {
     changePassword: (currentPassword: string, newPassword: string, confirmNewPassword: string, token?: string) => ipcRenderer.invoke(IPC.changePassword, currentPassword, newPassword, confirmNewPassword, token),
     logout: (token?: string) => ipcRenderer.invoke(IPC.logout, token),
     requestAccess: (token?: string) => ipcRenderer.invoke(IPC.requestAccess, token),
+    getAccountsStatus: () => ipcRenderer.invoke(IPC.getAccountsStatus),
+    switchToCloudAccounts: (token: string, email: string, password: string) => ipcRenderer.invoke(IPC.switchToCloudAccounts, token, email, password),
     getAccessRequests: (token?: string) => ipcRenderer.invoke(IPC.getAccessRequests, token),
     getMyAccessRequest: (token?: string) => ipcRenderer.invoke(IPC.getMyAccessRequest, token),
     reviewAccessRequest: (token: string, requestId: string, decision: "APPROVED" | "REJECTED", permissions?: string[], roleCode?: string) => ipcRenderer.invoke(IPC.reviewAccessRequest, token, requestId, decision, permissions, roleCode),

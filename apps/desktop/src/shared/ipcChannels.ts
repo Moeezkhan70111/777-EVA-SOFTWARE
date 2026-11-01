@@ -26,6 +26,9 @@ export const IPC = {
   requestAccess: "erp:request-access",
   getAccessRequests: "erp:get-access-requests",
   getMyAccessRequest: "erp:get-my-access-request",
+  // Cloud accounts (docs/41): which this computer uses, and an admin switching it, by hand.
+  getAccountsStatus: "erp:get-accounts-status",
+  switchToCloudAccounts: "erp:switch-to-cloud-accounts",
   reviewAccessRequest: "erp:review-access-request",
   listMembers: "erp:list-members",
   updateUserPermissions: "erp:update-user-permissions",

@@ -30,7 +30,6 @@ import type { SqliteDatabase, StructuredLogger, SyncRunOutcome, SyncRunTrigger }
 import type { DeviceSyncHealth, LastReport, SupabaseSyncTransport, SyncPassResult } from "@erp/sync";
 import { describeCloudSyncConfig, readCloudSyncConfig, type CloudSyncConfigResult } from "./cloudConfig";
 import { DeviceCredentialStore } from "./deviceCredentialStore";
-import { switchToCloudAccountsIfReady } from "./cloudAccounts";
 import { announceDataChanged } from "./dataChanged";
 import { dataKindsOf } from "../shared/dataChange";
 
@@ -423,18 +422,6 @@ export async function runCloudSyncPass(
 
   try {
     const sync = await import("@erp/sync");
-
-    // Before the pull, so the account revisions it brings land on a computer that has the whole
-    // account state underneath them (cloudAccounts.ts). Once switched, this costs nothing. A switch
-    // that fails is logged and tried on the next pass: it must never stop stock from syncing.
-    try {
-      await switchToCloudAccountsIfReady(db, transport, identity.url, logger, deviceId);
-    } catch (error) {
-      logger.log({
-        module: "sync", severity: "WARNING", operation: "cloud-accounts", deviceId,
-        message: `Cloud accounts could not be switched on this pass: ${error instanceof Error ? error.message : String(error)}`,
-      });
-    }
 
     const queueNow = () =>
       sync.outboxSummary(db.db, {
