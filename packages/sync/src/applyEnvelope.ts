@@ -27,7 +27,7 @@
 
 import { ApplyMustWait, type RegisteredContract } from "./applyContract.js";
 import { productionProducedContract, productVariantContract, qrMasterContract } from "./cartonContracts.js";
-import type { SyncEnvelope } from "./contract.js";
+import { senderOf, type SyncEnvelope } from "./contract.js";
 import { LEASED_RECORD_CONTRACTS } from "./leasedRecordContracts.js";
 import { rawMaterialQrBatchContract, rawMaterialQrContract } from "./rawMaterialContracts.js";
 import { stockEventContract } from "./stockEventContracts.js";
@@ -101,7 +101,7 @@ export function applyEnvelope(
 
   let inserted: boolean;
   try {
-    inserted = inOneTransaction(sql, () => arrival.write(sql, replicatedAt));
+    inserted = inOneTransaction(sql, () => arrival.write(sql, replicatedAt, senderOf(envelope)));
   } catch (error) {
     // The database said wait (a record still in use, a name still held): rolled back, and parked.
     if (error instanceof ApplyMustWait) return refuse(envelope.dedupeKey, error.reason, false);

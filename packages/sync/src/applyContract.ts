@@ -46,8 +46,13 @@ export interface ApplyContract<P> {
    *
    * `replicatedAt` is this computer's UTC arrival time, for the row's replicated_at column. The
    * row's created_at is ALWAYS the origin's, taken from the payload (migration 088).
+   *
+   * `sender` is the device that sent it (the envelope's origin), or null when the log names none.
+   * A contract writing a NUMBERED table must stamp it as the row's origin_device_id when the row
+   * carries none: the number-range guard counts an unstamped row as this computer's own, so a
+   * replicated row left unstamped makes this computer refuse its own range (numberRange.ts).
    */
-  readonly write: (sql: SyncSqlHandle, payload: P, replicatedAt: string) => boolean;
+  readonly write: (sql: SyncSqlHandle, payload: P, replicatedAt: string, sender: string | null) => boolean;
   /**
    * Called only when `write` inserted nothing. Says whether what is already here is a DIFFERENT
    * identity under the same key, as a reason, or null when it is genuinely the same event again.
@@ -80,7 +85,7 @@ export class ApplyMustWait extends Error {
 export interface PreparedArrival {
   readonly id: string;
   readonly missing: (sql: SyncSqlHandle) => string | null;
-  readonly write: (sql: SyncSqlHandle, replicatedAt: string) => boolean;
+  readonly write: (sql: SyncSqlHandle, replicatedAt: string, sender: string | null) => boolean;
   readonly conflict: (sql: SyncSqlHandle) => string | null;
 }
 
@@ -102,7 +107,7 @@ export function defineContract<P>(contract: ApplyContract<P>): RegisteredContrac
       return {
         id: contract.idOf(read),
         missing: (sql) => contract.missing(sql, read),
-        write: (sql, replicatedAt) => contract.write(sql, read, replicatedAt),
+        write: (sql, replicatedAt, sender) => contract.write(sql, read, replicatedAt, sender),
         conflict: (sql) => (contract.conflict === undefined ? null : contract.conflict(sql, read)),
       };
     },
