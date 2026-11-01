@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { SqliteDatabase } from "./sqliteDatabase.js";
 import { ROLE_SCREENS_REPAIR_SETTING_KEY } from "./database/users.js";
+import { enterCloudAccountsMode } from "./database/accountsMode.js";
 
 // TAKING A SCREEN OFF A ROLE TAKES IT FROM EVERYONE WITH THAT ROLE (rehearsal, 2 Nov). Approving
 // with a role stored the role's screens among the person's additional access too, so they kept a
@@ -102,6 +103,32 @@ test("once, on opening: role screens already stored as extras are removed, and n
       assert.deepEqual(third.getUserAdditionalPermissions(personId).sort(), ["logs", "stock"]);
     } finally {
       third.close();
+    }
+  });
+});
+
+test("under cloud accounts the repair leaves additional access alone: it is the cloud's", () => {
+  withFolder((dbPath) => {
+    let personId = "";
+    const first = open(dbPath);
+    try {
+      const people = waitingPerson(first);
+      personId = people.personId;
+      first.assignUserRole(personId, "store-operator", people.adminId);
+      enterCloudAccountsMode(first.db, "test");
+      const insert = first.db.prepare("INSERT INTO user_additional_permissions (user_id, permission_code, granted_at) VALUES (?, ?, ?)");
+      for (const code of ["stock", "logs"]) insert.run(personId, code, "2026-10-01T00:00:00.000Z");
+      first.db.prepare("DELETE FROM app_settings WHERE setting_key = ?").run(ROLE_SCREENS_REPAIR_SETTING_KEY);
+    } finally {
+      first.close();
+    }
+
+    const second = open(dbPath);
+    try {
+      assert.deepEqual(second.getUserAdditionalPermissions(personId).sort(), ["logs", "stock"]);
+      assert.equal(second.db.prepare("SELECT 1 FROM app_settings WHERE setting_key = ?").get(ROLE_SCREENS_REPAIR_SETTING_KEY), undefined);
+    } finally {
+      second.close();
     }
   });
 });

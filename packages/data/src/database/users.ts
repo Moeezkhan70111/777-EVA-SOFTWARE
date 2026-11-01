@@ -9,7 +9,7 @@ import type { MutableTransactionContext } from "./shared.js";
 import type { UserNotificationRecord } from "./types.js";
 import { pbkdf2Sync, randomBytes } from "node:crypto";
 import { businessDateOf, businessToday } from "@erp/domain";
-import { requireLocalAccounts, type AccountSqlHandle } from "./accountsMode.js";
+import { ACCOUNTS_MODE, readAccountsMode, requireLocalAccounts, type AccountSqlHandle } from "./accountsMode.js";
 import { readStoredSuggestion, type AccessSuggestion } from "./accounts.js";
 
 /** A permission code in its one canonical spelling, from any alias the app has ever stored. */
@@ -173,8 +173,12 @@ export const ROLE_SCREENS_REPAIR_SETTING_KEY = "accounts.extras.role_screens_rem
  * did not take it from anyone approved that way -- an access-control failure (rehearsal, 2 Nov).
  * Nobody loses anything today: their role still gives every screen removed. Only a later change to
  * the role now reaches them. Recorded in app_settings, so it runs once and can be read back.
+ *
+ * Under cloud accounts it does nothing: the extras here are the cloud's, written by its revisions,
+ * and the cloud keeps role screens out of them (cloudAdmin extrasBeyondRole).
  */
 export function removeRoleScreensFromExtrasOnce(db: SqlHandle, nowIso: string): number | null {
+  if (readAccountsMode(db) === ACCOUNTS_MODE.CLOUD) return null;
   const done = db.prepare("SELECT 1 FROM app_settings WHERE setting_key = ?").get(ROLE_SCREENS_REPAIR_SETTING_KEY);
   if (done !== undefined) return null;
   db.exec("BEGIN IMMEDIATE");
