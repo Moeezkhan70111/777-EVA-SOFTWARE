@@ -447,10 +447,31 @@ function hasColumn(db: SqliteDatabase, table: string, column: string): boolean {
  *   ALL           every one: the rule above, for allocation, where this computer's own rows since
  *                 087 carry no origin and must be counted.
  *   NOT_RECEIVED  all but those that provably arrived from another computer -- a row of a site that
- *                 travels (travelsAs) whose record has a revision in sync_record_revisions. For
- *                 ASSIGNING a range, see assignNumberBlock.
+ *                 travels (travelsAs) whose record has a revision in sync_record_revisions. For a
+ *                 computer being given its range, by assignment or adoption.
+ *
+ * WHY "HAS A REVISION" MEANS "RECEIVED" THERE, AND ONLY THERE. A lease holder records a revision for
+ * the records it builds too, so on a computer WITH a range a revision proves nothing. But
+ * NOT_RECEIVED is only ever asked of a computer with NO range: since cloud 018 such a computer cannot
+ * sync, so it has built no revisions; and with no range it has numbered nothing, so it holds no
+ * unstamped row of its own. An unstamped row with a revision there arrived from elsewhere.
  */
 type UnstampedRows = "ALL" | "NOT_RECEIVED";
+
+/**
+ * The SQL restricting a site's rows to this computer's own, with its bound value. No identity, or a
+ * database that predates migration 087: no restriction -- the broader, stricter question, which is
+ * the right way to fail. site.origin and site.travelsAs are fixed values from NUMBER_SITES, never
+ * caller input -- the same rule the rest of this file follows for table and column names.
+ */
+function mineClause(db: SqliteDatabase, site: NumberSite, origin: string | null, unstamped: UnstampedRows): { sql: string; params: string[] } {
+  if (origin === null || !hasColumn(db, site.table, site.origin)) return { sql: "", params: [] };
+  const received =
+    unstamped === "NOT_RECEIVED" && site.travelsAs !== undefined
+      ? ` AND NOT EXISTS (SELECT 1 FROM sync_record_revisions r WHERE r.aggregate_type = '${site.travelsAs}' AND r.record_id = ${site.table}.id)`
+      : "";
+  return { sql: ` AND (${site.origin} = ? OR (${site.origin} IS NULL${received}))`, params: [origin] };
+}
 
 function countOutsideRange(
   db: SqliteDatabase,
@@ -461,37 +482,35 @@ function countOutsideRange(
 ): { count: number; highest: number | null } {
   const expression = numberExpression(site);
   const filter = site.where ? ` AND ${site.where}` : "";
-  // site.origin is a fixed column name from NUMBER_SITES, never caller input -- the same rule
-  // the rest of this file follows for table and column names. The VALUE is always bound.
-  // No identity, or a database that predates migration 087: ask the broader question. Both are
-  // the stricter of the two options, which is the right way to fail.
-  const scoped = origin !== null && hasColumn(db, site.table, site.origin);
-  const received =
-    unstamped === "NOT_RECEIVED" && site.travelsAs !== undefined
-      ? ` AND NOT EXISTS (SELECT 1 FROM sync_record_revisions r WHERE r.aggregate_type = '${site.travelsAs}' AND r.record_id = ${site.table}.id)`
-      : "";
-  const mine = scoped ? ` AND (${site.origin} = ? OR (${site.origin} IS NULL${received}))` : "";
-  const params: Array<number | string> = [range.lo, range.hi];
-  if (scoped && origin !== null) params.push(origin);
+  const mine = mineClause(db, site, origin, unstamped);
   const row = db.db
     .prepare(
       `SELECT COUNT(*) AS n, MAX(${expression}) AS mx FROM ${site.table}
-        WHERE (${expression} < ? OR ${expression} > ?)${filter}${mine}`
+        WHERE (${expression} < ? OR ${expression} > ?)${filter}${mine.sql}`
     )
-    .get(...params) as { n: number; mx: number | null };
+    .get(range.lo, range.hi, ...mine.params) as { n: number; mx: number | null };
   return { count: Number(row.n), highest: row.mx === null ? null : Number(row.mx) };
 }
 
-/** How many numbers at one site already belong to the given range. */
-function countInsideRange(db: SqliteDatabase, site: NumberSite, range: NumberRange): number {
+/**
+ * How many of THIS computer's numbers at one site already belong to the given range.
+ *
+ * This computer's, not every number here (2026-11-01). Adoption asks "does this computer hold the
+ * existing documents?", and counting every block-1 number answered yes for a computer that had only
+ * RECEIVED them -- the rehearsal reader, holding the store's parties and materials, was offered
+ * range 1. Adopting it would have been irreversible here, and the cloud refuses a second computer on
+ * block 1 (018), so that computer could never have synced again.
+ */
+function countInsideRange(db: SqliteDatabase, site: NumberSite, range: NumberRange, origin: string | null, unstamped: UnstampedRows): number {
   const expression = numberExpression(site);
   const filter = site.where ? ` AND ${site.where}` : "";
+  const mine = mineClause(db, site, origin, unstamped);
   const row = db.db
     .prepare(
       `SELECT COUNT(*) AS n FROM ${site.table}
-        WHERE ${expression} BETWEEN ? AND ?${filter}`
+        WHERE ${expression} BETWEEN ? AND ?${filter}${mine.sql}`
     )
-    .get(range.lo, range.hi) as { n: number };
+    .get(range.lo, range.hi, ...mine.params) as { n: number };
   return Number(row.n);
 }
 
@@ -633,9 +652,11 @@ export function checkExistingDataAdoption(db: SqliteDatabase): AdoptionCheck {
   for (const key of Object.keys(NUMBER_SITES) as NumberSiteKey[]) {
     const site: NumberSite = NUMBER_SITES[key];
     if (site.external) continue;
-    const stray = countOutsideRange(db, site, range, localDeviceId);
+    // Only this computer's own documents, in both directions: records it received from another
+    // computer neither stop it adopting nor make it the computer that holds the existing data.
+    const stray = countOutsideRange(db, site, range, localDeviceId, "NOT_RECEIVED");
     if (stray.count > 0) outside.push(`${site.noun} (highest ${stray.highest})`);
-    inside += countInsideRange(db, site, range);
+    inside += countInsideRange(db, site, range, localDeviceId, "NOT_RECEIVED");
   }
 
   if (outside.length > 0) {
@@ -648,7 +669,7 @@ export function checkExistingDataAdoption(db: SqliteDatabase): AdoptionCheck {
   if (inside === 0) {
     return refuseAdoption(
       "NO_EXISTING_DATA",
-      "This is a new installation with no numbered documents, so it cannot work out which range it should hold. The range has to be assigned deliberately below, from the factory's record of which computer holds which range."
+      "This is a new installation: it holds no numbered documents of its own (records received from other computers are not its documents), so it cannot work out which range it should hold. The range has to be assigned deliberately below, from the factory's record of which computer holds which range."
     );
   }
 

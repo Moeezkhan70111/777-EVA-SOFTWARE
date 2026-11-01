@@ -427,6 +427,46 @@ test("an unstamped party with no trace of having arrived from elsewhere still co
   });
 });
 
+// ─── adopting range 1: only for the computer that holds the documents itself ───
+//
+// The rehearsal reader held the store's block-1 parties and materials -- received, some stamped with
+// the store's id, some not -- and was offered "adopt range 1". Adopting cannot be undone here, and
+// the cloud refuses a second computer on block 1 (018): that computer could never sync again.
+
+/** A block-1 party on a computer with no range, stamped as `origin` (null: unstamped). */
+const blockOneParty = (db: SqliteDatabase, name: string, origin: string | null): string => {
+  db.setNumberBlock(1, "test");
+  const id = party(db, name);
+  forgetBlock(db);
+  db.db.prepare("UPDATE parties SET origin_device_id = ? WHERE id = ?").run(origin, id);
+  return id;
+};
+
+test("a computer holding only another computer's block-1 records is not offered range 1, and cannot adopt it", () => {
+  withFixture("adopt-received", ({ db }) => {
+    setDeviceId(db, "dev-reader");
+    blockOneParty(db, "Stamped Elsewhere", "dev-store");
+    const unstamped = blockOneParty(db, "Received Unstamped", null);
+    db.db.prepare("INSERT INTO sync_record_revisions (aggregate_type, record_id, revision) VALUES ('PARTY', ?, 1)").run(unstamped);
+
+    const { adoption } = db.getNumberBlockStatus();
+    assert.equal(adoption.allowed, false);
+    assert.equal(adoption.refusal, "NO_EXISTING_DATA", "received records are not this computer's documents");
+    assert.throws(() => db.adoptExistingDataNumberBlock("owner"), NumberRangeError);
+    assert.equal(settingRows(db), 0, "nothing recorded: the mis-press is refused, not made irreversible");
+  });
+});
+
+test("the computer that holds the documents itself still adopts range 1, stamped or not", () => {
+  withFixture("adopt-own", ({ db }) => {
+    setDeviceId(db, "dev-store");
+    blockOneParty(db, "Stamped Here", "dev-store");
+    blockOneParty(db, "Made Here Unstamped", null);
+    assert.equal(db.getNumberBlockStatus().adoption.allowed, true);
+    assert.deepEqual(db.adoptExistingDataNumberBlock("owner"), { block: 1, lo: 1, hi: 99_999 });
+  });
+});
+
 test("every numbered site that travels names the record type it travels as", () => {
   for (const site of Object.values(NUMBER_SITES)) {
     const record = Object.entries(MASTER_RECORDS).find(([, spec]) => spec.table === site.table);
