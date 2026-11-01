@@ -12,6 +12,7 @@ import {
   readAccountRolePayload,
   readPermissionRequestPayload,
   readPersonPayload,
+  type AccessSuggestion,
   type AccountRolePayload,
   type PermissionRequestPayload,
   type PersonPayload,
@@ -94,16 +95,20 @@ export async function signUp(caller: AccountFunctionCaller, email: string, passw
   return readSignIn(call);
 }
 
-/** Moves an account this PC already holds up to the cloud, keeping its id (docs/41 section 6). */
+/**
+ * Moves an account this PC already holds up to the cloud, keeping its id (docs/41 section 6), with
+ * the access it had here as the admin's starting point (cloud 023). A suggestion, never access.
+ */
 export async function claimExistingAccount(
   caller: AccountFunctionCaller,
   localId: string,
   email: string,
   password: string,
-  displayName: string
+  displayName: string,
+  suggested: AccessSuggestion | null = null
 ): Promise<SignInAnswer> {
   const call = await caller.callAccountFunction(ACCOUNT_FUNCTION.CLAIM_EXISTING_ACCOUNT, {
-    p_local_id: localId, p_email: email, p_password: password, p_display_name: displayName,
+    p_local_id: localId, p_email: email, p_password: password, p_display_name: displayName, p_suggested: suggested,
   });
   return readSignIn(call);
 }

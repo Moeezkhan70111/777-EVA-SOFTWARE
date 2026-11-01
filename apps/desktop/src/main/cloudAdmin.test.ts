@@ -14,6 +14,7 @@ import {
   saveRole,
   setAccess,
   signUpsAwaitingApproval,
+  suggestionFrom,
   withSignUpsAsRequests,
 } from "./cloudAdmin";
 
@@ -101,6 +102,29 @@ describe("approving and changing people", () => {
       { id: "p-boss", accessStatus: "APPROVED", accessRequestId: null },
     ]);
     expect(members.map((member) => member.accessRequestId)).toEqual(["p-ali", null]);
+  });
+});
+
+describe("what an account brings when it moves up (cloud 023)", () => {
+  const localAccount = (id: string, permissionsJson = "[]") =>
+    db.db
+      .prepare("INSERT INTO app_users (id, username, role, access_status, job_role, authority_level, permissions_json, created_at, updated_at) VALUES (?, ?, 'USER', 'APPROVED', 'Munshi', 30, ?, ?, ?)")
+      .run(id, id, permissionsJson, new Date().toISOString(), new Date().toISOString());
+
+  it("its role, extra screens, job role and authority, as they are here", async () => {
+    localAccount("u-munshi");
+    db.db.prepare("INSERT INTO user_role_assignments (user_id, role_code, assigned_at, updated_at) VALUES ('u-munshi', 'munshi', ?, ?)").run("2026-11-01", "2026-11-01");
+    db.db.prepare("INSERT INTO user_additional_permissions (user_id, permission_code, granted_at) VALUES ('u-munshi', 'logs', ?)").run("2026-11-01");
+    expect(await suggestionFrom(db, "u-munshi")).toEqual({ roleCode: "munshi", extraPermissions: ["logs"], jobRole: "Munshi", authorityLevel: 30 });
+  });
+
+  it("an account from before roles brings its old permission list, in today's spelling", async () => {
+    localAccount("u-old", JSON.stringify(["current stock", "billing", "current stock"]));
+    expect(await suggestionFrom(db, "u-old")).toEqual({ roleCode: null, extraPermissions: ["stock", "sale-voucher-form"], jobRole: "Munshi", authorityLevel: 30 });
+  });
+
+  it("an account that is not here brings nothing", async () => {
+    expect(await suggestionFrom(db, "u-nobody")).toBeNull();
   });
 });
 

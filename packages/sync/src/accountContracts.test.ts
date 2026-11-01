@@ -40,7 +40,7 @@ function envelope(aggregateType: string, aggregateId: string, payload: Record<st
 
 const person = (overrides: Record<string, unknown> = {}): Record<string, unknown> => ({
   personId: "p-ali", revision: 1, email: "ali@777.pk", displayName: "Ali", status: "PENDING", isAdmin: false,
-  roleCode: null, extraPermissions: [], jobRole: "", authorityLevel: 10, credentialVersion: 1, ...overrides,
+  roleCode: null, extraPermissions: [], jobRole: "", authorityLevel: 10, credentialVersion: 1, suggestedAccess: null, ...overrides,
 });
 const role = (overrides: Record<string, unknown> = {}): Record<string, unknown> => ({
   roleCode: "munshi", revision: 1, deleted: false, name: "Munshi", description: null, loginPolicy: "ALWAYS_LOGGED_IN",
@@ -67,7 +67,7 @@ function snapshotKeys(file: string, fn: string): string[] {
 
 test("the cloud's snapshots and this PC's readers name the same fields, and every one is required or checked", () => {
   const cases = [
-    { keys: snapshotKeys("020_cloud_accounts.up.sql", "person_snapshot"), sample: person(), read: readPersonPayload },
+    { keys: snapshotKeys("023_suggested_access.up.sql", "person_snapshot"), sample: person(), read: readPersonPayload },
     { keys: snapshotKeys("020_cloud_accounts.up.sql", "account_role_snapshot"), sample: role(), read: readAccountRolePayload },
     { keys: snapshotKeys("021_permission_requests.up.sql", "permission_request_snapshot"), sample: request(), read: readPermissionRequestPayload },
   ];
@@ -140,6 +140,25 @@ test("a password check survives a revision at its own credential version, and di
     apply(db, "PERSON", "p-ali", person({ revision: 3, status: "APPROVED", jobRole: "Munshi", credentialVersion: 2 }));
     assert.equal(db.checkLocalCredential("p-ali", "alipass12"), false, "a changed password elsewhere makes this check stale");
   });
+});
+
+test("what an account had before it moved up is kept while it waits, as a suggestion, and gone once decided (023)", () => {
+  withDatabase((db) => {
+    const had = { roleCode: "munshi", extraPermissions: ["logs"], jobRole: "Munshi", authorityLevel: 20 };
+    apply(db, "PERSON", "p-ali", person({ suggestedAccess: had }));
+    const waiting = db.listMembers().find((member) => member.id === "p-ali");
+    assert.deepEqual(waiting?.suggestedAccess, had);
+    assert.deepEqual(waiting?.additionalPermissions, [], "a suggestion is never access");
+
+    apply(db, "PERSON", "p-ali", person({ revision: 2, status: "APPROVED", suggestedAccess: null }));
+    assert.equal(db.listMembers().find((member) => member.id === "p-ali")?.suggestedAccess, null);
+  });
+});
+
+test("a snapshot from before 023 has no suggestion, and is read as having none", () => {
+  const before023 = person();
+  delete before023.suggestedAccess;
+  assert.equal(readPersonPayload(before023)?.suggestedAccess, null);
 });
 
 test("a job-role change tells the person, as the local screen does", () => {

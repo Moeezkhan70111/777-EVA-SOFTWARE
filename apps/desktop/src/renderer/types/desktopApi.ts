@@ -1767,6 +1767,8 @@ export interface DesktopApi {
   getRoleCopyOffer?(token: string): Promise<{ accepted: boolean; count: number; reason?: string }>;
   /** Cloud accounts only: copies those roles up, once (docs/41 section 6). */
   copyRolesToCloud?(token: string): Promise<{ accepted: boolean; reason?: string }>;
+  /** Cloud accounts only: making someone an administrator, or no longer one, on every computer. */
+  setMemberAdmin?(token: string, userId: string, isAdmin: boolean): Promise<{ accepted: boolean; reason?: string }>;
   reviewAccessRequest(token: string, requestId: string, decision: "APPROVED" | "REJECTED", permissions?: string[], roleCode?: string): Promise<{ accepted: boolean; reason?: string }>;
   listMembers?(token?: string): Promise<{ accepted: boolean; members: Array<{ id: string; username: string; role: "USER" | "ADMIN"; jobRole: string; authorityLevel: number; accessStatus: "PENDING" | "APPROVED" | "REJECTED"; permissions: string[]; lastLoginAt: string | null; accessRequestId: string | null; roleCode: string | null; roleName: string | null; additionalPermissions: string[] }>; reason?: string }>;
   createPermissionRequest?(token: string, permissionCode: string, reason?: string): Promise<{ accepted: boolean; id?: string; permissionCode?: string; status?: "PENDING" | "APPROVED" | "REJECTED"; reason?: string }>;

@@ -5,6 +5,7 @@ import { formatDateTime } from "../../utils/dates";
 import type { Member } from "./types";
 import { copy } from "../../config/copy";
 import { CloudPasswordReset } from "../auth/CloudPasswordReset";
+import { CloudAdminToggle } from "../auth/CloudAdminToggle";
 
 export const MemberSection = ({
   members,
@@ -40,11 +41,15 @@ export const MemberSection = ({
   const [saved, setSaved] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const openMember = (member: Member) => {
+    // Someone waiting whose account moved up starts from what they had before (cloud 023): the admin
+    // checks it and approves, instead of picking it all again. A suggestion only -- nothing is saved
+    // until the admin approves.
+    const start = member.accessStatus === "PENDING" ? member.suggestedAccess ?? null : null;
     setSelectedMember(member);
-    setDraftAdditional(member.additionalPermissions ?? []);
-    setDraftJobRole(member.jobRole);
-    setSelectedRoleCode(member.roleCode ?? "");
-    setDraftAuthority(member.authorityLevel);
+    setDraftAdditional(start?.extraPermissions ?? member.additionalPermissions ?? []);
+    setDraftJobRole(start?.jobRole ?? member.jobRole);
+    setSelectedRoleCode(start?.roleCode ?? member.roleCode ?? "");
+    setDraftAuthority(start?.authorityLevel ?? member.authorityLevel);
     setSaved(false);
     setShowAdvanced(false);
   };
@@ -75,10 +80,10 @@ export const MemberSection = ({
       <section className="members-section">
         <div className="card-eyebrow">Members</div>
         {members.map((member) => (
+          <React.Fragment key={member.id}>
           <button
             type="button"
             className="member-row member-row-button"
-            key={member.id}
             onClick={() => openMember(member)}
             disabled={member.role === "ADMIN"}
           >
@@ -126,6 +131,11 @@ export const MemberSection = ({
               </span>
             </span>
           </button>
+          {/* An admin's row does not open; under cloud accounts their rights can be taken away here. */}
+          {member.role === "ADMIN" && (
+            <CloudAdminToggle userId={member.id} username={member.username} isAdmin approved={member.accessStatus === "APPROVED"} />
+          )}
+          </React.Fragment>
         ))}
       </section>
       {selectedMember && selectedMember.role !== "ADMIN" && (
@@ -204,6 +214,11 @@ export const MemberSection = ({
               />
             </label>
 
+            {selectedMember.accessStatus === "PENDING" && selectedMember.suggestedAccess && (
+              <p className="text-muted text-small" role="note">
+                {copy.cloudAccounts.suggestedNote}
+              </p>
+            )}
             {selectedMember.accessStatus === "PENDING" &&
               selectedMember.accessRequestId && (
                 <div className="member-review-actions">
@@ -468,6 +483,12 @@ export const MemberSection = ({
                 Revoke Access
               </button>
               <CloudPasswordReset userId={selectedMember.id} />
+              <CloudAdminToggle
+                userId={selectedMember.id}
+                username={selectedMember.username}
+                isAdmin={false}
+                approved={selectedMember.accessStatus === "APPROVED"}
+              />
               <span />
               <button
                 type="button"

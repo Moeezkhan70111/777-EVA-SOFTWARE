@@ -39,6 +39,7 @@ contextBridge.exposeInMainWorld("desktop", {
     resetMemberPassword: (token: string, userId: string, newPassword: string) => ipcRenderer.invoke(IPC.resetMemberPassword, token, userId, newPassword),
     getRoleCopyOffer: (token: string) => ipcRenderer.invoke(IPC.getRoleCopyOffer, token),
     copyRolesToCloud: (token: string) => ipcRenderer.invoke(IPC.copyRolesToCloud, token),
+    setMemberAdmin: (token: string, userId: string, isAdmin: boolean) => ipcRenderer.invoke(IPC.setMemberAdmin, token, userId, isAdmin),
     getAccessRequests: (token?: string) => ipcRenderer.invoke(IPC.getAccessRequests, token),
     getMyAccessRequest: (token?: string) => ipcRenderer.invoke(IPC.getMyAccessRequest, token),
     reviewAccessRequest: (token: string, requestId: string, decision: "APPROVED" | "REJECTED", permissions?: string[], roleCode?: string) => ipcRenderer.invoke(IPC.reviewAccessRequest, token, requestId, decision, permissions, roleCode),

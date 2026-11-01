@@ -197,6 +197,7 @@ export {
   readPersonPayload,
 } from "./database/accounts.js";
 export type {
+  AccessSuggestion,
   AccountRolePayload,
   AccountStatus,
   PermissionRequestPayload,

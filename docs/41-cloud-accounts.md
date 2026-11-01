@@ -134,9 +134,11 @@ PC2 holds the real accounts. On each person's **next online sign-in on PC2**:
 2. If the account has no email, they are asked for one.
 3. `claim_existing_account` creates them in the cloud **with their existing id**, PENDING, so every
    record that already names them still names the same person.
-4. The admin approves them and gives them a role and screens again. **Not built:** offering their old
-   role from this PC as a starting point -- moving up replaces it with the cloud's (none, while
-   PENDING), so the admin picks it again. With a handful of people this is minutes.
+4. The admin approves them, **starting from what they had** (cloud 023, owner 2026-11-01): the move
+   up carries the account's role, extra screens, job role and authority from this PC, and the cloud
+   keeps it with them while they wait. The admin, on any computer, sees it filled in, checks it and
+   approves. A suggestion only: nothing reads it to decide access, and it is cleared the moment the
+   person is decided.
 
 **The first admin**, once, on each project, is named in the SQL editor **before** anyone moves up:
 `select public.make_first_admin('<email>', '<PC2 device id>');` (cloud 022). The claim of that email
@@ -215,11 +217,9 @@ first admin.
 - **Email verification and "forgot password" by email.** They need mail sending. An admin resets.
 - **Notifications across PCs.** `user_notifications` stays per PC.
 - **In-app enrolment** (`docs/37 §U.1`). Enrolment stays the owner's procedure (`docs/36 §7.6`).
-- **Making another admin from the screen.** The local screens never had it, and the cloud keeps an
-  admin's rights as they are. Until it is added, a second admin is a direct update in the SQL editor:
-  `update public.people set is_admin = true, revision = revision + 1 where lower(email) = '<email>';`
-  (raising the revision is what sends the change to every PC). `make_first_admin` refuses once an
-  admin exists.
+- (Making another admin is no longer here: it is on the screen under cloud accounts, owner 2026-11-01 -- in
+  an approved member's details, and taking it away beside an admin's row. The cloud still refuses an
+  admin removing their own rights, and the last admin's.)
 
 ## 10. Number-block ceiling: 5 → 99
 

@@ -487,6 +487,22 @@ export const copy = {
     resetPasswordConfirm: "Set password",
     resetPasswordDoneTitle: "Password set",
     resetPasswordDoneBody: "They can sign in with the new password on any computer.",
+    // Approving someone whose account moved up: what they had is filled in, for the admin to check.
+    suggestedNote: "Filled in with the role and access this person had before their account moved to the cloud. Check it, then approve.",
+    // Making another administrator from the screen.
+    adminToggleMake: "Make administrator…",
+    adminToggleRemove: "Remove administrator…",
+    adminMakeTitle: "Make this person an administrator?",
+    adminRemoveTitle: "Remove this person's administrator rights?",
+    adminFactPerson: "Person",
+    adminFactWhere: "Where",
+    adminFactWhereValue: "Every computer",
+    adminMakeExplain:
+      "An administrator can approve people, change anyone's role and screens, revoke access and reset passwords, on every computer.",
+    adminRemoveExplain: "They keep their role and screens, but can no longer approve or change anyone's access.",
+    adminMakeConfirm: "Make administrator",
+    adminRemoveConfirm: "Remove administrator",
+    adminChangedTitle: "Administrator rights changed",
   },
 
   backup: {

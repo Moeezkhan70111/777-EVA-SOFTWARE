@@ -36,7 +36,18 @@ export const ACCOUNT_RECORD = {
   PERMISSION_REQUEST: "PERMISSION_REQUEST",
 } as const;
 
-/** One person's non-secret account facts at a revision (cloud 020, person_snapshot). */
+/**
+ * What an account had on its computer before it moved up (cloud 023): the admin's starting point when
+ * approving it. Never access -- only what the admin then sends becomes the person's.
+ */
+export interface AccessSuggestion {
+  readonly roleCode: string | null;
+  readonly extraPermissions: readonly string[];
+  readonly jobRole: string;
+  readonly authorityLevel: number;
+}
+
+/** One person's non-secret account facts at a revision (cloud 020's person_snapshot, 023's suggestion). */
 export interface PersonPayload {
   readonly personId: string;
   readonly revision: number;
@@ -49,6 +60,8 @@ export interface PersonPayload {
   readonly jobRole: string;
   readonly authorityLevel: number;
   readonly credentialVersion: number;
+  /** While PENDING, what the account had before it moved up (023). Null otherwise, and before 023. */
+  readonly suggestedAccess: AccessSuggestion | null;
 }
 
 /** One role of the catalogue at a revision (cloud 020, account_role_snapshot). */
@@ -102,6 +115,33 @@ const optionalInstant = (value: unknown): { ok: true; value: string | null } | {
   return read === null ? { ok: false } : { ok: true, value: read };
 };
 
+/**
+ * A suggestion read strictly. A snapshot from before 023 has no such key, which is no suggestion; a
+ * value that is there but is not one is a broken snapshot, refused like any other.
+ */
+const suggestion = (value: unknown): { ok: true; value: AccessSuggestion | null } | { ok: false } => {
+  if (value === undefined || value === null) return { ok: true, value: null };
+  if (typeof value !== "object" || Array.isArray(value)) return { ok: false };
+  const record = value as Record<string, unknown>;
+  const roleCode = record.roleCode === null || record.roleCode === undefined ? null : record.roleCode;
+  const extraPermissions = codeList(record.extraPermissions);
+  const authorityLevel = positiveInteger(record.authorityLevel);
+  if (roleCode !== null && !(typeof roleCode === "string" && PERMISSION_CODE.test(roleCode))) return { ok: false };
+  if (extraPermissions === null || typeof record.jobRole !== "string" || authorityLevel === null || authorityLevel > 99) return { ok: false };
+  return { ok: true, value: { roleCode, extraPermissions, jobRole: record.jobRole.trim(), authorityLevel } };
+};
+
+/** A suggestion as app_users keeps it (JSON text), read with the same rule; null when there is none or it is unreadable. */
+export function readStoredSuggestion(json: string | null): AccessSuggestion | null {
+  if (json === null) return null;
+  try {
+    const read = suggestion(JSON.parse(json) as unknown);
+    return read.ok ? read.value : null;
+  } catch {
+    return null;
+  }
+}
+
 export function readPersonPayload(payload: Record<string, unknown>): PersonPayload | null {
   const personId = text(payload.personId);
   const email = text(payload.email);
@@ -112,15 +152,17 @@ export function readPersonPayload(payload: Record<string, unknown>): PersonPaylo
   const status = oneOf(ACCOUNT_STATUSES, payload.status);
   const roleCode = optionalText(payload.roleCode);
   const extraPermissions = codeList(payload.extraPermissions);
+  const suggested = suggestion(payload.suggestedAccess);
   if (personId === null || email === null || displayName === null || status === null) return null;
   if (revision === null || credentialVersion === null || authorityLevel === null || authorityLevel > 99) return null;
   if (typeof payload.isAdmin !== "boolean" || typeof payload.jobRole !== "string") return null;
-  if (!roleCode.ok || extraPermissions === null) return null;
+  if (!roleCode.ok || extraPermissions === null || !suggested.ok) return null;
   return {
     personId, revision, email, displayName, status, credentialVersion, authorityLevel, extraPermissions,
     isAdmin: payload.isAdmin,
     roleCode: roleCode.value,
     jobRole: payload.jobRole.trim(),
+    suggestedAccess: suggested.value,
   };
 }
 
@@ -295,14 +337,16 @@ function recordRevision(sql: AccountSqlHandle, type: string, recordId: string, r
 function upsertPerson(sql: AccountSqlHandle, person: PersonPayload, now: string): void {
   sql
     .prepare(
-      `INSERT INTO app_users (id, username, email, role, authority_level, job_role, access_status, credential_version, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `INSERT INTO app_users (id, username, email, role, authority_level, job_role, access_status, credential_version, suggested_access_json, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET username = excluded.username, email = excluded.email, role = excluded.role,
          authority_level = excluded.authority_level, job_role = excluded.job_role, access_status = excluded.access_status,
-         credential_version = excluded.credential_version, updated_at = excluded.updated_at`
+         credential_version = excluded.credential_version, suggested_access_json = excluded.suggested_access_json,
+         updated_at = excluded.updated_at`
     )
     .run(person.personId, person.displayName, person.email, person.isAdmin ? "ADMIN" : "USER", person.authorityLevel,
-      person.jobRole, person.status, person.credentialVersion, now, now);
+      person.jobRole, person.status, person.credentialVersion,
+      person.suggestedAccess === null ? null : JSON.stringify(person.suggestedAccess), now, now);
 }
 
 /** The role and the extra screens, replaced whole: the revision is the whole truth about them. */

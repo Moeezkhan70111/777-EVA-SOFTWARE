@@ -50,6 +50,16 @@ export function registerUsersHandlers(ctx: IpcContext): void {
     return viaCloud ? resetPassword(viaCloud, userId, newPassword) : LOCAL_ONLY;
   });
 
+  // Making another admin, or taking it away (owner, 2026-11-01: not something for the SQL editor).
+  // The cloud refuses an admin removing their own rights, and removing the last admin's.
+  ipcMain.handle(IPC.setMemberAdmin, async (_event, token?: string, userId?: string, isAdmin?: boolean) => {
+    if (!isAdminSession(token) || typeof userId !== "string" || !userId || typeof isAdmin !== "boolean") {
+      return { accepted: false, reason: "Administrator access required" };
+    }
+    const viaCloud = await cloud(token);
+    return viaCloud ? setAccess(viaCloud, userId, { isAdmin }) : LOCAL_ONLY;
+  });
+
   ipcMain.handle(IPC.getRoleCopyOffer, async (_event, token?: string) => {
     if (!isAdminSession(token)) return { accepted: false, count: 0, reason: "Administrator access required" };
     return { accepted: true, count: (await usesCloudAccounts(db)) ? rolesToCopyUp(db).length : 0 };
@@ -76,8 +86,14 @@ export function registerUsersHandlers(ctx: IpcContext): void {
     if (!requestId || (decision !== "APPROVED" && decision !== "REJECTED")) return { accepted: false, reason: "Invalid access decision" };
     const viaCloud = await cloud(token);
     if (viaCloud) {
-      const role = typeof roleCode === "string" && roleCode.trim() ? { roleCode: roleCode.trim() } : {};
-      return setAccess(viaCloud, requestId, decision === "APPROVED" ? { status: "APPROVED", extraPermissions: codes(permissions), ...role } : { status: "REJECTED" });
+      if (decision === "REJECTED") return setAccess(viaCloud, requestId, { status: "REJECTED" });
+      // The screen sends the role's screens and the extras together. Under cloud accounts a role is its
+      // own record, so its screens are left out of the extras: a later change to the role then reaches
+      // this person, instead of their copy of the old screens outliving it.
+      const chosen = typeof roleCode === "string" && roleCode.trim() ? roleCode.trim() : null;
+      const roleScreens = new Set(chosen === null ? [] : (db.listRoles().find((role) => role.code === chosen)?.permissions ?? []));
+      const extraPermissions = codes(permissions).filter((code) => !roleScreens.has(code));
+      return setAccess(viaCloud, requestId, { status: "APPROVED", extraPermissions, ...(chosen === null ? {} : { roleCode: chosen }) });
     }
     try {
       db.reviewAccessRequest(requestId, sessionUser.id, decision, Array.isArray(permissions) ? permissions : [], typeof roleCode === "string" ? roleCode : undefined);

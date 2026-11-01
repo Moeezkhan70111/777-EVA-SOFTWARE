@@ -9,7 +9,7 @@
 // An admin's change to one field is sent as the person's WHOLE access decision, built from this
 // computer's copy of them: the cloud judges the whole (020's admin_set_access), never a fragment.
 
-import type { AccountRolePayload, PermissionRequestPayload, SqliteDatabase } from "@erp/data";
+import type { AccessSuggestion, AccountRolePayload, PermissionRequestPayload, SqliteDatabase } from "@erp/data";
 import type { AccessDecision, AccountCallFailure, AccountDeclined, AccountFunctionCaller, RoleDefinition } from "@erp/sync";
 
 export interface CloudAdminDeps {
@@ -133,6 +133,27 @@ export function currentAccess(db: SqliteDatabase, personId: string): AccessDecis
 async function canonicalCodes(codes: readonly string[]): Promise<string[]> {
   const data = await import("@erp/data");
   return Array.from(new Set(codes.map((code) => data.normalizePermissionCode(code)).filter((code) => code !== "")));
+}
+
+/**
+ * What a local account has here, as the suggestion its move up carries (cloud 023): the admin's
+ * starting point when approving it. An account that predates roles has only its old permission list,
+ * which becomes its extra screens. Null when the account is not here.
+ */
+export async function suggestionFrom(db: SqliteDatabase, userId: string): Promise<AccessSuggestion | null> {
+  const access = currentAccess(db, userId);
+  if (access === null) return null;
+  let extras = access.extraPermissions;
+  if (access.roleCode === null && extras.length === 0) {
+    const row = db.db.prepare("SELECT permissions_json FROM app_users WHERE id = ?").get(userId) as { permissions_json: string } | undefined;
+    try {
+      const legacy = JSON.parse(row?.permissions_json ?? "[]") as unknown;
+      extras = Array.isArray(legacy) ? legacy.filter((code): code is string => typeof code === "string") : [];
+    } catch {
+      extras = [];
+    }
+  }
+  return { roleCode: access.roleCode, extraPermissions: await canonicalCodes(extras), jobRole: access.jobRole, authorityLevel: access.authorityLevel };
 }
 
 /** One change to one person, sent as their whole decision. */

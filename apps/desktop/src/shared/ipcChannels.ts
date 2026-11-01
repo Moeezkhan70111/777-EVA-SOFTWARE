@@ -32,6 +32,7 @@ export const IPC = {
   resetMemberPassword: "erp:reset-member-password",
   getRoleCopyOffer: "erp:get-role-copy-offer",
   copyRolesToCloud: "erp:copy-roles-to-cloud",
+  setMemberAdmin: "erp:set-member-admin",
   reviewAccessRequest: "erp:review-access-request",
   listMembers: "erp:list-members",
   updateUserPermissions: "erp:update-user-permissions",

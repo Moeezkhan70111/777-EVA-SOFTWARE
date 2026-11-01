@@ -12,6 +12,8 @@
 --     declined)
 --   * email: how a person signs in under cloud accounts. Null for a local-mode account.
 --   * credential_version: the latest the cloud has told this PC for this person
+--   * suggested_access_json: while someone waits for approval, the access their account had on its
+--     computer before it moved up (cloud 023). A starting point for the admin, never access.
 --   * username stays unique among LOCAL accounts, which sign in with it. A person from the cloud
 --     signs in by email and their username is a display name, which two people may share.
 --
@@ -43,6 +45,7 @@ CREATE TABLE app_users_new (
   permissions_json TEXT NOT NULL DEFAULT '[]',
   last_login_at TEXT,
   credential_version INTEGER NOT NULL DEFAULT 1 CHECK (credential_version >= 1),
+  suggested_access_json TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   CHECK (role IN ('USER','ADMIN')),

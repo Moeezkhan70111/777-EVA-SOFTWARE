@@ -10,6 +10,7 @@ import type { UserNotificationRecord } from "./types.js";
 import { pbkdf2Sync, randomBytes } from "node:crypto";
 import { businessDateOf, businessToday } from "@erp/domain";
 import { requireLocalAccounts, type AccountSqlHandle } from "./accountsMode.js";
+import { readStoredSuggestion, type AccessSuggestion } from "./accounts.js";
 
 /** A permission code in its one canonical spelling, from any alias the app has ever stored. */
 export function normalizePermissionCode(raw: string): string {
@@ -562,15 +563,15 @@ export const usersMethods = {
     this.db.prepare("UPDATE app_users SET access_status = ?, updated_at = ? WHERE id = ?").run(decision, now, request.user_id);
   },
 
-  listMembers(this: SqliteDatabase): Array<{ id: string; username: string; role: "USER" | "ADMIN"; jobRole: string; authorityLevel: number; accessStatus: "PENDING" | "APPROVED" | "REJECTED"; permissions: string[]; lastLoginAt: string | null; accessRequestId: string | null; roleCode: string | null; roleName: string | null; additionalPermissions: string[] }> {
-    const rows = this.db.prepare("SELECT u.id, u.username, u.role, u.job_role, u.authority_level, u.access_status, u.permissions_json, u.last_login_at, r.id AS access_request_id, ura.role_code FROM app_users u LEFT JOIN access_requests r ON r.user_id = u.id LEFT JOIN user_role_assignments ura ON ura.user_id = u.id ORDER BY u.username COLLATE NOCASE").all() as Array<{ id: string; username: string; role: "USER" | "ADMIN"; job_role: string; authority_level: number; access_status: "PENDING" | "APPROVED" | "REJECTED"; permissions_json: string; last_login_at: string | null; access_request_id: string | null; role_code: string | null }>;
+  listMembers(this: SqliteDatabase): Array<{ id: string; username: string; role: "USER" | "ADMIN"; jobRole: string; authorityLevel: number; accessStatus: "PENDING" | "APPROVED" | "REJECTED" | "REVOKED"; permissions: string[]; lastLoginAt: string | null; accessRequestId: string | null; roleCode: string | null; roleName: string | null; additionalPermissions: string[]; suggestedAccess: AccessSuggestion | null }> {
+    const rows = this.db.prepare("SELECT u.id, u.username, u.role, u.job_role, u.authority_level, u.access_status, u.permissions_json, u.last_login_at, u.suggested_access_json, r.id AS access_request_id, ura.role_code FROM app_users u LEFT JOIN access_requests r ON r.user_id = u.id LEFT JOIN user_role_assignments ura ON ura.user_id = u.id ORDER BY u.username COLLATE NOCASE").all() as Array<{ id: string; username: string; role: "USER" | "ADMIN"; job_role: string; authority_level: number; access_status: "PENDING" | "APPROVED" | "REJECTED" | "REVOKED"; permissions_json: string; last_login_at: string | null; suggested_access_json: string | null; access_request_id: string | null; role_code: string | null }>;
     return rows.map((row) => {
       const roleRow = row.role_code ? this.db.prepare("SELECT role_name FROM roles WHERE role_code = ?").get(row.role_code) as { role_name?: string } | undefined : undefined;
       const roleName = roleRow?.role_name ?? null;
       const displayJobRole = roleName ?? row.job_role;
       const effectivePermissions = this.recalculateEffectivePermissions(row.id);
       const additionalPermissions = this.getUserAdditionalPermissions(row.id);
-      return { id: row.id, username: row.username, role: row.role, jobRole: displayJobRole, authorityLevel: row.role === "ADMIN" ? 100 : row.authority_level, accessStatus: row.access_status, permissions: effectivePermissions, lastLoginAt: row.last_login_at, accessRequestId: row.access_request_id, roleCode: row.role_code, roleName, additionalPermissions };
+      return { id: row.id, username: row.username, role: row.role, jobRole: displayJobRole, authorityLevel: row.role === "ADMIN" ? 100 : row.authority_level, accessStatus: row.access_status, permissions: effectivePermissions, lastLoginAt: row.last_login_at, accessRequestId: row.access_request_id, roleCode: row.role_code, roleName, additionalPermissions, suggestedAccess: readStoredSuggestion(row.suggested_access_json) };
     });
   },
 

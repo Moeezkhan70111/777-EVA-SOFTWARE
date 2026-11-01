@@ -20,6 +20,7 @@
 
 import type { SqliteDatabase, StructuredLogger, PersonPayload } from "@erp/data";
 import type { AccountFunctionCaller, AccountStateAnswer, SignInAnswer } from "@erp/sync";
+import { suggestionFrom } from "./cloudAdmin";
 
 /** How long a check confirmed online may sign someone in without the cloud (owner, 2026-10-23). */
 export const OFFLINE_DAYS = 7;
@@ -159,7 +160,7 @@ async function signInSwitchingAdmin(db: SqliteDatabase, caller: AccountFunctionC
   const online = await sync.verifyLogin(caller, request.email, request.password);
   if (online.kind !== "DECLINED" || online.reason !== "WRONG_CREDENTIALS") return online;
   if (!db.checkLocalCredential(request.localUserId, request.password)) return online;
-  return sync.claimExistingAccount(caller, request.localUserId, request.email, request.password, request.localUsername);
+  return sync.claimExistingAccount(caller, request.localUserId, request.email, request.password, request.localUsername, await suggestionFrom(db, request.localUserId));
 }
 
 type DataModule = typeof import("@erp/data");
@@ -232,7 +233,8 @@ export async function cloudClaim(deps: AccountDeps, username: string, password: 
   if (email === null || email.trim() === "") return { kind: "NEEDS_EMAIL", message: ACCOUNT_MESSAGES.NEEDS_EMAIL };
   if (deps.caller === null) return { kind: "REFUSED", message: ACCOUNT_MESSAGES.CLAIM_OFFLINE };
   const sync = await import("@erp/sync");
-  const answer = await sync.claimExistingAccount(deps.caller, local.id, email.trim(), password, local.username);
+  // What the account had here travels with it, as the approving admin's starting point (cloud 023).
+  const answer = await sync.claimExistingAccount(deps.caller, local.id, email.trim(), password, local.username, await suggestionFrom(deps.db, local.id));
   if (answer.kind === "UNREACHABLE" || answer.kind === "NOT_SUPPORTED") return { kind: "REFUSED", message: ACCOUNT_MESSAGES.CLAIM_OFFLINE };
   return settleOnline(deps.db, answer, password, now);
 }

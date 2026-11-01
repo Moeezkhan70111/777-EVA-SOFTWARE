@@ -13,6 +13,8 @@ export interface Member {
   roleCode?: string | null;
   roleName?: string | null;
   additionalPermissions?: string[];
+  /** Cloud accounts: while waiting, what this person had before their account moved up (cloud 023). */
+  suggestedAccess?: { roleCode: string | null; extraPermissions: string[]; jobRole: string; authorityLevel: number } | null;
 }
 
 export interface RoleOption {
