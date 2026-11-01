@@ -2,6 +2,8 @@ import React from "react";
 import { MemberSection } from "../users/MemberSection";
 import { RolesSection } from "../users/RolesSection";
 import type { Member } from "../users/types";
+import type { AuthUser } from "../../types/desktopApi";
+import { CloudAccountsSwitchCard } from "./CloudAccountsSwitchCard";
 
 export const ProfilePage = ({
   username,
@@ -20,8 +22,11 @@ export const ProfilePage = ({
   onCreateRole,
   onUpdateRole,
   onDeleteRole,
+  onSwitchedToCloud,
 }: {
   username: string;
+  /** Admins only: the session the switch to cloud accounts leaves them with (docs/41). */
+  onSwitchedToCloud?: (user: AuthUser, token: string) => Promise<void>;
   onLogout: () => void;
   onChangePassword: () => void;
   members?: Member[];
@@ -72,6 +77,7 @@ export const ProfilePage = ({
       </div>
       {members && onPermissions && onRevoke && (
         <>
+          {onSwitchedToCloud && <CloudAccountsSwitchCard onSwitched={onSwitchedToCloud} />}
           <RolesSection
             roles={roles}
             onCreate={onCreateRole}

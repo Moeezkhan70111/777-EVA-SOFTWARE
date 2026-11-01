@@ -768,6 +768,11 @@ html, body { margin: 0; height: 100%; overflow-x: hidden; background: var(--bg);
 .profile-username { margin: 16px 0 20px; font-size: 1.1rem; font-weight: 600; }
 .profile-actions { display: flex; gap: 8px; padding-bottom: 24px; border-bottom: 1px solid var(--border-soft); }
 .members-section { margin-top: 28px; padding-top: 20px; border-top: 1px solid var(--border-soft); }
+/* Switching a computer to cloud accounts (docs/41): one card above the roles, for an admin. */
+.cloud-accounts-card { margin-top: 28px; padding: 20px; display: grid; gap: 10px; max-width: 640px; }
+.cloud-accounts-card p { margin: 0; }
+.cloud-accounts-card .btn { justify-self: start; }
+.cloud-accounts-sql { margin: 0; padding: 10px 12px; font-family: var(--font-mono); font-size: 0.8rem; white-space: pre-wrap; word-break: break-all; background: var(--surface-muted); border: 1px solid var(--line-soft); border-radius: var(--radius-md); user-select: all; }
 .member-row { min-height: 58px; padding: 10px 12px; border-bottom: 1px solid var(--border-soft); }
 .member-row:last-child { border-bottom: 0; }
 .member-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; color: var(--text); font-size: 0.86rem; }

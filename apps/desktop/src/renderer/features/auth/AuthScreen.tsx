@@ -1,7 +1,22 @@
 import React, { useState } from "react";
 import { AuthLogo } from "./AuthLogo";
+import { PasswordField } from "./PasswordField";
+import { copy } from "../../config/copy";
 
 export type AuthView = "login" | "signup";
+
+/** What the person typed. `email` and `displayName` are used only under cloud accounts. */
+export interface AuthForm {
+  username: string;
+  password: string;
+  confirmPassword: string;
+  email: string;
+  displayName: string;
+}
+
+// Under cloud accounts (docs/41) the same screen signs in by email on any computer, and signs up with
+// a name and an email. An old username still works the first time: the main process checks it here
+// and answers that it needs an email, which `needsEmail` then asks for.
 
 export const AuthScreen = ({
   view,
@@ -9,33 +24,27 @@ export const AuthScreen = ({
   onSwitch,
   error,
   onCancel,
+  cloudAccounts = false,
+  needsEmail = false,
 }: {
   view: AuthView;
-  onSubmit: (
-    username: string,
-    password: string,
-    confirmPassword?: string,
-  ) => Promise<void>;
+  onSubmit: (form: AuthForm) => Promise<void>;
   onSwitch: (view: AuthView) => void;
   error?: string | null;
   onCancel?: () => void;
+  cloudAccounts?: boolean;
+  needsEmail?: boolean;
 }) => {
-  const [username, setUsername] = useState("");
-  const [password, setPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
-  const [showPassword, setShowPassword] = useState(false);
-  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [form, setForm] = useState<AuthForm>({ username: "", password: "", confirmPassword: "", email: "", displayName: "" });
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const set = (field: keyof AuthForm) => (value: string) => setForm((current) => ({ ...current, [field]: value }));
+  const isLogin = view === "login";
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
     setIsSubmitting(true);
     try {
-      if (view === "login") {
-        await onSubmit(username, password);
-      } else {
-        await onSubmit(username, password, confirmPassword);
-      }
+      await onSubmit(form);
     } finally {
       setIsSubmitting(false);
     }
@@ -48,122 +57,50 @@ export const AuthScreen = ({
           <AuthLogo />
         </div>
         <div className="auth-title-wrap">
-          <h1 className="auth-title">
-            {view === "login" ? "Login" : "Create Account"}
-          </h1>
+          <h1 className="auth-title">{isLogin ? copy.auth.loginHeading : copy.auth.signupHeading}</h1>
         </div>
         <form onSubmit={handleSubmit} className="auth-form">
-          <div className="input-group">
-            <label className="input-label" htmlFor="auth-username">
-              Username
-            </label>
-            <input
-              id="auth-username"
-              type="text"
-              value={username}
-              onChange={(event) => setUsername(event.target.value)}
-              placeholder="Enter your username"
-              autoComplete="username"
-            />
-          </div>
-          <div className="input-group">
-            <label className="input-label" htmlFor="auth-password">
-              Password
-            </label>
-            <div className="password-wrap">
-              <input
-                id="auth-password"
-                type={showPassword ? "text" : "password"}
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
-                placeholder="Enter your password"
-                autoComplete={
-                  view === "login" ? "current-password" : "new-password"
-                }
-              />
-              <button
-                type="button"
-                className="password-toggle"
-                onClick={() => setShowPassword((value) => !value)}
-                aria-label={
-                  showPassword ? "Hide hidden field" : "Show hidden field"
-                }
-              >
-                {showPassword ? "Hide" : "Show"}
-              </button>
-            </div>
-          </div>
-          {view === "signup" && (
-            <div className="input-group">
-              <label className="input-label" htmlFor="auth-confirm-password">
-                Confirm Password
-              </label>
-              <div className="password-wrap">
-                <input
-                  id="auth-confirm-password"
-                  type={showConfirmPassword ? "text" : "password"}
-                  value={confirmPassword}
-                  onChange={(event) => setConfirmPassword(event.target.value)}
-                  placeholder="Confirm your password"
-                  autoComplete="new-password"
-                />
-                <button
-                  type="button"
-                  className="password-toggle"
-                  onClick={() => setShowConfirmPassword((value) => !value)}
-                  aria-label={
-                    showConfirmPassword
-                      ? "Hide hidden field"
-                      : "Show hidden field"
-                  }
-                >
-                  {showConfirmPassword ? "Hide" : "Show"}
-                </button>
-              </div>
+          {cloudAccounts && !isLogin && (
+            <TextField id="auth-name" label={copy.auth.cloudNameLabel} value={form.displayName} onChange={set("displayName")}
+              placeholder={copy.auth.cloudNamePlaceholder} autoComplete="name" />
+          )}
+          <TextField
+            id="auth-username"
+            label={cloudAccounts ? copy.auth.cloudSignInLabel : copy.auth.username}
+            value={form.username}
+            onChange={set("username")}
+            placeholder={cloudAccounts ? copy.auth.cloudSignInPlaceholder : copy.auth.usernamePlaceholder}
+            autoComplete={cloudAccounts ? "email" : "username"}
+            hint={cloudAccounts && isLogin ? copy.auth.cloudSignInHint : undefined}
+          />
+          <PasswordField id="auth-password" label={copy.auth.password} value={form.password} onChange={set("password")}
+            placeholder={copy.auth.passwordPlaceholder} autoComplete={isLogin ? "current-password" : "new-password"} />
+          {!isLogin && (
+            <PasswordField id="auth-confirm-password" label={copy.auth.confirmPassword} value={form.confirmPassword}
+              onChange={set("confirmPassword")} placeholder={copy.auth.confirmPlaceholder} autoComplete="new-password" />
+          )}
+          {cloudAccounts && isLogin && needsEmail && (
+            <TextField id="auth-email" label={copy.auth.cloudEmailLabel} value={form.email} onChange={set("email")}
+              placeholder={copy.auth.cloudEmailPlaceholder} autoComplete="email" type="email" />
+          )}
+          {error && (
+            <div className="auth-error" role="alert">
+              {error}
             </div>
           )}
-          {error && <div className="auth-error">{error}</div>}
-          <button
-            type="submit"
-            className="btn btn-primary btn-xl auth-submit"
-            disabled={isSubmitting}
-          >
-            {view === "login"
-              ? isSubmitting
-                ? "Logging in..."
-                : "Login"
-              : isSubmitting
-                ? "Creating..."
-                : "Sign Up"}
+          <button type="submit" className="btn btn-primary btn-xl auth-submit" disabled={isSubmitting}>
+            {submitLabel(isLogin, isSubmitting, cloudAccounts && needsEmail)}
           </button>
         </form>
         <div className="auth-switch-row">
-          {view === "login" ? (
-            <button
-              type="button"
-              className="btn btn-ghost auth-link"
-              onClick={() => onSwitch("signup")}
-            >
-              Sign Up
-            </button>
-          ) : (
-            <button
-              type="button"
-              className="btn btn-ghost auth-link"
-              onClick={() => onSwitch("login")}
-            >
-              Login
-            </button>
-          )}
+          <button type="button" className="btn btn-ghost auth-link" onClick={() => onSwitch(isLogin ? "signup" : "login")}>
+            {isLogin ? copy.auth.signUpLink : copy.auth.loginLink}
+          </button>
         </div>
         {onCancel && (
-          <div style={{ marginTop: 12, textAlign: "center" }}>
-            <button
-              type="button"
-              className="btn btn-secondary btn-sm"
-              onClick={onCancel}
-            >
-              Cancel (Return to Active Profile)
+          <div className="auth-switch-row">
+            <button type="button" className="btn btn-secondary btn-sm" onClick={onCancel}>
+              {copy.auth.cancelToProfile}
             </button>
           </div>
         )}
@@ -171,3 +108,42 @@ export const AuthScreen = ({
     </div>
   );
 };
+
+function submitLabel(isLogin: boolean, isSubmitting: boolean, movingUp: boolean): string {
+  if (isSubmitting) return isLogin ? copy.auth.loggingIn : copy.auth.creating;
+  if (!isLogin) return copy.auth.signUpLink;
+  return movingUp ? copy.auth.cloudMoveUpButton : copy.auth.loginButton;
+}
+
+const TextField = ({
+  id,
+  label,
+  value,
+  onChange,
+  placeholder,
+  autoComplete,
+  hint,
+  type = "text",
+}: {
+  id: string;
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  placeholder: string;
+  autoComplete: string;
+  hint?: string;
+  type?: "text" | "email";
+}) => (
+  <div className="input-group">
+    <label className="input-label" htmlFor={id}>
+      {label}
+    </label>
+    <input id={id} type={type} value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder}
+      autoComplete={autoComplete} aria-describedby={hint ? `${id}-hint` : undefined} />
+    {hint ? (
+      <p className="text-muted text-small" id={`${id}-hint`}>
+        {hint}
+      </p>
+    ) : null}
+  </div>
+);

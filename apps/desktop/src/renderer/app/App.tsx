@@ -270,12 +270,21 @@ export const App = () => {
           onSubmit={auth.handleAuthSubmit}
           onSwitch={auth.setAuthView}
           onCancel={session && isAddingAccount ? auth.cancelAddAccount : undefined}
+          cloudAccounts={auth.accountsMode === "CLOUD"}
+          needsEmail={auth.needsEmail}
         />
       );
     }
 
     if (session.accessStatus !== ACCESS_STATUS.APPROVED) {
-      return <RookieScreen requestStatus={requestStatus} onRequest={auth.handleRequestAccess} error={authError} />;
+      return (
+        <RookieScreen
+          requestStatus={requestStatus}
+          onRequest={auth.handleRequestAccess}
+          error={authError}
+          cloudAccounts={auth.accountsMode === "CLOUD"}
+        />
+      );
     }
 
     // A page this role has not been given (a keyboard shortcut, a stale route after the
@@ -309,6 +318,7 @@ export const App = () => {
             onCreateRole={admin.handleCreateRole}
             onUpdateRole={admin.handleUpdateRole}
             onDeleteRole={admin.handleDeleteRole}
+            onSwitchedToCloud={auth.adoptSession}
           />
         );
       case "change-password":

@@ -5,7 +5,7 @@ import type { AppRoute } from "../../app/routes";
 import { copy } from "../../config/copy";
 import type { NoticeKind } from "../../state/NotificationsContext";
 import type { AuthUser, DesktopApi } from "../../types/desktopApi";
-import type { AuthView } from "./AuthScreen";
+import type { AuthForm, AuthView } from "./AuthScreen";
 import type { RequestStatus } from "./RookieScreen";
 import {
   canOpenRoute,
@@ -41,7 +41,13 @@ export interface AuthSessionState {
   /** True once boot confirms no ADMIN exists yet; routes to BootstrapAdminScreen instead of AuthScreen. */
   needsBootstrap: boolean;
   handleBootstrapSubmit: (username: string, password: string, confirmPassword: string) => Promise<void>;
-  handleAuthSubmit: (username: string, password: string, confirmPassword?: string) => Promise<void>;
+  handleAuthSubmit: (form: AuthForm) => Promise<void>;
+  /** Whether this computer's accounts are its own or the cloud's (docs/41). LOCAL until boot says otherwise. */
+  accountsMode: "LOCAL" | "CLOUD";
+  /** An old username signed in under cloud accounts: the screen now asks for an email to move it up. */
+  needsEmail: boolean;
+  /** The session the switch to cloud accounts leaves the admin with (it may be a new one). */
+  adoptSession: (user: AuthUser, token: string) => Promise<void>;
   handleSwitchProfile: (token: string) => Promise<void>;
   handleAddAccount: () => void;
   cancelAddAccount: () => void;
@@ -72,6 +78,8 @@ export const useAuthSession = ({ api, push, route, setRoute }: UseAuthSessionArg
   // exists — renders exactly as it always has, with no new async gate before AuthScreen. Only
   // flips to true if the boot check below finds no ADMIN at all, which is the fresh-install case.
   const [needsBootstrap, setNeedsBootstrap] = useState(false);
+  const [accountsMode, setAccountsMode] = useState<"LOCAL" | "CLOUD">("LOCAL");
+  const [needsEmail, setNeedsEmail] = useState(false);
 
   /**
    * Lands the user on their starting screen (landingRoute: the Store page for a store operator,
@@ -112,6 +120,14 @@ export const useAuthSession = ({ api, push, route, setRoute }: UseAuthSessionArg
   // Boot: no session can be valid until an administrator exists, so that check comes first.
   useEffect(() => {
     void (async () => {
+      // Which accounts this computer uses decides what the sign-in screen asks for. Not knowing is
+      // LOCAL: the screen as it has always been, and the main process still applies the real rule.
+      try {
+        const status = await api.getAccountsStatus?.();
+        if (status) setAccountsMode(status.mode);
+      } catch {
+        setAccountsMode("LOCAL");
+      }
       const { hasAdmin } = await api.hasAnyAdmin();
       setNeedsBootstrap(!hasAdmin);
       if (!hasAdmin) return;
@@ -180,13 +196,17 @@ export const useAuthSession = ({ api, push, route, setRoute }: UseAuthSessionArg
   );
 
   const handleAuthSubmit = useCallback(
-    async (username: string, password: string, confirmPassword?: string) => {
+    async (form: AuthForm) => {
       setAuthError(null);
       setAuthSuccess(null);
       const result =
-        authView === "login" ? await api.signIn(username, password) : await api.signUp(username, password, confirmPassword ?? "");
+        authView === "login"
+          ? await api.signIn(form.username, form.password, needsEmail ? form.email : undefined)
+          : await api.signUp(form.username, form.password, form.confirmPassword, form.displayName || undefined);
 
       if (!result.accepted) {
+        // An old username under cloud accounts: the reason asks for an email, and the screen shows the field.
+        if ("needsEmail" in result && result.needsEmail) setNeedsEmail(true);
         setAuthError(result.reason ?? copy.auth.authFailed);
         return;
       }
@@ -194,6 +214,7 @@ export const useAuthSession = ({ api, push, route, setRoute }: UseAuthSessionArg
 
       const activeToken = result.token ?? `session-${result.user.id}-${Date.now()}`;
       const signedInUser = normalizeAuthUser(result.user);
+      setNeedsEmail(false);
       setRequestStatus(null);
       await activate(signedInUser, activeToken);
       setIsAddingAccount(false);
@@ -201,8 +222,21 @@ export const useAuthSession = ({ api, push, route, setRoute }: UseAuthSessionArg
       setAuthSuccess(null);
       landOn(signedInUser, false);
     },
-    [activate, api, authView, landOn]
+    [activate, api, authView, landOn, needsEmail]
   );
+
+  const adoptSession = useCallback(
+    async (user: AuthUser, token: string) => {
+      setAccountsMode("CLOUD");
+      await activate(normalizeAuthUser(user), token);
+    },
+    [activate]
+  );
+
+  const changeAuthView = useCallback((view: AuthView) => {
+    setNeedsEmail(false);
+    setAuthView(view);
+  }, []);
 
   const handleSwitchProfile = useCallback(
     async (targetToken: string) => {
@@ -248,6 +282,7 @@ export const useAuthSession = ({ api, push, route, setRoute }: UseAuthSessionArg
     setAuthError(null);
     setAuthSuccess(null);
     setAuthView("login");
+    setNeedsEmail(false);
     setIsAddingAccount(false);
   }, [api, sessionToken, setRoute]);
 
@@ -290,13 +325,16 @@ export const useAuthSession = ({ api, push, route, setRoute }: UseAuthSessionArg
     savedProfiles,
     isAddingAccount,
     authView,
-    setAuthView,
+    setAuthView: changeAuthView,
     authError,
     authSuccess,
     requestStatus,
     needsBootstrap,
     handleBootstrapSubmit,
     handleAuthSubmit,
+    accountsMode,
+    needsEmail,
+    adoptSession,
     handleSwitchProfile,
     handleAddAccount,
     cancelAddAccount,
