@@ -65,6 +65,24 @@ one function that every numbered document in the ERP depends on.** That function
 covered by `numberRange.test.ts`; those tests encode the present behaviour and will need
 rewriting alongside it.
 
+#### 0.1a Sale return numbers are outside the ranges — a prerequisite (owner, 2026-11-02)
+
+**Before sale returns are recorded on a second PC, their numbers must become a number site.** Not
+built yet, by decision; recorded here so it is not discovered by a duplicate.
+
+Found auditing for code that treats received records as made here (rehearsal, 2026-11-02).
+`recordSaleReturn` (`packages/data/src/database/saleReturns.ts`) numbers a return as
+`MAX(return_number) + 1` over the whole `sale_returns` table: `RET-` and the next number. It is not
+in `NUMBER_SITES`, so it has no block, no origin column and no range check, and the return-scan
+channel is not lease-guarded. Today returns are recorded on one PC and do not travel, so nothing
+collides. The moment two PCs record returns, both issue `RET-0001`; once returns travel, a PC's
+next number is taken from the other PC's highest, as if every return in the table were its own --
+the same assumption the number ranges were built to remove.
+
+What it needs, as for the other sites: an `origin_device_id` on `sale_returns` (a local migration,
+so after PC2's cutover), a `NUMBER_SITES` entry (`return_number`, `SUFFIX` from 4), allocation
+through `allocateNumberInRange`, and the return writes under the Sales & dispatch lease (W.1).
+
 ### 0.2 Three things must be excluded from replication, not merely unhandled
 
 If these replicate, the system breaks in ways that look like data corruption:
