@@ -41,8 +41,13 @@ export const MemberSection = ({
     // checks it and approves, instead of picking it all again. A suggestion only -- nothing is saved
     // until the admin approves.
     const start = member.accessStatus === "PENDING" ? member.suggestedAccess ?? null : null;
+    // A moved-up account's extras can repeat its role's screens (local approval stored them together);
+    // shown here only the ones beyond the role, which is all that approving stores.
+    const startRoleScreens = roleOptions.find((role) => role.code === start?.roleCode)?.permissions ?? [];
     setSelectedMember(member);
-    setDraftAdditional(start?.extraPermissions ?? member.additionalPermissions ?? []);
+    setDraftAdditional(
+      start ? start.extraPermissions.filter((code) => !startRoleScreens.includes(code)) : member.additionalPermissions ?? []
+    );
     setDraftJobRole(start?.jobRole ?? member.jobRole);
     setSelectedRoleCode(start?.roleCode ?? member.roleCode ?? "");
     setDraftAuthority(start?.authorityLevel ?? member.authorityLevel);

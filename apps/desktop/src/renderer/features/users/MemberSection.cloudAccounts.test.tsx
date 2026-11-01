@@ -5,6 +5,7 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { MemberSection } from "./MemberSection";
 import type { Member } from "./types";
+import { describePerm } from "./permissions";
 import { SessionProvider } from "../auth/SessionContext";
 import { NotificationsProvider } from "../../state/NotificationsContext";
 import { copy } from "../../config/copy";
@@ -84,6 +85,22 @@ describe("approving someone whose account moved up", () => {
     await userEvent.click(screen.getByRole("button", { name: /Ali/ }));
     expect(screen.getByText(copy.cloudAccounts.suggestedNote)).toBeInTheDocument();
     expect(screen.getByRole("combobox")).toHaveValue("munshi");
+    await userEvent.click(screen.getByRole("button", { name: "Approve Access" }));
+    expect(onReview).toHaveBeenCalledWith("p-ali", "APPROVED", expect.arrayContaining(["logs", "stock"]), "munshi");
+  });
+
+  it("shows as Additional Access only the screens beyond the suggested role, which is all approving stores", async () => {
+    // A local approval stored the role's screens among the extras; they are the role's, not extra.
+    const onReview = show([
+      member({
+        accessStatus: "PENDING",
+        accessRequestId: "p-ali",
+        suggestedAccess: { roleCode: "munshi", extraPermissions: ["stock", "logs"], jobRole: "Munshi", authorityLevel: 10 },
+      }),
+    ]);
+    await userEvent.click(screen.getByRole("button", { name: /Ali/ }));
+    expect(screen.getByText(`+ ${describePerm("logs")}`)).toBeInTheDocument();
+    expect(screen.queryByText(`+ ${describePerm("stock")}`)).not.toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Approve Access" }));
     expect(onReview).toHaveBeenCalledWith("p-ali", "APPROVED", expect.arrayContaining(["logs", "stock"]), "munshi");
   });
