@@ -11,11 +11,14 @@ import {
   cloudSignIn,
   cloudSignUp,
   forgetPersonToken,
+  personTokenFor,
   switchThisComputerToCloud,
+  usesCloudAccounts,
   type AccountDeps,
   type AccountOutcome,
 } from "../cloudAccounts";
 import { isCloudSyncConfigured, signedInTransport } from "../cloudSyncPass";
+import { changeOwnPassword } from "../cloudAdmin";
 import type { IpcContext } from "./context";
 import type { StoredProfile } from "../sessionStore";
 import { USER_ROLE } from "@erp/domain";
@@ -70,10 +73,7 @@ export function registerSessionHandlers(ctx: IpcContext): void {
   // Local mode is untouched below. Under cloud accounts sign-in and sign-up go to the cloud through
   // this computer's enrolled device (cloudAccounts.ts), and the local writes refuse (accountsMode.ts).
 
-  const inCloudAccounts = async (): Promise<boolean> => {
-    const data = await import("@erp/data");
-    return data.readAccountsMode(db.db) === data.ACCOUNTS_MODE.CLOUD;
-  };
+  const inCloudAccounts = (): Promise<boolean> => usesCloudAccounts(db);
 
   const accountDeps = async (): Promise<AccountDeps> => {
     const signedIn = await signedInTransport({ logger, deviceId, dataRoot: paths.dataRoot });
@@ -218,7 +218,7 @@ export function registerSessionHandlers(ctx: IpcContext): void {
     }
   });
 
-  ipcMain.handle(IPC.changePassword, (_event, currentPassword?: string, newPassword?: string, confirmPassword?: string, token?: string) => {
+  ipcMain.handle(IPC.changePassword, async (_event, currentPassword?: string, newPassword?: string, confirmPassword?: string, token?: string) => {
     const current = typeof currentPassword === "string" ? currentPassword : "";
     const next = typeof newPassword === "string" ? newPassword : "";
     const confirm = typeof confirmPassword === "string" ? confirmPassword : "";
@@ -232,6 +232,12 @@ export function registerSessionHandlers(ctx: IpcContext): void {
     const sessionUser = db.getUserBySessionToken(sessionToken);
     if (!sessionUser) {
       return { accepted: false, reason: "Your session has expired. Please sign in again." };
+    }
+
+    // Under cloud accounts a password lives in the cloud; this computer's check is remade with it.
+    if (await inCloudAccounts()) {
+      const { caller } = await accountDeps();
+      return changeOwnPassword({ db, caller, personToken: personTokenFor(sessionToken) }, current, next);
     }
 
     try {

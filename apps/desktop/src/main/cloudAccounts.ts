@@ -25,13 +25,13 @@ import type { AccountFunctionCaller, AccountStateAnswer, SignInAnswer } from "@e
 export const OFFLINE_DAYS = 7;
 
 /**
- * WHETHER THIS BUILD MAY SWITCH A COMPUTER AT ALL. False until the admin screen under cloud accounts
- * works (owner, 2026-11-01): the switch signs everyone else out, and until an admin can approve
- * people from this computer, nobody signed out could get back in. The refusal is here, in the main
- * process, not only on the screen -- it must not be something only the owner knows not to touch.
- * Set true in the same change that makes approving people work.
+ * WHETHER THIS BUILD MAY SWITCH A COMPUTER AT ALL (owner, 2026-11-01): the switch signs everyone else
+ * out, so a build that cannot approve people under cloud accounts must refuse it -- in the main
+ * process, not only on the screen. True since the admin screen works under cloud accounts
+ * (cloudAdmin.ts: approving, roles, screens, revoking, resets, permission requests). Set it back to
+ * false in any build where that stops being so.
  */
-export const CLOUD_ACCOUNTS_SWITCH_READY = false;
+export const CLOUD_ACCOUNTS_SWITCH_READY = true;
 
 /** What a person is told. One place, for translation later (R21). */
 export const ACCOUNT_MESSAGES = {
@@ -69,6 +69,12 @@ export type AccountOutcome =
   | { readonly kind: "SIGNED_IN"; readonly userId: string; readonly sessionToken: string }
   | { readonly kind: "NEEDS_EMAIL"; readonly message: string }
   | { readonly kind: "REFUSED"; readonly message: string };
+
+/** Whether this computer's accounts are the cloud's (accounts.mode). One question, asked by every handler. */
+export async function usesCloudAccounts(db: SqliteDatabase): Promise<boolean> {
+  const data = await import("@erp/data");
+  return data.readAccountsMode(db.db) === data.ACCOUNTS_MODE.CLOUD;
+}
 
 // ─── Person tokens (memory only) ────────────────────────────────────────────
 

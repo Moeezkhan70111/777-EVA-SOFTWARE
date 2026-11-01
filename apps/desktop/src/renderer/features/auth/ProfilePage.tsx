@@ -4,6 +4,7 @@ import { RolesSection } from "../users/RolesSection";
 import type { Member } from "../users/types";
 import type { AuthUser } from "../../types/desktopApi";
 import { CloudAccountsSwitchCard } from "./CloudAccountsSwitchCard";
+import { CloudRoleCopyCard } from "./CloudRoleCopyCard";
 
 export const ProfilePage = ({
   username,
@@ -78,6 +79,7 @@ export const ProfilePage = ({
       {members && onPermissions && onRevoke && (
         <>
           {onSwitchedToCloud && <CloudAccountsSwitchCard onSwitched={onSwitchedToCloud} />}
+          <CloudRoleCopyCard />
           <RolesSection
             roles={roles}
             onCreate={onCreateRole}

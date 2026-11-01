@@ -29,6 +29,9 @@ export const IPC = {
   // Cloud accounts (docs/41): which this computer uses, and an admin switching it, by hand.
   getAccountsStatus: "erp:get-accounts-status",
   switchToCloudAccounts: "erp:switch-to-cloud-accounts",
+  resetMemberPassword: "erp:reset-member-password",
+  getRoleCopyOffer: "erp:get-role-copy-offer",
+  copyRolesToCloud: "erp:copy-roles-to-cloud",
   reviewAccessRequest: "erp:review-access-request",
   listMembers: "erp:list-members",
   updateUserPermissions: "erp:update-user-permissions",

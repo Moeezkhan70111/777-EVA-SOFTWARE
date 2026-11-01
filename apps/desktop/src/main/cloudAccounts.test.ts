@@ -147,15 +147,17 @@ describe("the switch to cloud accounts: by hand, by an admin, at this computer",
     expect(db.getUserBySessionToken(session)?.id).toBe(owner.id);
   });
 
-  it("is refused outright by a build that cannot yet approve anyone, before it asks the cloud anything", async () => {
-    // A TRIPWIRE, ON PURPOSE (owner, 2026-11-01). This build cannot approve people under cloud
-    // accounts, so the switch would sign everyone out with no way back in. When the admin screen
-    // works, CLOUD_ACCOUNTS_SWITCH_READY becomes true in the same change, and this line with it.
-    expect(CLOUD_ACCOUNTS_SWITCH_READY).toBe(false);
+  it("this build may switch: it can approve people under cloud accounts (cloudAdmin.test.ts)", () => {
+    expect(CLOUD_ACCOUNTS_SWITCH_READY).toBe(true);
+  });
+
+  it("a build that cannot approve anyone refuses outright, before it asks the cloud anything", async () => {
+    // The owner's rule (2026-11-01): the switch signs everyone out, so without approving there is no
+    // way back in. Any build that sets CLOUD_ACCOUNTS_SWITCH_READY false gets exactly this.
     const owner = db.createUserAccount("Owner", "owner1234");
     const session = db.createUserSession(owner.id);
     const cloud = new ScriptedCloud({ verify_login: signedIn({ personId: owner.id, isAdmin: true }) });
-    const outcome = await switchThisComputerToCloud(deps(cloud, CLOUD_ACCOUNTS_SWITCH_READY), request(session, owner.id));
+    const outcome = await switchThisComputerToCloud(deps(cloud, false), request(session, owner.id));
     expect(outcome).toEqual({ kind: "REFUSED", message: ACCOUNT_MESSAGES.SWITCH_NOT_READY });
     expect(cloud.calls).toEqual([]);
     expect(await mode()).toBe("LOCAL");

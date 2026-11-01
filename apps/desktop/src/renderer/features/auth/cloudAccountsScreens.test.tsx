@@ -5,6 +5,8 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { AuthScreen } from "./AuthScreen";
 import { CloudAccountsSwitchCard } from "./CloudAccountsSwitchCard";
+import { CloudPasswordReset } from "./CloudPasswordReset";
+import { CloudRoleCopyCard } from "./CloudRoleCopyCard";
 import { RookieScreen } from "./RookieScreen";
 import { SessionProvider } from "./SessionContext";
 import { NotificationsProvider } from "../../state/NotificationsContext";
@@ -21,11 +23,17 @@ const CLERK: AuthUser = { id: "u-clerk", username: "Clerk", role: "USER", access
 const api = {
   getAccountsStatus: vi.fn(),
   switchToCloudAccounts: vi.fn(),
+  getRoleCopyOffer: vi.fn(),
+  copyRolesToCloud: vi.fn(),
+  resetMemberPassword: vi.fn(),
 };
 
 beforeEach(() => {
   api.getAccountsStatus.mockReset().mockResolvedValue({ mode: "LOCAL", cloudConfigured: true, deviceId: "dev-pc2", switchReady: true });
   api.switchToCloudAccounts.mockReset();
+  api.getRoleCopyOffer.mockReset().mockResolvedValue({ accepted: true, count: 0 });
+  api.copyRolesToCloud.mockReset();
+  api.resetMemberPassword.mockReset();
   (window as unknown as { desktop: { api: typeof api } }).desktop = { api };
 });
 
@@ -147,5 +155,48 @@ describe("the switch to cloud accounts", () => {
     await userEvent.click(await screen.findByRole("button", { name: copy.cloudAccounts.switchButton }));
     expect(screen.getByRole("alert")).toHaveTextContent(copy.cloudAccounts.needsBoth);
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+});
+
+describe("after the switch: copying roles up, and resetting a password", () => {
+  const within_ = (node: React.ReactNode) =>
+    render(
+      <NotificationsProvider>
+        <SessionProvider user={ADMIN} token="session-owner">
+          {node}
+        </SessionProvider>
+      </NotificationsProvider>
+    );
+
+  it("offers to copy this computer's roles only while there are some the cloud has never seen", async () => {
+    within_(<CloudRoleCopyCard />);
+    await waitFor(() => expect(api.getRoleCopyOffer).toHaveBeenCalledWith("session-owner"));
+    expect(screen.queryByText(copy.cloudAccounts.roleCopyTitle)).not.toBeInTheDocument();
+  });
+
+  it("copies them up on one press, then stops offering", async () => {
+    api.getRoleCopyOffer.mockResolvedValue({ accepted: true, count: 8 });
+    api.copyRolesToCloud.mockResolvedValue({ accepted: true });
+    within_(<CloudRoleCopyCard />);
+    await userEvent.click(await screen.findByRole("button", { name: copy.cloudAccounts.roleCopyButton(8) }));
+    expect(api.copyRolesToCloud).toHaveBeenCalledWith("session-owner");
+    await waitFor(() => expect(screen.queryByText(copy.cloudAccounts.roleCopyTitle)).not.toBeInTheDocument());
+  });
+
+  it("offers no password reset in local accounts", async () => {
+    within_(<CloudPasswordReset userId="p-ali" />);
+    await waitFor(() => expect(api.getAccountsStatus).toHaveBeenCalled());
+    expect(screen.queryByRole("button", { name: copy.cloudAccounts.resetPasswordButton })).not.toBeInTheDocument();
+  });
+
+  it("under cloud accounts sets a new password for that person, and says why when refused", async () => {
+    api.getAccountsStatus.mockResolvedValue({ mode: "CLOUD", cloudConfigured: true, deviceId: "dev-pc2", switchReady: true });
+    api.resetMemberPassword.mockResolvedValueOnce({ accepted: false, reason: "Password must be at least 8 characters and include a letter and a number." });
+    within_(<CloudPasswordReset userId="p-ali" />);
+    await userEvent.click(await screen.findByRole("button", { name: copy.cloudAccounts.resetPasswordButton }));
+    await userEvent.type(screen.getByLabelText(copy.cloudAccounts.resetPasswordLabel), "short");
+    await userEvent.click(screen.getByRole("button", { name: copy.cloudAccounts.resetPasswordConfirm }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("at least 8 characters");
+    expect(api.resetMemberPassword).toHaveBeenCalledWith("session-owner", "p-ali", "short");
   });
 });

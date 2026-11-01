@@ -4,6 +4,7 @@ import { describePerm } from "./permissions";
 import { formatDateTime } from "../../utils/dates";
 import type { Member } from "./types";
 import { copy } from "../../config/copy";
+import { CloudPasswordReset } from "../auth/CloudPasswordReset";
 
 export const MemberSection = ({
   members,
@@ -466,6 +467,7 @@ export const MemberSection = ({
               >
                 Revoke Access
               </button>
+              <CloudPasswordReset userId={selectedMember.id} />
               <span />
               <button
                 type="button"

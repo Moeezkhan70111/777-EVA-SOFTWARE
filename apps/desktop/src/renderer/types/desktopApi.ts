@@ -1761,6 +1761,12 @@ export interface DesktopApi {
   getAccountsStatus?(): Promise<AccountsStatus>;
   /** An admin switching this computer to cloud accounts, by hand (docs/41 section 12). Signs everyone else out. */
   switchToCloudAccounts?(token: string, email: string, password: string): Promise<SwitchToCloudAccountsResult>;
+  /** Cloud accounts only: an admin setting a new password for someone who forgot theirs (020). */
+  resetMemberPassword?(token: string, userId: string, newPassword: string): Promise<{ accepted: boolean; reason?: string }>;
+  /** Cloud accounts only: how many of this computer's roles the cloud has never seen, while it has none. */
+  getRoleCopyOffer?(token: string): Promise<{ accepted: boolean; count: number; reason?: string }>;
+  /** Cloud accounts only: copies those roles up, once (docs/41 section 6). */
+  copyRolesToCloud?(token: string): Promise<{ accepted: boolean; reason?: string }>;
   reviewAccessRequest(token: string, requestId: string, decision: "APPROVED" | "REJECTED", permissions?: string[], roleCode?: string): Promise<{ accepted: boolean; reason?: string }>;
   listMembers?(token?: string): Promise<{ accepted: boolean; members: Array<{ id: string; username: string; role: "USER" | "ADMIN"; jobRole: string; authorityLevel: number; accessStatus: "PENDING" | "APPROVED" | "REJECTED"; permissions: string[]; lastLoginAt: string | null; accessRequestId: string | null; roleCode: string | null; roleName: string | null; additionalPermissions: string[] }>; reason?: string }>;
   createPermissionRequest?(token: string, permissionCode: string, reason?: string): Promise<{ accepted: boolean; id?: string; permissionCode?: string; status?: "PENDING" | "APPROVED" | "REJECTED"; reason?: string }>;

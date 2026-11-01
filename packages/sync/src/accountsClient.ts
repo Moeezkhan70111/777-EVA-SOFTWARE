@@ -122,7 +122,112 @@ export async function fetchAccountState(caller: AccountFunctionCaller): Promise<
   return { kind: "STATE", roles, people, requests };
 }
 
+// ─── Admin work, and a person's own changes (each needs a person token) ─────
+//
+// Every answer carries the snapshot the cloud just wrote, so the caller can write it here at once
+// rather than wait for the log to bring the same revision (which then arrives as a duplicate).
+
+export type PersonAnswer = { readonly kind: "PERSON"; readonly person: PersonPayload } | AccountDeclined | AccountCallFailure;
+export type RoleAnswer = { readonly kind: "ROLE"; readonly role: AccountRolePayload } | AccountDeclined | AccountCallFailure;
+export type RequestAnswer = { readonly kind: "REQUEST"; readonly request: PermissionRequestPayload } | AccountDeclined | AccountCallFailure;
+export type ImportAnswer = { readonly kind: "IMPORTED"; readonly count: number } | AccountDeclined | AccountCallFailure;
+
+/** Everything an admin decides about one person, sent whole: the cloud judges the whole (cloud 020). */
+export interface AccessDecision {
+  readonly status: "PENDING" | "APPROVED" | "REJECTED" | "REVOKED";
+  readonly isAdmin: boolean;
+  readonly roleCode: string | null;
+  readonly extraPermissions: readonly string[];
+  readonly jobRole: string;
+  readonly authorityLevel: number;
+}
+
+export interface RoleDefinition {
+  readonly code: string | null;
+  readonly name: string;
+  readonly description: string | null;
+  readonly loginPolicy: "ALWAYS_LOGGED_IN" | "DAILY_LOGIN";
+  readonly permissions: readonly string[];
+}
+
+export async function adminSetAccess(caller: AccountFunctionCaller, token: string, personId: string, decision: AccessDecision): Promise<PersonAnswer> {
+  const call = await caller.callAccountFunction(ACCOUNT_FUNCTION.ADMIN_SET_ACCESS, {
+    p_token: token, p_person_id: personId, p_status: decision.status, p_is_admin: decision.isAdmin, p_role_code: decision.roleCode,
+    p_extra_permissions: decision.extraPermissions, p_job_role: decision.jobRole, p_authority_level: decision.authorityLevel,
+  });
+  return readOne(call, "person", readPersonPayload, (person) => ({ kind: "PERSON", person }));
+}
+
+export async function adminResetPassword(caller: AccountFunctionCaller, token: string, personId: string, newPassword: string): Promise<PersonAnswer> {
+  const call = await caller.callAccountFunction(ACCOUNT_FUNCTION.ADMIN_RESET_PASSWORD, { p_token: token, p_person_id: personId, p_new_password: newPassword });
+  return readOne(call, "person", readPersonPayload, (person) => ({ kind: "PERSON", person }));
+}
+
+export async function changeOwnPassword(caller: AccountFunctionCaller, token: string, current: string, next: string): Promise<PersonAnswer> {
+  const call = await caller.callAccountFunction(ACCOUNT_FUNCTION.CHANGE_PASSWORD, { p_token: token, p_current: current, p_new: next });
+  return readOne(call, "person", readPersonPayload, (person) => ({ kind: "PERSON", person }));
+}
+
+export async function adminSaveRole(caller: AccountFunctionCaller, token: string, role: RoleDefinition): Promise<RoleAnswer> {
+  const call = await caller.callAccountFunction(ACCOUNT_FUNCTION.ADMIN_SAVE_ROLE, {
+    p_token: token, p_role_code: role.code, p_name: role.name, p_description: role.description,
+    p_login_policy: role.loginPolicy, p_permissions: role.permissions,
+  });
+  return readOne(call, "role", readAccountRolePayload, (saved) => ({ kind: "ROLE", role: saved }));
+}
+
+export async function adminDeleteRole(caller: AccountFunctionCaller, token: string, roleCode: string): Promise<RoleAnswer> {
+  const call = await caller.callAccountFunction(ACCOUNT_FUNCTION.ADMIN_DELETE_ROLE, { p_token: token, p_role_code: roleCode });
+  return readOne(call, "role", readAccountRolePayload, (removed) => ({ kind: "ROLE", role: removed }));
+}
+
+/** Copies a computer's roles up, once, while the cloud has none (cloud 020). */
+export async function adminImportRoles(caller: AccountFunctionCaller, token: string, roles: readonly RoleDefinition[]): Promise<ImportAnswer> {
+  const call = await caller.callAccountFunction(ACCOUNT_FUNCTION.ADMIN_IMPORT_ROLES, {
+    p_token: token,
+    p_roles: roles.map((role) => ({ code: role.code, name: role.name, description: role.description, loginPolicy: role.loginPolicy, permissions: role.permissions })),
+  });
+  if (call.kind !== "ANSWERED") return call;
+  const declined = readDeclined(call.answer);
+  if (declined !== null) return declined;
+  const count = call.answer.imported;
+  return call.answer.ok === true && typeof count === "number" && Number.isInteger(count) && count >= 0 ? { kind: "IMPORTED", count } : { kind: "UNREADABLE" };
+}
+
+export async function requestPermission(caller: AccountFunctionCaller, token: string, permissionCode: string, reason: string | null): Promise<RequestAnswer> {
+  const call = await caller.callAccountFunction(ACCOUNT_FUNCTION.REQUEST_PERMISSION, { p_token: token, p_permission_code: permissionCode, p_reason: reason });
+  return readOne(call, "request", readPermissionRequestPayload, (request) => ({ kind: "REQUEST", request }));
+}
+
+export async function adminReviewPermissionRequest(
+  caller: AccountFunctionCaller,
+  token: string,
+  requestId: string,
+  decision: "APPROVED" | "REJECTED",
+  notes: string | null
+): Promise<RequestAnswer> {
+  const call = await caller.callAccountFunction(ACCOUNT_FUNCTION.ADMIN_REVIEW_PERMISSION_REQUEST, {
+    p_token: token, p_request_id: requestId, p_decision: decision, p_notes: notes,
+  });
+  return readOne(call, "request", readPermissionRequestPayload, (request) => ({ kind: "REQUEST", request }));
+}
+
 // ─── Reading answers ────────────────────────────────────────────────────────
+
+/** {ok: true, <key>: snapshot}, read whole; a refusal as DECLINED; anything else UNREADABLE. */
+function readOne<P, A>(
+  call: AccountCall,
+  key: string,
+  read: (row: Record<string, unknown>) => P | null,
+  wrap: (payload: P) => A
+): A | AccountDeclined | AccountCallFailure {
+  if (call.kind !== "ANSWERED") return call;
+  const declined = readDeclined(call.answer);
+  if (declined !== null) return declined;
+  const row = asRow(call.answer[key]);
+  const payload = row === null ? null : read(row);
+  return call.answer.ok === true && payload !== null ? wrap(payload) : { kind: "UNREADABLE" };
+}
 
 function readSignIn(call: AccountCall): SignInAnswer {
   if (call.kind !== "ANSWERED") return call;

@@ -134,8 +134,9 @@ PC2 holds the real accounts. On each person's **next online sign-in on PC2**:
 2. If the account has no email, they are asked for one.
 3. `claim_existing_account` creates them in the cloud **with their existing id**, PENDING, so every
    record that already names them still names the same person.
-4. The admin approves them. The approval screen offers their **old role and permissions from this
-   PC** as a starting point, so nobody has to remember them.
+4. The admin approves them and gives them a role and screens again. **Not built:** offering their old
+   role from this PC as a starting point -- moving up replaces it with the cloud's (none, while
+   PENDING), so the admin picks it again. With a handful of people this is minutes.
 
 **The first admin**, once, on each project, is named in the SQL editor **before** anyone moves up:
 `select public.make_first_admin('<email>', '<PC2 device id>');` (cloud 022). The claim of that email
@@ -214,6 +215,11 @@ first admin.
 - **Email verification and "forgot password" by email.** They need mail sending. An admin resets.
 - **Notifications across PCs.** `user_notifications` stays per PC.
 - **In-app enrolment** (`docs/37 §U.1`). Enrolment stays the owner's procedure (`docs/36 §7.6`).
+- **Making another admin from the screen.** The local screens never had it, and the cloud keeps an
+  admin's rights as they are. Until it is added, a second admin is a direct update in the SQL editor:
+  `update public.people set is_admin = true, revision = revision + 1 where lower(email) = '<email>';`
+  (raising the revision is what sends the change to every PC). `make_first_admin` refuses once an
+  admin exists.
 
 ## 10. Number-block ceiling: 5 → 99
 
@@ -246,8 +252,10 @@ Blocks 1–10 see no change. For blocks 11 and up:
    **Done; 021 passing on test (2026-11-01).**
 5. The switch, by an admin at the PC (§7, cloud 022), and the sign-in rules (§4), in the main process. **Done.**
 6. The screens: sign-in by email with the move-up prompt, sign-up with a name, the waiting screen
-   without its button, the admin screen in cloud mode (people, roles, requests, resets), and
-   changing one's own password through the cloud.
+   without its button, the switch card, and the admin screen in cloud mode -- approving, roles,
+   screens, job role, authority, revoking, permission requests, password resets, copying the roles
+   up -- and changing one's own password through the cloud. **Done.** The switch was refused by
+   every build until this was (`CLOUD_ACCOUNTS_SWITCH_READY`, owner 2026-11-01).
 7. The block ceiling and numeric sorting (§10), at any point.
 
 Nothing here ships before PC2's cutover: migration 100 would move PC2 off schema 099, which the

@@ -469,6 +469,24 @@ export const copy = {
     retry: "Retry",
     notReady:
       "Not available in this version: approving people under cloud accounts is not finished yet, and switching would sign everyone out with no way back in.",
+    // After the switch: this computer's roles, copied up once, so people can be approved with them.
+    roleCopyTitle: "Copy this computer's roles to the cloud",
+    roleCopyBody: (count: number) =>
+      `The cloud has no roles yet. This computer has ${count}. Copy them up once, so you can approve people with the roles they had here.`,
+    roleCopyButton: (count: number) => `Copy ${count} ${count === 1 ? "role" : "roles"} to the cloud`,
+    roleCopying: "Copying…",
+    roleCopiedTitle: "Roles copied",
+    roleCopiedBody: "The roles are in the cloud. Every computer will have them.",
+    roleCopyFailed: "Roles not copied",
+    // An admin setting a new password for someone who forgot theirs.
+    resetPasswordButton: "Set a new password…",
+    resetPasswordTitle: "Set a new password",
+    resetPasswordExplain:
+      "For someone who forgot theirs. The new password works on every computer at once, and their old one stops working everywhere. Tell them the new one in person.",
+    resetPasswordLabel: "New password",
+    resetPasswordConfirm: "Set password",
+    resetPasswordDoneTitle: "Password set",
+    resetPasswordDoneBody: "They can sign in with the new password on any computer.",
   },
 
   backup: {
