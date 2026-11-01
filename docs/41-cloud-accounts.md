@@ -144,8 +144,10 @@ PC2 holds the real accounts. On each person's **next online sign-in on PC2**:
 `select public.make_first_admin('<email>', '<PC2 device id>');` (cloud 022). The claim of that email
 at that PC -- the owner pressing the switch (§7) -- arrives as an approved admin; the same email at
 any other PC arrives PENDING. Someone who already exists in the cloud can still be made the first
-admin with the email alone, as 020 did. Once switched, PC2 offers to copy its role catalogue up
-(`admin_import_roles`).
+admin with the email alone, as 020 did. The switch itself copies PC2's role catalogue up
+(`admin_import_roles`) while the cloud has no roles, before anything on PC2 changes; a refusal
+there switches nothing (owner, 2026-11-02: a separate step after the switch was easy to miss, and
+approving before it lost the role). Every later PC finds the roles there and copies nothing.
 
 **The switch ends every session of an account the cloud does not know** (one with no email). The
 cloud cannot revoke what it has never seen, so a remembered session that outlived the switch would
@@ -269,14 +271,18 @@ the button. In this order, at a quiet time:
 
 1. **The release with migration 100 is installed on every PC**, PC2 included. Every PC stays in
    local accounts and nothing changes for anyone.
-2. **Apply 020, 021 and 022 to production.** Still nothing changes anywhere.
+2. **Apply 020 to 024 to production**, each followed by its check script. Still nothing changes
+   anywhere.
 3. **Name the first admin** in production's SQL editor, at PC2:
    `select public.make_first_admin('<email>', (select device_id from public.device_accounts where label = '<PC2''s label>'));`
-   The switch screen shows PC2's device id too.
+   Replace both placeholders: since 024 anything that is not an email address is refused. The
+   switch screen shows PC2's device id too, and if the switch finds you are not yet an admin it
+   gives this line with your email and PC2's id already filled in.
 4. **Sign in on PC2** with your old name and password, as today.
 5. **Press "Switch to cloud accounts"**, read what it will do, confirm, and give your email and
    password. Your account moves up as an approved admin, then PC2 switches. Everyone else signed in
-   on PC2 is signed out; you stay in. PC2 offers to copy its role catalogue up; accept it.
+   on PC2 is signed out; you stay in. PC2's roles go up to the cloud in the same press, before
+   anyone is signed out.
 6. **Everyone else signs in once** with their old name and password and adds their email. Approve
    each, starting from the role and screens they had on PC2.
 
