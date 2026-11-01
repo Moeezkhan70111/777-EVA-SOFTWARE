@@ -32,8 +32,23 @@ export const CloudAccountsSwitchCard = ({ onSwitched }: { onSwitched: (user: Aut
     );
   }
   if (state.status.mode !== "LOCAL" || !state.status.cloudConfigured || token === null) return null;
+  if (!state.status.switchReady) return <NotReady />;
   return <SwitchForm token={token} deviceId={state.status.deviceId} onSwitched={onSwitched} />;
 };
+
+/** This build cannot approve anyone under cloud accounts, so it offers no switch -- and says why. */
+const NotReady = () => (
+  <section className="card cloud-accounts-card" aria-labelledby="cloud-accounts-title">
+    <div className="card-eyebrow">{copy.cloudAccounts.cardEyebrow}</div>
+    <h2 className="card-title" id="cloud-accounts-title">
+      {copy.cloudAccounts.cardTitle}
+    </h2>
+    <p>{copy.cloudAccounts.cardBody}</p>
+    <p className="text-muted" role="status">
+      {copy.cloudAccounts.notReady}
+    </p>
+  </section>
+);
 
 const SwitchForm = ({
   token,

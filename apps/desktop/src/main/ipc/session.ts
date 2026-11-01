@@ -5,7 +5,16 @@
 
 import { ipcMain, type IpcMainInvokeEvent } from "electron";
 import { IPC } from "../../shared/ipcChannels";
-import { cloudClaim, cloudSignIn, cloudSignUp, forgetPersonToken, switchThisComputerToCloud, type AccountDeps, type AccountOutcome } from "../cloudAccounts";
+import {
+  CLOUD_ACCOUNTS_SWITCH_READY,
+  cloudClaim,
+  cloudSignIn,
+  cloudSignUp,
+  forgetPersonToken,
+  switchThisComputerToCloud,
+  type AccountDeps,
+  type AccountOutcome,
+} from "../cloudAccounts";
 import { isCloudSyncConfigured, signedInTransport } from "../cloudSyncPass";
 import type { IpcContext } from "./context";
 import type { StoredProfile } from "../sessionStore";
@@ -82,6 +91,7 @@ export function registerSessionHandlers(ctx: IpcContext): void {
     mode: (await inCloudAccounts()) ? "CLOUD" : "LOCAL",
     cloudConfigured: isCloudSyncConfigured({ deviceId, dataRoot: paths.dataRoot }),
     deviceId,
+    switchReady: CLOUD_ACCOUNTS_SWITCH_READY,
   }));
 
   // THE SWITCH, BY HAND (docs/41 section 12): an admin signed in here, at this computer, after the
@@ -100,7 +110,7 @@ export function registerSessionHandlers(ctx: IpcContext): void {
     const sessionToken = typeof token === "string" ? token.trim() : "";
 
     const outcome = await switchThisComputerToCloud(
-      { ...(await accountDeps()), logger, deviceId },
+      { ...(await accountDeps()), logger, deviceId, switchReady: CLOUD_ACCOUNTS_SWITCH_READY },
       { sessionToken, localUserId: admin.id, localUsername: admin.username, email: givenEmail, password: givenPassword }
     );
     if (outcome.kind === "REFUSED") return { accepted: false, reason: outcome.message };

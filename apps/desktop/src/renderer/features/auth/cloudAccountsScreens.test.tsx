@@ -24,7 +24,7 @@ const api = {
 };
 
 beforeEach(() => {
-  api.getAccountsStatus.mockReset().mockResolvedValue({ mode: "LOCAL", cloudConfigured: true, deviceId: "dev-pc2" });
+  api.getAccountsStatus.mockReset().mockResolvedValue({ mode: "LOCAL", cloudConfigured: true, deviceId: "dev-pc2", switchReady: true });
   api.switchToCloudAccounts.mockReset();
   (window as unknown as { desktop: { api: typeof api } }).desktop = { api };
 });
@@ -97,6 +97,14 @@ describe("the switch to cloud accounts", () => {
     show(CLERK);
     await waitFor(() => expect(api.getAccountsStatus).toHaveBeenCalled());
     expect(screen.queryByText(copy.cloudAccounts.cardTitle)).not.toBeInTheDocument();
+  });
+
+  it("in a build that cannot yet approve anyone, says so and offers no switch at all", async () => {
+    api.getAccountsStatus.mockResolvedValue({ mode: "LOCAL", cloudConfigured: true, deviceId: "dev-pc2", switchReady: false });
+    show(ADMIN);
+    expect(await screen.findByText(copy.cloudAccounts.notReady)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: copy.cloudAccounts.switchButton })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(copy.cloudAccounts.passwordLabel)).not.toBeInTheDocument();
   });
 
   it("shows the line that names the first admin, with this computer's id, before anything happens", async () => {

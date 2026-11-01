@@ -1650,6 +1650,8 @@ export interface AccountsStatus {
   cloudConfigured: boolean;
   /** This computer's device id: the second argument of make_first_admin in the SQL editor. */
   deviceId: string;
+  /** Whether this build may switch at all: false until approving people works (the main process refuses too). */
+  switchReady: boolean;
 }
 
 export type SwitchToCloudAccountsResult =

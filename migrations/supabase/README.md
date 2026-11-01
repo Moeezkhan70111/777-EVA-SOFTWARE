@@ -2,8 +2,8 @@
 
 **Where each project stands (test 1 Nov 2026; production 31 Oct 2026):**
 
-- **Test** (`wpkrhgqsizjjdaztijwv`): the baseline and `002`–`021` are applied. 020 and 021 on 1 Nov;
-  `check_accounts.sql`, `check_permission_requests.sql` and `check_number_blocks.sql` pass.
+- **Test** (`wpkrhgqsizjjdaztijwv`): the baseline and `002`–`022` are applied. 020–022 on 1 Nov;
+  `check_accounts.sql`, `check_permission_requests.sql`, `check_first_admin.sql` and `check_number_blocks.sql` pass.
 - **Production** (`ykhvbmhmeefdtrzqeoxm`): the baseline and `002`–`018` applied 31 Oct, `factory-777`
   seeded, `verify_applied_state.sql` 34/34. No devices enrolled and no business data yet. The
   `check_*.sql` scripts are never run here.

@@ -24,6 +24,15 @@ import type { AccountFunctionCaller, AccountStateAnswer, SignInAnswer } from "@e
 /** How long a check confirmed online may sign someone in without the cloud (owner, 2026-10-23). */
 export const OFFLINE_DAYS = 7;
 
+/**
+ * WHETHER THIS BUILD MAY SWITCH A COMPUTER AT ALL. False until the admin screen under cloud accounts
+ * works (owner, 2026-11-01): the switch signs everyone else out, and until an admin can approve
+ * people from this computer, nobody signed out could get back in. The refusal is here, in the main
+ * process, not only on the screen -- it must not be something only the owner knows not to touch.
+ * Set true in the same change that makes approving people work.
+ */
+export const CLOUD_ACCOUNTS_SWITCH_READY = false;
+
 /** What a person is told. One place, for translation later (R21). */
 export const ACCOUNT_MESSAGES = {
   WRONG_CREDENTIALS: "Wrong email or password.",
@@ -52,6 +61,8 @@ export const ACCOUNT_MESSAGES = {
   NOT_FIRST_ADMIN: (deviceId: string) =>
     `Your account is in the cloud, but it is not an approved administrator. Nothing was changed. In the SQL editor run: select make_first_admin('<your email>', '${deviceId}'); then press the button again.`,
   STATE_WAITING: (reason: string) => `Nothing was changed: the cloud's accounts could not all be loaded here (${reason}). Try again in a moment.`,
+  SWITCH_NOT_READY:
+    "This version cannot switch to cloud accounts yet: approving people from this computer is not finished, so anyone signed out could not get back in. Nothing was changed.",
 } as const;
 
 export type AccountOutcome =
@@ -90,10 +101,16 @@ export type SwitchOutcome =
   | { readonly kind: "REFUSED"; readonly message: string };
 
 export async function switchThisComputerToCloud(
-  deps: AccountDeps & { readonly logger: StructuredLogger; readonly deviceId: string },
+  deps: AccountDeps & {
+    readonly logger: StructuredLogger;
+    readonly deviceId: string;
+    /** CLOUD_ACCOUNTS_SWITCH_READY in the application; a test of the switch itself passes true. */
+    readonly switchReady: boolean;
+  },
   request: SwitchRequest,
   now = new Date()
 ): Promise<SwitchOutcome> {
+  if (!deps.switchReady) return { kind: "REFUSED", message: ACCOUNT_MESSAGES.SWITCH_NOT_READY };
   const data = await import("@erp/data");
   if (data.readAccountsMode(deps.db.db) === data.ACCOUNTS_MODE.CLOUD) return { kind: "REFUSED", message: ACCOUNT_MESSAGES.ALREADY_CLOUD };
   if (deps.caller === null) return { kind: "REFUSED", message: ACCOUNT_MESSAGES.SWITCH_OFFLINE };

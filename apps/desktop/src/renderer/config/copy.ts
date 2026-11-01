@@ -467,6 +467,8 @@ export const copy = {
       `This computer now uses cloud accounts (${people} ${people === 1 ? "person" : "people"}). Approve people from the list below.`,
     statusFailed: "Could not tell whether this computer uses cloud accounts.",
     retry: "Retry",
+    notReady:
+      "Not available in this version: approving people under cloud accounts is not finished yet, and switching would sign everyone out with no way back in.",
   },
 
   backup: {
