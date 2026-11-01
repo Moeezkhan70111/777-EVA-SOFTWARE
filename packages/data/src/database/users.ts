@@ -151,6 +151,56 @@ export interface MemberAccessChange {
   readonly extraPermissions: readonly string[];
 }
 
+type SqlHandle = Pick<SqliteDatabase["db"], "prepare" | "exec">;
+
+/** The screens this person's role gives them; none when they have no role. */
+function roleScreensOf(db: SqlHandle, userId: string): string[] {
+  const rows = db
+    .prepare(
+      `SELECT rp.permission_code FROM user_role_assignments ura
+       JOIN role_permissions rp ON rp.role_code = ura.role_code WHERE ura.user_id = ?`
+    )
+    .all(userId) as Array<{ permission_code: string }>;
+  return rows.map((row) => row.permission_code);
+}
+
+/** Set once the repair below has run: when, and how many stored screens it removed. */
+export const ROLE_SCREENS_REPAIR_SETTING_KEY = "accounts.extras.role_screens_removed";
+
+/**
+ * ONCE PER DATABASE: removes from each person's additional access the screens their own role already
+ * gives. Approving with a role stored the role's screens there too, so taking a screen off the role
+ * did not take it from anyone approved that way -- an access-control failure (rehearsal, 2 Nov).
+ * Nobody loses anything today: their role still gives every screen removed. Only a later change to
+ * the role now reaches them. Recorded in app_settings, so it runs once and can be read back.
+ */
+export function removeRoleScreensFromExtrasOnce(db: SqlHandle, nowIso: string): number | null {
+  const done = db.prepare("SELECT 1 FROM app_settings WHERE setting_key = ?").get(ROLE_SCREENS_REPAIR_SETTING_KEY);
+  if (done !== undefined) return null;
+  db.exec("BEGIN IMMEDIATE");
+  try {
+    const removed = db
+      .prepare(
+        `DELETE FROM user_additional_permissions
+          WHERE EXISTS (SELECT 1 FROM user_role_assignments ura
+                          JOIN role_permissions rp ON rp.role_code = ura.role_code
+                         WHERE ura.user_id = user_additional_permissions.user_id
+                           AND rp.permission_code = user_additional_permissions.permission_code)`
+      )
+      .run().changes;
+    db.prepare("INSERT INTO app_settings (setting_key, setting_value, updated_at) VALUES (?, ?, ?)").run(
+      ROLE_SCREENS_REPAIR_SETTING_KEY,
+      JSON.stringify({ at: nowIso, removed: Number(removed) }),
+      nowIso
+    );
+    db.exec("COMMIT");
+    return Number(removed);
+  } catch (error) {
+    db.exec("ROLLBACK");
+    throw error;
+  }
+}
+
 export const usersMethods = {
   hashPassword(this: SqliteDatabase, password: string): { hash: string; salt: string } {
     const salt = randomBytes(16);
@@ -370,7 +420,13 @@ export const usersMethods = {
     const user = this.db.prepare("SELECT id FROM app_users WHERE id = ?").get(userId) as { id?: string } | undefined;
     if (!user) throw new Error("User not found");
 
-    const normalized = Array.from(new Set((permissions ?? []).map((permission) => this.normalizePermissionCode(permission)).filter(Boolean)));
+    // Additional access is what this person has ON TOP OF their role. A screen the role already
+    // gives is not stored here: kept, it would outlive the role losing it, and taking a screen off
+    // a role would not take it from them. Approve sends the role's screens and the extras together,
+    // which is how they got in (rehearsal, 2 Nov).
+    const roleScreens = new Set(roleScreensOf(this.db, userId));
+    const normalized = Array.from(new Set((permissions ?? []).map((permission) => this.normalizePermissionCode(permission)).filter(Boolean)))
+      .filter((permission) => !roleScreens.has(permission));
     const now = new Date().toISOString();
     this.db.prepare("DELETE FROM user_additional_permissions WHERE user_id = ?").run(userId);
     for (const permission of normalized) {
