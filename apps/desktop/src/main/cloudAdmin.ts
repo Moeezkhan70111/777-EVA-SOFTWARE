@@ -254,7 +254,32 @@ async function writeRole(db: SqliteDatabase, role: AccountRolePayload): Promise<
  */
 export function rolesToCopyUp(db: SqliteDatabase): RoleDefinition[] {
   const cloudHasRoles = db.db.prepare("SELECT 1 FROM sync_record_revisions WHERE aggregate_type = 'ACCOUNT_ROLE' LIMIT 1").get() !== undefined;
-  if (cloudHasRoles) return [];
+  return cloudHasRoles ? [] : localRoleDefinitions(db);
+}
+
+/**
+ * The switch's own copy of this computer's roles, in the same press (owner, 2 Nov: as a separate
+ * step after the switch it was easy to miss, approving before it lost the role, and PC2 gets one
+ * go). Only while the cloud has no roles: the first computer to switch brings its roles, every
+ * later one finds them there and copies nothing.
+ */
+export async function copyRolesBeforeSwitch(
+  db: SqliteDatabase,
+  caller: AccountFunctionCaller,
+  adminToken: string,
+  cloudRoleCount: number
+): Promise<{ kind: "COPIED"; count: number } | { kind: "REFUSED"; reason: string }> {
+  const roles = cloudRoleCount > 0 ? [] : localRoleDefinitions(db);
+  if (roles.length === 0) return { kind: "COPIED", count: 0 };
+  const sync = await import("@erp/sync");
+  const answer = await sync.adminImportRoles(caller, adminToken, roles);
+  if (answer.kind === "IMPORTED") return { kind: "COPIED", count: answer.count };
+  const why = refused(answer);
+  return { kind: "REFUSED", reason: why.accepted ? "" : why.reason };
+}
+
+/** Every role this computer has, as the cloud takes it. */
+function localRoleDefinitions(db: SqliteDatabase): RoleDefinition[] {
   const rows = db.db.prepare("SELECT role_code, role_name, description, login_policy FROM roles ORDER BY role_name").all() as Array<{
     role_code: string;
     role_name: string;

@@ -20,7 +20,7 @@
 
 import type { SqliteDatabase, StructuredLogger, PersonPayload } from "@erp/data";
 import type { AccountFunctionCaller, AccountStateAnswer, SignInAnswer } from "@erp/sync";
-import { suggestionFrom } from "./cloudAdmin";
+import { copyRolesBeforeSwitch, suggestionFrom } from "./cloudAdmin";
 
 /** How long a check confirmed online may sign someone in without the cloud (owner, 2026-10-23). */
 export const OFFLINE_DAYS = 7;
@@ -58,9 +58,13 @@ export const ACCOUNT_MESSAGES = {
   OTHER: (code: string) => `The cloud refused this (${code}).`,
   ALREADY_CLOUD: "This computer already uses cloud accounts.",
   SWITCH_OFFLINE: "Switching to cloud accounts needs an internet connection.",
-  CLOUD_HAS_NO_ACCOUNTS: "The cloud does not have accounts yet. Apply cloud migrations 020 to 022 first.",
-  NOT_FIRST_ADMIN: (deviceId: string) =>
-    `Your account is in the cloud, but it is not an approved administrator. Nothing was changed. In the SQL editor run: select make_first_admin('<your email>', '${deviceId}'); then press the button again.`,
+  CLOUD_HAS_NO_ACCOUNTS: "The cloud does not have accounts yet. Apply cloud migrations 020 to 024 first.",
+  // The email as typed into the switch, so the line runs as it stands: a placeholder was pasted
+  // into the SQL editor literally in the rehearsal (2 Nov).
+  NOT_FIRST_ADMIN: (deviceId: string, email: string) =>
+    `Your account is in the cloud, but it is not an approved administrator. Nothing was changed. In the SQL editor run: select public.make_first_admin('${email.replace(/'/g, "''")}', '${deviceId}'); then press the button again.`,
+  ROLES_NOT_COPIED: (reason: string) =>
+    `Nothing was changed: this computer's roles could not be copied to the cloud (${reason}). Nobody was signed out. Try again in a moment.`,
   STATE_WAITING: (reason: string) => `Nothing was changed: the cloud's accounts could not all be loaded here (${reason}). Try again in a moment.`,
   SWITCH_NOT_READY:
     "This version cannot switch to cloud accounts yet: approving people from this computer is not finished, so anyone signed out could not get back in. Nothing was changed.",
@@ -127,13 +131,11 @@ export async function switchThisComputerToCloud(
   if (admin.kind === "UNREACHABLE") return { kind: "REFUSED", message: ACCOUNT_MESSAGES.SWITCH_OFFLINE };
   if (admin.kind !== "SIGNED_IN") return { kind: "REFUSED", message: messageFor(admin) };
   if (admin.person.status !== "APPROVED" || !admin.person.isAdmin) {
-    return { kind: "REFUSED", message: ACCOUNT_MESSAGES.NOT_FIRST_ADMIN(deps.deviceId) };
+    return { kind: "REFUSED", message: ACCOUNT_MESSAGES.NOT_FIRST_ADMIN(deps.deviceId, request.email.trim()) };
   }
 
-  const sync = await import("@erp/sync");
-  const state = await sync.fetchAccountState(deps.caller);
-  if (state.kind === "NOT_SUPPORTED") return { kind: "REFUSED", message: ACCOUNT_MESSAGES.CLOUD_HAS_NO_ACCOUNTS };
-  if (state.kind !== "STATE") return { kind: "REFUSED", message: ACCOUNT_MESSAGES.STATE_WAITING(describeFailure(state)) };
+  const state = await cloudStateWithRoles(deps.db, deps.caller, admin.token);
+  if (typeof state === "string") return { kind: "REFUSED", message: state };
   const waiting = loadStateAndSwitch(deps.db, data, state);
   if (waiting !== null) return { kind: "REFUSED", message: ACCOUNT_MESSAGES.STATE_WAITING(waiting) };
 
@@ -161,6 +163,27 @@ async function signInSwitchingAdmin(db: SqliteDatabase, caller: AccountFunctionC
   if (online.kind !== "DECLINED" || online.reason !== "WRONG_CREDENTIALS") return online;
   if (!db.checkLocalCredential(request.localUserId, request.password)) return online;
   return sync.claimExistingAccount(caller, request.localUserId, request.email, request.password, request.localUsername, await suggestionFrom(db, request.localUserId));
+}
+
+/**
+ * The cloud's accounts as the switch loads them, this computer's roles copied up first when the cloud
+ * has none (cloudAdmin copyRolesBeforeSwitch). All before anything here changes, so a refusal -- the
+ * string, said as it stands -- leaves everyone signed in and the button there to press again.
+ */
+async function cloudStateWithRoles(
+  db: SqliteDatabase,
+  caller: AccountFunctionCaller,
+  adminToken: string
+): Promise<Extract<AccountStateAnswer, { kind: "STATE" }> | string> {
+  const sync = await import("@erp/sync");
+  const state = await sync.fetchAccountState(caller);
+  if (state.kind === "NOT_SUPPORTED") return ACCOUNT_MESSAGES.CLOUD_HAS_NO_ACCOUNTS;
+  if (state.kind !== "STATE") return ACCOUNT_MESSAGES.STATE_WAITING(describeFailure(state));
+  const roles = await copyRolesBeforeSwitch(db, caller, adminToken, state.roles.length);
+  if (roles.kind === "REFUSED") return ACCOUNT_MESSAGES.ROLES_NOT_COPIED(roles.reason);
+  if (roles.count === 0) return state;
+  const after = await sync.fetchAccountState(caller);
+  return after.kind === "STATE" ? after : ACCOUNT_MESSAGES.STATE_WAITING(describeFailure(after));
 }
 
 type DataModule = typeof import("@erp/data");

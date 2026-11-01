@@ -72,6 +72,7 @@ describe("the switch to cloud accounts: by hand, by an admin, at this computer",
     sessionToken, localUserId, localUsername: "Owner", email: "boss@777.pk", password,
   });
   const deps = (caller: AccountFunctionCaller | null, switchReady = true) => ({ db, caller, logger: LOG, deviceId: "dev-pc2", switchReady });
+  const ROLES_COPIED = answered({ ok: true, imported: 7 });
 
   it("moves the admin's own account up, keeps their session, and signs everyone else out", async () => {
     const owner = db.createUserAccount("Owner", "owner1234");
@@ -83,6 +84,7 @@ describe("the switch to cloud accounts: by hand, by an admin, at this computer",
       verify_login: declined("WRONG_CREDENTIALS"),
       claim_existing_account: signedIn(boss),
       account_state: STATE([person(boss)]),
+      admin_import_roles: ROLES_COPIED,
     });
 
     const outcome = await switchThisComputerToCloud(deps(cloud), request(ownerSession, owner.id));
@@ -102,7 +104,7 @@ describe("the switch to cloud accounts: by hand, by an admin, at this computer",
       claim_existing_account: signedIn({ personId: owner.id, email: "boss@777.pk", status: "PENDING" }),
     });
     const outcome = await switchThisComputerToCloud(deps(cloud), request(ownerSession, owner.id));
-    expect(outcome).toEqual({ kind: "REFUSED", message: ACCOUNT_MESSAGES.NOT_FIRST_ADMIN("dev-pc2") });
+    expect(outcome).toEqual({ kind: "REFUSED", message: ACCOUNT_MESSAGES.NOT_FIRST_ADMIN("dev-pc2", "boss@777.pk") });
     expect(cloud.calls).not.toContain("account_state");
     expect(await mode()).toBe("LOCAL");
     expect(db.getUserBySessionToken(ownerSession)?.id).toBe(owner.id);
@@ -112,7 +114,7 @@ describe("the switch to cloud accounts: by hand, by an admin, at this computer",
     const setup = db.createUserAccount("Setup", "setup1234");
     const setupSession = db.createUserSession(setup.id);
     const boss = { personId: "p-boss", email: "boss@777.pk", displayName: "Boss", isAdmin: true };
-    const cloud = new ScriptedCloud({ verify_login: signedIn(boss), account_state: STATE([person(boss)]) });
+    const cloud = new ScriptedCloud({ verify_login: signedIn(boss), account_state: STATE([person(boss)]), admin_import_roles: ROLES_COPIED });
     const outcome = await switchThisComputerToCloud(deps(cloud), request(setupSession, setup.id, "bosspass1"));
     expect(outcome.kind).toBe("SWITCHED");
     if (outcome.kind !== "SWITCHED") return;
@@ -137,7 +139,7 @@ describe("the switch to cloud accounts: by hand, by an admin, at this computer",
       [null, ACCOUNT_MESSAGES.SWITCH_OFFLINE],
       [new ScriptedCloud({ verify_login: { kind: "NOT_SUPPORTED" } }), ACCOUNT_MESSAGES.CLOUD_HAS_NO_ACCOUNTS],
       [new ScriptedCloud({ verify_login: UNREACHABLE }), ACCOUNT_MESSAGES.SWITCH_OFFLINE],
-      [new ScriptedCloud({ verify_login: admin, account_state: STATE([person({ roleCode: "ghost" })]) }),
+      [new ScriptedCloud({ verify_login: admin, account_state: STATE([person({ roleCode: "ghost" })]), admin_import_roles: ROLES_COPIED }),
         ACCOUNT_MESSAGES.STATE_WAITING(`WAITING_FOR:ACCOUNT_ROLE:ghost`)],
     ];
     for (const [caller, message] of cases) {
@@ -162,6 +164,43 @@ describe("the switch to cloud accounts: by hand, by an admin, at this computer",
     expect(cloud.calls).toEqual([]);
     expect(await mode()).toBe("LOCAL");
     expect(db.getUserBySessionToken(session)?.id).toBe(owner.id);
+  });
+
+  describe("this computer's roles go up in the same press (owner, 2 Nov: PC2 gets one go)", () => {
+    const owner = () => {
+      const account = db.createUserAccount("Owner", "owner1234");
+      return { account, session: db.createUserSession(account.id), boss: { personId: account.id, email: "boss@777.pk", isAdmin: true } };
+    };
+
+    it("copies them up when the cloud has none, before anything here changes, then switches", async () => {
+      const { account, session, boss } = owner();
+      const cloud = new ScriptedCloud({ verify_login: signedIn(boss), account_state: STATE([person(boss)]), admin_import_roles: ROLES_COPIED });
+      const outcome = await switchThisComputerToCloud(deps(cloud), request(session, account.id));
+      expect(outcome.kind).toBe("SWITCHED");
+      expect(cloud.calls).toEqual(["verify_login", "account_state", "admin_import_roles", "account_state"]);
+    });
+
+    it("copies nothing when the cloud already has roles: the first computer brought them", async () => {
+      const { account, session, boss } = owner();
+      const storeOperator = { roleCode: "store-operator", revision: 1, deleted: false, name: "Store Operator", description: null, loginPolicy: "ALWAYS_LOGGED_IN", permissions: ["stock"] };
+      const cloud = new ScriptedCloud({
+        verify_login: signedIn(boss),
+        account_state: answered({ ok: true, roles: [storeOperator], people: [person(boss)], requests: [] }),
+      });
+      expect((await switchThisComputerToCloud(deps(cloud), request(session, account.id))).kind).toBe("SWITCHED");
+      expect(cloud.calls).not.toContain("admin_import_roles");
+    });
+
+    it("roles the cloud will not take switch nothing: everyone stays signed in, and it can be pressed again", async () => {
+      const { account, session, boss } = owner();
+      const munshi = db.createUserAccount("Munshi", "munshi5678");
+      const munshiSession = db.createUserSession(munshi.id);
+      const cloud = new ScriptedCloud({ verify_login: signedIn(boss), account_state: STATE([person(boss)]), admin_import_roles: UNREACHABLE });
+      const outcome = await switchThisComputerToCloud(deps(cloud), request(session, account.id));
+      expect(outcome).toMatchObject({ kind: "REFUSED", message: expect.stringContaining("roles could not be copied") });
+      expect(await mode()).toBe("LOCAL");
+      expect(db.getUserBySessionToken(munshiSession)?.id).toBe(munshi.id);
+    });
   });
 
   it("is refused on a computer that already uses cloud accounts", async () => {

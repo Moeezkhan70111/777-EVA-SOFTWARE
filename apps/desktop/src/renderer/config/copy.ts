@@ -459,7 +459,7 @@ export const copy = {
     factWork: "Until they are approved",
     factWorkValue: "Nobody else can work",
     explain:
-      "Your account moves to the cloud as the administrator, and you stay signed in. Everyone else signs in once more with their old username and password, adds their email, and waits for you to approve them.",
+      "Your account moves to the cloud as the administrator, and you stay signed in. If the cloud has no roles yet, this computer's roles go up first, so you can approve people with the roles they had here. Everyone else signs in once more with their old username and password, adds their email, and waits for you to approve them.",
     warning: "This signs everyone else out now, and nobody can work until you approve them. It cannot be switched back.",
     confirm: "Sign everyone out and switch",
     switching: "Switching…",
@@ -470,7 +470,8 @@ export const copy = {
     retry: "Retry",
     notReady:
       "Not available in this version: approving people under cloud accounts is not finished yet, and switching would sign everyone out with no way back in.",
-    // After the switch: this computer's roles, copied up once, so people can be approved with them.
+    // The switch copies the roles itself (cloudAdmin copyRolesBeforeSwitch). This card is only for a
+    // computer switched by an earlier build that left the cloud without them.
     roleCopyTitle: "Copy this computer's roles to the cloud",
     roleCopyBody: (count: number) =>
       `The cloud has no roles yet. This computer has ${count}. Copy them up once, so you can approve people with the roles they had here.`,
