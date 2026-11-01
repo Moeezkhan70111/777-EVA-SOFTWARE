@@ -172,6 +172,13 @@ export interface NumberSite {
    * is skipped — a typed number may legitimately be any value at all.
    */
   readonly external?: boolean;
+  /**
+   * The record type a row of this table travels as, when it replicates (masterRecords.ts). Then
+   * a row that arrived from another computer can be told apart locally: its record has a
+   * revision in sync_record_revisions. Used when a range is ASSIGNED (assignNumberBlock): see
+   * there. Kept in step with MASTER_RECORDS by test.
+   */
+  readonly travelsAs?: string;
 }
 
 export const NUMBER_SITES = {
@@ -181,7 +188,7 @@ export const NUMBER_SITES = {
   gatepass: { table: "gatepasses", column: "gatepass_number", parse: { kind: "INT" }, noun: "gatepass numbers", origin: "origin_device_id" },
   machineProgram: { table: "machine_programs", column: "program_number", parse: { kind: "INT" }, noun: "machine program numbers", origin: "origin_device_id" },
   manualProduction: { table: "manual_production_entries", column: "entry_number", parse: { kind: "INT" }, noun: "manual production numbers", origin: "origin_device_id" },
-  partyCode: { table: "parties", column: "party_code", parse: { kind: "SUFFIX", from: 5 }, noun: "party codes", origin: "origin_device_id" },
+  partyCode: { table: "parties", column: "party_code", parse: { kind: "SUFFIX", from: 5 }, noun: "party codes", origin: "origin_device_id", travelsAs: "PARTY" },
   productCode: { table: "article_sizes", column: "product_code", parse: { kind: "SUFFIX", from: 5 }, where: "product_code IS NOT NULL", noun: "product codes", origin: "origin_device_id" },
   rmReceivingSession: { table: "raw_material_receiving_sessions", column: "session_number", parse: { kind: "INT" }, noun: "raw material receiving numbers", origin: "device_id" },
   rmIssueSession: { table: "raw_material_issue_sessions", column: "session_number", parse: { kind: "INT" }, noun: "raw material issue numbers", origin: "device_id" },
@@ -190,9 +197,9 @@ export const NUMBER_SITES = {
   partyClaim: { table: "party_claims", column: "claim_number", parse: { kind: "SUFFIX", from: 4 }, noun: "claim numbers", origin: "origin_device_id" },
   removalRequest: { table: "removal_requests", column: "request_code", parse: { kind: "SUFFIX", from: 5 }, where: "request_code LIKE 'DEL-%'", noun: "removal request numbers", origin: "origin_device_id" },
   stockCorrection: { table: "stock_correction_requests", column: "request_code", parse: { kind: "SUFFIX", from: 5 }, where: "request_code LIKE 'SCR-%'", noun: "stock correction numbers", origin: "origin_device_id" },
-  machineCode: { table: "machines", column: "machine_code", parse: { kind: "SUFFIX", from: 3 }, where: "machine_code LIKE 'M-%'", noun: "machine codes", origin: "origin_device_id" },
-  inventoryItemCode: { table: "inventory_items", column: "item_code", parse: { kind: "SUFFIX", from: 4 }, where: "item_code LIKE 'RM-%'", noun: "raw material codes", origin: "origin_device_id" },
-  workSectionCode: { table: "work_sections", column: "section_code", parse: { kind: "SUFFIX", from: 4 }, where: "section_code LIKE 'WS-%'", noun: "work section codes", origin: "origin_device_id" },
+  machineCode: { table: "machines", column: "machine_code", parse: { kind: "SUFFIX", from: 3 }, where: "machine_code LIKE 'M-%'", noun: "machine codes", origin: "origin_device_id", travelsAs: "MACHINE" },
+  inventoryItemCode: { table: "inventory_items", column: "item_code", parse: { kind: "SUFFIX", from: 4 }, where: "item_code LIKE 'RM-%'", noun: "raw material codes", origin: "origin_device_id", travelsAs: "INVENTORY_ITEM" },
+  workSectionCode: { table: "work_sections", column: "section_code", parse: { kind: "SUFFIX", from: 4 }, where: "section_code LIKE 'WS-%'", noun: "work section codes", origin: "origin_device_id", travelsAs: "WORK_SECTION" },
 } as const satisfies Record<string, NumberSite>;
 
 export type NumberSiteKey = keyof typeof NUMBER_SITES;
@@ -434,11 +441,23 @@ function hasColumn(db: SqliteDatabase, table: string, column: string): boolean {
   return present;
 }
 
+/**
+ * Which unstamped rows count as this computer's.
+ *
+ *   ALL           every one: the rule above, for allocation, where this computer's own rows since
+ *                 087 carry no origin and must be counted.
+ *   NOT_RECEIVED  all but those that provably arrived from another computer -- a row of a site that
+ *                 travels (travelsAs) whose record has a revision in sync_record_revisions. For
+ *                 ASSIGNING a range, see assignNumberBlock.
+ */
+type UnstampedRows = "ALL" | "NOT_RECEIVED";
+
 function countOutsideRange(
   db: SqliteDatabase,
   site: NumberSite,
   range: NumberRange,
-  origin: string | null
+  origin: string | null,
+  unstamped: UnstampedRows = "ALL"
 ): { count: number; highest: number | null } {
   const expression = numberExpression(site);
   const filter = site.where ? ` AND ${site.where}` : "";
@@ -447,7 +466,11 @@ function countOutsideRange(
   // No identity, or a database that predates migration 087: ask the broader question. Both are
   // the stricter of the two options, which is the right way to fail.
   const scoped = origin !== null && hasColumn(db, site.table, site.origin);
-  const mine = scoped ? ` AND (${site.origin} = ? OR ${site.origin} IS NULL)` : "";
+  const received =
+    unstamped === "NOT_RECEIVED" && site.travelsAs !== undefined
+      ? ` AND NOT EXISTS (SELECT 1 FROM sync_record_revisions r WHERE r.aggregate_type = '${site.travelsAs}' AND r.record_id = ${site.table}.id)`
+      : "";
+  const mine = scoped ? ` AND (${site.origin} = ? OR (${site.origin} IS NULL${received}))` : "";
   const params: Array<number | string> = [range.lo, range.hi];
   if (scoped && origin !== null) params.push(origin);
   const row = db.db
@@ -730,12 +753,20 @@ export const numberRangeMethods = {
       // Anything already numbered here must fit the block being recorded, or this computer has
       // documents it could not have issued and the assignment is wrong. Same guard as adoption,
       // against the chosen range rather than block 1.
+      //
+      // EXCEPT RECORDS THAT ARRIVED FROM ANOTHER COMPUTER (2026-11-01 rehearsal). A computer is
+      // given its range here having none -- and with none it has numbered nothing, so another
+      // computer's party and material codes it already received are not its documents. Counted, they
+      // made the reader refuse every range; and since cloud 018 a computer without a range cannot
+      // sync to heal them, so it could never be given one. Only rows that PROVABLY travelled are
+      // left out (an unstamped row whose record has a revision here); an unstamped row with no such
+      // trace still counts, as before.
       const range = rangeForBlock(block);
       const outside: string[] = [];
       for (const key of Object.keys(NUMBER_SITES) as NumberSiteKey[]) {
         const site: NumberSite = NUMBER_SITES[key];
         if (site.external) continue;
-        const stray = countOutsideRange(this, site, range, readLocalDeviceId(this));
+        const stray = countOutsideRange(this, site, range, readLocalDeviceId(this), "NOT_RECEIVED");
         if (stray.count > 0) outside.push(`${site.noun} (highest ${String(stray.highest)})`);
       }
       if (outside.length > 0) {
