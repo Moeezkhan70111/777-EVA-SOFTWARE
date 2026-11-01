@@ -668,6 +668,10 @@ read off the PC.
 
 ### U.2 Cloud-authoritative logins with per-PC caching — replaces "logins stay local"
 
+> **Being built (2026-11-01) as `docs/41`**, to the owner's flow: people sign themselves up on an
+> enrolled PC with an email, and an admin approves them. Where this section and `docs/41` differ,
+> `docs/41` wins.
+
 This **supersedes the 2026-10-22 decision** that each PC keeps its own accounts (`docs/38 §2`).
 The decision's two reasons still hold, and the design keeps both:
 
