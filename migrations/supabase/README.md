@@ -10,7 +10,7 @@
 
 Apply in this order, in the Supabase SQL editor, on an **empty** project, one file at a time:
 
-`schema.sql` → `002` → `003` → … → `019`
+`schema.sql` → `002` → `003` → … → `019` → `020`
 
 After each one, run `verify_applied_state.sql`. Its header lists exactly which checks a project
 one migration behind fails, so a half-applied project is diagnosed rather than guessed at. The
@@ -58,12 +58,13 @@ guarded by `factory_id is null`), and its function block is what puts the correc
 | 17 | `017_product_variant_log.up.sql` | Product variants reach the log, so a new computer can hold the cartons of them. |
 | 18 | `018_number_block_registry.up.sql` | The number-block registry: the cloud refuses a second computer on a number block already taken (the PC2/PC3 incident, docs/39 §4.4). Check: `check_number_blocks.sql`. **A client from before 018 cannot sync once it is applied.** |
 | 19 | `019_close_rls_auto_enable.up.sql` | Takes `EXECUTE` on Supabase's own `rls_auto_enable()` away from `anon` and `authenticated`. Its event trigger still switches RLS on for every new table. |
+| 20 | `020_cloud_accounts.up.sql` | Cloud accounts (docs/41): people sign up on an enrolled PC, an admin approves them once, and the account works on every PC. Adds `people`, `account_roles`, `person_tokens`, `account_events` and the `PERSON` and `ACCOUNT_ROLE` log types. Check: `check_accounts.sql`. **Test only until after PC2's cutover**; production stays at `019`. Then `make_first_admin` is run once, by the owner, in the SQL editor. |
 
 Each file is a single transaction and each has a matching `.down.sql`. The down files are only
 safe on a project that has never been written to — once real rows exist, reversing the type
 changes would have to discard data to succeed, and they are written to fail instead.
 
-**Reverse in the opposite order: `019` → `018` → … → `003` → `002`.** Each down file's header
+**Reverse in the opposite order: `020` → `019` → `018` → … → `003` → `002`.** Each down file's header
 says what reversing it costs: `018`'s re-opens the PC2/PC3 failure, for example. Reversing `005`
 re-opens the cross-factory read, and reversing `006` re-opens unbound access, re-enables any
 device revoked before the rollback and discards the claim audit. Both headers say so. `004_rls_policies.down.sql` revokes a
