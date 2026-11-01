@@ -51,6 +51,7 @@ import { purchasesMethods, type PurchasesMethods } from "./database/purchases.js
 import { contractorLedgerMethods, type ContractorLedgerMethods } from "./database/contractorLedger.js";
 import { storeDailyReportMethods, type StoreDailyReportMethods } from "./database/storeDailyReport.js";
 import { DEVICE_ID_SETTING_KEY, numberRangeMethods, type NumberRangeMethods } from "./database/numberRange.js";
+import { ACCOUNTS_MODE, readAccountsMode } from "./database/accountsMode.js";
 import { productVariantSeedMethods, type ProductVariantSeedMethods } from "./database/productVariantSeed.js";
 import { machineProgramUpperReconciliationMethods, type MachineProgramUpperReconciliationMethods } from "./database/machineProgramUpperReconciliation.js";
 import { partyClaimsMethods, type PartyClaimsMethods } from "./database/partyClaims.js";
@@ -168,6 +169,39 @@ export {
   REPLICATION_EXCLUDED_TABLES,
   isReplicationExcluded,
 } from "./database/replicationScope.js";
+export {
+  ACCOUNTS_MODE,
+  ACCOUNTS_MODE_SETTING_KEY,
+  PROTECTED_ACCOUNT_SETTING_KEYS,
+  LocalAccountsClosedError,
+  enterCloudAccountsMode,
+  readAccountsMode,
+  requireLocalAccounts,
+} from "./database/accountsMode.js";
+export type { AccountSqlHandle, AccountsMode } from "./database/accountsMode.js";
+export {
+  ACCOUNT_RECORD,
+  ACCOUNT_STATUSES,
+  PERMISSION_REQUEST_STATUSES,
+  ROLE_LOGIN_POLICIES,
+  accountRoleWaitsFor,
+  applyAccountRoleRevision,
+  applyPermissionRequestRevision,
+  applyPersonRevision,
+  permissionRequestWaitsFor,
+  personWaitsFor,
+  readAccountRolePayload,
+  readPermissionRequestPayload,
+  readPersonPayload,
+} from "./database/accounts.js";
+export type {
+  AccountRolePayload,
+  AccountStatus,
+  PermissionRequestPayload,
+  PermissionRequestStatus,
+  PersonPayload,
+  RoleLoginPolicy,
+} from "./database/accounts.js";
 export {
   PRODUCT_VARIANT_SEED_FORMAT,
   PRODUCT_VARIANT_SEED_VERSION,
@@ -597,6 +631,11 @@ export class SqliteDatabase
   }
 
   private ensureDefaultRoles(): void {
+    // Under cloud accounts the role catalogue comes from the cloud (docs/41), and every local
+    // account write is refused (accountsMode.ts). Seeding here would either be refused on every
+    // start or grow roles the cloud never made, so it stands down. A PC's existing roles reach
+    // the cloud once, through admin_import_roles.
+    if (readAccountsMode(this.db) === ACCOUNTS_MODE.CLOUD) return;
     const builtInRoles = [
       {
         name: "Billing Manager",

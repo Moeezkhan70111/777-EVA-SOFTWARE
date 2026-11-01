@@ -33,6 +33,7 @@
 // protected only by the measures above.
 
 import type { SqliteDatabase } from "../sqliteDatabase.js";
+import { PROTECTED_ACCOUNT_SETTING_KEYS } from "./accountsMode.js";
 
 /** Settings key holding this computer's block number. Absent means "not configured". */
 export const NUMBER_BLOCK_SETTING_KEY = "numbering.block";
@@ -829,6 +830,9 @@ export const numberRangeMethods = {
    * range has to be filtered out rather than trusted not to appear: an operator editing a
    * settings field must not be able to point this computer at another machine's numbers. The
    * range is written only by provisioning, above.
+   *
+   * The account mode is protected the same way (accountsMode.ts): nobody may put a PC back into
+   * local accounts, where its own admin decides who gets in, from a settings screen.
    */
   setOperatorSettings(
     this: SqliteDatabase,
@@ -838,7 +842,7 @@ export const numberRangeMethods = {
     const allowed: Record<string, string> = {};
     const dropped: string[] = [];
     for (const [key, value] of Object.entries(entries)) {
-      if (PROTECTED_NUMBER_SETTING_KEYS.includes(key)) dropped.push(key);
+      if (PROTECTED_NUMBER_SETTING_KEYS.includes(key) || PROTECTED_ACCOUNT_SETTING_KEYS.includes(key)) dropped.push(key);
       else allowed[key] = value;
     }
     this.setSettings(allowed, updatedBy);

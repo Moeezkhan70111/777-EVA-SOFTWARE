@@ -1483,9 +1483,9 @@ test("009: every event type this computer can apply is a type the cloud log acce
   // fails here rather than as a refused log insert on a real computer.
   const { APPLY_CONTRACTS } = await import("./applyEnvelope.js");
   // Every cloud migration that seeds the log's types: 009 the first five, 013 the eight master
-  // records, 015 stock movements.
+  // records, 015 stock movements, 020 and 021 the account types.
   const seeds = new Set(seededTypes().keys());
-  for (const migration of [LEASED_RECORDS, STOCK_EVENTS]) {
+  for (const migration of [LEASED_RECORDS, STOCK_EVENTS, CLOUD_ACCOUNTS, PERMISSION_REQUESTS]) {
     const insert = migration.slice(migration.indexOf("insert into public.sync_aggregate_types"));
     for (const match of insert.slice(0, insert.indexOf(";")).matchAll(/\('([A-Z_]+)', (true|false), '/g)) {
       seeds.add(match[1] ?? "");
@@ -1858,6 +1858,10 @@ test("014: read by the computers of one factory, written only through the report
 
 const STOCK_EVENTS = read("migrations/supabase/015_stock_events.up.sql");
 const STOCK_EVENTS_DOWN = read("migrations/supabase/015_stock_events.down.sql");
+
+// 020 and 021 seed the account types (docs/41): PERSON, ACCOUNT_ROLE, PERMISSION_REQUEST.
+const CLOUD_ACCOUNTS = read("migrations/supabase/020_cloud_accounts.up.sql");
+const PERMISSION_REQUESTS = read("migrations/supabase/021_permission_requests.up.sql");
 
 test("015: the cloud log's payload is one the receiving computer accepts, field for field", () => {
   const scanOut = {

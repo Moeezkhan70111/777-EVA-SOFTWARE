@@ -25,6 +25,7 @@
 // An event this code does not understand must stop visibly in the sender's dead-letter queue, not
 // be written with guessed values.
 
+import { ACCOUNT_CONTRACTS } from "./accountContracts.js";
 import { ApplyMustWait, type RegisteredContract } from "./applyContract.js";
 import { productionProducedContract, productVariantContract, qrMasterContract } from "./cartonContracts.js";
 import type { SyncEnvelope } from "./contract.js";
@@ -57,6 +58,7 @@ export const APPLY_CONTRACTS: readonly RegisteredContract[] = [
   rawMaterialQrContract,
   ...LEASED_RECORD_CONTRACTS,
   stockEventContract,
+  ...ACCOUNT_CONTRACTS,
 ];
 
 const contractFor = (aggregateType: string): RegisteredContract | undefined =>

@@ -78,6 +78,11 @@ export const SYNC_AGGREGATE = {
    * on arrival by adding balanceDelta, never by re-deriving a sign (cloud migration 015).
    */
   STOCK_EVENT: "STOCK_EVENT",
+  // ── Accounts: written only by the cloud (migrations 020, 021), received by every PC ──
+  // Never captured or pushed from a PC. Each is a whole snapshot at a revision (accounts.ts).
+  PERSON: "PERSON",
+  ACCOUNT_ROLE: "ACCOUNT_ROLE",
+  PERMISSION_REQUEST: "PERMISSION_REQUEST",
 } as const;
 
 export type SyncAggregateType = (typeof SYNC_AGGREGATE)[keyof typeof SYNC_AGGREGATE];

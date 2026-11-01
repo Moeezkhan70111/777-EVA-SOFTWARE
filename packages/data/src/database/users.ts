@@ -9,6 +9,138 @@ import type { MutableTransactionContext } from "./shared.js";
 import type { UserNotificationRecord } from "./types.js";
 import { pbkdf2Sync, randomBytes } from "node:crypto";
 import { businessDateOf, businessToday } from "@erp/domain";
+import { requireLocalAccounts, type AccountSqlHandle } from "./accountsMode.js";
+
+/** A permission code in its one canonical spelling, from any alias the app has ever stored. */
+export function normalizePermissionCode(raw: string): string {
+  const aliasMap: Record<string, string> = {
+    "dashboard": "dashboard",
+    "workspace": "workspace",
+    "live production": "live-production",
+    "daily production": "daily-production",
+    "live dispatch": "live-dispatch",
+    "dispatch history": "dispatch-history",
+    "return scan": "live-return",
+    "return history": "return-history",
+    "store scanning": "store-scanning",
+    "store receiving": "store-scanning",
+    "gatepass": "gatepass",
+    "gate pass": "gatepass",
+    "cancel gatepass": "gatepass-cancel",
+    "current stock": "stock",
+    "stock history": "production-history",
+    "party list": "party-list",
+    "add / edit party": "party-form",
+    "product list": "product-list",
+    "add / edit product": "product-form",
+    "discount policy": "discount-policy",
+    // The QR Generator was called the Barcode Generator until the carton label became a QR
+    // code. migrations/sqlite/045_qr_registry_rename rewrites the stored grants, but a code
+    // cached anywhere it did not reach must still open the page rather than silently fail.
+    "barcode-generator": "qr-generator",
+    "qr generator": "qr-generator",
+    "customer ledger": "customer-ledger",
+    "customer balance": "customer-balance",
+    "sale vouchers": "sale-voucher-form",
+    "voucher list": "sale-voucher-list",
+    "cash voucher": "cash-voucher-form",
+    "cash voucher list": "cash-voucher-list",
+    "settings": "settings",
+    "health": "health",
+    "logs": "logs",
+    "inventory": "stock",
+    "masters": "product-list",
+    "billing": "sale-voucher-form",
+    "scanning": "live-production",
+  };
+
+  const normalized = String(raw ?? "").trim();
+  if (!normalized) return "";
+  const direct = aliasMap[normalized.toLowerCase()];
+  if (direct) return direct;
+  return normalized.toLowerCase().replace(/\s+/g, "-");
+}
+
+/**
+ * Everything a person may open on this PC: their role's permissions, their extra grants, every
+ * screen for an ADMIN, and the legacy permissions_json of an account that predates roles. One
+ * function for the methods below and for an account revision arriving from the cloud (accounts.ts).
+ */
+export function effectivePermissionsFor(sql: AccountSqlHandle, userId: string): string[] {
+  const userRow = sql.prepare("SELECT role, permissions_json FROM app_users WHERE id = ?").get(userId) as { role?: string; permissions_json?: string } | undefined;
+  const directPermissions = new Set<string>();
+
+  const roleRows = sql
+    .prepare(
+      `SELECT rp.permission_code
+       FROM user_role_assignments ura
+       JOIN role_permissions rp ON rp.role_code = ura.role_code
+       WHERE ura.user_id = ?`
+    )
+    .all(userId) as Array<{ permission_code: string }>;
+
+  for (const row of roleRows) {
+    const permission = normalizePermissionCode(row.permission_code);
+    if (permission) directPermissions.add(permission);
+  }
+
+  const extraRows = sql.prepare("SELECT permission_code FROM user_additional_permissions WHERE user_id = ?").all(userId) as Array<{ permission_code: string }>;
+  for (const row of extraRows) {
+    const permission = normalizePermissionCode(row.permission_code);
+    if (permission) directPermissions.add(permission);
+  }
+
+  // permissions_json is where this method's own result is cached (persistEffectivePermissions).
+  // Folding it back in for a user who has a role would make every permission permanent:
+  // unchecking one on the role would be re-added from the cache on the very next recalculation.
+  // So it is read only for accounts that predate roles and have no role assignment — for
+  // everyone else the role plus the additional grants are the whole answer.
+  const hasRole = sql.prepare("SELECT 1 FROM user_role_assignments WHERE user_id = ? LIMIT 1").get(userId) !== undefined;
+  try {
+    const legacyPermissions = hasRole ? [] : (JSON.parse(userRow?.permissions_json ?? "[]") as string[]);
+    for (const permission of legacyPermissions) {
+      const normalized = normalizePermissionCode(permission);
+      if (normalized) directPermissions.add(normalized);
+    }
+  } catch {
+    // Ignore invalid legacy JSON.
+  }
+
+  if (userRow?.role === "ADMIN") {
+    [
+      "dashboard",
+      "workspace",
+      "live-production",
+      "daily-production",
+      "live-dispatch",
+      "dispatch-history",
+      "live-return",
+      "return-history",
+      "store-scanning",
+      "gatepass",
+      "gatepass-cancel",
+      "stock",
+      "production-history",
+      "party-list",
+      "party-form",
+      "product-list",
+      "product-form",
+      "discount-policy",
+      "qr-generator",
+      "customer-ledger",
+      "customer-balance",
+      "sale-voucher-form",
+      "sale-voucher-list",
+      "cash-voucher-form",
+      "cash-voucher-list",
+      "settings",
+      "health",
+      "logs",
+    ].forEach((permission) => directPermissions.add(permission));
+  }
+
+  return Array.from(directPermissions);
+}
 
 export const usersMethods = {
   hashPassword(this: SqliteDatabase, password: string): { hash: string; salt: string } {
@@ -70,6 +202,7 @@ export const usersMethods = {
    * that used to serve this purpose has been removed.
    */
   bootstrapFirstAdmin(this: SqliteDatabase, username: string, password: string): { id: string; username: string } {
+    requireLocalAccounts(this.db);
     const normalized = username.trim();
     if (!normalized) {
       throw new Error("Username is required");
@@ -114,128 +247,11 @@ export const usersMethods = {
   },
 
   normalizePermissionCode(this: SqliteDatabase, raw: string): string {
-    const aliasMap: Record<string, string> = {
-      "dashboard": "dashboard",
-      "workspace": "workspace",
-      "live production": "live-production",
-      "daily production": "daily-production",
-      "live dispatch": "live-dispatch",
-      "dispatch history": "dispatch-history",
-      "return scan": "live-return",
-      "return history": "return-history",
-      "store scanning": "store-scanning",
-      "store receiving": "store-scanning",
-      "gatepass": "gatepass",
-      "gate pass": "gatepass",
-      "cancel gatepass": "gatepass-cancel",
-      "current stock": "stock",
-      "stock history": "production-history",
-      "party list": "party-list",
-      "add / edit party": "party-form",
-      "product list": "product-list",
-      "add / edit product": "product-form",
-      "discount policy": "discount-policy",
-      // The QR Generator was called the Barcode Generator until the carton label became a QR
-      // code. migrations/sqlite/045_qr_registry_rename rewrites the stored grants, but a code
-      // cached anywhere it did not reach must still open the page rather than silently fail.
-      "barcode-generator": "qr-generator",
-      "qr generator": "qr-generator",
-      "customer ledger": "customer-ledger",
-      "customer balance": "customer-balance",
-      "sale vouchers": "sale-voucher-form",
-      "voucher list": "sale-voucher-list",
-      "cash voucher": "cash-voucher-form",
-      "cash voucher list": "cash-voucher-list",
-      "settings": "settings",
-      "health": "health",
-      "logs": "logs",
-      "inventory": "stock",
-      "masters": "product-list",
-      "billing": "sale-voucher-form",
-      "scanning": "live-production",
-    };
-
-    const normalized = String(raw ?? "").trim();
-    if (!normalized) return "";
-    const direct = aliasMap[normalized.toLowerCase()];
-    if (direct) return direct;
-    return normalized.toLowerCase().replace(/\s+/g, "-");
+    return normalizePermissionCode(raw);
   },
 
   recalculateEffectivePermissions(this: SqliteDatabase, userId: string): string[] {
-    const userRow = this.db.prepare("SELECT role, permissions_json FROM app_users WHERE id = ?").get(userId) as { role?: string; permissions_json?: string } | undefined;
-    const directPermissions = new Set<string>();
-
-    const roleRows = this.db
-      .prepare(
-        `SELECT rp.permission_code
-         FROM user_role_assignments ura
-         JOIN role_permissions rp ON rp.role_code = ura.role_code
-         WHERE ura.user_id = ?`
-      )
-      .all(userId) as Array<{ permission_code: string }>;
-
-    for (const row of roleRows) {
-      const permission = this.normalizePermissionCode(row.permission_code);
-      if (permission) directPermissions.add(permission);
-    }
-
-    const extraRows = this.db.prepare("SELECT permission_code FROM user_additional_permissions WHERE user_id = ?").all(userId) as Array<{ permission_code: string }>;
-    for (const row of extraRows) {
-      const permission = this.normalizePermissionCode(row.permission_code);
-      if (permission) directPermissions.add(permission);
-    }
-
-    // permissions_json is where this method's own result is cached (persistEffectivePermissions).
-    // Folding it back in for a user who has a role would make every permission permanent:
-    // unchecking one on the role would be re-added from the cache on the very next recalculation.
-    // So it is read only for accounts that predate roles and have no role assignment — for
-    // everyone else the role plus the additional grants are the whole answer.
-    const hasRole = this.db.prepare("SELECT 1 FROM user_role_assignments WHERE user_id = ? LIMIT 1").get(userId) !== undefined;
-    try {
-      const legacyPermissions = hasRole ? [] : (JSON.parse(userRow?.permissions_json ?? "[]") as string[]);
-      for (const permission of legacyPermissions) {
-        const normalized = this.normalizePermissionCode(permission);
-        if (normalized) directPermissions.add(normalized);
-      }
-    } catch {
-      // Ignore invalid legacy JSON.
-    }
-
-    if (userRow?.role === "ADMIN") {
-      [
-        "dashboard",
-        "workspace",
-        "live-production",
-        "daily-production",
-        "live-dispatch",
-        "dispatch-history",
-        "live-return",
-        "return-history",
-        "store-scanning",
-        "gatepass",
-        "gatepass-cancel",
-        "stock",
-        "production-history",
-        "party-list",
-        "party-form",
-        "product-list",
-        "product-form",
-        "discount-policy",
-        "qr-generator",
-        "customer-ledger",
-        "customer-balance",
-        "sale-voucher-form",
-        "sale-voucher-list",
-        "cash-voucher-form",
-        "cash-voucher-list",
-        "settings",
-        "health",
-        "logs",
-      ].forEach((permission) => directPermissions.add(permission));
-    }
-
-    return Array.from(directPermissions);
+    return effectivePermissionsFor(this.db, userId);
   },
 
   persistEffectivePermissions(this: SqliteDatabase, userId: string): void {
@@ -244,6 +260,7 @@ export const usersMethods = {
   },
 
   createRole(this: SqliteDatabase, input: { name: string; description?: string; permissions?: string[]; loginPolicy?: "ALWAYS_LOGGED_IN" | "DAILY_LOGIN" }): { code: string; name: string; description: string | null; permissions: string[]; loginPolicy: "ALWAYS_LOGGED_IN" | "DAILY_LOGIN" } {
+    requireLocalAccounts(this.db);
     const name = input.name?.trim();
     if (!name) throw new Error("Role name is required");
 
@@ -274,6 +291,7 @@ export const usersMethods = {
   },
 
   updateRole(this: SqliteDatabase, roleCode: string, updates: { name?: string; description?: string; permissions?: string[]; loginPolicy?: "ALWAYS_LOGGED_IN" | "DAILY_LOGIN" }): { code: string; name: string; description: string | null; permissions: string[]; loginPolicy: "ALWAYS_LOGGED_IN" | "DAILY_LOGIN" } {
+    requireLocalAccounts(this.db);
     const existing = this.db.prepare("SELECT role_code, role_name, description, COALESCE(login_policy, 'ALWAYS_LOGGED_IN') as login_policy FROM roles WHERE role_code = ?").get(roleCode) as { role_code?: string; role_name?: string; description?: string | null; login_policy?: string } | undefined;
     if (!existing) throw new Error("Role not found");
 
@@ -296,6 +314,7 @@ export const usersMethods = {
   },
 
   updateRolePermissions(this: SqliteDatabase, roleCode: string, permissions: string[]): void {
+    requireLocalAccounts(this.db);
     const role = this.db.prepare("SELECT role_code FROM roles WHERE role_code = ?").get(roleCode) as { role_code?: string } | undefined;
     if (!role) throw new Error("Role not found");
 
@@ -314,6 +333,7 @@ export const usersMethods = {
   },
 
   deleteRole(this: SqliteDatabase, roleCode: string): void {
+    requireLocalAccounts(this.db);
     const existing = this.db.prepare("SELECT 1 as ok FROM user_role_assignments WHERE role_code = ? LIMIT 1").get(roleCode) as { ok?: number } | undefined;
     if (existing) throw new Error("Role is in use and cannot be deleted");
     this.db.prepare("DELETE FROM role_permissions WHERE role_code = ?").run(roleCode);
@@ -321,6 +341,7 @@ export const usersMethods = {
   },
 
   assignUserRole(this: SqliteDatabase, userId: string, roleCode: string, assignedBy?: string): void {
+    requireLocalAccounts(this.db);
     const user = this.db.prepare("SELECT id FROM app_users WHERE id = ?").get(userId) as { id?: string } | undefined;
     if (!user) throw new Error("User not found");
     const role = this.db.prepare("SELECT role_code FROM roles WHERE role_code = ?").get(roleCode) as { role_code?: string } | undefined;
@@ -336,6 +357,7 @@ export const usersMethods = {
   },
 
   setUserAdditionalPermissions(this: SqliteDatabase, userId: string, permissions: string[]): void {
+    requireLocalAccounts(this.db);
     const user = this.db.prepare("SELECT id FROM app_users WHERE id = ?").get(userId) as { id?: string } | undefined;
     if (!user) throw new Error("User not found");
 
@@ -349,6 +371,7 @@ export const usersMethods = {
   },
 
   createUserAccount(this: SqliteDatabase, username: string, password: string): { id: string; username: string; role: "USER" | "ADMIN"; accessStatus: "PENDING" | "APPROVED" | "REJECTED" } {
+    requireLocalAccounts(this.db);
     const normalized = username.trim();
     if (!normalized) {
       throw new Error("Username is required");
@@ -487,6 +510,7 @@ export const usersMethods = {
   },
 
   createAccessRequest(this: SqliteDatabase, userId: string): { status: "PENDING" | "APPROVED" | "REJECTED" } {
+    requireLocalAccounts(this.db);
     const user = this.db.prepare("SELECT access_status FROM app_users WHERE id = ?").get(userId) as { access_status?: string } | undefined;
     if (!user) throw new Error("User not found");
     if (user.access_status === "APPROVED") return { status: "APPROVED" };
@@ -514,6 +538,7 @@ export const usersMethods = {
   },
 
   reviewAccessRequest(this: SqliteDatabase, requestId: string, reviewerId: string, decision: "APPROVED" | "REJECTED", permissions: string[] = [], roleCode?: string): void {
+    requireLocalAccounts(this.db);
     const admin = this.db.prepare("SELECT role FROM app_users WHERE id = ?").get(reviewerId) as { role?: string } | undefined;
     if (admin?.role !== "ADMIN") throw new Error("Administrator access required");
     const request = this.db.prepare("SELECT user_id FROM access_requests WHERE id = ?").get(requestId) as { user_id?: string } | undefined;
@@ -555,6 +580,7 @@ export const usersMethods = {
   },
 
   createPermissionRequest(this: SqliteDatabase, userId: string, permissionCode: string, reason?: string): { id: string; permissionCode: string; status: "PENDING" | "APPROVED" | "REJECTED" } {
+    requireLocalAccounts(this.db);
     const user = this.db.prepare("SELECT id, access_status FROM app_users WHERE id = ?").get(userId) as { id?: string; access_status?: string } | undefined;
     if (!user) throw new Error("User not found");
     if (user.access_status !== "APPROVED") throw new Error("Only approved users may request additional permissions");
@@ -584,6 +610,7 @@ export const usersMethods = {
   },
 
   reviewPermissionRequest(this: SqliteDatabase, requestId: string, reviewerId: string, decision: "APPROVED" | "REJECTED", reviewNotes?: string): { permissionCode: string; userId: string; status: "APPROVED" | "REJECTED" } {
+    requireLocalAccounts(this.db);
     const admin = this.db.prepare("SELECT role FROM app_users WHERE id = ?").get(reviewerId) as { role?: string } | undefined;
     if (admin?.role !== "ADMIN") throw new Error("Administrator access required");
     const request = this.db.prepare("SELECT id, user_id, permission_code, status FROM permission_requests WHERE id = ?").get(requestId) as { id?: string; user_id?: string; permission_code?: string; status?: string } | undefined;
@@ -606,6 +633,7 @@ export const usersMethods = {
   },
 
   updateMemberJobRole(this: SqliteDatabase, userId: string, reviewerId: string, jobRole: string): void {
+    requireLocalAccounts(this.db);
     const admin = this.db.prepare("SELECT role FROM app_users WHERE id = ?").get(reviewerId) as { role?: string } | undefined;
     if (admin?.role !== "ADMIN") throw new Error("Administrator access required");
     const normalizedRole = jobRole.trim();
@@ -617,6 +645,7 @@ export const usersMethods = {
   },
 
   updateMemberAuthorityLevel(this: SqliteDatabase, userId: string, reviewerId: string, authorityLevel: number): void {
+    requireLocalAccounts(this.db);
     const admin = this.db.prepare("SELECT role FROM app_users WHERE id = ?").get(reviewerId) as { role?: string } | undefined;
     if (admin?.role !== "ADMIN") throw new Error("Administrator access required");
     const level = Math.max(1, Math.min(99, Math.round(authorityLevel)));
@@ -770,12 +799,14 @@ export const usersMethods = {
   },
 
   updateUserPermissions(this: SqliteDatabase, userId: string, reviewerId: string, permissions: string[]): void {
+    requireLocalAccounts(this.db);
     const admin = this.db.prepare("SELECT role FROM app_users WHERE id = ?").get(reviewerId) as { role?: string } | undefined;
     if (admin?.role !== "ADMIN") throw new Error("Administrator access required");
     this.setUserAdditionalPermissions(userId, permissions);
   },
 
   revokeUserAccess(this: SqliteDatabase, userId: string, reviewerId: string): void {
+    requireLocalAccounts(this.db);
     const admin = this.db.prepare("SELECT role FROM app_users WHERE id = ?").get(reviewerId) as { role?: string } | undefined;
     if (admin?.role !== "ADMIN") throw new Error("Administrator access required");
     this.db.prepare("UPDATE app_users SET access_status = 'REJECTED', updated_at = ? WHERE id = ? AND role <> 'ADMIN'").run(new Date().toISOString(), userId);
@@ -788,6 +819,7 @@ export const usersMethods = {
   },
 
   changePasswordForUser(this: SqliteDatabase, userId: string, currentPassword: string, newPassword: string): void {
+    requireLocalAccounts(this.db);
     if (!this.checkLocalCredential(userId, currentPassword)) {
       throw new Error("Current password is incorrect");
     }

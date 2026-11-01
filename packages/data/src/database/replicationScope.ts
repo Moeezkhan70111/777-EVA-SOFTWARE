@@ -71,24 +71,16 @@ export const REPLICATION_EXCLUSIONS: ReadonlyArray<{ readonly table: string; rea
   //
   // No password check EVER replicates. That part is permanent, and the owner re-affirmed it on
   // 2026-10-23. Migration 100 moved the checks out of app_users into user_credentials, which stays
-  // here for good. docs/41 makes accounts cloud-authoritative, replicating only non-secret facts:
-  // when its contracts are built, app_users and the two assignment tables below receive those facts
-  // from the cloud (never pushed from a PC) and leave this list. Until then they stay excluded.
+  // here for good.
+  //
+  // NOT HERE, ON PURPOSE: app_users, user_role_assignments, user_additional_permissions, roles,
+  // role_permissions and permission_requests. Under docs/41 they RECEIVE the cloud's PERSON,
+  // ACCOUNT_ROLE and PERMISSION_REQUEST revisions (accounts.ts), which is replication, so a contract
+  // must be allowed to write them. They are never captured or pushed from a PC: no capture covers
+  // them (masterCapture.ts lists them as not master data), and only cloud functions change accounts.
   {
     table: "user_credentials",
     why: "This PC's password checks (migration 100): the account's password in local mode, a cache under cloud accounts. Replicating puts every user's credential on every machine, including a stolen one. Under docs/41 each PC holds a check only for people who signed in on it, and no hash ever replicates.",
-  },
-  {
-    table: "app_users",
-    why: "Held the password hashes until migration 100 moved them to user_credentials. Under docs/41 it receives PERSON revisions from the cloud and is never pushed from a PC, but that contract is not built yet, so for now nothing replicates it.",
-  },
-  {
-    table: "user_role_assignments",
-    why: "Follows app_users: a role assignment for a user that does not exist here is meaningless.",
-  },
-  {
-    table: "user_additional_permissions",
-    why: "Follows app_users.",
   },
   {
     table: "user_notifications",

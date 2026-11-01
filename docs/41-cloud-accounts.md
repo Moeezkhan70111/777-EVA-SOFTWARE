@@ -147,6 +147,12 @@ A PC stays in **local mode** (today's behaviour, unchanged) until it is enrolled
 project answers the account functions. It then switches to **cloud mode** once, recorded in
 `app_settings` (`accounts.mode`), and never switches back by itself.
 
+**The switch loads the whole account state once** (`account_state()`, cloud 021), through the same
+writes the log uses, and the log keeps the PC current from then on. The log alone is not enough: a
+PC on a version without the account contracts refuses `PERSON`, `ACCOUNT_ROLE` and
+`PERMISSION_REQUEST` permanently, and its cursor passes them for good. Without this, a PC updated
+after people had signed up would never hear of them.
+
 In cloud mode **the data layer refuses every local account change**, not just the screens (owner,
 2026-11-01: a hidden button is not an authorisation, CLAUDE.md R9). A local admin on any PC must not
 be able to grant what the cloud did not:
