@@ -252,6 +252,23 @@ export function applyPermissionRequestRevision(sql: AccountSqlHandle, request: P
   return true;
 }
 
+/**
+ * At the switch to cloud accounts: ends every open session of an account the cloud does not know
+ * -- one with no email, still only this PC's. The cloud cannot revoke what it has never seen, so a
+ * session that outlived the switch would be access nobody can take away. Each such person signs in
+ * once more with their old name and password, adds an email, and moves up (docs/41 section 6).
+ * Returns how many sessions ended.
+ */
+export function endLocalOnlySessions(sql: AccountSqlHandle, now = new Date().toISOString()): number {
+  const ended = sql
+    .prepare(
+      `UPDATE user_sessions SET revoked_at = ?
+       WHERE revoked_at IS NULL AND user_id IN (SELECT id FROM app_users WHERE email IS NULL)`
+    )
+    .run(now) as { changes?: number | bigint };
+  return Number(ended.changes ?? 0);
+}
+
 // ─── The parts ──────────────────────────────────────────────────────────────
 
 function exists(sql: AccountSqlHandle, select: string, ...params: string[]): boolean {

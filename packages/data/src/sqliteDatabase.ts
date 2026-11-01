@@ -186,6 +186,7 @@ export {
   ROLE_LOGIN_POLICIES,
   accountRoleWaitsFor,
   applyAccountRoleRevision,
+  endLocalOnlySessions,
   applyPermissionRequestRevision,
   applyPersonRevision,
   permissionRequestWaitsFor,

@@ -28,8 +28,9 @@
 import { app } from "electron";
 import type { SqliteDatabase, StructuredLogger, SyncRunOutcome, SyncRunTrigger } from "@erp/data";
 import type { DeviceSyncHealth, LastReport, SupabaseSyncTransport, SyncPassResult } from "@erp/sync";
-import { describeCloudSyncConfig, readCloudSyncConfig } from "./cloudConfig";
+import { describeCloudSyncConfig, readCloudSyncConfig, type CloudSyncConfigResult } from "./cloudConfig";
 import { DeviceCredentialStore } from "./deviceCredentialStore";
+import { switchToCloudAccountsIfReady } from "./cloudAccounts";
 import { announceDataChanged } from "./dataChanged";
 import { dataKindsOf } from "../shared/dataChange";
 
@@ -287,47 +288,33 @@ async function refreshLeaseCache(
   }
 }
 
+/** Everything that decides who a transport is signed in as (see CachedTransport). */
+type TransportIdentity = Omit<CachedTransport, "transport">;
+
+export type SignedInTransport =
+  | {
+      readonly ok: true;
+      readonly transport: SupabaseSyncTransport;
+      readonly identity: TransportIdentity;
+      readonly settings: Extract<CloudSyncConfigResult, { configured: true }>;
+    }
+  | { readonly ok: false; readonly reason: string };
+
 /**
- * Runs one pass and records it in sync_runs.
- *
- * The run row is opened before the network is touched and closed on every path out, so an
- * unclosed row means the process died mid-pass — which is worth being able to see.
+ * This computer's transport, signed in as this computer's device account, reused while its
+ * identity is unchanged (CachedTransport). One place, for the sync pass and for cloud accounts
+ * (accountsClient.ts): both must speak as the same enrolled device, and a second sign-in path would
+ * be a second place to get the credential handling wrong. No network here: the session is made on
+ * the first call that needs it.
  */
-export async function runCloudSyncPass(
-  deps: CloudSyncPassDeps,
-  trigger: SyncRunTrigger
-): Promise<CloudSyncPassOutcome> {
-  const { db, logger, deviceId, workstationId, dataRoot, actor } = deps;
-  const runId = db.startSyncRun(trigger);
-
-  /** Closes the run and hands the outcome back in one place, so no path can forget. */
-  const finish = (
-    outcome: SyncRunOutcome,
-    result: Omit<CloudSyncPassOutcome, "outcome">
-  ): CloudSyncPassOutcome => {
-    db.finishSyncRun(
-      runId,
-      outcome,
-      {
-        pushed: result.pushed,
-        fetched: result.fetched,
-        applied: result.applied,
-        duplicates: result.duplicates,
-        refused: result.refusedEvents?.length,
-      },
-      result.reason
-    );
-    return { ...result, outcome };
-  };
-
+export async function signedInTransport(deps: Pick<CloudSyncPassDeps, "logger" | "deviceId" | "dataRoot">): Promise<SignedInTransport> {
+  const { logger, deviceId, dataRoot } = deps;
   const credentials = new DeviceCredentialStore(dataRoot);
   const stored = credentials.load();
   const usable = stored !== null && stored.deviceId === deviceId;
   const settings = readCloudSyncConfig(process.env, { hasStoredCredential: usable });
   if (!settings.configured) {
-    return finish("FAILED", {
-      reason: `This computer is not set up for cloud sync: ${settings.problems.join("; ")}`,
-    });
+    return { ok: false, reason: `This computer is not set up for cloud sync: ${settings.problems.join("; ")}` };
   }
 
   try {
@@ -369,7 +356,7 @@ export async function runCloudSyncPass(
 
     // Reused only when every part of the identity matches, so a re-provisioned computer can
     // never keep signing in as whoever it used to be.
-    const identity = {
+    const identity: TransportIdentity = {
       url: settings.config.url,
       email: settings.config.email ?? "",
       anonKey: settings.config.anonKey,
@@ -390,6 +377,63 @@ export async function runCloudSyncPass(
         : new sync.SupabaseSyncTransport({ url: identity.url, anonKey: identity.anonKey, auth });
     if (!sameTarget) {
       cachedTransport = { transport, ...identity };
+    }
+    return { ok: true, transport, identity, settings };
+  } catch (error) {
+    return { ok: false, reason: error instanceof Error ? error.message : "The cloud connection could not be prepared." };
+  }
+}
+
+/**
+ * Runs one pass and records it in sync_runs.
+ *
+ * The run row is opened before the network is touched and closed on every path out, so an
+ * unclosed row means the process died mid-pass — which is worth being able to see.
+ */
+export async function runCloudSyncPass(
+  deps: CloudSyncPassDeps,
+  trigger: SyncRunTrigger
+): Promise<CloudSyncPassOutcome> {
+  const { db, logger, deviceId, workstationId, dataRoot, actor } = deps;
+  const runId = db.startSyncRun(trigger);
+
+  /** Closes the run and hands the outcome back in one place, so no path can forget. */
+  const finish = (
+    outcome: SyncRunOutcome,
+    result: Omit<CloudSyncPassOutcome, "outcome">
+  ): CloudSyncPassOutcome => {
+    db.finishSyncRun(
+      runId,
+      outcome,
+      {
+        pushed: result.pushed,
+        fetched: result.fetched,
+        applied: result.applied,
+        duplicates: result.duplicates,
+        refused: result.refusedEvents?.length,
+      },
+      result.reason
+    );
+    return { ...result, outcome };
+  };
+
+  const signedIn = await signedInTransport(deps);
+  if (!signedIn.ok) return finish("FAILED", { reason: signedIn.reason });
+  const { transport, identity, settings } = signedIn;
+
+  try {
+    const sync = await import("@erp/sync");
+
+    // Before the pull, so the account revisions it brings land on a computer that has the whole
+    // account state underneath them (cloudAccounts.ts). Once switched, this costs nothing. A switch
+    // that fails is logged and tried on the next pass: it must never stop stock from syncing.
+    try {
+      await switchToCloudAccountsIfReady(db, transport, identity.url, logger, deviceId);
+    } catch (error) {
+      logger.log({
+        module: "sync", severity: "WARNING", operation: "cloud-accounts", deviceId,
+        message: `Cloud accounts could not be switched on this pass: ${error instanceof Error ? error.message : String(error)}`,
+      });
     }
 
     const queueNow = () =>

@@ -141,6 +141,11 @@ PC2 holds the real accounts. On each person's **next online sign-in on PC2**:
 `select public.make_first_admin('<email>');` in the SQL editor. On that admin's next online sign-in
 on PC2, the app offers to copy PC2's role catalogue up (`admin_import_roles`).
 
+**The switch ends every session of an account the cloud does not know** (one with no email). The
+cloud cannot revoke what it has never seen, so a remembered session that outlived the switch would
+be access nobody could take away. Everyone on that PC therefore signs in once more, with their old
+name and password, and moves up.
+
 ## 7. Two modes, one switch
 
 A PC stays in **local mode** (today's behaviour, unchanged) until it is enrolled **and** its cloud
@@ -222,9 +227,32 @@ Blocks 1–10 see no change. For blocks 11 and up:
 3. Local migration 100: `user_credentials`, `app_users` without password columns. **Done.**
 4. Cloud 021 (permission requests, §8) on test; the `accounts.mode` switch and the data layer's
    refusals in cloud mode (§7); the `PERSON`, `ACCOUNT_ROLE` and `PERMISSION_REQUEST` contracts.
-5. The sign-in rules (§4).
-6. The admin screen in cloud mode, and the waiting screen without its button.
+   **Done; 021 passing on test (2026-11-01).**
+5. The switch on a sync pass and the sign-in rules (§4, §7) in the main process. **Done.**
+6. The screens: sign-in by email with the move-up prompt, sign-up with a name, the waiting screen
+   without its button, the admin screen in cloud mode (people, roles, requests, resets), and
+   changing one's own password through the cloud.
 7. The block ceiling and numeric sorting (§10), at any point.
 
 Nothing here ships before PC2's cutover: migration 100 would move PC2 off schema 099, which the
 rehearsed cutover depends on (`docs/36 §10.5`).
+
+## 12. Turning it on in production (after the cutover)
+
+The switch is automatic: the first sync pass after a project answers `account_state` switches that
+PC. On production that is a moment the store has to plan for, so it goes in this order, at a quiet
+time:
+
+1. **The release with migration 100 is installed on every PC**, PC2 included. Production still at
+   019: every PC stays in local accounts and nothing changes for anyone.
+2. **Apply 020 and 021 to production.** Within a minute PC2 switches. Everyone signed in on it is
+   signed out (§6).
+3. **The owner signs in on PC2** with their old name and password and adds their email. They arrive
+   PENDING, and see the waiting screen.
+4. **The owner runs `make_first_admin`** in production's SQL editor, then signs in again: now an
+   admin. PC2 offers to copy its role catalogue up; accept it.
+5. **Everyone else signs in once** with their old name and password and adds their email. The owner
+   approves each, starting from the role and screens they had on PC2.
+
+The store is unusable for anyone not yet approved between steps 2 and 5. With the owner present and
+a handful of people, that is minutes, but it is not zero.

@@ -194,6 +194,9 @@ vi.mock("@erp/sync", () => {
       sql.prepare("SELECT COUNT(*) AS n FROM sync_inbox_parked");
       return parked;
     },
+    // A project without cloud accounts (before cloud 020/021): the switch is asked and stands down.
+    // The switch itself is proved against a real database in ../cloudAccounts.test.ts.
+    fetchAccountState: async () => ({ kind: "NOT_SUPPORTED" }),
   };
 });
 

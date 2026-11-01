@@ -1733,8 +1733,10 @@ export interface DesktopApi {
   hasAnyAdmin(): Promise<{ hasAdmin: boolean }>;
   /** One-time creation of the first ADMIN. The backend rejects every call once an ADMIN already exists. */
   bootstrapAdmin(username: string, password: string, confirmPassword: string): Promise<{ accepted: boolean; user?: AuthUser; token?: string; reason?: string }>;
-  signIn(username: string, password: string): Promise<{ accepted: boolean; user?: AuthUser; token?: string; reason?: string }>;
-  signUp(username: string, password: string, confirmPassword: string): Promise<{ accepted: boolean; user?: AuthUser; token?: string; reason?: string }>;
+  /** Under cloud accounts `username` may be an email; `email` moves an old username up to the cloud (docs/41 section 6). */
+  signIn(username: string, password: string, email?: string): Promise<{ accepted: boolean; user?: AuthUser; token?: string; reason?: string; needsEmail?: boolean }>;
+  /** Under cloud accounts `username` is the email and `displayName` is required. */
+  signUp(username: string, password: string, confirmPassword: string, displayName?: string): Promise<{ accepted: boolean; user?: AuthUser; token?: string; reason?: string }>;
   changePassword(currentPassword: string, newPassword: string, confirmNewPassword: string, token?: string): Promise<{ accepted: boolean; reason?: string }>;
   logout(token?: string): Promise<{ accepted: boolean; reason?: string }>;
   requestAccess(token?: string): Promise<{ accepted: boolean; status?: "PENDING" | "APPROVED" | "REJECTED"; reason?: string }>;

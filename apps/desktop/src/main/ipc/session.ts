@@ -3,8 +3,10 @@
 // IPC handlers are registered per feature; every write is authorised through ctx.authorizer
 // (see ../authorize.ts) and every channel name comes from shared/ipcChannels.ts.
 
-import { ipcMain } from "electron";
+import { ipcMain, type IpcMainInvokeEvent } from "electron";
 import { IPC } from "../../shared/ipcChannels";
+import { cloudClaim, cloudSignIn, cloudSignUp, forgetPersonToken, type AccountDeps, type AccountOutcome } from "../cloudAccounts";
+import { signedInTransport } from "../cloudSyncPass";
 import type { IpcContext } from "./context";
 import type { StoredProfile } from "../sessionStore";
 import { USER_ROLE } from "@erp/domain";
@@ -12,7 +14,7 @@ import { app } from "electron";
 import { readBuildInfo } from "../buildInfo";
 
 export function registerSessionHandlers(ctx: IpcContext): void {
-  const { db, authorizer, sessionStore, paths, dbPath, dataMigration, useCases } = ctx;
+  const { db, logger, deviceId, authorizer, sessionStore, paths, dbPath, dataMigration, useCases } = ctx;
   const { processScanUseCase, dispatchScanUseCase, returnScanUseCase, storeEntryScanUseCase, storeExitScanUseCase, createGatepassUseCase, cancelGatepassUseCase } = useCases;
 
   ipcMain.handle(IPC.getRuntime, () => ({
@@ -55,7 +57,29 @@ export function registerSessionHandlers(ctx: IpcContext): void {
     return user;
   });
 
-  ipcMain.handle(IPC.hasAnyAdmin, () => ({ hasAdmin: db.hasAnyAdmin() }));
+  // ── Cloud accounts (docs/41) ──
+  // Local mode is untouched below. Under cloud accounts sign-in and sign-up go to the cloud through
+  // this computer's enrolled device (cloudAccounts.ts), and the local writes refuse (accountsMode.ts).
+
+  const inCloudAccounts = async (): Promise<boolean> => {
+    const data = await import("@erp/data");
+    return data.readAccountsMode(db.db) === data.ACCOUNTS_MODE.CLOUD;
+  };
+
+  const accountDeps = async (): Promise<AccountDeps> => {
+    const signedIn = await signedInTransport({ logger, deviceId, dataRoot: paths.dataRoot });
+    return { db, caller: signedIn.ok ? signedIn.transport : null };
+  };
+
+  const answerFor = (event: IpcMainInvokeEvent, outcome: AccountOutcome) => {
+    if (outcome.kind === "NEEDS_EMAIL") return { accepted: false, needsEmail: true, reason: outcome.message };
+    if (outcome.kind === "REFUSED") return { accepted: false, reason: outcome.message };
+    authorizer.bind(event, outcome.sessionToken);
+    return { accepted: true, user: db.getUserBySessionToken(outcome.sessionToken), token: outcome.sessionToken };
+  };
+
+  // Under cloud accounts there is no first admin to make here: the screen that asks must not appear.
+  ipcMain.handle(IPC.hasAnyAdmin, async () => ({ hasAdmin: (await inCloudAccounts()) || db.hasAnyAdmin() }));
 
   ipcMain.handle(IPC.bootstrapAdmin, (event, username?: string, password?: string, confirmPassword?: string) => {
     const normalizedUsername = typeof username === "string" ? username.trim() : "";
@@ -85,15 +109,25 @@ export function registerSessionHandlers(ctx: IpcContext): void {
     }
   });
 
-  ipcMain.handle(IPC.signIn, (event, username?: string, password?: string) => {
+  ipcMain.handle(IPC.signIn, async (event, username?: string, password?: string, email?: string) => {
     const normalizedUsername = typeof username === "string" ? username.trim() : "";
     const normalizedPassword = typeof password === "string" ? password : "";
 
     if (!normalizedUsername) {
-      return { accepted: false, reason: "Please enter your username" };
+      return { accepted: false, reason: "Please enter your email or username" };
     }
     if (!normalizedPassword) {
       return { accepted: false, reason: "Please enter your password" };
+    }
+
+    // An email signs in through the cloud. An old username is an account this computer holds that
+    // has not moved up yet: its password is checked here, then it moves up with an email.
+    if (await inCloudAccounts()) {
+      const deps = await accountDeps();
+      const outcome = normalizedUsername.includes("@")
+        ? await cloudSignIn(deps, normalizedUsername, normalizedPassword)
+        : await cloudClaim(deps, normalizedUsername, normalizedPassword, typeof email === "string" ? email : null);
+      return answerFor(event, outcome);
     }
 
     const user = db.authenticateUser(normalizedUsername, normalizedPassword);
@@ -106,7 +140,7 @@ export function registerSessionHandlers(ctx: IpcContext): void {
     return { accepted: true, user: db.getUserBySessionToken(token), token };
   });
 
-  ipcMain.handle(IPC.signUp, (event, username?: string, password?: string, confirmPassword?: string) => {
+  ipcMain.handle(IPC.signUp, async (event, username?: string, password?: string, confirmPassword?: string, displayName?: string) => {
     const normalizedUsername = typeof username === "string" ? username.trim() : "";
     const normalizedPassword = typeof password === "string" ? password : "";
     const normalizedConfirm = typeof confirmPassword === "string" ? confirmPassword : "";
@@ -122,6 +156,13 @@ export function registerSessionHandlers(ctx: IpcContext): void {
     }
     if (normalizedPassword !== normalizedConfirm) {
       return { accepted: false, reason: "Passwords do not match" };
+    }
+
+    // Under cloud accounts the username field holds the email, and the account is made in the cloud.
+    if (await inCloudAccounts()) {
+      const name = typeof displayName === "string" ? displayName.trim() : "";
+      if (!name) return { accepted: false, reason: "Please enter your name" };
+      return answerFor(event, await cloudSignUp(await accountDeps(), normalizedUsername, normalizedPassword, name));
     }
 
     try {
@@ -166,14 +207,17 @@ export function registerSessionHandlers(ctx: IpcContext): void {
     if (sessionToken) {
       db.revokeSessionToken(sessionToken);
       sessionStore.removeProfile(sessionToken);
+      forgetPersonToken(sessionToken);
     }
     authorizer.release(event);
     return { accepted: true };
   });
 
-  ipcMain.handle(IPC.requestAccess, (_event, token?: string) => {
+  ipcMain.handle(IPC.requestAccess, async (_event, token?: string) => {
     const sessionUser = typeof token === "string" ? db.getUserBySessionToken(token.trim()) : null;
     if (!sessionUser) return { accepted: false, reason: "Your session has expired. Please sign in again." };
+    // Under cloud accounts signing up IS the request: there is nothing more to send.
+    if (await inCloudAccounts()) return { accepted: true, status: sessionUser.accessStatus };
     try {
       return { accepted: true, ...db.createAccessRequest(sessionUser.id) };
     } catch (error) {
@@ -181,9 +225,10 @@ export function registerSessionHandlers(ctx: IpcContext): void {
     }
   });
 
-  ipcMain.handle(IPC.getMyAccessRequest, (_event, token?: string) => {
+  ipcMain.handle(IPC.getMyAccessRequest, async (_event, token?: string) => {
     const sessionUser = typeof token === "string" ? db.getUserBySessionToken(token.trim()) : null;
     if (!sessionUser) return { accepted: false, reason: "Your session has expired. Please sign in again." };
+    if (await inCloudAccounts()) return { accepted: true, request: { status: sessionUser.accessStatus } };
     return { accepted: true, request: db.getAccessRequestForUser(sessionUser.id) };
   });
 }

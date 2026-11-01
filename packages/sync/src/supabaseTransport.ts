@@ -38,6 +38,7 @@ import {
   readLeasedRecordPayload,
 } from "@erp/data";
 import { readDomainLeases, type DomainLease } from "./leases.js";
+import type { AccountCall, AccountFunctionName } from "./accountsClient.js";
 import type { SyncEnvelope } from "./contract.js";
 import { HttpError, readServiceError, redactSecrets, requestJson } from "./httpJson.js";
 import type { FailureKind } from "./outboxQueue.js";
@@ -721,6 +722,50 @@ export class SupabaseSyncTransport implements SyncTransport, SyncPullTransport {
     return leases === null ? { ok: false, reason: "UNREADABLE" } : { ok: true, leases };
   }
 
+  // ─── Cloud accounts (cloud migrations 020, 021) ──────────────────────────
+
+  /**
+   * One account function, called as this enrolled device (accountsClient.ts names them and reads
+   * their answers). Never throws: what went wrong is part of the answer, because the sign-in rules
+   * turn on it (docs/41 section 4):
+   *
+   *   ANSWERED      the function ran. Its own refusals (WRONG_CREDENTIALS, ...) are in the answer.
+   *   NOT_SUPPORTED 404: this project has no such function (before 020 or 021).
+   *   REFUSED       the cloud was reached and said no to the CALL -- this device's own sign-in was
+   *                 refused, or another 4xx. Final: never a reason to fall back to an offline check.
+   *   UNREACHABLE   no answer at all, a timeout, or the service failing (5xx, 408, 429). The only
+   *                 case where a cached check may be tried.
+   *
+   * The arguments carry passwords. Nothing here writes them anywhere: they go in the request body
+   * and nowhere else, and a failure's message is the service's, redacted (redactSecrets).
+   */
+  async callAccountFunction(name: AccountFunctionName, args: Record<string, unknown>): Promise<AccountCall> {
+    let response;
+    try {
+      response = await this.authedRequest((headers) => ({
+        url: `${this.base()}/rest/v1/rpc/${name}`,
+        method: "POST",
+        headers,
+        body: JSON.stringify(args),
+        timeoutMs: this.options.timeoutMs,
+      }));
+    } catch (error) {
+      if (error instanceof HttpError && isRefusalStatus(error.status)) return { kind: "REFUSED", message: redactSecrets(error.message) };
+      return { kind: "UNREACHABLE", message: redactSecrets(error instanceof Error ? error.message : "the cloud could not be reached") };
+    }
+    if (response.status === 404) return { kind: "NOT_SUPPORTED" };
+    if (response.status < 200 || response.status >= 300) {
+      const message = redactSecrets(readServiceError(response.status, response.text).message);
+      return isRefusalStatus(response.status) ? { kind: "REFUSED", message } : { kind: "UNREACHABLE", message };
+    }
+    try {
+      const answer = asRow(JSON.parse(response.text) as unknown);
+      return answer === null ? { kind: "UNREADABLE" } : { kind: "ANSWERED", answer };
+    } catch {
+      return { kind: "UNREADABLE" };
+    }
+  }
+
   // ─── Sync health (cloud migration 014) ───────────────────────────────────
 
   /**
@@ -945,6 +990,12 @@ function classify(error: HttpError): FailureKind {
   if (error.code !== undefined && PERMANENT_CODES.has(error.code)) return "REFUSED";
   return "TRANSIENT";
 }
+
+/**
+ * For cloud accounts: a 4xx is the cloud saying no to the call, final. 408 and 429 are the cloud
+ * being unable to answer now, like a 5xx or no answer at all (callAccountFunction).
+ */
+const isRefusalStatus = (status: number): boolean => status >= 400 && status < 500 && status !== 408 && status !== 429;
 
 const wholeCount = (value: unknown): number | null =>
   typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : null;

@@ -23,6 +23,7 @@ export * from "./doorbell.js";
 export * from "./httpJson.js";
 export * from "./supabaseAuth.js";
 export * from "./supabaseTransport.js";
+export * from "./accountsClient.js";
 export * from "./testOnlyBackend.js";
 export * from "./outboxSync.js";
 export * from "./scheduler.js";
