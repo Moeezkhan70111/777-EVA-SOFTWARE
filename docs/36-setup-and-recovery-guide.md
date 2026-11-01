@@ -740,7 +740,9 @@ always. Belt and braces, with two fixes already in:
 - A PC that did receive records before its range -- the 1 Nov rehearsal's reader, which synced
   under a build from before 018 -- counted the store's party and material codes as its own and
   refused every range. Fixed in `b90b9c8`: a replicated record is stamped with its sender, and a
-  test refuses any future contract that writes a numbered table without stamping.
+  test refuses any future contract that writes a numbered table without stamping. And a PC being
+  given its range no longer counts records that provably arrived from another computer, so one in
+  that state is given its range in Settings as usual: no script, no SQL editor.
 
 Neither is a reason to rely on the order not mattering.
 
