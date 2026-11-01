@@ -95,16 +95,31 @@ begin
   r := public.admin_review_permission_request(admin_token, request_id, 'REJECTED', 'access removed');
   if r->'request'->>'status' is distinct from 'REJECTED' then raise exception 'STEP 7: decline: %', r; end if;
 
-  -- 8. A signed-in client reads no request.
+  -- 8. The whole account state, for a PC switching to cloud accounts: everyone and everything above,
+  --    and nothing secret. A computer that is not enrolled gets nothing.
+  r := public.account_state();
+  if (r->>'ok')::boolean is distinct from true then raise exception 'STEP 8: account_state: %', r; end if;
+  if not exists (select 1 from jsonb_array_elements(r->'people') p where p->>'personId' = bob_id and p->>'status' = 'REVOKED') then
+    raise exception 'STEP 8: Bob is missing from the state';
+  end if;
+  if (select count(*) from jsonb_array_elements(r->'requests') q where q->>'personId' = bob_id) <> 2 then
+    raise exception 'STEP 8: Bob''s two requests are not both in the state';
+  end if;
+  if r::text like '%verifier%' or r::text like '%$2a$%' or r::text like '%$2b$%' then raise exception 'STEP 8: a verifier is in the state'; end if;
+  perform set_config('request.jwt.claim.sub', gen_random_uuid()::text, true);
+  r := public.account_state();
+  if r->>'reason' is distinct from 'NOT_ENROLLED' then raise exception 'STEP 8: an unenrolled computer read the state: %', r; end if;
+
+  -- 9. A signed-in client reads no request, and cannot call the state without being enrolled.
   set local role authenticated;
   refused := false;
   begin
     perform 1 from public.account_permission_requests;
   exception when insufficient_privilege then refused := true;
   end;
-  if not refused then raise exception 'STEP 8: a client read the requests'; end if;
+  if not refused then raise exception 'STEP 9: a client read the requests'; end if;
   reset role;
 
-  raise exception 'PERMISSION_REQUESTS_CHECK_PASSED: all 8 steps (rolled back, nothing kept)';
+  raise exception 'PERMISSION_REQUESTS_CHECK_PASSED: all 9 steps (rolled back, nothing kept)';
 end;
 $$;

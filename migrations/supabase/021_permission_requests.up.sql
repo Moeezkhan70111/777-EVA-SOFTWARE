@@ -183,7 +183,39 @@ begin
 end;
 $$;
 
+-- ── The whole account state, once, when a PC switches to cloud accounts ──
+--
+-- WHY THE LOG IS NOT ENOUGH. A PC on a version without the account contracts refuses PERSON,
+-- ACCOUNT_ROLE and PERMISSION_REQUEST permanently, and its cursor passes them for good (pull.ts).
+-- When it is updated and switches to cloud accounts, those revisions are behind it. So the switch
+-- loads every current snapshot through the same writes the log uses (@erp/data accounts.ts), and
+-- the log keeps the PC current from then on. Snapshots only: nothing secret is in them.
+
+create or replace function public.account_state() returns jsonb
+language plpgsql
+stable
+security definer
+set search_path = ''
+as $$
+declare
+  device public.device_accounts;
+begin
+  device := public.account_caller();
+  if device.auth_user_id is null then return public.account_refusal('NOT_ENROLLED'); end if;
+  return jsonb_build_object(
+    'ok', true,
+    'roles', coalesce((select jsonb_agg(public.account_role_snapshot(r) order by r.role_code) from public.account_roles r), '[]'::jsonb),
+    'people', coalesce((select jsonb_agg(public.person_snapshot(p) order by p.id) from public.people p), '[]'::jsonb),
+    'requests', coalesce((select jsonb_agg(public.permission_request_snapshot(q) order by q.requested_at, q.id)
+                            from public.account_permission_requests q), '[]'::jsonb)
+  );
+end;
+$$;
+
 -- ── Who may call what ──
+
+revoke all on function public.account_state() from public, anon, authenticated;
+grant execute on function public.account_state() to authenticated;
 
 revoke all on function public.permission_request_snapshot(public.account_permission_requests) from public, anon, authenticated;
 revoke all on function public.log_permission_request_revision() from public, anon, authenticated;

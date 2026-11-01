@@ -5,6 +5,9 @@
 
 begin;
 
+revoke all on function public.account_state() from authenticated;
+drop function if exists public.account_state();
+
 revoke all on function public.request_permission(text, text, text) from authenticated;
 revoke all on function public.admin_review_permission_request(text, text, text, text) from authenticated;
 
