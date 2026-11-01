@@ -22,7 +22,7 @@ rules:
 | The first admin | **Set once by the owner in the SQL editor** (`make_first_admin`). Never taken from a PC's local admin: every install makes one of those on first run. |
 | Existing accounts | Move without a password reset, and arrive **PENDING**. An admin approves them like anyone new. |
 | Offline maximum | **7 days** (owner, 2026-10-23, unchanged). |
-| Number-block ceiling | **99**, with code lists sorted by number rather than text (§9). |
+| Number-block ceiling | **99**, with code lists sorted by number rather than text (§10). |
 | Migrations | Local **100**, cloud **020**. Cloud 020 goes to **test only**; production stays at 019 until after the cutover. |
 
 ## 1. The flow, and what happens underneath
@@ -147,25 +147,48 @@ A PC stays in **local mode** (today's behaviour, unchanged) until it is enrolled
 project answers the account functions. It then switches to **cloud mode** once, recorded in
 `app_settings` (`accounts.mode`), and never switches back by itself.
 
-In cloud mode:
+In cloud mode **the data layer refuses every local account change**, not just the screens (owner,
+2026-11-01: a hidden button is not an authorisation, CLAUDE.md R9). A local admin on any PC must not
+be able to grant what the cloud did not:
 
-- The first-run "create the administrator" screen is gone. On a PC in local mode it remains,
-  because that PC is connected to nothing.
-- Local account-changing actions (create, approve, assign a role, revoke, change a password) go to
-  the cloud functions. The local writes behind them are reached only by applying a revision.
-- A PC still on a version without cloud mode keeps its local accounts, and the cloud does not know
-  them. Nothing breaks, but that PC is outside the scheme until it updates, so every PC moves to the
-  release together.
+- **No local first admin.** `bootstrapFirstAdmin` refuses, and so does the first-run screen that
+  calls it. Every install making its own admin is exactly the hole this feature closes. On a PC in
+  local mode it remains, because that PC is connected to nothing.
+- **No local account writes.** Creating an account, approving or reviewing a request, assigning a
+  role or a permission, editing the role catalogue, changing a job role or authority, revoking, and
+  changing a password all refuse locally. Each has a cloud function instead (§3, §8). The tables
+  behind them are written only by applying a revision (§5).
+- **The switch itself is protected.** `accounts.mode` joins the settings the generic "save
+  settings" path drops (as the number block's keys are, `numberRange.ts`), so nobody can switch a PC
+  back to local mode from a settings screen.
 
-## 8. Not in this work
+A PC still on a version without cloud mode keeps its local accounts, and the cloud does not know
+them. Nothing breaks, but that PC is outside the scheme until it updates, so every PC moves to the
+release together.
 
-- **Permission requests** (a user asks for one more screen). Per-PC today. In cloud mode they need
-  to reach the admin wherever they are. Left as they are for now, and decided before release.
+## 8. Permission requests (cloud migration 021)
+
+Under cloud accounts a request for one more screen goes to the cloud, like everything else about
+access. A request approved by one PC's admin and nowhere else would be the same hole as a local
+first admin.
+
+- **Asking** (`request_permission`): an APPROVED person, signed in online. Asking again for a
+  screen already pending returns the pending request, as it does locally today.
+- **Deciding** (`admin_review_permission_request`): an admin's token. Approving adds the screen to
+  the person's extra permissions, which reaches every PC as a new `PERSON` revision.
+- **Every PC sees them.** Requests travel through the log as a third type, `PERMISSION_REQUEST`,
+  by revision, so an admin's PC lists them wherever it is, even offline. Asking and deciding need
+  the internet.
+- **Notifications stay per PC** (§9), so each PC makes its own: a new request notifies that PC's
+  admins, a decision notifies the person, exactly as the local flow does today.
+
+## 9. Not in this work
+
 - **Email verification and "forgot password" by email.** They need mail sending. An admin resets.
 - **Notifications across PCs.** `user_notifications` stays per PC.
 - **In-app enrolment** (`docs/37 §U.1`). Enrolment stays the owner's procedure (`docs/36 §7.6`).
 
-## 9. Number-block ceiling: 5 → 99
+## 10. Number-block ceiling: 5 → 99
 
 `MAX_ASSIGNABLE_BLOCK` (`numberRange.ts`) is the only limit. The cloud (018) requires a block of 1
 or more and one computer per block, and no more, so the change needs **no migration**. A block is
@@ -186,14 +209,16 @@ Blocks 1–10 see no change. For blocks 11 and up:
 - **Scanning** is unaffected: the parsers read any number of digits.
 - `check_number_blocks.sql` stops using blocks 7–9 as test values, since they become real.
 
-## 10. Order of work
+## 11. Order of work
 
-1. This note.
-2. Cloud 020 and `check_accounts.sql`, on **test** only.
-3. Local migration 100: `user_credentials`, `app_users` without password columns, `accounts.mode`.
-4. The `PERSON` and `ACCOUNT_ROLE` contracts, and the sign-in rules (§4).
-5. The admin screen in cloud mode, and the waiting screen without its button.
-6. The block ceiling and numeric sorting (§9), at any point.
+1. This note. **Done.**
+2. Cloud 020 and `check_accounts.sql`, on **test** only. **Done, passing on test (2026-11-01).**
+3. Local migration 100: `user_credentials`, `app_users` without password columns. **Done.**
+4. Cloud 021 (permission requests, §8) on test; the `accounts.mode` switch and the data layer's
+   refusals in cloud mode (§7); the `PERSON`, `ACCOUNT_ROLE` and `PERMISSION_REQUEST` contracts.
+5. The sign-in rules (§4).
+6. The admin screen in cloud mode, and the waiting screen without its button.
+7. The block ceiling and numeric sorting (§10), at any point.
 
 Nothing here ships before PC2's cutover: migration 100 would move PC2 off schema 099, which the
 rehearsed cutover depends on (`docs/36 §10.5`).
