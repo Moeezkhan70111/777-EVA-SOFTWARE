@@ -1,4 +1,4 @@
-import { PERMISSION, QR_GENERATOR_ACCESS, USER_ROLE } from "@erp/domain";
+import { ACCESS_STATUS, PERMISSION, QR_GENERATOR_ACCESS, USER_ROLE } from "@erp/domain";
 import type { PermissionCode, UserRole } from "@erp/domain";
 import type { AppRoute } from "../../app/routes";
 import type { AuthUser, DesktopApi } from "../../types/desktopApi";
@@ -224,14 +224,21 @@ export const HOME_ROUTE: AppRoute = "home";
 /**
  * Where a user starts after signing in, and where Escape takes them.
  *
- * A store operator (anyone but an administrator who holds Store Scanning) starts on the Store page
- * in Receiving (0.3.9); its switch shows Issuing's state at a glance. Everyone else starts on their
- * Dashboard.
+ * A store operator (anyone approved, but not an administrator, who holds Store Scanning) starts on
+ * the Store page in Receiving (0.3.9); its switch shows Issuing's state at a glance. Everyone else
+ * starts on their Dashboard.
+ *
+ * APPROVED FIRST. A person still waiting can already hold Store Scanning -- an admin who saves a
+ * role on a pending member gives them its permissions -- and the waiting screen covers the Store
+ * page, whose header is where a store operator signs out. Counted as one, they had no way to sign
+ * out at all, and the saved session brought them back after a restart (rehearsal, 2 Nov).
  */
 export const STORE_LANDING_ROUTE: AppRoute = "store-receiving";
 
 export const landingRoute = (user: AuthUser | null | undefined): AppRoute =>
-  user && !isAdmin(user) && hasPermission(user, PERMISSION.STORE_SCANNING) ? STORE_LANDING_ROUTE : HOME_ROUTE;
+  user && user.accessStatus === ACCESS_STATUS.APPROVED && !isAdmin(user) && hasPermission(user, PERMISSION.STORE_SCANNING)
+    ? STORE_LANDING_ROUTE
+    : HOME_ROUTE;
 
 /**
  * A store operator: anyone but an administrator who holds Store Scanning -- the built-in Store
