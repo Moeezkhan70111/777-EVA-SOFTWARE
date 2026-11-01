@@ -731,17 +731,31 @@ The project is `ykhvbmhmeefdtrzqeoxm` (created 2026-10-23). Record progress in �
 
 ### 7.3 On each office PC
 
-11. **Set the four cloud variables** in the environment the app starts in:
+**The range comes first, before the PC's first sync** (owner, 2026-11-01). Step 11 before step 12,
+always. Belt and braces, with two fixes already in:
+
+- Since cloud migration 018 a PC with no range cannot sync at all: the cloud refuses its claim
+  (`NUMBER_BLOCK_MISSING`) and the pass stops before it reads anything. Set up in the wrong order,
+  the PC only says so on its Health page until the range is given.
+- A PC that did receive records before its range -- the 1 Nov rehearsal's reader, which synced
+  under a build from before 018 -- counted the store's party and material codes as its own and
+  refused every range. Fixed in `b90b9c8`: a replicated record is stamped with its sender, and a
+  test refuses any future contract that writes a numbered table without stamping.
+
+Neither is a reason to rely on the order not mattering.
+
+11. **Assign the document-number range** in Settings → Document Number Range, **before anything
+    else on this list.** The PC holding the existing documents presses **adopt** (range 1); every
+    other PC is given its own range by an administrator, from your written record. **Until this is
+    done that PC cannot create a numbered document or print a QR label, and cannot sync** —
+    scanning, production, dispatch and store work are unaffected, and it says so at sign-in rather
+    than at the printer.
+12. **Set the four cloud variables** in the environment the app starts in:
    `ERP_SUPABASE_URL`, `ERP_SUPABASE_ANON_KEY`, `ERP_DEVICE_EMAIL`, `ERP_DEVICE_PASSWORD`.
-   After the first successful sync the refresh token is stored encrypted in
-   `device-credential.bin` and the email and password are no longer needed — the URL and key
-   still are.
-12. **Set `ERP_UPDATE_TOKEN`** (§5), or that PC will never receive a new version.
-13. **Assign the document-number range** in Settings → Document Number Range. The PC holding the
-    existing documents presses **adopt** (range 1); every other PC is given 2–5 by an
-    administrator, from your written record. **Until this is done that PC cannot create a
-    numbered document or print a QR label** — scanning, production, dispatch and store work are
-    unaffected, and it now says so at sign-in rather than at the printer.
+   The PC's first sync follows; it already has its range. After the first successful sync the
+   refresh token is stored encrypted in `device-credential.bin` and the email and password are no
+   longer needed — the URL and key still are.
+13. **Set `ERP_UPDATE_TOKEN`** (§5), or that PC will never receive a new version.
 14. **Install from a fresh installer. Never copy the data folder** between PCs — it carries
     `device-identity.json`, and both machines would then claim to be the same workstation.
 
@@ -806,6 +820,10 @@ enrolled.
    values ('<prod auth user uuid>', 'factory-777', '<PC 2 workstationId>', '<PC 2 deviceId>', 'PC 2', true, now());
    ```
 4. **Mirror the operators PC 2 names** (§7.1 step 5), if there are any.
+
+**Before C, on PCs 3–5 (the boss's PC included): give the PC its range** (§7.3 step 11). Setting
+the variables in C is what starts its first sync, and the range comes first. PC 2 already holds
+range 1.
 
 **C. On PC 2 — close 777 ERP first, then change the four variables** (System Properties →
 Environment Variables, user scope):
@@ -1069,7 +1087,7 @@ starts on PC2. Step 1 below still applies; step 2 is kept for the record.
    confirmed (`numbering.block = 1`, `numbering.block.confirmed = 1`). Never change it on this
    database.
 2. **Record the written assignment:** block 1 = this database's machine, and blocks 2–5 = the
-   others (§7.3 step 13). A PC enrolled later is given its block from that record, never block 1.
+   others (§7.3 step 11). A PC enrolled later is given its block from that record, never block 1.
 
 ### 10.5 Clear what belongs to the test project
 
