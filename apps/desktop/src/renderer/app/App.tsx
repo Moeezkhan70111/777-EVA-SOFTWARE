@@ -311,10 +311,7 @@ export const App = () => {
             onPermissions={admin.handleMemberPermissions}
             onRevoke={admin.handleMemberRevoke}
             onReview={admin.handleReviewAccessRequest}
-            onJobRole={admin.handleMemberJobRole}
-            onAuthority={admin.handleMemberAuthority}
-            onAssignRole={admin.handleMemberRoleAssignment}
-            onSetAdditionalPermissions={admin.handleSetAdditionalPermissions}
+            onSaveAccess={admin.handleSaveMemberAccess}
             onCreateRole={admin.handleCreateRole}
             onUpdateRole={admin.handleUpdateRole}
             onDeleteRole={admin.handleDeleteRole}

@@ -47,6 +47,7 @@ const LOCAL_ACCOUNT_CHANGES: Array<[string, (db: SqliteDatabase) => unknown]> = 
   ["reviewPermissionRequest", (db) => db.reviewPermissionRequest("pr-1", "u-admin", "APPROVED")],
   ["updateMemberJobRole", (db) => db.updateMemberJobRole("u-1", "u-admin", "Munshi")],
   ["updateMemberAuthorityLevel", (db) => db.updateMemberAuthorityLevel("u-1", "u-admin", 20)],
+  ["saveMemberAccess", (db) => db.saveMemberAccess("u-1", "u-admin", { roleCode: "munshi", jobRole: "Munshi", authorityLevel: 20, extraPermissions: ["logs"] })],
   ["updateUserPermissions", (db) => db.updateUserPermissions("u-1", "u-admin", ["logs"])],
   ["revokeUserAccess", (db) => db.revokeUserAccess("u-1", "u-admin")],
   ["changePasswordForUser", (db) => db.changePasswordForUser("u-1", "old12345", "new12345")],

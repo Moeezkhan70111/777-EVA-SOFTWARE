@@ -73,6 +73,7 @@ contextBridge.exposeInMainWorld("desktop", {
     getMyPermissionRequests: (token?: string) => ipcRenderer.invoke(IPC.getMyPermissionRequests, token),
     reviewPermissionRequest: (token: string, requestId: string, decision: "APPROVED" | "REJECTED", reviewNotes?: string) => ipcRenderer.invoke(IPC.reviewPermissionRequest, token, requestId, decision, reviewNotes),
     setUserAdditionalPermissions: (token: string, userId: string, permissions: string[]) => ipcRenderer.invoke(IPC.setUserAdditionalPermissions, token, userId, permissions),
+    saveMemberAccess: (token: string, userId: string, access: unknown) => ipcRenderer.invoke(IPC.saveMemberAccess, token, userId, access),
     getUserAdditionalPermissions: (token: string, userId: string) => ipcRenderer.invoke(IPC.getUserAdditionalPermissions, token, userId),
     getDashboard: () => ipcRenderer.invoke(IPC.getDashboard),
     listInventory: (search: string) => ipcRenderer.invoke(IPC.listInventory, search),

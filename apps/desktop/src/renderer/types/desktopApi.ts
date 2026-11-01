@@ -1654,6 +1654,14 @@ export interface AccountsStatus {
   switchReady: boolean;
 }
 
+/** What the member details' Save sends (data users.ts): a null role or job role leaves it as it is. */
+export interface MemberAccessChange {
+  roleCode: string | null;
+  jobRole: string | null;
+  authorityLevel: number;
+  extraPermissions: string[];
+}
+
 export type SwitchToCloudAccountsResult =
   | { accepted: true; user: AuthUser | null; token: string; people: number }
   | { accepted: false; reason: string };
@@ -1776,6 +1784,8 @@ export interface DesktopApi {
   getMyPermissionRequests?(token?: string): Promise<{ accepted: boolean; requests: Array<{ id: string; permissionCode: string; reason: string | null; status: "PENDING" | "APPROVED" | "REJECTED"; createdAt: string; requestedAt: string; reviewedAt: string | null; reviewNotes: string | null }>; reason?: string }>;
   reviewPermissionRequest?(token: string, requestId: string, decision: "APPROVED" | "REJECTED", reviewNotes?: string): Promise<{ accepted: boolean; permissionCode?: string; userId?: string; status?: "APPROVED" | "REJECTED"; reason?: string }>;
   setUserAdditionalPermissions?(token: string, userId: string, permissions: string[]): Promise<{ accepted: boolean; reason?: string }>;
+  /** The member details' Save as one change: all of it saved, or refused with the reason. */
+  saveMemberAccess?(token: string, userId: string, access: MemberAccessChange): Promise<{ accepted: boolean; reason?: string }>;
   getUserAdditionalPermissions?(token: string, userId: string): Promise<{ accepted: boolean; permissions: string[]; reason?: string }>;
   updateUserPermissions?(token: string, userId: string, permissions: string[]): Promise<{ accepted: boolean; reason?: string }>;
   updateMemberJobRole?(token: string, userId: string, jobRole: string): Promise<{ accepted: boolean; reason?: string }>;

@@ -3,6 +3,7 @@ import { NAV_PERMISSION_MODULES } from "../../components/layout/Navbar";
 import { describePerm } from "./permissions";
 import { formatDateTime } from "../../utils/dates";
 import type { Member } from "./types";
+import type { MemberAccessChange } from "../../types/desktopApi";
 import { copy } from "../../config/copy";
 import { CloudPasswordReset } from "../auth/CloudPasswordReset";
 import { CloudAdminToggle } from "../auth/CloudAdminToggle";
@@ -13,10 +14,7 @@ export const MemberSection = ({
   onPermissions,
   onRevoke,
   onReview,
-  onJobRole,
-  onAuthority,
-  onAssignRole,
-  onSetAdditionalPermissions,
+  onSaveAccess,
 }: {
   members: Member[];
   roleOptions: Array<{ code: string; name: string; permissions: string[] }>;
@@ -28,10 +26,8 @@ export const MemberSection = ({
     permissions: string[],
     roleCode?: string,
   ) => Promise<void>;
-  onJobRole: (id: string, jobRole: string) => Promise<void>;
-  onAuthority: (id: string, authorityLevel: number) => Promise<void>;
-  onAssignRole: (userId: string, roleCode: string) => Promise<void>;
-  onSetAdditionalPermissions: (userId: string, permissions: string[]) => Promise<void>;
+  /** Save, as one change: false when it was refused (the reason is already on screen). */
+  onSaveAccess: (userId: string, access: MemberAccessChange) => Promise<boolean>;
 }) => {
   const [selectedMember, setSelectedMember] = useState<Member | null>(null);
   const [draftAdditional, setDraftAdditional] = useState<string[]>([]);
@@ -55,15 +51,16 @@ export const MemberSection = ({
   };
   const save = async () => {
     if (!selectedMember) return;
-    if (selectedRoleCode) {
-      await onAssignRole(selectedMember.id, selectedRoleCode);
-      const role = roleOptions.find((r) => r.code === selectedRoleCode);
-      if (role) await onJobRole(selectedMember.id, role.name);
-    } else if (draftJobRole) {
-      await onJobRole(selectedMember.id, draftJobRole);
-    }
-    await onAuthority(selectedMember.id, draftAuthority);
-    await onSetAdditionalPermissions(selectedMember.id, draftAdditional);
+    // One change per press: a chosen role brings its name as the job role; with no role, a typed job
+    // role is kept; a null leaves that one as it is.
+    const role = roleOptions.find((r) => r.code === selectedRoleCode);
+    const accepted = await onSaveAccess(selectedMember.id, {
+      roleCode: selectedRoleCode || null,
+      jobRole: selectedRoleCode ? role?.name ?? null : draftJobRole || null,
+      authorityLevel: draftAuthority,
+      extraPermissions: draftAdditional,
+    });
+    if (!accepted) return;
     setSelectedMember({
       ...selectedMember,
       additionalPermissions: draftAdditional,

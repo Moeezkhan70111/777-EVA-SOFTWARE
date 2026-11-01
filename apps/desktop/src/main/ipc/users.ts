@@ -14,7 +14,9 @@ import {
   resetPassword,
   rolesToCopyUp,
   deleteRole as deleteCloudRole,
+  extrasBeyondRole,
   reviewPermission,
+  saveMemberAccess as saveCloudMemberAccess,
   saveRole,
   setAccess,
   signUpsAwaitingApproval,
@@ -22,6 +24,22 @@ import {
   type CloudAdminDeps,
 } from "../cloudAdmin";
 import { signedInTransport } from "../cloudSyncPass";
+import type { MemberAccessChange } from "@erp/data";
+
+/** The Save's payload from the renderer, checked: a blank role or job role means leave it as it is. */
+export function readMemberAccess(value: unknown): MemberAccessChange | null {
+  if (typeof value !== "object" || value === null) return null;
+  const input = value as Record<string, unknown>;
+  if (typeof input.authorityLevel !== "number" || !Number.isFinite(input.authorityLevel)) return null;
+  if (!Array.isArray(input.extraPermissions)) return null;
+  const text = (field: unknown): string | null => (typeof field === "string" && field.trim() ? field.trim() : null);
+  return {
+    roleCode: text(input.roleCode),
+    jobRole: text(input.jobRole),
+    authorityLevel: Math.max(1, Math.min(99, Math.round(input.authorityLevel))),
+    extraPermissions: input.extraPermissions.filter((code): code is string => typeof code === "string"),
+  };
+}
 
 export function registerUsersHandlers(ctx: IpcContext): void {
   const { db, logger, deviceId, paths, useCases } = ctx;
@@ -87,12 +105,9 @@ export function registerUsersHandlers(ctx: IpcContext): void {
     const viaCloud = await cloud(token);
     if (viaCloud) {
       if (decision === "REJECTED") return setAccess(viaCloud, requestId, { status: "REJECTED" });
-      // The screen sends the role's screens and the extras together. Under cloud accounts a role is its
-      // own record, so its screens are left out of the extras: a later change to the role then reaches
-      // this person, instead of their copy of the old screens outliving it.
+      // The screen sends the role's screens and the extras together; the role's are left out (extrasBeyondRole).
       const chosen = typeof roleCode === "string" && roleCode.trim() ? roleCode.trim() : null;
-      const roleScreens = new Set(chosen === null ? [] : (db.listRoles().find((role) => role.code === chosen)?.permissions ?? []));
-      const extraPermissions = codes(permissions).filter((code) => !roleScreens.has(code));
+      const extraPermissions = extrasBeyondRole(db, chosen, codes(permissions));
       return setAccess(viaCloud, requestId, { status: "APPROVED", extraPermissions, ...(chosen === null ? {} : { roleCode: chosen }) });
     }
     try {
@@ -108,6 +123,19 @@ export function registerUsersHandlers(ctx: IpcContext): void {
     if (!admin || admin.role !== USER_ROLE.ADMIN) return { accepted: false, members: [], reason: "Administrator access required" };
     const members = db.listMembers();
     return { accepted: true, members: (await usesCloudAccounts(db)) ? withSignUpsAsRequests(members) : members };
+  });
+
+  // The member details' Save: role, job role, authority and extra screens as one change -- one cloud
+  // revision, or one local transaction -- all saved or refused together (cloudAdmin.saveMemberAccess).
+  ipcMain.handle(IPC.saveMemberAccess, async (_event, token?: string, userId?: string, access?: unknown) => {
+    const admin = typeof token === "string" ? db.getUserBySessionToken(token.trim()) : null;
+    if (!admin || admin.role !== USER_ROLE.ADMIN || typeof userId !== "string" || !userId) return { accepted: false, reason: "Administrator access required" };
+    const change = readMemberAccess(access);
+    if (change === null) return { accepted: false, reason: "The access to save could not be read" };
+    const viaCloud = await cloud(token);
+    if (viaCloud) return saveCloudMemberAccess(viaCloud, userId, change);
+    try { db.saveMemberAccess(userId, admin.id, change); return { accepted: true }; }
+    catch (error) { return { accepted: false, reason: error instanceof Error ? error.message : "Unable to save access" }; }
   });
 
   ipcMain.handle(IPC.updateUserPermissions, async (_event, token?: string, userId?: string, permissions?: string[]) => {

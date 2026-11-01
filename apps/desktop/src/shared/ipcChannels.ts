@@ -52,6 +52,7 @@ export const IPC = {
   getMyPermissionRequests: "erp:get-my-permission-requests",
   reviewPermissionRequest: "erp:review-permission-request",
   setUserAdditionalPermissions: "erp:set-user-additional-permissions",
+  saveMemberAccess: "erp:save-member-access",
   getUserAdditionalPermissions: "erp:get-user-additional-permissions",
 
   // Workspace

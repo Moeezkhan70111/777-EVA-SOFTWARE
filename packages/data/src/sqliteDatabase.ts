@@ -169,7 +169,7 @@ export {
   REPLICATION_EXCLUDED_TABLES,
   isReplicationExcluded,
 } from "./database/replicationScope.js";
-export { normalizePermissionCode, effectivePermissionsFor } from "./database/users.js";
+export { normalizePermissionCode, effectivePermissionsFor, type MemberAccessChange } from "./database/users.js";
 export {
   ACCOUNTS_MODE,
   ACCOUNTS_MODE_SETTING_KEY,

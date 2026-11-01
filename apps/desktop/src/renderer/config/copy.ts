@@ -394,6 +394,7 @@ export const copy = {
     requestSent: "Request Sent",
     requestFailed: "Unable to request access",
     roleUpdatedTitle: "Role updated",
+    memberSaveFailed: "Access not saved",
     switchedProfileTitle: "Switched profile",
     switchedProfileBody: (username: string) => `Signed in as ${username}`,
     sessionExpiredTitle: "Session expired",

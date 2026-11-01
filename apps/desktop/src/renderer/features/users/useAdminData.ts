@@ -4,7 +4,8 @@ import type { LoginPolicy } from "@erp/domain";
 
 export type ReviewDecision = "APPROVED" | "REJECTED";
 import type { NoticeKind } from "../../state/NotificationsContext";
-import type { AuthUser, DesktopApi } from "../../types/desktopApi";
+import type { AuthUser, DesktopApi, MemberAccessChange } from "../../types/desktopApi";
+import { copy } from "../../config/copy";
 import type { AccessRequestRow, Member, PermissionRequestAdminView, RoleOption, RoleRecord, UserNotification } from "./types";
 
 // Administrative data shown in the shell: members, roles, access/permission requests and
@@ -45,11 +46,8 @@ export interface AdminData {
   handleNotificationClick: (notification: UserNotification) => void;
   handleReviewAccessRequest: (requestId: string, decision: ReviewDecision, permissions?: string[], roleCode?: string) => Promise<void>;
   handleMemberPermissions: (userId: string, permissions: string[]) => Promise<void>;
-  handleMemberRoleAssignment: (userId: string, roleCode: string) => Promise<void>;
-  handleMemberJobRole: (userId: string, jobRole: string) => Promise<void>;
-  handleMemberAuthority: (userId: string, authorityLevel: number) => Promise<void>;
+  handleSaveMemberAccess: (userId: string, access: MemberAccessChange) => Promise<boolean>;
   handleMemberRevoke: (userId: string) => Promise<void>;
-  handleSetAdditionalPermissions: (userId: string, permissions: string[]) => Promise<void>;
   handleCreateRole: (input: RoleInput) => Promise<void>;
   handleUpdateRole: (code: string, input: RoleUpdate) => Promise<void>;
   handleDeleteRole: (code: string) => Promise<void>;
@@ -153,37 +151,23 @@ export const useAdminData = ({ api, push, session, sessionToken, setAuthError }:
     if (result.accepted) patchMember(userId, { permissions });
   };
 
-  const handleMemberRoleAssignment = async (userId: string, roleCode: string) => {
-    if (!sessionToken || typeof api.assignUserRole !== "function") return;
-    const result = await api.assignUserRole(sessionToken, userId, roleCode);
-    if (result.accepted) {
-      const roleName = roleOptions.find((role) => role.code === roleCode)?.name;
-      patchMember(userId, { roleCode, ...(roleName ? { jobRole: roleName } : {}) });
+  // The member details' Save: one change, all saved or refused with the reason shown. It was four
+  // calls, and a refused one (a role not in the cloud yet) was dropped with nothing said.
+  const handleSaveMemberAccess = async (userId: string, access: MemberAccessChange): Promise<boolean> => {
+    if (!sessionToken || typeof api.saveMemberAccess !== "function") return false;
+    const result = await api.saveMemberAccess(sessionToken, userId, access);
+    if (!result.accepted) {
+      push("error", copy.auth.memberSaveFailed, result.reason ?? "");
+      return false;
     }
-  };
-
-  const handleMemberJobRole = async (userId: string, jobRole: string) => {
-    if (!sessionToken || typeof api.updateMemberJobRole !== "function") return;
-    const result = await api.updateMemberJobRole(sessionToken, userId, jobRole);
-    if (result.accepted) patchMember(userId, { jobRole });
-  };
-
-  const handleMemberAuthority = async (userId: string, authorityLevel: number) => {
-    if (!sessionToken || typeof api.updateMemberAuthority !== "function") return;
-    const result = await api.updateMemberAuthority(sessionToken, userId, authorityLevel);
-    if (result.accepted) patchMember(userId, { authorityLevel });
+    await refreshMembers();
+    return true;
   };
 
   const handleMemberRevoke = async (userId: string) => {
     if (!sessionToken || typeof api.revokeUserAccess !== "function") return;
     const result = await api.revokeUserAccess(sessionToken, userId);
     if (result.accepted) patchMember(userId, { accessStatus: ACCESS_STATUS.REJECTED });
-  };
-
-  const handleSetAdditionalPermissions = async (userId: string, permissions: string[]) => {
-    if (!sessionToken || typeof api.setUserAdditionalPermissions !== "function") return;
-    const result = await api.setUserAdditionalPermissions(sessionToken, userId, permissions);
-    if (result.accepted) patchMember(userId, { additionalPermissions: permissions });
   };
 
   const handleCreateRole = async (input: RoleInput) => {
@@ -242,11 +226,8 @@ export const useAdminData = ({ api, push, session, sessionToken, setAuthError }:
     handleNotificationClick,
     handleReviewAccessRequest,
     handleMemberPermissions,
-    handleMemberRoleAssignment,
-    handleMemberJobRole,
-    handleMemberAuthority,
+    handleSaveMemberAccess,
     handleMemberRevoke,
-    handleSetAdditionalPermissions,
     handleCreateRole,
     handleUpdateRole,
     handleDeleteRole,

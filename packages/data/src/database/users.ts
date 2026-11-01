@@ -143,6 +143,14 @@ export function effectivePermissionsFor(sql: AccountSqlHandle, userId: string): 
   return Array.from(directPermissions);
 }
 
+/** What the member details' Save sends: a null role or job role leaves that one as it is. */
+export interface MemberAccessChange {
+  readonly roleCode: string | null;
+  readonly jobRole: string | null;
+  readonly authorityLevel: number;
+  readonly extraPermissions: readonly string[];
+}
+
 export const usersMethods = {
   hashPassword(this: SqliteDatabase, password: string): { hash: string; salt: string } {
     const salt = randomBytes(16);
@@ -651,6 +659,26 @@ export const usersMethods = {
     if (admin?.role !== "ADMIN") throw new Error("Administrator access required");
     const level = Math.max(1, Math.min(99, Math.round(authorityLevel)));
     this.db.prepare("UPDATE app_users SET authority_level = ?, updated_at = ? WHERE id = ? AND role <> 'ADMIN'").run(level, new Date().toISOString(), userId);
+  },
+
+  /**
+   * The member details' Save, as one change: role, job role, authority and extra screens all
+   * written, or none. It used to be four separate calls from the screen, and one refused part left
+   * the rest saved with nothing said (rehearsal, 2 Nov). A null role or job role leaves it as it is.
+   */
+  saveMemberAccess(this: SqliteDatabase, userId: string, reviewerId: string, access: MemberAccessChange): void {
+    requireLocalAccounts(this.db);
+    this.db.exec("BEGIN IMMEDIATE");
+    try {
+      if (access.roleCode !== null) this.assignUserRole(userId, access.roleCode, reviewerId);
+      if (access.jobRole !== null) this.updateMemberJobRole(userId, reviewerId, access.jobRole);
+      this.updateMemberAuthorityLevel(userId, reviewerId, access.authorityLevel);
+      this.setUserAdditionalPermissions(userId, [...access.extraPermissions]);
+      this.db.exec("COMMIT");
+    } catch (error) {
+      this.db.exec("ROLLBACK");
+      throw error;
+    }
   },
 
   getJobRoleOptions(this: SqliteDatabase): string[] {

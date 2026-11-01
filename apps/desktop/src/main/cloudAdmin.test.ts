@@ -11,6 +11,7 @@ import {
   copyRolesUp,
   resetPassword,
   rolesToCopyUp,
+  saveMemberAccess,
   saveRole,
   setAccess,
   signUpsAwaitingApproval,
@@ -85,6 +86,27 @@ describe("approving and changing people", () => {
     const cloud = new ScriptedCloud({ admin_set_access: answered({ ok: true, person: person({ revision: 2, jobRole: "Munshi" }) }) });
     await setAccess(deps(cloud), "p-ali", { jobRole: "Munshi" });
     expect(cloud.calls[0]?.args).toMatchObject({ p_status: "PENDING", p_job_role: "Munshi", p_role_code: null, p_extra_permissions: [] });
+  });
+
+  it("Save is one cloud change: role, job role, authority and extras in a single call, the role's own screens left out", async () => {
+    const cloud = new ScriptedCloud({
+      admin_set_access: answered({ ok: true, person: person({ revision: 2, roleCode: "munshi", jobRole: "Munshi", authorityLevel: 20, extraPermissions: ["logs"] }) }),
+    });
+    const result = await saveMemberAccess(deps(cloud), "p-ali", { roleCode: "munshi", jobRole: "Munshi", authorityLevel: 20, extraPermissions: ["stock", "logs"] });
+    expect(result).toEqual({ accepted: true });
+    expect(cloud.calls).toHaveLength(1);
+    expect(cloud.calls[0]?.args).toMatchObject({
+      p_status: "PENDING", p_role_code: "munshi", p_job_role: "Munshi", p_authority_level: 20, p_extra_permissions: ["logs"],
+    });
+  });
+
+  it("a Save the cloud refuses saves nothing and says why (a role not copied up yet)", async () => {
+    const cloud = new ScriptedCloud({ admin_set_access: answered({ ok: false, reason: "ROLE_NOT_FOUND" }) });
+    const before = db.db.prepare("SELECT job_role, authority_level FROM app_users WHERE id = 'p-ali'").get();
+    const result = await saveMemberAccess(deps(cloud), "p-ali", { roleCode: "store-operator", jobRole: "Store Operator", authorityLevel: 20, extraPermissions: [] });
+    expect(result).toEqual({ accepted: false, reason: CLOUD_ADMIN_MESSAGES.ROLE_NOT_FOUND });
+    expect(cloud.calls).toHaveLength(1);
+    expect(db.db.prepare("SELECT job_role, authority_level FROM app_users WHERE id = 'p-ali'").get()).toEqual(before);
   });
 
   it("refuses without a person token, offline, and says why the cloud said no", async () => {

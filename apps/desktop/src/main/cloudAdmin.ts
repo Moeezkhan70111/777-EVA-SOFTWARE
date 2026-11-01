@@ -9,7 +9,7 @@
 // An admin's change to one field is sent as the person's WHOLE access decision, built from this
 // computer's copy of them: the cloud judges the whole (020's admin_set_access), never a fragment.
 
-import type { AccessSuggestion, AccountRolePayload, PermissionRequestPayload, SqliteDatabase } from "@erp/data";
+import type { AccessSuggestion, AccountRolePayload, MemberAccessChange, PermissionRequestPayload, SqliteDatabase } from "@erp/data";
 import type { AccessDecision, AccountCallFailure, AccountDeclined, AccountFunctionCaller, RoleDefinition } from "@erp/sync";
 
 export interface CloudAdminDeps {
@@ -170,6 +170,34 @@ export async function setAccess(deps: CloudAdminDeps, personId: string, change: 
   const data = await import("@erp/data");
   writeHere(deps.db, () => data.personWaitsFor(deps.db.db, answer.person), () => data.applyPersonRevision(deps.db.db, answer.person));
   return { accepted: true };
+}
+
+/**
+ * The extra screens, without the ones the role already gives. Under cloud accounts a role is its own
+ * record: a later change to the role then reaches this person, instead of their copy of its old
+ * screens outliving it.
+ */
+export function extrasBeyondRole(db: SqliteDatabase, roleCode: string | null, permissions: readonly string[]): string[] {
+  const roleScreens = new Set(roleCode === null ? [] : (db.listRoles().find((role) => role.code === roleCode)?.permissions ?? []));
+  return permissions.filter((code) => !roleScreens.has(code));
+}
+
+/**
+ * The member details' Save: role, job role, authority and extra screens as ONE cloud change, so one
+ * revision in the log and one round trip, and a refusal (a role not in the cloud yet) refuses the
+ * whole of it rather than leaving the rest saved. It was four calls (rehearsal, 2 Nov: four presses
+ * made twelve revisions in two seconds, the role refused each time with nothing said).
+ */
+export async function saveMemberAccess(deps: CloudAdminDeps, personId: string, change: MemberAccessChange): Promise<AdminResult> {
+  const current = currentAccess(deps.db, personId);
+  if (current === null) return { accepted: false, reason: CLOUD_ADMIN_MESSAGES.NOT_HERE };
+  const roleCode = change.roleCode ?? current.roleCode;
+  return setAccess(deps, personId, {
+    roleCode,
+    jobRole: change.jobRole ?? current.jobRole,
+    authorityLevel: change.authorityLevel,
+    extraPermissions: extrasBeyondRole(deps.db, roleCode, change.extraPermissions),
+  });
 }
 
 export async function resetPassword(deps: CloudAdminDeps, personId: string, newPassword: string): Promise<AdminResult> {

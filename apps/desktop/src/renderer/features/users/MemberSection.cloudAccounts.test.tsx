@@ -32,7 +32,7 @@ beforeEach(() => {
   (window as unknown as { desktop: { api: typeof api } }).desktop = { api };
 });
 
-const show = (members: Member[], onReview = vi.fn().mockResolvedValue(undefined)) => {
+const show = (members: Member[], onReview = vi.fn().mockResolvedValue(undefined), onSaveAccess = vi.fn().mockResolvedValue(true)) => {
   render(
     <NotificationsProvider>
       <SessionProvider user={OWNER} token="session-owner">
@@ -42,16 +42,35 @@ const show = (members: Member[], onReview = vi.fn().mockResolvedValue(undefined)
           onPermissions={vi.fn()}
           onRevoke={vi.fn()}
           onReview={onReview}
-          onJobRole={vi.fn()}
-          onAuthority={vi.fn()}
-          onAssignRole={vi.fn()}
-          onSetAdditionalPermissions={vi.fn()}
+          onSaveAccess={onSaveAccess}
         />
       </SessionProvider>
     </NotificationsProvider>
   );
   return onReview;
 };
+
+describe("Save is one change per press (rehearsal, 2 Nov)", () => {
+  it("sends the role, its name as job role, authority and extras together, once", async () => {
+    const onSaveAccess = vi.fn().mockResolvedValue(true);
+    show([member({ roleCode: "munshi", roleName: "Munshi", jobRole: "Munshi", additionalPermissions: ["logs"] })], undefined, onSaveAccess);
+    await userEvent.click(screen.getByRole("button", { name: /Ali/ }));
+    await userEvent.selectOptions(screen.getByRole("combobox"), "store");
+    await userEvent.click(screen.getByRole("button", { name: "Save Changes" }));
+    expect(onSaveAccess).toHaveBeenCalledTimes(1);
+    expect(onSaveAccess).toHaveBeenCalledWith("p-ali", { roleCode: "store", jobRole: "Store", authorityLevel: 10, extraPermissions: ["logs"] });
+    expect(await screen.findByText("Changes saved")).toBeInTheDocument();
+  });
+
+  it("a refused Save does not say it saved", async () => {
+    const onSaveAccess = vi.fn().mockResolvedValue(false);
+    show([member({})], undefined, onSaveAccess);
+    await userEvent.click(screen.getByRole("button", { name: /Ali/ }));
+    await userEvent.click(screen.getByRole("button", { name: "Save Changes" }));
+    expect(onSaveAccess).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(screen.queryByText("Changes saved")).not.toBeInTheDocument());
+  });
+});
 
 describe("approving someone whose account moved up", () => {
   it("starts from the role and access they had, says so, and approves with it", async () => {

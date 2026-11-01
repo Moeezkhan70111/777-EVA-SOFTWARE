@@ -2,7 +2,7 @@ import React from "react";
 import { MemberSection } from "../users/MemberSection";
 import { RolesSection } from "../users/RolesSection";
 import type { Member } from "../users/types";
-import type { AuthUser } from "../../types/desktopApi";
+import type { AuthUser, MemberAccessChange } from "../../types/desktopApi";
 import { CloudAccountsSwitchCard } from "./CloudAccountsSwitchCard";
 import { CloudRoleCopyCard } from "./CloudRoleCopyCard";
 
@@ -16,10 +16,7 @@ export const ProfilePage = ({
   onPermissions,
   onRevoke,
   onReview,
-  onJobRole,
-  onAuthority,
-  onAssignRole,
-  onSetAdditionalPermissions,
+  onSaveAccess,
   onCreateRole,
   onUpdateRole,
   onDeleteRole,
@@ -48,10 +45,7 @@ export const ProfilePage = ({
     permissions: string[],
     roleCode?: string,
   ) => Promise<void>;
-  onJobRole: (id: string, jobRole: string) => Promise<void>;
-  onAuthority: (id: string, authorityLevel: number) => Promise<void>;
-  onAssignRole: (userId: string, roleCode: string) => Promise<void>;
-  onSetAdditionalPermissions: (userId: string, permissions: string[]) => Promise<void>;
+  onSaveAccess: (userId: string, access: MemberAccessChange) => Promise<boolean>;
   onCreateRole: (input: { name: string; description?: string; permissions: string[]; loginPolicy?: "ALWAYS_LOGGED_IN" | "DAILY_LOGIN" }) => Promise<void>;
   onUpdateRole: (
     code: string,
@@ -92,10 +86,7 @@ export const ProfilePage = ({
             onPermissions={onPermissions}
             onRevoke={onRevoke}
             onReview={onReview}
-            onJobRole={onJobRole}
-            onAuthority={onAuthority}
-            onAssignRole={onAssignRole}
-            onSetAdditionalPermissions={onSetAdditionalPermissions}
+            onSaveAccess={onSaveAccess}
           />
         </>
       )}
