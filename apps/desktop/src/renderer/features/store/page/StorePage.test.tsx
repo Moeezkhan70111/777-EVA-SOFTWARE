@@ -212,13 +212,99 @@ describe("Store page — the two modes", () => {
 describe("Store page — the scan panels, as released", () => {
   afterEach(() => vi.restoreAllMocks());
 
-  it("hosts Scan Material as Store In had it: the supplier, Start session, READY TO SCAN", async () => {
+  it("hosts Scan Material: Not Ready, the supplier, Ready to Scan with Start Session inside it", async () => {
+    const api = Object.assign(installApi({ receivingOpen: false }), { startRawMaterialReceivingSession: vi.fn() });
+    renderPage();
+    const rail = screen.getByRole("complementary", { name: "Scan Material" });
+    const start = await within(rail).findByRole("button", { name: /Start Session/ });
+    expect(within(rail).getByRole("status")).toHaveTextContent("Not Ready");
+    expect(within(rail).getByTestId("scan-status")).toHaveTextContent("Ready to Scan");
+    // Nothing a scan could land in until a session is open.
+    expect(within(rail).queryByLabelText("Scanner input")).toBeNull();
+
+    // With no supplier chosen it says to choose one (a notice), and starts nothing.
+    await act(async () => {
+      fireEvent.click(start);
+    });
+    expect(api.startRawMaterialReceivingSession).not.toHaveBeenCalled();
+    expect(within(rail).getByRole("status")).toHaveTextContent("Not Ready");
+  });
+
+  it("puts the open session's party, large with its type, and End Session inside the scan panel", async () => {
+    installApi();
+    renderPage();
+    const rail = screen.getByRole("complementary", { name: "Scan Material" });
+    const panel = await within(rail).findByRole("region", { name: "Scanning station" });
+
+    const party = await within(panel).findByTestId("scan-party");
+    expect(party).toHaveTextContent("Receiving from");
+    expect(party).toHaveTextContent("SHEHZAD RUBBER");
+    expect(within(party).getByTestId("party-type-badge")).toHaveTextContent("Supplier");
+    expect(within(panel).getByRole("button", { name: "End Session" })).toBeEnabled();
+    // No scanner pill on the rail: its head already says Ready.
+    expect(within(rail).queryByText(/Keyboard input|Scanner ready/)).toBeNull();
+
+    // Print Receipt is in the rail's head (beside nothing else), once, and not in the station's toolbar.
+    const pill = await within(rail).findByRole("status");
+    await waitFor(() => expect(pill).toHaveTextContent(/^Ready$/));
+    // The head is the <header> the pill is in (inside the rail's <aside>, so it has no banner role).
+    const head = pill.closest("header") as HTMLElement;
+    expect(await within(head).findByRole("button", { name: "Print Receipt" })).toBeEnabled();
+    expect(within(rail).getAllByRole("button", { name: /Print receipt/i })).toHaveLength(1);
+  });
+
+  it("lists the session's packets newest first: time, name, the rest, the category as a tag, QR and amount", async () => {
+    const api = installApi();
+    api.getRawMaterialReceivingSessionSummary.mockResolvedValue({
+      session: RECEIVING,
+      totalPackets: 2,
+      byMaterial: [
+        { itemDisplayName: "UPPER — LADIES — DC1 — 6/9", categoryLabel: "UPPER — LADIES", packets: 1, quantity: 1, unitCode: "BUNDLE" },
+        { itemDisplayName: "UPPER — LADIES — DC2", categoryLabel: "UPPER — LADIES", packets: 1, quantity: 2, unitCode: "BUNDLE" },
+      ],
+      scans: [
+        { qrId: "RM_16_802_4", itemDisplayName: "UPPER — LADIES — DC2", categoryLabel: "UPPER — LADIES", quantity: 2, unitCode: "BUNDLE", receivedAt: "2026-10-30T02:28:00.000Z", actor: "store" },
+        { qrId: "RM_16_910_1", itemDisplayName: "UPPER — LADIES — DC1 — 6/9", categoryLabel: "UPPER — LADIES", quantity: 1, unitCode: "BUNDLE", receivedAt: "2026-10-30T02:31:00.000Z", actor: "store" },
+      ],
+    } as never);
+    renderPage();
+    const rail = screen.getByRole("complementary", { name: "Scan Material" });
+    const list = await within(rail).findByRole("region", { name: "Recently Received" });
+    expect(list).toHaveTextContent("Last 12 in this session");
+
+    const [newest, older] = await within(list).findAllByRole("listitem");
+    expect(within(newest).getByText("DC1")).toBeInTheDocument();
+    expect(within(newest).getByText("6/9")).toBeInTheDocument();
+    expect(within(newest).getByText("LADIES")).toBeInTheDocument();
+    expect(within(newest).getByText("RM_16_910_1")).toBeInTheDocument();
+    expect(within(newest).getByText("1 BUNDLE")).toBeInTheDocument();
+    expect(within(older).getByText("DC2")).toBeInTheDocument();
+    // The session card groups the same packets by category, packets and quantity said apart.
+    const session = within(rail).getByRole("region", { name: "This Session" });
+    expect(session).toHaveTextContent("UPPER · LADIES");
+    expect(session).toHaveTextContent("1 packet");
+    expect(within(session).getByTestId("session-total")).toHaveTextContent("2 packets");
+    expect(within(session).getByTestId("session-total")).toHaveTextContent("3 BUNDLE");
+
+    // No subtext under the rail's name any more.
+    expect(within(rail).queryByText("Scan a QR code to receive material into stock.")).toBeNull();
+  });
+
+  it("has no Print Receipt in the rail's head before a session is open", async () => {
     installApi({ receivingOpen: false });
     renderPage();
     const rail = screen.getByRole("complementary", { name: "Scan Material" });
-    expect(await within(rail).findByRole("button", { name: /Start session/ })).toBeDisabled();
-    expect(within(rail).getByTestId("scan-status")).toHaveTextContent("READY TO SCAN");
-    expect(within(rail).getByLabelText("Scanner input")).toBeDisabled();
+    await within(rail).findByRole("button", { name: /Start Session/ });
+    expect(within(rail).queryByRole("button", { name: /Print receipt/i })).toBeNull();
+  });
+
+  it("says Ready, and arms the scanner's box, once a receiving session is open", async () => {
+    installApi();
+    renderPage();
+    const rail = screen.getByRole("complementary", { name: "Scan Material" });
+    await waitFor(() => expect(within(rail).getByRole("status")).toHaveTextContent(/^Ready$/));
+    expect(within(rail).getByLabelText("Scanner input")).toBeEnabled();
+    expect(within(rail).queryByRole("button", { name: /Start Session/ })).toBeNull();
   });
 
   it("offers contractors as well as suppliers to receive from, each with its type (0.4.1)", async () => {
@@ -233,23 +319,77 @@ describe("Store page — the scan panels, as released", () => {
     expect(screen.getByRole("option", { name: /DANIYAL/ })).toHaveTextContent("Contractor");
   });
 
-  it("hosts Scan Out as Store Out had it: the party with its type, New session, End session, Print slip", async () => {
-    installApi();
+  it("hosts Scan Out as Move in has it: Not Ready, the party picker, Ready to Scan with Start Session inside", async () => {
+    const api = Object.assign(installApi(), { startRawMaterialIssueSession: vi.fn() });
     renderPage({ start: "issuing" });
     const rail = screen.getByRole("complementary", { name: "Scan Out" });
-    expect(within(rail).getByRole("button", { name: /New session/ })).toBeDisabled();
-    expect(within(rail).getByRole("button", { name: /End session/ })).toBeDisabled();
-    expect(within(rail).getByRole("button", { name: /Print slip/ })).toBeInTheDocument();
+    expect(rail).toHaveClass("sp-rail--out");
+    expect(within(rail).getByRole("status")).toHaveTextContent("Not Ready");
+    const panel = await within(rail).findByRole("region", { name: "Scanning station" });
+    expect(within(panel).getByTestId("scan-status")).toHaveTextContent("Ready to Scan");
+    expect(within(rail).queryByLabelText("Scanner input")).toBeNull();
+    expect(within(rail).queryByRole("button", { name: /Print/i })).toBeNull();
+
+    // With no party chosen it says to choose one, and starts nothing.
+    await act(async () => {
+      fireEvent.click(within(panel).getByRole("button", { name: /Start Session/ }));
+    });
+    expect(api.startRawMaterialIssueSession).not.toHaveBeenCalled();
+
     await act(async () => {
       fireEvent.click(await within(rail).findByRole("combobox", { name: "Moving out to" }));
     });
     expect(await screen.findByRole("option", { name: /DANIYAL/ })).toHaveTextContent("Contractor");
   });
 
+  it("shows Print Receipt on Move out as soon as a session opens, before any packet, as on Move in", async () => {
+    const api = installApi();
+    const ISSUING = { id: "is-2", code: "RMO-000175", sessionNumber: 175, deviceId: "d1", startedBy: "store", status: "OPEN" as const, startedAt: "2026-10-30T06:00:00.000Z", closedAt: null };
+    api.getOpenRawMaterialIssueSession.mockResolvedValue(ISSUING as never);
+    api.getRawMaterialIssueSessionSummary.mockResolvedValue({
+      session: ISSUING, partyId: "con-1", partyName: "DANIYAL", totalPackets: 0, byMaterial: [], bySection: [], scans: [],
+    } as never);
+    renderPage({ start: "issuing" });
+    const rail = screen.getByRole("complementary", { name: "Scan Out" });
+    expect(await within(rail).findByRole("button", { name: "Print Receipt" })).toBeEnabled();
+  });
+
+  it("puts an open Move out session's party, End Session, its list and Print Receipt where Move in has them", async () => {
+    const api = installApi();
+    const ISSUING = { id: "is-1", code: "RMO-000174", sessionNumber: 174, deviceId: "d1", startedBy: "store", status: "OPEN" as const, startedAt: "2026-10-30T05:00:00.000Z", closedAt: null };
+    api.getOpenRawMaterialIssueSession.mockResolvedValue(ISSUING as never);
+    api.getRawMaterialIssueSessionSummary.mockResolvedValue({
+      session: ISSUING,
+      partyId: "con-1",
+      partyName: "DANIYAL",
+      totalPackets: 1,
+      byMaterial: [{ itemDisplayName: "DANA — EVA — RED", categoryLabel: "DANA — EVA", packets: 1, quantity: 25, unitCode: "KG" }],
+      bySection: [],
+      scans: [{ qrId: "RM_1_1_1", itemDisplayName: "DANA — EVA — RED", categoryLabel: "DANA — EVA", quantity: 25, unitCode: "KG", sectionName: null, issuedAt: "2026-10-30T05:10:00.000Z", actor: "store" }],
+    } as never);
+    renderPage({ start: "issuing" });
+    const rail = screen.getByRole("complementary", { name: "Scan Out" });
+    const panel = await within(rail).findByRole("region", { name: "Scanning station" });
+
+    const party = await within(panel).findByTestId("scan-party");
+    expect(party).toHaveTextContent("Moving out to");
+    expect(party).toHaveTextContent("DANIYAL");
+    expect(within(party).getByTestId("party-type-badge")).toHaveTextContent("Contractor");
+    expect(within(panel).getByRole("button", { name: "End Session" })).toBeEnabled();
+    expect(await within(rail).findByRole("button", { name: "Print Receipt" })).toBeEnabled();
+    expect(within(rail).queryByText(/Keyboard input|Scanner ready/)).toBeNull();
+
+    const session = within(rail).getByRole("region", { name: "This Session" });
+    expect(session).toHaveTextContent("DANA · EVA");
+    expect(within(session).getByTestId("session-total")).toHaveTextContent("25 KG");
+    const recent = within(rail).getByRole("region", { name: "Recently Issued" });
+    expect(within(recent).getByText("RM_1_1_1")).toBeInTheDocument();
+  });
+
   it("gives the scanner's focus to the mode on screen only, and back after the Machine programs dialog", async () => {
     installApi();
     renderPage({ showMachinePrograms: true });
-    const box = within(screen.getByRole("complementary", { name: "Scan Material" })).getByLabelText("Scanner input");
+    const box = await within(screen.getByRole("complementary", { name: "Scan Material" })).findByLabelText("Scanner input");
     await waitFor(() => expect(box).toHaveFocus());
 
     fireEvent.click(screen.getByRole("button", { name: "Machine programs" }));
@@ -304,7 +444,7 @@ describe("Store page — keys 1 and 2", () => {
     installApi();
     const onModeChange = vi.fn();
     renderPage({ onModeChange });
-    const box = within(screen.getByRole("complementary", { name: "Scan Material" })).getByLabelText("Scanner input");
+    const box = await within(screen.getByRole("complementary", { name: "Scan Material" })).findByLabelText("Scanner input");
     await waitFor(() => expect(box).toBeEnabled());
     box.focus();
     await act(async () => {

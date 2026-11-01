@@ -40,7 +40,7 @@ import { NO_SESSION, type StationStatus } from "./stationStatus";
 // and disarmed meanwhile: the program's own scanner is the one box listening.
 
 /** The scan rail's share of the page: its limits, and the default the CSS starts from (theme.css). */
-const RAIL = { min: 0.2, max: 0.6, default: 0.3, minPx: 300, workMinPx: 420, storageKey: "erp.store.rail-width" } as const;
+const RAIL = { min: 0.2, max: 0.6, default: 0.5, minPx: 300, workMinPx: 420, storageKey: "erp.store.rail-width" } as const;
 
 interface StorePageProps {
   mode: StoreMode;
@@ -130,12 +130,20 @@ export const StorePage: React.FC<StorePageProps> = (props) => {
           onChange={setRailFraction}
           className="sp-split"
         />
-        <ScanInRail token={token} username={username} hidden={!showing("receiving")} active={mode === "receiving" && free} onStatus={setReceivingStatus} />
+        <ScanInRail
+          token={token}
+          username={username}
+          hidden={!showing("receiving")}
+          active={mode === "receiving" && free}
+          status={receivingStatus}
+          onStatus={setReceivingStatus}
+        />
         <ScanOutRail
           token={token}
           username={username}
           hidden={!showing("issuing")}
           active={mode === "issuing" && free}
+          status={issuingStatus}
           onStatus={setIssuingStatus}
           onMachineProgramScan={programs.openProgram}
         />

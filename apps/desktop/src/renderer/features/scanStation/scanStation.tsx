@@ -29,6 +29,7 @@ export const SCAN_STATION_CSS = `
   --ok: #15803d;   --ok-bg: #ecfdf3;   --ok-line: #a7e6c0;
   --warn: #a16207; --warn-bg: #fffbeb; --warn-line: #f2d98a;
   --err: var(--danger-strong);  --err-bg: #fef2f2;  --err-line: #f3b9b9;
+  --tag: #7e22ce;  --tag-bg: #f3e8ff;  --tag-line: #e9d5ff;   /* a material's category in the recent list: 6:1 */
   --r-sm: 8px; --r-md: 12px; --r-lg: 16px;
   --shadow-card: 0 1px 2px rgba(15, 34, 51, .04);
   --shadow-scan: 0 10px 30px rgba(24, 127, 187, .10), 0 1px 2px rgba(15, 34, 51, .05);
@@ -55,6 +56,19 @@ export const SCAN_STATION_CSS = `
 .ssn-btn:disabled { opacity: .5; cursor: default; }
 .ssn-btn--ghost { border-color: transparent; background: transparent; box-shadow: none; color: var(--ink-2); padding: 0 10px; }
 .ssn-btn--sm { height: 28px; padding: 0 10px; font-size: .72rem; }
+/* The one big action inside the scan panel (Start session). White text, large and bold: 3:1 at least. */
+.ssn-btn--hero { height: 56px; min-width: 240px; justify-content: center; gap: 10px; padding: 0 28px; border: 0; border-radius: var(--r-md); background: linear-gradient(90deg, var(--sky-500), var(--sky-700)); color: var(--white); font-size: 1.15rem; font-weight: 800; box-shadow: 0 10px 24px rgba(24, 127, 187, .25); }
+.ssn-btn--hero svg { width: 22px; height: 22px; }
+.ssn-btn--hero:hover:not(:disabled) { background: linear-gradient(90deg, var(--sky-600), var(--sky-700)); color: var(--white); }
+.ssn-scan-action { margin-top: 8px; }
+/* The band across the top of the panel (ScanPanel's header): who the open session is with. */
+/* Not positioned, so the panel's coloured top stripe (its verdict) still shows over it. */
+.ssn-scan-header { flex-shrink: 0; padding: 16px 20px; border-bottom: 1px solid var(--line-2); background: var(--surface); }
+.ssn-scan-party { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-width: 0; }
+.ssn-scan-party-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.ssn-scan-party-eyebrow { font-size: .7rem; font-weight: 700; color: var(--ink-3); text-transform: uppercase; letter-spacing: .1em; }
+.ssn-scan-party-name { font-size: 1.4rem; font-weight: 800; color: var(--ink); letter-spacing: -.02em; line-height: 1.15; overflow-wrap: anywhere; }
+.ssn-scan-party .party-type-badge { margin-top: 0; flex-shrink: 0; }
 
 /* ── Toolbar ─────────────────────────────────────────────────────────────── */
 .ssn-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; flex-shrink: 0; }
@@ -78,6 +92,8 @@ export const SCAN_STATION_CSS = `
 .ssn--embedded { height: 100%; padding: 16px; gap: 12px; background: var(--surface); }
 .ssn--embedded .ssn-brand-icon, .ssn--embedded .ssn-eyebrow { display: none; }
 .ssn--embedded .ssn-toolbar { gap: 10px; }
+/* Nothing in the toolbar (an open session on the Store page, its controls all elsewhere): no empty row. */
+.ssn--embedded .ssn-toolbar:has(.ssn-toolbar-actions:empty) { display: none; }
 .ssn--embedded .ssn-toolbar-actions { flex: 1 1 100%; }
 .ssn--embedded .ssn-supplier-pick { min-width: 0; flex: 1 1 200px; }
 .ssn--embedded .ssn-workspace { flex: none; display: flex; flex-direction: column; gap: 12px; min-height: 0; }
@@ -250,6 +266,50 @@ export const SCAN_STATION_CSS = `
 .ssn-recent tr.ssn-recent-row:focus-visible td { background: var(--sky-100); }
 .ssn-recent tr.ssn-recent-row:last-child td { border-bottom: 0; }
 
+/* ── Recent activity as a list (RecentScansList, the Store page's rail) ─────
+   One line a packet: time, name, what follows it, its category as a tag, then its QR and amount at
+   the right. The newest is on top, tinted. Lines wrap rather than squeeze in a narrow rail. */
+.ssn-list-card, .ssn-recent-list { flex-shrink: 0; padding: 16px 18px; }
+.ssn-list-head { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+.ssn-list-icon { display: inline-flex; color: var(--sky-600); }
+.ssn-list-icon svg { width: 22px; height: 22px; }
+.ssn-list-title { flex: 1; margin: 0; font-size: 1.1rem; font-weight: 800; color: var(--ink); letter-spacing: -.01em; }
+.ssn-recent-list-rows { list-style: none; margin: 0; padding: 0; }
+.ssn-recent-list-row {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 6px 18px; padding: 12px 14px;
+  border-bottom: 1px solid var(--line-2); font-size: .86rem; color: var(--ink);
+}
+.ssn-recent-list-row:last-child { border-bottom: 0; }
+.ssn-recent-list-row:first-child { background: var(--sky-50); border-bottom-color: transparent; border-radius: var(--r-md); }
+.ssn-recent-list-time { flex: none; min-width: 64px; font-size: .78rem; font-weight: 600; color: var(--ink-3); white-space: nowrap; }
+.ssn-list-name { font-size: 1rem; font-weight: 800; color: var(--ink); overflow-wrap: anywhere; }
+.ssn-list-detail { font-weight: 600; color: var(--ink-2); overflow-wrap: anywhere; }
+.ssn-list-tag {
+  display: inline-flex; align-items: center; height: 26px; padding: 0 12px; border-radius: 999px;
+  background: var(--tag-bg); border: 1px solid var(--tag-line); color: var(--tag); font-size: .76rem; font-weight: 700; white-space: nowrap;
+}
+.ssn-recent-list-qr {
+  margin-left: auto; padding: 4px 10px; border-radius: 6px; background: var(--canvas); border: 1px solid var(--line);
+  font-size: .74rem; font-weight: 700; color: var(--sky-700); white-space: nowrap;
+}
+.ssn-list-amount { flex: none; min-width: 72px; text-align: right; font-weight: 700; color: var(--ink); white-space: nowrap; }
+
+/* ── The session as a list, grouped by category (SessionGroupsCard, the Store page's rail) ──
+   Each category is a tag with its packet count; under it a line a material — name, the rest, how
+   many packets, and what they put into stock — and the session's total at the foot. */
+.ssn-list-head-code { font-size: .78rem; font-weight: 700; color: var(--ink); background: var(--sky-50); border: 1px solid var(--sky-100); padding: 3px 9px; border-radius: 6px; }
+.ssn-tally-meta { margin: -4px 0 10px; font-size: .78rem; font-weight: 600; color: var(--ink-3); overflow-wrap: anywhere; }
+.ssn-tally-groups { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.ssn-tally-group-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 4px 2px 6px; }
+.ssn-tally-count { font-size: .8rem; font-weight: 700; color: var(--ink-3); white-space: nowrap; }
+.ssn-tally-lines { list-style: none; margin: 0; padding: 0; border: 1px solid var(--line-2); border-radius: var(--r-md); }
+.ssn-tally-line { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 18px; padding: 10px 14px; border-bottom: 1px solid var(--line-2); font-size: .86rem; color: var(--ink); }
+.ssn-tally-line:last-child { border-bottom: 0; }
+.ssn-tally-line .ssn-tally-count { margin-left: auto; }
+.ssn-tally-total { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line); font-size: .7rem; font-weight: 700; color: var(--ink-3); text-transform: uppercase; letter-spacing: .08em; }
+.ssn-tally-total-figures { display: inline-flex; align-items: baseline; flex-wrap: wrap; justify-content: flex-end; gap: 4px 18px; letter-spacing: 0; text-transform: none; }
+.ssn-tally-total strong { font-size: 1.05rem; color: var(--ink); text-align: right; }
+
 /* ── Blocked state ───────────────────────────────────────────────────────── */
 .ssn-blocked { grid-column: 1 / -1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; text-align: center; padding: 40px 28px; background: var(--surface); border: 1px dashed var(--line); border-radius: var(--r-lg); color: var(--ink-2); font-size: .9rem; }
 .ssn-blocked-icon { width: 48px; height: 48px; border-radius: 50%; background: var(--err-bg); color: var(--err); border: 1px solid var(--err-line); display: flex; align-items: center; justify-content: center; margin-bottom: 4px; }
@@ -289,6 +349,23 @@ const ReadyIcon: React.FC = () => (
       />
     </svg>
   </div>
+);
+
+/** Three stacked layers: what this session holds, sorted into kinds. */
+const LayersIcon: React.FC = () => (
+  <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+    <path d="M12 3l9 4.5-9 4.5-9-4.5L12 3z" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />
+    <path d="M3 12l9 4.5 9-4.5M3 16.5l9 4.5 9-4.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+  </svg>
+);
+
+/** A clock with an arrow running back round it: what has just happened. */
+const HistoryIcon: React.FC = () => (
+  <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+    <path d="M3.5 12a8.5 8.5 0 1 0 2.5-6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+    <path d="M3 3.5V8h4.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+    <path d="M12 7.5V12l3 2" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+  </svg>
 );
 
 const ChevronLeftIcon: React.FC = () => (
@@ -394,11 +471,18 @@ export const ScanPanel: React.FC<{
   /** Placeholder while armed, and the line under the box, for such a station. */
   placeholder?: string;
   dockHint?: string;
-}> = ({ feedback, inputRef, inputVal, onInputChange, onKeyDown, onFocusScanner, disabled, disabledHint, onSubmit, submitLabel, placeholder, dockHint }) => {
+  /** A button under the message (and any result), such as Start session or End session. */
+  action?: React.ReactNode;
+  /** A band across the top of the panel, such as who the open session is with. */
+  header?: React.ReactNode;
+  /** False leaves the scanner's box out, where it could take nothing yet. Shown when left out. */
+  showDock?: boolean;
+}> = ({ feedback, inputRef, inputVal, onInputChange, onKeyDown, onFocusScanner, disabled, disabledHint, onSubmit, submitLabel, placeholder, dockHint, action, header, showDock = true }) => {
   const r = feedback.result;
   const isIdle = feedback.tone === "idle";
   return (
     <section className={`ssn-scan ssn-scan--${feedback.tone}`} aria-live="polite" aria-label={copy.scanning.station}>
+      {header ? <div className="ssn-scan-header">{header}</div> : null}
       <div className="ssn-scan-stage">
         <div className="ssn-scan-stage-inner">
           {isIdle && <ReadyIcon />}
@@ -447,24 +531,27 @@ export const ScanPanel: React.FC<{
               )}
             </div>
           )}
+          {action ? <div className="ssn-scan-action">{action}</div> : null}
         </div>
       </div>
 
       {/* Keyboard-wedge scanner target. Kept visible but secondary, so a supervisor can
           type a code for troubleshooting without this becoming a manual-entry workflow. */}
-      <ScanDock
-        inputRef={inputRef}
-        inputVal={inputVal}
-        onInputChange={onInputChange}
-        onKeyDown={onKeyDown}
-        onFocusScanner={onFocusScanner}
-        disabled={disabled}
-        disabledHint={disabledHint}
-        onSubmit={onSubmit}
-        submitLabel={submitLabel}
-        placeholder={placeholder}
-        dockHint={dockHint}
-      />
+      {showDock ? (
+        <ScanDock
+          inputRef={inputRef}
+          inputVal={inputVal}
+          onInputChange={onInputChange}
+          onKeyDown={onKeyDown}
+          onFocusScanner={onFocusScanner}
+          disabled={disabled}
+          disabledHint={disabledHint}
+          onSubmit={onSubmit}
+          submitLabel={submitLabel}
+          placeholder={placeholder}
+          dockHint={dockHint}
+        />
+      ) : null}
     </section>
   );
 };
@@ -632,6 +719,80 @@ export const SessionCard: React.FC<{
   );
 };
 
+/** One material in a session grouped by category: its name, the rest of it, how many packets, what they hold. */
+export interface StationTallyLine {
+  key: string;
+  name: string;
+  detail?: string;
+  count: number;
+  amount: string;
+}
+
+/** One category of a session, with its materials. */
+export interface StationTallyGroup {
+  key: string;
+  label: string;
+  count: number;
+  lines: StationTallyLine[];
+}
+
+/** The open session as a list grouped by category, like RecentScansList: the Store page's rail. */
+export const SessionGroupsCard: React.FC<{
+  title: string;
+  code: string | null;
+  meta: string;
+  groups: StationTallyGroup[];
+  total: number;
+  /** What the session put into stock, one total per unit: "25 KG + 3 BUNDLE". */
+  totalAmount: string;
+  /** "1 packet", "3 packets". */
+  countLabel: (count: number) => string;
+  totalLabel: string;
+  emptyLabel: string;
+}> = ({ title, code, meta, groups, total, totalAmount, countLabel, totalLabel, emptyLabel }) => (
+  <section className="ssn-card ssn-list-card" aria-label={title}>
+    <div className="ssn-list-head">
+      <span className="ssn-list-icon" aria-hidden="true">
+        <LayersIcon />
+      </span>
+      <h3 className="ssn-list-title">{title}</h3>
+      <span className="ssn-list-head-code ssn-mono" data-testid="session-code">{code ?? "—"}</span>
+    </div>
+    <div className="ssn-tally-meta">{meta}</div>
+    {groups.length === 0 ? (
+      <div className="ssn-empty">{emptyLabel}</div>
+    ) : (
+      <ul className="ssn-tally-groups">
+        {groups.map((group) => (
+          <li key={group.key} className="ssn-tally-group">
+            <div className="ssn-tally-group-head">
+              <span className="ssn-list-tag">{group.label}</span>
+              <span className="ssn-tally-count">{countLabel(group.count)}</span>
+            </div>
+            <ul className="ssn-tally-lines">
+              {group.lines.map((line) => (
+                <li key={line.key} className="ssn-tally-line">
+                  <span className="ssn-list-name">{line.name}</span>
+                  {line.detail ? <span className="ssn-list-detail">{line.detail}</span> : null}
+                  <span className="ssn-tally-count">{countLabel(line.count)}</span>
+                  <span className="ssn-list-amount">{line.amount}</span>
+                </li>
+              ))}
+            </ul>
+          </li>
+        ))}
+      </ul>
+    )}
+    <div className="ssn-tally-total">
+      <span>{totalLabel}</span>
+      <span className="ssn-tally-total-figures" data-testid="session-total">
+        <span className="ssn-tally-count">{countLabel(total)}</span>
+        {totalAmount ? <strong>{totalAmount}</strong> : null}
+      </span>
+    </div>
+  </section>
+);
+
 /** One scanned line, as every station's cards and tables show it. */
 export interface StationScanRow {
   key: string;
@@ -640,6 +801,11 @@ export interface StationScanRow {
   at: string;
   /** The green pill: "In Store", "To Gate", … */
   badge: string;
+  /** For RecentScansList: the bold name (product is used when left out), what follows it, a tag, the amount. */
+  name?: string;
+  detail?: string;
+  tag?: string;
+  amount?: string;
 }
 
 export const LastScanCard: React.FC<{ title: string; row: StationScanRow | null }> = ({ title, row }) => (
@@ -720,6 +886,40 @@ export const RecentScansCard: React.FC<{
         </table>
       )}
     </div>
+  </section>
+);
+
+/** The recent scans as a list of lines, newest first and tinted: the Store page's rail. */
+export const RecentScansList: React.FC<{
+  title: string;
+  note: string;
+  emptyLabel: string;
+  rows: StationScanRow[];
+}> = ({ title, note, emptyLabel, rows }) => (
+  <section className="ssn-card ssn-recent-list" aria-label={title}>
+    <div className="ssn-list-head">
+      <span className="ssn-list-icon" aria-hidden="true">
+        <HistoryIcon />
+      </span>
+      <h3 className="ssn-list-title">{title}</h3>
+      <span className="ssn-card-note">{note}</span>
+    </div>
+    {rows.length === 0 ? (
+      <div className="ssn-empty">{emptyLabel}</div>
+    ) : (
+      <ol className="ssn-recent-list-rows">
+        {rows.map((row) => (
+          <li key={row.key} className="ssn-recent-list-row">
+            <time className="ssn-recent-list-time" dateTime={row.at}>{formatTime(row.at)}</time>
+            <span className="ssn-list-name">{row.name ?? row.product}</span>
+            {row.detail ? <span className="ssn-list-detail">{row.detail}</span> : null}
+            {row.tag ? <span className="ssn-list-tag">{row.tag}</span> : null}
+            <span className="ssn-recent-list-qr ssn-mono">{row.qrId}</span>
+            {row.amount ? <span className="ssn-list-amount">{row.amount}</span> : null}
+          </li>
+        ))}
+      </ol>
+    )}
   </section>
 );
 

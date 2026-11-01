@@ -4,6 +4,7 @@ import type { HandMoveDirection, Party, RawMaterialHandMoveOptions } from "../..
 import { useDesktopApi } from "../../hooks/useDesktopApi";
 import { useNotifications } from "../../state/NotificationsContext";
 import { SearchableCombobox } from "../../components/shared/SearchableCombobox";
+import { PersonIcon } from "./StoreIcons";
 import { LeasedStation } from "./LeasedStation";
 import { PartyTypeBadge } from "../parties/PartyTypeBadge";
 import { partyOption } from "../parties/partyOption";
@@ -203,8 +204,9 @@ const HandMoveForm: React.FC<HandMovePanelProps> = ({ direction, token, onMoved 
           <StepHeading index={1} done={Boolean(partyId)} title={copy.moveOut.stepSupplier} />
           <div className="qr-step-body">
             <SearchableCombobox
-              dropdown
               value={partyId}
+              icon={<PersonIcon />}
+              searchPlaceholder={copy.store.searchParty}
               options={supplierOptions}
               placeholder={supplierOptions.length === 0 ? copy.moveOut.noSuppliers : copy.moveOut.chooseSupplier}
               emptyLabel={copy.moveOut.noSupplierMatch}
@@ -225,8 +227,8 @@ const HandMoveForm: React.FC<HandMovePanelProps> = ({ direction, token, onMoved 
           ) : (
             <>
               <SearchableCombobox
-                dropdown
                 value={itemId}
+                searchPlaceholder={copy.store.searchMaterial}
                 options={itemOptions}
                 placeholder={itemOptions.length === 0 ? copy.moveOut.noMaterials : copy.moveOut.chooseMaterial}
                 emptyLabel={copy.moveOut.noMaterialMatch}

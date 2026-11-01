@@ -113,3 +113,70 @@ describe("SearchableCombobox — opening upward", () => {
     rect.mockRestore();
   });
 });
+
+// THE PANEL (1 Nov 2026), on the scan stations' party pickers: the field is a select, and the open
+// list carries its own search box, which takes the typing.
+describe("SearchableCombobox — the panel", () => {
+  const SUPPLIER = { value: "p18", label: "Ilyas", detail: "PTY-000018", badge: "Supplier", badgeTone: "info" as const, keywords: "PTY-000018 Supplier" };
+  const CONTRACTOR = { value: "p13", label: "Nasir", detail: "PTY-000013", badge: "Contractor", badgeTone: "ok" as const, keywords: "PTY-000013 Contractor" };
+
+  const renderPanel = (value = "") => {
+    const onChange = vi.fn();
+    render(
+      <SearchableCombobox value={value} options={[SUPPLIER, CONTRACTOR]} placeholder="Select Supplier" ariaLabel="Supplier" onChange={onChange} searchPlaceholder="Search supplier or contractor…" />
+    );
+    return onChange;
+  };
+
+  it("opens from the field with the search box focused, each row with its name, code and type", () => {
+    renderPanel();
+    const field = screen.getByRole("combobox", { name: "Supplier" });
+    expect(field).toHaveAttribute("readonly");
+    fireEvent.focus(field);
+
+    expect(screen.getByRole("textbox", { name: "Search supplier or contractor…" })).toHaveFocus();
+    const nasir = screen.getByRole("option", { name: /Nasir/ });
+    expect(nasir).toHaveTextContent("PTY-000013");
+    expect(nasir).toHaveTextContent("Contractor");
+    expect(nasir.querySelector(".badge-ok")).not.toBeNull();
+    expect(screen.getByRole("option", { name: /Ilyas/ }).querySelector(".badge-info")).not.toBeNull();
+  });
+
+  it("searches by code or type in its own box, and Enter picks the row", () => {
+    const onChange = renderPanel();
+    fireEvent.focus(screen.getByRole("combobox", { name: "Supplier" }));
+    const search = screen.getByRole("textbox", { name: "Search supplier or contractor…" });
+
+    fireEvent.change(search, { target: { value: "contractor" } });
+    expect(screen.getAllByRole("option")).toHaveLength(1);
+    fireEvent.change(search, { target: { value: "000018" } });
+    fireEvent.keyDown(search, { key: "Enter" });
+
+    expect(onChange).toHaveBeenCalledWith("p18");
+    expect(screen.queryByRole("listbox")).toBeNull();
+    // The focus goes back to the field without opening the list again.
+    expect(screen.getByRole("combobox", { name: "Supplier" })).toHaveFocus();
+  });
+
+  it("shows the pick in the field, and Escape closes the panel without changing it", () => {
+    const onChange = renderPanel("p13");
+    const field = screen.getByRole("combobox", { name: "Supplier" });
+    expect(field).toHaveValue("Nasir");
+    fireEvent.focus(field);
+    fireEvent.keyDown(screen.getByRole("textbox", { name: "Search supplier or contractor…" }), { key: "Escape" });
+
+    expect(screen.queryByRole("listbox")).toBeNull();
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it("opens with a letter typed on the field already searched", () => {
+    renderPanel();
+    const field = screen.getByRole("combobox", { name: "Supplier" });
+    fireEvent.click(screen.getByRole("button", { name: "Show options" }));
+    fireEvent.keyDown(screen.getByRole("textbox", { name: "Search supplier or contractor…" }), { key: "Escape" });
+    fireEvent.keyDown(field, { key: "n" });
+
+    expect(screen.getByRole("textbox", { name: "Search supplier or contractor…" })).toHaveValue("n");
+    expect(screen.getAllByRole("option")).toHaveLength(1);
+  });
+});

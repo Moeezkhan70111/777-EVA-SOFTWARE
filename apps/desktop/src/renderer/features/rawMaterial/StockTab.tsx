@@ -4,7 +4,6 @@ import { useNotifications } from "../../state/NotificationsContext";
 import type { RawMaterialMovementConfigRow, StockCorrectionRequest, WorkSection } from "../../types/desktopApi";
 import { StateView } from "../../components/shared/StateView";
 import { copy } from "../../config/copy";
-import { formatWholeMoney } from "../../app/format";
 import { AttributeField } from "./AttributeField";
 import { MaterialDrawer } from "./MaterialDrawer";
 import { NewMaterialModal } from "./NewMaterialModal";
@@ -12,22 +11,19 @@ import { ImportMaterialsModal } from "./ImportMaterialsModal";
 import { ActionMenu } from "./ActionMenu";
 import { useSyncWaiting } from "../sync/useSyncWaiting";
 import { incompleteMaterials } from "../sync/syncWaiting";
-import { IncompleteMaterials, IncompleteRowMark } from "../sync/IncompleteMaterials";
+import { IncompleteMaterials } from "../sync/IncompleteMaterials";
 import { useDataChanged } from "../../hooks/useDataChanged";
 import { DATA_KIND } from "../../../shared/dataChange";
 import { downloadCsv, exportFileName } from "../../utils/exportFile";
-import { quantityInBaseUnit } from "@erp/domain";
 import type { ItemUnitLadderStep } from "../../types/desktopApi";
 import { openReport } from "../../utils/reportDocument";
 import { buildMaterialsSheet, buildStockReport } from "./rawMaterialExports";
+import { CategoryFilterBar } from "./CategoryFilterBar";
+import { StockList } from "./StockList";
+import { categoryCounts, groupStockPage, sortForStock } from "./stockGroups";
+import { Pager } from "../../components/shared/Pager";
 import {
-  formatQuantity,
   identityFields,
-  categoryPath,
-  descendantsOf,
-  topCategories,
-  packCountLabel,
-  packetsInStore,
   type CategoryRow,
   type InventoryItemRow,
 } from "./rawMaterial";
@@ -83,7 +79,6 @@ export const StockTab: React.FC<StockTabProps> = ({
   const [categoryId, setCategoryId] = useState("");
   const [subCategoryId, setSubCategoryId] = useState("");
   const [attributeFilters, setAttributeFilters] = useState<Record<string, string>>({});
-  const [equivalentUnitId, setEquivalentUnitId] = useState("");
   /** Disabled materials are hidden by default; without this they could not be reached at all. */
   const [showDisabled, setShowDisabled] = useState(false);
   /** Each material's own chain of units, so Total qty can say the balance in the smallest one. */
@@ -122,12 +117,8 @@ export const StockTab: React.FC<StockTabProps> = ({
       const scopeId = subCategoryId || categoryId;
       const [itemRows, stockSummary] = await Promise.all([
         api.listInventoryItems({ search, categoryId: scopeId || undefined, attributes, status: showDisabled ? "ALL" : "ACTIVE" }),
-        api.queryInventoryStock({
-          search,
-          categoryId: scopeId || undefined,
-          attributes,
-          targetUnitId: equivalentUnitId || undefined,
-        }),
+        // The per-unit totals are no longer shown on screen, but the printed stock report carries them.
+        api.queryInventoryStock({ search, categoryId: scopeId || undefined, attributes }),
       ]);
       setItems(itemRows);
       setSummary(stockSummary);
@@ -144,7 +135,7 @@ export const StockTab: React.FC<StockTabProps> = ({
     } finally {
       if (!quiet) setLoading(false);
     }
-  }, [api, search, categoryId, subCategoryId, attributeKey, equivalentUnitId, showDisabled]);
+  }, [api, search, categoryId, subCategoryId, attributeKey, showDisabled]);
 
   useEffect(() => {
     void load();
@@ -164,9 +155,6 @@ export const StockTab: React.FC<StockTabProps> = ({
     onInitialItemConsumed();
   }, [initialItemId, onInitialItemConsumed]);
 
-  // Every level beneath the chosen category, not just its direct children: without this a
-  // sub-sub-category such as ACCESSORY > TAG > RUBBER TAG could not be picked at all.
-  const subCategories = useMemo(() => descendantsOf(categories, categoryId), [categories, categoryId]);
   // Attribute filters follow whichever level is selected: a sub-category's own attributes
   // include everything it inherits, so narrowing never loses a filter.
   const scopeCategory = categories.find((row) => String(row.id) === (subCategoryId || categoryId));
@@ -187,8 +175,11 @@ export const StockTab: React.FC<StockTabProps> = ({
     return rows;
   }, [items, awaitingOnly, awaitingItemIds]);
 
-  const pageCount = Math.max(1, Math.ceil(visible.length / PAGE_SIZE));
-  const pageRows = visible.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  // Sorted so each category and sub-category sits together; counted across the whole list.
+  const sorted = useMemo(() => sortForStock(visible), [visible]);
+  const counts = useMemo(() => categoryCounts(visible), [visible]);
+  const pageCount = Math.max(1, Math.ceil(sorted.length / PAGE_SIZE));
+  const pageRows = sorted.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
   const openItem = openItemId ? items.find((item) => String(item.id) === openItemId) : undefined;
 
   const activeFilters =
@@ -196,6 +187,17 @@ export const StockTab: React.FC<StockTabProps> = ({
     (subCategoryId ? 1 : 0) +
     (awaitingOnly ? 1 : 0) +
     Object.values(attributeFilters).filter((value) => value.trim() !== "").length;
+
+  // Choosing another category starts its sub-category and attribute filters afresh.
+  const chooseCategory = (next: string) => {
+    setCategoryId(next);
+    setSubCategoryId("");
+    setAttributeFilters({});
+  };
+  const chooseSubCategory = (next: string) => {
+    setSubCategoryId(next);
+    setAttributeFilters({});
+  };
 
   const clearFilters = () => {
     setCategoryId("");
@@ -261,57 +263,6 @@ export const StockTab: React.FC<StockTabProps> = ({
           />
         </div>
 
-        <div className="form-group rm-toolbar-field">
-          <label className="input-label" htmlFor="rm-filter-category">
-            Category
-          </label>
-          <select
-            id="rm-filter-category"
-            className="form-input"
-            value={categoryId}
-            onChange={(event) => {
-              setCategoryId(event.target.value);
-              setSubCategoryId("");
-              setAttributeFilters({});
-            }}
-          >
-            <option value="">All categories</option>
-            {topCategories(categories).map((row) => (
-              <option key={String(row.id)} value={String(row.id)}>
-                {String(row.name)}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        {subCategories.length > 0 ? (
-          <div className="form-group rm-toolbar-field">
-            <label className="input-label" htmlFor="rm-filter-subcategory">
-              Sub-category
-            </label>
-            <select
-              id="rm-filter-subcategory"
-              className="form-input"
-              value={subCategoryId}
-              onChange={(event) => {
-                setSubCategoryId(event.target.value);
-                setAttributeFilters({});
-              }}
-            >
-              <option value="">All of {String(categories.find((row) => String(row.id) === categoryId)?.name ?? "")}</option>
-              {subCategories.map((row) => (
-                <option key={String(row.id)} value={String(row.id)}>
-                  {/* The path below the chosen category, so three levels read as three. */}
-                  {categoryPath(row)
-                    .split(" — ")
-                    .slice(1)
-                    .join(" ▸ ")}
-                </option>
-              ))}
-            </select>
-          </div>
-        ) : null}
-
         {filterFields.map((field) => (
           <div className="rm-toolbar-field" key={String(field.id)}>
             <AttributeField
@@ -322,25 +273,6 @@ export const StockTab: React.FC<StockTabProps> = ({
             />
           </div>
         ))}
-
-        <div className="form-group rm-toolbar-field">
-          <label className="input-label" htmlFor="rm-equivalent-unit">
-            Show total as
-          </label>
-          <select
-            id="rm-equivalent-unit"
-            className="form-input"
-            value={equivalentUnitId}
-            onChange={(event) => setEquivalentUnitId(event.target.value)}
-          >
-            <option value="">No conversion</option>
-            {units.map((unit) => (
-              <option key={String(unit.id)} value={String(unit.id)}>
-                {String(unit.name)} ({String(unit.code)})
-              </option>
-            ))}
-          </select>
-        </div>
 
         <div className="rm-toolbar-actions">
           <button
@@ -408,27 +340,14 @@ export const StockTab: React.FC<StockTabProps> = ({
         </div>
       </div>
 
-      {/* ── Totals ───────────────────────────────────────────────── */}
-      {summary && !error ? (
-        <div className="rm-kpis">
-          <div className="rm-kpi">
-            <span className="rm-kpi-label">{copy.columns.items}</span>
-            <strong className="rm-kpi-value">{summary.itemCount}</strong>
-          </div>
-          {summary.totalsByUnit.map((entry) => (
-            <div className="rm-kpi" key={entry.unitId}>
-              <span className="rm-kpi-label">{entry.unitCode}</span>
-              <strong className="rm-kpi-value">{formatQuantity(entry.quantity)}</strong>
-            </div>
-          ))}
-          {summary.equivalent ? (
-            <div className="rm-kpi rm-kpi--eq">
-              <span className="rm-kpi-label">≈ {summary.equivalent.unitCode}</span>
-              <strong className="rm-kpi-value">{formatQuantity(summary.equivalent.quantity)}</strong>
-            </div>
-          ) : null}
-        </div>
-      ) : null}
+      {/* ── Categories, as buttons; a chosen one opens its sub-categories under it ── */}
+      <CategoryFilterBar
+        categories={categories}
+        categoryId={categoryId}
+        subCategoryId={subCategoryId}
+        onCategory={chooseCategory}
+        onSubCategory={chooseSubCategory}
+      />
 
       <IncompleteMaterials incomplete={incomplete} />
 
@@ -454,124 +373,22 @@ export const StockTab: React.FC<StockTabProps> = ({
         />
       ) : (
         <>
-          <div className="table-container">
-            <table className="data-table rm-table">
-              <thead>
-                <tr>
-                  <th scope="col">Material</th>
-                  <th scope="col" className="rm-num">In store</th>
-                  <th scope="col" className="rm-num">Total qty</th>
-                  <th scope="col" className="rm-num">Cost</th>
-                  <th scope="col" aria-label={copy.columns.actions} />
-                </tr>
-              </thead>
-              <tbody>
-                {pageRows.map((item) => {
-                  const id = String(item.id);
-                  const config = configByItem.get(id);
-                  const onHand = Number(item.quantity_on_hand ?? 0);
-                  const packs = packetsInStore(config);
-                  return (
-                    <tr key={id}>
-                      <td>
-                        <button type="button" className="rm-name-btn" onClick={() => setOpenItemId(id)}>
-                          {String(item.display_name)}
-                        </button>
-                        <span className="cell-mono rm-row-code">{String(item.item_code)}</span>
-                        {/* Said in words, not by colour alone: a disabled row is in the list
-                            only because "Show disabled" is on, and it is not in use. */}
-                        {String(item.status ?? "ACTIVE") === "INACTIVE" ? (
-                          <span className="rm-awaiting">⚠ {copy.removal.disabledBadge}</span>
-                        ) : null}
-                        {awaitingItemIds.has(id) ? <span className="rm-awaiting">⏳ Correction waiting</span> : null}
-                        <IncompleteRowMark entry={incomplete.get(id)} />
-                      </td>
-                      {/* What the storekeeper counts on the shelf: labelled packets, counted
-                          one by one because each holds what its own label says. No packets
-                          (opening stock only) shows the measured balance instead. */}
-                      <td className="rm-num">
-                        {packs == null ? (
-                          <>
-                            <span className="rm-stock-qty">{formatQuantity(onHand)}</span>
-                            <span className="rm-stock-unit">{String(item.unit_code ?? "")}</span>
-                          </>
-                        ) : (
-                          <span className="rm-stock-qty">{packCountLabel(packs, config)}</span>
-                        )}
-                      </td>
-                      {/* The same stock, measured out. A material with its own chain of units
-                          is said in the smallest one — 16 RULE of a nawaar whose rule is 975
-                          inches is 15,600 INCH — because that is the figure the floor works in.
-                          Everything else reads as it always did. */}
-                      <td className="rm-num">
-                        {(() => {
-                          const total = quantityInBaseUnit(
-                            (ladders[id] ?? []).map((step) => ({
-                              fromUnit: step.fromUnit,
-                              toUnit: step.toUnit,
-                              factor: step.factor,
-                            })),
-                            String(item.unit_code ?? ""),
-                            onHand,
-                          );
-                          if (!total) {
-                            return (
-                              <>
-                                <span className={packs == null ? "rm-muted" : "rm-stock-qty"}>{formatQuantity(onHand)}</span>
-                                <span className="rm-stock-unit">{String(item.unit_code ?? "")}</span>
-                              </>
-                            );
-                          }
-                          return (
-                            <>
-                              <span className="rm-stock-qty">{formatQuantity(total.quantity)}</span>
-                              <span className="rm-stock-unit">{total.unit}</span>
-                            </>
-                          );
-                        })()}
-                      </td>
-                      <td className="rm-num">
-                        {item.cost_price != null ? (
-                          `Rs. ${formatWholeMoney(Number(item.cost_price))}`
-                        ) : (
-                          <span className="rm-muted">—</span>
-                        )}
-                      </td>
-                      <td>
-                        <button type="button" className="btn btn-sm btn-secondary" onClick={() => setOpenItemId(id)}>
-                          Open
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-
-          {pageCount > 1 ? (
-            <div className="pager">
-              <span className="pager-info">
-                Page {page} of {pageCount} · {visible.length} materials
-              </span>
-              <button
-                type="button"
-                className="btn btn-secondary btn-sm"
-                disabled={page <= 1}
-                onClick={() => setPage((value) => value - 1)}
-              >
-                ← Prev
-              </button>
-              <button
-                type="button"
-                className="btn btn-secondary btn-sm"
-                disabled={page >= pageCount}
-                onClick={() => setPage((value) => value + 1)}
-              >
-                Next →
-              </button>
-            </div>
-          ) : null}
+          {/* Grouped by category and sub-category; the groups carry on across pages. */}
+          <StockList
+            groups={groupStockPage(pageRows)}
+            counts={counts}
+            configByItem={configByItem}
+            ladders={ladders}
+            awaitingItemIds={awaitingItemIds}
+            incomplete={incomplete}
+            onOpen={setOpenItemId}
+          />
+          <footer className="rm-stock-foot">
+            <span className="rm-stock-foot-count">
+              {copy.rawMaterialStock.showing((page - 1) * PAGE_SIZE + 1, (page - 1) * PAGE_SIZE + pageRows.length, sorted.length)}
+            </span>
+            {pageCount > 1 ? <Pager page={page} pages={pageCount} onPage={setPage} numbered /> : null}
+          </footer>
         </>
       )}
 

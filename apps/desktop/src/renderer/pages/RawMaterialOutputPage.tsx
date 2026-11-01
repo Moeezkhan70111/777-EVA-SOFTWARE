@@ -4,6 +4,7 @@ import type { Party, RawMaterialIssueResult, RawMaterialIssueSession, RawMateria
 import { PartyTypeBadge } from "../features/parties/PartyTypeBadge";
 import { partyOption } from "../features/parties/partyOption";
 import { SearchableCombobox } from "../components/shared/SearchableCombobox";
+import { PersonIcon } from "../features/store/StoreIcons";
 import { StateView } from "../components/shared/StateView";
 import { StepHeading } from "../components/shared/StepHeading";
 import type { AppRoute } from "../app/routes";
@@ -15,15 +16,21 @@ import { formatDateTime } from "../utils/dates";
 import { isCompleteQr, sanitizeScanInput } from "../utils/qr";
 import { LEASE_DOMAIN, isMachineProgramCodeScan, isRawMaterialIssuePartyType, isValidRawMaterialQrId } from "@erp/domain";
 import { LeasedStation } from "../features/store/LeasedStation";
+import { ScanPartyHeader } from "../features/store/ScanPartyHeader";
+import { ScanSessionButton } from "../features/store/ScanSessionButton";
+import { materialScanRow, sessionGroups } from "../features/rawMaterial/sessionGroups";
+import { quantityTotalLine } from "../features/rawMaterial/storeVoucher";
 import { ReaderStation } from "../features/store/ReaderStation";
 import type { StationStatus } from "../features/store/page/stationStatus";
 import {
   LastScanCard,
   PlusIcon,
   RecentScansCard,
+  RecentScansList,
   SCAN_STATION_CSS,
   ScanPanel,
   SessionCard,
+  SessionGroupsCard,
   StationBlocked,
   StationToolbar,
 } from "../features/scanStation/scanStation";
@@ -46,7 +53,7 @@ const RECENT_LIMIT = 12;
 
 const IDLE: ScanStationFeedback = {
   tone: "idle",
-  title: "READY TO SCAN",
+  title: copy.store.readyToScan,
   message: "Scan a packet leaving the store",
   result: null,
   seq: 0,
@@ -145,6 +152,25 @@ function scanHintFor(partyId: string, session: RawMaterialIssueSession | null): 
   return copy.moveOut.scanPressNew;
 }
 
+/** "SHAN · started 1 Nov 2026 · 9:00 AM · store", or the first step while there is no session. */
+function sessionMetaLine(session: RawMaterialIssueSession | null, partyName: string | null): string {
+  if (!session) return copy.moveOut.scanStartHint;
+  const party = partyName ? `${partyName} · ` : "";
+  const by = session.startedBy ? ` · ${session.startedBy}` : "";
+  return `${party}started ${formatDateTime(session.startedAt)}${by}`;
+}
+
+/** The party picker's placeholder: none to choose from, or what to do on the Store page or the full screen. */
+function pickerPlaceholder(partyCount: number, embedded: boolean): string {
+  if (partyCount === 0) return copy.moveOut.noScanParties;
+  return embedded ? copy.store.selectParty : copy.moveOut.chooseScanParty;
+}
+
+/** The full-screen station's scanner pill. */
+function scannerPillFor(connected: boolean): { text: string; color: string } {
+  return connected ? { text: "Scanner ready", color: "#16a34a" } : { text: "Keyboard input", color: "#94a3b8" };
+}
+
 /** The party a running session is locked to: its name and type, and why it cannot be changed. */
 const LockedParty: React.FC<{ party: Party | undefined }> = ({ party }) => (
   <div className="mo-locked-party" data-testid="locked-party">
@@ -185,6 +211,11 @@ interface RawMaterialOutputPageProps {
   active?: boolean;
   /** Where this panel's session stands, for the Store page's mode switch. */
   onStatus?: (status: StationStatus) => void;
+  /**
+   * Given where the screen around the station shows Print slip (the Store page's rail head): the
+   * station hands it the print action while there is a slip to print, and leaves its own button out.
+   */
+  onPrintSlip?: (print: (() => void) | null) => void;
 }
 
 const RawMaterialOutputStation: React.FC<RawMaterialOutputPageProps> = ({
@@ -197,6 +228,7 @@ const RawMaterialOutputStation: React.FC<RawMaterialOutputPageProps> = ({
   onMachineProgramScan,
   active = true,
   onStatus,
+  onPrintSlip,
 }) => {
   const api = useDesktopApi();
   const { push } = useNotifications();
@@ -255,7 +287,10 @@ const RawMaterialOutputStation: React.FC<RawMaterialOutputPageProps> = ({
   // New session, for the chosen party. Any session still open on this terminal is closed first by
   // the main process, so one terminal has one session at a time.
   const startSession = useCallback(async () => {
-    if (!partyId) return;
+    if (!partyId) {
+      push("error", copy.store.chooseParty, copy.store.chooseMoveOutParty);
+      return;
+    }
     setSessionError(null);
     try {
       const result = await api.startRawMaterialIssueSession({ token, startNew: true });
@@ -270,7 +305,7 @@ const RawMaterialOutputStation: React.FC<RawMaterialOutputPageProps> = ({
     } catch (error) {
       setSessionError(error instanceof Error ? error.message : copy.states.loadFailedBody);
     }
-  }, [api, partyId, refreshSummary, token]);
+  }, [api, partyId, push, refreshSummary, token]);
 
   // Only active suppliers and contractors may receive packets — the same domain rule the main
   // process enforces, so the list cannot offer a party the scan would be refused for.
@@ -420,26 +455,54 @@ const RawMaterialOutputStation: React.FC<RawMaterialOutputPageProps> = ({
     push("success", "Session closed", `${summary?.totalPackets ?? 0} packet(s) issued`);
   };
 
-  const print = () => {
+  const print = useCallback(() => {
     if (!summary) return;
     if (!openIssueSlipPrintWindow(summary, username)) {
       push("error", copy.toast.popupBlocked, "Allow popups to print the issue slip");
     }
-  };
+  }, [summary, username, push]);
+
+  // The full-screen station prints a slip once there is a packet on it. On the Store page, Print
+  // Receipt is in the rail's head as on Move in: from the moment a session opens, and after it ends
+  // while it still has packets to print.
+  const hasSlip = Boolean(summary && summary.totalPackets > 0);
+  const canPrintFromHead = Boolean(summary && (hasSlip || session?.status === "OPEN"));
+  useEffect(() => {
+    if (!onPrintSlip) return undefined;
+    onPrintSlip(canPrintFromHead ? print : null);
+    return () => onPrintSlip(null);
+  }, [onPrintSlip, canPrintFromHead, print]);
 
   const scanRows: StationScanRow[] = (summary?.scans ?? [])
     .slice(-RECENT_LIMIT)
     .reverse()
-    .map((scan) => ({
-      key: `${scan.qrId}|${scan.issuedAt}`,
-      qrId: scan.qrId,
-      product: `${scan.itemDisplayName} · ${scan.quantity} ${scan.unitCode}`.trim(),
-      at: scan.issuedAt,
-      badge: scan.sectionName ?? "Issued",
-    }));
+    .map((scan) => materialScanRow(scan, scan.issuedAt, scan.sectionName ?? "Issued"));
 
   const blocked = Boolean(sessionError);
   const scanHint = scanHintFor(partyId, session);
+  // On the Store page there is no room for empty cards: the session and its packets appear once
+  // there is a session to show. The full-screen station keeps its fixed layout.
+  const showSessionDetails = !embedded || session !== null;
+  const sessionParty = parties.find((party) => party.id === sessionPartyId);
+  const sessionMeta = sessionMetaLine(session, summary?.partyName ?? null);
+
+  const partyPicker = (
+    <SearchableCombobox
+      value={partyId}
+      icon={<PersonIcon />}
+      searchPlaceholder={copy.store.searchParty}
+      options={partyOptions}
+      placeholder={pickerPlaceholder(partyOptions.length, embedded)}
+      emptyLabel={copy.moveOut.noScanPartyMatch}
+      ariaLabel={copy.moveOut.scanPartyStep}
+      onChange={(next) => {
+        setPartyId(next);
+        setFeedback(IDLE);
+        // Hand the keyboard straight back to the scanner once the party is chosen.
+        setTimeout(focusScanner, 0);
+      }}
+    />
+  );
 
   return (
     <div
@@ -459,18 +522,24 @@ const RawMaterialOutputStation: React.FC<RawMaterialOutputPageProps> = ({
         eyebrow={embedded ? undefined : copy.storePage.stationEyebrow}
         title={embedded ? undefined : "Raw Material Output"}
         onBack={onBack}
-        scannerPill={scannerConnected ? { text: "Scanner ready", color: "#16a34a" } : { text: "Keyboard input", color: "#94a3b8" }}
+        // On the Store page the rail's head says Ready / Not Ready, and the session's buttons are in
+        // the scan panel and the head, so the toolbar is left empty (and then not shown).
+        scannerPill={embedded ? undefined : scannerPillFor(scannerConnected)}
       >
-        <button type="button" className="ssn-btn" onClick={() => void startSession()} disabled={locked || !partyId}>
-          <PlusIcon />
-          New session
-        </button>
-        <button type="button" className="ssn-btn" onClick={() => void endSession()} disabled={!locked}>
-          End session
-        </button>
-        <button type="button" className="ssn-btn" onClick={print} disabled={!summary || summary.totalPackets === 0}>
-          Print slip
-        </button>
+        {embedded ? null : (
+          <>
+            <button type="button" className="ssn-btn" onClick={() => void startSession()} disabled={locked || !partyId}>
+              <PlusIcon />
+              New session
+            </button>
+            <button type="button" className="ssn-btn" onClick={() => void endSession()} disabled={!locked}>
+              End session
+            </button>
+            <button type="button" className="ssn-btn" onClick={print} disabled={!hasSlip}>
+              Print slip
+            </button>
+          </>
+        )}
         {onNavigate ? (
           <button
             type="button"
@@ -483,7 +552,20 @@ const RawMaterialOutputStation: React.FC<RawMaterialOutputPageProps> = ({
         ) : null}
       </StationToolbar>
 
-      {!blocked && (
+      {/* On the Store page the party is picked as on Move in, and once the session is open it is
+          shown at the top of the scan panel instead. */}
+      {!blocked && embedded ? (
+        partiesError ? (
+          <StateView kind="error" compact message={partiesError} onRetry={() => void loadParties()} />
+        ) : locked ? null : (
+          <div className="ssn-party-row">
+            <div className="ssn-supplier-pick">{partyPicker}</div>
+            <PartyTypeBadge partyType={chosenParty?.partyType} />
+          </div>
+        )
+      ) : null}
+
+      {!blocked && !embedded && (
         <section className="qr-step">
           <StepHeading index={1} done={Boolean(partyId)} title={copy.moveOut.scanPartyStep} />
           <div className="qr-step-body">
@@ -493,20 +575,7 @@ const RawMaterialOutputStation: React.FC<RawMaterialOutputPageProps> = ({
               <LockedParty party={parties.find((party) => party.id === sessionPartyId)} />
             ) : (
               <>
-                <SearchableCombobox
-                  dropdown
-                  value={partyId}
-                  options={partyOptions}
-                  placeholder={partyOptions.length === 0 ? copy.moveOut.noScanParties : copy.moveOut.chooseScanParty}
-                  emptyLabel={copy.moveOut.noScanPartyMatch}
-                  ariaLabel={copy.moveOut.scanPartyStep}
-                  onChange={(next) => {
-                    setPartyId(next);
-                    setFeedback(IDLE);
-                    // Hand the keyboard straight back to the scanner once the party is chosen.
-                    setTimeout(focusScanner, 0);
-                  }}
-                />
+                {partyPicker}
                 <PartyTypeBadge partyType={chosenParty?.partyType} />
                 <p className="field-help">{copy.moveOut.scanPartyHelp}</p>
               </>
@@ -525,7 +594,21 @@ const RawMaterialOutputStation: React.FC<RawMaterialOutputPageProps> = ({
         ) : (
           <>
             <ScanPanel
-              feedback={feedback}
+              feedback={locked || !embedded ? feedback : { ...IDLE, message: copy.store.scanToBeginIssuing }}
+              header={
+                embedded && locked ? (
+                  <ScanPartyHeader
+                    eyebrow={copy.store.movingOutTo}
+                    name={sessionParty?.partyName ?? summary?.partyName ?? "—"}
+                    partyType={sessionParty?.partyType}
+                  />
+                ) : undefined
+              }
+              action={
+                embedded ? <ScanSessionButton open={locked} onStart={() => void startSession()} onEnd={() => void endSession()} /> : undefined
+              }
+              // The rail leaves the box out until it could take a scan; the full screen keeps its layout.
+              showDock={locked || !embedded}
               inputRef={inputRef}
               inputVal={inputVal}
               onInputChange={setInputVal}
@@ -534,6 +617,24 @@ const RawMaterialOutputStation: React.FC<RawMaterialOutputPageProps> = ({
               disabled={!scannerReady}
               disabledHint={scanHint}
             />
+            {showSessionDetails && embedded ? (
+              <aside className="ssn-side">
+                {/* Grouped by category, as on Move in. */}
+                <SessionGroupsCard
+                  title={copy.store.thisSession}
+                  code={session?.code ?? null}
+                  meta={sessionMeta}
+                  groups={sessionGroups(summary?.byMaterial ?? [], copy.store.noCategory)}
+                  total={summary?.totalPackets ?? 0}
+                  // Per unit, as the printed slip totals it, so the two can never disagree.
+                  totalAmount={quantityTotalLine(summary?.byMaterial ?? [])}
+                  countLabel={copy.storeStation.packets}
+                  totalLabel={copy.columns.total}
+                  emptyLabel={copy.store.nothingIssuedYet}
+                />
+              </aside>
+            ) : null}
+            {embedded ? null : (
             <aside className="ssn-side">
               <SessionCard
                 code={session?.code ?? null}
@@ -556,11 +657,21 @@ const RawMaterialOutputStation: React.FC<RawMaterialOutputPageProps> = ({
               />
               <LastScanCard title="Last issued" row={scanRows[0] ?? null} />
             </aside>
+            )}
           </>
         )}
       </div>
 
-      {!blocked && (
+      {/* The Store page's rail lists them line by line, as on Move in; the full-screen station keeps its table. */}
+      {!blocked && embedded && showSessionDetails ? (
+        <RecentScansList
+          title={copy.store.recentlyIssued}
+          note={copy.store.lastInSession(RECENT_LIMIT)}
+          emptyLabel={copy.store.nothingIssuedYet}
+          rows={scanRows}
+        />
+      ) : null}
+      {!blocked && !embedded && (
         <RecentScansCard
           title="Recently issued"
           note={`Last ${RECENT_LIMIT} in this session`}

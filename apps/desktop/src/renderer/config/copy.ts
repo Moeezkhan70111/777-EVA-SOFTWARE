@@ -1736,9 +1736,62 @@ export const copy = {
     lookupLastMove: "Last moved",
   },
 
+  // The Stock tab's category buttons (1 Nov 2026).
+  rawMaterialStock: {
+    categoryFilter: "Filter by category",
+    subCategoryFilter: (category: string) => `Filter within ${category}`,
+    allCategories: "All",
+    allOf: (category: string) => `All ${category}`,
+    groupCount: (materials: number, inStock: number) =>
+      `${materials.toLocaleString()} material${materials === 1 ? "" : "s"} · ${inStock.toLocaleString()} in stock`,
+    showing: (from: number, to: number, total: number) =>
+      `${from.toLocaleString()}–${to.toLocaleString()} of ${total.toLocaleString()} materials`,
+    inStore: "In store",
+    totalQty: "Total quantity",
+    columnMaterial: "Material",
+    /** Over the grey figure: the same stock measured out, shown only when it says something more. */
+    columnTotal: "Total",
+    outOfStock: "Out of stock",
+    cost: (rupees: string) => `Cost Rs. ${rupees}`,
+    viewDetails: "View details",
+    correctionWaiting: "Correction waiting",
+  },
+
   store: {
     scanMaterialTitle: "Scan Material",
     scanMaterialLine: "Scan a QR code to receive material into stock.",
+    // The scan panels' own words (1 Nov 2026 look), like READY TO SCAN inside them: the pill in a
+    // rail's head says whether a scan would land now.
+    railReady: "Ready",
+    railNotReady: "Not Ready",
+    selectSupplier: "Select Supplier",
+    /** The search box at the top of a scan station's open party list. */
+    searchParty: "Search supplier or contractor…",
+    noPartyMatch: "No supplier or contractor matches that.",
+    /** The search box at the top of a material picker's open list (By hand). */
+    searchMaterial: "Search material by name or code…",
+    /** The Receipts filter's first row, and what it shows while nothing narrows the list. */
+    allSuppliers: "All suppliers",
+    readyToScan: "Ready to Scan",
+    scanToBegin: "Scan a packet QR code to begin receiving.",
+    startSession: "Start Session",
+    endSession: "End Session",
+    printReceipt: "Print Receipt",
+    recentlyReceived: "Recently Received",
+    thisSession: "This Session",
+    // Move out on the Store page, in the same words as Move in.
+    selectParty: "Select Supplier or Contractor",
+    movingOutTo: "Moving out to",
+    scanToBeginIssuing: "Scan a packet QR code to begin issuing.",
+    recentlyIssued: "Recently Issued",
+    nothingIssuedYet: "No packets issued in this session yet.",
+    chooseParty: "Choose a supplier or contractor",
+    chooseMoveOutParty: "Pick who the packets are going to, then press Start Session.",
+    noCategory: "No category",
+    lastInSession: (n: number) => `Last ${n} in this session`,
+    nothingReceivedYet: "No packets received in this session yet.",
+    /** Above the party's name at the top of the scan panel, while a session is open. */
+    receivingFrom: "Receiving from",
     moveInTitle: "Move In",
     operator: "Operator",
     qrTitle: "Raw Material QR",

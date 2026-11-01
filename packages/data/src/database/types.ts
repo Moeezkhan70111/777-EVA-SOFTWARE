@@ -1574,10 +1574,13 @@ export interface RawMaterialReceivingSession {
 export interface RawMaterialReceivingSessionSummary {
   session: RawMaterialReceivingSession;
   totalPackets: number;
-  byMaterial: Array<{ itemDisplayName: string; packets: number; quantity: number; unitCode: string }>;
+  /** Per material and unit. categoryLabel is where the material sits now, as on each scan. */
+  byMaterial: Array<{ itemDisplayName: string; categoryLabel: string; packets: number; quantity: number; unitCode: string }>;
   scans: Array<{
     qrId: string;
     itemDisplayName: string;
+    /** Where the material sits now: "TOP — SUB", or "TOP", or "" when its item cannot be found. */
+    categoryLabel: string;
     quantity: number;
     unitCode: string;
     receivedAt: string;
@@ -1615,8 +1618,8 @@ export interface RawMaterialIssueSessionSummary {
   /** That party's name, for the printed slip; null when the session has no party yet. */
   partyName: string | null;
   totalPackets: number;
-  /** One line per material and unit — what the printed slip totals. */
-  byMaterial: Array<{ itemDisplayName: string; packets: number; quantity: number; unitCode: string }>;
+  /** One line per material and unit — what the printed slip totals. categoryLabel as on each scan. */
+  byMaterial: Array<{ itemDisplayName: string; categoryLabel: string; packets: number; quantity: number; unitCode: string }>;
   bySection: Array<{
     sectionName: string;
     packets: number;
@@ -1625,6 +1628,8 @@ export interface RawMaterialIssueSessionSummary {
   scans: Array<{
     qrId: string;
     itemDisplayName: string;
+    /** Where the material sits now: "TOP — SUB", or "TOP", or "" when its item cannot be found. */
+    categoryLabel: string;
     quantity: number;
     unitCode: string;
     sectionName: string | null;

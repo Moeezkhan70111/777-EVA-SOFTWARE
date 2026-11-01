@@ -127,7 +127,7 @@ describe("RawMaterialInputPage", () => {
     api.getOpenRawMaterialReceivingSession.mockResolvedValue(null);
     renderPage();
 
-    const box = await screen.findByPlaceholderText("Choose supplier…");
+    const box = await screen.findByPlaceholderText("Select Supplier");
     await act(async () => {
       fireEvent.focus(box);
     });

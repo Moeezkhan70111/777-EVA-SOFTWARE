@@ -4,6 +4,7 @@ import { useNotifications } from "../../state/NotificationsContext";
 import type { Party, PurchaseVoucher, RawMaterialReceivingSession } from "../../types/desktopApi";
 import type { AppRoute } from "../../app/routes";
 import { SearchableCombobox } from "../../components/shared/SearchableCombobox";
+import { PersonIcon } from "../store/StoreIcons";
 import { StateView } from "../../components/shared/StateView";
 import { copy } from "../../config/copy";
 import { formatDate, formatDateTime, isoDateDaysAgo, toIsoDate } from "../../utils/dates";
@@ -204,7 +205,8 @@ export const ReceiptsTab: React.FC<ReceiptsTabProps> = ({ username, onNavigate }
   const continueSession = () => onNavigate("raw-material-input");
 
   const partyOptions = useMemo(
-    () => parties.map((party) => ({ value: party.id, label: party.partyName })),
+    // "All suppliers" first: the filter is a select now, with no clear button, so this is how it is reset.
+    () => [{ value: "", label: copy.store.allSuppliers }, ...parties.map((party) => ({ value: party.id, label: party.partyName, detail: party.partyCode }))],
     [parties]
   );
 
@@ -242,10 +244,12 @@ export const ReceiptsTab: React.FC<ReceiptsTabProps> = ({ username, onNavigate }
           <SearchableCombobox
             value={partyId}
             options={partyOptions}
-            placeholder="All suppliers"
+            placeholder={copy.store.allSuppliers}
             emptyLabel="No suppliers found"
             ariaLabel="Filter by supplier"
             onChange={setPartyId}
+            icon={<PersonIcon />}
+            searchPlaceholder={copy.store.searchParty}
           />
         </div>
 
