@@ -326,6 +326,18 @@ export const rawMaterialQrMethods = {
       .prepare(`SELECT COUNT(1) AS n FROM raw_material_qr_events WHERE qr_id IN (SELECT id FROM raw_material_qrs WHERE batch_id = ?)`)
       .get(batchId) as { n: number } | undefined;
     if (scans && scans.n > 0) blockers.push(`${scans.n} scan(s) recorded`);
+
+    // A run that arrived from another computer (replicated_at, migration 089) is that computer's,
+    // and in the cloud. Erasing it here would delete it on this computer only and hand its serials
+    // out again -- the same QR identities as labels already printed. The withdrawal check below
+    // cannot see this: a received run has nothing in this computer's outbox (rehearsal, 2 Nov).
+    const received = this.db
+      .prepare(
+        `SELECT (SELECT COUNT(1) FROM raw_material_qr_batches WHERE id = ? AND replicated_at IS NOT NULL)
+              + (SELECT COUNT(1) FROM raw_material_qrs WHERE batch_id = ? AND replicated_at IS NOT NULL) AS n`
+      )
+      .get(batchId, batchId) as { n: number } | undefined;
+    if (received && received.n > 0) blockers.push("it was printed on another computer");
     return blockers;
   },
 
