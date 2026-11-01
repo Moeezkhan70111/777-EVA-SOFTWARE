@@ -23,6 +23,37 @@ export const usersMethods = {
     return candidate === passwordHash;
   },
 
+  /**
+   * Stores this PC's check of a person's password (user_credentials, migration 100). In local mode
+   * it IS the account's password. Under cloud accounts it is a cache, valid only at
+   * `credentialVersion` (docs/41 section 4). Hash first, with hashPassword, outside any write lock.
+   */
+  writeLocalCredential(
+    this: SqliteDatabase,
+    userId: string,
+    credential: { hash: string; salt: string },
+    credentialVersion = 1,
+    confirmedOnlineAt: string | null = null
+  ): void {
+    this.db
+      .prepare(
+        `INSERT INTO user_credentials (user_id, password_hash, password_salt, credential_version, confirmed_online_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?)
+         ON CONFLICT(user_id) DO UPDATE SET password_hash = excluded.password_hash, password_salt = excluded.password_salt,
+           credential_version = excluded.credential_version, confirmed_online_at = excluded.confirmed_online_at,
+           updated_at = excluded.updated_at`
+      )
+      .run(userId, credential.hash, credential.salt, credentialVersion, confirmedOnlineAt, new Date().toISOString());
+  },
+
+  /** Whether `password` matches this PC's check for the person. False when this PC holds none. */
+  checkLocalCredential(this: SqliteDatabase, userId: string, password: string): boolean {
+    const row = this.db
+      .prepare("SELECT password_hash, password_salt FROM user_credentials WHERE user_id = ?")
+      .get(userId) as { password_hash: string; password_salt: string } | undefined;
+    return row !== undefined && this.verifyPassword(password, row.password_hash, row.password_salt);
+  },
+
   /** True once any ADMIN account exists — used to decide whether first-run setup is required. */
   hasAnyAdmin(this: SqliteDatabase): boolean {
     const row = this.db.prepare("SELECT 1 as ok FROM app_users WHERE role = 'ADMIN' LIMIT 1").get() as { ok?: number } | undefined;
@@ -67,10 +98,11 @@ export const usersMethods = {
       const { hash, salt } = this.hashPassword(password);
       this.db
         .prepare(
-          `INSERT INTO app_users (id, username, password_hash, password_salt, role, access_status, permissions_json, created_at, updated_at)
-           VALUES (?, ?, ?, ?, 'ADMIN', 'APPROVED', '[]', ?, ?)`
+          `INSERT INTO app_users (id, username, role, access_status, permissions_json, created_at, updated_at)
+           VALUES (?, ?, 'ADMIN', 'APPROVED', '[]', ?, ?)`
         )
-        .run(userId, normalized, hash, salt, now, now);
+        .run(userId, normalized, now, now);
+      this.writeLocalCredential(userId, { hash, salt });
 
       this.db.exec("COMMIT");
       this.persistEffectivePermissions(userId);
@@ -343,13 +375,22 @@ export const usersMethods = {
     const { hash, salt } = this.hashPassword(password);
 
     // Every self-registered account starts as a pending USER — the only way to become ADMIN
-    // without an existing admin's approval is the first-run bootstrapFirstAdmin() path.
-    this.db
-      .prepare(
-        `INSERT INTO app_users (id, username, password_hash, password_salt, role, access_status, permissions_json, created_at, updated_at)
-         VALUES (?, ?, ?, ?, 'USER', 'PENDING', '[]', ?, ?)`
-      )
-      .run(userId, normalized, hash, salt, now, now);
+    // without an existing admin's approval is the first-run bootstrapFirstAdmin() path. The
+    // account and its password check are written together, or not at all.
+    this.db.exec("BEGIN IMMEDIATE TRANSACTION");
+    try {
+      this.db
+        .prepare(
+          `INSERT INTO app_users (id, username, role, access_status, permissions_json, created_at, updated_at)
+           VALUES (?, ?, 'USER', 'PENDING', '[]', ?, ?)`
+        )
+        .run(userId, normalized, now, now);
+      this.writeLocalCredential(userId, { hash, salt });
+      this.db.exec("COMMIT");
+    } catch (error) {
+      this.db.exec("ROLLBACK");
+      throw error;
+    }
 
     return { id: userId, username: normalized, role: "USER", accessStatus: "PENDING" };
   },
@@ -360,14 +401,14 @@ export const usersMethods = {
 
     const row = this.db
       .prepare(
-        `SELECT id, username, password_hash, password_salt, role, access_status
+        `SELECT id, username, role, access_status
          FROM app_users
-         WHERE LOWER(username) = LOWER(?)`
+         WHERE LOWER(username) = LOWER(?) AND email IS NULL`
       )
-      .get(normalized) as { id: string; username: string; password_hash: string; password_salt: string; role: "USER" | "ADMIN"; access_status: "PENDING" | "APPROVED" | "REJECTED" } | undefined;
+      .get(normalized) as { id: string; username: string; role: "USER" | "ADMIN"; access_status: "PENDING" | "APPROVED" | "REJECTED" } | undefined;
 
     if (!row) return null;
-    if (!this.verifyPassword(password, row.password_hash, row.password_salt)) return null;
+    if (!this.checkLocalCredential(row.id, password)) return null;
 
     const now = new Date().toISOString();
     this.db.prepare("UPDATE app_users SET last_login_at = ?, updated_at = ? WHERE id = ?").run(now, now, row.id);
@@ -747,11 +788,7 @@ export const usersMethods = {
   },
 
   changePasswordForUser(this: SqliteDatabase, userId: string, currentPassword: string, newPassword: string): void {
-    const row = this.db
-      .prepare("SELECT password_hash, password_salt FROM app_users WHERE id = ?")
-      .get(userId) as { password_hash: string; password_salt: string } | undefined;
-
-    if (!row || !this.verifyPassword(currentPassword, row.password_hash, row.password_salt)) {
+    if (!this.checkLocalCredential(userId, currentPassword)) {
       throw new Error("Current password is incorrect");
     }
 
@@ -759,10 +796,14 @@ export const usersMethods = {
       throw new Error("Password must be at least 8 characters and include a number");
     }
 
+    // The hash and salt change; the credential version and online confirmation do not. Under cloud
+    // accounts a password changes in the cloud, never here (docs/41 section 3).
     const { hash, salt } = this.hashPassword(newPassword);
+    const now = new Date().toISOString();
     this.db
-      .prepare("UPDATE app_users SET password_hash = ?, password_salt = ?, updated_at = ? WHERE id = ?")
-      .run(hash, salt, new Date().toISOString(), userId);
+      .prepare("UPDATE user_credentials SET password_hash = ?, password_salt = ?, updated_at = ? WHERE user_id = ?")
+      .run(hash, salt, now, userId);
+    this.db.prepare("UPDATE app_users SET updated_at = ? WHERE id = ?").run(now, userId);
   },
 };
 

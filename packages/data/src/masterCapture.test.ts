@@ -58,9 +58,11 @@ const NOT_MASTER: Readonly<Record<string, readonly string[]>> = {
   "Approvals: transitions, Milestone 2": [
     "access_requests", "permission_requests", "party_claims", "removal_requests", "stock_correction_requests",
   ],
-  "People and access: cloud-authoritative under docs/37 U.2, never replicated as records": [
+  "People and access: cloud-authoritative under docs/41, never replicated as records": [
     "app_users", "roles", "role_permissions", "user_role_assignments", "user_additional_permissions",
     "job_role_options", "user_notifications", "user_sessions",
+    // This PC's password checks (migration 100). Never leaves the PC, as anything (replicationScope.ts).
+    "user_credentials",
   ],
   "Workspace messages and tasks: per installation": [
     "workspace_activity", "workspace_conversation_members", "workspace_conversations", "workspace_messages",

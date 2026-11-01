@@ -69,14 +69,18 @@ export const REPLICATION_EXCLUSIONS: ReadonlyArray<{ readonly table: string; rea
 
   // ── Logins ───────────────────────────────────────────────────────────────────────
   //
-  // app_users NEVER replicates: it holds the hashes. That part is permanent, and the owner
-  // re-affirmed it on 2026-10-23. What changed that day is how logins reach other PCs: docs/37
-  // section U.2 makes accounts cloud-authoritative, replicating only non-secret facts. When that is
-  // built, the three companion tables below may receive those facts through a contract of their
-  // own. Until then all four stay excluded.
+  // No password check EVER replicates. That part is permanent, and the owner re-affirmed it on
+  // 2026-10-23. Migration 100 moved the checks out of app_users into user_credentials, which stays
+  // here for good. docs/41 makes accounts cloud-authoritative, replicating only non-secret facts:
+  // when its contracts are built, app_users and the two assignment tables below receive those facts
+  // from the cloud (never pushed from a PC) and leave this list. Until then they stay excluded.
+  {
+    table: "user_credentials",
+    why: "This PC's password checks (migration 100): the account's password in local mode, a cache under cloud accounts. Replicating puts every user's credential on every machine, including a stolen one. Under docs/41 each PC holds a check only for people who signed in on it, and no hash ever replicates.",
+  },
   {
     table: "app_users",
-    why: "Holds password_hash and password_salt. Replicating puts every user's credential on every machine, including a stolen one. Under docs/37 section U.2 each PC caches a verifier only for people who logged in on it, and no hash ever replicates.",
+    why: "Held the password hashes until migration 100 moved them to user_credentials. Under docs/41 it receives PERSON revisions from the cloud and is never pushed from a PC, but that contract is not built yet, so for now nothing replicates it.",
   },
   {
     table: "user_role_assignments",
