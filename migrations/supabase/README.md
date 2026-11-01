@@ -1,9 +1,9 @@
 # Cloud schema — apply order
 
-**Where each project stands (31 Oct 2026):**
+**Where each project stands (test 1 Nov 2026; production 31 Oct 2026):**
 
-- **Test** (`wpkrhgqsizjjdaztijwv`): the baseline and `002`–`018` are applied.
-  `verify_applied_state.sql` passes 34/34, and `check_number_blocks.sql` passes.
+- **Test** (`wpkrhgqsizjjdaztijwv`): the baseline and `002`–`020` are applied. 020 on 1 Nov;
+  `check_accounts.sql` passes, and `check_number_blocks.sql` passes.
 - **Production** (`ykhvbmhmeefdtrzqeoxm`): the baseline and `002`–`018` applied 31 Oct, `factory-777`
   seeded, `verify_applied_state.sql` 34/34. No devices enrolled and no business data yet. The
   `check_*.sql` scripts are never run here.
