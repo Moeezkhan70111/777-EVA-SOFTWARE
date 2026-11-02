@@ -19,10 +19,11 @@ one migration behind fails, so a half-applied project is diagnosed rather than g
 each one leaves nothing behind (it ends by raising, so everything rolls back) and reports
 `..._CHECK_PASSED` on success.
 
-`reset_accounts_on_test.sql` is the first step of resetting cloud accounts **on test** for a
-rehearsal from a clean start: it removes the account events from the log (which undoing 020–024
-alone leaves behind, and which would make every computer ignore the restarted revisions), then
-024→020 down, 020→024 up and every check. It refuses on a project without the rehearsal computers.
+`reset_accounts_on_test.sql` resets cloud accounts **on test** to a fresh 020–024 state, for a
+rehearsal from a clean start: the account data and the account events in the log (which undoing
+020–024 would leave behind, making every computer ignore the restarted revisions). It refuses on a
+project without the rehearsal computers. Paste it into an empty tab and run it with nothing
+highlighted: the SQL editor runs only highlighted text. Run on test 2026-11-02.
 
 **Once `005` has been applied, never run `003` again.** This is an ordering hazard, not a fault
 in either file and not a reason to rerun or edit a migration that is already applied.
