@@ -3,8 +3,8 @@ import { copy } from "../../../config/copy";
 import { MoveInIcon, MoveOutIcon } from "../StoreIcons";
 import type { StoreMode } from "./storeTabs";
 
-// MOVE IN | MOVE OUT (0.4.2, the owner's design) — one pill under STORE, the active half filled
-// blue. A session open on either half shows as a small "Open · n" chip, so one left open on the
+// MOVE IN | MOVE OUT (0.4.2, the owner's design) — one pill under STORE, a blue thumb behind the
+// active half that slides across when the mode changes (0.4.3; data-mode tells the CSS where). A session open on either half shows as a small "Open · n" chip, so one left open on the
 // other side is still seen from this one; the full state line is there for screen readers. Which
 // half is on is said by aria-pressed, never by colour alone.
 
@@ -45,7 +45,7 @@ interface ModeSwitchProps {
 }
 
 export const ModeSwitch: React.FC<ModeSwitchProps> = ({ mode, receiving, issuing, onSelect }) => (
-  <div className="sp-modes" role="group" aria-label={copy.storePage.modesLabel} title={copy.storePage.keyHint}>
+  <div className="sp-modes" data-mode={mode} role="group" aria-label={copy.storePage.modesLabel} title={copy.storePage.keyHint}>
     <ModeHalf mode="receiving" label={copy.storePage.receiving} session={receiving} active={mode === "receiving"} onSelect={onSelect} />
     <ModeHalf mode="issuing" label={copy.storePage.issuing} session={issuing} active={mode === "issuing"} onSelect={onSelect} />
   </div>

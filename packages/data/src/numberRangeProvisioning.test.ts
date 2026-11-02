@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { SqliteDatabase, NumberRangeError, PROTECTED_NUMBER_SETTING_KEYS } from "./sqliteDatabase.js";
+import { SqliteDatabase, NumberRangeError, NUMBER_SITES, MASTER_RECORDS, PROTECTED_NUMBER_SETTING_KEYS } from "./sqliteDatabase.js";
 import { NUMBER_BLOCK_SETTING_KEY, NUMBER_BLOCK_CONFIRMED_KEY } from "./sqliteDatabase.js";
 
 // PROVISIONING A COMPUTER'S DOCUMENT-NUMBER RANGE.
@@ -381,6 +381,98 @@ test("a computer holding documents from another block is refused, and told which
     );
     assert.equal(settingRows(db), 0, "a refused assignment records nothing");
   });
+});
+
+// ─── records received from another computer (2026-11-01 rehearsal) ───────────
+//
+// The reader had received the store's PTY-000019..22 and RM-000965..1001 unstamped, under a build
+// from before senders were stamped. Counted as its own, they made it refuse every range -- and since
+// cloud 018 a computer with no range cannot sync to heal them. A record that provably arrived (its
+// revision is here) is not this computer's document; one with no such trace still counts.
+
+const setDeviceId = (db: SqliteDatabase, id: string) =>
+  db.db
+    .prepare(
+      `INSERT INTO app_settings (setting_key, setting_value, value_type, is_encrypted, updated_by, updated_at)
+       VALUES ('device.id', ?, 'string', 0, 'test', '2026-11-01') ON CONFLICT(setting_key) DO UPDATE SET setting_value = excluded.setting_value`
+    )
+    .run(id);
+
+/** A block-1 party with no origin stamp, as the old applier left a received one, on a computer with no range. */
+const unstampedBlockOneParty = (db: SqliteDatabase): string => {
+  setDeviceId(db, "dev-reader");
+  db.setNumberBlock(1, "test");
+  const id = party(db, "Received Traders");
+  forgetBlock(db);
+  db.db.prepare("UPDATE parties SET origin_device_id = NULL WHERE id = ?").run(id);
+  return id;
+};
+
+test("another computer's records, received unstamped before this one had a range, do not stop it getting one", () => {
+  withFixture("assign-received", ({ db }) => {
+    const id = unstampedBlockOneParty(db);
+    db.db.prepare("INSERT INTO sync_record_revisions (aggregate_type, record_id, revision) VALUES ('PARTY', ?, 1)").run(id);
+    assert.deepEqual(db.assignNumberBlock(2, "owner"), { block: 2, lo: 100_000, hi: 199_999 });
+  });
+});
+
+test("an unstamped party with no trace of having arrived from elsewhere still counts as this computer's", () => {
+  withFixture("assign-unstamped-local", ({ db }) => {
+    unstampedBlockOneParty(db);
+    assert.throws(
+      () => db.assignNumberBlock(2, "owner"),
+      (error: unknown) => error instanceof NumberRangeError && error.reason === "OUT_OF_RANGE" && /party codes/i.test(error.message)
+    );
+    assert.equal(settingRows(db), 0);
+  });
+});
+
+// ─── adopting range 1: only for the computer that holds the documents itself ───
+//
+// The rehearsal reader held the store's block-1 parties and materials -- received, some stamped with
+// the store's id, some not -- and was offered "adopt range 1". Adopting cannot be undone here, and
+// the cloud refuses a second computer on block 1 (018): that computer could never sync again.
+
+/** A block-1 party on a computer with no range, stamped as `origin` (null: unstamped). */
+const blockOneParty = (db: SqliteDatabase, name: string, origin: string | null): string => {
+  db.setNumberBlock(1, "test");
+  const id = party(db, name);
+  forgetBlock(db);
+  db.db.prepare("UPDATE parties SET origin_device_id = ? WHERE id = ?").run(origin, id);
+  return id;
+};
+
+test("a computer holding only another computer's block-1 records is not offered range 1, and cannot adopt it", () => {
+  withFixture("adopt-received", ({ db }) => {
+    setDeviceId(db, "dev-reader");
+    blockOneParty(db, "Stamped Elsewhere", "dev-store");
+    const unstamped = blockOneParty(db, "Received Unstamped", null);
+    db.db.prepare("INSERT INTO sync_record_revisions (aggregate_type, record_id, revision) VALUES ('PARTY', ?, 1)").run(unstamped);
+
+    const { adoption } = db.getNumberBlockStatus();
+    assert.equal(adoption.allowed, false);
+    assert.equal(adoption.refusal, "NO_EXISTING_DATA", "received records are not this computer's documents");
+    assert.throws(() => db.adoptExistingDataNumberBlock("owner"), NumberRangeError);
+    assert.equal(settingRows(db), 0, "nothing recorded: the mis-press is refused, not made irreversible");
+  });
+});
+
+test("the computer that holds the documents itself still adopts range 1, stamped or not", () => {
+  withFixture("adopt-own", ({ db }) => {
+    setDeviceId(db, "dev-store");
+    blockOneParty(db, "Stamped Here", "dev-store");
+    blockOneParty(db, "Made Here Unstamped", null);
+    assert.equal(db.getNumberBlockStatus().adoption.allowed, true);
+    assert.deepEqual(db.adoptExistingDataNumberBlock("owner"), { block: 1, lo: 1, hi: 99_999 });
+  });
+});
+
+test("every numbered site that travels names the record type it travels as", () => {
+  for (const site of Object.values(NUMBER_SITES)) {
+    const record = Object.entries(MASTER_RECORDS).find(([, spec]) => spec.table === site.table);
+    const travelsAs: string | undefined = "travelsAs" in site ? site.travelsAs : undefined;
+    assert.equal(travelsAs, record?.[0], `${site.table}: travelsAs must be ${record?.[0] ?? "absent"}`);
+  }
 });
 
 test("an assignment is one transaction: a refusal leaves no half-written range", () => {

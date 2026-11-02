@@ -144,6 +144,11 @@ export const useAuthSession = ({ api, push, route, setRoute }: UseAuthSessionArg
           setSession(refreshedUser);
           if (refreshedUser.roleNotification) push("success", copy.auth.roleUpdatedTitle, refreshedUser.roleNotification);
           if (updated.accessStatus === ACCESS_STATUS.APPROVED) setRequestStatus(ACCESS_STATUS.APPROVED);
+          // Approved while waiting: now they land where their role starts (the Store page for a
+          // store operator), which landingRoute withheld while they waited.
+          if (session.accessStatus !== ACCESS_STATUS.APPROVED && refreshedUser.accessStatus === ACCESS_STATUS.APPROVED) {
+            setRoute(landingRoute(refreshedUser));
+          }
         } else {
           void clearActiveSession(api);
           setSession(null);
