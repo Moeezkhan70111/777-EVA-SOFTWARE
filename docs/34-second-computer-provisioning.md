@@ -92,10 +92,11 @@ and `secureStorage: true` means this machine can hold an encrypted credential.
 
 - The computer holding the existing documents presses **adopt**, which records range 1 after
   proving from its own data that it is that machine.
-- A **second** computer is assigned a range from **2 to 5**, typed by an administrator from the
-  written record. Blocks are 100,000 apart: 2 → 100,000-199,999, 3 → 200,000-299,999, and so on.
+- A **second** computer is assigned a range from **2 to 99**, typed by an administrator from the
+  written record. Blocks are 100,000 apart: 2 → 100,000-199,999, 3 → 200,000-299,999, and so on;
+  block 11 → 1,000,000-1,099,999 is the first with seven-digit numbers (docs/41 section 10).
 
-Refused, and stated plainly, when: the range is outside 2-5; it is range 1 (that one belongs to the
+Refused, and stated plainly, when: the range is outside 2-99; it is range 1 (that one belongs to the
 existing-data machine); a range is already recorded here (a range is never reassigned); or this
 machine already holds documents that would not fit the range being recorded.
 

@@ -15,7 +15,8 @@
 //
 //   * It never renumbers anything. Existing documents keep their numbers exactly.
 //   * It never changes a visible format. GP-000001 stays GP-000001 — only the magnitude of
-//     newly allocated numbers differs on computers 2-5.
+//     newly allocated numbers differs on blocks 2-99, which from block 11 means a seventh digit
+//     (GP-1000000) that the six-digit padding never cuts.
 //   * It never backfills a gap or reuses a deleted number. SCR- already has gaps, and reusing
 //     one would alias a document somebody may still hold on paper.
 //   * It never falls back to a global MAX + 1. An unconfigured computer refuses to allocate.
@@ -54,9 +55,9 @@ export const NUMBER_BLOCK_SIZE = 100_000;
 /**
  * Block size for QR SERIALS, which is ten times the document-number block.
  *
- *   computer 1   1 - 999,999          computer 4   3,000,000 - 3,999,999
- *   computer 2   1,000,000 - 1,999,999 computer 5  4,000,000 - 4,999,999
- *   computer 3   2,000,000 - 2,999,999 5,000,000+  reserved for future machines
+ *   block 1    1 - 999,999              block 11   10,000,000 - 10,999,999
+ *   block 2    1,000,000 - 1,999,999    ...
+ *   block 3    2,000,000 - 2,999,999    block 99   98,000,000 - 98,999,999
  *
  * WHY ITS OWN SIZE. Serials are counted per article+colour+size, so the question is not "how
  * many documents will this company ever write" but "how many cartons of ONE article in ONE
@@ -65,13 +66,20 @@ export const NUMBER_BLOCK_SIZE = 100_000;
  *
  * WHY THE FORMAT DOES NOT CHANGE. `formatQrSerial` pads to six digits, which is a no-op for any
  * value of 1,000,000 or more. So block 1 keeps printing six-digit serials exactly as it always
- * has, blocks 2-5 come out seven digits naturally, and — the part that matters — no two serial
+ * has, blocks 2-10 come out seven digits and 11-99 eight, naturally, and — the part that matters — no two serial
  * STRINGS can ever denote the same number. Padding everything to seven would have made block
  * 1's existing `000500` and a new `0000500` two different identities for serial 500.
  */
 export const SERIAL_BLOCK_SIZE = 1_000_000;
-/** Blocks 1-5 are assignable today. 6+ (500,000 and above) is reserved for future machines. */
-export const MAX_ASSIGNABLE_BLOCK = 5;
+/**
+ * Blocks 1-99 are assignable (owner, 2026-11-01; docs/41 section 10). A block is used up for good by
+ * every installation that ever holds it (cloud 018: a block never moves by itself), so this counts
+ * installations over the company's life, not PCs in service -- five was too few for nine or ten
+ * machines. Blocks 11 and up number in seven digits (documents from 1,000,000) and eight for carton
+ * serials: codes are sorted by their number, not their text (orderByCode, compareNumberedCodes), and
+ * the scanners read any number of digits.
+ */
+export const MAX_ASSIGNABLE_BLOCK = 99;
 
 /**
  * The only block a computer can work out for itself: the installation that already holds the
@@ -210,6 +218,16 @@ export function numberExpression(site: NumberSite): string {
   return site.parse.kind === "INT"
     ? `CAST(COALESCE(NULLIF(TRIM(CAST(${site.column} AS TEXT)), ''), '0') AS INTEGER)`
     : `CAST(SUBSTR(${site.column}, ${site.parse.from}) AS INTEGER)`;
+}
+
+/**
+ * ORDER BY for a numbered code: by its number, then by its text. Text alone puts `PTY-1000000`
+ * before `PTY-200000`, and blocks 11 to 99 number in seven digits (docs/41 section 10). `column`
+ * is the column as the query names it, e.g. `c.claim_number`. compareNumberedCodes (@erp/domain)
+ * is the same rule for lists sorted in code.
+ */
+export function orderByCode(siteKey: NumberSiteKey, column: string): string {
+  return `${numberExpression({ ...NUMBER_SITES[siteKey], column })}, ${column}`;
 }
 
 // ─── Errors the operator sees ───────────────────────────────────────────────

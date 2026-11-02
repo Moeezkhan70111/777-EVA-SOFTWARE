@@ -244,6 +244,16 @@ Blocks 1–10 see no change. For blocks 11 and up:
 - **Scanning** is unaffected: the parsers read any number of digits.
 - `check_number_blocks.sql` stops using blocks 7–9 as test values, since they become real.
 
+**Done (2026-11-03).** `MAX_ASSIGNABLE_BLOCK` is 99. Five sorts compared numbered codes as text and
+now compare their numbers: the materials using a dropdown choice (`RM-`), a program line's claims
+and a party's claims (`CL-`), in SQL through `orderByCode` beside `numberExpression`; the contractor
+ledger's programs (`MP-`) and the PC2/PC3 reconciliation's materials, in code through
+`compareNumberedCodes` (`@erp/domain`). Every code is written with `padStart(6)`, which pads and
+never cuts, so `GP-1000000` prints whole. The carton QR symbol was measured with the label encoder:
+real identities with six-, seven- and eight-digit serials all came out 25 or 29 modules, about
+0.9-1 mm each, so labels need nothing. The check script now tests with blocks 997–999 (018 has no
+upper bound). Settings offers blocks 2–99 in its list.
+
 ## 11. Order of work
 
 1. This note. **Done.**
@@ -258,7 +268,7 @@ Blocks 1–10 see no change. For blocks 11 and up:
    screens, job role, authority, revoking, permission requests, password resets, copying the roles
    up -- and changing one's own password through the cloud. **Done.** The switch was refused by
    every build until this was (`CLOUD_ACCOUNTS_SWITCH_READY`, owner 2026-11-01).
-7. The block ceiling and numeric sorting (§10), at any point.
+7. The block ceiling and numeric sorting (§10), at any point. **Done (2026-11-03).**
 
 Nothing here ships before PC2's cutover: migration 100 would move PC2 off schema 099, which the
 rehearsed cutover depends on (`docs/36 §10.5`).

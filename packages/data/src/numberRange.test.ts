@@ -5,6 +5,8 @@ import os from "node:os";
 import path from "node:path";
 import { SqliteDatabase, NumberRangeError, NUMBER_SITES, rangeForBlock } from "./sqliteDatabase.js";
 import type { NumberSiteKey } from "./sqliteDatabase.js";
+import { DatabaseSync } from "node:sqlite";
+import { orderByCode } from "./database/numberRange.js";
 
 // RESERVED DOCUMENT-NUMBER RANGES — one block of numbers per computer.
 //
@@ -117,7 +119,7 @@ test("an unconfigured computer refuses to allocate, and writes nothing", () => {
 
 test("an invalid block refuses rather than falling back to a global next number", () => {
   withFixture("range-bad", null, ({ db, raw }) => {
-    db.setSettings({ "numbering.block": "9" }, "test");
+    db.setSettings({ "numbering.block": "100" }, "test");
     assert.throws(
       () => party(db, "BAD BLOCK"),
       (error: unknown) => error instanceof NumberRangeError && error.reason === "INVALID"
@@ -128,11 +130,11 @@ test("an invalid block refuses rather than falling back to a global next number"
   });
 });
 
-test("setNumberBlock refuses a block outside 1-5 and never guesses one", () => {
+test("setNumberBlock refuses a block outside 1-99 and never guesses one", () => {
   withFixture("range-set", null, ({ db }) => {
     assert.equal(db.getNumberBlock(), null, "nothing assigns a block on its own");
     assert.throws(() => db.setNumberBlock(0), NumberRangeError);
-    assert.throws(() => db.setNumberBlock(6), NumberRangeError);
+    assert.throws(() => db.setNumberBlock(100), NumberRangeError);
     assert.throws(() => db.setNumberBlock(1.5), NumberRangeError);
     assert.equal(db.isNumberBlockConfirmed(), false);
     assert.deepEqual(db.setNumberBlock(4, "admin"), { block: 4, lo: 300_000, hi: 399_999 });
@@ -386,4 +388,23 @@ test("QR serials are allocated inside this computer's block", () => {
     assert.equal(generated.batch.endSequence, 2_000_002);
     assert.match(generated.qrCodes[0].id, /^SK9_BLACK_7\/10_2000000$/, "seven digits above block 1, unpadded");
   });
+});
+
+// Blocks 11 to 99 number in seven digits (docs/41 section 10). As text, PTY-1000000 would sort
+// before PTY-200000; orderByCode sorts by the number, then the text.
+test("numbered codes sort by their number, not their text", () => {
+  const sql = new DatabaseSync(":memory:");
+  try {
+    sql.exec("CREATE TABLE p (party_code TEXT); CREATE TABLE c (claim_number TEXT)");
+    for (const code of ["PTY-1000000", "PTY-200000", "PTY-000123", "PTY-1000001", "PTY-099999"]) {
+      sql.prepare("INSERT INTO p VALUES (?)").run(code);
+    }
+    for (const code of ["CL-1000000", "CL-000002", "CL-200000"]) sql.prepare("INSERT INTO c VALUES (?)").run(code);
+    const parties = (sql.prepare(`SELECT party_code FROM p ORDER BY ${orderByCode("partyCode", "party_code")}`).all() as Array<{ party_code: string }>).map((row) => row.party_code);
+    assert.deepEqual(parties, ["PTY-000123", "PTY-099999", "PTY-200000", "PTY-1000000", "PTY-1000001"]);
+    const claims = (sql.prepare(`SELECT claim_number FROM c ORDER BY ${orderByCode("partyClaim", "c.claim_number")}`).all() as Array<{ claim_number: string }>).map((row) => row.claim_number);
+    assert.deepEqual(claims, ["CL-000002", "CL-200000", "CL-1000000"]);
+  } finally {
+    sql.close();
+  }
 });

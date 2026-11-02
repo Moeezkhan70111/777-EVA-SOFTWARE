@@ -12,6 +12,7 @@
 import type { SqliteDatabase } from "../sqliteDatabase.js";
 import { formatMachineProgramCodeNumber } from "@erp/application";
 import { PARTY_CLAIM_STATUS } from "@erp/domain";
+import { orderByCode } from "./numberRange.js";
 
 const text = (value: unknown): string => (value == null ? "" : String(value));
 
@@ -32,7 +33,7 @@ const CLAIMS_SQL = `
     JOIN machine_programs mp ON mp.id = c.program_id
     JOIN inventory_items ii ON ii.id = c.item_id
    WHERE c.party_id = ? AND c.status = '${PARTY_CLAIM_STATUS.POSTED}'
-   ORDER BY c.claim_date, c.claim_number`;
+   ORDER BY c.claim_date, ${orderByCode("partyClaim", "c.claim_number")}`;
 
 const describe = (row: Record<string, unknown>): string => {
   const pairs = Number(row.quantity_pairs ?? 0);

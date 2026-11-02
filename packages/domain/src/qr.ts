@@ -135,7 +135,8 @@ export function isValidQrCode(rawInput: string): boolean {
  * Serials are allocated from a per-computer block a million wide (SERIAL_BLOCK_SIZE in
  * @erp/data's numberRange.ts): computer 1 owns 1-999,999, computer 2 owns 1,000,000-1,999,999,
  * and so on. padStart(6) is a NO-OP for anything from 1,000,000 up, so computer 1 keeps printing
- * the six-digit serials it always has and computers 2-5 come out seven digits naturally.
+ * the six-digit serials it always has, blocks 2-10 come out seven digits and blocks 11-99 eight,
+ * naturally.
  *
  * DO NOT RAISE THIS TO 7. Padding everything to seven would make block 1's already-printed
  * `000500` and a freshly generated `0000500` two different identity STRINGS for serial 500, and

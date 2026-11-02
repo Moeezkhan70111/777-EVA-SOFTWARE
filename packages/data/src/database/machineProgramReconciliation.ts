@@ -33,6 +33,7 @@ import {
   type UpperReconciliation,
 } from "@erp/domain";
 import { CUT_SIZE_KIND } from "./machineProgramUpperReconciliation.js";
+import { orderByCode } from "./numberRange.js";
 import type { MachineProgramRecord } from "./types.js";
 
 const text = (value: unknown): string => (value == null ? "" : String(value));
@@ -356,7 +357,7 @@ export const machineProgramReconciliationMethods = {
         `SELECT c.claim_number, c.party_role, p.party_name, c.quantity_pairs, c.amount_paisa, c.reason
            FROM party_claims c JOIN parties p ON p.id = c.party_id
           WHERE c.program_id = ? AND c.upper_line_id = ? AND c.status = 'POSTED'
-          ORDER BY c.claim_number`
+          ORDER BY ${orderByCode("partyClaim", "c.claim_number")}`
       )
       .all(programId, lineId) as Array<Record<string, unknown>>).map((claim) => ({
       claimNumber: text(claim.claim_number),

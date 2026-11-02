@@ -10,7 +10,7 @@
 
 import { randomUUID } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
-import { compactRawMaterialQrToken, normalizeRawMaterialQrCode, parseRawMaterialQrId, stockEventBalanceDelta } from "@erp/domain";
+import { compactRawMaterialQrToken, compareNumberedCodes, normalizeRawMaterialQrCode, parseRawMaterialQrId, stockEventBalanceDelta } from "@erp/domain";
 import { TABLE, all, nextFreeNumber, num, one, sourceOnly, text, textOrNull, type Row } from "./shared.js";
 
 export interface RenumberedMaterial {
@@ -51,7 +51,7 @@ const pairKey = (partyId: string, itemId: string): string => `${partyId}|${itemI
 
 /** The source's new materials, renumbered past the target's codes in the source's code order. */
 export function planMaterials(source: DatabaseSync, target: DatabaseSync, refusals: string[]): MaterialPlan {
-  const rows = sourceOnly(source, target, TABLE.ITEMS).sort((a, b) => text(a, "item_code").localeCompare(text(b, "item_code")));
+  const rows = sourceOnly(source, target, TABLE.ITEMS).sort((a, b) => compareNumberedCodes(text(a, "item_code"), text(b, "item_code")));
   const first = rows.length > 0 ? nextFreeNumber(target, "inventoryItemCode") : 0;
   const materials = rows.map((row, i) => ({ source: row, newCode: `RM-${String(first + i).padStart(6, "0")}` }));
   for (const { source: row } of materials) {

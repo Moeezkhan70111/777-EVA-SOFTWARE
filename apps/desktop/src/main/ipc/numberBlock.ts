@@ -10,7 +10,7 @@
 //                          installation that already holds the company's numbered documents,
 //                          after the data layer has proved that is what this computer is.
 //   assignNumberBlock      admin-only, one-time, for a SECOND computer: it records a block from
-//                          2 to 5, which an administrator reads off the factory's own record of
+//                          2 to 99, which an administrator reads off the factory's own record of
 //                          which machine holds which range.
 //
 // WHY assignNumberBlock EXISTS NOW. Nothing on a computer can tell whether the range it was
@@ -100,7 +100,7 @@ export function registerNumberBlockHandlers(ctx: NumberBlockContext): void {
     try {
       const admin = authorizer.requireAdmin(event);
       // The renderer sends whatever was typed; the number is settled here and validated by the
-      // data layer, which owns the 2-5 bound and the never-reassign rule (R25: the boundary does
+      // data layer, which owns the 2-99 bound and the never-reassign rule (R25: the boundary does
       // not trust the renderer, and does not decide the rule either).
       const chosen = typeof block === "number" ? block : Number(block);
       const range = db.assignNumberBlock(chosen, admin.username);

@@ -1098,7 +1098,7 @@ starts on PC2. Step 1 below still applies; step 2 is kept for the record.
 1. **The real database keeps its block.** If it has been issuing documents, that is **block 1**,
    confirmed (`numbering.block = 1`, `numbering.block.confirmed = 1`). Never change it on this
    database.
-2. **Record the written assignment:** block 1 = this database's machine, and blocks 2–5 = the
+2. **Record the written assignment:** block 1 = this database's machine, and blocks 2–99 = the
    others (§7.3 step 11). A PC enrolled later is given its block from that record, never block 1.
 
 ### 10.5 Clear what belongs to the test project

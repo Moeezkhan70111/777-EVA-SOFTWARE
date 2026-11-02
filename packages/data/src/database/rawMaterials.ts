@@ -9,7 +9,7 @@ import { EFFECTIVE_PACK_NAME_SQL, normalizeInventoryText, normalizePackName } fr
 import type { DatabaseSync } from "node:sqlite";
 import { STOCK_EVENT_NOTE, fromPaisaOrNull, packetsInStore as countPacketsInStore, toPaisaOrNull } from "@erp/domain";
 import type { InventoryStockEventRow, RawMaterialHop, RawMaterialMovementConfigRow, RawMaterialSetupTemplate, WorkSection } from "./types.js";
-import { allocateNumberInRange } from "./numberRange.js";
+import { allocateNumberInRange, orderByCode } from "./numberRange.js";
 
 function readWorkSectionByName(db: DatabaseSync, name: string): WorkSection | undefined {
   const row = db
@@ -789,7 +789,7 @@ export const rawMaterialsMethods = {
     return (this.db.prepare(
       `SELECT i.item_code AS itemCode, i.display_name AS displayName
        FROM inventory_item_values v JOIN inventory_items i ON i.id = v.item_id
-       WHERE v.field_id = ? AND v.text_value = ? ORDER BY i.item_code`
+       WHERE v.field_id = ? AND v.text_value = ? ORDER BY ${orderByCode("inventoryItemCode", "i.item_code")}`
     ).all(option.field_id, option.option_value) as Array<{ itemCode: string; displayName: string }>);
   },
 

@@ -11,7 +11,7 @@ export type NumberBlockAdoptRefusal = "ALREADY_CONFIGURED" | "NO_EXISTING_DATA" 
  * hands the renderer.
  */
 export interface NumberBlockStatus {
-  /** The range this computer holds (1-5), or null when it holds none. */
+  /** The range this computer holds (1-99), or null when it holds none. */
   block: number | null;
   /** The first and last number this computer may allocate, or null when it holds no range. */
   range: { block: number; lo: number; hi: number } | null;
@@ -2341,7 +2341,7 @@ export interface DesktopApi {
     code?: string;
   }>;
   /**
-   * Records a range from 2 to 5 for a SECOND computer, read off the factory's own record of which
+   * Records a range from 2 to 99 for a SECOND computer, read off the factory's own record of which
    * machine holds which range. Administrator only, never a second time, and block 1 is refused --
    * that one belongs to the installation holding the existing documents, which adopts it itself.
    */

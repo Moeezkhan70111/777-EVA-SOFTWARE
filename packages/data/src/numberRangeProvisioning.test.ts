@@ -105,14 +105,14 @@ test("a new installation is pointed at the assignment, not told it is impossible
 
 // WHAT A SECOND COMPUTER IS OFFERED. Carried in the status so no screen works a range out for
 // itself: the Settings panel shows these numbers and the assignment records exactly them.
-test("the status offers a second computer the four ranges that are not block 1", () => {
+test("the status offers a second computer every range from block 2 to block 99", () => {
   withFixture("provision-assignable", ({ db }) => {
-    assert.deepEqual(db.getNumberBlockStatus().assignable, [
-      { block: 2, lo: 100_000, hi: 199_999 },
-      { block: 3, lo: 200_000, hi: 299_999 },
-      { block: 4, lo: 300_000, hi: 399_999 },
-      { block: 5, lo: 400_000, hi: 499_999 },
-    ]);
+    const assignable = db.getNumberBlockStatus().assignable;
+    assert.equal(assignable.length, 98);
+    assert.deepEqual(assignable[0], { block: 2, lo: 100_000, hi: 199_999 });
+    // Block 11 is the first to number in seven digits (docs/41 section 10).
+    assert.deepEqual(assignable.find((range) => range.block === 11), { block: 11, lo: 1_000_000, hi: 1_099_999 });
+    assert.deepEqual(assignable[97], { block: 99, lo: 9_800_000, hi: 9_899_999 });
   });
 });
 
@@ -124,7 +124,7 @@ test("the status offers nothing once a range is recorded here, valid or not", ()
     // An unusable stored value is corrected at the database by an administrator, never
     // reassigned from the application: documents may already carry numbers from it. Written
     // through setSettings because setNumberBlock refuses it, which is the point.
-    db.setSettings({ [NUMBER_BLOCK_SETTING_KEY]: "42" }, "test");
+    db.setSettings({ [NUMBER_BLOCK_SETTING_KEY]: "100" }, "test");
     const status = db.getNumberBlockStatus();
     assert.equal(status.problem, "INVALID");
     assert.deepEqual(status.assignable, []);
@@ -257,18 +257,18 @@ test("adopting twice is refused the second time, and the first assignment stands
 
 test("an unusable stored range is reported as invalid, with what is stored, and is not quietly fixed", () => {
   withFixture("provision-invalid", ({ db }) => {
-    db.setSettings({ [NUMBER_BLOCK_SETTING_KEY]: "99" }, "test");
+    db.setSettings({ [NUMBER_BLOCK_SETTING_KEY]: "100" }, "test");
 
     const status = db.getNumberBlockStatus();
     assert.equal(status.block, null);
     assert.equal(status.range, null);
     assert.equal(status.problem, "INVALID");
-    assert.equal(status.storedValue, "99");
+    assert.equal(status.storedValue, "100");
     // Provisioning does not treat a bad value as "unconfigured" and overwrite it: a wrong range
     // is a mistake to look at, not one to paper over.
     assert.equal(status.adoption.refusal, "ALREADY_CONFIGURED");
     assert.throws(() => db.adoptExistingDataNumberBlock("admin"), NumberRangeError);
-    assert.equal(db.getNumberBlockStatus().storedValue, "99");
+    assert.equal(db.getNumberBlockStatus().storedValue, "100");
   });
 });
 
@@ -329,9 +329,9 @@ test("block 1 is never handed to a second computer, whatever an administrator as
   });
 });
 
-test("a block outside 2-5 is refused, and nothing is recorded", () => {
+test("a block outside 2-99 is refused, and nothing is recorded", () => {
   withFixture("assign-bounds", ({ db }) => {
-    for (const bad of [0, -1, 6, 99, 1.5, Number.NaN, Number.POSITIVE_INFINITY]) {
+    for (const bad of [0, -1, 100, 1000, 1.5, Number.NaN, Number.POSITIVE_INFINITY]) {
       assert.throws(
         () => db.assignNumberBlock(bad, "owner"),
         (error: unknown) => error instanceof NumberRangeError && error.reason === "INVALID",

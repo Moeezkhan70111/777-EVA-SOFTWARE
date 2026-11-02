@@ -17,7 +17,7 @@ import type { NumberBlockStatus } from "../../types/desktopApi";
 //   adopt   the computer that already holds the company's numbered documents takes range 1,
 //           after the data layer proves from that computer's own data that is what it is. It
 //           takes no range, because there is nothing to choose.
-//   assign  a SECOND computer is given a range from 2 to 5, picked from the list the data layer
+//   assign  a SECOND computer is given a range from 2 to 99, picked from the list the data layer
 //           hands back. Nothing on a computer can tell whether that range is already in use on
 //           another machine -- the factory's written record is the authority -- so this is a
 //           deliberate act by an administrator, confirmed against the numbers it will create,

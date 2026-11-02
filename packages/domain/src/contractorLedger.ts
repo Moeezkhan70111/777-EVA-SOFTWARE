@@ -1,4 +1,5 @@
 import { APP_TIMEZONE } from "./constants.js";
+import { compareNumberedCodes } from "./codes.js";
 import { jobChargePaisa } from "./contractorPricing.js";
 import { OPERATIONAL_DAY_START_HOUR, cartonsToDozens } from "./units.js";
 
@@ -227,7 +228,7 @@ const linesOf = (cartons: readonly ContractorWorkCarton[]): ContractorWorkLine[]
 };
 
 const byProgramThenArticle = (a: ContractorWorkLine, b: ContractorWorkLine): number =>
-  a.programCode.localeCompare(b.programCode) || a.role.localeCompare(b.role) || `${a.article} ${a.size}`.localeCompare(`${b.article} ${b.size}`);
+  compareNumberedCodes(a.programCode, b.programCode) || a.role.localeCompare(b.role) || `${a.article} ${a.size}`.localeCompare(`${b.article} ${b.size}`);
 
 /** The cartons, grouped into the business days they came in on, oldest first. */
 export const groupContractorWork = (cartons: readonly ContractorWorkCarton[]): ContractorWorkDay[] => {

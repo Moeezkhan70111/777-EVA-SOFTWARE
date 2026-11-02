@@ -35,9 +35,10 @@ const ARTWORK_HEIGHT_IN = LABEL_HEIGHT_IN - 2 * SAFE_MARGIN_IN;
  * level M, and 1.3in keeps every module at roughly 1mm — comfortably above the ~0.33mm a
  * handheld imager needs, even on a smudged thermal print.
  *
- * Seven-digit serials (computers 2-5 under the per-computer block scheme) add one byte, which
- * mostly does not change the version at all and at worst steps 33 modules to 37 — about 0.89mm
- * a module, still well clear. AUTO_TYPE_NUMBER below means the encoder absorbs it either way,
+ * Seven- and eight-digit serials (blocks 2-10 and 11-99 under the per-computer block scheme) add
+ * one or two bytes, which mostly does not change the version at all and at worst steps 33 modules
+ * to 37 — about 0.89mm a module, still well clear. Measured 2026-11-02 with this encoder: real
+ * identities with a six-, seven- or eight-digit serial all came out 25 or 29 modules. AUTO_TYPE_NUMBER below means the encoder absorbs it either way,
  * so nothing here needs adjusting for serial width.
  *
  * The rest of the height carries the two text lines: the plain-language name above and the
