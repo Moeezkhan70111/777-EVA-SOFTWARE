@@ -33,6 +33,7 @@ import {
   readRawMaterialQrBatchPayload,
   readRawMaterialQrPayload,
   readStockEventPayload,
+  readCartonStockEventPayload,
   MASTER_RECORD_TYPES,
   isMasterRecordType,
   readLeasedRecordPayload,
@@ -130,6 +131,8 @@ export const SUPABASE_PUSHABLE_AGGREGATES: readonly string[] = [
   ...MASTER_RECORD_TYPES,
   // Raw-material stock movements (cloud migration 015), after the materials they move.
   SYNC_AGGREGATE.STOCK_EVENT,
+  // Carton stock movements (cloud migration 026), after the products they move.
+  SYNC_AGGREGATE.CARTON_STOCK_EVENT,
 ];
 
 /** What one computer reports about itself (cloud migration 014). Counts and words only. */
@@ -331,6 +334,7 @@ export class SupabaseSyncTransport implements SyncTransport, SyncPullTransport {
     const packets: SyncEnvelope[] = [];
     const records: SyncEnvelope[] = [];
     const movements: SyncEnvelope[] = [];
+    const cartonMovements: SyncEnvelope[] = [];
 
     for (const envelope of envelopes) {
       if (envelope.aggregateType === SYNC_AGGREGATE.PRODUCT_VARIANT) {
@@ -347,6 +351,8 @@ export class SupabaseSyncTransport implements SyncTransport, SyncPullTransport {
         records.push(envelope);
       } else if (envelope.aggregateType === SYNC_AGGREGATE.STOCK_EVENT) {
         movements.push(envelope);
+      } else if (envelope.aggregateType === SYNC_AGGREGATE.CARTON_STOCK_EVENT) {
+        cartonMovements.push(envelope);
       } else {
         acks.push({
           dedupeKey: envelope.dedupeKey,
@@ -373,6 +379,8 @@ export class SupabaseSyncTransport implements SyncTransport, SyncPullTransport {
     if (packets.length > 0) acks.push(...(await this.pushPackets(held, packets)));
     // A material's revision before a movement of it.
     if (movements.length > 0) acks.push(...(await this.pushStockEvents(held, movements)));
+    // A product before a carton movement of it (the variants went first, above).
+    if (cartonMovements.length > 0) acks.push(...(await this.pushCartonStockEvents(held, cartonMovements)));
     return acks;
   }
 
@@ -620,6 +628,51 @@ export class SupabaseSyncTransport implements SyncTransport, SyncPullTransport {
     const acks = [...waiting, ...envelopesWithUnreadablePayloads(byAggregate)];
     if (rows.length === 0) return acks;
     const results = await this.callPush("push_stock_event", held, rows);
+    return [...acks, ...matchResults(results, byAggregate, "id")];
+  }
+
+  /**
+   * Carton stock movements, through push_carton_stock_event (cloud migration 026). Leased under the
+   * carton lease. The cloud checks the delta against the type and quantity, as this computer's reader
+   * does, and keeps the gatepass and Manual Production ids as plain references.
+   */
+  private async pushCartonStockEvents(held: ClaimHeld, envelopes: readonly SyncEnvelope[]): Promise<SyncAck[]> {
+    const rows: Array<Record<string, unknown>> = [];
+    const byAggregate = new Map<string, SyncEnvelope>();
+    const waiting: SyncAck[] = [];
+
+    for (const envelope of envelopes) {
+      const event = readCartonStockEventPayload(envelope.payload);
+      if (event === null) {
+        byAggregate.set(`!payload:${envelope.dedupeKey}`, envelope);
+        continue;
+      }
+      const leaseEpoch = envelope.leaseEpoch ?? null;
+      if (leaseEpoch === null) {
+        waiting.push(unstampedLeasedRow(envelope));
+        continue;
+      }
+      byAggregate.set(event.eventId, envelope);
+      rows.push({
+        id: event.eventId,
+        product_variant_id: event.productVariantId,
+        event_type: event.eventType,
+        quantity: event.quantity,
+        balance_delta: event.balanceDelta,
+        location_type: event.locationType,
+        location_id: event.locationId,
+        created_by: event.createdBy,
+        created_at: event.createdAt,
+        manual_production_entry_id: event.manualProductionEntryId,
+        gatepass_id: event.gatepassId,
+        gatepass_line_id: event.gatepassLineId,
+        lease_epoch: leaseEpoch,
+      });
+    }
+
+    const acks = [...waiting, ...envelopesWithUnreadablePayloads(byAggregate)];
+    if (rows.length === 0) return acks;
+    const results = await this.callPush("push_carton_stock_event", held, rows);
     return [...acks, ...matchResults(results, byAggregate, "id")];
   }
 

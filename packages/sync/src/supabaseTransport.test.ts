@@ -1008,13 +1008,13 @@ test("an event type with no contract at all is refused without being parked", as
     // The five types that HAVE contracts are claimed; the four that do not are left alone.
     // Order matters and is the order leaseBatch claims them in: a variant before a carton of it,
     // a carton before a scan of it, a label run before a packet of it, a material before a
-    // movement of it.
+    // movement of it, a product before a carton movement of it.
     assert.deepEqual(
       [...SUPABASE_PUSHABLE_AGGREGATES],
       [
         "PRODUCT_VARIANT", "QR_MASTER", "PRODUCTION_PRODUCED", "RAW_MATERIAL_QR_BATCH", "RAW_MATERIAL_QR",
         "PARTY_GROUP", "INVENTORY_UNIT", "WORK_SECTION", "UNIT_LADDER_PRESET", "INVENTORY_CATEGORY", "PARTY", "INVENTORY_ITEM", "MACHINE",
-        "STOCK_EVENT",
+        "STOCK_EVENT", "CARTON_STOCK_EVENT",
       ]
     );
     for (const absent of ["PRODUCTION_EVENT", "DISPATCH_EVENT", "RETURN_EVENT", "PROJECTION"]) {

@@ -32,6 +32,7 @@ import { senderOf, type SyncEnvelope } from "./contract.js";
 import { LEASED_RECORD_CONTRACTS } from "./leasedRecordContracts.js";
 import { rawMaterialQrBatchContract, rawMaterialQrContract } from "./rawMaterialContracts.js";
 import { stockEventContract } from "./stockEventContracts.js";
+import { cartonStockEventContract } from "./cartonStockEventContracts.js";
 import type { SyncSqlHandle } from "./sqlPort.js";
 
 export type ApplyStatus =
@@ -58,6 +59,7 @@ export const APPLY_CONTRACTS: readonly RegisteredContract[] = [
   rawMaterialQrContract,
   ...LEASED_RECORD_CONTRACTS,
   stockEventContract,
+  cartonStockEventContract,
   ...ACCOUNT_CONTRACTS,
 ];
 

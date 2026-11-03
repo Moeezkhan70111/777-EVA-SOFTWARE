@@ -215,6 +215,7 @@ const RECORD_WORDS: Readonly<Record<string, string>> = {
   [SYNC_AGGREGATE.QR_MASTER]: "carton",
   [SYNC_AGGREGATE.PRODUCTION_PRODUCED]: "production scan",
   [SYNC_AGGREGATE.STOCK_EVENT]: "stock movement",
+  [SYNC_AGGREGATE.CARTON_STOCK_EVENT]: "carton stock movement",
 };
 
 export const recordWords = (type: string): string => RECORD_WORDS[type] ?? type.toLowerCase().replace(/_/g, " ");

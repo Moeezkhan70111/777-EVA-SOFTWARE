@@ -17,6 +17,8 @@ import {
   readRawMaterialQrPayload,
   readStockEventPayload,
   stockEventDedupeKey,
+  readCartonStockEventPayload,
+  cartonStockEventDedupeKey,
 } from "@erp/data";
 
 // IS THE CLOUD SCHEMA ABLE TO HOLD WHAT THE LOCAL ONE CONTAINS?
@@ -1483,9 +1485,9 @@ test("009: every event type this computer can apply is a type the cloud log acce
   // fails here rather than as a refused log insert on a real computer.
   const { APPLY_CONTRACTS } = await import("./applyEnvelope.js");
   // Every cloud migration that seeds the log's types: 009 the first five, 013 the eight master
-  // records, 015 stock movements, 020 and 021 the account types.
+  // records, 015 stock movements, 020 and 021 the account types, 026 carton stock movements.
   const seeds = new Set(seededTypes().keys());
-  for (const migration of [LEASED_RECORDS, STOCK_EVENTS, CLOUD_ACCOUNTS, PERMISSION_REQUESTS]) {
+  for (const migration of [LEASED_RECORDS, STOCK_EVENTS, CLOUD_ACCOUNTS, PERMISSION_REQUESTS, CARTON_STOCK_EVENTS]) {
     const insert = migration.slice(migration.indexOf("insert into public.sync_aggregate_types"));
     for (const match of insert.slice(0, insert.indexOf(";")).matchAll(/\('([A-Z_]+)', (true|false), '/g)) {
       seeds.add(match[1] ?? "");
@@ -1537,9 +1539,14 @@ const declarationOf = (sql: string, name: string): string => {
 };
 
 test("011: the cloud's lease domains are exactly this computer's", () => {
-  const seeded = [...LEASES.matchAll(/^\s+\('([A-Z_]+)', '/gm)].map((match) => match[1]);
+  // 011 seeds the first six; 026 adds CARTON_STOCK, read from its lease_domains insert alone.
+  const cartonLease = CARTON_STOCK_EVENTS.slice(CARTON_STOCK_EVENTS.indexOf("insert into public.lease_domains"));
+  const seeded = [LEASES, cartonLease.slice(0, cartonLease.indexOf(";"))].flatMap((sql) =>
+    [...sql.matchAll(/^\s+\('([A-Z_]+)', '/gm)].map((match) => match[1])
+  );
   assert.deepEqual([...seeded].sort(), Object.values(LEASE_DOMAIN).sort());
-  // Carton flows stay multi-writer (owner, 2026-10-23): no carton type may ever gain a lease.
+  // Carton IDENTITIES stay multi-writer (owner, 2026-10-23): no carton identity type may ever gain a
+  // lease. The carton stock FIGURE is leased (docs/42), and is a different type.
   for (const carton of [SYNC_AGGREGATE.QR_MASTER, SYNC_AGGREGATE.PRODUCTION_PRODUCED]) {
     assert.ok(!seeded.includes(carton), `${carton} must stay unleased`);
   }
@@ -1863,6 +1870,10 @@ const STOCK_EVENTS_DOWN = read("migrations/supabase/015_stock_events.down.sql");
 const CLOUD_ACCOUNTS = read("migrations/supabase/020_cloud_accounts.up.sql");
 const PERMISSION_REQUESTS = read("migrations/supabase/021_permission_requests.up.sql");
 
+// 026 carton stock movements (docs/42): the figure's every change, under the carton lease.
+const CARTON_STOCK_EVENTS = read("migrations/supabase/026_carton_stock_events.up.sql");
+const CARTON_STOCK_EVENTS_DOWN = read("migrations/supabase/026_carton_stock_events.down.sql");
+
 test("015: the cloud log's payload is one the receiving computer accepts, field for field", () => {
   const scanOut = {
     id: "e-1", item_id: "i-1", event_type: "TRANSFER_OUT", quantity: 2, unit_id: "u-kg", note: "Issued", created_by: "user-1",
@@ -1972,4 +1983,65 @@ test("016: read by the computers of one factory, written only by the trigger", (
   const down = sqlOnly(DOORBELL_DOWN);
   assert.ok(down.indexOf("alter publication supabase_realtime drop table public.sync_log_doorbell") < down.indexOf("drop table if exists public.sync_log_doorbell"));
   assert.doesNotMatch(down, /delete from/, "the rollback removes the doorbell, never log rows");
+});
+
+test("026: the cloud log's payload is one the receiving computer accepts, field for field", () => {
+  const issue = {
+    id: "ce-1", product_variant_id: "v-1", event_type: "GATEPASS_ISSUE", quantity: 5, balance_delta: -5, location_type: "WAREHOUSE",
+    location_id: "factory-777", created_by: "clerk", created_at: "2026-11-03T05:00:00.000Z",
+    manual_production_entry_id: null, gatepass_id: "g-1", gatepass_line_id: "gl-1",
+  };
+  assert.deepEqual(readCartonStockEventPayload(payloadFromTrigger("log_carton_stock_event_insert", issue, CARTON_STOCK_EVENTS)), {
+    eventId: "ce-1", productVariantId: "v-1", eventType: "GATEPASS_ISSUE", quantity: 5, balanceDelta: -5, locationType: "WAREHOUSE",
+    locationId: "factory-777", createdBy: "clerk", createdAt: "2026-11-03T05:00:00.000Z",
+    manualProductionEntryId: null, gatepassId: "g-1", gatepassLineId: "gl-1",
+  });
+});
+
+test("026: the cloud builds the local dedupe key, unscoped, under the log's one ordering lock, and the type is under the carton lease", () => {
+  assert.equal(cartonStockEventDedupeKey("ce-1"), "CARTON_STOCK_EVENT:ce-1");
+  assert.ok(CARTON_STOCK_EVENTS.includes("'CARTON_STOCK_EVENT:' || new.id"));
+  assert.match(sqlOnly(CARTON_STOCK_EVENTS), /\('CARTON_STOCK_EVENT', false, '/, "seeded unscoped: factory_id is null");
+  assert.equal(LEASED_AGGREGATE_DOMAIN[SYNC_AGGREGATE.CARTON_STOCK_EVENT], LEASE_DOMAIN.CARTON_STOCK);
+  const body = functionBody(CARTON_STOCK_EVENTS, "log_carton_stock_event_insert");
+  assert.ok(body.indexOf("pg_advisory_xact_lock(777, 1)") < body.indexOf("insert into public.sync_event_log"), "003's lock, never a key of its own");
+  assert.doesNotMatch(sqlOnly(CARTON_STOCK_EVENTS), /pg_advisory_xact_lock\((?!777, 1\))/);
+  assert.match(body, /on conflict \(dedupe_key\) do nothing/);
+  assert.match(sqlOnly(CARTON_STOCK_EVENTS), /insert into public\.domain_leases \(domain\) values \('CARTON_STOCK'\)/, "the lease has its row to be granted");
+});
+
+test("026: the push proves the device, then the carton lease, before it writes, and answers per row", () => {
+  const body = functionBody(CARTON_STOCK_EVENTS, "push_carton_stock_event");
+  const claim = body.indexOf("public.claim_is_current(p_epoch, p_holder)");
+  const lease = body.indexOf(`public.lease_holds('${LEASE_DOMAIN.CARTON_STOCK}', account.device_id, (item->>'lease_epoch')::bigint)`);
+  const write = body.indexOf("insert into public.");
+  assert.ok(claim >= 0 && lease > claim && write > lease, "claim, then lease, then write");
+  assert.ok(!body.includes("item->>'origin_device_id'"), "the origin is the proven device");
+  assert.ok(!body.slice(body.indexOf("for item in")).includes("raise exception"), "one bad row must not stall the rest");
+  assert.match(body, /on conflict do nothing;/, "a second void or cancel meets a unique key and is answered, never raised");
+  const shape = functionBody(CARTON_STOCK_EVENTS, "carton_stock_event_problem");
+  for (const reason of ["PAYLOAD_INCOMPLETE", "DELTA_DOES_NOT_MATCH"]) assert.ok(shape.includes(`'${reason}'`), `refuses ${reason}`);
+  for (const reason of ["NOT_LEASE_HOLDER", "IDENTITY_CONFLICT", "MOVEMENT_ALREADY_RECORDED"]) assert.ok(body.includes(`'${reason}'`), `refuses ${reason}`);
+});
+
+test("026: the sign is the type's, in the cloud exactly as on every computer, and the source documents are references only", () => {
+  const sql = sqlOnly(CARTON_STOCK_EVENTS);
+  assert.match(sql, /check \(balance_delta = case when event_type in \('GATEPASS_ISSUE', 'MANUAL_PRODUCTION_VOID'\) then -quantity else quantity end\)/);
+  assert.doesNotMatch(sql, /references public\.(gatepasses|manual_production_entries|product_variants)/, "nothing it names must exist in the cloud");
+  for (const index of ["idx_carton_stock_events_entry_once", "idx_carton_stock_events_line_once"]) {
+    assert.ok(sql.includes(index), `${index}: a void, and a cancel, once`);
+  }
+});
+
+test("026: the movements are closed to every client, only the push is callable, and the rollback keeps the log", () => {
+  const sql = sqlOnly(CARTON_STOCK_EVENTS);
+  assert.match(sql, /alter table public\.carton_stock_events enable row level security;/);
+  assert.match(sql, /revoke all on table public\.carton_stock_events from public, anon, authenticated;/);
+  for (const fn of ["log_carton_stock_event_insert()", "carton_stock_event_problem(jsonb)", "push_carton_stock_event(bigint, uuid, jsonb)"]) {
+    assert.ok(sql.includes(`revoke all on function public.${fn} from public, anon, authenticated;`), `${fn} revoked`);
+  }
+  assert.equal([...sql.matchAll(/grant execute on function/g)].length, 1, "the push alone is granted");
+  const down = sqlOnly(CARTON_STOCK_EVENTS_DOWN);
+  assert.doesNotMatch(down, /delete from public\.(sync_event_log|domain_lease_events)/, "both logs are append-only");
+  assert.match(down, /raise exception 'CARTON_STOCK is held by a computer/, "a held lease is released first, never dropped");
 });
