@@ -17,11 +17,16 @@ import {
   type StationScanRow,
 } from "../scanStation/scanStation";
 import { openGatepassSlipPrintWindow } from "../../utils/gatepassSlip";
+import { deskDoneMessage, deskIdleMessage, type CartonFigures } from "./gatepassProgress";
 
 // The two gatepass-locked scanning desks, which are the same screen twice.
 //
 //   Store    the cartons this document asks for leave the store      BILLED  → AT_GATE
 //   Dispatch those same cartons go onto the vehicle for the party    AT_GATE → DISPATCHED
+//
+// Only QR cartons are scanned. Cartons with no QR (Manual Production) were issued directly when the
+// gatepass was made (docs/42): each desk shows them as issued, asks only for the QR cartons, and
+// never counts an issued carton as scanned (gatepassProgress.ts words it).
 //
 // The operator opens one document and scans. They never pick an article, a colour, a size or a
 // carton: the Gatepass already says what may be scanned and the backend holds them to it, so
@@ -34,7 +39,23 @@ const RECENT_LIMIT = 12;
 
 export type GatepassScanDesk = "STORE" | "DISPATCH";
 
-const IDLE: ScanStationFeedback = { tone: "idle", title: "READY TO SCAN", message: "Scan a carton for this Gatepass", result: null, seq: 0 };
+const IDLE: ScanStationFeedback = { tone: "idle", title: "READY TO SCAN", message: copy.gatepass.scanPrompt, result: null, seq: 0 };
+
+/** The desk's figures, in the shape the one wording rule reads. */
+const deskFigures = (progress: GatepassScanProgress, totals: { scanned: number; remaining: number }): CartonFigures => ({
+  total: progress.requiredCartons,
+  issuedDirectly: progress.issuedDirectlyCartons,
+  scanned: totals.scanned,
+  remaining: totals.remaining,
+});
+
+/** What the scan panel shows: the done banner, the opening prompt, or the last scan's answer. */
+const panelFeedback = (feedback: ScanStationFeedback, figures: CartonFigures | null, desk: GatepassScanDesk, complete: boolean): ScanStationFeedback => {
+  if (!figures) return feedback;
+  if (complete) return { ...IDLE, ...deskDoneMessage(desk, figures) };
+  if (feedback.seq === 0) return { ...IDLE, message: deskIdleMessage(figures) };
+  return feedback;
+};
 
 /** Required / scanned / remaining for a line, at whichever desk is open. */
 const atDesk = (line: GatepassScanLine, desk: GatepassScanDesk) =>
@@ -110,6 +131,7 @@ export const GatepassScanPage: React.FC<GatepassScanPageProps> = ({ gatepassId, 
   const ready = waitingHere || movedPast;
   const totals = progress ? totalsAtDesk(progress, desk) : { scanned: 0, remaining: 0 };
   const complete = Boolean(progress) && totals.remaining === 0;
+  const figures = progress ? deskFigures(progress, totals) : null;
 
   const runScan = useCallback(
     async (code: string) => {
@@ -242,7 +264,7 @@ export const GatepassScanPage: React.FC<GatepassScanPageProps> = ({ gatepassId, 
         ) : (
           <>
             <ScanPanel
-              feedback={complete ? { ...IDLE, title: "✓ COMPLETE", message: "Every carton is scanned. Print the slip." } : feedback}
+              feedback={panelFeedback(feedback, figures, desk, complete)}
               inputRef={inputRef}
               inputVal={inputVal}
               onInputChange={setInputVal}
@@ -268,10 +290,18 @@ export const GatepassScanPage: React.FC<GatepassScanPageProps> = ({ gatepassId, 
                 </div>
 
                 <div className="ssn-kpis">
+                  {progress.issuedDirectlyCartons > 0 ? (
+                    <div className="ssn-kpi">
+                      <span className="ssn-kpi-label">{copy.gatepass.issuedDirectly}</span>
+                      <span className="ssn-kpi-value" data-testid="gatepass-issued-directly">{formatQuantityInDozens(progress.issuedDirectlyCartons)}</span>
+                      <span className="ssn-kpi-sub">{copy.gatepass.issuedDirectlySub}</span>
+                    </div>
+                  ) : null}
                   <div className="ssn-kpi">
                     <span className="ssn-kpi-label">Scanned</span>
                     <span className="ssn-kpi-value" data-testid="gatepass-scanned">{formatQuantityInDozens(totals.scanned)}</span>
-                    <span className="ssn-kpi-sub">of {formatQuantityInDozens(progress.requiredCartons)}</span>
+                    {/* Of the QR cartons only: an issued carton is never one to scan. */}
+                    <span className="ssn-kpi-sub">of {formatQuantityInDozens(progress.requiredCartons - progress.issuedDirectlyCartons)}</span>
                   </div>
                   <div className="ssn-kpi">
                     <span className="ssn-kpi-label">Remaining</span>
@@ -291,6 +321,9 @@ export const GatepassScanPage: React.FC<GatepassScanPageProps> = ({ gatepassId, 
                         </div>
                         <div className="gp-scan-line-figures">
                           <span>Required <strong>{formatQuantityInDozens(line.requiredCartons)}</strong></span>
+                          {line.issuedDirectlyCartons > 0 ? (
+                            <span>{copy.gatepass.issuedDirectly} <strong>{formatQuantityInDozens(line.issuedDirectlyCartons)}</strong></span>
+                          ) : null}
                           <span>Scanned <strong>{formatQuantityInDozens(line_.scanned)}</strong></span>
                           <span className={line_.remaining === 0 ? "is-done" : ""}>
                             Remaining <strong>{formatQuantityInDozens(line_.remaining)}</strong>

@@ -7,6 +7,7 @@ import {
   AddMachineUseCase,
   CancelGatepassUseCase,
   CreateGatepassUseCase,
+  DispatchScanUseCase,
   InMemoryEventBus,
   ProcessScanUseCase,
   StoreEntryScanUseCase,
@@ -44,6 +45,7 @@ const producer = (db: SqliteDatabase) =>
   new ProcessScanUseCase({ ...scanDeps(db), duplicateChecker: db, productCatalog: db, productionEventsRepo: db });
 const receiver = (db: SqliteDatabase) => new StoreEntryScanUseCase({ ...scanDeps(db), storeEntryEventsRepo: db });
 const mover = (db: SqliteDatabase) => new StoreExitScanUseCase({ ...scanDeps(db), storeExitEventsRepo: db });
+const dispatcher = (db: SqliteDatabase) => new DispatchScanUseCase({ ...scanDeps(db), dispatchEventsRepo: db, dispatchSessionRepo: db });
 
 async function createFixture() {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "erp-carton-split-"));
@@ -223,6 +225,190 @@ test("10. production while a gatepass holds the write lock is refused whole, nev
       assert.equal(produce().duplicate, false, "Save again, same request id: it lands now");
       assert.equal(produce().duplicate, true, "and a third press adds nothing");
       assert.deepEqual(figures(f), { current: 7, reserved: 0, reflected: 7 }, "4 - 3 + 6, exact");
+    } finally {
+      second.close();
+    }
+  });
+});
+
+// ─── The lifecycle: billing, the store, the gate (docs/42 section 10.2) ─────────────────────────
+
+const statusOf = (f: Fixture, gatepassId: string) => (f.raw.prepare("SELECT status FROM gatepasses WHERE id = ?").get(gatepassId) as { status: string }).status;
+const bill = (f: Fixture, gatepassId: string) => f.db.createSaleVoucher({ partyId: f.customer, voucherDate: "2026-11-03", bookNo: "1", gatepassId });
+const transitions = (f: Fixture, gatepassId: string) =>
+  (f.raw
+    .prepare(
+      `SELECT event_type FROM audit_log WHERE entity_type = 'GATEPASS' AND entity_id = ?
+         AND event_type IN ('GATEPASS_BILLED', 'GATEPASS_AT_GATE', 'GATEPASS_DISPATCHED') ORDER BY rowid`
+    )
+    .all(gatepassId) as Array<{ event_type: string }>).map((row) => row.event_type);
+const count = (f: Fixture, sql: string, ...params: string[]) => Number((f.raw.prepare(sql).get(...params) as { n: number }).n);
+const scanAgainst = async (f: Fixture, qrId: string, gatepassId: string) => {
+  const result = await mover(f.db).execute({ rawScan: qrId, gatepassId, context: CONTEXT });
+  assert.equal(result.accepted, true, result.reason);
+  return result;
+};
+/** A user of the store desk, to see who is told "ready for Store". */
+function storeUser(f: Fixture): string {
+  const user = f.db.createUserAccount("store-desk", "Password123");
+  f.raw.prepare("UPDATE app_users SET access_status = 'APPROVED' WHERE id = ?").run(user.id);
+  f.db.assignUserRole(user.id, f.db.createRole({ name: "Store desk", permissions: ["store-scanning"] }).code);
+  return user.id;
+}
+const billedNotices = (f: Fixture, userId: string) =>
+  count(f, "SELECT COUNT(1) AS n FROM user_notifications WHERE user_id = ? AND kind = 'GATEPASS_BILLED'", userId);
+
+test("L1 & L5. billing a fully manual gatepass takes it to the gate at once -- no scan, no stock movement, no store alert", async () => {
+  await withFixture(async (f) => {
+    const store = storeUser(f);
+    stockManual(f, f.db, 10);
+    const made = await makeGatepass(f, 4);
+    const eventsBefore = count(f, "SELECT COUNT(1) AS n FROM production_events");
+    const qrBefore = f.raw.prepare("SELECT qr_id, current_status FROM qr_master ORDER BY qr_id").all();
+    bill(f, made.gatepassId!);
+    assert.equal(statusOf(f, made.gatepassId!), "AT_GATE");
+    assert.deepEqual(transitions(f, made.gatepassId!), ["GATEPASS_BILLED", "GATEPASS_AT_GATE"], "the journey still shows both steps");
+    assert.equal(count(f, "SELECT COUNT(1) AS n FROM production_events"), eventsBefore, "no scan was invented");
+    assert.deepEqual(f.raw.prepare("SELECT qr_id, current_status FROM qr_master ORDER BY qr_id").all(), qrBefore);
+    assert.deepEqual(movements(f), ["GATEPASS_ISSUE 4"], "the only movement is the one made with the gatepass");
+    assert.equal(billedNotices(f, store), 0, "the store is not told to scan what it cannot");
+    assert.deepEqual(figures(f), { current: 6, reserved: 0, reflected: 6 });
+  });
+});
+
+test("L2. billing a QR-only gatepass leaves it Pending Store, and the store is told", async () => {
+  await withFixture(async (f) => {
+    const store = storeUser(f);
+    await stockQr(f, 3);
+    const made = await makeGatepass(f, 3);
+    bill(f, made.gatepassId!);
+    assert.equal(statusOf(f, made.gatepassId!), "BILLED");
+    assert.equal(billedNotices(f, store), 1);
+  });
+});
+
+test("L3, L4 & L12. a billed mixed gatepass waits for its QR cartons, goes to the gate on the last one, and on to DISPATCHED at the gate", async () => {
+  await withFixture(async (f) => {
+    const qr = await stockQr(f, 3);
+    stockManual(f, f.db, 10);
+    const made = await makeGatepass(f, 5);
+    const gatepassId = made.gatepassId!;
+    bill(f, gatepassId);
+    assert.equal(statusOf(f, gatepassId), "BILLED", "3 QR cartons still to scan");
+    await scanAgainst(f, qr[0]!, gatepassId);
+    await scanAgainst(f, qr[1]!, gatepassId);
+    assert.equal(statusOf(f, gatepassId), "BILLED", "partly scanned: still Pending Store");
+    const last = await scanAgainst(f, qr[2]!, gatepassId);
+    assert.equal(last.gatepassReachedGate, true);
+    assert.equal(statusOf(f, gatepassId), "AT_GATE");
+
+    const progress = f.db.getGatepassScanProgress(gatepassId)!;
+    assert.deepEqual(
+      [progress.issuedDirectlyCartons, progress.storeScannedCartons, progress.storeRemainingCartons, progress.dispatchRemainingCartons],
+      [2, 3, 0, 3],
+      "the gate is asked only for the 3 QR cartons"
+    );
+    for (const id of qr) {
+      const dispatched = await dispatcher(f.db).execute({ rawScan: id, sessionId: progress.dispatchSessionId!, gatepassId, context: CONTEXT });
+      assert.equal(dispatched.accepted, true, dispatched.reason);
+    }
+    assert.equal(statusOf(f, gatepassId), "DISPATCHED");
+    assert.deepEqual(transitions(f, gatepassId), ["GATEPASS_BILLED", "GATEPASS_AT_GATE", "GATEPASS_DISPATCHED"]);
+    assert.deepEqual(figures(f), { current: 8, reserved: 0, reflected: 8 }, "13 - 2 issued - 3 scanned, each once");
+  });
+});
+
+test("L6. a repeat bill is refused: no second transition, no movement", async () => {
+  await withFixture(async (f) => {
+    stockManual(f, f.db, 10);
+    const made = await makeGatepass(f, 4);
+    bill(f, made.gatepassId!);
+    assert.throws(() => bill(f, made.gatepassId!), /already has Sale Voucher/);
+    assert.deepEqual(transitions(f, made.gatepassId!), ["GATEPASS_BILLED", "GATEPASS_AT_GATE"]);
+    assert.deepEqual(movements(f), ["GATEPASS_ISSUE 4"]);
+  });
+});
+
+test("L7. cancelling a manual-only gatepass before it is billed puts its cartons back, once", async () => {
+  await withFixture(async (f) => {
+    stockManual(f, f.db, 10);
+    const made = await makeGatepass(f, 4);
+    const cancelled = await cancel(f, made.gatepassId!);
+    assert.deepEqual([cancelled.releasedQuantity, cancelled.returnedToStockQuantity], [0, 4]);
+    assert.equal((await cancel(f, made.gatepassId!)).outcome, "ALREADY_CANCELLED");
+    assert.deepEqual(movements(f), ["GATEPASS_ISSUE 4", "GATEPASS_CANCEL 4"]);
+    assert.deepEqual(figures(f), { current: 10, reserved: 0, reflected: 10 });
+  });
+});
+
+test("L8. QR cartons a cancel released are reserved again by the next gatepass, never issued around", async () => {
+  await withFixture(async (f) => {
+    await stockQr(f, 3);
+    stockManual(f, f.db, 5);
+    const first = await makeGatepass(f, 3);
+    await cancel(f, first.gatepassId!);
+    const second = await makeGatepass(f, 3);
+    assert.deepEqual(line(f, second.gatepassId!), { quantity: 3, scanned: 0, issued: 0, outstanding: 3 });
+    assert.deepEqual(movements(f), [], "no carton left stock directly");
+    assert.deepEqual(figures(f), { current: 8, reserved: 3, reflected: 5 });
+  });
+});
+
+test("L9. a DELIVERED gatepass claims no QR cartons", async () => {
+  await withFixture(async (f) => {
+    const qr = await stockQr(f, 2);
+    const first = await makeGatepass(f, 2);
+    const gatepassId = first.gatepassId!;
+    bill(f, gatepassId);
+    for (const id of qr) await scanAgainst(f, id, gatepassId);
+    const session = f.db.getGatepassScanProgress(gatepassId)!.dispatchSessionId!;
+    for (const id of qr) await dispatcher(f.db).execute({ rawScan: id, sessionId: session, gatepassId, context: CONTEXT });
+    f.db.saveGatepassDeliveryProof({ gatepassId, fileName: "proof.jpg", mimeType: "image/jpeg", byteSize: 2048, originalName: "b.jpg", uploadedBy: "driver" });
+    assert.equal(statusOf(f, gatepassId), "DELIVERED");
+
+    await stockQr(f, 2);
+    stockManual(f, f.db, 4);
+    const next = await makeGatepass(f, 2);
+    assert.deepEqual(line(f, next.gatepassId!), { quantity: 2, scanned: 0, issued: 0, outstanding: 2 }, "both new QR cartons are free to reserve");
+  });
+});
+
+test("L10. a carton brought back from the gate is still the gatepass's: it is not offered to the next one", async () => {
+  await withFixture(async (f) => {
+    const qr = await stockQr(f, 3);
+    const first = await makeGatepass(f, 3);
+    const gatepassId = first.gatepassId!;
+    bill(f, gatepassId);
+    for (const id of qr) await scanAgainst(f, id, gatepassId);
+    const back = await receiver(f.db).execute({ rawScan: qr[0]!, context: CONTEXT, actor: "store-op" });
+    assert.equal(back.accepted, true, back.reason);
+    assert.deepEqual(line(f, gatepassId), { quantity: 3, scanned: 2, issued: 0, outstanding: 1 }, "it owes that carton again");
+
+    stockManual(f, f.db, 4);
+    const next = await makeGatepass(f, 2);
+    assert.deepEqual(
+      line(f, next.gatepassId!),
+      { quantity: 2, scanned: 0, issued: 2, outstanding: 0 },
+      "the one QR carton in the store is the first gatepass's, so the next is issued from manual stock"
+    );
+    assert.deepEqual(figures(f), { current: 3, reserved: 1, reflected: 2 }, "1 QR back + 4 manual - 2 issued");
+  });
+});
+
+test("L11. two connections creating gatepasses at once never reserve the same QR cartons", async () => {
+  await withFixture(async (f) => {
+    const second = openDb(f.dbPath);
+    try {
+      await stockQr(f, 3);
+      stockManual(f, f.db, 6);
+      const results = await Promise.allSettled([makeGatepass(f, 3), makeGatepass(f, 3, second)]);
+      const made = results.flatMap((r) => (r.status === "fulfilled" && r.value.accepted ? [r.value.gatepassId!] : []));
+      assert.ok(made.length >= 1);
+      const reserved = made.reduce((sum, id) => sum + Number(line(f, id).outstanding), 0);
+      const issued = made.reduce((sum, id) => sum + Number(line(f, id).issued), 0);
+      assert.equal(reserved, 3, "the 3 QR cartons are reserved once, by one gatepass");
+      assert.equal(issued, 3 * made.length - 3, "anything beyond them was issued from manual stock");
+      assert.deepEqual(figures(f), { current: 9 - issued, reserved: 3, reflected: 6 - issued });
     } finally {
       second.close();
     }

@@ -44,13 +44,13 @@ const SK6_IMAGE = "data:image/png;base64,c2s2";
 const makeDocument = (gatepassNumber: number, input: any, stock: GatepassStockRow[], status: Gatepass["status"] = "CREATED"): Gatepass => {
   const lines = input.lines.map((l: any, idx: number) => {
     const row = stock.find((r) => r.productVariantId === l.productVariantId)!;
-    return { id: `l-${gatepassNumber}-${idx}`, lineNo: idx + 1, productVariantId: l.productVariantId, article: row.article, color: row.color, size: row.size, groupName: row.groupName, quantity: l.quantity, storeQuantityAtCreation: row.storeQuantity, dispatchedFromStoreQuantity: 0, outstandingQuantity: l.quantity };
+    return { id: `l-${gatepassNumber}-${idx}`, lineNo: idx + 1, productVariantId: l.productVariantId, article: row.article, color: row.color, size: row.size, groupName: row.groupName, quantity: l.quantity, storeQuantityAtCreation: row.storeQuantity, dispatchedFromStoreQuantity: 0, issuedDirectlyQuantity: 0, outstandingQuantity: l.quantity };
   });
   const party = PARTIES.find((p) => p.id === input.partyId)!;
   return {
     id: `gp-${gatepassNumber}`, code: `GP-${String(gatepassNumber).padStart(6, "0")}`, gatepassNumber, partyId: party.id, partyName: party.partyName, partyCode: party.partyCode, partyCity: party.city ?? null,
     gatepassDate: "2026-09-16", status, biltyNumber: input.biltyNumber ?? null, transportVia: input.transportVia ?? null, remarks: input.remarks ?? null,
-    totalQuantity: lines.reduce((s: number, l: any) => s + l.quantity, 0), dispatchedFromStoreQuantity: 0, outstandingQuantity: lines.reduce((s: number, l: any) => s + l.quantity, 0), lineCount: lines.length,
+    totalQuantity: lines.reduce((s: number, l: any) => s + l.quantity, 0), dispatchedFromStoreQuantity: 0, issuedDirectlyQuantity: 0, outstandingQuantity: lines.reduce((s: number, l: any) => s + l.quantity, 0), lineCount: lines.length,
     createdBy: "clerk", createdAt: "2026-09-16T10:00:00.000Z", updatedAt: "2026-09-16T10:00:00.000Z",
     cancelledAt: status === "CANCELLED" ? "2026-09-17T08:00:00.000Z" : null, cancelledBy: status === "CANCELLED" ? "owner" : null, cancelReason: status === "CANCELLED" ? "Wrong party" : null, lines,
   };

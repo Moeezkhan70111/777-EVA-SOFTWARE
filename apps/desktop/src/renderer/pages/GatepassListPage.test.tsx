@@ -25,6 +25,7 @@ const DOC: Gatepass = {
   remarks: null,
   totalQuantity: 80,
   dispatchedFromStoreQuantity: 0,
+  issuedDirectlyQuantity: 0,
   outstandingQuantity: 80,
   lineCount: 3,
   createdBy: "clerk",
@@ -34,16 +35,16 @@ const DOC: Gatepass = {
   cancelledBy: null,
   cancelReason: null,
   lines: [
-    { id: "l1", lineNo: 1, productVariantId: "v1", groupName: null, article: "SK6", color: "RED", size: "7/10", quantity: 50, storeQuantityAtCreation: 120, dispatchedFromStoreQuantity: 0, outstandingQuantity: 50 },
-    { id: "l2", lineNo: 2, productVariantId: "v2", groupName: null, article: "SK6", color: "BLUE", size: "7/10", quantity: 20, storeQuantityAtCreation: 80, dispatchedFromStoreQuantity: 0, outstandingQuantity: 20 },
-    { id: "l3", lineNo: 3, productVariantId: "v3", groupName: null, article: "SK6", color: "RED", size: "4/6", quantity: 10, storeQuantityAtCreation: 50, dispatchedFromStoreQuantity: 0, outstandingQuantity: 10 },
+    { id: "l1", lineNo: 1, productVariantId: "v1", groupName: null, article: "SK6", color: "RED", size: "7/10", quantity: 50, storeQuantityAtCreation: 120, dispatchedFromStoreQuantity: 0, issuedDirectlyQuantity: 0, outstandingQuantity: 50 },
+    { id: "l2", lineNo: 2, productVariantId: "v2", groupName: null, article: "SK6", color: "BLUE", size: "7/10", quantity: 20, storeQuantityAtCreation: 80, dispatchedFromStoreQuantity: 0, issuedDirectlyQuantity: 0, outstandingQuantity: 20 },
+    { id: "l3", lineNo: 3, productVariantId: "v3", groupName: null, article: "SK6", color: "RED", size: "4/6", quantity: 10, storeQuantityAtCreation: 50, dispatchedFromStoreQuantity: 0, issuedDirectlyQuantity: 0, outstandingQuantity: 10 },
   ],
 };
 
 const ROWS: GatepassListRow[] = [
-  { id: "gp-1", code: "GP-000123", gatepassNumber: 123, partyId: "p-abc", partyName: "ABC TRADERS", gatepassDate: "2026-09-16", status: "CREATED", totalQuantity: 80, dispatchedFromStoreQuantity: 0, outstandingQuantity: 80, lineCount: 3, articles: ["SK6"], createdBy: "clerk", createdAt: "2026-09-16T10:00:00.000Z" },
-  { id: "gp-2", code: "GP-000122", gatepassNumber: 122, partyId: "p-xyz", partyName: "XYZ TRADERS", gatepassDate: "2026-09-16", status: "CREATED", totalQuantity: 45, dispatchedFromStoreQuantity: 0, outstandingQuantity: 45, lineCount: 2, articles: ["SK12", "SK8"], createdBy: "clerk", createdAt: "2026-09-16T09:00:00.000Z" },
-  { id: "gp-3", code: "GP-000121", gatepassNumber: 121, partyId: "p-abc", partyName: "ABC TRADERS", gatepassDate: "2026-09-15", status: "CANCELLED", totalQuantity: 90, dispatchedFromStoreQuantity: 0, outstandingQuantity: 90, lineCount: 4, articles: ["SK6"], createdBy: "clerk", createdAt: "2026-09-15T09:00:00.000Z" },
+  { id: "gp-1", code: "GP-000123", gatepassNumber: 123, partyId: "p-abc", partyName: "ABC TRADERS", gatepassDate: "2026-09-16", status: "CREATED", totalQuantity: 80, dispatchedFromStoreQuantity: 0, issuedDirectlyQuantity: 0, outstandingQuantity: 80, lineCount: 3, articles: ["SK6"], createdBy: "clerk", createdAt: "2026-09-16T10:00:00.000Z" },
+  { id: "gp-2", code: "GP-000122", gatepassNumber: 122, partyId: "p-xyz", partyName: "XYZ TRADERS", gatepassDate: "2026-09-16", status: "CREATED", totalQuantity: 45, dispatchedFromStoreQuantity: 0, issuedDirectlyQuantity: 0, outstandingQuantity: 45, lineCount: 2, articles: ["SK12", "SK8"], createdBy: "clerk", createdAt: "2026-09-16T09:00:00.000Z" },
+  { id: "gp-3", code: "GP-000121", gatepassNumber: 121, partyId: "p-abc", partyName: "ABC TRADERS", gatepassDate: "2026-09-15", status: "CANCELLED", totalQuantity: 90, dispatchedFromStoreQuantity: 0, issuedDirectlyQuantity: 0, outstandingQuantity: 90, lineCount: 4, articles: ["SK6"], createdBy: "clerk", createdAt: "2026-09-15T09:00:00.000Z" },
 ];
 
 function createFakeBackend() {
@@ -238,5 +239,51 @@ describe("the queue the Gatepass list opens on", () => {
     // Their only gatepass permission is the plain one, which also gates Pending Builties.
     expect(defaultStageFor([PERMISSION.GATEPASS], false)).toBe("DISPATCHED");
     expect(defaultStageFor([PERMISSION.MUNSHI, PERMISSION.GATEPASS, PERMISSION.STOCK], false)).toBe("ALL");
+  });
+});
+
+// Cartons with no QR are issued directly when the gatepass is made (docs/42 section 10.2): the
+// document and the list say so, and never call them scanned or moved out.
+describe("a gatepass that issued cartons directly", () => {
+  const line = (quantity: number, issued: number, scanned: number) => ({
+    id: "lm", lineNo: 1, productVariantId: "v1", groupName: null, article: "SK6", color: "RED", size: "7/10",
+    quantity, storeQuantityAtCreation: 13, dispatchedFromStoreQuantity: scanned, issuedDirectlyQuantity: issued, outstandingQuantity: quantity - issued - scanned,
+  });
+  const doc = (id: string, status: Gatepass["status"], quantity: number, issued: number, scanned: number): Gatepass => ({
+    ...DOC, id, status, totalQuantity: quantity, lineCount: 1, dispatchedFromStoreQuantity: scanned, issuedDirectlyQuantity: issued,
+    outstandingQuantity: quantity - issued - scanned, lines: [line(quantity, issued, scanned)],
+  });
+
+  it("manual only: 'All cartons issued — No Store Scan Required', with every figure stated", async () => {
+    const { docs } = createFakeBackend();
+    docs.set("gp-manual", doc("gp-manual", "AT_GATE", 4, 4, 0));
+    renderPage({ initialGatepassId: "gp-manual" });
+    expect(await screen.findByTestId("gatepass-detail-moved-out")).toHaveTextContent("All cartons issued — No Store Scan Required");
+    expect(screen.getByTestId("gatepass-detail-figures")).toHaveTextContent("Issued directly: 4 · Scanned out: 0 · Remaining to scan: 0");
+  });
+
+  it("mixed: issued, scanned and remaining each in its own place, and the issued cartons are never called scanned", async () => {
+    const { docs } = createFakeBackend();
+    docs.set("gp-mixed", doc("gp-mixed", "BILLED", 5, 2, 1));
+    renderPage({ initialGatepassId: "gp-mixed" });
+    expect(await screen.findByTestId("gatepass-detail-moved-out")).toHaveTextContent("2 cartons issued directly. Scan the remaining 2 QR cartons.");
+    expect(screen.getByTestId("gatepass-detail-figures")).toHaveTextContent("Issued directly: 2 · Scanned out: 1 · Remaining to scan: 2");
+
+    const lines = document.querySelector(".gp-lines-table") as HTMLTableElement;
+    const headers = within(lines).getAllByRole("columnheader").map((h) => h.textContent);
+    expect(headers).toEqual(expect.arrayContaining(["Issued directly", "Scanned out", "Remaining to scan"]));
+    expect(headers).not.toContain("Moved out");
+    const cells = within(within(lines).getAllByRole("row")[1]!).getAllByRole("cell").map((c) => c.textContent);
+    expect(cells.slice(4, 8)).toEqual(["5", "2", "1", "2"]);
+  });
+
+  it("the list row shows what was scanned out apart from what was issued", async () => {
+    const { api } = createFakeBackend();
+    api.listGatepasses.mockResolvedValue({
+      rows: [{ ...ROWS[0]!, code: "GP-000200", totalQuantity: 5, dispatchedFromStoreQuantity: 1, issuedDirectlyQuantity: 2, outstandingQuantity: 2 }],
+      total: 1, page: 1, pageSize: 25,
+    });
+    renderPage();
+    expect(await screen.findByTestId("gatepass-row-moved-out-GP-000200")).toHaveTextContent("1 · 2 issued directly");
   });
 });

@@ -21,11 +21,11 @@ const PRODUCTS = [
 
 const GATEPASS: Gatepass = {
   id: "gp-7", code: "GP-000007", gatepassNumber: 7, partyId: "p-abc", partyName: "ABC Traders", partyCode: "P-0001", partyCity: "Lahore",
-  gatepassDate: "2026-09-18", status: "CREATED", biltyNumber: "B-4471", transportVia: "Daewoo Cargo", remarks: null, totalQuantity: 30, dispatchedFromStoreQuantity: 0, outstandingQuantity: 30, lineCount: 2,
+  gatepassDate: "2026-09-18", status: "CREATED", biltyNumber: "B-4471", transportVia: "Daewoo Cargo", remarks: null, totalQuantity: 30, dispatchedFromStoreQuantity: 0, issuedDirectlyQuantity: 0, outstandingQuantity: 30, lineCount: 2,
   createdBy: "clerk", createdAt: "2026-09-18T10:00:00.000Z", updatedAt: "2026-09-18T10:00:00.000Z", cancelledAt: null, cancelledBy: null, cancelReason: null,
   lines: [
-    { id: "l1", lineNo: 1, productVariantId: "v-sk6-blue", groupName: null, article: "SK6", color: "BLUE", size: "7/10", quantity: 20, storeQuantityAtCreation: 120, dispatchedFromStoreQuantity: 0, outstandingQuantity: 20 },
-    { id: "l2", lineNo: 2, productVariantId: "v-sk6-red", groupName: null, article: "SK6", color: "RED", size: "7/10", quantity: 10, storeQuantityAtCreation: 85, dispatchedFromStoreQuantity: 0, outstandingQuantity: 10 },
+    { id: "l1", lineNo: 1, productVariantId: "v-sk6-blue", groupName: null, article: "SK6", color: "BLUE", size: "7/10", quantity: 20, storeQuantityAtCreation: 120, dispatchedFromStoreQuantity: 0, issuedDirectlyQuantity: 0, outstandingQuantity: 20 },
+    { id: "l2", lineNo: 2, productVariantId: "v-sk6-red", groupName: null, article: "SK6", color: "RED", size: "7/10", quantity: 10, storeQuantityAtCreation: 85, dispatchedFromStoreQuantity: 0, issuedDirectlyQuantity: 0, outstandingQuantity: 10 },
   ],
 };
 

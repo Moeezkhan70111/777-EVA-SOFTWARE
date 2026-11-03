@@ -58,8 +58,8 @@ export interface DraftColour {
   /** Exactly what the clerk typed. */
   text: string;
   check: QuantityCheck;
-  /** A stored document only: what Store Move Out has taken for this line so far. */
-  progress?: { dispatchedFromStore: number; outstanding: number };
+  /** A stored document only: what Store Move Out has scanned out, what was issued directly (docs/42), and what is left to scan. */
+  progress?: { dispatchedFromStore: number; issuedDirectly: number; outstanding: number };
 }
 
 export interface DraftArticle {
@@ -171,7 +171,7 @@ export const buildDraftFromDocument = (document: Pick<Gatepass, "lines">): Gatep
       available: line.storeQuantityAtCreation,
       text: String(line.quantity),
       check: { value: line.quantity, error: null },
-      progress: { dispatchedFromStore: line.dispatchedFromStoreQuantity, outstanding: line.outstandingQuantity },
+      progress: { dispatchedFromStore: line.dispatchedFromStoreQuantity, issuedDirectly: line.issuedDirectlyQuantity, outstanding: line.outstandingQuantity },
     });
   }
   const articles = Array.from(byKey.values()).sort((a, b) => compareNatural(a.article, b.article) || compareNatural(a.size, b.size));

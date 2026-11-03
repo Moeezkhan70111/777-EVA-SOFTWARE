@@ -173,6 +173,30 @@ describe("ManualProductionTab", () => {
     expect(ids[2]).not.toBe(ids[1]);
   });
 
+  it("a save refused because another stock operation held the database says nothing was saved and to try again, in plain words", async () => {
+    // The main process turns SQLite's "database is locked" into this (main/writeRefusal.ts). Nothing
+    // was written, so pressing Save again is safe -- and it is the operator who presses it.
+    const busy = "Production entry was not saved because another stock operation is in progress. Please try again.";
+    const recordManualProduction = vi
+      .fn()
+      .mockResolvedValueOnce({ accepted: false, entry: null, reason: busy })
+      .mockResolvedValue({ accepted: true, entry: entry(), duplicate: false });
+    await openTab(baseApi({ recordManualProduction }));
+    await fillForm("10");
+    const save = screen.getByRole("button", { name: "Save production" });
+
+    await userEvent.click(save);
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(`⚠ Not saved ${busy}`);
+    expect(alert).not.toHaveTextContent(/database is locked/i);
+    expect(recordManualProduction).toHaveBeenCalledTimes(1);
+    expect(save).toBeEnabled();
+
+    await userEvent.click(save);
+    expect(await screen.findByText(/MAN-000001: 20 cartons of SK6 7\/10 RED added to stock/)).toBeInTheDocument();
+    expect(recordManualProduction).toHaveBeenCalledTimes(2);
+  });
+
   it("lists today's entries in Details and adds them up in Summary", async () => {
     await openTab(baseApi({ listManualProduction: vi.fn().mockResolvedValue({ accepted: true, page: day([entry()]) }) }));
     const details = await screen.findByRole("table", { name: "Manual production today" });

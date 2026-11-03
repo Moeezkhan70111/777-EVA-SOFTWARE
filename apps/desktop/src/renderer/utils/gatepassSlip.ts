@@ -2,6 +2,7 @@ import { formatQuantityInDozens } from "@erp/domain";
 import type { GatepassScanProgress } from "../types/desktopApi";
 import { openReport } from "./reportDocument";
 import { formatDateTime } from "./dates";
+import { copy } from "../config/copy";
 
 // The two operational slips a gatepass produces as it physically moves:
 //
@@ -53,6 +54,10 @@ export const buildGatepassSlip = ({ desk, progress, operator }: GatepassSlipInpu
     ]),
     totals: [
       { label: "Required", value: formatQuantityInDozens(progress.requiredCartons) },
+      // Cartons with no QR left stock when the gatepass was made (docs/42): stated apart, never as scanned.
+      ...(progress.issuedDirectlyCartons > 0
+        ? [{ label: copy.gatepass.slipIssuedDirectly, value: formatQuantityInDozens(progress.issuedDirectlyCartons) }]
+        : []),
       { label: store ? "Taken out of store" : "Dispatched", value: formatQuantityInDozens(scannedTotal) },
     ],
     footnote: store

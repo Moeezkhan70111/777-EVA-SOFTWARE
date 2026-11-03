@@ -186,6 +186,28 @@ export const copy = {
     outstanding: "Outstanding",
     movedOutOf: (moved: number, total: number) => `${moved} of ${total} moved out`,
     allMovedOut: "All moved out",
+    // Cartons with no QR (Manual Production) leave stock when the gatepass is made (docs/42 section
+    // 10.2). They are "issued directly" and are never called scanned: only QR cartons are scanned.
+    issuedDirectly: "Issued directly",
+    scannedOut: "Scanned out",
+    remainingToScan: "Remaining to scan",
+    totalCartons: "Total cartons",
+    noStoreScanRequired: "All cartons issued — No Store Scan Required",
+    noGateScanRequired: "All cartons issued — nothing to scan at the gate",
+    issuedThenScan: (issued: number, remaining: number) =>
+      `${issued} ${issued === 1 ? "carton" : "cartons"} issued directly. Scan the remaining ${remaining} QR ${remaining === 1 ? "carton" : "cartons"}.`,
+    issuedAndScanned: (issued: number, scanned: number) =>
+      `${issued} ${issued === 1 ? "carton" : "cartons"} issued directly · ${scanned} QR ${scanned === 1 ? "carton" : "cartons"} scanned out`,
+    issuedDirectlyNote: (issued: number) => `${issued} issued directly`,
+    issuedBackInStock: (cartons: number) => `${cartons} issued ${cartons === 1 ? "carton" : "cartons"} back in stock`,
+    // The scanning desks' banners (GatepassScanPage). The QR-only wording is the one the floor knows.
+    scanPrompt: "Scan a carton for this Gatepass",
+    deskCompleteTitle: "✓ COMPLETE",
+    everyCartonScanned: "Every carton is scanned. Print the slip.",
+    everyQrCartonScanned: "Every QR carton is scanned. Print the slip.",
+    deskNothingToScanTitle: "✓ NOTHING TO SCAN",
+    issuedDirectlySub: "no QR, nothing to scan",
+    slipIssuedDirectly: "Issued directly (no QR, not scanned)",
     colorsSelected: (count: number) => `${count} ${count === 1 ? "color" : "colors"} selected`,
     noQuantityYet: "No quantity entered",
     totalQty: (total: number) => `Total Qty: ${total}`,

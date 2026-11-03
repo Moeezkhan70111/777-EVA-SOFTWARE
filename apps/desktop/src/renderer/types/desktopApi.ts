@@ -1088,6 +1088,8 @@ export interface GatepassScanLine {
   color: string;
   size: string;
   requiredCartons: number;
+  /** Issued directly when the gatepass was made: no QR, never scanned at either desk (docs/42). */
+  issuedDirectlyCartons: number;
   storeScannedCartons: number;
   storeRemainingCartons: number;
   dispatchedCartons: number;
@@ -1104,6 +1106,7 @@ export interface GatepassScanProgress {
   dispatchSessionId: string | null;
   lines: GatepassScanLine[];
   requiredCartons: number;
+  issuedDirectlyCartons: number;
   storeScannedCartons: number;
   storeRemainingCartons: number;
   dispatchedCartons: number;
@@ -1197,7 +1200,9 @@ export interface GatepassLine {
   storeQuantityAtCreation: number;
   /** Cartons Store Move Out has actually taken for this line. */
   dispatchedFromStoreQuantity: number;
-  /** quantity − dispatchedFromStoreQuantity: still reserved. */
+  /** Taken out of stock directly when the gatepass was made (docs/42), net of a cancel. Never scanned. */
+  issuedDirectlyQuantity: number;
+  /** quantity − scanned − issued directly: still reserved for the QR scanners. */
   outstandingQuantity: number;
 }
 
@@ -1219,6 +1224,7 @@ export interface Gatepass {
   remarks: string | null;
   totalQuantity: number;
   dispatchedFromStoreQuantity: number;
+  issuedDirectlyQuantity: number;
   outstandingQuantity: number;
   lineCount: number;
   createdBy: string | null;
@@ -1240,6 +1246,7 @@ export interface GatepassListRow {
   status: GatepassStatus;
   totalQuantity: number;
   dispatchedFromStoreQuantity: number;
+  issuedDirectlyQuantity: number;
   outstandingQuantity: number;
   lineCount: number;
   articles: string[];
@@ -1270,6 +1277,8 @@ export interface CancelGatepassResult {
   cancelledAt?: string;
   /** Cartons whose reservation the cancellation released (were still outstanding). */
   releasedQuantity?: number;
+  /** Cartons issued directly when the gatepass was made, put back into stock by the cancellation. */
+  returnedToStockQuantity?: number;
   /** Cartons already moved out of the store for it — unchanged by cancelling. */
   dispatchedFromStoreQuantity?: number;
 }

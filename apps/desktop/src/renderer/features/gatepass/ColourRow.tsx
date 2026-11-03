@@ -33,9 +33,23 @@ const ColourCell: React.FC<{ colour: string }> = ({ colour }) => (
   </td>
 );
 
-/** A stored document: the creation snapshot, the quantity, and what Store Move Out has taken. */
+type LineProgress = NonNullable<DraftColour["progress"]>;
+
+/** What is left for the store on this line: a number, or a badge once nothing is. Issued cartons are never "moved out". */
+const OutstandingCell: React.FC<{ progress: LineProgress; quantity: number }> = ({ progress, quantity }) => {
+  if (progress.issuedDirectly > 0 && progress.issuedDirectly >= quantity) {
+    return <span className="badge badge-ok">{copy.gatepass.issuedDirectly}</span>;
+  }
+  if (progress.outstanding <= 0) return <span className="badge badge-ok">{copy.gatepass.allMovedOut}</span>;
+  return <>{progress.outstanding}</>;
+};
+
+/**
+ * A stored document: the creation snapshot, the quantity, what Store Move Out has scanned out, and what
+ * is left to scan. Cartons issued directly (no QR, docs/42) are shown as issued, never as scanned.
+ */
 const DocumentRow: React.FC<{ article: DraftArticle; colour: DraftColour }> = ({ article, colour }) => {
-  const progress = colour.progress ?? { dispatchedFromStore: 0, outstanding: colour.check.value ?? 0 };
+  const progress = colour.progress ?? { dispatchedFromStore: 0, issuedDirectly: 0, outstanding: colour.check.value ?? 0 };
   const done = progress.outstanding <= 0;
   return (
     <tr className={done ? "is-done" : undefined}>
@@ -50,9 +64,10 @@ const DocumentRow: React.FC<{ article: DraftArticle; colour: DraftColour }> = ({
       </td>
       <td className="num" data-testid={testId("moved-out", article, colour)}>
         {progress.dispatchedFromStore}
+        {progress.issuedDirectly > 0 ? ` · ${copy.gatepass.issuedDirectlyNote(progress.issuedDirectly)}` : null}
       </td>
       <td className="num" data-testid={testId("outstanding", article, colour)}>
-        {done ? <span className="badge badge-ok">{copy.gatepass.allMovedOut}</span> : progress.outstanding}
+        <OutstandingCell progress={progress} quantity={colour.check.value ?? 0} />
       </td>
     </tr>
   );

@@ -403,7 +403,19 @@ export const gatepassMethods = {
    */
   advanceGatepassStatus(
     this: SqliteDatabase,
-    payload: { gatepassId: string; from: GatepassStatus; to: GatepassStatus; actor?: string | null; reason?: string },
+    payload: {
+      gatepassId: string;
+      from: GatepassStatus;
+      to: GatepassStatus;
+      actor?: string | null;
+      reason?: string;
+      /**
+       * False only when the document passes straight through this stage in the same transaction, so
+       * the desk it would alert has nothing to do (billing a gatepass with nothing left to scan). The
+       * audit row is written either way: the journey still shows the step.
+       */
+      notify?: boolean;
+    },
     tx?: TransactionContext
   ): boolean {
     if (!canTransitionGatepass(payload.from, payload.to)) {
@@ -441,7 +453,7 @@ export const gatepassMethods = {
       nowIso
     );
 
-    const notice = GATEPASS_TRANSITION_NOTICE[payload.to];
+    const notice = payload.notify === false ? undefined : GATEPASS_TRANSITION_NOTICE[payload.to];
     if (notice) {
       const party = doc
         ? (db.prepare("SELECT party_name FROM parties WHERE id = ?").get(doc.party_id) as { party_name: string } | undefined)

@@ -17,6 +17,15 @@ import { IPC } from "../../shared/ipcChannels";
 import type { IpcContext } from "./context";
 import { PERMISSION, USER_ROLE, asRecord, asString } from "@erp/domain";
 import { rejection } from "../authorize";
+import { refusalReason } from "../writeRefusal";
+
+/** What an operator is told. One place, for translation later (R21). */
+export const MANUAL_PRODUCTION_MESSAGES = {
+  STOCK_BUSY: "Production entry was not saved because another stock operation is in progress. Please try again.",
+  VOID_BUSY: "The entry was not voided because another stock operation is in progress. Nothing was changed. Please try again.",
+  NOT_RECORDED: "The production could not be recorded. Nothing was saved.",
+  NOT_VOIDED: "The entry could not be voided. Nothing was changed.",
+} as const;
 
 export function registerManualProductionHandlers(ctx: IpcContext): void {
   const { db, logger, authorizer, scanContext, deviceId } = ctx;
@@ -50,9 +59,10 @@ export function registerManualProductionHandlers(ctx: IpcContext): void {
       log("INFO", "record", JSON.stringify({ entry: result.entry.code, cartons: result.entry.cartons, duplicate: result.duplicate }), who.user.id);
       return { accepted: true, entry: result.entry, duplicate: result.duplicate };
     } catch (error) {
-      // A refusal (bad quantity, disabled product, machine not ready) is the data layer's own words.
-      const reason = error instanceof Error ? error.message : "The production could not be recorded. Nothing was saved.";
-      log("WARNING", "record-refused", reason, who.user.id);
+      // A refusal (bad quantity, disabled product, machine not ready) is the data layer's own words; a
+      // database lock is said plainly. The original error is logged as it came, for diagnosis.
+      const reason = refusalReason(error, MANUAL_PRODUCTION_MESSAGES.STOCK_BUSY, MANUAL_PRODUCTION_MESSAGES.NOT_RECORDED);
+      log("WARNING", "record-refused", error instanceof Error ? error.message : String(error), who.user.id);
       return { accepted: false, reason, entry: null };
     }
   });
@@ -76,8 +86,8 @@ export function registerManualProductionHandlers(ctx: IpcContext): void {
       log("INFO", "void", JSON.stringify({ entry: entry.code, cartons: entry.cartons, reason: entry.voidReason }), who.user.id);
       return { accepted: true, entry };
     } catch (error) {
-      const reason = error instanceof Error ? error.message : "The entry could not be voided. Nothing was changed.";
-      log("WARNING", "void-refused", reason, who.user.id);
+      const reason = refusalReason(error, MANUAL_PRODUCTION_MESSAGES.VOID_BUSY, MANUAL_PRODUCTION_MESSAGES.NOT_VOIDED);
+      log("WARNING", "void-refused", error instanceof Error ? error.message : String(error), who.user.id);
       return { accepted: false, reason, entry: null };
     }
   });

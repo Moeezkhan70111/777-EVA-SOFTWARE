@@ -283,6 +283,7 @@ export const GatepassListPage: React.FC<GatepassListPageProps> = ({ token, usern
         "success",
         `Gatepass ${result.code ?? detail.code} cancelled`,
         `by ${username} · ${result.releasedQuantity ?? 0} reserved cartons released` +
+          (result.returnedToStockQuantity ? ` · ${copy.gatepass.issuedBackInStock(result.returnedToStockQuantity)}` : "") +
           (result.dispatchedFromStoreQuantity ? ` · ${result.dispatchedFromStoreQuantity} already moved out stay moved out` : "")
       );
       setCancelOpen(false);
@@ -427,8 +428,10 @@ export const GatepassListPage: React.FC<GatepassListPageProps> = ({ token, usern
                 <div>
                   <span className="card-eyebrow">{copy.gatepass.movedOut}</span>
                   <strong data-testid="gatepass-detail-moved-out">{describeMoveOutProgress(detail)}</strong>
-                  <span className="gp-party-meta">
-                    {copy.gatepass.outstanding}: {detail.outstandingQuantity}
+                  <span className="gp-party-meta" data-testid="gatepass-detail-figures">
+                    {detail.issuedDirectlyQuantity > 0
+                      ? `${copy.gatepass.issuedDirectly}: ${detail.issuedDirectlyQuantity} · ${copy.gatepass.scannedOut}: ${detail.dispatchedFromStoreQuantity} · ${copy.gatepass.remainingToScan}: ${detail.outstandingQuantity}`
+                      : `${copy.gatepass.outstanding}: ${detail.outstandingQuantity}`}
                   </span>
                 </div>
                 <div>
@@ -504,8 +507,10 @@ export const GatepassListPage: React.FC<GatepassListPageProps> = ({ token, usern
                       <th>Colour</th>
                       <th>{copy.columns.size}</th>
                       <th className="num">Qty (cartons)</th>
-                      <th className="num">{copy.gatepass.movedOut}</th>
-                      <th className="num">{copy.gatepass.outstanding}</th>
+                      {/* A gatepass that issued cartons directly says so in its own column; a QR-only one reads as before. */}
+                      {detail.issuedDirectlyQuantity > 0 ? <th className="num">{copy.gatepass.issuedDirectly}</th> : null}
+                      <th className="num">{detail.issuedDirectlyQuantity > 0 ? copy.gatepass.scannedOut : copy.gatepass.movedOut}</th>
+                      <th className="num">{detail.issuedDirectlyQuantity > 0 ? copy.gatepass.remainingToScan : copy.gatepass.outstanding}</th>
                       <th className="num text-muted">In Store when cut</th>
                     </tr>
                   </thead>
@@ -517,6 +522,7 @@ export const GatepassListPage: React.FC<GatepassListPageProps> = ({ token, usern
                         <td>{line.color}</td>
                         <td>{line.size}</td>
                         <td className="num">{line.quantity}</td>
+                        {detail.issuedDirectlyQuantity > 0 ? <td className="num">{line.issuedDirectlyQuantity}</td> : null}
                         <td className="num">{line.dispatchedFromStoreQuantity}</td>
                         <td className="num">{line.outstandingQuantity}</td>
                         <td className="num text-muted">{line.storeQuantityAtCreation}</td>
@@ -711,7 +717,10 @@ export const GatepassListPage: React.FC<GatepassListPageProps> = ({ token, usern
                   <td>{row.articles.join(", ")}</td>
                   <td className="num">{row.lineCount}</td>
                   <td className="num gp-cell-strong">{row.totalQuantity}</td>
-                  <td className="num" data-testid={`gatepass-row-moved-out-${row.code}`}>{row.dispatchedFromStoreQuantity}</td>
+                  <td className="num" data-testid={`gatepass-row-moved-out-${row.code}`}>
+                    {row.dispatchedFromStoreQuantity}
+                    {row.issuedDirectlyQuantity > 0 ? ` · ${copy.gatepass.issuedDirectlyNote(row.issuedDirectlyQuantity)}` : null}
+                  </td>
                   <td>
                     <StatusBadge status={row.status} />
                   </td>

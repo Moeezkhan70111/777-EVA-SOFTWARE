@@ -153,9 +153,9 @@ describe("buildDraftFromDocument", () => {
   it("shows a stored document in the draft's shape: article + size cards, colours in natural order, stock at creation, move-out progress, no errors", () => {
     const draft = buildDraftFromDocument({
       lines: [
-        { id: "l1", lineNo: 1, productVariantId: "v-sk12-black-46", groupName: null, article: "SK12", color: "BLACK", size: "4/6", quantity: 30, storeQuantityAtCreation: 40, dispatchedFromStoreQuantity: 0, outstandingQuantity: 30 },
-        { id: "l2", lineNo: 2, productVariantId: "v-sk6-red-710", groupName: null, article: "SK6", color: "RED", size: "7/10", quantity: 50, storeQuantityAtCreation: 120, dispatchedFromStoreQuantity: 50, outstandingQuantity: 0 },
-        { id: "l3", lineNo: 3, productVariantId: "v-sk6-blue-710", groupName: null, article: "SK6", color: "BLUE", size: "7/10", quantity: 20, storeQuantityAtCreation: 80, dispatchedFromStoreQuantity: 5, outstandingQuantity: 15 },
+        { id: "l1", lineNo: 1, productVariantId: "v-sk12-black-46", groupName: null, article: "SK12", color: "BLACK", size: "4/6", quantity: 30, storeQuantityAtCreation: 40, dispatchedFromStoreQuantity: 0, issuedDirectlyQuantity: 0, outstandingQuantity: 30 },
+        { id: "l2", lineNo: 2, productVariantId: "v-sk6-red-710", groupName: null, article: "SK6", color: "RED", size: "7/10", quantity: 50, storeQuantityAtCreation: 120, dispatchedFromStoreQuantity: 50, issuedDirectlyQuantity: 0, outstandingQuantity: 0 },
+        { id: "l3", lineNo: 3, productVariantId: "v-sk6-blue-710", groupName: null, article: "SK6", color: "BLUE", size: "7/10", quantity: 20, storeQuantityAtCreation: 80, dispatchedFromStoreQuantity: 5, issuedDirectlyQuantity: 0, outstandingQuantity: 15 },
       ],
     });
     expect(draft.articles.map((a) => [a.key, a.total, a.selectedCount])).toEqual([
@@ -163,8 +163,8 @@ describe("buildDraftFromDocument", () => {
       [SK12_46, 30, 1],
     ]);
     expect(draft.articles[0].colours.map((c) => [c.colour, c.currentStock, c.text, c.check, c.progress])).toEqual([
-      ["BLUE", 80, "20", { value: 20, error: null }, { dispatchedFromStore: 5, outstanding: 15 }],
-      ["RED", 120, "50", { value: 50, error: null }, { dispatchedFromStore: 50, outstanding: 0 }],
+      ["BLUE", 80, "20", { value: 20, error: null }, { dispatchedFromStore: 5, issuedDirectly: 0, outstanding: 15 }],
+      ["RED", 120, "50", { value: 50, error: null }, { dispatchedFromStore: 50, issuedDirectly: 0, outstanding: 0 }],
     ]);
     expect(draft.total).toBe(100);
     expect(draft.articleCount).toBe(2);

@@ -4,6 +4,7 @@ import type { Gatepass } from "../../types/desktopApi";
 import { formatGatepassDate, formatGatepassDateTime } from "../../utils/gatepassPrint";
 import { PartyCard } from "../parties/PartyCard";
 import type { PartyBalanceState } from "../parties/usePartyBalance";
+import { describeStoreProgress, type CartonFigures } from "./gatepassProgress";
 
 // The top of a stored Gatepass, read-only: the party (with today's balance), the book's
 // header facts, how much of it Store Move Out has taken so far, and — when it was
@@ -14,11 +15,18 @@ interface GatepassDocumentHeadProps {
   balance: PartyBalanceState;
 }
 
-/** "2 of 3 moved out" / "All moved out" — the store's progress on this document. */
-export const describeMoveOutProgress = (document: Pick<Gatepass, "totalQuantity" | "dispatchedFromStoreQuantity" | "outstandingQuantity">): string =>
-  document.outstandingQuantity <= 0 && document.totalQuantity > 0
-    ? copy.gatepass.allMovedOut
-    : copy.gatepass.movedOutOf(document.dispatchedFromStoreQuantity, document.totalQuantity);
+type StoreFigures = Pick<Gatepass, "totalQuantity" | "issuedDirectlyQuantity" | "dispatchedFromStoreQuantity" | "outstandingQuantity">;
+
+/** A document's (or list row's) carton figures, in the shape the one wording rule reads. */
+export const documentFigures = (document: StoreFigures): CartonFigures => ({
+  total: document.totalQuantity,
+  issuedDirectly: document.issuedDirectlyQuantity,
+  scanned: document.dispatchedFromStoreQuantity,
+  remaining: document.outstandingQuantity,
+});
+
+/** "2 of 3 moved out" / "All moved out" / "All cartons issued — …" — the store's progress (gatepassProgress.ts). */
+export const describeMoveOutProgress = (document: StoreFigures): string => describeStoreProgress(documentFigures(document));
 
 export const GatepassDocumentHead: React.FC<GatepassDocumentHeadProps> = ({ document, balance }) => {
   const facts: Array<[string, string]> = [
@@ -28,6 +36,15 @@ export const GatepassDocumentHead: React.FC<GatepassDocumentHeadProps> = ({ docu
     [copy.gatepass.transportVia, document.transportVia ?? copy.common.none],
     [copy.gatepass.movedOut, describeMoveOutProgress(document)],
   ];
+  // Only a gatepass that issued cartons directly gets the breakdown: a QR-only one reads as it always did.
+  if (document.issuedDirectlyQuantity > 0) {
+    facts.push(
+      [copy.gatepass.totalCartons, String(document.totalQuantity)],
+      [copy.gatepass.issuedDirectly, String(document.issuedDirectlyQuantity)],
+      [copy.gatepass.scannedOut, String(document.dispatchedFromStoreQuantity)],
+      [copy.gatepass.remainingToScan, String(document.outstandingQuantity)]
+    );
+  }
   if (document.remarks) facts.push([copy.columns.remarks, document.remarks]);
 
   return (

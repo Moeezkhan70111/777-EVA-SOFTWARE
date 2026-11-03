@@ -444,8 +444,22 @@ export const salesMethods = {
     // Billing is what moves a Gatepass out of its issued state. Guarded: if it is not CREATED
     // any more (cancelled, or billed by someone else a moment ago) nothing moves, and the
     // checks above have already refused the obvious cases.
+    //
+    // NOTHING LEFT FOR THE STORE TO SCAN: the document goes on to the gate in the same transaction.
+    // A line whose cartons were issued directly when the gatepass was made (Manual Production
+    // cartons, which have no QR -- docs/42 section 10.2) owes the scanners nothing, and the same
+    // is true of QR cartons the generic scanner already moved out before the bill caught up. Read
+    // from the one shared rule (gatepassStoreScanComplete: scanned + issued directly), through the
+    // same guarded transition the last scan uses. No scan, no stock movement and no attribution is
+    // written or changed: only the status moves. The store is not told "ready for Store" about a
+    // document it has nothing to do for; the gate is told as usual. A repeat bill is refused above
+    // (and by the unique live-bill index, migration 031) and never gets here.
     if (gatepassId) {
-      this.advanceGatepassStatus({ gatepassId, from: "CREATED", to: "BILLED", actor: null });
+      const nothingToScan = this.gatepassStoreScanComplete(gatepassId);
+      const billed = this.advanceGatepassStatus({ gatepassId, from: "CREATED", to: "BILLED", actor: null, notify: !nothingToScan });
+      if (billed && nothingToScan) {
+        this.advanceGatepassStatus({ gatepassId, from: "BILLED", to: "AT_GATE", actor: null, reason: "No store scan required" });
+      }
     }
 
       this.db.exec("COMMIT");
