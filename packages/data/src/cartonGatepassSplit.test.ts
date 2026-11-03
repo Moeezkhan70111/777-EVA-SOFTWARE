@@ -319,6 +319,7 @@ test("Q3. a mixed gatepass is in the store's queue until its QR part is scanned,
     const made = await makeGatepass(f, 5);
     const gatepassId = made.gatepassId!;
     bill(f, gatepassId);
+    assert.equal(statusOf(f, gatepassId), "BILLED", "3 QR cartons unscanned: billing does not move it on");
     assert.deepEqual(inQueue(f, "BILLED", gatepassId), { listed: true, counted: 1 });
     await scanAgainst(f, qr[0]!, gatepassId);
     await scanAgainst(f, qr[1]!, gatepassId);
@@ -331,6 +332,62 @@ test("Q3. a mixed gatepass is in the store's queue until its QR part is scanned,
     assert.equal(atGateNotices(f, gate), 1, "told once, by the last scan");
     assert.deepEqual(inQueue(f, "BILLED", gatepassId), { listed: false, counted: 0 });
     assert.deepEqual(inQueue(f, "AT_GATE", gatepassId), { listed: true, counted: 1 });
+  });
+});
+
+test("Q5. a QR gatepass scanned out before it was billed goes to the gate on billing: in the gate's queue, the gate told once, and dispatch works", async () => {
+  await withFixture(async (f) => {
+    const store = storeUser(f);
+    const gate = gateUser(f);
+    const qr = await stockQr(f, 3);
+    const made = await makeGatepass(f, 3);
+    const gatepassId = made.gatepassId!;
+    // The generic scanner, no gatepass named: each carton is attributed to the oldest open line.
+    for (const id of qr) assert.equal((await scanOut(f, id)).gatepass?.code, made.code);
+    assert.equal(statusOf(f, gatepassId), "CREATED", "a scan never moves an unbilled gatepass");
+
+    const eventsBefore = count(f, "SELECT COUNT(1) AS n FROM production_events");
+    bill(f, gatepassId);
+    assert.equal(statusOf(f, gatepassId), "AT_GATE");
+    assert.deepEqual(transitions(f, gatepassId), ["GATEPASS_BILLED", "GATEPASS_AT_GATE"]);
+    assert.equal(count(f, "SELECT COUNT(1) AS n FROM production_events"), eventsBefore, "billing scanned nothing");
+    assert.deepEqual(movements(f), [], "and moved no stock");
+    assert.deepEqual(inQueue(f, "AT_GATE", gatepassId), { listed: true, counted: 1 });
+    assert.deepEqual(inQueue(f, "BILLED", gatepassId), { listed: false, counted: 0 });
+    assert.equal(atGateNotices(f, gate), 1, "the gate is told once");
+    assert.equal(billedNotices(f, store), 0, "the store, which has nothing to do, is not");
+
+    const session = f.db.getGatepassScanProgress(gatepassId)!.dispatchSessionId!;
+    for (const id of qr) {
+      const dispatched = await dispatcher(f.db).execute({ rawScan: id, sessionId: session, gatepassId, context: CONTEXT });
+      assert.equal(dispatched.accepted, true, dispatched.reason);
+    }
+    assert.equal(statusOf(f, gatepassId), "DISPATCHED");
+    assert.equal(atGateNotices(f, gate), 1);
+  });
+});
+
+test("Q6. a mixed gatepass whose QR part was scanned before billing goes to the gate on billing, and the gate sees only its QR cartons", async () => {
+  await withFixture(async (f) => {
+    const gate = gateUser(f);
+    const qr = await stockQr(f, 3);
+    stockManual(f, f.db, 10);
+    const made = await makeGatepass(f, 5);
+    const gatepassId = made.gatepassId!;
+    for (const id of qr) await scanOut(f, id);
+    assert.deepEqual(line(f, gatepassId), { quantity: 5, scanned: 3, issued: 2, outstanding: 0 });
+
+    bill(f, gatepassId);
+    assert.equal(statusOf(f, gatepassId), "AT_GATE");
+    assert.equal(atGateNotices(f, gate), 1);
+    assert.deepEqual(inQueue(f, "AT_GATE", gatepassId), { listed: true, counted: 1 });
+    const progress = f.db.getGatepassScanProgress(gatepassId)!;
+    assert.deepEqual(
+      [progress.requiredCartons, progress.issuedDirectlyCartons, progress.dispatchRemainingCartons],
+      [5, 2, 3],
+      "the gate is asked for the 3 QR cartons, never the 2 issued directly"
+    );
+    assert.deepEqual(movements(f), ["GATEPASS_ISSUE 2"], "billing moved no stock");
   });
 });
 

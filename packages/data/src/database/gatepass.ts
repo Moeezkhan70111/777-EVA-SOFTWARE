@@ -36,7 +36,15 @@ import type { DispatchAllowance, GatepassDeliveryProof, GatepassJourneyStep, Gat
 import { IN_STORE_STOCK_SQL, type MutableTransactionContext } from "./shared.js";
 import { createHash } from "node:crypto";
 import { allocateNumberInRange } from "./numberRange.js";
-import { DESK_OWES_SQL, IN_ITS_DESK_QUEUE_SQL, LINE_DISPATCHED_SQL, LINE_ISSUED_SQL, LINE_SETTLED_SQL } from "./gatepassLineSql.js";
+import {
+  DESK_OWES_SQL,
+  GATE_OWES_SQL,
+  IN_ITS_DESK_QUEUE_SQL,
+  LINE_DISPATCHED_SQL,
+  LINE_ISSUED_SQL,
+  LINE_SETTLED_SQL,
+  STORE_OWES_SQL,
+} from "./gatepassLineSql.js";
 
 /**
  * Cartons still owed to live gatepasses by the QR scanners for one variant; `pv` is the
@@ -801,6 +809,18 @@ export const gatepassMethods = {
                 WHERE gl.gatepass_id = ? AND gl.quantity > ${LINE_SETTLED_SQL}`)
       .get(gatepassId) as { n: number } | undefined;
     return (outstanding?.n ?? 0) === 0;
+  },
+
+  /**
+   * What the scanning desks owe one gatepass, read through the desks' own queue rules
+   * (gatepassLineSql.ts: STORE_OWES_SQL, GATE_OWES_SQL), so a decision made from it can never
+   * disagree with which queue the gatepass is in. Runs on the caller's connection, inside its write.
+   */
+  gatepassDeskWork(this: SqliteDatabase, gatepassId: string): { storeOwes: boolean; gateOwes: boolean } {
+    const row = this.db
+      .prepare(`SELECT ${STORE_OWES_SQL} AS store_owes, ${GATE_OWES_SQL} AS gate_owes FROM gatepasses g WHERE g.id = ?`)
+      .get(gatepassId) as { store_owes: number; gate_owes: number } | undefined;
+    return { storeOwes: Number(row?.store_owes ?? 0) === 1, gateOwes: Number(row?.gate_owes ?? 0) === 1 };
   },
 
   getGatepass(this: SqliteDatabase, gatepassId: string): GatepassRecord | null {

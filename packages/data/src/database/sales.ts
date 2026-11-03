@@ -445,15 +445,25 @@ export const salesMethods = {
     // any more (cancelled, or billed by someone else a moment ago) nothing moves, and the
     // checks above have already refused the obvious cases.
     //
-    // BILLING CHANGES ONLY THIS ONE STEP. A gatepass with nothing for the store to scan -- every
-    // carton issued directly when it was made (docs/42 section 10.2) -- rests at BILLED like any
-    // other: deleting its bill takes it back to CREATED, where it can still be cancelled and its
-    // issued cartons put back. It is simply in no desk's queue (gatepassLineSql.ts, DESK_OWES_SQL),
-    // and the store is not told "ready for Store" about it, read from the one shared rule
-    // (gatepassStoreScanComplete: scanned + issued directly).
+    // WHAT HAPPENS NEXT IS READ FROM THE DESKS' OWN QUEUE RULES (gatepassDeskWork: STORE_OWES_SQL,
+    // GATE_OWES_SQL in gatepassLineSql.ts), never from the status:
+    //
+    //   store owes a scan                    rests at BILLED, in the store's queue; the store is told
+    //   store owes nothing, a QR part        on to AT_GATE in this transaction, and the gate is told:
+    //                                        its QR cartons were scanned out before the bill caught
+    //                                        up and stand at the gate, which only AT_GATE can dispatch
+    //   store owes nothing, no QR part       rests at BILLED in no queue, nobody told: every carton was
+    //                                        issued directly (docs/42 section 10.2), the gate has
+    //                                        nothing to do with it, and deleting the bill must still
+    //                                        take it back to CREATED, where a cancel puts them back
+    //
+    // Only the status moves: no scan, stock movement or attribution is written or changed.
     if (gatepassId) {
-      const nothingToScan = this.gatepassStoreScanComplete(gatepassId);
-      this.advanceGatepassStatus({ gatepassId, from: "CREATED", to: "BILLED", actor: null, notify: !nothingToScan });
+      const work = this.gatepassDeskWork(gatepassId);
+      const billed = this.advanceGatepassStatus({ gatepassId, from: "CREATED", to: "BILLED", actor: null, notify: work.storeOwes });
+      if (billed && work.gateOwes && !work.storeOwes) {
+        this.advanceGatepassStatus({ gatepassId, from: "BILLED", to: "AT_GATE", actor: null, reason: "Scanned out of the store before billing" });
+      }
     }
 
       this.db.exec("COMMIT");
