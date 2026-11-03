@@ -577,7 +577,10 @@ test("a return dated before the ledger window lands in the opening balance, not 
     const { variantId, qrIds } = await stockInStore(f.db, f.raw, "SK6", "7/10", "RED", 1);
     const bill = billFor(f.db, { partyName: "MAMA CHAPPAL", variantId, dozens: 0.5 });
     await moveOutAndDispatch(f.db, qrIds[0], bill.sessionId);
-    await returner(f.db).execute({ rawScan: qrIds[0], context: CONTEXT });
+    // Dated on the bill's own day, not today: undated, the return took the date the suite ran,
+    // and from 1 October that fell inside the window below.
+    const returnedOnBillDay = new ReturnScanUseCase({ txManager: f.db, qrLookupRepo: f.db, attributionRepo: f.db, qrMasterRepo: f.db, saleReturnsRepo: f.db, returnEventsRepo: f.db, outboxRepo: f.db, eventPublisher: bus(), idGenerator: ids(), localDate: () => "2026-09-22" });
+    await returnedOnBillDay.execute({ rawScan: qrIds[0], context: CONTEXT });
 
     const later = f.db.getCustomerLedgerWithCash(bill.partyId, { fromDate: "2026-10-01", toDate: "2026-12-31" });
 
