@@ -25,6 +25,8 @@ interface ConfirmDialogProps {
   /** Resolves with a reason to stay open and show it, or null to close. */
   onConfirm: () => Promise<string | null>;
   onClose: () => void;
+  /** What the action needs from the operator before it runs -- a required reason, say. */
+  children?: React.ReactNode;
 }
 
 export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
@@ -37,6 +39,7 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
   busyLabel = copy.common.saving,
   onConfirm,
   onClose,
+  children,
 }) => {
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
@@ -72,6 +75,7 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
         ))}
       </dl>
       <p className="confirm-note">{explain}</p>
+      {children}
       {warning ? (
         <p className="confirm-warning" role="status">
           ⚠ {warning}

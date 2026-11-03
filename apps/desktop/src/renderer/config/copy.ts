@@ -1665,6 +1665,25 @@ export const copy = {
     emptyTitle: "No manual production yet today",
     emptyHint: "Choose the machine, article, size and colour, enter the dozens and press Save.",
     offline: "Not updating — the last refresh failed. It will try again.",
+    // Voiding an entry (docs/42): kept and marked, never deleted
+    colAction: "Action",
+    voidButton: "Void",
+    voidButtonLabel: (code: string) => `Void ${code}`,
+    voidedBadge: "Voided",
+    voidedNote: (who: string | null, reason: string | null) => `${who ?? "Someone"}: ${reason ?? "no reason recorded"}`,
+    voidTitle: (code: string) => `Void ${code}?`,
+    voidFactProduct: "Product",
+    voidFactCartons: "Cartons",
+    voidFactMachine: "Machine",
+    voidExplain:
+      "Its cartons come out of store stock on every computer, and it leaves the day's totals and the contractor ledger. The entry stays in the list, marked voided, with your reason.",
+    voidWarning: "If the contractor has already been paid for it, the ledger will show them overpaid.",
+    voidReasonLabel: "Reason (required)",
+    voidReasonHint: "Whoever reads the contractor ledger later will see this.",
+    voidReasonRequired: "Give a reason for voiding this entry.",
+    voidConfirm: "Void entry",
+    voidBusy: "Voiding…",
+    voidUnreachable: "The entry could not be voided — the connection failed. Nothing was changed. Try again.",
   },
 
   // Upper Move Out (Phase 3): upper packets issued out of the store to a chosen machine.
@@ -1811,6 +1830,7 @@ export const copy = {
       ACCOUNTS: "accounts",
       MACHINE_PROGRAMS: "machine programs",
       APPROVALS: "approvals",
+      CARTON_STOCK: "carton stock (Manual Production and gatepasses)",
     },
     heldElsewhere: (what: string, holder: string | null) =>
       `${what.charAt(0).toUpperCase()}${what.slice(1)} is written on ${holder ?? "another computer"} only. You can look things up here, but not change them.`,

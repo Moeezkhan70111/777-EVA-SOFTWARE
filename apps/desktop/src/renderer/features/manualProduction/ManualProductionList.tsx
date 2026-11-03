@@ -8,6 +8,10 @@ import type { ManualProductionEntry, ManualProductionPage } from "../../types/de
 import { formatTime } from "../../utils/dates";
 import { ReceiptSummary } from "../receiveProduction/ReceiptSummary";
 import type { ManualProductionDay } from "./useManualProduction";
+import { VoidEntryDialog } from "./VoidEntryDialog";
+
+/** Voids one entry; resolves with null once done, or the reason it was not. */
+type OnVoid = (entryId: string, reason: string) => Promise<string | null>;
 
 // MANUAL PRODUCTION TODAY — in two sections, like Receive Production's:
 //
@@ -24,7 +28,19 @@ type Section = "details" | "summary";
 const text = copy.manualProduction;
 const columns = copy.receiveProduction;
 
-const EntryRow: React.FC<{ entry: ManualProductionEntry; latest: boolean }> = ({ entry, latest }) => (
+/** A live entry can be voided; a voided one says so in words, with who and why -- never by colour alone. */
+const EntryAction: React.FC<{ entry: ManualProductionEntry; onChoose: (entry: ManualProductionEntry) => void }> = ({ entry, onChoose }) =>
+  entry.voidedAt ? (
+    <>
+      <span className="badge badge-muted">{text.voidedBadge}</span> <span className="mpr-program">{text.voidedNote(entry.voidedBy, entry.voidReason)}</span>
+    </>
+  ) : (
+    <button type="button" className="btn btn-ghost btn-sm" aria-label={text.voidButtonLabel(entry.code)} onClick={() => onChoose(entry)}>
+      {text.voidButton}
+    </button>
+  );
+
+const EntryRow: React.FC<{ entry: ManualProductionEntry; latest: boolean; onChoose: (entry: ManualProductionEntry) => void }> = ({ entry, latest, onChoose }) => (
   <tr className={latest ? "rp-row is-latest" : "rp-row"}>
     <td className="rp-qr">
       <code>{entry.code}</code>
@@ -38,11 +54,13 @@ const EntryRow: React.FC<{ entry: ManualProductionEntry; latest: boolean }> = ({
     <td>{entry.machineName} <span className="mpr-program">· {entry.programCode}</span></td>
     <td className="rp-time">{formatTime(entry.enteredAt)}</td>
     <td>{entry.enteredBy ?? "—"}</td>
+    <td><EntryAction entry={entry} onChoose={onChoose} /></td>
   </tr>
 );
 
-const Details: React.FC<{ day: ManualProductionDay; page: ManualProductionPage }> = ({ day, page }) => {
+const Details: React.FC<{ day: ManualProductionDay; page: ManualProductionPage; onVoid: OnVoid }> = ({ day, page, onVoid }) => {
   const pages = Math.max(1, Math.ceil(page.totalEntries / page.pageSize));
+  const [voiding, setVoiding] = useState<ManualProductionEntry | null>(null);
   return (
     <>
       <div className="rp-table-wrap">
@@ -59,21 +77,23 @@ const Details: React.FC<{ day: ManualProductionDay; page: ManualProductionPage }
               <th scope="col">{text.colMachine}</th>
               <th scope="col">{text.colAt}</th>
               <th scope="col">{text.colBy}</th>
+              <th scope="col">{text.colAction}</th>
             </tr>
           </thead>
           <tbody>
             {page.rows.map((entry, index) => (
-              <EntryRow key={entry.id} entry={entry} latest={page.page === 1 && index === 0} />
+              <EntryRow key={entry.id} entry={entry} latest={page.page === 1 && index === 0} onChoose={setVoiding} />
             ))}
           </tbody>
         </table>
       </div>
       {pages > 1 ? <Pager page={day.pageNo} pages={pages} onPage={day.setPageNo} /> : null}
+      {voiding ? <VoidEntryDialog entry={voiding} onVoid={onVoid} onClose={() => setVoiding(null)} /> : null}
     </>
   );
 };
 
-export const ManualProductionList: React.FC<{ day: ManualProductionDay }> = ({ day }) => {
+export const ManualProductionList: React.FC<{ day: ManualProductionDay; onVoid: OnVoid }> = ({ day, onVoid }) => {
   const [section, setSection] = useState<Section>("details");
   const page = day.page;
   const body = () => {
@@ -81,7 +101,7 @@ export const ManualProductionList: React.FC<{ day: ManualProductionDay }> = ({ d
     if (day.error && !page) return <StateView kind="error" compact message={day.error} onRetry={() => void day.reload()} />;
     if (!page || page.totalEntries === 0) return <StateView kind="empty" compact title={text.emptyTitle} hint={text.emptyHint} />;
     if (section === "summary") return <ReceiptSummary lines={page.summary} totalCartons={page.totalCartons} caption={text.summaryCaption} />;
-    return <Details day={day} page={page} />;
+    return <Details day={day} page={page} onVoid={onVoid} />;
   };
 
   return (

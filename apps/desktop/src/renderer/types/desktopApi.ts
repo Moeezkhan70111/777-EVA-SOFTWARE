@@ -431,6 +431,10 @@ export interface ManualProductionEntry {
   machineName: string;
   enteredAt: string;
   enteredBy: string | null;
+  /** Set once voided: its cartons are out of stock and it is out of the totals and the ledger. */
+  voidedAt: string | null;
+  voidedBy: string | null;
+  voidReason: string | null;
 }
 
 /** One business day of Manual Production, a page at a time, with the whole day added up. */
@@ -2225,6 +2229,11 @@ export interface DesktopApi {
   recordManualProduction(input: { requestId: string; machineId: string; articleSizeId: string; color: string; dozens: string }): Promise<ManualProductionResult>;
   /** One business day's Manual Production (YYYY-MM-DD), newest first, a page at a time. */
   listManualProduction(query: { date: string; page?: number; pageSize?: number }): Promise<{ accepted: boolean; page: ManualProductionPage | null; reason?: string }>;
+  /**
+   * Voids one Manual Production entry (docs/42): its cartons leave stock on every computer and it leaves
+   * the Contractor Ledger. Kept and marked voided, never deleted. The reason is required.
+   */
+  voidManualProduction(input: { entryId: string; reason: string }): Promise<{ accepted: boolean; entry: ManualProductionEntry | null; reason?: string }>;
   /** Upper Move Out: one upper packet issued out of the store to the named machine. */
   issueUpperToMachine(rawScan: string, machineId: string): Promise<UpperIssueResult>;
   /** One business day's issues to one machine, newest first, a page at a time. */

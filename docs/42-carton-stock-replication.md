@@ -334,3 +334,32 @@ Build it on a branch now; ship it after step 2.
   floor awaiting a truck are already out of the figure. That is the owner's decision, taken
   knowingly on 2026-11-03, and it should be revisited when a dispatch stage can actually be
   recorded.
+
+---
+
+## 10. Reconciled with what is built (2026-11-03)
+
+The supplied `777-carton-and-role-tests.patch` was not on this machine, so local migration 101 was
+written from this document rather than taken from that patch's commit 1. If the patch turns up, compare
+its 101 with the one on `feat/cloud-accounts` before using either. Every difference from §§3-6 below is a
+schema or mechanism detail; none changes a business rule. The ones that need the owner are marked.
+
+| Point | This document | As built | Why |
+|---|---|---|---|
+| Quantity column | `quantity`, cartons | **`quantity`**, always cartons, always positive | The name §3.1 gives; "cartons" is its unit, as `inventory_stock_events.quantity` is the material's. |
+| Which projection row | "the WAREHOUSE row of `stock_projection_by_location`" | Events carry **`location_type`** (always `WAREHOUSE`) and **`location_id`** | That row is keyed by location. Without the id a receiver cannot move the same row the origin moved. Manual Production's id is the store it stocked (`stock_location_id`); a gatepass takes from the store rows holding the cartons, fullest first -- one row while there is one store. |
+| Event types | three in §3.1, four after §5 | **Four everywhere**: `MANUAL_PRODUCE`, `GATEPASS_ISSUE`, `GATEPASS_CANCEL`, `MANUAL_PRODUCTION_VOID` -- local 101, cloud 026, `@erp/domain cartonStock.ts` | §5 adds the void to the check; one list now. |
+| The sign | `balance_delta`, `abs = quantity` | `balance_delta` is **checked against the type** (issue and void negative, the rest positive), locally, in the cloud and by the reader | Stronger than `abs`; the one rule is `cartonStockDelta`. |
+| `origin_device_id` | `NOT NULL` | **Null on a row made here**, stamped with the sender on a received one (local); `NOT NULL` in the cloud, set by the push from the proven device | The convention every numbered table follows (local migration 087: "NULL is mine"). |
+| Outbox | -- | 101 also widens `sync_outbox`'s type check | Without it `enqueueSyncEvent` quietly refuses the row (it never throws) and nothing travels. Found by the two-PC test. |
+| Once only | "cancelling twice must not restore twice", "a void happens once" | Application guards **and** unique keys: one void per entry, one cancel per issued line and store row, locally and in the cloud | The database is the floor. |
+| Negative stock | park as `CARTON_STOCK_WOULD_GO_NEGATIVE:<variantId>` | As written | A taking-out movement updates the rows, never upserts: SQLite checks `quantity_on_hand >= 0` on the row an upsert would insert, before it finds the conflict. |
+| §3.5 Reserved | Reserved is 0, one figure | A line **issued at creation** reserves nothing and is never offered to a Store Move Out scan. A gatepass made **before** this keeps reserving as it did, and its cancel puts nothing back (it took nothing). | One rule (`ISSUED_AT_CREATION_SQL`), so older live gatepasses are never promised twice. |
+| §3.5 screens | collapse the two numbers in `gatepassStock.ts` and every screen | **Not done.** Reserved is 0 for every new gatepass, so the figures agree, but the screens still show three columns. | A display change across several screens; left for its own change. |
+| §6 lease | carton domain for Manual Production | **`CARTON_STOCK` covers all four movements, gatepasses included** (OWNER TO CONFIRM) | The push is leased per event type, and one aggregate carries all four. If a gatepass were written under another lease, a void on one computer and a gatepass on another could take the same cartons, and every receiver would park forever below zero. Consequence: gatepasses and Manual Production are entered on the computer holding the carton lease. Phase 1 has one such computer (PC2). |
+| §6 "follows the user" | -- | The existing grant and handover (011): granted to a computer, labelled with the person; moved when they move | Nothing moves a lease automatically on sign-in, for any domain. |
+| Void permission | -- | Same as recording: Live Production (OWNER TO CONFIRM) | The screen that records is the screen that voids. A stricter permission is a one-line change. |
+| Contractor ledger | "withdraw the entry" | The ledger, Reconciliation and the day's totals read live entries only (`LIVE_MANUAL_ENTRY_SQL`) | The ledger is computed, never stored, so excluding the entry is the withdrawal. It lives where machine programs are -- the lease holder -- and does not replicate. |
+
+**Still required before shipping (§4, unchanged):** confirm on PC2 that carton stock is empty, or void the
+test entries from the screen once this is installed. The cutover and the cloud-accounts release come first (§8).

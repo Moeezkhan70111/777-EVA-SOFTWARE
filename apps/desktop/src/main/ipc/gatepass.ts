@@ -2,8 +2,11 @@
 //
 // IPC handlers are registered per feature; every write is authorised through ctx.authorizer
 // (see ../authorize.ts) and every channel name comes from shared/ipcChannels.ts.
+//
+// Making and cancelling a gatepass move the carton figure (docs/42), so both are lease-gated
+// (leaseChannels.ts): written on the computer holding the carton lease only. The reads are not.
 
-import { ipcMain } from "electron";
+import { ipcMain } from "../leaseGuard";
 import { IPC } from "../../shared/ipcChannels";
 import type { IpcContext } from "./context";
 import { ACCESS_STATUS, GATEPASS_STATUS, USER_ROLE } from "@erp/domain";

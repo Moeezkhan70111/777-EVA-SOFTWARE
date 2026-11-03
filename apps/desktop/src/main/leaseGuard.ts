@@ -45,6 +45,7 @@ const DOMAIN_WORDS: Readonly<Record<LeaseDomain, string>> = {
   [LEASE_DOMAIN.ACCOUNTS]: "accounts",
   [LEASE_DOMAIN.MACHINE_PROGRAMS]: "machine programs",
   [LEASE_DOMAIN.APPROVALS]: "approvals",
+  [LEASE_DOMAIN.CARTON_STOCK]: "carton stock (Manual Production and gatepasses)",
 };
 
 /** A leased write refused on this computer. The message is for the operator, as it stands. */

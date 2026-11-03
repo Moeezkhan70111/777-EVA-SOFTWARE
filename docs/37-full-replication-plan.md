@@ -158,6 +158,7 @@ and everyone else applies them.
 | **Accounts** | lease holder | cash vouchers, purchase vouchers |
 | **Machine programs** | lease holder | `machine_programs` and its child tables, manual production entries |
 | **Approvals** | lease holder | stock corrections, removal requests, party claims, access and permission requests |
+| **Carton stock** (added 2026-11-03, `docs/42`) | lease holder (`CARTON_STOCK`, cloud 026) | `carton_stock_events`: Manual Production and its voids, gatepass issues and their cancels -- every movement of the carton figure. Enforced at once, because these movements replicate. **Not permanent:** the lease protects Manual Production's machine-day program and contractor ledger, which do not replicate (W.6). When machine programs replicate, revisit whether cartons still need it. The carton QR identities above stay multi-writer. |
 
 **The raw material store is leased** (owner, 2026-10-23). An earlier draft treated RM packet scans
 as multi-writer QR flows, because packets are minted from per-PC serial blocks. That is now

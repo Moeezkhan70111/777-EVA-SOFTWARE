@@ -268,6 +268,7 @@ export const IPC = {
   findProductionReceipt: "erp:find-production-receipt",
   recordManualProduction: "erp:record-manual-production",
   listManualProduction: "erp:list-manual-production",
+  voidManualProduction: "erp:void-manual-production",
   // Upper Move Out (Phase 3): upper packets issued to a named machine, and upper stock.
   issueUpperToMachine: "erp:issue-upper-to-machine",
   listUpperIssues: "erp:list-upper-issues",

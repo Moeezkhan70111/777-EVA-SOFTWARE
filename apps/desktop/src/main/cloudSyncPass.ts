@@ -224,6 +224,24 @@ function buildStockEvents(db: SqliteDatabase, logger: StructuredLogger, deviceId
   }
 }
 
+/** Builds marked carton movements into queued events (docs/42). Never throws: a mark left here is built next pass. */
+function buildCartonStockEvents(db: SqliteDatabase, logger: StructuredLogger, deviceId: string): void {
+  try {
+    const built = db.buildCartonStockEvents(new Date().toISOString());
+    if (built.unqueued > 0) {
+      logger.log({
+        module: "sync", severity: "WARNING", operation: "carton-stock-events", deviceId,
+        message: `${String(built.unqueued)} carton movement(s) could not be queued and stay marked.`,
+      });
+    }
+  } catch (error) {
+    logger.log({
+      module: "sync", severity: "ERROR", operation: "carton-stock-events", deviceId,
+      message: `Carton movements could not be built: ${error instanceof Error ? error.message : String(error)}. They stay marked.`,
+    });
+  }
+}
+
 /** Sends this computer's sync health when it changed, or as a keepalive. Never throws. */
 async function reportSyncHealth(
   sync: typeof import("@erp/sync"),
@@ -467,6 +485,7 @@ export async function runCloudSyncPass(
     // Then the labels the backfill marked, then the stock movements, each behind its material.
     buildLabelRuns(db, logger, deviceId);
     buildStockEvents(db, logger, deviceId);
+    buildCartonStockEvents(db, logger, deviceId);
 
     const drain = new sync.OutboxDrain(db.db, transport, {
       deviceId,
@@ -480,6 +499,7 @@ export async function runCloudSyncPass(
       buildMasterRecords(db, logger, deviceId);
       buildLabelRuns(db, logger, deviceId);
       buildStockEvents(db, logger, deviceId);
+      buildCartonStockEvents(db, logger, deviceId);
     });
 
     // The project goes with the cursor: a computer moved to another project (test -> production)

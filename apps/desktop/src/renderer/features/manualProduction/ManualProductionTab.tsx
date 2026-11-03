@@ -4,7 +4,7 @@ import { copy } from "../../config/copy";
 import type { MachineRecord } from "../../types/desktopApi";
 import { ManualProductionForm } from "./ManualProductionForm";
 import { ManualProductionList } from "./ManualProductionList";
-import { useManualProductionDay, useProductChoices, useSaveManualProduction } from "./useManualProduction";
+import { useManualProductionDay, useProductChoices, useSaveManualProduction, useVoidManualProduction } from "./useManualProduction";
 
 // MANUAL PRODUCTION — a QR Generator tab, beside Receive Production (owner, 2026-10-14):
 //
@@ -28,6 +28,7 @@ export const ManualProductionTab: React.FC<{ machine: MachineRecord | null }> = 
   const reloadDay = day.reload;
   const onSaved = useCallback(() => void reloadDay(), [reloadDay]);
   const saving = useSaveManualProduction(onSaved);
+  const voidEntry = useVoidManualProduction(onSaved);
   const total = day.page?.totalCartons ?? null;
 
   return (
@@ -45,7 +46,7 @@ export const ManualProductionTab: React.FC<{ machine: MachineRecord | null }> = 
       </header>
       <div className="rp-body mpr-body">
         <ManualProductionForm machine={machine} products={products} busy={saving.busy} outcome={saving.outcome} onSave={saving.save} />
-        <ManualProductionList day={day} />
+        <ManualProductionList day={day} onVoid={voidEntry} />
       </div>
     </div>
   );

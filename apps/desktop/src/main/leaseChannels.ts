@@ -5,9 +5,10 @@
 // 011-013). leaseGuard.ts refuses it HERE first, at the moment of the write, so an operator is told
 // "read-only on this computer" instead of finding a dead letter days later.
 //
-// Milestone 1 enforces two domains. The other four (sales and dispatch, accounts, machine programs,
-// approvals) are enforced when they replicate, in Milestone 2: leasing them before then would lock
-// a computer out of work nothing else can see.
+// Milestone 1 enforces two domains, and carton stock a third (docs/42): its movements replicate. The
+// other four (sales and dispatch, accounts, machine programs, approvals) are enforced when they
+// replicate, in Milestone 2: leasing them before then would lock a computer out of work nothing else
+// can see.
 //
 // A channel that writes BOTH -- an item import, a removal that deletes stock history -- needs both
 // leases. In phase 1 one computer holds both (docs/37 W.1), so this never splits a write.
@@ -22,6 +23,7 @@ import { IPC } from "../shared/ipcChannels";
 const STORE: readonly LeaseDomain[] = [LEASE_DOMAIN.RAW_MATERIAL_STORE];
 const MASTER: readonly LeaseDomain[] = [LEASE_DOMAIN.MASTER_DATA];
 const BOTH: readonly LeaseDomain[] = [LEASE_DOMAIN.MASTER_DATA, LEASE_DOMAIN.RAW_MATERIAL_STORE];
+const CARTONS: readonly LeaseDomain[] = [LEASE_DOMAIN.CARTON_STOCK];
 
 export const LEASED_CHANNELS: Readonly<Record<string, readonly LeaseDomain[]>> = {
   // ── Raw material store: label runs, receiving, issuing, Dana, hand moves, stock ──
@@ -91,6 +93,15 @@ export const LEASED_CHANNELS: Readonly<Record<string, readonly LeaseDomain[]>> =
   [IPC.completeMachineProgramProduction]: BOTH,
   // The backfill sends master records and stock history: only the holder of both, caught up.
   [IPC.runBackfill]: BOTH,
+
+  // ── Carton stock: every movement of the carton figure (docs/42 section 6) ──
+  // One writer for all four, so no two computers can take the same cartons out, and Manual
+  // Production's machine-day program and contractor ledger -- which do not replicate -- are never
+  // split. A gatepass is here because it takes its cartons out the moment it is made.
+  [IPC.recordManualProduction]: CARTONS,
+  [IPC.voidManualProduction]: CARTONS,
+  [IPC.createGatepass]: CARTONS,
+  [IPC.cancelGatepass]: CARTONS,
 };
 
 /**
@@ -111,6 +122,8 @@ export const UNLEASED_WRITE_CHANNELS: Readonly<Record<string, string>> = {
   [IPC.createItemRemovalRequest]: "A request only: approvals are leased in Milestone 2. Approving it is leased.",
   [IPC.createCategoryRemovalRequest]: "A request only: approvals are leased in Milestone 2. Approving it is leased.",
   [IPC.createStockCorrectionRequest]: "A request only: approvals are leased in Milestone 2. Approving it is leased.",
+  [IPC.saveGatepassDeliveryProof]:
+    "A delivery photo on a gatepass: no carton moves (they left when it was made). Gatepass documents are leased with sales and dispatch in Milestone 2.",
 };
 
 /** The domains this version enforces: every domain some channel above needs. */

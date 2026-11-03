@@ -95,3 +95,22 @@ export const useSaveManualProduction = (onSaved: () => void) => {
 
   return { busy, outcome, save };
 };
+
+/**
+ * Voiding one entry (docs/42). Resolves with null once voided, or with the reason it was not --
+ * the main process's own words, or the connection's. Safe to press again: an entry already voided
+ * is refused, and nothing moves twice.
+ */
+export const useVoidManualProduction = (onVoided: () => void) => {
+  const api = useDesktopApi();
+  return useCallback(async (entryId: string, reason: string): Promise<string | null> => {
+    try {
+      const reply = await api.voidManualProduction({ entryId, reason });
+      if (!reply.accepted) return reply.reason ?? text.voidUnreachable;
+      onVoided();
+      return null;
+    } catch {
+      return text.voidUnreachable;
+    }
+  }, [api, onVoided]);
+};

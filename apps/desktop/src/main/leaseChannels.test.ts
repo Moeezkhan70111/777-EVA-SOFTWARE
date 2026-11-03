@@ -14,7 +14,11 @@ import { IPC } from "../shared/ipcChannels";
 const IPC_DIR = path.resolve(__dirname, "ipc");
 
 /** The modules that register through the guarded ipcMain (leaseGuard.ts). */
-const GUARDED_MODULES = ["rawMaterials", "rawMaterialQr", "store", "parties", "machinePrograms", "upperMoveOut", "syncWaiting", "backfill"];
+const GUARDED_MODULES = [
+  "rawMaterials", "rawMaterialQr", "store", "parties", "machinePrograms", "upperMoveOut", "syncWaiting", "backfill",
+  // Carton stock (docs/42): Manual Production and gatepasses move the carton figure.
+  "manualProduction", "gatepass",
+];
 
 /** Channels these modules register that only read. Checked by hand, one by one. */
 const READS = new Set([
@@ -46,6 +50,11 @@ const READS = new Set([
   "getSyncWaiting", "getFactorySyncHealth",
   // backfill
   "getBackfillPlan",
+  // manualProduction
+  "listManualProduction",
+  // gatepass
+  "listGatepassStock", "listGatepassStoreStock", "getGatepass", "getGatepassByNumber", "countGatepassesByStage",
+  "getGatepassJourney", "getGatepassDeliveryProof", "getGatepassScanProgress", "listGatepasses",
 ]);
 
 const channelValue = (name: string): string => {
@@ -108,8 +117,16 @@ describe("lease classification", () => {
     expect(leasesFor(IPC.storeEntryScan)).toEqual([]);
   });
 
-  it("only Milestone 1's two domains are enforced", () => {
+  it("only Milestone 1's two domains and carton stock are enforced", () => {
     const domains = new Set(Object.values(LEASED_CHANNELS).flat());
-    expect([...domains].sort()).toEqual([LEASE_DOMAIN.MASTER_DATA, LEASE_DOMAIN.RAW_MATERIAL_STORE]);
+    expect([...domains].sort()).toEqual([LEASE_DOMAIN.CARTON_STOCK, LEASE_DOMAIN.MASTER_DATA, LEASE_DOMAIN.RAW_MATERIAL_STORE]);
+  });
+
+  it("every movement of the carton figure needs the carton lease, and nothing else does (docs/42)", () => {
+    for (const channel of [IPC.recordManualProduction, IPC.voidManualProduction, IPC.createGatepass, IPC.cancelGatepass]) {
+      expect(leasesFor(channel)).toEqual([LEASE_DOMAIN.CARTON_STOCK]);
+    }
+    expect(leasesFor(IPC.listManualProduction)).toEqual([]);
+    expect(leasesFor(IPC.listGatepassStoreStock)).toEqual([]);
   });
 });

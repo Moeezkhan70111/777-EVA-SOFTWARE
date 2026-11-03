@@ -275,6 +275,7 @@ contextBridge.exposeInMainWorld("desktop", {
     findProductionReceipt: (qrId: string) => ipcRenderer.invoke(IPC.findProductionReceipt, qrId),
     recordManualProduction: (input: Record<string, unknown>) => ipcRenderer.invoke(IPC.recordManualProduction, input),
     listManualProduction: (query: Record<string, unknown>) => ipcRenderer.invoke(IPC.listManualProduction, query),
+    voidManualProduction: (input: Record<string, unknown>) => ipcRenderer.invoke(IPC.voidManualProduction, input),
     issueUpperToMachine: (rawScan: string, machineId: string) => ipcRenderer.invoke(IPC.issueUpperToMachine, rawScan, machineId),
     listUpperIssues: (query: Record<string, unknown>) => ipcRenderer.invoke(IPC.listUpperIssues, query),
     getUpperIssueSummary: (query: Record<string, unknown>) => ipcRenderer.invoke(IPC.getUpperIssueSummary, query),

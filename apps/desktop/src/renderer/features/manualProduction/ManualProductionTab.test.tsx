@@ -34,7 +34,8 @@ const product = (article: string, size: string, colors: string[]) => ({
 
 const entry = (overrides: Partial<ManualProductionEntry> = {}): ManualProductionEntry => ({
   id: "e-1", code: "MAN-000001", article: "SK6", size: "7/10", color: "RED", cartons: 20, equivalentDozens: 10,
-  programCode: "MP-000123", machineName: "MACHINE 1", enteredAt: "2026-10-14T05:42:00.000Z", enteredBy: "admin", ...overrides,
+  programCode: "MP-000123", machineName: "MACHINE 1", enteredAt: "2026-10-14T05:42:00.000Z", enteredBy: "admin",
+  voidedAt: null, voidedBy: null, voidReason: null, ...overrides,
 });
 
 const day = (rows: ManualProductionEntry[]): ManualProductionPage => ({
@@ -198,6 +199,36 @@ describe("ManualProductionTab", () => {
     expect(await screen.findByText("Today's manual production could not be loaded.")).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Retry" }));
     expect(await screen.findByText("No manual production yet today")).toBeInTheDocument();
+  });
+
+  it("voids an entry only with a reason, shows the refusal it gets, and then shows the entry as voided in words", async () => {
+    const voided = entry({ voidedAt: "2026-10-14T06:00:00.000Z", voidedBy: "admin", voidReason: "typed twice" });
+    const listManualProduction = vi.fn().mockResolvedValue({ accepted: true, page: day([entry()]) });
+    const voidManualProduction = vi
+      .fn()
+      .mockResolvedValueOnce({ accepted: false, entry: null, reason: "These cartons have already gone out on gatepass GP-000123. Cancel that gatepass first." })
+      .mockImplementationOnce(async () => {
+        listManualProduction.mockResolvedValue({ accepted: true, page: day([voided]) });
+        return { accepted: true, entry: voided };
+      });
+    await openTab(baseApi({ listManualProduction, voidManualProduction }));
+
+    await userEvent.click(await screen.findByRole("button", { name: "Void MAN-000001" }));
+    const dialog = await screen.findByRole("dialog", { name: "Void MAN-000001?" });
+    await userEvent.click(within(dialog).getByRole("button", { name: "Void entry" }));
+    expect(within(dialog).getByRole("alert")).toHaveTextContent("Give a reason for voiding this entry.");
+    expect(voidManualProduction).not.toHaveBeenCalled();
+
+    await userEvent.type(within(dialog).getByLabelText("Reason (required)"), "typed twice");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Void entry" }));
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent("already gone out on gatepass GP-000123");
+
+    await userEvent.click(within(dialog).getByRole("button", { name: "Void entry" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(voidManualProduction).toHaveBeenLastCalledWith({ entryId: "e-1", reason: "typed twice" });
+    expect(await screen.findByText("Voided")).toBeInTheDocument();
+    expect(screen.getByText("admin: typed twice")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Void MAN-000001" })).not.toBeInTheDocument();
   });
 
   it("says so when there are no active products to record", async () => {

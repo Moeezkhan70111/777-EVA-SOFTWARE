@@ -10,7 +10,9 @@
 // Nothing the screen sends is trusted — the machine, the product and the quantity are all checked
 // by the data layer inside the write lock.
 
-import { ipcMain, type IpcMainInvokeEvent } from "electron";
+import type { IpcMainInvokeEvent } from "electron";
+// Lease-gated (leaseChannels.ts): recording and voiding move the carton figure, written on one computer only.
+import { ipcMain } from "../leaseGuard";
 import { IPC } from "../../shared/ipcChannels";
 import type { IpcContext } from "./context";
 import { PERMISSION, asRecord, asString } from "@erp/domain";
@@ -51,6 +53,23 @@ export function registerManualProductionHandlers(ctx: IpcContext): void {
       // A refusal (bad quantity, disabled product, machine not ready) is the data layer's own words.
       const reason = error instanceof Error ? error.message : "The production could not be recorded. Nothing was saved.";
       log("WARNING", "record-refused", reason, who.user.id);
+      return { accepted: false, reason, entry: null };
+    }
+  });
+
+  // A void, never a delete (docs/42 section 5): the entry stays, marked, and its cartons leave stock on
+  // every computer. The reason is required by the data layer, and logged with who voided it.
+  ipcMain.handle(IPC.voidManualProduction, (event, input?: unknown) => {
+    const who = operator(event);
+    if (!who.ok) return { accepted: false, reason: who.reason, entry: null };
+    const fields = asRecord(input);
+    try {
+      const entry = db.voidManualProduction({ entryId: asString(fields.entryId), reason: asString(fields.reason), voidedBy: who.user.username });
+      log("INFO", "void", JSON.stringify({ entry: entry.code, cartons: entry.cartons, reason: entry.voidReason }), who.user.id);
+      return { accepted: true, entry };
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : "The entry could not be voided. Nothing was changed.";
+      log("WARNING", "void-refused", reason, who.user.id);
       return { accepted: false, reason, entry: null };
     }
   });
