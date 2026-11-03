@@ -467,6 +467,16 @@ PC2's claim untouched at epoch 33):
 Both are **test only**: they write and roll back, and on production even a rolled-back write would
 leave gaps in the log's positions.
 
+**Rule: every check script registers a number block for its temporary device.** Since 018,
+`claim_is_current` refuses a device that holds no block (`NUMBER_BLOCK_NOT_REGISTERED`), so a check
+in the pre-018 form fails at its first push. Right after the `device_accounts` insert, add
+`insert into public.number_blocks (block, device_id, auth_user_id) values (997, b, uid);`. Block 997
+is beyond any computer (the app assigns 1–99), as in `check_number_blocks.sql`, and rolls back with
+the rest. `check_stock_events.sql` and `check_leased_records.sql` were brought up to this on
+2026-11-03 and passed on test again, 4/4 and 6/6. Still in the old form, so they would stop the
+same way: `check_doorbell.sql`, `check_raw_material_identity.sql` and `check_sync_health.sql`. Do
+not write a new check in the old form.
+
 **Verified 2026-10-25, after 009 and 010:** `verify_applied_state.sql`, all 21 checks `ok`.
 Checks 5 and 7 now pass: `anon` holds nothing, and `authenticated` exactly `SELECT` on the seven
 synchronised tables, with no `MAINTAIN`. One check (20) first failed **in the script, not the

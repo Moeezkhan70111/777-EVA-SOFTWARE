@@ -1,5 +1,5 @@
 -- NOT A MIGRATION. TEST PROJECT ONLY. Run whole through execute_sql or the SQL editor.
--- Functional check of 013 on TEST, after 011 and 013 are applied. Leaves nothing behind: the block
+-- Functional check of 013 on TEST, after 011, 013 and 018 are applied. Leaves nothing behind: the block
 -- ends by raising, so the temporary device, its claim, the leases, the records and the log rows
 -- are all rolled back. PC2's rows are only READ, to copy not-null columns. Success is the error
 -- message 'LEASED_RECORDS_CHECK_PASSED ...'.
@@ -23,6 +23,9 @@ begin
           || jsonb_build_object('auth_user_id', uid, 'device_id', b, 'workstation_id', 'ws-lr-check',
                                 'label', 'lr check', 'claim_holder', holder, 'claim_epoch', 1))).*
     from public.device_accounts d where d.device_id = 'desktop-main';
+  -- Since 018 a claim counts only with a registered number block. 997 is beyond any computer (the
+  -- app assigns 1-99), as in check_number_blocks.sql, and is rolled back with the rest.
+  insert into public.number_blocks (block, device_id, auth_user_id) values (997, b, uid);
   perform set_config('request.jwt.claims', jsonb_build_object('sub', uid, 'role', 'authenticated')::text, true);
 
   -- 1. Without the master-data lease: refused. Holding ANOTHER domain's lease does not help.
