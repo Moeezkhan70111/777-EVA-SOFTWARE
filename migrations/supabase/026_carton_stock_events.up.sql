@@ -137,7 +137,7 @@ begin
     return 'PAYLOAD_INCOMPLETE';
   end if;
   v_quantity := (item->>'quantity')::integer;
-  if (item->>'balance_delta')::integer <> case when item->>'event_type' in ('GATEPASS_ISSUE', 'MANUAL_PRODUCTION_VOID') then -v_quantity else v_quantity end then
+  if (item->>'balance_delta')::integer <> (case when item->>'event_type' in ('GATEPASS_ISSUE', 'MANUAL_PRODUCTION_VOID') then -v_quantity else v_quantity end) then
     return 'DELTA_DOES_NOT_MATCH';
   end if;
   return null;

@@ -1204,6 +1204,21 @@ test("the README's apply order names every migration in the folder", () => {
   }
 });
 
+test("no PL/pgSQL if or elsif holds a bare case expression", () => {
+  // PL/pgSQL reads an if's condition up to the first then outside parentheses -- a case's own
+  // then included. 026 once failed to create on test for this. Parenthesised, the case is fine.
+  // STATIC CHECK over one-line conditions. Only PostgreSQL creating the function proves it.
+  const folder = path.join(ROOT, "migrations/supabase");
+  for (const name of fs.readdirSync(folder).filter((file) => file.endsWith(".sql"))) {
+    for (const line of sqlOnly(read(`migrations/supabase/${name}`)).split("\n")) {
+      if (!/^\s*(if|elsif)\b/i.test(line)) continue;
+      let bare = line;
+      while (/\([^()]*\)/.test(bare)) bare = bare.replace(/\([^()]*\)/g, "");
+      assert.doesNotMatch(bare, /\bcase\b/i, `${name}: wrap the case in parentheses -- ${line.trim()}`);
+    }
+  }
+});
+
 // ─── the claim holder is not readable through an ordinary query ─────────────
 //
 // Eviction only works because a superseded device cannot learn the epoch and holder that
