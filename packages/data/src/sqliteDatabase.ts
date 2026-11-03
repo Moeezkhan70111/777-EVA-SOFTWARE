@@ -183,6 +183,7 @@ export type { AccountSqlHandle, AccountsMode } from "./database/accountsMode.js"
 export {
   ACCOUNT_RECORD,
   ACCOUNT_STATUSES,
+  LOCAL_ROLE_NAME_SUFFIX,
   PERMISSION_REQUEST_STATUSES,
   ROLE_LOGIN_POLICIES,
   accountRoleWaitsFor,

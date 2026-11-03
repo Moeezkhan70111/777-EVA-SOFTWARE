@@ -207,17 +207,27 @@ export function readPermissionRequestPayload(payload: Record<string, unknown>): 
 // A wait, never a refusal: what it needs is earlier in the log, or on its way (applyContract.ts).
 
 export function personWaitsFor(sql: AccountSqlHandle, person: PersonPayload): string | null {
+  // Superseded: nothing will be written, so there is nothing to wait for. Waiting would be for ever.
+  if (heldRevision(sql, ACCOUNT_RECORD.PERSON, person.personId) >= person.revision) return null;
   if (person.roleCode !== null && !exists(sql, "SELECT 1 FROM roles WHERE role_code = ?", person.roleCode)) {
     return `WAITING_FOR:${ACCOUNT_RECORD.ACCOUNT_ROLE}:${person.roleCode}`;
   }
   return null;
 }
 
+/**
+ * A role's name is unique here as in the cloud, but only the cloud's own roles are bound by the
+ * cloud's rule. So a name held by another CLOUD role is a wait (that role's rename is in the log),
+ * while one held by a role the cloud never sent -- this PC's own, kept from before the switch -- is
+ * no wait at all: that role steps aside when the revision is written (stepAsideFromName).
+ */
 export function accountRoleWaitsFor(sql: AccountSqlHandle, role: AccountRolePayload): string | null {
+  if (heldRevision(sql, ACCOUNT_RECORD.ACCOUNT_ROLE, role.roleCode) >= role.revision) return null;
   if (role.deleted && exists(sql, "SELECT 1 FROM user_role_assignments WHERE role_code = ?", role.roleCode)) {
     return `WAITING_FOR:ROLE_UNASSIGNED:${role.roleCode}`;
   }
-  if (!role.deleted && exists(sql, "SELECT 1 FROM roles WHERE role_name = ? AND role_code <> ?", role.name, role.roleCode)) {
+  const holder = role.deleted ? undefined : nameHolder(sql, role);
+  if (holder !== undefined && heldRevision(sql, ACCOUNT_RECORD.ACCOUNT_ROLE, holder) > 0) {
     return `WAITING_FOR:ROLE_NAME:${role.name}`;
   }
   return null;
@@ -260,6 +270,7 @@ export function applyAccountRoleRevision(sql: AccountSqlHandle, role: AccountRol
   if (role.deleted) {
     sql.prepare("DELETE FROM roles WHERE role_code = ?").run(role.roleCode);
   } else {
+    stepAsideFromName(sql, role, now);
     upsertRole(sql, role, now);
     const insert = sql.prepare("INSERT OR IGNORE INTO role_permissions (role_code, permission_code, created_at) VALUES (?, ?, ?)");
     for (const permission of role.permissions) insert.run(role.roleCode, normalizePermissionCode(permission), now);
@@ -364,6 +375,35 @@ function writeAssignments(sql: AccountSqlHandle, person: PersonPayload, now: str
   sql.prepare("DELETE FROM user_additional_permissions WHERE user_id = ?").run(person.personId);
   const insert = sql.prepare("INSERT OR IGNORE INTO user_additional_permissions (user_id, permission_code, granted_by, granted_at) VALUES (?, ?, NULL, ?)");
   for (const permission of person.extraPermissions) insert.run(person.personId, normalizePermissionCode(permission), now);
+}
+
+/** The code of the other role that already has this role's name here, if any. */
+function nameHolder(sql: AccountSqlHandle, role: AccountRolePayload): string | undefined {
+  const row = sql.prepare("SELECT role_code FROM roles WHERE role_name = ? AND role_code <> ?").get(role.name, role.roleCode) as
+    | { role_code: string }
+    | undefined;
+  return row?.role_code;
+}
+
+/** Added to the name of this PC's own role when a cloud role takes its name. */
+export const LOCAL_ROLE_NAME_SUFFIX = "(This PC)";
+
+/** "Billing Manager (This PC) 2" -> "Billing Manager": the suffix is added once, never stacked. */
+const SUFFIXED = / \(This PC\)(?: \d+)?$/;
+
+/**
+ * A role the cloud never sent gives up its name to the cloud's role, and only its name: its code,
+ * screens and holders stay as they are, and it is never merged into the cloud's role. A cloud
+ * role holding the name never reaches here (accountRoleWaitsFor waits for it instead).
+ */
+function stepAsideFromName(sql: AccountSqlHandle, role: AccountRolePayload, now: string): void {
+  const holder = nameHolder(sql, role);
+  if (holder === undefined || heldRevision(sql, ACCOUNT_RECORD.ACCOUNT_ROLE, holder) > 0) return;
+  const base = role.name.replace(SUFFIXED, "");
+  const taken = (name: string) => name === role.name || exists(sql, "SELECT 1 FROM roles WHERE role_name = ?", name);
+  let renamed = `${base} ${LOCAL_ROLE_NAME_SUFFIX}`;
+  for (let n = 2; taken(renamed); n += 1) renamed = `${base} ${LOCAL_ROLE_NAME_SUFFIX} ${n}`;
+  sql.prepare("UPDATE roles SET role_name = ?, updated_at = ? WHERE role_code = ?").run(renamed, now, holder);
 }
 
 function upsertRole(sql: AccountSqlHandle, role: AccountRolePayload, now: string): void {

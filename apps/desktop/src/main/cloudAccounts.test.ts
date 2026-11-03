@@ -191,6 +191,22 @@ describe("the switch to cloud accounts: by hand, by an admin, at this computer",
       expect(cloud.calls).not.toContain("admin_import_roles");
     });
 
+    it("a cloud role carrying one of this computer's built-in names under another code still switches it", async () => {
+      // A reader's built-ins never go up, so nothing in the cloud stops a role of its own taking the name.
+      const { account, session, boss } = owner();
+      const desk = { roleCode: "billing-desk", revision: 1, deleted: false, name: "Billing Manager", description: null, loginPolicy: "ALWAYS_LOGGED_IN", permissions: ["stock"] };
+      const cloud = new ScriptedCloud({
+        verify_login: signedIn(boss),
+        account_state: answered({ ok: true, roles: [desk], people: [person(boss)], requests: [] }),
+      });
+      expect((await switchThisComputerToCloud(deps(cloud), request(session, account.id))).kind).toBe("SWITCHED");
+      const names = db.db.prepare("SELECT role_code, role_name FROM roles WHERE role_code IN ('billing-desk', 'billing-manager') ORDER BY role_code").all();
+      expect(names.map((r) => ({ ...r }))).toEqual([
+        { role_code: "billing-desk", role_name: "Billing Manager" },
+        { role_code: "billing-manager", role_name: "Billing Manager (This PC)" },
+      ]);
+    });
+
     it("roles the cloud will not take switch nothing: everyone stays signed in, and it can be pressed again", async () => {
       const { account, session, boss } = owner();
       const munshi = db.createUserAccount("Munshi", "munshi5678");

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { SqliteDatabase, readAccountRolePayload, readPermissionRequestPayload, readPersonPayload } from "@erp/data";
+import { LOCAL_ROLE_NAME_SUFFIX, SqliteDatabase, readAccountRolePayload, readPermissionRequestPayload, readPersonPayload } from "@erp/data";
 import { applyEnvelope } from "./applyEnvelope.js";
 import type { SyncEnvelope } from "./contract.js";
 
@@ -116,6 +116,126 @@ test("a role is deleted only after its last holder has moved off it", () => {
     apply(db, "PERSON", "p-ali", person({ revision: 2, status: "APPROVED", roleCode: null }));
     assert.equal(apply(db, "ACCOUNT_ROLE", "munshi", role({ revision: 2, deleted: true })).status, "APPLIED");
     assert.equal(row(db, "SELECT 1 AS here FROM roles WHERE role_code = 'munshi'"), undefined);
+  });
+});
+
+// ─── Role names: this PC's own roles against the cloud's ──────────────────────
+//
+// Every PC is born with the built-in roles (sqliteDatabase ensureDefaultRoles), and a PC that switched
+// without copying its roles up keeps them, though the cloud never sent them. The cloud keeps role
+// names unique among ITS roles only, so one of its roles can carry a built-in's name under another
+// code. That must not wait for ever, and must not turn the built-in into the cloud's role.
+
+const BUILT_IN = "billing-manager";
+const screensOf = (db: SqliteDatabase, roleCode: string): string[] =>
+  (db.db.prepare("SELECT permission_code FROM role_permissions WHERE role_code = ?").all(roleCode) as Array<{ permission_code: string }>)
+    .map((r) => r.permission_code)
+    .sort();
+
+/** A person of this PC holding the built-in, and what the built-in is before anything arrives. */
+function holdBuiltIn(db: SqliteDatabase): { holderId: string; screens: string[] } {
+  const holder = db.createUserAccount("Bilal", "Password123");
+  db.assignUserRole(holder.id, BUILT_IN);
+  return { holderId: holder.id, screens: screensOf(db, BUILT_IN) };
+}
+
+/** The built-in kept its code, its screens, its holder and its system flag; only its name moved. */
+function assertBuiltInKept(db: SqliteDatabase, before: { holderId: string; screens: string[] }, name: string): void {
+  assert.deepEqual({ ...row(db, "SELECT role_name, is_system_role FROM roles WHERE role_code = ?", BUILT_IN) }, { role_name: name, is_system_role: 1 });
+  assert.deepEqual(screensOf(db, BUILT_IN), before.screens, "its screens are its own, not the cloud role's");
+  assert.equal(row(db, "SELECT role_code FROM user_role_assignments WHERE user_id = ?", before.holderId)?.role_code, BUILT_IN);
+}
+
+test("a cloud role named like a built-in role on this PC is written, and the built-in steps aside", () => {
+  withDatabase((db) => {
+    const before = holdBuiltIn(db);
+    const desk = role({ roleCode: "billing-desk", name: "Billing Manager", permissions: ["stock"] });
+
+    const outcome = apply(db, "ACCOUNT_ROLE", "billing-desk", desk);
+    assert.equal(outcome.status, "APPLIED", String(outcome.reason));
+
+    assert.equal(row(db, "SELECT role_name FROM roles WHERE role_code = 'billing-desk'")?.role_name, "Billing Manager");
+    assert.deepEqual(screensOf(db, "billing-desk"), ["stock"]);
+    assertBuiltInKept(db, before, `Billing Manager ${LOCAL_ROLE_NAME_SUFFIX}`);
+  });
+});
+
+test("a cloud role renamed onto a built-in role's name is written, and the built-in steps aside", () => {
+  withDatabase((db) => {
+    const before = holdBuiltIn(db);
+    assert.equal(apply(db, "ACCOUNT_ROLE", "billing-desk", role({ roleCode: "billing-desk", name: "Billing Desk" })).status, "APPLIED");
+
+    const renamed = apply(db, "ACCOUNT_ROLE", "billing-desk", role({ roleCode: "billing-desk", revision: 2, name: "Billing Manager" }));
+    assert.equal(renamed.status, "APPLIED", String(renamed.reason));
+
+    assert.equal(row(db, "SELECT role_name FROM roles WHERE role_code = 'billing-desk'")?.role_name, "Billing Manager");
+    assertBuiltInKept(db, before, `Billing Manager ${LOCAL_ROLE_NAME_SUFFIX}`);
+  });
+});
+
+test("the name a built-in steps aside to is never one already taken here", () => {
+  withDatabase((db) => {
+    const before = holdBuiltIn(db);
+    db.createRole({ name: `Billing Manager ${LOCAL_ROLE_NAME_SUFFIX}`, permissions: ["logs"] });
+
+    assert.equal(apply(db, "ACCOUNT_ROLE", "billing-desk", role({ roleCode: "billing-desk", name: "Billing Manager" })).status, "APPLIED");
+    assertBuiltInKept(db, before, `Billing Manager ${LOCAL_ROLE_NAME_SUFFIX} 2`);
+    assert.deepEqual(screensOf(db, "billing-manager-this-pc"), ["logs"], "the role already called that is untouched");
+  });
+});
+
+test("stepping aside happens once: the suffix is never added twice", () => {
+  withDatabase((db) => {
+    const before = holdBuiltIn(db);
+    const stepped = `Billing Manager ${LOCAL_ROLE_NAME_SUFFIX}`;
+    const desk = role({ roleCode: "billing-desk", name: "Billing Manager" });
+    apply(db, "ACCOUNT_ROLE", "billing-desk", desk);
+
+    // The same revision again: a duplicate, so nothing is renamed a second time.
+    assert.equal(apply(db, "ACCOUNT_ROLE", "billing-desk", desk).status, "DUPLICATE");
+    assertBuiltInKept(db, before, stepped);
+
+    // The cloud role leaves the name and takes it back: the built-in is not in its way either time.
+    apply(db, "ACCOUNT_ROLE", "billing-desk", role({ roleCode: "billing-desk", revision: 2, name: "Billing Desk" }));
+    apply(db, "ACCOUNT_ROLE", "billing-desk", role({ roleCode: "billing-desk", revision: 3, name: "Billing Manager" }));
+    assertBuiltInKept(db, before, stepped);
+
+    // A cloud role takes the suffixed name itself: the built-in is numbered, not suffixed again.
+    const taker = apply(db, "ACCOUNT_ROLE", "billing-copy", role({ roleCode: "billing-copy", name: stepped }));
+    assert.equal(taker.status, "APPLIED", String(taker.reason));
+    assertBuiltInKept(db, before, `${stepped} 2`);
+  });
+});
+
+test("a name another CLOUD role still holds is a wait, and clears when that role's rename arrives", () => {
+  withDatabase((db) => {
+    apply(db, "ACCOUNT_ROLE", "munshi", role());
+    const clerk = role({ roleCode: "gate-clerk", name: "Munshi" });
+
+    const early = apply(db, "ACCOUNT_ROLE", "gate-clerk", clerk);
+    assert.equal(early.status, "REJECTED");
+    assert.equal(early.permanent, false, "the cloud's own roles never share a name, so its rename is on its way");
+    assert.match(String(early.reason), /WAITING_FOR:ROLE_NAME:Munshi/);
+
+    apply(db, "ACCOUNT_ROLE", "munshi", role({ revision: 2, name: "Gate Munshi" }));
+    assert.equal(apply(db, "ACCOUNT_ROLE", "gate-clerk", clerk).status, "APPLIED");
+    assert.equal(row(db, "SELECT role_name FROM roles WHERE role_code = 'munshi'")?.role_name, "Gate Munshi", "a cloud role never steps aside");
+  });
+});
+
+test("a revision this PC has already moved past is a duplicate, never a wait", () => {
+  withDatabase((db) => {
+    // The name it carries now belongs to another role...
+    apply(db, "ACCOUNT_ROLE", "munshi", role());
+    apply(db, "ACCOUNT_ROLE", "munshi", role({ revision: 2, name: "Gate Munshi" }));
+    apply(db, "ACCOUNT_ROLE", "gate-clerk", role({ roleCode: "gate-clerk", name: "Munshi" }));
+    assert.equal(apply(db, "ACCOUNT_ROLE", "munshi", role()).status, "DUPLICATE");
+
+    // ...or the role it names is gone.
+    apply(db, "PERSON", "p-ali", person({ status: "APPROVED", roleCode: "munshi" }));
+    apply(db, "PERSON", "p-ali", person({ revision: 2, status: "APPROVED", roleCode: null }));
+    apply(db, "ACCOUNT_ROLE", "munshi", role({ revision: 3, deleted: true }));
+    assert.equal(apply(db, "PERSON", "p-ali", person({ status: "APPROVED", roleCode: "munshi" })).status, "DUPLICATE");
   });
 });
 
