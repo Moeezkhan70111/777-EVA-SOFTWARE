@@ -36,47 +36,26 @@ import type { DispatchAllowance, GatepassDeliveryProof, GatepassJourneyStep, Gat
 import { IN_STORE_STOCK_SQL, type MutableTransactionContext } from "./shared.js";
 import { createHash } from "node:crypto";
 import { allocateNumberInRange } from "./numberRange.js";
-import { ISSUED_AT_CREATION_SQL } from "./gatepassCartons.js";
-
-// ─── The one derivation of "dispatched from store" ───────────────────────────
-// Per gatepass line, the cartons Store Move Out has actually taken for it: every STORE_EXIT
-// event that names this gatepass and this variant, minus every STORE_ENTRY that brought one
-// of those cartons back from the gate (the compensating record). Both are MOVED events;
-// the business sub-kind lives in metadata_json exactly as the store sessions read it. The
-// gatepass id on the event is the only ownership rule; it is stamped by the scan itself from
-// findOldestOutstandingGatepassLine (oldest open line for the scanned variant) — never from
-// article + size + time afterwards. Nothing is cached: Reserved and Reflected Stock are
-// computed from this every time.
-//
-// `gl` must be the gatepass_lines alias in the enclosing query.
-const LINE_DISPATCHED_SQL = `(SELECT COALESCE(SUM(CASE json_extract(pe.metadata_json, '$.eventType')
-                                                    WHEN 'STORE_EXIT' THEN 1
-                                                    WHEN 'STORE_ENTRY' THEN -1
-                                                    ELSE 0 END), 0)
-                              FROM production_events pe
-                              WHERE pe.gatepass_id = gl.gatepass_id
-                                AND pe.product_variant_id = gl.product_variant_id
-                                AND pe.event_type = 'MOVED')`;
+import { LINE_DISPATCHED_SQL, LINE_ISSUED_SQL, LINE_SETTLED_SQL } from "./gatepassLineSql.js";
 
 /**
- * Cartons still owed to live gatepasses for one variant; `pv` is the product_variants alias.
+ * Cartons still owed to live gatepasses by the QR scanners for one variant; `pv` is the
+ * product_variants alias. Nothing is cached: computed from the records every time.
  *
  * Every status except CANCELLED counts. A document does not stop reserving when it is billed —
- * it stops reserving when its cartons are actually scanned out, which `LINE_DISPATCHED_SQL`
- * already subtracts. Past AT_GATE the subtraction has reached the full quantity, so those rows
+ * it stops reserving when its cartons are actually scanned out, which `LINE_SETTLED_SQL`
+ * subtracts. Past AT_GATE the subtraction has reached the full quantity, so those rows
  * contribute nothing on their own. Filtering on CREATED alone would hand the reserved cartons
  * back to Reflected Stock the moment the bill was made, and the store would promise them twice.
  *
- * A line ISSUED AT CREATION reserves nothing (docs/42 section 3.5): its cartons already left Current
- * Stock when the gatepass was made, so subtracting them here too would take them out twice. Only
- * gatepasses from before carton movements still reserve, and Reflected Stock = Current Stock for
- * every gatepass made since.
+ * The part of a line ISSUED DIRECTLY when the gatepass was made (docs/42 section 3.5) already left
+ * Current Stock, so `LINE_SETTLED_SQL` subtracts it too: counting it here as well would take those
+ * cartons out twice.
  */
-const RESERVED_FOR_VARIANT_SQL = `COALESCE((SELECT SUM(gl.quantity - ${LINE_DISPATCHED_SQL})
+const RESERVED_FOR_VARIANT_SQL = `COALESCE((SELECT SUM(gl.quantity - ${LINE_SETTLED_SQL})
                                             FROM gatepass_lines gl
                                             JOIN gatepasses g ON g.id = gl.gatepass_id
-                                            WHERE g.status <> 'CANCELLED' AND gl.product_variant_id = pv.id
-                                              AND NOT ${ISSUED_AT_CREATION_SQL}), 0)`;
+                                            WHERE g.status <> 'CANCELLED' AND gl.product_variant_id = pv.id), 0)`;
 
 // Physical In Store cartons for one variant come from IN_STORE_STOCK_SQL in ./shared.js —
 // the single definition of Current Stock, shared with the Stock screen and the dashboard.
@@ -104,6 +83,7 @@ const mapStockRow = (row: Record<string, unknown>): GatepassStockRow => {
 const mapLineProgress = (line: Record<string, unknown>) => {
   const quantity = Number(line.quantity ?? 0);
   const dispatchedFromStoreQuantity = Number(line.dispatched_from_store ?? 0);
+  const issuedDirectlyQuantity = Number(line.issued_directly ?? 0);
   return {
     productVariantId: String(line.product_variant_id ?? ""),
     article: String(line.article_snapshot ?? ""),
@@ -111,7 +91,8 @@ const mapLineProgress = (line: Record<string, unknown>) => {
     size: String(line.size_snapshot ?? ""),
     quantity,
     dispatchedFromStoreQuantity,
-    outstandingQuantity: outstandingQuantity(quantity, dispatchedFromStoreQuantity),
+    issuedDirectlyQuantity,
+    outstandingQuantity: outstandingQuantity(quantity, dispatchedFromStoreQuantity, issuedDirectlyQuantity),
   };
 };
 
@@ -201,8 +182,9 @@ export const gatepassMethods = {
    * terminals moving the same variant out at once each consume a different carton of the
    * same line rather than the same one twice.
    *
-   * A line issued at creation is settled and is never offered (docs/42 section 3.5): a scan
-   * attributed to it would take its cartons out of the store a second time.
+   * Only what the line reserved for QR cartons is ever offered: the part issued directly when the
+   * gatepass was made already left the store (docs/42 section 3.5), so `LINE_SETTLED_SQL` counts it
+   * as done, and a scan can never take those cartons out a second time.
    */
   async findOldestOutstandingGatepassLine(this: SqliteDatabase, productVariantId: string, tx: TransactionContext): Promise<OutstandingGatepassLine | null> {
     const context = tx as MutableTransactionContext;
@@ -210,13 +192,12 @@ export const gatepassMethods = {
       .prepare(
         `SELECT g.id AS gatepass_id, g.gatepass_number, p.party_name,
                 gl.article_snapshot, gl.color_snapshot, gl.size_snapshot, gl.quantity,
-                ${LINE_DISPATCHED_SQL} AS dispatched_from_store
+                ${LINE_DISPATCHED_SQL} AS dispatched_from_store, ${LINE_ISSUED_SQL} AS issued_directly
          FROM gatepass_lines gl
          JOIN gatepasses g ON g.id = gl.gatepass_id
          JOIN parties p ON p.id = g.party_id
          WHERE g.status <> 'CANCELLED' AND gl.product_variant_id = ?
-           AND NOT ${ISSUED_AT_CREATION_SQL}
-           AND gl.quantity > ${LINE_DISPATCHED_SQL}
+           AND gl.quantity > ${LINE_SETTLED_SQL}
          ORDER BY g.gatepass_number ASC
          LIMIT 1`
       )
@@ -231,6 +212,7 @@ export const gatepassMethods = {
       size: String(row.size_snapshot ?? ""),
       quantity: Number(row.quantity ?? 0),
       dispatchedFromStoreQuantity: Number(row.dispatched_from_store ?? 0),
+      issuedDirectlyQuantity: Number(row.issued_directly ?? 0),
     };
   },
 
@@ -250,7 +232,7 @@ export const gatepassMethods = {
     return row?.gatepass_id ? String(row.gatepass_id) : null;
   },
 
-  /** Every line of a gatepass with what Store Move Out has taken for it, in document order. */
+  /** Every line of a gatepass with what Store Move Out has taken for it and what was issued directly, in document order. */
   readGatepassLineProgress(this: SqliteDatabase, gatepassId: string, db: MutableTransactionContext["db"]) {
     return (
       db
@@ -259,7 +241,8 @@ export const gatepassMethods = {
           // The product group is not snapshotted and is read live off the article + size, as
           // a classification for the reader rather than a figure the document is made of.
           `SELECT gl.id, gl.line_no, gl.product_variant_id, gl.article_snapshot, gl.color_snapshot, gl.size_snapshot, gl.quantity,
-                  gl.store_quantity_at_creation, pg.group_name, ${LINE_DISPATCHED_SQL} AS dispatched_from_store
+                  gl.store_quantity_at_creation, pg.group_name, ${LINE_DISPATCHED_SQL} AS dispatched_from_store,
+                  ${LINE_ISSUED_SQL} AS issued_directly
            FROM gatepass_lines gl
            LEFT JOIN product_variants pv ON pv.id = gl.product_variant_id
            LEFT JOIN article_sizes ass ON ass.id = pv.article_size_id
@@ -494,12 +477,12 @@ export const gatepassMethods = {
     gatepassId: string,
     productVariantId: string,
     tx: TransactionContext
-  ): { article: string; color: string; size: string; quantity: number; dispatchedFromStoreQuantity: number } | null {
+  ): { article: string; color: string; size: string; quantity: number; dispatchedFromStoreQuantity: number; issuedDirectlyQuantity: number } | null {
     const context = tx as MutableTransactionContext;
     const row = context.db
       .prepare(
         `SELECT gl.article_snapshot, gl.color_snapshot, gl.size_snapshot, gl.quantity,
-                ${LINE_DISPATCHED_SQL} AS dispatched_from_store
+                ${LINE_DISPATCHED_SQL} AS dispatched_from_store, ${LINE_ISSUED_SQL} AS issued_directly
          FROM gatepass_lines gl
          WHERE gl.gatepass_id = ? AND gl.product_variant_id = ?`
       )
@@ -511,6 +494,7 @@ export const gatepassMethods = {
       size: String(row.size_snapshot ?? ""),
       quantity: Number(row.quantity ?? 0),
       dispatchedFromStoreQuantity: Number(row.dispatched_from_store ?? 0),
+      issuedDirectlyQuantity: Number(row.issued_directly ?? 0),
     };
   },
 
@@ -545,7 +529,7 @@ export const gatepassMethods = {
     const rows = this.db
       .prepare(
         `SELECT gl.product_variant_id, gl.article_snapshot, gl.color_snapshot, gl.size_snapshot, gl.quantity,
-                ${LINE_DISPATCHED_SQL} AS moved_out,
+                ${LINE_DISPATCHED_SQL} AS moved_out, ${LINE_ISSUED_SQL} AS issued_directly,
                 COALESCE((SELECT COUNT(1) FROM production_events pe
                           WHERE pe.event_type = 'DISPATCHED'
                             AND pe.dispatch_session_id = ?
@@ -554,20 +538,24 @@ export const gatepassMethods = {
       )
       .all(dispatchSessionId, gatepassId) as Array<Record<string, unknown>>;
 
+    // The scanners are asked only for the QR part of a line: what was issued directly when the
+    // gatepass was made has no QR to scan, and already left the store (docs/42 section 3.5).
     const lines = rows.map((row) => {
       const quantity = Number(row.quantity ?? 0);
       const movedOut = Number(row.moved_out ?? 0);
       const dispatched = Number(row.dispatched ?? 0);
+      const issuedDirectly = Number(row.issued_directly ?? 0);
       return {
         productVariantId: String(row.product_variant_id ?? ""),
         article: String(row.article_snapshot ?? ""),
         color: String(row.color_snapshot ?? ""),
         size: String(row.size_snapshot ?? ""),
         requiredCartons: quantity,
+        issuedDirectlyCartons: issuedDirectly,
         storeScannedCartons: movedOut,
-        storeRemainingCartons: Math.max(0, quantity - movedOut),
+        storeRemainingCartons: Math.max(0, outstandingQuantity(quantity, movedOut, issuedDirectly)),
         dispatchedCartons: dispatched,
-        dispatchRemainingCartons: Math.max(0, quantity - dispatched),
+        dispatchRemainingCartons: Math.max(0, quantity - issuedDirectly - dispatched),
       };
     });
 
@@ -581,6 +569,7 @@ export const gatepassMethods = {
       dispatchSessionId,
       lines,
       requiredCartons: sum((l) => l.requiredCartons),
+      issuedDirectlyCartons: sum((l) => l.issuedDirectlyCartons),
       storeScannedCartons: sum((l) => l.storeScannedCartons),
       storeRemainingCartons: sum((l) => l.storeRemainingCartons),
       dispatchedCartons: sum((l) => l.dispatchedCartons),
@@ -784,15 +773,15 @@ export const gatepassMethods = {
   },
 
   /**
-   * Whether every line of a Gatepass has had its full quantity scanned out of the store.
-   * Read from the events themselves (the same derivation Reflected Stock uses), never from a
-   * cached counter, so it cannot drift from what the scanners actually recorded.
+   * Whether every line of a Gatepass has had its full quantity out of the store: scanned out, or
+   * issued directly when it was made. Read from the records themselves (the same derivation
+   * Reflected Stock uses), never from a cached counter, so it cannot drift from what happened.
    */
   gatepassStoreScanComplete(this: SqliteDatabase, gatepassId: string, tx?: TransactionContext): boolean {
     const context = tx as MutableTransactionContext | undefined;
     const outstanding = (context?.db ?? this.db)
       .prepare(`SELECT COUNT(1) AS n FROM gatepass_lines gl
-                WHERE gl.gatepass_id = ? AND gl.quantity > ${LINE_DISPATCHED_SQL}`)
+                WHERE gl.gatepass_id = ? AND gl.quantity > ${LINE_SETTLED_SQL}`)
       .get(gatepassId) as { n: number } | undefined;
     return (outstanding?.n ?? 0) === 0;
   },
@@ -812,6 +801,7 @@ export const gatepassMethods = {
 
     const lines = this.readGatepassLineProgress(String(row.id), this.db);
     const dispatchedFromStoreQuantity = lines.reduce((sum, line) => sum + line.dispatchedFromStoreQuantity, 0);
+    const issuedDirectlyQuantity = lines.reduce((sum, line) => sum + line.issuedDirectlyQuantity, 0);
     const totalQuantity = Number(row.total_quantity ?? 0);
 
     const gatepassNumber = Number(row.gatepass_number ?? 0);
@@ -830,7 +820,8 @@ export const gatepassMethods = {
       remarks: row.remarks ? String(row.remarks) : null,
       totalQuantity,
       dispatchedFromStoreQuantity,
-      outstandingQuantity: outstandingQuantity(totalQuantity, dispatchedFromStoreQuantity),
+      issuedDirectlyQuantity,
+      outstandingQuantity: outstandingQuantity(totalQuantity, dispatchedFromStoreQuantity, issuedDirectlyQuantity),
       lineCount: lines.length,
       createdBy: row.created_by ? String(row.created_by) : null,
       createdAt: String(row.created_at ?? ""),
@@ -900,6 +891,7 @@ export const gatepassMethods = {
                 p.party_name,
                 (SELECT COUNT(1) FROM gatepass_lines gl WHERE gl.gatepass_id = g.id) AS line_count,
                 (SELECT COALESCE(SUM(${LINE_DISPATCHED_SQL}), 0) FROM gatepass_lines gl WHERE gl.gatepass_id = g.id) AS dispatched_from_store,
+                (SELECT COALESCE(SUM(${LINE_ISSUED_SQL}), 0) FROM gatepass_lines gl WHERE gl.gatepass_id = g.id) AS issued_directly,
                 (SELECT GROUP_CONCAT(article, '|') FROM (
                    SELECT DISTINCT gl.article_snapshot AS article FROM gatepass_lines gl WHERE gl.gatepass_id = g.id ORDER BY gl.article_snapshot
                  )) AS articles
@@ -915,6 +907,7 @@ export const gatepassMethods = {
         const gatepassNumber = Number(row.gatepass_number ?? 0);
         const totalQuantity = Number(row.total_quantity ?? 0);
         const dispatchedFromStoreQuantity = Number(row.dispatched_from_store ?? 0);
+        const issuedDirectlyQuantity = Number(row.issued_directly ?? 0);
         return {
           id: String(row.id ?? ""),
           code: formatGatepassCode(gatepassNumber),
@@ -925,7 +918,8 @@ export const gatepassMethods = {
           status: this.mapGatepassStatus(row.status),
           totalQuantity,
           dispatchedFromStoreQuantity,
-          outstandingQuantity: outstandingQuantity(totalQuantity, dispatchedFromStoreQuantity),
+          issuedDirectlyQuantity,
+          outstandingQuantity: outstandingQuantity(totalQuantity, dispatchedFromStoreQuantity, issuedDirectlyQuantity),
           lineCount: Number(row.line_count ?? 0),
           articles: row.articles ? String(row.articles).split("|").filter(Boolean) : [],
           createdBy: row.created_by ? String(row.created_by) : null,

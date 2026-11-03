@@ -18,12 +18,13 @@ import type { TransactionContext, TransactionManager } from "./ports.js";
 // inside the same write transaction, never trusted from the screen, so two clerks can never take
 // the same last carton.
 //
-// THE CARTONS LEAVE STOCK WHEN THE GATEPASS IS MADE (docs/42, owner decision 2026-11-03: dispatch
-// cannot be tracked, so there is no later stage to settle against). In the same transaction the
-// repository records one carton movement per line, which every other computer receives, and
-// cancelling puts back exactly what was taken. A line issued this way reserves nothing and no
-// Store Move Out scan is ever attributed to it. Gatepasses made before keep their reservation,
-// consumed by the scan that names them (StoreExitScanUseCase) or released by cancellation.
+// EACH LINE IS SPLIT WHEN THE GATEPASS IS MADE (docs/42 section 3.5, revised 2026-11-03). What QR
+// cartons in the store can cover is RESERVED, consumed by the Store Move Out scan that names this
+// gatepass (StoreExitScanUseCase), exactly as before. The shortfall -- cartons with no QR, from
+// Manual Production -- is ISSUED DIRECTLY: in the same transaction the repository takes it out of
+// stock as a carton movement, which every other computer receives. Cancelling releases the
+// reservation and puts back exactly what was issued. With every carton a QR carton, nothing is
+// issued and the gatepass behaves exactly as it always has.
 
 /** Display code, e.g. GP-000123. */
 export const formatGatepassCode = (gatepassNumber: number): string => `GP-${String(gatepassNumber).padStart(6, "0")}`;
@@ -468,6 +469,8 @@ export interface CancelGatepassResult {
   cancelledAt?: string;
   /** Cartons whose reservation this cancellation released (were still outstanding). */
   releasedQuantity?: number;
+  /** Cartons issued directly when the gatepass was made, put back into stock by this cancellation. */
+  returnedToStockQuantity?: number;
   /** Cartons Store Move Out had already taken for this gatepass — unchanged by cancelling. */
   dispatchedFromStoreQuantity?: number;
 }
@@ -479,7 +482,7 @@ export class GatepassCancelRejectedError extends Error {
   }
 }
 
-/** A line's requested quantity and what Store Move Out has actually taken for it so far. */
+/** A line's requested quantity, what Store Move Out has taken for it, and what was issued directly. */
 export interface GatepassLineProgress {
   productVariantId: string;
   article: string;
@@ -487,6 +490,8 @@ export interface GatepassLineProgress {
   size: string;
   quantity: number;
   dispatchedFromStoreQuantity: number;
+  /** Taken out of stock when the gatepass was made (docs/42), net of any cancel. */
+  issuedDirectlyQuantity: number;
 }
 
 export interface GatepassForCancel {
@@ -530,11 +535,14 @@ const summariseRelease = (lines: GatepassLineProgress[]) => {
     size: line.size,
     quantity: line.quantity,
     dispatchedFromStoreQuantity: line.dispatchedFromStoreQuantity,
-    releasedQuantity: outstandingQuantity(line.quantity, line.dispatchedFromStoreQuantity),
+    // The reservation the QR scanners no longer owe, and the cartons issued directly, which go back to stock.
+    releasedQuantity: outstandingQuantity(line.quantity, line.dispatchedFromStoreQuantity, line.issuedDirectlyQuantity),
+    returnedToStockQuantity: line.issuedDirectlyQuantity,
   }));
   return {
     lines: perLine,
     releasedQuantity: perLine.reduce((sum, line) => sum + line.releasedQuantity, 0),
+    returnedToStockQuantity: perLine.reduce((sum, line) => sum + line.returnedToStockQuantity, 0),
     dispatchedFromStoreQuantity: perLine.reduce((sum, line) => sum + line.dispatchedFromStoreQuantity, 0),
   };
 };
@@ -597,11 +605,12 @@ export class CancelGatepassUseCase {
           throw new GatepassCancelRejectedError("ALREADY_CANCELLED", `${code} has already been cancelled.`);
         }
         // Only after the guarded status move: a second cancel never gets here, so nothing is put back twice.
-        await this.deps.repo.returnGatepassCartons(gatepassId, actor, tx);
+        const returnedToStock = await this.deps.repo.returnGatepassCartons(gatepassId, actor, tx);
 
         // Read under the same lock as the status change, so the audit row states exactly
-        // what this cancellation released and what had already physically left the store.
-        const release = summariseRelease(existing.lines);
+        // what this cancellation released, what went back to stock, and what had already
+        // physically left the store. What went back is what the repository put back.
+        const release = { ...summariseRelease(existing.lines), returnedToStockQuantity: returnedToStock };
         await this.deps.repo.appendAuditLog(
           {
             id: this.deps.idGenerator.nextId(),
@@ -617,7 +626,13 @@ export class CancelGatepassUseCase {
         );
 
         await this.deps.repo.notifyBilling(await this.billingNotice(gatepassId, code, actor, reason, tx), tx);
-        return { code, cancelledAt: tx.nowIso, releasedQuantity: release.releasedQuantity, dispatchedFromStoreQuantity: release.dispatchedFromStoreQuantity };
+        return {
+          code,
+          cancelledAt: tx.nowIso,
+          releasedQuantity: release.releasedQuantity,
+          returnedToStockQuantity: release.returnedToStockQuantity,
+          dispatchedFromStoreQuantity: release.dispatchedFromStoreQuantity,
+        };
       });
 
       return { accepted: true, outcome: "CANCELLED", gatepassId, ...committed };

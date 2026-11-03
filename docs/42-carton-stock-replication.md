@@ -337,29 +337,75 @@ Build it on a branch now; ship it after step 2.
 
 ---
 
-## 10. Reconciled with what is built (2026-11-03)
+## 10. Reconciled with what is built (2026-11-03, revised the same day)
 
-The supplied `777-carton-and-role-tests.patch` was not on this machine, so local migration 101 was
-written from this document rather than taken from that patch's commit 1. If the patch turns up, compare
-its 101 with the one on `feat/cloud-accounts` before using either. Every difference from §§3-6 below is a
-schema or mechanism detail; none changes a business rule. The ones that need the owner are marked.
+**Authoritative:** local migration 101 as built on `feat/carton-stock`, cloud migration 026, and this
+section. Where §§3-6 above disagree with this section, this section is what is implemented. Cloud 025 stays
+the role fix; nothing is renumbered.
 
-| Point | This document | As built | Why |
-|---|---|---|---|
-| Quantity column | `quantity`, cartons | **`quantity`**, always cartons, always positive | The name §3.1 gives; "cartons" is its unit, as `inventory_stock_events.quantity` is the material's. |
-| Which projection row | "the WAREHOUSE row of `stock_projection_by_location`" | Events carry **`location_type`** (always `WAREHOUSE`) and **`location_id`** | That row is keyed by location. Without the id a receiver cannot move the same row the origin moved. Manual Production's id is the store it stocked (`stock_location_id`); a gatepass takes from the store rows holding the cartons, fullest first -- one row while there is one store. |
-| Event types | three in §3.1, four after §5 | **Four everywhere**: `MANUAL_PRODUCE`, `GATEPASS_ISSUE`, `GATEPASS_CANCEL`, `MANUAL_PRODUCTION_VOID` -- local 101, cloud 026, `@erp/domain cartonStock.ts` | §5 adds the void to the check; one list now. |
-| The sign | `balance_delta`, `abs = quantity` | `balance_delta` is **checked against the type** (issue and void negative, the rest positive), locally, in the cloud and by the reader | Stronger than `abs`; the one rule is `cartonStockDelta`. |
-| `origin_device_id` | `NOT NULL` | **Null on a row made here**, stamped with the sender on a received one (local); `NOT NULL` in the cloud, set by the push from the proven device | The convention every numbered table follows (local migration 087: "NULL is mine"). |
-| Outbox | -- | 101 also widens `sync_outbox`'s type check | Without it `enqueueSyncEvent` quietly refuses the row (it never throws) and nothing travels. Found by the two-PC test. |
-| Once only | "cancelling twice must not restore twice", "a void happens once" | Application guards **and** unique keys: one void per entry, one cancel per issued line and store row, locally and in the cloud | The database is the floor. |
-| Negative stock | park as `CARTON_STOCK_WOULD_GO_NEGATIVE:<variantId>` | As written | A taking-out movement updates the rows, never upserts: SQLite checks `quantity_on_hand >= 0` on the row an upsert would insert, before it finds the conflict. |
-| §3.5 Reserved | Reserved is 0, one figure | A line **issued at creation** reserves nothing and is never offered to a Store Move Out scan. A gatepass made **before** this keeps reserving as it did, and its cancel puts nothing back (it took nothing). | One rule (`ISSUED_AT_CREATION_SQL`), so older live gatepasses are never promised twice. |
-| §3.5 screens | collapse the two numbers in `gatepassStock.ts` and every screen | **Not done.** Reserved is 0 for every new gatepass, so the figures agree, but the screens still show three columns. | A display change across several screens; left for its own change. |
-| §6 lease | carton domain for Manual Production | **`CARTON_STOCK` covers all four movements, gatepasses included** (OWNER TO CONFIRM) | The push is leased per event type, and one aggregate carries all four. If a gatepass were written under another lease, a void on one computer and a gatepass on another could take the same cartons, and every receiver would park forever below zero. Consequence: gatepasses and Manual Production are entered on the computer holding the carton lease. Phase 1 has one such computer (PC2). |
-| §6 "follows the user" | -- | The existing grant and handover (011): granted to a computer, labelled with the person; moved when they move | Nothing moves a lease automatically on sign-in, for any domain. |
-| Void permission | -- | Same as recording: Live Production (OWNER TO CONFIRM) | The screen that records is the screen that voids. A stricter permission is a one-line change. |
-| Contractor ledger | "withdraw the entry" | The ledger, Reconciliation and the day's totals read live entries only (`LIVE_MANUAL_ENTRY_SQL`) | The ledger is computed, never stored, so excluding the entry is the withdrawal. It lives where machine programs are -- the lease holder -- and does not replicate. |
+### 10.1 The schema as built (local 101, cloud 026)
+
+| Column | Meaning |
+|---|---|
+| `id` | the movement, for good (text primary key) |
+| `product_variant_id` | the colour of the product moved; a foreign key locally, waited for by a receiver |
+| `event_type` | `MANUAL_PRODUCE`, `GATEPASS_ISSUE`, `GATEPASS_CANCEL`, `MANUAL_PRODUCTION_VOID` -- the same four locally, in the cloud and in `@erp/domain cartonStock.ts` |
+| `quantity` | cartons, always positive |
+| `balance_delta` | the change made: **negative** for `GATEPASS_ISSUE` and `MANUAL_PRODUCTION_VOID`, **positive** for the other two, checked against the type locally, in the cloud and by the reader (`cartonStockDelta`) |
+| `location_type`, `location_id` | the store row moved: always `WAREHOUSE`, and the store's id, so a receiver moves the same row |
+| `created_by`, `created_at` | who and when, at the origin |
+| `origin_device_id` | locally **null on a row made here**, the sender on a received one (local migration 087's convention); in the cloud `NOT NULL`, the proven device |
+| `replicated_at` | locally, when a received row arrived; null on a row made here |
+| `manual_production_entry_id`, `gatepass_id`, `gatepass_line_id` | **references only**: no foreign key, never waited for. Required by type: an entry for `MANUAL_PRODUCE` and its void, a gatepass and line for an issue and its cancel |
+
+Unique keys make a second void of one entry, and a second cancel of one issued line and store row,
+impossible in the database itself. `manual_production_entries` gains `voided_at`, `voided_by`,
+`void_reason`. 101 also widens `sync_outbox`'s type check, without which nothing would be queued.
+
+### 10.2 A gatepass line is split (supersedes §3.5)
+
+§3.5's "Reserved is 0" and "scan path unreachable for issued lines" are **withdrawn**: the QR-carton
+workflow is live -- reservations, Store Move Out attribution, the gate, dispatch and delivery photos -- and
+stays exactly as it was. Instead each line is split when the gatepass is made:
+
+```
+qrAvailable = QR cartons of the variant In Store (qr_master, status WAREHOUSE)
+              - what other live gatepasses still owe the QR scanners for the variant
+issueNow    = max(0, lineQuantity - qrAvailable)      -> one GATEPASS_ISSUE movement, at once
+reserved    = lineQuantity - issueNow                 -> for the QR scanners, as before
+```
+
+- With every carton a QR carton, `issueNow` is 0 and the gatepass behaves exactly as before.
+- With no QR cartons, the whole line leaves stock at once.
+- Mixed, e.g. 3 QR + 10 Manual Production cartons and a gatepass for 5: 2 leave at once, 3 are reserved.
+- QR cartons another live gatepass has claimed are not offered again, so two gatepasses never reserve the
+  same QR cartons. (Reading of the owner's "current QR-carton quantity in store": the unclaimed part of it.)
+
+**Reserved, everywhere, is derived and never stored:**
+`reserved = lineQuantity - dispatchedByScan - issuedDirectly`, where `issuedDirectly` is the net of the
+line's `GATEPASS_ISSUE` minus `GATEPASS_CANCEL` movements. One SQL definition (`gatepassLineSql.ts`), one
+domain rule (`outstandingQuantity`); Reflected Stock, the attribution of a scan, the gatepass-locked scan,
+both scan desks' progress, store-scan completion, the document and the list all read them. A scan is
+attributed only while the line still owes QR cartons, so a carton never leaves Current Stock twice.
+
+**Cancelling** releases the reservation and puts back exactly what was issued (one `GATEPASS_CANCEL` per
+issue, from the same store row), once. Cartons already scanned out stay moved out, and the existing refusal
+to cancel once any have left the store stands. The three screen figures stay: they are now consistent.
+
+### 10.3 The lease and who may void
+
+| Point | As built |
+|---|---|
+| Lease | One `CARTON_STOCK` lease for all machines, covering all four movements, gatepasses included. In phase 1 the gatepass clerk and the production-entry operator are therefore the same lease holder: an operational constraint, not a staffing decision (`docs/37` §W). Independent leases for them need a future concurrency design and a review of the lease's scope. |
+| "Follows the user" | The existing grant and handover (cloud 011): granted to a computer, labelled with the person, moved when they move. Nothing moves a lease automatically on sign-in, for any domain. |
+| Void, today's entry | The production operator (Live Production), with a non-blank reason. |
+| Void, an earlier day's entry | An administrator only, with a reason. "Today" is the Asia/Karachi business day (`businessDateOf`), decided by the data layer inside the write lock; the person's role is read from their session in the main process, never from the screen. |
+| Void, cartons gone | Refused, naming the gatepass that took them. |
+| Contractor ledger | Computed, never stored: the ledger, Reconciliation and the day's totals read live entries only (`LIVE_MANUAL_ENTRY_SQL`), so the void withdraws the entry in the same transaction. It lives where machine programs are -- the lease holder -- and does not replicate. |
+
+**Not enforced in the cloud:** the cloud authorises a carton push by the computer's claim and lease, not by
+the person; pushes carry no person token. Who may void is enforced on the writing computer, in the main
+process and the data layer.
 
 **Still required before shipping (§4, unchanged):** confirm on PC2 that carton stock is empty, or void the
 test entries from the screen once this is installed. The cutover and the cloud-accounts release come first (§8).

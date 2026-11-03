@@ -170,6 +170,23 @@ shared by suppliers (store) and customers (sales), so splitting their lease woul
 `party_type`. That is avoidable while every document still lives on one PC. Revisit when Sales &
 dispatch replicates.
 
+**Carton stock: one lease for all machines, and in phase 1 the gatepass clerk and the production-entry
+operator are the same lease holder** (owner, 2026-11-03, `docs/42`).
+
+- Every write that moves the carton figure -- Manual Production, its void, a gatepass, its cancel --
+  needs `CARTON_STOCK`. A gatepass is in it because the part of a line QR cartons cannot cover leaves
+  stock the moment the gatepass is made.
+- So in phase 1 whoever makes gatepasses and whoever enters production must work at the computer
+  holding that lease (the lease follows the person through the ordinary grant and handover, W.2-W.3).
+- **This is an operational constraint, not a staffing or role decision.** It exists because writes to
+  one shared carton figure are serialised through one holder. That is what stops a void on one
+  computer and a gatepass on another from taking the same cartons out. Roles still decide who may do
+  each thing (cloud accounts, `docs/41`).
+- **Separate production and gatepass operators cannot hold independent leases under this design.**
+  Letting them would need a safe concurrency design for the shared figure first -- for example, a way
+  to refuse a void whose cartons another computer has meanwhile issued -- and a review of the lease's
+  scope. Until that exists, splitting the lease is not an option.
+
 **Logins are not a leased domain.** Under §U.2 accounts are cloud-authoritative: they are changed
 only by online cloud functions, never by a PC's local write. `app_users` itself, which holds the
 hashes, stays excluded from replication (`replicationScope.ts`). Until §U.2 is built, each PC

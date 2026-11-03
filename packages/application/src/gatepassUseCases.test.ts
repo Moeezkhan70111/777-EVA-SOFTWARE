@@ -114,7 +114,8 @@ function createWorld(initial: Partial<World> = {}) {
           status: cancelledIds.has(gatepassId) ? "CANCELLED" : "CREATED",
           lines: lines
             .filter((line) => line.gatepassId === gatepassId)
-            .map((line) => ({ productVariantId: line.productVariantId, article: line.article, color: line.color, size: line.size, quantity: line.quantity, dispatchedFromStoreQuantity: dispatchedFor(line) })),
+            // This world's cartons are all QR cartons, so the repository issues nothing directly.
+            .map((line) => ({ productVariantId: line.productVariantId, article: line.article, color: line.color, size: line.size, quantity: line.quantity, dispatchedFromStoreQuantity: dispatchedFor(line), issuedDirectlyQuantity: 0 })),
         };
       },
       async markGatepassCancelled(payload) {
@@ -125,7 +126,9 @@ function createWorld(initial: Partial<World> = {}) {
       },
       async returnGatepassCartons(gatepassId, returnedBy) {
         returned.push({ gatepassId, returnedBy });
-        return lines.filter((line) => line.gatepassId === gatepassId).reduce((sum, line) => sum + line.quantity, 0);
+        // All QR cartons here: nothing was issued directly, so nothing goes back. The split itself
+        // is the repository's, and is tested against the real database (@erp/data cartonStock.test.ts).
+        return 0;
       },
       async appendAuditLog(payload) {
         audit.push({ ...payload });
@@ -177,7 +180,7 @@ const RED = { productVariantId: "v-red", article: "SK6", color: "RED", size: "7/
 const BLUE = { productVariantId: "v-blue", article: "SK6", color: "BLUE", size: "7/10", storeQuantity: 80 };
 const ABC = { id: "p-abc", partyName: "ABC TRADERS", status: "ACTIVE" };
 
-test("a gatepass takes every line's cartons out of the store as it is made, and its cancel puts them back once (docs/42)", async () => {
+test("every line goes to the repository to be split as it is made, in the same transaction, and the cancel asks once for the issued part back (docs/42)", async () => {
   const w = createWorld({ parties: { [ABC.id]: ABC }, stock: { [RED.productVariantId]: RED, [BLUE.productVariantId]: BLUE } });
   const made = await w.creator.execute({
     partyId: ABC.id,
@@ -198,7 +201,7 @@ test("a gatepass takes every line's cartons out of the store as it is made, and 
   assert.equal((await w.canceller.execute({ gatepassId, reason: "wrong party", actor: "clerk" })).accepted, true);
   const again = await w.canceller.execute({ gatepassId, reason: "again", actor: "clerk" });
   assert.equal(again.outcome, "ALREADY_CANCELLED");
-  assert.deepEqual(w.returned, [{ gatepassId, returnedBy: "clerk" }], "cancelling twice puts the cartons back once");
+  assert.deepEqual(w.returned, [{ gatepassId, returnedBy: "clerk" }], "cancelling twice asks for the issued cartons back once");
 });
 
 test("a gatepass the store cannot issue is not made at all", async () => {

@@ -12,21 +12,30 @@
 //      so the machine-day's owed figure falls by exactly the entry's share. Not refused when the day
 //      is already paid -- the ledger then shows the overpayment, which is the true statement of fact.
 //
-// Two refusals, both changing nothing: the cartons must still be in the store (a gatepass that took
-// them is named), and an entry is voided once.
+// Three refusals, all changing nothing: an entry is voided once; an entry from an EARLIER business day
+// is voided only by an administrator; and the cartons must still be in the store (a gatepass that took
+// them is named).
+//
+// WHO MAY VOID (owner, 2026-11-03). Recording production does not authorise rewriting past days: the
+// production operator may void today's entries, an administrator any day's. "Today" is the business
+// day in Asia/Karachi (@erp/domain businessDateOf), the same day the Manual Production list and the
+// Contractor Ledger use. The caller says whether the person is an administrator (mayVoidEarlierDays);
+// the day is decided HERE, inside the write lock, never by the screen.
 //
 // These methods are merged onto SqliteDatabase (see sqliteDatabase.ts, "Feature modules").
 
 import type { SqliteDatabase } from "../sqliteDatabase.js";
 import type { ManualProductionEntry } from "./types.js";
 import { IN_STORE_LOCATION_TYPE, formatGatepassCode } from "@erp/application";
-import { CARTON_STOCK_EVENT_TYPE, formatManualProductionCode } from "@erp/domain";
+import { CARTON_STOCK_EVENT_TYPE, businessDateOf, formatManualProductionCode } from "@erp/domain";
 import { recordCartonStockMovement } from "./cartonStock.js";
 
 export interface VoidManualProductionInput {
   entryId: string;
   reason: string;
   voidedBy: string | null;
+  /** True only for an administrator: an entry from an earlier business day may then be voided too. */
+  mayVoidEarlierDays: boolean;
 }
 
 interface EntryToVoid {
@@ -35,6 +44,7 @@ interface EntryToVoid {
   variantId: string;
   cartons: number;
   locationId: string;
+  enteredAt: string;
   voidedAt: string | null;
 }
 
@@ -52,8 +62,12 @@ export const manualProductionVoidMethods = {
     try {
       const entry = this.manualEntryToVoid(entryId);
       if (entry.voidedAt !== null) throw new Error(`${entry.code} has already been voided.`);
-      this.refuseVoidIfCartonsGone(entry);
       const nowIso = new Date().toISOString();
+      const enteredOn = businessDateOf(entry.enteredAt);
+      if (enteredOn !== businessDateOf(nowIso) && !input.mayVoidEarlierDays) {
+        throw new Error(`${entry.code} was entered on ${enteredOn}. Only an administrator can void an entry from an earlier day.`);
+      }
+      this.refuseVoidIfCartonsGone(entry);
       this.db
         .prepare("UPDATE manual_production_entries SET voided_at = ?, voided_by = ?, void_reason = ? WHERE id = ? AND voided_at IS NULL")
         .run(nowIso, input.voidedBy, reason, entry.id);
@@ -77,7 +91,7 @@ export const manualProductionVoidMethods = {
   /** @internal The entry as a void needs it. Call ONLY inside BEGIN IMMEDIATE. */
   manualEntryToVoid(this: SqliteDatabase, entryId: string): EntryToVoid {
     const row = this.db
-      .prepare("SELECT id, entry_number, product_variant_id, cartons, stock_location_id, voided_at FROM manual_production_entries WHERE id = ?")
+      .prepare("SELECT id, entry_number, product_variant_id, cartons, stock_location_id, entry_ts, voided_at FROM manual_production_entries WHERE id = ?")
       .get(entryId) as Record<string, unknown> | undefined;
     if (!row) throw new Error("This entry could not be found.");
     return {
@@ -86,6 +100,7 @@ export const manualProductionVoidMethods = {
       variantId: text(row.product_variant_id),
       cartons: Number(row.cartons),
       locationId: text(row.stock_location_id),
+      enteredAt: text(row.entry_ts),
       voidedAt: row.voided_at == null ? null : text(row.voided_at),
     };
   },

@@ -1,8 +1,9 @@
 -- 101: carton stock, replicated (docs/42).
 --
 -- EVERY MOVEMENT OF THE CARTON FIGURE BECOMES A ROW. Manual Production stocks cartons, a gatepass
--- takes them out the moment it is made, cancelling it puts them back, and voiding a Manual Production
--- entry takes its cartons out again. Each is one append-only row here, written in the same
+-- takes out at once the part of a line QR cartons in the store cannot cover (the QR part stays
+-- reserved for scanning, docs/42 section 10.2), cancelling it puts that part back, and voiding a
+-- Manual Production entry takes its cartons out again. Each is one append-only row here, written in the same
 -- transaction as the projections it moves (stock_projection_by_variant and the WAREHOUSE row of
 -- stock_projection_by_location). The rows replicate as CARTON_STOCK_EVENT (cloud 026), and a
 -- receiving computer moves its projections by balance_delta, so every computer shows one figure.

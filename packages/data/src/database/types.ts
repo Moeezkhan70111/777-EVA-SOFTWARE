@@ -553,7 +553,9 @@ export interface GatepassLineRecord {
   storeQuantityAtCreation: number;
   /** Cartons Store Move Out has actually taken for this line (its STORE_EXIT events, less bring-backs). */
   dispatchedFromStoreQuantity: number;
-  /** quantity − dispatchedFromStoreQuantity: still reserved, still owed. */
+  /** Cartons taken out of stock directly when the gatepass was made, net of a cancel (docs/42). */
+  issuedDirectlyQuantity: number;
+  /** quantity − dispatched − issued directly: still reserved for the QR scanners. */
   outstandingQuantity: number;
 }
 
@@ -588,7 +590,9 @@ export interface GatepassRecord {
   totalQuantity: number;
   /** Across every line: cartons Store Move Out has actually taken for this document. */
   dispatchedFromStoreQuantity: number;
-  /** totalQuantity − dispatchedFromStoreQuantity: still reserved. 0 once fully moved out. */
+  /** Across every line: cartons issued directly when it was made, net of a cancel (docs/42). */
+  issuedDirectlyQuantity: number;
+  /** totalQuantity − dispatched − issued directly: still reserved. 0 once fully out. */
   outstandingQuantity: number;
   lineCount: number;
   createdBy: string | null;
@@ -610,6 +614,7 @@ export interface GatepassListRow {
   status: GatepassStatus;
   totalQuantity: number;
   dispatchedFromStoreQuantity: number;
+  issuedDirectlyQuantity: number;
   outstandingQuantity: number;
   lineCount: number;
   /** Distinct articles on the document, alphabetical, for the list column. */
@@ -655,6 +660,8 @@ export interface GatepassScanLine {
   color: string;
   size: string;
   requiredCartons: number;
+  /** Taken out of stock when the gatepass was made: no QR, so never scanned at either desk (docs/42). */
+  issuedDirectlyCartons: number;
   storeScannedCartons: number;
   storeRemainingCartons: number;
   dispatchedCartons: number;
@@ -672,6 +679,7 @@ export interface GatepassScanProgress {
   dispatchSessionId: string | null;
   lines: GatepassScanLine[];
   requiredCartons: number;
+  issuedDirectlyCartons: number;
   storeScannedCartons: number;
   storeRemainingCartons: number;
   dispatchedCartons: number;

@@ -365,6 +365,8 @@ const line = (gatepassNumber: number, productVariantId: string, color: string, q
   size: "7/10",
   quantity,
   dispatchedFromStoreQuantity: dispatched,
+  // Every carton in these tests is a QR carton: nothing was issued directly.
+  issuedDirectlyQuantity: 0,
 });
 
 test("reconciliation: a plain scan counts against the oldest open line for its variant — GP1 (2) before GP2 (1) — and reports the line's progress", async () => {

@@ -1,4 +1,4 @@
-import { InvalidQrError, isValidRawMaterialQrId, parseQrCode } from "@erp/domain";
+import { InvalidQrError, isValidRawMaterialQrId, outstandingQuantity, parseQrCode } from "@erp/domain";
 import type {
   QrRegistryRepository,
   EventPublisher,
@@ -76,6 +76,8 @@ export interface OutstandingGatepassLine {
   size: string;
   quantity: number;
   dispatchedFromStoreQuantity: number;
+  /** Taken out of stock when the gatepass was made, with no QR to scan (docs/42): never the scanner's. */
+  issuedDirectlyQuantity: number;
 }
 
 /** The Gatepass line a move-out was counted against, after that scan. */
@@ -187,7 +189,7 @@ export interface StoreExitScanDeps {
       gatepassId: string,
       productVariantId: string,
       tx: TransactionContext
-    ): { article: string; color: string; size: string; quantity: number; dispatchedFromStoreQuantity: number } | null;
+    ): { article: string; color: string; size: string; quantity: number; dispatchedFromStoreQuantity: number; issuedDirectlyQuantity: number } | null;
     readGatepassStatus(gatepassId: string, tx: TransactionContext): string | null;
     /** Whether every line of a Gatepass has now had its full quantity scanned out of the store. */
     gatepassStoreScanComplete(gatepassId: string, tx: TransactionContext): boolean;
@@ -276,7 +278,7 @@ const progressAfterThisScan = (line: OutstandingGatepassLine): StoreExitGatepass
   size: line.size,
   requested: line.quantity,
   dispatchedFromStore: line.dispatchedFromStoreQuantity + 1,
-  outstanding: line.quantity - line.dispatchedFromStoreQuantity - 1,
+  outstanding: outstandingQuantity(line.quantity, line.dispatchedFromStoreQuantity + 1, line.issuedDirectlyQuantity),
 });
 
 export class StoreExitScanUseCase {
@@ -400,7 +402,8 @@ export class StoreExitScanUseCase {
             `This Gatepass does not ask for ${qr.article} ${qr.color} ${qr.size}.`
             );
           }
-          if (line.quantity - line.dispatchedFromStoreQuantity <= 0) {
+          // Only the QR part of a line is the scanner's: what was issued directly already left (docs/42).
+          if (outstandingQuantity(line.quantity, line.dispatchedFromStoreQuantity, line.issuedDirectlyQuantity) <= 0) {
             throw new StoreExitRejectedError(
               "LINE_COMPLETE",
             `${qr.article} ${qr.color} ${qr.size} is already complete on this Gatepass.`
@@ -416,6 +419,7 @@ export class StoreExitScanUseCase {
             size: line.size,
             quantity: line.quantity,
             dispatchedFromStoreQuantity: line.dispatchedFromStoreQuantity,
+            issuedDirectlyQuantity: line.issuedDirectlyQuantity,
           });
         } else {
           const reservation = await this.deps.gatepassRepo.findOldestOutstandingGatepassLine(qr.productVariantId, tx);

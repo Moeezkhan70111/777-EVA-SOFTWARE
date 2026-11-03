@@ -129,7 +129,7 @@ test("A produces, B rises; A gatepasses, B falls; A cancels, B comes back; A voi
 
     const day = { fromDate: businessDateOf(new Date().toISOString()), toDate: businessDateOf(new Date().toISOString()) };
     const owedBefore = a.pc.db.getContractorLedger(a.aslam, day).earnedPaisa;
-    a.pc.db.voidManualProduction({ entryId: entry.id, reason: "entered on the wrong machine", voidedBy: "admin" });
+    a.pc.db.voidManualProduction({ entryId: entry.id, reason: "entered on the wrong machine", voidedBy: "admin", mayVoidEarlierDays: false });
     sync(a.pc, b);
     assert.deepEqual([inStore(a.pc), inStore(b), onHand(b)], [0, 0, 0], "the void took its 20 cartons out on both");
     assert.ok(owedBefore > 0);

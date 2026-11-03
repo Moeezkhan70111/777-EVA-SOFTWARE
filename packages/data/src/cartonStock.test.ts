@@ -113,17 +113,17 @@ test("a gatepass for more than the store holds is refused, and nothing moves", a
   });
 });
 
-test("a void takes the entry's cartons out, withdraws it from totals, Reconciliation and the Contractor Ledger -- once", async () => {
+test("11, 12 & 16. a production operator voids today's entry with a reason, never without one; stock, totals, Reconciliation and the Contractor Ledger move together -- once", async () => {
   await withFixture(async (f) => {
     const m1 = await f.machine();
     const kept = f.produce(m1, "5").entry;
     const voided = f.produce(m1, "10").entry;
     assert.equal(f.earned(f.aslam), toPaisa(70 * 15));
 
-    assert.throws(() => f.db.voidManualProduction({ entryId: voided.id, reason: "  ", voidedBy: "admin" }), /Give a reason/);
-    const after = f.db.voidManualProduction({ entryId: voided.id, reason: "typed twice", voidedBy: "admin" });
-    assert.deepEqual([after.voidReason, after.voidedBy], ["typed twice", "admin"]);
-    assert.throws(() => f.db.voidManualProduction({ entryId: voided.id, reason: "again", voidedBy: "admin" }), /has already been voided/);
+    assert.throws(() => f.db.voidManualProduction({ entryId: voided.id, reason: "  ", voidedBy: "operator", mayVoidEarlierDays: false }), /Give a reason/);
+    const after = f.db.voidManualProduction({ entryId: voided.id, reason: "typed twice", voidedBy: "operator", mayVoidEarlierDays: false });
+    assert.deepEqual([after.voidReason, after.voidedBy], ["typed twice", "operator"]);
+    assert.throws(() => f.db.voidManualProduction({ entryId: voided.id, reason: "again", voidedBy: "operator", mayVoidEarlierDays: false }), /has already been voided/);
 
     assert.equal(f.inStore(), 10, "exactly its 20 cartons came out");
     assert.equal(f.events().filter((e) => e.event_type === "MANUAL_PRODUCTION_VOID").length, 1, "voiding twice emits one event");
@@ -138,19 +138,19 @@ test("a void takes the entry's cartons out, withdraws it from totals, Reconcilia
   });
 });
 
-test("a void is refused while a gatepass holds the cartons, names it, and goes through once it is cancelled", async () => {
+test("15. a void is refused while a gatepass holds the cartons, names it, and goes through once it is cancelled", async () => {
   await withFixture(async (f) => {
     const entry = f.produce(await f.machine(), "10").entry;
     const made = await f.gatepass(15);
     assert.throws(
-      () => f.db.voidManualProduction({ entryId: entry.id, reason: "wrong machine", voidedBy: "admin" }),
+      () => f.db.voidManualProduction({ entryId: entry.id, reason: "wrong machine", voidedBy: "operator", mayVoidEarlierDays: false }),
       new RegExp(`already gone out on gatepass ${String(made.code)}\\. Cancel that gatepass first`)
     );
     assert.equal(f.inStore(), 5, "the refusal changed nothing");
     assert.equal(f.db.listManualProduction({ date: today() })?.rows[0]?.voidedAt, null);
 
     await f.cancel(String(made.gatepassId));
-    f.db.voidManualProduction({ entryId: entry.id, reason: "wrong machine", voidedBy: "admin" });
+    f.db.voidManualProduction({ entryId: entry.id, reason: "wrong machine", voidedBy: "operator", mayVoidEarlierDays: false });
     assert.equal(f.inStore(), 0);
   });
 });
@@ -172,5 +172,49 @@ test("every movement made here is marked for sending, once", async () => {
     await f.cancel(String(made.gatepassId));
     const marks = f.raw.prepare("SELECT COUNT(*) AS n FROM sync_dirty_records WHERE aggregate_type = 'CARTON_STOCK_EVENT'").get() as { n: number };
     assert.equal(Number(marks.n), 3);
+  });
+});
+
+/** Moves an entry to an earlier business day, as if it had been made two days ago. */
+const makeOld = (f: Fixture, entryId: string) =>
+  f.raw.prepare("UPDATE manual_production_entries SET entry_ts = ? WHERE id = ?").run(new Date(Date.now() - 2 * 86_400_000).toISOString(), entryId);
+
+test("13. an entry from an earlier business day is not the production operator's to void: refused, nothing moves", async () => {
+  await withFixture(async (f) => {
+    const entry = f.produce(await f.machine(), "10").entry;
+    makeOld(f, entry.id);
+    assert.throws(
+      () => f.db.voidManualProduction({ entryId: entry.id, reason: "wrong machine", voidedBy: "operator", mayVoidEarlierDays: false }),
+      /was entered on \d{4}-\d{2}-\d{2}\. Only an administrator can void an entry from an earlier day\./
+    );
+    assert.equal(f.inStore(), 20);
+    assert.equal(f.events().filter((e) => e.event_type === "MANUAL_PRODUCTION_VOID").length, 0);
+    assert.equal((f.raw.prepare("SELECT voided_at FROM manual_production_entries WHERE id = ?").get(entry.id) as { voided_at: string | null }).voided_at, null);
+  });
+});
+
+test("14. an administrator voids an entry from an earlier business day, with a reason, once", async () => {
+  await withFixture(async (f) => {
+    const entry = f.produce(await f.machine(), "10").entry;
+    makeOld(f, entry.id);
+    assert.throws(() => f.db.voidManualProduction({ entryId: entry.id, reason: " ", voidedBy: "owner", mayVoidEarlierDays: true }), /Give a reason/);
+    const voided = f.db.voidManualProduction({ entryId: entry.id, reason: "test entry from the rollout", voidedBy: "owner", mayVoidEarlierDays: true });
+    assert.deepEqual([voided.voidedBy, voided.voidReason], ["owner", "test entry from the rollout"]);
+    assert.equal(f.inStore(), 0);
+    assert.throws(() => f.db.voidManualProduction({ entryId: entry.id, reason: "again", voidedBy: "owner", mayVoidEarlierDays: true }), /already been voided/);
+    assert.equal(f.events().filter((e) => e.event_type === "MANUAL_PRODUCTION_VOID").length, 1);
+  });
+});
+
+test("16. a void is one transaction: if its stock movement fails, the entry, the stock and the ledger are as they were", async () => {
+  await withFixture(async (f) => {
+    const entry = f.produce(await f.machine(), "10").entry;
+    const owed = f.earned(f.aslam);
+    f.raw.exec(`CREATE TRIGGER test_refuse_void BEFORE INSERT ON carton_stock_events
+                WHEN NEW.event_type = 'MANUAL_PRODUCTION_VOID' BEGIN SELECT RAISE(ABORT, 'refused for the test'); END`);
+    assert.throws(() => f.db.voidManualProduction({ entryId: entry.id, reason: "wrong machine", voidedBy: "operator", mayVoidEarlierDays: false }), /refused for the test/);
+    f.raw.exec("DROP TRIGGER test_refuse_void");
+    assert.equal((f.raw.prepare("SELECT voided_at FROM manual_production_entries WHERE id = ?").get(entry.id) as { voided_at: string | null }).voided_at, null);
+    assert.deepEqual([f.inStore(), f.onHand(), f.earned(f.aslam)], [20, 20, owed]);
   });
 });

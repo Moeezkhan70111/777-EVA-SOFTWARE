@@ -1,59 +1,84 @@
-// A gatepass takes its cartons out of stock the moment it is made, and its cancel puts them back
-// (docs/42, owner decision 2026-11-03: dispatch cannot be tracked, so there is no later stage).
+// A gatepass line is split when it is made (docs/42 section 3.5, revised 2026-11-03):
 //
-//   issueGatepassCartons    one GATEPASS_ISSUE movement per line (per store row it takes from --
-//                           one row with one store), in the create transaction
-//   returnGatepassCartons   one GATEPASS_CANCEL movement for each issue, from the same store row, in
-//                           the cancel transaction. Read from the events, so a gatepass made before
-//                           this existed (nothing issued) puts nothing back, and nothing is put back
-//                           twice. The cancel use case's guarded status move already refuses a
-//                           second cancel, and the database's unique index is under that.
+//   QR cartons the store holds, not claimed by another live gatepass   -> RESERVED, for the QR
+//                                                                         scanners, exactly as before
+//   the shortfall (cartons with no QR: Manual Production)               -> ISSUED DIRECTLY now, one
+//                                                                         GATEPASS_ISSUE movement
 //
-// A LINE ISSUED AT CREATION IS SETTLED (ISSUED_AT_CREATION_SQL). It reserves nothing, because its
-// cartons are already out of Current Stock: counting it in Reserved as well would take them out
-// twice. And no Store Move Out scan can be attributed to it, so carton QR, when it returns, cannot
-// take the same cartons out a second time. Gatepasses from before this keep reserving as they did.
+//   issueGatepassCartons    splits each line and issues the shortfall, in the create transaction
+//   returnGatepassCartons   one GATEPASS_CANCEL movement for each issue not yet reversed, from the same
+//                           store row, in the cancel transaction. Read from the movements, so a
+//                           gatepass that issued nothing puts nothing back, and nothing is put back
+//                           twice. The cancel's guarded status move already refuses a second cancel,
+//                           and the database's unique index is under that.
+//
+// THE QR COUNT IS THE AUTHORITATIVE ONE: qr_master rows of the variant whose status is In Store --
+// never estimated from the projections, which count QR and Manual Production cartons together.
+// What other live gatepasses still owe the scanners for the variant comes off it, so two gatepasses
+// can never both reserve the same QR cartons. With every carton a QR carton this reserves the whole
+// line and issues nothing: today's behaviour, unchanged.
 //
 // These methods are merged onto SqliteDatabase (see sqliteDatabase.ts, "Feature modules").
 
 import type { SqliteDatabase } from "../sqliteDatabase.js";
-import type { GatepassLineToIssue, TransactionContext } from "@erp/application";
-import { CARTON_STOCK_EVENT_TYPE } from "@erp/domain";
-import { CartonStockWouldGoNegative, recordCartonStockMovement, storeRowsToTakeFrom } from "./cartonStock.js";
+import { IN_STORE_STATUS, type GatepassLineToIssue, type TransactionContext } from "@erp/application";
+import { CARTON_STOCK_EVENT_TYPE, splitGatepassLine } from "@erp/domain";
+import { CartonStockWouldGoNegative, recordCartonStockMovement, storeRowsToTakeFrom, type CartonSql } from "./cartonStock.js";
+import { LINE_SETTLED_SQL } from "./gatepassLineSql.js";
 import type { MutableTransactionContext } from "./shared.js";
 
-/** `gl` is the gatepass_lines alias. True when the line took its cartons out of stock when it was made. */
-export const ISSUED_AT_CREATION_SQL = `EXISTS (SELECT 1 FROM carton_stock_events ce
-                                         WHERE ce.gatepass_line_id = gl.id AND ce.event_type = '${CARTON_STOCK_EVENT_TYPE.GATEPASS_ISSUE}')`;
+/** QR cartons of the variant in the store that no other live gatepass still owes its scanners. */
+function qrAvailableFor(sql: CartonSql, line: GatepassLineToIssue): number {
+  const inStore = sql
+    .prepare("SELECT COUNT(1) AS n FROM qr_master WHERE product_variant_id = ? AND current_status = ?")
+    .get(line.productVariantId, IN_STORE_STATUS) as { n: number };
+  const claimed = sql
+    .prepare(
+      `SELECT COALESCE(SUM(gl.quantity - ${LINE_SETTLED_SQL}), 0) AS n
+         FROM gatepass_lines gl JOIN gatepasses g ON g.id = gl.gatepass_id
+        WHERE g.status <> 'CANCELLED' AND gl.product_variant_id = ? AND gl.gatepass_id <> ?`
+    )
+    .get(line.productVariantId, line.gatepassId) as { n: number };
+  return Number(inStore.n) - Number(claimed.n);
+}
+
+/** Takes `cartons` of the line out of the store now, row by row. Refuses rather than overdraw. */
+function issueNow(sql: CartonSql, line: GatepassLineToIssue, cartons: number, issuedBy: string, nowIso: string): void {
+  let rows: Array<{ locationId: string; cartons: number }>;
+  try {
+    rows = storeRowsToTakeFrom(sql, line.productVariantId, cartons);
+  } catch (error) {
+    if (!(error instanceof CartonStockWouldGoNegative)) throw error;
+    throw new Error(`The store does not hold ${cartons} carton(s) of ${line.label}. Nothing was saved.`);
+  }
+  for (const row of rows) {
+    recordCartonStockMovement(sql, {
+      variantId: line.productVariantId,
+      eventType: CARTON_STOCK_EVENT_TYPE.GATEPASS_ISSUE,
+      cartons: row.cartons,
+      locationId: row.locationId,
+      createdBy: issuedBy,
+      createdAt: nowIso,
+      gatepassId: line.gatepassId,
+      gatepassLineId: line.lineId,
+    });
+  }
+}
 
 export const gatepassCartonsMethods = {
-  /** Takes every line's cartons out of the store. Inside the create transaction only. */
+  /**
+   * Splits every line and takes its shortfall out of the store. Inside the create transaction only,
+   * after the lines are written and the Reflected Stock check has passed, under the same write lock.
+   */
   async issueGatepassCartons(this: SqliteDatabase, lines: GatepassLineToIssue[], issuedBy: string, tx: TransactionContext): Promise<void> {
     const context = tx as MutableTransactionContext;
     for (const line of lines) {
-      let rows: Array<{ locationId: string; cartons: number }>;
-      try {
-        rows = storeRowsToTakeFrom(context.db, line.productVariantId, line.quantity);
-      } catch (error) {
-        if (!(error instanceof CartonStockWouldGoNegative)) throw error;
-        throw new Error(`The store does not hold ${line.quantity} carton(s) of ${line.label}. Nothing was saved.`);
-      }
-      for (const row of rows) {
-        recordCartonStockMovement(context.db, {
-          variantId: line.productVariantId,
-          eventType: CARTON_STOCK_EVENT_TYPE.GATEPASS_ISSUE,
-          cartons: row.cartons,
-          locationId: row.locationId,
-          createdBy: issuedBy,
-          createdAt: context.nowIso,
-          gatepassId: line.gatepassId,
-          gatepassLineId: line.lineId,
-        });
-      }
+      const split = splitGatepassLine(line.quantity, qrAvailableFor(context.db, line));
+      if (split.issueNow > 0) issueNow(context.db, line, split.issueNow, issuedBy, context.nowIso);
     }
   },
 
-  /** Puts back exactly what the gatepass took, row by row. Returns the cartons put back. */
+  /** Puts back exactly what the gatepass issued directly, row by row. Returns the cartons put back. */
   async returnGatepassCartons(this: SqliteDatabase, gatepassId: string, returnedBy: string, tx: TransactionContext): Promise<number> {
     const context = tx as MutableTransactionContext;
     const issues = context.db

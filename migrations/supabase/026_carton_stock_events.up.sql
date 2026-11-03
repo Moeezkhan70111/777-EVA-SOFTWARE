@@ -2,8 +2,8 @@
 -- shows the same carton figure (docs/42).
 --
 -- WHAT TRAVELS. One row of the writer's carton_stock_events (local migration 101) per movement:
--- Manual Production (+), a gatepass taking its cartons out when it is made (-), its cancel putting
--- them back (+), and a voided Manual Production entry taking its cartons back out (-). quantity is
+-- Manual Production (+), a gatepass taking out at once the part QR cartons cannot cover (-), its
+-- cancel putting that back (+), and a voided Manual Production entry taking its cartons back out (-). quantity is
 -- cartons, always positive. balance_delta is the change it made, and this table checks it against
 -- the type exactly as the computers do (@erp/domain cartonStockDelta): the sign is the type's.
 --
