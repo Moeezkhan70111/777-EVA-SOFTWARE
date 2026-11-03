@@ -43,6 +43,9 @@ const NOT_MASTER: Readonly<Record<string, readonly string[]>> = {
     "inventory_stock_balances", "inventory_stock_events", "raw_material_issue_sessions", "raw_material_qr_batches",
     "raw_material_qr_events", "raw_material_qrs", "raw_material_receiving_sessions", "inventory_item_audit",
   ],
+  "Carton stock: leased EVENTS that move the carton figure (docs/42), captured as events, never replaced whole": [
+    "carton_stock_events",
+  ],
   "Sales and dispatch documents and pricing: Milestone 2": [
     "gatepasses", "gatepass_lines", "gatepass_delivery_proofs", "sale_vouchers", "sale_voucher_line_items",
     "sale_returns", "party_article_discounts", "party_article_series_discounts", "party_price_range_discounts",

@@ -1326,6 +1326,10 @@ export interface ManualProductionEntry {
   machineName: string;
   enteredAt: string;
   enteredBy: string | null;
+  /** Set when the entry was voided (migration 101): its cartons are out of stock and the ledger. */
+  voidedAt: string | null;
+  voidedBy: string | null;
+  voidReason: string | null;
 }
 
 /** One business day of Manual Production, a page of entries at a time, with the whole day added up. */

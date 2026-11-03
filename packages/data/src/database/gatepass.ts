@@ -36,6 +36,7 @@ import type { DispatchAllowance, GatepassDeliveryProof, GatepassJourneyStep, Gat
 import { IN_STORE_STOCK_SQL, type MutableTransactionContext } from "./shared.js";
 import { createHash } from "node:crypto";
 import { allocateNumberInRange } from "./numberRange.js";
+import { ISSUED_AT_CREATION_SQL } from "./gatepassCartons.js";
 
 // ─── The one derivation of "dispatched from store" ───────────────────────────
 // Per gatepass line, the cartons Store Move Out has actually taken for it: every STORE_EXIT
@@ -65,11 +66,17 @@ const LINE_DISPATCHED_SQL = `(SELECT COALESCE(SUM(CASE json_extract(pe.metadata_
  * already subtracts. Past AT_GATE the subtraction has reached the full quantity, so those rows
  * contribute nothing on their own. Filtering on CREATED alone would hand the reserved cartons
  * back to Reflected Stock the moment the bill was made, and the store would promise them twice.
+ *
+ * A line ISSUED AT CREATION reserves nothing (docs/42 section 3.5): its cartons already left Current
+ * Stock when the gatepass was made, so subtracting them here too would take them out twice. Only
+ * gatepasses from before carton movements still reserve, and Reflected Stock = Current Stock for
+ * every gatepass made since.
  */
 const RESERVED_FOR_VARIANT_SQL = `COALESCE((SELECT SUM(gl.quantity - ${LINE_DISPATCHED_SQL})
                                             FROM gatepass_lines gl
                                             JOIN gatepasses g ON g.id = gl.gatepass_id
-                                            WHERE g.status <> 'CANCELLED' AND gl.product_variant_id = pv.id), 0)`;
+                                            WHERE g.status <> 'CANCELLED' AND gl.product_variant_id = pv.id
+                                              AND NOT ${ISSUED_AT_CREATION_SQL}), 0)`;
 
 // Physical In Store cartons for one variant come from IN_STORE_STOCK_SQL in ./shared.js —
 // the single definition of Current Stock, shared with the Stock screen and the dashboard.
@@ -193,6 +200,9 @@ export const gatepassMethods = {
    * deterministic FIFO, never a timestamp match. Read inside the scan's write lock, so two
    * terminals moving the same variant out at once each consume a different carton of the
    * same line rather than the same one twice.
+   *
+   * A line issued at creation is settled and is never offered (docs/42 section 3.5): a scan
+   * attributed to it would take its cartons out of the store a second time.
    */
   async findOldestOutstandingGatepassLine(this: SqliteDatabase, productVariantId: string, tx: TransactionContext): Promise<OutstandingGatepassLine | null> {
     const context = tx as MutableTransactionContext;
@@ -205,6 +215,7 @@ export const gatepassMethods = {
          JOIN gatepasses g ON g.id = gl.gatepass_id
          JOIN parties p ON p.id = g.party_id
          WHERE g.status <> 'CANCELLED' AND gl.product_variant_id = ?
+           AND NOT ${ISSUED_AT_CREATION_SQL}
            AND gl.quantity > ${LINE_DISPATCHED_SQL}
          ORDER BY g.gatepass_number ASC
          LIMIT 1`

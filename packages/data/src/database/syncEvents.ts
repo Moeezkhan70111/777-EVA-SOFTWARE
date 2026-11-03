@@ -78,6 +78,12 @@ export const SYNC_AGGREGATE = {
    * on arrival by adding balanceDelta, never by re-deriving a sign (cloud migration 015).
    */
   STOCK_EVENT: "STOCK_EVENT",
+  /**
+   * One movement of the carton figure -- Manual Production, its void, a gatepass, its cancel -- with
+   * the change it made (balanceDelta). Append-only, captured when inserted, applied on arrival by
+   * moving both projections by balanceDelta (cartonStock.ts, cloud migration 026, docs/42).
+   */
+  CARTON_STOCK_EVENT: "CARTON_STOCK_EVENT",
   // ── Accounts: written only by the cloud (migrations 020, 021), received by every PC ──
   // Never captured or pushed from a PC. Each is a whole snapshot at a revision (accounts.ts).
   PERSON: "PERSON",
@@ -110,6 +116,7 @@ export const LEASED_AGGREGATE_DOMAIN: Readonly<Partial<Record<SyncAggregateType,
   [SYNC_AGGREGATE.WORK_SECTION]: LEASE_DOMAIN.MASTER_DATA,
   [SYNC_AGGREGATE.MACHINE]: LEASE_DOMAIN.MASTER_DATA,
   [SYNC_AGGREGATE.STOCK_EVENT]: LEASE_DOMAIN.RAW_MATERIAL_STORE,
+  [SYNC_AGGREGATE.CARTON_STOCK_EVENT]: LEASE_DOMAIN.CARTON_STOCK,
 };
 
 /** The lease an event type is written under, or null when it is not leased. */

@@ -11,16 +11,19 @@ import type { TransactionContext, TransactionManager } from "./ports.js";
 //   Current Stock    physical cartons In Store — changed only by an actual scan
 //   Reflected Stock  Current Stock − cartons still owed to outstanding Gatepasses
 //
-// Creating a gatepass never changes a QR's status or location, never writes an event, never
-// touches a stock projection, never assigns QR codes, and never creates a voucher or ledger
-// entry. It writes the gatepass header, its lines, an audit row and a notice to the billing
-// users. The one hard rule it enforces is that every line fits inside Reflected Stock —
-// Current Stock and the other Gatepasses' outstanding quantity are both re-read inside the
-// same write transaction, never trusted from the screen, so two clerks can never reserve
+// Creating a gatepass never changes a QR's status or location, never assigns QR codes, and never
+// creates a voucher or ledger entry. It writes the gatepass header, its lines, an audit row and a
+// notice to the billing users. The one hard rule it enforces is that every line fits inside
+// Reflected Stock — Current Stock and the other Gatepasses' outstanding quantity are both re-read
+// inside the same write transaction, never trusted from the screen, so two clerks can never take
 // the same last carton.
 //
-// The reservation is consumed by the Store Move Out scan that names this gatepass
-// (StoreExitScanUseCase), and released by cancellation. Nothing here ever moves a carton.
+// THE CARTONS LEAVE STOCK WHEN THE GATEPASS IS MADE (docs/42, owner decision 2026-11-03: dispatch
+// cannot be tracked, so there is no later stage to settle against). In the same transaction the
+// repository records one carton movement per line, which every other computer receives, and
+// cancelling puts back exactly what was taken. A line issued this way reserves nothing and no
+// Store Move Out scan is ever attributed to it. Gatepasses made before keep their reservation,
+// consumed by the scan that names them (StoreExitScanUseCase) or released by cancellation.
 
 /** Display code, e.g. GP-000123. */
 export const formatGatepassCode = (gatepassNumber: number): string => `GP-${String(gatepassNumber).padStart(6, "0")}`;
@@ -160,6 +163,16 @@ export interface GatepassLinePayload {
   createdAt: string;
 }
 
+/** One line whose cartons leave the store as the gatepass is made. */
+export interface GatepassLineToIssue {
+  gatepassId: string;
+  lineId: string;
+  productVariantId: string;
+  quantity: number;
+  /** "SK6 / RED / 7/10", for a refusal. */
+  label: string;
+}
+
 export interface AuditLogPayload {
   id: string;
   eventType: string;
@@ -194,6 +207,11 @@ export interface CreateGatepassDeps {
     allocateGatepassNumber(tx: TransactionContext): Promise<number>;
     insertGatepass(payload: GatepassHeaderPayload, tx: TransactionContext): Promise<void>;
     insertGatepassLines(lines: GatepassLinePayload[], tx: TransactionContext): Promise<void>;
+    /**
+     * Takes each line's cartons out of the store as a carton movement, in this transaction. Throws
+     * (rolling the whole gatepass back) when the store does not hold them.
+     */
+    issueGatepassCartons(lines: GatepassLineToIssue[], issuedBy: string, tx: TransactionContext): Promise<void>;
     appendAuditLog(payload: AuditLogPayload, tx: TransactionContext): Promise<void>;
     /** Tells every billing user; who they are is the repository's business. */
     notifyBilling(payload: BillingNoticePayload, tx: TransactionContext): Promise<void>;
@@ -291,6 +309,11 @@ export class CreateGatepassUseCase {
           tx
         );
         await this.deps.repo.insertGatepassLines(linePayloads.map((line) => ({ ...line, gatepassId })), tx);
+        await this.deps.repo.issueGatepassCartons(
+          linePayloads.map((line) => ({ gatepassId, lineId: line.id, productVariantId: line.productVariantId, quantity: line.quantity, label: describeLine(line) })),
+          actor,
+          tx
+        );
         await this.deps.repo.appendAuditLog(
           {
             id: this.deps.idGenerator.nextId(),
@@ -485,6 +508,11 @@ export interface CancelGatepassDeps {
       payload: { gatepassId: string; cancelledAt: string; cancelledBy: string; reason: string },
       tx: TransactionContext
     ): Promise<boolean>;
+    /**
+     * Puts back exactly the cartons this gatepass took out when it was made, in this transaction,
+     * and returns how many. A gatepass that took none (made before carton movements) puts none back.
+     */
+    returnGatepassCartons(gatepassId: string, returnedBy: string, tx: TransactionContext): Promise<number>;
     appendAuditLog(payload: AuditLogPayload, tx: TransactionContext): Promise<void>;
     /** The live (not deleted) sale voucher made from this gatepass, if any. */
     getLinkedSaleVoucher(gatepassId: string, tx: TransactionContext): Promise<{ id: string; voucherNumber: string } | null>;
@@ -568,6 +596,8 @@ export class CancelGatepassUseCase {
         if (!changed) {
           throw new GatepassCancelRejectedError("ALREADY_CANCELLED", `${code} has already been cancelled.`);
         }
+        // Only after the guarded status move: a second cancel never gets here, so nothing is put back twice.
+        await this.deps.repo.returnGatepassCartons(gatepassId, actor, tx);
 
         // Read under the same lock as the status change, so the audit row states exactly
         // what this cancellation released and what had already physically left the store.

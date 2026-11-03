@@ -6,6 +6,7 @@ import { DatabaseSync } from "node:sqlite";
 import { dropCaptureTriggers, installCaptureTriggers } from "./database/masterCapture.js";
 import { buildLeasedRecordRevisions, markRecordToSendAgain, type BuildResult, type SendAgainOutcome } from "./database/masterRecords.js";
 import { buildStockEvents, type StockEventBuildResult } from "./database/stockEventSync.js";
+import { buildCartonStockEvents, type CartonStockBuildResult } from "./database/cartonStock.js";
 import { buildLabelRuns, type LabelBuildResult } from "./database/labelRunSync.js";
 import { lastBackfillAt, planBackfill, runBackfill, type BackfillOutcome, type BackfillPlan } from "./database/backfill.js";
 import type {
@@ -60,6 +61,8 @@ import { productionReceiptsMethods, type ProductionReceiptsMethods } from "./dat
 import { upperMoveOutMethods, type UpperMoveOutMethods } from "./database/upperMoveOut.js";
 import { productionReconciliationMethods, type ProductionReconciliationMethods } from "./database/productionReconciliation.js";
 import { manualProductionMethods, type ManualProductionMethods } from "./database/manualProduction.js";
+import { manualProductionVoidMethods, type ManualProductionVoidMethods } from "./database/manualProductionVoid.js";
+import { gatepassCartonsMethods, type GatepassCartonsMethods } from "./database/gatepassCartons.js";
 import type { BackupRecord, HealthSnapshot, MoneyDriftSummary, MoneyDriftViolation, SqliteDatabaseOptions } from "./database/types.js";
 
 // The data layer's public record shapes and constants live in ./database/types.ts and are
@@ -149,6 +152,15 @@ export {
 } from "./database/masterRecords.js";
 export { buildStockEvents, stockEventPayloadOf } from "./database/stockEventSync.js";
 export type { StockEventBuildResult } from "./database/stockEventSync.js";
+export {
+  CartonStockWouldGoNegative,
+  buildCartonStockEvents,
+  cartonStockEventDedupeKey,
+  cartonStockEventPayloadOf,
+  moveCartonStock,
+  readCartonStockEventPayload,
+} from "./database/cartonStock.js";
+export type { CartonSql, CartonStockBuildResult, CartonStockEventPayload } from "./database/cartonStock.js";
 export { buildLabelRuns } from "./database/labelRunSync.js";
 export type { LabelBuildResult } from "./database/labelRunSync.js";
 export { BACKFILL_SETTING_KEY, lastBackfillAt, planBackfill, runBackfill, stockMismatches } from "./database/backfill.js";
@@ -1257,6 +1269,11 @@ export class SqliteDatabase
     return buildStockEvents(this.db, nowIso);
   }
 
+  /** Queues every carton movement recorded under this computer's carton lease (cartonStock.ts, docs/42). */
+  buildCartonStockEvents(nowIso: string): CartonStockBuildResult {
+    return buildCartonStockEvents(this.db, nowIso);
+  }
+
   /** Queues the label runs and packets the backfill marked, behind their materials (labelRunSync.ts). */
   buildLabelRuns(nowIso: string): LabelBuildResult {
     return buildLabelRuns(this.db, nowIso);
@@ -1559,7 +1576,9 @@ export interface SqliteDatabase
     ProductionReceiptsMethods,
     UpperMoveOutMethods,
     ProductionReconciliationMethods,
-    ManualProductionMethods {}
+    ManualProductionMethods,
+    ManualProductionVoidMethods,
+    GatepassCartonsMethods {}
 
 Object.assign(
   SqliteDatabase.prototype,
@@ -1602,5 +1621,7 @@ Object.assign(
   productionReceiptsMethods,
   upperMoveOutMethods,
   productionReconciliationMethods,
-  manualProductionMethods
+  manualProductionMethods,
+  manualProductionVoidMethods,
+  gatepassCartonsMethods
 );

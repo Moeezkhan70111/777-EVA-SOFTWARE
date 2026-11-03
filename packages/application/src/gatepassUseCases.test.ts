@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { CancelGatepassUseCase, CreateGatepassUseCase, formatGatepassCode } from "./gatepassUseCases.js";
-import type { BillingNoticePayload, CancelGatepassDeps, CreateGatepassDeps, GatepassHeaderPayload, GatepassLinePayload, GatepassVariantStock, AuditLogPayload } from "./gatepassUseCases.js";
+import type { BillingNoticePayload, CancelGatepassDeps, CreateGatepassDeps, GatepassHeaderPayload, GatepassLinePayload, GatepassLineToIssue, GatepassVariantStock, AuditLogPayload } from "./gatepassUseCases.js";
 import type { TransactionContext } from "./ports.js";
 
 // Same approach as the store station tests: in-memory fakes count every write and every
@@ -33,6 +33,8 @@ function createWorld(initial: Partial<World> = {}) {
   const audit: AuditLogPayload[] = [];
   const notices: BillingNoticePayload[] = [];
   const cancelledIds = new Set<string>();
+  const issued: Array<GatepassLineToIssue & { issuedBy: string }> = [];
+  const returned: Array<{ gatepassId: string; returnedBy: string }> = [];
   let rollbacks = 0;
   let commits = 0;
   let cancelled: { gatepassId: string; cancelledBy: string; reason: string } | null = null;
@@ -86,6 +88,9 @@ function createWorld(initial: Partial<World> = {}) {
       async insertGatepassLines(payload) {
         lines.push(...payload.map((line) => ({ ...line })));
       },
+      async issueGatepassCartons(payload, issuedBy) {
+        issued.push(...payload.map((line) => ({ ...line, issuedBy })));
+      },
       async appendAuditLog(payload) {
         audit.push({ ...payload });
       },
@@ -117,6 +122,10 @@ function createWorld(initial: Partial<World> = {}) {
         cancelledIds.add(payload.gatepassId);
         cancelled = { gatepassId: payload.gatepassId, cancelledBy: payload.cancelledBy, reason: payload.reason };
         return true;
+      },
+      async returnGatepassCartons(gatepassId, returnedBy) {
+        returned.push({ gatepassId, returnedBy });
+        return lines.filter((line) => line.gatepassId === gatepassId).reduce((sum, line) => sum + line.quantity, 0);
       },
       async appendAuditLog(payload) {
         audit.push({ ...payload });
@@ -158,12 +167,49 @@ function createWorld(initial: Partial<World> = {}) {
     cancelledState: () => cancelled,
     moveOutFromStore,
     figures,
+    issued,
+    returned,
+    createDeps,
   };
 }
 
 const RED = { productVariantId: "v-red", article: "SK6", color: "RED", size: "7/10", storeQuantity: 120 };
 const BLUE = { productVariantId: "v-blue", article: "SK6", color: "BLUE", size: "7/10", storeQuantity: 80 };
 const ABC = { id: "p-abc", partyName: "ABC TRADERS", status: "ACTIVE" };
+
+test("a gatepass takes every line's cartons out of the store as it is made, and its cancel puts them back once (docs/42)", async () => {
+  const w = createWorld({ parties: { [ABC.id]: ABC }, stock: { [RED.productVariantId]: RED, [BLUE.productVariantId]: BLUE } });
+  const made = await w.creator.execute({
+    partyId: ABC.id,
+    lines: [{ productVariantId: "v-red", quantity: 50 }, { productVariantId: "v-blue", quantity: 20 }],
+    actor: "clerk",
+  });
+  assert.equal(made.accepted, true, made.reason);
+  assert.deepEqual(
+    w.issued.map(({ gatepassId, productVariantId, quantity, label, issuedBy }) => ({ gatepassId, productVariantId, quantity, label, issuedBy })),
+    [
+      { gatepassId: made.gatepassId, productVariantId: "v-red", quantity: 50, label: "SK6 / RED / 7/10", issuedBy: "clerk" },
+      { gatepassId: made.gatepassId, productVariantId: "v-blue", quantity: 20, label: "SK6 / BLUE / 7/10", issuedBy: "clerk" },
+    ]
+  );
+  assert.deepEqual(w.issued.map((line) => line.lineId), w.lines.map((line) => line.id), "each movement names its own line");
+
+  const gatepassId = String(made.gatepassId);
+  assert.equal((await w.canceller.execute({ gatepassId, reason: "wrong party", actor: "clerk" })).accepted, true);
+  const again = await w.canceller.execute({ gatepassId, reason: "again", actor: "clerk" });
+  assert.equal(again.outcome, "ALREADY_CANCELLED");
+  assert.deepEqual(w.returned, [{ gatepassId, returnedBy: "clerk" }], "cancelling twice puts the cartons back once");
+});
+
+test("a gatepass the store cannot issue is not made at all", async () => {
+  const w = createWorld({ parties: { [ABC.id]: ABC }, stock: { [RED.productVariantId]: RED } });
+  const refusing = new CreateGatepassUseCase({
+    ...w.createDeps,
+    repo: { ...w.createDeps.repo, issueGatepassCartons: async () => { throw new Error("The store does not hold 5 carton(s)"); } },
+  });
+  await assert.rejects(refusing.execute({ partyId: ABC.id, lines: [{ productVariantId: "v-red", quantity: 5 }], actor: "clerk" }), /does not hold/);
+  assert.deepEqual(w.counts(), { commits: 0, rollbacks: 1, headers: 0, lines: 0, audit: 0, notices: 0 }, "the header and lines roll back with it");
+});
 
 test("formatGatepassCode pads to six digits", () => {
   assert.equal(formatGatepassCode(1), "GP-000001");

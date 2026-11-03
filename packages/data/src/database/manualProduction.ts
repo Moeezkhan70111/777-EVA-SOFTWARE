@@ -7,9 +7,10 @@
 //   1. joins the machine's program for today — openMachineDayProgramInTransaction, the very call the
 //      QR Generator's runs make, so the program, its contractors and its rates are the same ones
 //   2. writes the entry (manual_production_entries, migration 080), which is never changed afterwards
-//   3. adds the cartons to store stock: stock_projection_by_variant and the WAREHOUSE row of
-//      stock_projection_by_location, the figure Current Stock reads (IN_STORE_STOCK_SQL)
-// The Contractor Ledger and Reconciliation read the entries beside the carton QRs.
+//      except to be voided (manualProductionVoid.ts)
+//   3. adds the cartons to store stock as one MANUAL_PRODUCE carton movement (cartonStock.ts): the
+//      event every other computer receives, and the figure Current Stock reads (IN_STORE_STOCK_SQL)
+// The Contractor Ledger and Reconciliation read the entries beside the carton QRs, voided ones never.
 //
 // The quantity is checked by @erp/domain's manualProductionCartons, the same rule the screen shows.
 // Only an existing, active colour of an active product can be stocked — no variant is created here.
@@ -19,9 +20,13 @@
 
 import type { SqliteDatabase } from "../sqliteDatabase.js";
 import type { ManualProductionEntry, ManualProductionPage, ManualProductionResult, ProductionReceiptSummaryLine } from "./types.js";
-import { IN_STORE_LOCATION_TYPE, formatMachineProgramCodeNumber } from "@erp/application";
-import { businessDayStartIso, cartonsToDozens, formatManualProductionCode, manualProductionCartons } from "@erp/domain";
+import { formatMachineProgramCodeNumber } from "@erp/application";
+import { CARTON_STOCK_EVENT_TYPE, businessDayStartIso, cartonsToDozens, formatManualProductionCode, manualProductionCartons } from "@erp/domain";
 import { allocateNumberInRange } from "./numberRange.js";
+import { recordCartonStockMovement } from "./cartonStock.js";
+
+/** A voided entry counts nowhere: not in totals, not in Reconciliation, not in the Contractor Ledger. */
+export const LIVE_MANUAL_ENTRY_SQL = "voided_at IS NULL";
 
 type Row = Record<string, unknown>;
 
@@ -46,7 +51,7 @@ export interface ManualProductionInput {
 
 const ENTRY_SELECT = `
   SELECT e.id, e.entry_number, e.article, e.size, e.color, e.cartons, e.entry_ts, e.created_by,
-         mp.program_number, mp.machine_name_snapshot
+         e.voided_at, e.voided_by, e.void_reason, mp.program_number, mp.machine_name_snapshot
   FROM manual_production_entries e
   JOIN machine_programs mp ON mp.id = e.machine_program_id`;
 
@@ -64,6 +69,9 @@ const toEntry = (row: Row): ManualProductionEntry => {
     machineName: text(row.machine_name_snapshot),
     enteredAt: text(row.entry_ts),
     enteredBy: textOrNull(row.created_by),
+    voidedAt: textOrNull(row.voided_at),
+    voidedBy: textOrNull(row.voided_by),
+    voidReason: textOrNull(row.void_reason),
   };
 };
 
@@ -96,7 +104,15 @@ export const manualProductionMethods = {
       const nowIso = new Date().toISOString();
       const program = this.openMachineDayProgramInTransaction({ machineId: input.machineId, createdBy: input.createdBy, nowIso });
       const id = this.insertManualProductionEntry({ requestId, variant, cartons: quantity.cartons, programId: program.id, machineId: input.machineId, storeLocationId, createdBy: input.createdBy, nowIso });
-      this.addManualCartonsToStore({ variantId: variant.id, cartons: quantity.cartons, storeLocationId, nowIso });
+      recordCartonStockMovement(this.db, {
+        variantId: variant.id,
+        eventType: CARTON_STOCK_EVENT_TYPE.MANUAL_PRODUCE,
+        cartons: quantity.cartons,
+        locationId: storeLocationId,
+        createdBy: input.createdBy,
+        createdAt: nowIso,
+        manualProductionEntryId: id,
+      });
       this.db.exec("COMMIT");
       return { entry: this.getManualProductionEntry(id), duplicate: false };
     } catch (error) {
@@ -150,29 +166,6 @@ export const manualProductionMethods = {
     return id;
   },
 
-  /** @internal The cartons go on hand and into the store — the two figures Store In moves for a scanned carton. */
-  addManualCartonsToStore(this: SqliteDatabase, input: { variantId: string; cartons: number; storeLocationId: string; nowIso: string }): void {
-    this.db
-      .prepare(
-        `INSERT INTO stock_projection_by_variant (product_variant_id, quantity_on_hand, last_event_ts, updated_at)
-         VALUES (?, ?, ?, ?)
-         ON CONFLICT(product_variant_id) DO UPDATE SET
-           quantity_on_hand = quantity_on_hand + excluded.quantity_on_hand,
-           last_event_ts = excluded.last_event_ts,
-           updated_at = excluded.updated_at`
-      )
-      .run(input.variantId, input.cartons, input.nowIso, input.nowIso);
-    this.db
-      .prepare(
-        `INSERT INTO stock_projection_by_location (product_variant_id, location_type, location_id, quantity_on_hand, updated_at)
-         VALUES (?, ?, ?, ?, ?)
-         ON CONFLICT(product_variant_id, location_type, location_id) DO UPDATE SET
-           quantity_on_hand = quantity_on_hand + excluded.quantity_on_hand,
-           updated_at = excluded.updated_at`
-      )
-      .run(input.variantId, IN_STORE_LOCATION_TYPE, input.storeLocationId, input.cartons, input.nowIso);
-  },
-
   /** @internal The entry a Save already made, if it was made. */
   findManualProductionByRequest(this: SqliteDatabase, requestId: string): ManualProductionEntry | null {
     const row = this.db.prepare(`${ENTRY_SELECT} WHERE e.request_id = ? LIMIT 1`).get(requestId) as Row | undefined;
@@ -198,8 +191,12 @@ export const manualProductionMethods = {
     const page = Math.max(1, Math.trunc(Number(input.page) || 1));
     const day = "e.entry_ts >= ? AND e.entry_ts < ?";
 
+    // Every entry is listed, voided ones marked as such, so paging counts them all. Cartons do not.
     const totals = this.db
-      .prepare(`SELECT COUNT(*) AS entries, COALESCE(SUM(e.cartons), 0) AS cartons FROM manual_production_entries e WHERE ${day}`)
+      .prepare(
+        `SELECT COUNT(*) AS entries, COALESCE(SUM(CASE WHEN e.${LIVE_MANUAL_ENTRY_SQL} THEN e.cartons ELSE 0 END), 0) AS cartons
+         FROM manual_production_entries e WHERE ${day}`
+      )
       .get(fromIso, toIso) as Row;
     const rows = this.db
       .prepare(`${ENTRY_SELECT} WHERE ${day} ORDER BY e.entry_ts DESC, e.entry_number DESC LIMIT ? OFFSET ?`)
@@ -223,7 +220,7 @@ export const manualProductionMethods = {
       .prepare(
         `SELECT e.article, e.size, e.color, SUM(e.cartons) AS cartons
          FROM manual_production_entries e
-         WHERE e.entry_ts >= ? AND e.entry_ts < ?
+         WHERE e.entry_ts >= ? AND e.entry_ts < ? AND e.${LIVE_MANUAL_ENTRY_SQL}
          GROUP BY e.article, e.size, e.color
          ORDER BY e.article, e.size, e.color`
       )
@@ -237,7 +234,7 @@ export const manualProductionMethods = {
   /** @internal A program's Manual Production cartons, for Reconciliation. */
   programManualCartons(this: SqliteDatabase, programId: string): number {
     const row = this.db
-      .prepare("SELECT COALESCE(SUM(cartons), 0) AS cartons FROM manual_production_entries WHERE machine_program_id = ?")
+      .prepare(`SELECT COALESCE(SUM(cartons), 0) AS cartons FROM manual_production_entries WHERE machine_program_id = ? AND ${LIVE_MANUAL_ENTRY_SQL}`)
       .get(programId) as Row;
     return Number(row.cartons ?? 0);
   },

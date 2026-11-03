@@ -22,6 +22,7 @@ import {
   type ContractorWorkCarton,
   type RateSource,
 } from "@erp/domain";
+import { LIVE_MANUAL_ENTRY_SQL } from "./manualProduction.js";
 
 const text = (value: unknown): string => (value == null ? "" : String(value));
 
@@ -140,7 +141,9 @@ const CARTONS_SQL = `
     LEFT JOIN machines m ON m.id = mp.machine_id
     LEFT JOIN machine_program_article_rates r ON r.program_id = mp.id AND r.article_size_id = me.article_size_id
     LEFT JOIN article_sizes asz ON asz.id = me.article_size_id
-    WHERE (?1 = '${PRINTING_CONTRACTOR_ACCOUNT_ID}' OR mp.contractor_party_id = ?1 OR mp.packing_contractor_party_id = ?1)
+    -- A voided entry was never produced (owner, 2026-11-03): nobody is owed for it, paid or not.
+    WHERE me.${LIVE_MANUAL_ENTRY_SQL}
+      AND (?1 = '${PRINTING_CONTRACTOR_ACCOUNT_ID}' OR mp.contractor_party_id = ?1 OR mp.packing_contractor_party_id = ?1)
   ) WHERE received_at IS NOT NULL`;
 
 // Every active cash voucher that names the contractor, on its header or on one of its lines.

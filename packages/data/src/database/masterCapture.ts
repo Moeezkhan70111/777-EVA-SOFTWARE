@@ -82,6 +82,8 @@ export const MASTER_CAPTURE: readonly MasterTableCapture[] = [
  */
 export const EVENT_CAPTURE: readonly MasterTableCapture[] = [
   { table: "inventory_stock_events", record: SYNC_AGGREGATE.STOCK_EVENT, recordId: `${ROW}.id` },
+  // Never updated or deleted at all: a carton movement is undone by an opposite movement (docs/42).
+  { table: "carton_stock_events", record: SYNC_AGGREGATE.CARTON_STOCK_EVENT, recordId: `${ROW}.id` },
 ];
 
 /** Every capture trigger's name starts with this, so they can all be found and dropped. */
