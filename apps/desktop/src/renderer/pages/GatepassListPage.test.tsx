@@ -254,12 +254,14 @@ describe("a gatepass that issued cartons directly", () => {
     outstandingQuantity: quantity - issued - scanned, lines: [line(quantity, issued, scanned)],
   });
 
-  it("manual only: 'All cartons issued — No Store Scan Required', with every figure stated", async () => {
+  it("manual only, billed: 'All cartons issued — No Store Scan Required', every figure stated, and no desk offered", async () => {
     const { docs } = createFakeBackend();
-    docs.set("gp-manual", doc("gp-manual", "AT_GATE", 4, 4, 0));
+    docs.set("gp-manual", doc("gp-manual", "BILLED", 4, 4, 0));
     renderPage({ initialGatepassId: "gp-manual" });
     expect(await screen.findByTestId("gatepass-detail-moved-out")).toHaveTextContent("All cartons issued — No Store Scan Required");
     expect(screen.getByTestId("gatepass-detail-figures")).toHaveTextContent("Issued directly: 4 · Scanned out: 0 · Remaining to scan: 0");
+    expect(screen.queryByTestId("gatepass-open-store-scan")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("gatepass-open-dispatch-scan")).not.toBeInTheDocument();
   });
 
   it("mixed: issued, scanned and remaining each in its own place, and the issued cartons are never called scanned", async () => {
@@ -268,6 +270,7 @@ describe("a gatepass that issued cartons directly", () => {
     renderPage({ initialGatepassId: "gp-mixed" });
     expect(await screen.findByTestId("gatepass-detail-moved-out")).toHaveTextContent("2 cartons issued directly. Scan the remaining 2 QR cartons.");
     expect(screen.getByTestId("gatepass-detail-figures")).toHaveTextContent("Issued directly: 2 · Scanned out: 1 · Remaining to scan: 2");
+    expect(screen.getByTestId("gatepass-open-store-scan")).toBeInTheDocument();
 
     const lines = document.querySelector(".gp-lines-table") as HTMLTableElement;
     const headers = within(lines).getAllByRole("columnheader").map((h) => h.textContent);

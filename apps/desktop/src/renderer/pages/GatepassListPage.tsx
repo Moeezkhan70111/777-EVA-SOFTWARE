@@ -11,6 +11,7 @@ import { formatGatepassDate, formatGatepassDateTime, openGatepassPrintWindow } f
 import { copy } from "../config/copy";
 import { GatepassStatusBadge as StatusBadge } from "../features/gatepass/GatepassStatusBadge";
 import { describeMoveOutProgress } from "../features/gatepass/GatepassDocumentHead";
+import { gateHasQrPart, storeOwesScan } from "../features/gatepass/gatepassProgress";
 import { StateView } from "../components/shared/StateView";
 
 // Gatepass List — every gatepass, newest first, with the document opened in place.
@@ -334,7 +335,9 @@ export const GatepassListPage: React.FC<GatepassListPageProps> = ({ token, usern
               <button type="button" className="btn btn-secondary" onClick={print} data-testid="gatepass-print">
                 🖨 Print
               </button>
-              {detail.status === "BILLED" ? (
+              {/* A desk is offered only while it owes a scan, from the same figures as its queue: a
+                  gatepass whose cartons were all issued directly has no QR for either desk (docs/42). */}
+              {detail.status === "BILLED" && storeOwesScan(detail) ? (
                 <button
                   type="button"
                   className="btn btn-primary"
@@ -344,7 +347,7 @@ export const GatepassListPage: React.FC<GatepassListPageProps> = ({ token, usern
                   Scan out of Store →
                 </button>
               ) : null}
-              {detail.status === "AT_GATE" ? (
+              {detail.status === "AT_GATE" && gateHasQrPart(detail) ? (
                 <button
                   type="button"
                   className="btn btn-primary"

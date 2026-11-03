@@ -30,7 +30,7 @@ function openDesk(answer: GatepassScanProgress) {
 
 describe("the Store Move Out desk", () => {
   it("a manual-only gatepass: nothing to scan, said so, and its cartons shown as issued", async () => {
-    openDesk(progress("AT_GATE", 4, 4, 0));
+    openDesk(progress("BILLED", 4, 4, 0));
     expect(await screen.findByText("All cartons issued — No Store Scan Required")).toBeInTheDocument();
     expect(screen.getByTestId("gatepass-issued-directly")).toHaveTextContent("2 DZN");
     expect(screen.queryByText(/Every carton is scanned/)).not.toBeInTheDocument();

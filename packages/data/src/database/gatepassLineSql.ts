@@ -39,3 +39,27 @@ export const LINE_ISSUED_SQL = `(SELECT COALESCE(SUM(CASE ce.event_type
 
 /** What the line no longer owes the QR scanners: scanned out, or issued directly. */
 export const LINE_SETTLED_SQL = `(${LINE_DISPATCHED_SQL} + ${LINE_ISSUED_SQL})`;
+
+// ─── What a desk still has to do (docs/42 section 10.2) ──────────────────────
+// A desk's queue is its stage AND work owed there, never the stage alone. The status says how far
+// the document has got (billed, at the gate); these say whether the desk has anything to scan, from
+// the same per-line rules every figure reads. A gatepass whose every carton was issued directly owes
+// the scanners nothing, so it rests at BILLED in no queue at all -- and never reaches the gate, so
+// never DISPATCHED or DELIVERED: physical events this business cannot observe for cartons with no QR.
+// `g` must be the gatepasses alias in the enclosing query.
+
+/** The store has QR cartons to scan out for this gatepass. */
+export const STORE_OWES_SQL = `EXISTS (SELECT 1 FROM gatepass_lines gl WHERE gl.gatepass_id = g.id AND gl.quantity > ${LINE_SETTLED_SQL})`;
+
+/** The gate has QR cartons to dispatch for this gatepass: it has a QR part at all. */
+export const GATE_OWES_SQL = `EXISTS (SELECT 1 FROM gatepass_lines gl WHERE gl.gatepass_id = g.id AND gl.quantity > ${LINE_ISSUED_SQL})`;
+
+/** The scanning desks' stages, each with the work that puts a gatepass in its queue. */
+export const DESK_OWES_SQL: Readonly<Record<string, string>> = {
+  BILLED: STORE_OWES_SQL,
+  AT_GATE: GATE_OWES_SQL,
+};
+
+/** True when the gatepass belongs in its stage's count: any stage that is not a scanning desk, or a desk that owes a scan. */
+export const IN_ITS_DESK_QUEUE_SQL = `(g.status NOT IN (${Object.keys(DESK_OWES_SQL).map((stage) => `'${stage}'`).join(", ")})
+  OR ${Object.entries(DESK_OWES_SQL).map(([stage, owed]) => `(g.status = '${stage}' AND ${owed})`).join(" OR ")})`;

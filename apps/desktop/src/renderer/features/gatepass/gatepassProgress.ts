@@ -26,6 +26,19 @@ export interface CartonFigures {
 /** Every carton was issued directly: there is nothing at all to scan. */
 export const isIssuedWhole = (figures: CartonFigures): boolean => figures.total > 0 && figures.issuedDirectly >= figures.total;
 
+/** The document's figures as the main process read them (gatepassLineSql.ts). */
+interface DocumentScanFigures {
+  totalQuantity: number;
+  issuedDirectlyQuantity: number;
+  outstandingQuantity: number;
+}
+
+/** The store still has QR cartons to scan out for it: the store desk's queue rule (STORE_OWES_SQL). */
+export const storeOwesScan = (document: DocumentScanFigures): boolean => document.outstandingQuantity > 0;
+
+/** It has QR cartons for the gate to dispatch at all: the gate desk's queue rule (GATE_OWES_SQL). */
+export const gateHasQrPart = (document: DocumentScanFigures): boolean => document.totalQuantity > document.issuedDirectlyQuantity;
+
 /** What a scanning desk's banner says once nothing is left to scan there. QR-only wording is unchanged. */
 export const deskDoneMessage = (desk: "STORE" | "DISPATCH", figures: CartonFigures): { title: string; message: string } => {
   if (isIssuedWhole(figures)) {

@@ -36,7 +36,7 @@ import type { DispatchAllowance, GatepassDeliveryProof, GatepassJourneyStep, Gat
 import { IN_STORE_STOCK_SQL, type MutableTransactionContext } from "./shared.js";
 import { createHash } from "node:crypto";
 import { allocateNumberInRange } from "./numberRange.js";
-import { LINE_DISPATCHED_SQL, LINE_ISSUED_SQL, LINE_SETTLED_SQL } from "./gatepassLineSql.js";
+import { DESK_OWES_SQL, IN_ITS_DESK_QUEUE_SQL, LINE_DISPATCHED_SQL, LINE_ISSUED_SQL, LINE_SETTLED_SQL } from "./gatepassLineSql.js";
 
 /**
  * Cartons still owed to live gatepasses by the QR scanners for one variant; `pv` is the
@@ -721,9 +721,14 @@ export const gatepassMethods = {
   /**
    * How many gatepasses are sitting at each desk. One grouped count rather than a query per
    * stage, so the workspace header costs the same whether there are four stages or forty.
+   *
+   * A scanning desk counts only the documents it still owes a scan (DESK_OWES_SQL): a gatepass whose
+   * every carton was issued directly rests at BILLED and is in no desk's count (docs/42 section 10.2).
    */
   countGatepassesByStage(this: SqliteDatabase): Record<string, number> {
-    const rows = this.db.prepare("SELECT status, COUNT(1) AS n FROM gatepasses GROUP BY status").all() as Array<{ status: string; n: number }>;
+    const rows = this.db
+      .prepare(`SELECT g.status, COUNT(1) AS n FROM gatepasses g WHERE ${IN_ITS_DESK_QUEUE_SQL} GROUP BY g.status`)
+      .all() as Array<{ status: string; n: number }>;
     const counts: Record<string, number> = {};
     for (const stage of GATEPASS_STAGES) counts[stage.status] = 0;
     for (const row of rows) counts[String(row.status)] = Number(row.n);
@@ -892,6 +897,10 @@ export const gatepassMethods = {
     if (query.status && query.status !== "ALL") {
       where.push("g.status = ?");
       values.push(query.status);
+      // A scanning desk's queue is its stage AND a scan still owed there (gatepassLineSql.ts): a
+      // gatepass with nothing to scan is not on the store's or the gate's list, as it is not in their count.
+      const owed = DESK_OWES_SQL[query.status];
+      if (owed) where.push(owed);
     }
     const whereClause = where.join(" AND ");
     const from = "FROM gatepasses g JOIN parties p ON p.id = g.party_id";

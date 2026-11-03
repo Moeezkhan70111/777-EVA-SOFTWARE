@@ -13,6 +13,7 @@ import {
   StoreEntryScanUseCase,
   StoreExitScanUseCase,
 } from "@erp/application";
+import { PERMISSION } from "@erp/domain";
 import { SqliteDatabase } from "./sqliteDatabase.js";
 import { UuidGenerator } from "./idGenerator.js";
 
@@ -258,21 +259,78 @@ function storeUser(f: Fixture): string {
 const billedNotices = (f: Fixture, userId: string) =>
   count(f, "SELECT COUNT(1) AS n FROM user_notifications WHERE user_id = ? AND kind = 'GATEPASS_BILLED'", userId);
 
-test("L1 & L5. billing a fully manual gatepass takes it to the gate at once -- no scan, no stock movement, no store alert", async () => {
+/** A user of the gate desk, to see when the gate is told a gatepass has arrived. */
+function gateUser(f: Fixture): string {
+  const user = f.db.createUserAccount("gate-desk", "Password123");
+  f.raw.prepare("UPDATE app_users SET access_status = 'APPROVED' WHERE id = ?").run(user.id);
+  f.db.assignUserRole(user.id, f.db.createRole({ name: "Gate desk", permissions: [PERMISSION.LIVE_DISPATCH] }).code);
+  return user.id;
+}
+const atGateNotices = (f: Fixture, userId: string) =>
+  count(f, "SELECT COUNT(1) AS n FROM user_notifications WHERE user_id = ? AND kind = 'GATEPASS_AT_GATE'", userId);
+
+/** Whether a desk's queue holds the gatepass: its list and its count, as the screens read them. */
+const inQueue = (f: Fixture, stage: "BILLED" | "AT_GATE", gatepassId: string) => {
+  const listed = f.db.listGatepasses({ status: stage, pageSize: 100 }).rows.some((row) => row.id === gatepassId);
+  return { listed, counted: f.db.countGatepassesByStage()[stage] ?? 0 };
+};
+
+test("Q1, Q4 & L5. a manual-only gatepass, once billed, rests at BILLED in no desk's queue; the store is not told; nothing is scanned or moved", async () => {
   await withFixture(async (f) => {
     const store = storeUser(f);
     stockManual(f, f.db, 10);
     const made = await makeGatepass(f, 4);
+    const gatepassId = made.gatepassId!;
     const eventsBefore = count(f, "SELECT COUNT(1) AS n FROM production_events");
-    const qrBefore = f.raw.prepare("SELECT qr_id, current_status FROM qr_master ORDER BY qr_id").all();
-    bill(f, made.gatepassId!);
-    assert.equal(statusOf(f, made.gatepassId!), "AT_GATE");
-    assert.deepEqual(transitions(f, made.gatepassId!), ["GATEPASS_BILLED", "GATEPASS_AT_GATE"], "the journey still shows both steps");
-    assert.equal(count(f, "SELECT COUNT(1) AS n FROM production_events"), eventsBefore, "no scan was invented");
-    assert.deepEqual(f.raw.prepare("SELECT qr_id, current_status FROM qr_master ORDER BY qr_id").all(), qrBefore);
-    assert.deepEqual(movements(f), ["GATEPASS_ISSUE 4"], "the only movement is the one made with the gatepass");
+    bill(f, gatepassId);
+    assert.equal(statusOf(f, gatepassId), "BILLED", "billing changes one step only");
+    assert.deepEqual(transitions(f, gatepassId), ["GATEPASS_BILLED"]);
+    assert.deepEqual(inQueue(f, "BILLED", gatepassId), { listed: false, counted: 0 }, "not in the store's queue");
+    assert.deepEqual(inQueue(f, "AT_GATE", gatepassId), { listed: false, counted: 0 }, "not in the gate's queue");
+    assert.equal(f.db.listGatepasses({ status: "ALL", pageSize: 100 }).rows.some((row) => row.id === gatepassId), true, "still a document on the list");
     assert.equal(billedNotices(f, store), 0, "the store is not told to scan what it cannot");
+    assert.equal(count(f, "SELECT COUNT(1) AS n FROM production_events"), eventsBefore, "no scan was invented");
+    assert.deepEqual(movements(f), ["GATEPASS_ISSUE 4"]);
     assert.deepEqual(figures(f), { current: 6, reserved: 0, reflected: 6 });
+  });
+});
+
+test("Q2. deleting that bill takes it back to CREATED, where it can be cancelled, and the cancel puts its issued cartons back", async () => {
+  await withFixture(async (f) => {
+    stockManual(f, f.db, 10);
+    const made = await makeGatepass(f, 4);
+    const gatepassId = made.gatepassId!;
+    const voucher = bill(f, gatepassId);
+    f.db.deleteSaleVoucher(voucher.id, "billed the wrong party");
+    assert.equal(statusOf(f, gatepassId), "CREATED");
+    const cancelled = await cancel(f, gatepassId);
+    assert.equal(cancelled.accepted, true, cancelled.reason);
+    assert.equal(cancelled.returnedToStockQuantity, 4);
+    assert.deepEqual(movements(f), ["GATEPASS_ISSUE 4", "GATEPASS_CANCEL 4"]);
+    assert.deepEqual(figures(f), { current: 10, reserved: 0, reflected: 10 }, "every issued carton is back");
+  });
+});
+
+test("Q3. a mixed gatepass is in the store's queue until its QR part is scanned, then goes to the gate -- and the gate is told then, not before", async () => {
+  await withFixture(async (f) => {
+    const gate = gateUser(f);
+    const qr = await stockQr(f, 3);
+    stockManual(f, f.db, 10);
+    const made = await makeGatepass(f, 5);
+    const gatepassId = made.gatepassId!;
+    bill(f, gatepassId);
+    assert.deepEqual(inQueue(f, "BILLED", gatepassId), { listed: true, counted: 1 });
+    await scanAgainst(f, qr[0]!, gatepassId);
+    await scanAgainst(f, qr[1]!, gatepassId);
+    assert.deepEqual(inQueue(f, "BILLED", gatepassId), { listed: true, counted: 1 }, "1 QR carton still to scan");
+    assert.equal(atGateNotices(f, gate), 0, "the gate is not told before the store is done");
+    assert.deepEqual(inQueue(f, "AT_GATE", gatepassId), { listed: false, counted: 0 });
+
+    await scanAgainst(f, qr[2]!, gatepassId);
+    assert.equal(statusOf(f, gatepassId), "AT_GATE");
+    assert.equal(atGateNotices(f, gate), 1, "told once, by the last scan");
+    assert.deepEqual(inQueue(f, "BILLED", gatepassId), { listed: false, counted: 0 });
+    assert.deepEqual(inQueue(f, "AT_GATE", gatepassId), { listed: true, counted: 1 });
   });
 });
 
@@ -324,7 +382,7 @@ test("L6. a repeat bill is refused: no second transition, no movement", async ()
     const made = await makeGatepass(f, 4);
     bill(f, made.gatepassId!);
     assert.throws(() => bill(f, made.gatepassId!), /already has Sale Voucher/);
-    assert.deepEqual(transitions(f, made.gatepassId!), ["GATEPASS_BILLED", "GATEPASS_AT_GATE"]);
+    assert.deepEqual(transitions(f, made.gatepassId!), ["GATEPASS_BILLED"]);
     assert.deepEqual(movements(f), ["GATEPASS_ISSUE 4"]);
   });
 });

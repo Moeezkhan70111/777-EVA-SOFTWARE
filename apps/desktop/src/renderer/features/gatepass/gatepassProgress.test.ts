@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { deskDoneMessage, deskIdleMessage, describeStoreProgress, isIssuedWhole } from "./gatepassProgress";
+import { deskDoneMessage, deskIdleMessage, describeStoreProgress, gateHasQrPart, isIssuedWhole, storeOwesScan } from "./gatepassProgress";
 
 // The one wording rule for a gatepass's cartons (docs/42 section 10.2): issued cartons are said to be
 // issued, QR cartons to be scanned, and a QR-only gatepass reads exactly as it always has.
@@ -41,5 +41,15 @@ describe("the scanning desks' banners", () => {
   it("open a mixed gatepass on how many QR cartons to scan, and a QR-only one on the usual prompt", () => {
     expect(deskIdleMessage(figures(5, 2, 0, 3))).toBe("2 cartons issued directly. Scan the remaining 3 QR cartons.");
     expect(deskIdleMessage(figures(5, 0, 0, 5))).toBe("Scan a carton for this Gatepass");
+  });
+});
+
+describe("which desk a gatepass is offered to (the same rule as the desks' queues)", () => {
+  it("the store only while it owes QR cartons, the gate only when there is a QR part at all", () => {
+    expect(storeOwesScan({ totalQuantity: 4, issuedDirectlyQuantity: 4, outstandingQuantity: 0 })).toBe(false);
+    expect(gateHasQrPart({ totalQuantity: 4, issuedDirectlyQuantity: 4, outstandingQuantity: 0 })).toBe(false);
+    expect(storeOwesScan({ totalQuantity: 5, issuedDirectlyQuantity: 2, outstandingQuantity: 3 })).toBe(true);
+    expect(gateHasQrPart({ totalQuantity: 5, issuedDirectlyQuantity: 2, outstandingQuantity: 0 })).toBe(true);
+    expect(storeOwesScan({ totalQuantity: 5, issuedDirectlyQuantity: 0, outstandingQuantity: 5 })).toBe(true);
   });
 });

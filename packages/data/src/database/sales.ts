@@ -445,21 +445,15 @@ export const salesMethods = {
     // any more (cancelled, or billed by someone else a moment ago) nothing moves, and the
     // checks above have already refused the obvious cases.
     //
-    // NOTHING LEFT FOR THE STORE TO SCAN: the document goes on to the gate in the same transaction.
-    // A line whose cartons were issued directly when the gatepass was made (Manual Production
-    // cartons, which have no QR -- docs/42 section 10.2) owes the scanners nothing, and the same
-    // is true of QR cartons the generic scanner already moved out before the bill caught up. Read
-    // from the one shared rule (gatepassStoreScanComplete: scanned + issued directly), through the
-    // same guarded transition the last scan uses. No scan, no stock movement and no attribution is
-    // written or changed: only the status moves. The store is not told "ready for Store" about a
-    // document it has nothing to do for; the gate is told as usual. A repeat bill is refused above
-    // (and by the unique live-bill index, migration 031) and never gets here.
+    // BILLING CHANGES ONLY THIS ONE STEP. A gatepass with nothing for the store to scan -- every
+    // carton issued directly when it was made (docs/42 section 10.2) -- rests at BILLED like any
+    // other: deleting its bill takes it back to CREATED, where it can still be cancelled and its
+    // issued cartons put back. It is simply in no desk's queue (gatepassLineSql.ts, DESK_OWES_SQL),
+    // and the store is not told "ready for Store" about it, read from the one shared rule
+    // (gatepassStoreScanComplete: scanned + issued directly).
     if (gatepassId) {
       const nothingToScan = this.gatepassStoreScanComplete(gatepassId);
-      const billed = this.advanceGatepassStatus({ gatepassId, from: "CREATED", to: "BILLED", actor: null, notify: !nothingToScan });
-      if (billed && nothingToScan) {
-        this.advanceGatepassStatus({ gatepassId, from: "BILLED", to: "AT_GATE", actor: null, reason: "No store scan required" });
-      }
+      this.advanceGatepassStatus({ gatepassId, from: "CREATED", to: "BILLED", actor: null, notify: !nothingToScan });
     }
 
       this.db.exec("COMMIT");
