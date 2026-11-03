@@ -1,4 +1,4 @@
-import { InvalidQrError, parseQrCode } from "@erp/domain";
+import { InvalidQrError, businessDateOf, parseQrCode } from "@erp/domain";
 import type {
   EventPublisher,
   IdGenerator,
@@ -236,7 +236,10 @@ export interface ReturnScanDeps {
   };
   eventPublisher: EventPublisher;
   idGenerator: IdGenerator;
-  /** Business date for the credit, in the application's local `YYYY-MM-DD` form. */
+  /**
+   * Business date for the credit, `YYYY-MM-DD`. Left out, it is the Karachi calendar date of the
+   * scan's own instant (businessDateOf), which rolls at midnight like every voucher date.
+   */
   localDate?: () => string;
 }
 
@@ -410,7 +413,9 @@ export class ReturnScanUseCase {
         const eventId = this.deps.idGenerator.nextId();
         const outboxId = this.deps.idGenerator.nextId();
         const saleReturnId = this.deps.idGenerator.nextId();
-        const returnDate = this.deps.localDate ? this.deps.localDate() : tx.nowIso.slice(0, 10);
+        // Not tx.nowIso.slice(0, 10): that is the UTC date, still YESTERDAY from 00:00 to 05:00
+        // Karachi, which filed a return scanned then under the day before in the ledger.
+        const returnDate = this.deps.localDate ? this.deps.localDate() : businessDateOf(tx.nowIso);
 
         // Guarded status move first: if it does not apply (another terminal got there
         // first) the repository throws and nothing below runs.

@@ -313,3 +313,70 @@ test("a failing credit aborts the whole return — no event and no outbox row su
   assert.equal(writes.events, 0);
   assert.equal(writes.outbox, 0);
 });
+
+// ─── The return's date is the Karachi calendar date of the scan ──────────────
+//
+// A return credit is a ledger entry, so it is dated like every voucher (businessToday in
+// @erp/domain): the Karachi calendar date, rolling at MIDNIGHT -- not the 06:00 production shift.
+// It used to be the UTC date, which is still yesterday from 00:00 to 05:00 Karachi (UTC+5).
+
+/** Scans one return at a fixed instant with no date injected, and answers the date it was filed under. */
+async function returnDateAt(nowIso: string): Promise<string> {
+  const { deps } = createWorld({ [QR]: unit() });
+  const filed: string[] = [];
+  const record = deps.saleReturnsRepo.recordSaleReturn;
+  deps.saleReturnsRepo = {
+    async recordSaleReturn(payload, tx) {
+      filed.push(payload.returnDate);
+      return record(payload, tx);
+    },
+  };
+  deps.txManager = { runInTransaction: (work) => work({ nowIso }) };
+  delete deps.localDate;
+
+  const result = await new ReturnScanUseCase(deps).execute({ rawScan: QR, context: CONTEXT });
+  assert.equal(result.accepted, true, result.reason);
+  assert.equal(filed.length, 1);
+  return filed[0] as string;
+}
+
+// Karachi clock time on the night of 3 → 4 November 2026, the UTC instant it is, and whether the
+// old UTC date got it wrong.
+const NIGHT = [
+  { karachi: "23:59 on the 3rd", nowIso: "2026-11-03T18:59:00.000Z", date: "2026-11-03", utcWasWrong: false },
+  { karachi: "23:59:59.999 on the 3rd", nowIso: "2026-11-03T18:59:59.999Z", date: "2026-11-03", utcWasWrong: false },
+  { karachi: "00:00 exactly", nowIso: "2026-11-03T19:00:00.000Z", date: "2026-11-04", utcWasWrong: true },
+  { karachi: "00:01", nowIso: "2026-11-03T19:01:00.000Z", date: "2026-11-04", utcWasWrong: true },
+  { karachi: "02:00", nowIso: "2026-11-03T21:00:00.000Z", date: "2026-11-04", utcWasWrong: true },
+  { karachi: "04:59", nowIso: "2026-11-03T23:59:00.000Z", date: "2026-11-04", utcWasWrong: true },
+  { karachi: "05:00 exactly", nowIso: "2026-11-04T00:00:00.000Z", date: "2026-11-04", utcWasWrong: false },
+];
+
+for (const { karachi, nowIso, date } of NIGHT) {
+  test(`a return scanned at ${karachi} Karachi is dated ${date}`, async () => {
+    assert.equal(await returnDateAt(nowIso), date);
+  });
+}
+
+test("the hours from midnight to 05:00 are exactly the ones the UTC date filed under yesterday", () => {
+  // The premise of the tests above: if this ever stops holding, they no longer test the defect.
+  for (const { karachi, nowIso, date, utcWasWrong } of NIGHT) {
+    assert.equal(nowIso.slice(0, 10) !== date, utcWasWrong, `${karachi}: the UTC date is ${nowIso.slice(0, 10)}`);
+  }
+});
+
+test("an injected business date still wins over the scan's instant", async () => {
+  const { deps } = createWorld({ [QR]: unit() });
+  let filed = "";
+  deps.saleReturnsRepo = {
+    async recordSaleReturn(payload) {
+      filed = payload.returnDate;
+      return { saleReturnId: payload.saleReturnId, returnNumber: "SR-000001" };
+    },
+  };
+  deps.txManager = { runInTransaction: (work) => work({ nowIso: "2026-11-03T21:00:00.000Z" }) };
+
+  await new ReturnScanUseCase(deps).execute({ rawScan: QR, context: CONTEXT });
+
+  assert.equal(filed, "2026-09-22", "createWorld injects 2026-09-22");
+});
