@@ -281,8 +281,9 @@ the button. In this order, at a quiet time:
 
 1. **The release with migration 100 is installed on every PC**, PC2 included. Every PC stays in
    local accounts and nothing changes for anyone.
-2. **Apply 020 to 024 to production**, each followed by its check script. Still nothing changes
-   anywhere.
+2. **Apply 020 to 025 to production**, each followed by its check script (025's is
+   `check_role_codes.sql`). Still nothing changes anywhere. 025 must not be left out: without it,
+   creating a role under a name another role once had overwrites that role's screens.
 3. **Name the first admin** in production's SQL editor, at PC2:
    `select public.make_first_admin('<email>', (select device_id from public.device_accounts where label = '<PC2''s label>'));`
    Replace both placeholders: since 024 anything that is not an email address is refused. The

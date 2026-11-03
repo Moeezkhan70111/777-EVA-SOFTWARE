@@ -2,16 +2,18 @@
 
 **Where each project stands (test 1 Nov 2026; production 31 Oct 2026):**
 
-- **Test** (`wpkrhgqsizjjdaztijwv`): the baseline and `002`–`023` are applied. 020–023 on 1 Nov;
+- **Test** (`wpkrhgqsizjjdaztijwv`): the baseline and `002`–`025` are applied. 020–023 on 1 Nov;
   `check_accounts.sql`, `check_permission_requests.sql`, `check_first_admin.sql`, `check_suggested_access.sql`
-  and `check_number_blocks.sql` pass. `024` is written and passes on PGlite, not yet applied to test.
+  and `check_number_blocks.sql` pass. `024` is applied (its email check is in `make_first_admin`).
+  `025` applied 3 Nov: `check_role_codes.sql` stopped at its step 3 before it and passes after it;
+  `check_accounts.sql` passes after it too.
 - **Production** (`ykhvbmhmeefdtrzqeoxm`): the baseline and `002`–`018` applied 31 Oct, `factory-777`
   seeded, `verify_applied_state.sql` 34/34. No devices enrolled and no business data yet. The
   `check_*.sql` scripts are never run here.
 
 Apply in this order, in the Supabase SQL editor, on an **empty** project, one file at a time:
 
-`schema.sql` → `002` → `003` → … → `019` → `020` → `021` → `022` → `023` → `024`
+`schema.sql` → `002` → `003` → … → `019` → `020` → `021` → `022` → `023` → `024` → `025`
 
 After each one, run `verify_applied_state.sql`. Its header lists exactly which checks a project
 one migration behind fails, so a half-applied project is diagnosed rather than guessed at. The
@@ -70,12 +72,13 @@ guarded by `factory_id is null`), and its function block is what puts the correc
 | 22 | `022_first_admin_designation.up.sql` | The first admin can be named before they exist, at the one enrolled computer they will claim from: `select make_first_admin('<email>', '<device id>')`. That claim arrives as an approved admin, once, while no admin exists; the same email anywhere else arrives PENDING. Lets the owner switch PC2 by hand with an admin already in place (docs/41 §12). Check: `check_first_admin.sql`. **Test only until after PC2's cutover.** |
 | 23 | `023_suggested_access.up.sql` | An account that moves up brings the role, screens, job role and authority it had on its computer, as a suggestion the cloud keeps while it waits; the admin approving it on any computer starts from it. Never access: cleared the moment the person is decided. Check: `check_suggested_access.sql`. **Test only until after PC2's cutover.** |
 | 24 | `024_login_bookkeeping.up.sql` | Two rehearsal findings (2 Nov): `verify_login` records a sign-in only once the person is let in (a revoked person's right password was recorded as their last sign-in), and `make_first_admin` refuses anything that is not an email address (the placeholder `<your email>` was run as it stood). Signatures unchanged. Check: `check_login_bookkeeping.sql`. **Test only until after PC2's cutover.** |
+| 25 | `025_role_create_never_overwrites.up.sql` | A new role never overwrites an existing one. `admin_save_role` with no code (the Roles screen's "new role") codes it from its name; a role keeps its code when renamed, so creating a role under a name another role once had replaced that role's screens. Now a create whose code a live role holds is refused as `ROLE_CODE_TAKEN`; editing by code and bringing back a deleted role are unchanged. Signature unchanged. Check: `check_role_codes.sql`. **Test only until after PC2's cutover.** |
 
 Each file is a single transaction and each has a matching `.down.sql`. The down files are only
 safe on a project that has never been written to — once real rows exist, reversing the type
 changes would have to discard data to succeed, and they are written to fail instead.
 
-**Reverse in the opposite order: `024` → `023` → `022` → `021` → `020` → `019` → `018` → … → `003` → `002`.** Each down file's header
+**Reverse in the opposite order: `025` → `024` → `023` → `022` → `021` → `020` → `019` → `018` → … → `003` → `002`.** Each down file's header
 says what reversing it costs: `018`'s re-opens the PC2/PC3 failure, for example. Reversing `005`
 re-opens the cross-factory read, and reversing `006` re-opens unbound access, re-enables any
 device revoked before the rollback and discards the claim audit. Both headers say so. `004_rls_policies.down.sql` revokes a

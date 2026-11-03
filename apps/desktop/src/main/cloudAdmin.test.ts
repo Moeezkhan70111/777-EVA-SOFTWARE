@@ -176,6 +176,15 @@ describe("roles", () => {
     expect(db.db.prepare("SELECT role_name FROM roles WHERE role_code = 'store'").get()).toEqual({ role_name: "Store" });
   });
 
+  it("a new role the cloud refuses for its code (025) says so, and changes nothing here", async () => {
+    const before = db.db.prepare("SELECT role_code, role_name FROM roles ORDER BY role_code").all();
+    const cloud = new ScriptedCloud({ admin_save_role: answered({ ok: false, reason: "ROLE_CODE_TAKEN" }) });
+    const outcome = await saveRole(deps(cloud), { code: null, name: "Munshi", description: null, loginPolicy: "ALWAYS_LOGGED_IN", permissions: ["stock"] });
+    expect(outcome).toEqual({ accepted: false, reason: CLOUD_ADMIN_MESSAGES.ROLE_CODE_TAKEN });
+    expect(cloud.calls[0]?.args).toMatchObject({ p_role_code: null });
+    expect(db.db.prepare("SELECT role_code, role_name FROM roles ORDER BY role_code").all()).toEqual(before);
+  });
+
   it("offers this computer's roles only while the cloud has none, and stops once they are copied", async () => {
     // The cloud already has Munshi, so there is nothing to offer.
     expect(rolesToCopyUp(db)).toEqual([]);
