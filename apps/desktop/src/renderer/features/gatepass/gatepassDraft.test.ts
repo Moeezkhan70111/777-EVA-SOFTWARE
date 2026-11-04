@@ -40,7 +40,7 @@ describe("checkQuantity", () => {
     expect(checkQuantity("abc", 10).error).toMatch(/whole number/i);
     expect(checkQuantity("-1", 10).error).toMatch(/negative/i);
     expect(checkQuantity("1.5", 10).error).toMatch(/whole cartons/i);
-    expect(checkQuantity("11", 10)).toEqual({ value: null, error: "Only 10 available (Reflected Stock)" });
+    expect(checkQuantity("11", 10)).toEqual({ value: null, error: "Only 10 available" });
   });
 });
 
@@ -111,14 +111,14 @@ describe("buildDraft", () => {
     const draft = buildDraft(grid, [SK6_710], { "v-sk6-red-710": "101", "v-sk6-blue-710": "10" });
     const sk6 = draft.articles[0];
     expect(sk6.errorCount).toBe(1);
-    expect(sk6.colours.find((c) => c.colour === "RED")!.check.error).toBe("Only 100 available (Reflected Stock)");
+    expect(sk6.colours.find((c) => c.colour === "RED")!.check.error).toBe("Only 100 available");
     expect(draft.errorCount).toBe(1);
     expect(draft.total).toBe(10);
     expect(draft.lines).toEqual([{ productVariantId: "v-sk6-blue-710", quantity: 10, reflectedStockSeen: 80 }]);
     // Exactly Reflected Stock is fine.
     expect(buildDraft(grid, [SK6_710], { "v-sk6-red-710": "100" }).errorCount).toBe(0);
     // A fully reserved colour cannot take even one carton.
-    expect(buildDraft(grid, [SK6_46], { "v-sk6-navy-46": "1" }).articles[0].colours.find((c) => c.colour === "NAVY")!.check.error).toBe("Only 0 available (Reflected Stock)");
+    expect(buildDraft(grid, [SK6_46], { "v-sk6-navy-46": "1" }).articles[0].colours.find((c) => c.colour === "NAVY")!.check.error).toBe("Only 0 available");
   });
 
   it("ignores an added key the store no longer holds", () => {

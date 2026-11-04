@@ -54,9 +54,9 @@ const TableHead: React.FC<{ readOnly?: boolean }> = ({ readOnly }) => (
         </>
       ) : (
         <>
-          <th scope="col" className="num">Store Stock</th>
+          <th scope="col" className="num">{copy.gatepass.currentStock}</th>
           <th scope="col" className="num">{copy.gatepass.reserved}</th>
-          <th scope="col" className="num gp-th-reflected">Available</th>
+          <th scope="col" className="num gp-th-reflected">{copy.gatepass.reflectedStock}</th>
           <th scope="col">{copy.gatepass.gatepassQty}</th>
         </>
       )}

@@ -295,7 +295,7 @@ describe("GatepassPage", () => {
     expect(screen.getByTestId("gatepass-summary-total")).toHaveTextContent("14");
   });
 
-  it("shows Current Stock, Reserved and Reflected Stock per colour, caps the quantity at Reflected Stock — not at what is physically in the store — and sends the Reflected figure it showed", async () => {
+  it("shows In Store, Reserved and Available per colour, caps the quantity at Reflected Stock — not at what is physically in the store — and sends the Reflected figure it showed", async () => {
     // SK6 RED 7/10: 5 physically in store, 4 promised to other open gatepasses → 1 may go on this one.
     const { api, created } = createFakeBackend({
       stock: [stockRow("v-sk6-red-710", "SK6", "RED", "7/10", 5, 4), stockRow("v-sk6-blue-710", "SK6", "BLUE", "7/10", 3, 3)],
@@ -306,7 +306,7 @@ describe("GatepassPage", () => {
     await addArticle("sk6 7/10");
 
     const cardEl = card("SK6-7/10");
-    expect(within(cardEl).getAllByRole("columnheader").map((h) => h.textContent)).toEqual(["Color", "Current Stock", "Reserved", "Reflected Stock", "Gatepass Qty"]);
+    expect(within(cardEl).getAllByRole("columnheader").map((h) => h.textContent)).toEqual(["Color", "In Store", "Reserved", "Available", "Gatepass Qty"]);
     expect(screen.getByTestId("current-SK6-RED-7/10")).toHaveTextContent("5");
     expect(screen.getByTestId("reserved-SK6-RED-7/10")).toHaveTextContent("4");
     expect(screen.getByTestId("available-SK6-RED-7/10")).toHaveTextContent("1");
@@ -316,7 +316,7 @@ describe("GatepassPage", () => {
 
     // 2 is refused although 5 are physically there; 1 is allowed, and + stops at 1.
     await typeQty("SK6", "RED", "7/10", "2");
-    expect(await screen.findByRole("alert")).toHaveTextContent("Only 1 available (Reflected Stock)");
+    expect(await screen.findByRole("alert")).toHaveTextContent(/^⚠ Only 1 available$/);
     expect(screen.getByTestId("gatepass-create")).toBeDisabled();
     await typeQty("SK6", "RED", "7/10", "1");
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
@@ -330,6 +330,35 @@ describe("GatepassPage", () => {
     expect(created[0].lines).toEqual([{ productVariantId: "v-sk6-red-710", quantity: 1, reflectedStockSeen: 1 }]);
   });
 
+  it("shows every colour's own In Store, Reserved and Available, and they follow the article that is open", async () => {
+    createFakeBackend({
+      stock: [
+        stockRow("v-sk6-blue-710", "SK6", "BLUE", "7/10", 14, 2),
+        stockRow("v-sk6-red-710", "SK6", "RED", "7/10", 6),
+        stockRow("v-sk12-black-46", "SK12", "BLACK", "4/6", 8, 3),
+        stockRow("v-sk12-grey-46", "SK12", "GREY", "4/6", 3, 3),
+      ],
+    });
+    renderPage();
+    await screen.findByTestId("gatepass-articles-section");
+    const figures = (key: string) =>
+      within(card(key)).getAllByRole("row").slice(1).map((row) => within(row).getAllByRole("cell").slice(0, 4).map((cell) => cell.textContent));
+    const SK6_FIGURES = [["BLUE", "14", "2", "12"], ["RED", "6", "0", "6"]];
+
+    await addArticle("sk6 7/10");
+    expect(figures("SK6-7/10")).toEqual(SK6_FIGURES);
+
+    await addArticle("sk12");
+    expect(figures("SK12-4/6")).toEqual([["BLACK", "8", "3", "5"], ["GREY", "3", "3", "0Fully reserved"]]);
+    expect(within(card("SK6-7/10")).queryByRole("row")).not.toBeInTheDocument();
+
+    await act(async () => {
+      fireEvent.click(within(card("SK6-7/10")).getByRole("button", { expanded: false }));
+    });
+    expect(figures("SK6-7/10")).toEqual(SK6_FIGURES);
+    expect(within(card("SK12-4/6")).queryByRole("row")).not.toBeInTheDocument();
+  });
+
   it("refuses more than Reflected Stock with an inline error on the row, and blocks Create until it is fixed", async () => {
     createFakeBackend();
     renderPage();
@@ -338,7 +367,7 @@ describe("GatepassPage", () => {
     await addArticle("sk6 7/10");
 
     await typeQty("SK6", "RED", "7/10", "130");
-    expect(await screen.findByRole("alert")).toHaveTextContent("Only 120 available (Reflected Stock)");
+    expect(await screen.findByRole("alert")).toHaveTextContent(/^⚠ Only 120 available$/);
     expect(qty("SK6", "RED", "7/10")).toHaveAttribute("aria-invalid", "true");
     expect(screen.getByTestId("gatepass-create")).toBeDisabled();
     expect(screen.getByTestId("gatepass-blocker")).toHaveTextContent("Fix the highlighted quantities first.");
