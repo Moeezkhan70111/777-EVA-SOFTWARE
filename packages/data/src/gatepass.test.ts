@@ -415,7 +415,7 @@ test("stock check — a line above the live In Store quantity is refused with th
 
     assert.equal(result.accepted, false);
     assert.equal(result.outcome, "INSUFFICIENT_STOCK");
-    assert.match(result.reason ?? "", /exceeds Reflected Stock for SK6 \/ BLUE \/ 7\/10\. Current Stock: 2\. Reserved: 0\. Reflected Stock: 2\. Requested: 5\./);
+    assert.match(result.reason ?? "", /more than what is available for SK6 \/ BLUE \/ 7\/10\. In Store: 2\. Reserved: 0\. Available: 2\. Requested: 5\./);
     assert.deepEqual(result.shortages, [
       { productVariantId: blue.variantId, article: "SK6", color: "BLUE", size: "7/10", requested: 5, currentStock: 2, reserved: 0, reflected: 2, seen: 2 },
     ]);
@@ -453,7 +453,7 @@ test("concurrency — stock that moved between display and creation is reported 
     });
     assert.equal(result.accepted, false);
     assert.equal(result.outcome, "STOCK_CHANGED");
-    assert.match(result.reason ?? "", /reflected stock changed before the gatepass could be created/i);
+    assert.match(result.reason ?? "", /available stock changed before the gatepass could be created/i);
     assert.deepEqual(result.shortages?.map((s) => [s.requested, s.currentStock, s.reserved, s.reflected, s.seen]), [[4, 2, 0, 2, 5]]);
 
     // After a refresh the clerk sees the truth and can cut what is really there.

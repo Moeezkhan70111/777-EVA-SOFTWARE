@@ -301,7 +301,8 @@ test("stock is re-read inside the transaction: INSUFFICIENT_STOCK when the clerk
   });
   assert.equal(tooMany.accepted, false);
   assert.equal(tooMany.outcome, "INSUFFICIENT_STOCK");
-  assert.match(tooMany.reason ?? "", /exceeds Reflected Stock for SK6 \/ RED \/ 7\/10\. Current Stock: 40\. Reserved: 0\. Reflected Stock: 40\. Requested: 50\./);
+  assert.match(tooMany.reason ?? "", /more than what is available for SK6 \/ RED \/ 7\/10\. In Store: 40\. Reserved: 0\. Available: 40\. Requested: 50\./);
+  assert.doesNotMatch(tooMany.reason ?? "", /Reflected/, "an operator reads this: Reflected Stock is the system's word");
   assert.deepEqual(tooMany.shortages, [
     { productVariantId: "v-red", article: "SK6", color: "RED", size: "7/10", requested: 50, currentStock: 40, reserved: 0, reflected: 40, seen: 40 },
   ]);
@@ -312,7 +313,8 @@ test("stock is re-read inside the transaction: INSUFFICIENT_STOCK when the clerk
     actor: "clerk",
   });
   assert.equal(moved.outcome, "STOCK_CHANGED");
-  assert.match(moved.reason ?? "", /Reflected Stock changed before the Gatepass could be created/);
+  assert.match(moved.reason ?? "", /Available stock changed before the Gatepass could be created/);
+  assert.doesNotMatch(moved.reason ?? "", /Reflected/);
   assert.deepEqual(moved.shortages?.map((s) => [s.requested, s.reflected, s.seen]), [[50, 40, 120]]);
 
   // Without a "seen" figure the use case cannot claim the figure changed, so it says "too many".
@@ -350,7 +352,7 @@ test("reservations — creating a gatepass lowers Reflected Stock and never Curr
   assert.equal(gp3.accepted, false);
   assert.equal(gp3.outcome, "INSUFFICIENT_STOCK");
   assert.deepEqual(gp3.shortages?.map((s) => [s.requested, s.currentStock, s.reserved, s.reflected]), [[2, 5, 4, 1]]);
-  assert.match(gp3.reason ?? "", /Current Stock: 5\. Reserved: 4\. Reflected Stock: 1\. Requested: 2\./);
+  assert.match(gp3.reason ?? "", /In Store: 5\. Reserved: 4\. Available: 1\. Requested: 2\./);
 
   // A clerk who saw "2" before GP2 was cut is told the figure changed, not that they asked too much.
   const stale = await w.creator.execute({ partyId: ABC.id, lines: [{ productVariantId: "v-red", quantity: 2, reflectedStockSeen: 2 }], actor: "clerk" });

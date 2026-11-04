@@ -247,8 +247,8 @@ const shortageRejection = (shortages: GatepassShortage[]): GatepassRejectedError
   return new GatepassRejectedError(
     changed ? "STOCK_CHANGED" : "INSUFFICIENT_STOCK",
     changed
-      ? "Reflected Stock changed before the Gatepass could be created. Please review the latest figures."
-      : `Requested quantity exceeds Reflected Stock for ${describeLine(first)}. Current Stock: ${first.currentStock}. Reserved: ${first.reserved}. Reflected Stock: ${first.reflected}. Requested: ${first.requested}.`,
+      ? "Available stock changed before the Gatepass could be created. Please review the latest figures."
+      : `Requested quantity is more than what is available for ${describeLine(first)}. In Store: ${first.currentStock}. Reserved: ${first.reserved}. Available: ${first.reflected}. Requested: ${first.requested}.`,
     { shortages }
   );
 };

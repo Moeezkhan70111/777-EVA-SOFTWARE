@@ -173,7 +173,7 @@ export const copy = {
     noStockTitle: "The store holds no stock right now",
     noStockHint: "Cartons appear here once they are received by Store Move In.",
     noArticlesTitle: "No articles added",
-    noArticlesHint: "Add an article to see its Current Stock, Reserved and Reflected Stock by color and enter the Gatepass quantity.",
+    noArticlesHint: "Add an article to see its In Store, Reserved and Available figures by color and enter the Gatepass quantity.",
     // The three stock figures, in the operator's words (owner, 2026-11-04). Inside the system they
     // stay Current Stock and Reflected Stock: Reflected Stock is what a NEW gatepass may take, and
     // it is never labelled plain "Stock" so it cannot be mistaken for what is physically there.
@@ -238,7 +238,7 @@ export const copy = {
     saveFailed: "The Gatepass could not be saved. Nothing was changed — review the stock and try again.",
     stockLoadFailed: "Store stock could not be loaded. Try again.",
     shortageLine: (s: { currentStock: number; reserved: number; reflected: number; requested: number }) =>
-      `Current Stock ${s.currentStock}, Reserved ${s.reserved}, Reflected Stock ${s.reflected}, Requested ${s.requested}`,
+      `In Store ${s.currentStock}, Reserved ${s.reserved}, Available ${s.reflected}, Requested ${s.requested}`,
     youSaw: (seen: number) => `(you saw ${seen})`,
   },
 
