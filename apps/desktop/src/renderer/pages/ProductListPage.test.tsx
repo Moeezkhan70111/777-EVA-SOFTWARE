@@ -1,9 +1,10 @@
 import React from "react";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { ProductListPage } from "./ProductListPage";
 import { NotificationsProvider } from "../state/NotificationsContext";
+import { copy } from "../config/copy";
 
 function setupDesktop(api: Record<string, unknown>) {
   Object.defineProperty(window, "desktop", {
@@ -52,19 +53,22 @@ describe("ProductListPage — NORMAL/B-TYPE selling type rows", () => {
     );
 
     await waitFor(() => expect(screen.getByText("SK6 7/10 EVR GENTS")).toBeInTheDocument());
-    const typeFilter = screen.getByRole("combobox", { name: /selling type/i });
+    // The Type buttons in the Filters panel. "All" is also a Status button, so they are read from their own group.
+    await userEvent.click(screen.getByRole("button", { name: "Filters" }));
+    const typeGroup = screen.getByText(copy.columns.type, { selector: ".party-filter-panel__field-label" }).nextElementSibling as HTMLElement;
+    const pickType = (name: string) => userEvent.click(within(typeGroup).getByRole("button", { name }));
 
-    await userEvent.selectOptions(typeFilter, "NORMAL");
+    await pickType("A-Type");
     expect(screen.getByText("SK6 7/10 EVR GENTS")).toBeInTheDocument();
     expect(screen.queryByText("SK6 7/10 EVR GENTS - B")).not.toBeInTheDocument();
     expect(screen.getByText("1 products")).toBeInTheDocument();
 
-    await userEvent.selectOptions(typeFilter, "B_TYPE");
+    await pickType("B-Type");
     expect(screen.queryByText("SK6 7/10 EVR GENTS")).not.toBeInTheDocument();
     expect(screen.getByText("SK6 7/10 EVR GENTS - B")).toBeInTheDocument();
     expect(screen.getByText("1 products")).toBeInTheDocument();
 
-    await userEvent.selectOptions(typeFilter, "ALL");
+    await pickType("All");
     expect(screen.getByText("SK6 7/10 EVR GENTS")).toBeInTheDocument();
     expect(screen.getByText("SK6 7/10 EVR GENTS - B")).toBeInTheDocument();
     expect(screen.getByText("2 products")).toBeInTheDocument();

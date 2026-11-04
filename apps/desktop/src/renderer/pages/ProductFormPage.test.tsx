@@ -41,6 +41,8 @@ describe("ProductFormPage article image handling", () => {
     const articleInput = screen.getByLabelText(/product name \/ article/i);
     await userEvent.clear(articleInput);
     await userEvent.type(articleInput, "SK6");
+    // Typing only searches the list: the article is set by picking it.
+    await userEvent.click(await screen.findByRole("option", { name: "SK6" }));
 
     await waitFor(() => expect(getProductImage).toHaveBeenCalledWith("SK6"));
     await waitFor(() =>

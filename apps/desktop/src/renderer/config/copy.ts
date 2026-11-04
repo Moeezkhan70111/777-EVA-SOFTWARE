@@ -174,11 +174,12 @@ export const copy = {
     noStockHint: "Cartons appear here once they are received by Store Move In.",
     noArticlesTitle: "No articles added",
     noArticlesHint: "Add an article to see its Current Stock, Reserved and Reflected Stock by color and enter the Gatepass quantity.",
-    // The three stock figures. Reflected Stock is what a NEW gatepass may take; it is never
-    // labelled plain "Stock" so it cannot be mistaken for the physical Current Stock.
-    currentStock: "Current Stock",
+    // The three stock figures, in the operator's words (owner, 2026-11-04). Inside the system they
+    // stay Current Stock and Reflected Stock: Reflected Stock is what a NEW gatepass may take, and
+    // it is never labelled plain "Stock" so it cannot be mistaken for what is physically there.
+    currentStock: "In Store",
     reserved: "Reserved",
-    reflectedStock: "Reflected Stock",
+    reflectedStock: "Available",
     fullyReserved: "Fully reserved",
     stockAtCreation: "In Store at creation",
     gatepassQty: "Gatepass Qty",
@@ -205,7 +206,7 @@ export const copy = {
     qtyNotWhole: "Enter a whole number of cartons.",
     qtyNegative: "Quantity cannot be negative.",
     qtyFraction: "Enter whole cartons only.",
-    qtyExceeds: (available: number) => `Only ${available} available (Reflected Stock)`,
+    qtyExceeds: (available: number) => `Only ${available} available`,
     blockerParty: "Select a party first.",
     blockerErrors: "Fix the highlighted quantities first.",
     blockerLines: "Add an article and enter at least one quantity.",
