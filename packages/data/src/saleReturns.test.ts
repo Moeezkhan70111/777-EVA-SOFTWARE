@@ -577,12 +577,51 @@ test("a return dated before the ledger window lands in the opening balance, not 
     const { variantId, qrIds } = await stockInStore(f.db, f.raw, "SK6", "7/10", "RED", 1);
     const bill = billFor(f.db, { partyName: "MAMA CHAPPAL", variantId, dozens: 0.5 });
     await moveOutAndDispatch(f.db, qrIds[0], bill.sessionId);
-    await returner(f.db).execute({ rawScan: qrIds[0], context: CONTEXT });
+    // Dated on the bill's own day, not today: undated, the return took the date the suite ran,
+    // and from 1 October that fell inside the window below.
+    const returnedOnBillDay = new ReturnScanUseCase({ txManager: f.db, qrLookupRepo: f.db, attributionRepo: f.db, qrMasterRepo: f.db, saleReturnsRepo: f.db, returnEventsRepo: f.db, outboxRepo: f.db, eventPublisher: bus(), idGenerator: ids(), localDate: () => "2026-09-22" });
+    await returnedOnBillDay.execute({ rawScan: qrIds[0], context: CONTEXT });
 
     const later = f.db.getCustomerLedgerWithCash(bill.partyId, { fromDate: "2026-10-01", toDate: "2026-12-31" });
 
     assert.equal(later.entries.length, 0, "nothing falls inside the window");
     assert.equal(later.openingBalance, 0, "the sale and its credit cancel out in the opening balance");
+  } finally {
+    f.cleanup();
+  }
+});
+
+test("a return scanned at 01:00 Karachi is filed under that day everywhere it is read", async () => {
+  // 20:00Z on the 3rd is 01:00 on the 4th in Karachi. The UTC date used to file it under the 3rd.
+  // The app wires no date in (main.ts), so the date comes from the scan's own instant.
+  const f = createFixture();
+  try {
+    const { variantId, qrIds } = await stockInStore(f.db, f.raw, "SK6", "7/10", "RED", 1);
+    const bill = billFor(f.db, { partyName: "MAMA CHAPPAL", variantId, dozens: 0.5 });
+    await moveOutAndDispatch(f.db, qrIds[0], bill.sessionId);
+    const atOneAm = {
+      runInTransaction: <T>(work: (tx: { nowIso: string }) => Promise<T>) =>
+        f.db.runInTransaction((tx) => work({ ...tx, nowIso: "2026-11-03T20:00:00.000Z" })),
+    };
+    const returned = await new ReturnScanUseCase({ txManager: atOneAm, qrLookupRepo: f.db, attributionRepo: f.db, qrMasterRepo: f.db, saleReturnsRepo: f.db, returnEventsRepo: f.db, outboxRepo: f.db, eventPublisher: bus(), idGenerator: ids() })
+      .execute({ rawScan: qrIds[0], context: CONTEXT });
+    assert.equal(returned.accepted, true, returned.reason);
+
+    // The record, and Live Return's list for today.
+    assert.equal(countRows(f.raw, "SELECT COUNT(1) c FROM sale_returns WHERE return_date = '2026-11-04'"), 1);
+    assert.equal(f.db.listSaleReturns({ fromDate: "2026-11-04", toDate: "2026-11-04" }).length, 1);
+    assert.equal(f.db.listSaleReturns({ fromDate: "2026-11-03", toDate: "2026-11-03" }).length, 0);
+
+    // The customer's ledger: an entry of the 4th, and nothing of the 3rd.
+    const fourth = f.db.getCustomerLedgerWithCash(bill.partyId, { fromDate: "2026-11-04", toDate: "2026-11-04" });
+    assert.deepEqual(fourth.entries.map((e) => [e.voucherType, e.voucherDate]), [["SALE_RETURN", "2026-11-04"]]);
+    const third = f.db.getCustomerLedgerWithCash(bill.partyId, { fromDate: "2026-11-03", toDate: "2026-11-03" });
+    assert.equal(third.entries.length, 0);
+
+    // The balances list as of each day: the credit counts from the 4th, not the 3rd.
+    const asOf = (date: string) => f.db.listCustomerBalances({ asOfDate: date }).rows.find((r) => r.partyId === bill.partyId)!;
+    assert.equal(asOf("2026-11-03").totalReturns, 0);
+    assert.equal(asOf("2026-11-04").totalReturns, 1080, "one carton, 6 pairs at 180");
   } finally {
     f.cleanup();
   }

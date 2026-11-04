@@ -360,8 +360,10 @@ test("bootstrap: rejects an invalid username or a weak password without creating
 test("role assignment resolves effective permissions and additional overrides", () => {
   const fixture = createDbFixture();
   try {
+    // Not "Billing Manager": every new database already holds a built-in role of that name, and
+    // role names are unique. This test is about a role the admin creates.
     const billingRole = fixture.db.createRole({
-      name: "Billing Manager",
+      name: "Billing Desk",
       description: "Handles vouchers and ledgers",
       permissions: ["sale-voucher-form", "customer-ledger"],
     });
@@ -839,11 +841,16 @@ test("saleable variant read returns exact variant metadata and projected stock",
       productGroupId: groupId,
       status: "ACTIVE",
     });
+    // A second colour sends the ArticleSize's shared fields again: adding one to an existing
+    // ArticleSize overwrites price, series and group with what it sends, blanks included, by
+    // design ("creating an existing ArticleSize saves Product Setup fields immediately").
     const blueId = fixture.db.createProduct({
       article: "SK12",
       color: "BLUE",
       size: "4/6",
-      sellingPrice: 520,
+      sellingPrice: 500,
+      articleSeriesId: seriesId,
+      productGroupId: groupId,
       status: "ACTIVE",
     });
     const raw = (fixture.db as any).db as DatabaseSync;
@@ -881,10 +888,17 @@ test("ArticleSize owns shared price while color variants own independent stock",
     assert.equal((fixture.db as any).db.prepare("SELECT COUNT(1) count FROM product_variants WHERE article_size_id = ?").get(articleSizeId).count, 0);
 
     const redId = fixture.db.createProduct({ article: "SK6", color: "RED", size: "7/10", sellingPrice: 550, status: "ACTIVE" });
-    const blueId = fixture.db.createProduct({ article: "SK6", color: "BLUE", size: "7/10", sellingPrice: 575, status: "ACTIVE" });
+    // Each later colour sends the current shared price: a colour added to an existing ArticleSize
+    // overwrites its shared fields by design (see the test after this one).
+    const blueId = fixture.db.createProduct({ article: "SK6", color: "BLUE", size: "7/10", sellingPrice: 550, status: "ACTIVE" });
     const raw = (fixture.db as any).db as DatabaseSync;
-    raw.prepare("INSERT INTO stock_projection_by_variant (product_variant_id, quantity_on_hand, updated_at) VALUES (?, ?, ?)").run(redId, 20, new Date().toISOString());
-    raw.prepare("INSERT INTO stock_projection_by_variant (product_variant_id, quantity_on_hand, updated_at) VALUES (?, ?, ?)").run(blueId, 15, new Date().toISOString());
+    // stockQuantity is Current Stock (IN_STORE_STOCK_SQL), so the In Store projection is what to seed.
+    const seedInStore = (variantId: string, quantity: number) =>
+      raw
+        .prepare("INSERT INTO stock_projection_by_location (product_variant_id, location_type, location_id, quantity_on_hand, updated_at) VALUES (?, 'WAREHOUSE', ?, ?, ?)")
+        .run(variantId, "factory-1", quantity, new Date().toISOString());
+    seedInStore(redId, 20);
+    seedInStore(blueId, 15);
 
     const red = fixture.db.getSaleableVariant(redId);
     const blue = fixture.db.getSaleableVariant(blueId);
@@ -905,7 +919,7 @@ test("ArticleSize owns shared price while color variants own independent stock",
     assert.equal(fixture.db.getSaleableVariant(redId)?.sellingPrice, 575);
     assert.equal(fixture.db.getSaleableVariant(blueId)?.sellingPrice, 575);
 
-    const greenId = fixture.db.createProduct({ article: "SK6", color: "GREEN", size: "7/10", sellingPrice: 500, status: "ACTIVE" });
+    const greenId = fixture.db.createProduct({ article: "SK6", color: "GREEN", size: "7/10", sellingPrice: 575, status: "ACTIVE" });
     assert.equal(fixture.db.getSaleableVariant(greenId)?.sellingPrice, 575);
     assert.equal(fixture.db.listProducts({ search: "SK6", status: "ACTIVE", pageSize: 100 }).rows.length, 1);
   } finally {
@@ -1107,9 +1121,11 @@ test("discount resolver uses ArticleSize-owned relationship metadata for every c
       article: "SK12", color: "GREEN", size: "4/6", sellingPrice: 500,
       productGroupId: groupId, articleSeriesId: seriesId, status: "ACTIVE",
     });
-    // Adding a second color does not create a second ArticleSize.
+    // Adding a second color does not create a second ArticleSize. It sends the shared series and
+    // group again, because adding a colour overwrites them with what it sends, blanks included.
     const redVariantId = fixture.db.createProduct({
-      article: "SK12", color: "RED", size: "4/6", sellingPrice: 500, status: "ACTIVE",
+      article: "SK12", color: "RED", size: "4/6", sellingPrice: 500,
+      productGroupId: groupId, articleSeriesId: seriesId, status: "ACTIVE",
     });
 
     // AHHS: no Article rule, only Series + Group configured.
@@ -2051,20 +2067,25 @@ test("saved vouchers create a pending dispatch session and allow only bill-match
     const session = fixture.db.getDispatchSession(pendingSessions[0].sessionId);
     assert.ok(session);
     assert.equal(session.allowedItems.length, 2);
+    // Dispatch matches a carton to a bill line by article + size, so every line reads
+    // "ALL COLORS" (dispatch.ts getDispatchSession; gatepass.ts states the same rule). The lines
+    // come back ordered by their random UUIDs, not bill order, so they are compared by size.
     assert.deepEqual(
-      session.allowedItems.map((item) => ({ article: item.article, color: item.color, size: item.size })),
+      session.allowedItems
+        .map((item) => ({ article: item.article, color: item.color, size: item.size }))
+        .sort((a, b) => a.size.localeCompare(b.size)),
       [
-        { article: "SK7", color: "RED", size: "7/10" },
-        { article: "SK7", color: "BLACK", size: "8/11" },
+        { article: "SK7", color: "ALL COLORS", size: "7/10" },
+        { article: "SK7", color: "ALL COLORS", size: "8/11" },
       ]
     );
 
     const firstAllowed = fixture.db.checkDispatchSessionAllowance(session.sessionId, allowedVariantId);
     assert.deepEqual(firstAllowed, {
       allowed: true,
-      lineItemId: session.allowedItems[0].lineItemId,
+      lineItemId: session.allowedItems.find((item) => item.size === "7/10")?.lineItemId,
       article: "SK7",
-      color: "RED",
+      color: "ALL COLORS",
       size: "7/10",
       requiredCartons: 2,
       dispatchedCartons: 0,
@@ -2268,7 +2289,9 @@ test("product CRUD and inventory valuation work offline", async () => {
     assert.equal(inventory[0].stockValue, 130);
     assert.equal(inventory[0].profitPotential, 70);
 
-    fixture.db.disableProduct(productId, "archived");
+    // Disabled the way the Product List does it: by the ArticleSize's own id, which disables every
+    // colour. createProduct answers the first colour's id, and disabling that disables one colour.
+    fixture.db.disableProduct(list.rows[0].id, "archived");
     const postDisable = fixture.db.listProducts({ search: "SK7", status: "DISABLED" });
     assert.equal(postDisable.total, 1);
   } finally {
