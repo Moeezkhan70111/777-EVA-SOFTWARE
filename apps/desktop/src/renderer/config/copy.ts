@@ -466,6 +466,9 @@ export const copy = {
     switchedTitle: "Cloud accounts are on",
     switchedBody: (people: number) =>
       `This computer now uses cloud accounts (${people} ${people === 1 ? "person" : "people"}). Approve people from the list below.`,
+    roleClearedTitle: "Role removed",
+    roleClearedBody: (username: string, roleName: string) =>
+      `${username} had the role "${roleName}", which the cloud has removed. Choose a role for them when you approve them.`,
     statusFailed: "Could not tell whether this computer uses cloud accounts.",
     retry: "Retry",
     notReady:

@@ -126,6 +126,28 @@ All in the applier's one transaction:
 3. If the status is REVOKED or REJECTED: revoke their open sessions on this PC. The renderer
    finds the session gone on its next call and returns to sign-in.
 
+**Only on a PC already on cloud accounts** (rehearsal, 2026-11-04). On a PC in local mode an account
+revision is **held, not applied**: it is parked under `HELD_FOR_SWITCH`, as it arrived, and the
+cursor passes it, so business data keeps flowing. Its roles, screens, people and assignments stay
+its own. Held events are no fault, so they raise no stuck or stale notice. The switch loads the
+whole state and releases them, and the next pull settles each one: superseded by the state, or
+applied if it was logged after the state was read.
+
+**A deleted role leaves nobody holding it.** The cloud refuses to delete a role any cloud person has
+(`admin_delete_role`, `ROLE_IN_USE`), so its deletion says nobody it knows holds it. Anyone still
+holding it on a PC is that PC's own, whom the cloud has never heard of. The deletion's own revision
+is the authoritative event: it reaches every enrolled PC by the log and any later PC by the account
+state, and each clears its own people in the same transaction. The role assignment goes, extra screens stay, and it is recorded in
+`audit_log` (`ROLE_ASSIGNMENT_CLEARED`) with a notice to the PC's admins, who choose a role when they
+approve that person. It happens once per revision, so offering it again changes nothing. A role
+brought back later does not bring the assignment back. A **cloud** person still holding the role on a
+PC is never cleared: their own revision is in the log, the deletion waits for it, and it is retried
+the moment anything arrives.
+
+**Someone left with no role has only their extra screens.** Effective permissions here are role plus
+extras and nothing else: the old `permissions_json` fallback, for accounts that predate roles, is not
+read for anyone the cloud decides.
+
 ## 6. Moving the accounts that already exist
 
 PC2 holds the real accounts. On each person's **next online sign-in on PC2**:

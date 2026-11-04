@@ -3,7 +3,14 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { LOCAL_ROLE_NAME_SUFFIX, SqliteDatabase, readAccountRolePayload, readPermissionRequestPayload, readPersonPayload } from "@erp/data";
+import {
+  LOCAL_ROLE_NAME_SUFFIX,
+  SqliteDatabase,
+  enterCloudAccountsMode,
+  readAccountRolePayload,
+  readPermissionRequestPayload,
+  readPersonPayload,
+} from "@erp/data";
 import { applyEnvelope } from "./applyEnvelope.js";
 import type { SyncEnvelope } from "./contract.js";
 
@@ -51,8 +58,14 @@ const request = (overrides: Record<string, unknown> = {}): Record<string, unknow
   requestedAt: "2026-11-01T10:00:00.123456+00:00", reviewedAt: null, reviewedBy: null, reviewNotes: null, ...overrides,
 });
 
-const apply = (db: SqliteDatabase, type: string, id: string, payload: Record<string, unknown>) =>
-  applyEnvelope(db.db, envelope(type, id, payload));
+/**
+ * Arrivals on a PC on cloud accounts, the only kind that applies them (accountsHeldForSwitch.test.ts
+ * has the other). It switches at the first arrival, so a test can still seed this PC's own people.
+ */
+const apply = (db: SqliteDatabase, type: string, id: string, payload: Record<string, unknown>) => {
+  enterCloudAccountsMode(db.db, "test");
+  return applyEnvelope(db.db, envelope(type, id, payload));
+};
 const row = (db: SqliteDatabase, sql: string, ...params: string[]) => db.db.prepare(sql).get(...params) as Record<string, unknown> | undefined;
 const permissionsOf = (db: SqliteDatabase, id: string): string[] =>
   (JSON.parse(String(row(db, "SELECT permissions_json FROM app_users WHERE id = ?", id)?.permissions_json)) as string[]).sort();

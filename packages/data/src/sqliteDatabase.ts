@@ -173,11 +173,14 @@ export { normalizePermissionCode, effectivePermissionsFor, type MemberAccessChan
 export {
   ACCOUNTS_MODE,
   ACCOUNTS_MODE_SETTING_KEY,
+  HELD_FOR_SWITCH,
   PROTECTED_ACCOUNT_SETTING_KEYS,
   LocalAccountsClosedError,
   enterCloudAccountsMode,
   readAccountsMode,
+  releaseEventsHeldForSwitch,
   requireLocalAccounts,
+  waitForSwitch,
 } from "./database/accountsMode.js";
 export type { AccountSqlHandle, AccountsMode } from "./database/accountsMode.js";
 export {
@@ -186,16 +189,21 @@ export {
   LOCAL_ROLE_NAME_SUFFIX,
   PERMISSION_REQUEST_STATUSES,
   ROLE_LOGIN_POLICIES,
+  ROLE_NAME_WAIT,
+  ROLE_STILL_HELD_WAIT,
   accountRoleWaitsFor,
   applyAccountRoleRevision,
   endLocalOnlySessions,
   applyPermissionRequestRevision,
   applyPersonRevision,
+  freeRoleNamesForState,
+  localOnlyHolders,
   permissionRequestWaitsFor,
   personWaitsFor,
   readAccountRolePayload,
   readPermissionRequestPayload,
   readPersonPayload,
+  roleHolders,
 } from "./database/accounts.js";
 export type {
   AccessSuggestion,
@@ -204,6 +212,7 @@ export type {
   PermissionRequestPayload,
   PermissionRequestStatus,
   PersonPayload,
+  RoleHolder,
   RoleLoginPolicy,
 } from "./database/accounts.js";
 export {

@@ -6,6 +6,7 @@
 // the log's way. It is kept here, exactly as it arrived, and retried until it applies or is refused
 // for good -- never dropped, never skipped.
 
+import { HELD_FOR_SWITCH } from "@erp/data";
 import { isSyncEnvelope, type SyncEnvelope } from "./contract.js";
 import { asRow, type SyncSqlHandle } from "./sqlPort.js";
 import { waitedForKey } from "./waiting.js";
@@ -118,7 +119,10 @@ export function clearParkedEvents(sql: SyncSqlHandle): void {
 }
 
 export interface ParkedSummary {
+  /** Events waiting for something. Not those held for this PC's switch: nothing is wrong with those. */
   readonly count: number;
+  /** Account revisions held on a PC still on local accounts, until it switches (accountsMode.ts). */
+  readonly heldForSwitch: number;
   /** The parked event at the earliest log position, and when it is next due. Null when none. */
   readonly oldest: {
     readonly seq: number;
@@ -131,12 +135,14 @@ export interface ParkedSummary {
 
 /** What the Health page shows: how many are parked, and the one that has waited longest. */
 export function parkedSummary(sql: SyncSqlHandle): ParkedSummary {
-  const count = asRow(sql.prepare("SELECT COUNT(*) AS n FROM sync_inbox_parked").get());
+  const count = asRow(sql.prepare("SELECT COUNT(*) AS n FROM sync_inbox_parked WHERE reason <> ?").get(HELD_FOR_SWITCH));
+  const held = asRow(sql.prepare("SELECT COUNT(*) AS n FROM sync_inbox_parked WHERE reason = ?").get(HELD_FOR_SWITCH));
   const oldest = asRow(
-    sql.prepare("SELECT seq, dedupe_key, reason, attempts, next_try_at FROM sync_inbox_parked ORDER BY seq LIMIT 1").get()
+    sql.prepare("SELECT seq, dedupe_key, reason, attempts, next_try_at FROM sync_inbox_parked WHERE reason <> ? ORDER BY seq LIMIT 1").get(HELD_FOR_SWITCH)
   );
   return {
     count: Number(count?.n ?? 0),
+    heldForSwitch: Number(held?.n ?? 0),
     oldest:
       oldest === null
         ? null

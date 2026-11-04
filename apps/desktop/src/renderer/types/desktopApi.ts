@@ -1663,7 +1663,7 @@ export interface MemberAccessChange {
 }
 
 export type SwitchToCloudAccountsResult =
-  | { accepted: true; user: AuthUser | null; token: string; people: number }
+  | { accepted: true; user: AuthUser | null; token: string; people: number; clearedRoles: Array<{ username: string; roleName: string }> }
   | { accepted: false; reason: string };
 
 export interface AuthUser {

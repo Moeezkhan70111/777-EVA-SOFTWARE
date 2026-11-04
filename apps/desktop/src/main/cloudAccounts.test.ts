@@ -140,7 +140,9 @@ describe("the switch to cloud accounts: by hand, by an admin, at this computer",
       [new ScriptedCloud({ verify_login: { kind: "NOT_SUPPORTED" } }), ACCOUNT_MESSAGES.CLOUD_HAS_NO_ACCOUNTS],
       [new ScriptedCloud({ verify_login: UNREACHABLE }), ACCOUNT_MESSAGES.SWITCH_OFFLINE],
       [new ScriptedCloud({ verify_login: admin, account_state: STATE([person({ roleCode: "ghost" })]), admin_import_roles: ROLES_COPIED }),
-        ACCOUNT_MESSAGES.STATE_WAITING(`WAITING_FOR:ACCOUNT_ROLE:ghost`)],
+        ACCOUNT_MESSAGES.SWITCH_RECORD_MISSING],
+      [new ScriptedCloud({ verify_login: admin, account_state: declined("NOT_ENROLLED") }),
+        ACCOUNT_MESSAGES.STATE_WAITING(ACCOUNT_MESSAGES.STATE_DECLINED)],
     ];
     for (const [caller, message] of cases) {
       expect(await switchThisComputerToCloud(deps(caller), request(session, owner.id))).toEqual({ kind: "REFUSED", message });
@@ -216,6 +218,152 @@ describe("the switch to cloud accounts: by hand, by an admin, at this computer",
       expect(outcome).toMatchObject({ kind: "REFUSED", message: expect.stringContaining("roles could not be copied") });
       expect(await mode()).toBe("LOCAL");
       expect(db.getUserBySessionToken(munshiSession)?.id).toBe(munshi.id);
+    });
+  });
+
+  // Found by the 4 Nov rehearsal. A role deleted in the cloud, still held by someone only this
+  // computer knows, refused the switch for ever with a raw code and "try again in a moment".
+  describe("a role the cloud has deleted, and a computer that fell behind", () => {
+    const INTERNAL_CODE = /WAITING_FOR|STILL_IN_USE|ROLE_UNASSIGNED|ROLE_NAME|ACCOUNT_ROLE|NOT_ENROLLED/;
+    const role = (overrides: Record<string, unknown> = {}) => ({
+      roleCode: "gatepass-clerk", revision: 2, deleted: false, name: "Gatepass Clerk", description: null, loginPolicy: "ALWAYS_LOGGED_IN", permissions: ["gatepass"], ...overrides,
+    });
+    const DELETED = role({ deleted: true });
+    const owner = () => {
+      const account = db.createUserAccount("Owner", "owner1234");
+      return { account, session: db.createUserSession(account.id), boss: { personId: account.id, email: "boss@777.pk", isAdmin: true } };
+    };
+    const holding = (name: string, roleCode: string) => {
+      const account = db.createUserAccount(name, `${name.toLowerCase()}1234`);
+      db.assignUserRole(account.id, roleCode);
+      return account;
+    };
+    const press = (boss: Record<string, unknown>, session: string, id: string, roles: unknown[], people: unknown[] = [person(boss)]) =>
+      switchThisComputerToCloud(
+        deps(new ScriptedCloud({ verify_login: signedIn(boss), account_state: answered({ ok: true, roles, people, requests: [] }) })),
+        request(session, id)
+      );
+    const assignmentOf = (userId: string) => db.db.prepare("SELECT role_code FROM user_role_assignments WHERE user_id = ?").get(userId);
+    const held = async (roleEvent: ReturnType<typeof role>) => {
+      const data = await import("@erp/data");
+      const read = data.readAccountRolePayload(roleEvent);
+      if (read === null) throw new Error("not a role");
+      data.applyAccountRoleRevision(db.db, read);
+    };
+
+    it("a local-only holder does not block the first switch: the assignment goes, named, and it never waits", async () => {
+      const { account, session, boss } = owner();
+      const clerk = holding("Clerk", "gatepass-clerk");
+      const storeman = holding("Storeman", "store-operator");
+      const storeOperator = role({ roleCode: "store-operator", name: "Store Operator", revision: 1, permissions: ["stock"] });
+
+      const outcome = await press(boss, session, account.id, [DELETED, storeOperator]);
+
+      expect(outcome).toMatchObject({ kind: "SWITCHED", clearedRoles: [{ userId: clerk.id, username: "Clerk", roleName: "Gatepass Clerk" }] });
+      expect(await mode()).toBe("CLOUD");
+      expect(db.db.prepare("SELECT 1 FROM roles WHERE role_code = 'gatepass-clerk'").get()).toBeUndefined();
+      expect(assignmentOf(clerk.id)).toBeUndefined();
+      expect({ ...assignmentOf(storeman.id) }).toEqual({ role_code: "store-operator" });
+      expect(db.db.prepare("SELECT entity_id FROM audit_log WHERE event_type = 'ROLE_ASSIGNMENT_CLEARED'").all().map((row) => ({ ...row }))).toEqual([{ entity_id: clerk.id }]);
+      const notice = db.db.prepare("SELECT message FROM user_notifications WHERE user_id = ? AND title = 'Role removed'").get(account.id) as { message: string };
+      expect(notice.message).toContain('Clerk held "Gatepass Clerk"');
+    });
+
+    it("a refused switch clears nothing: the local-only holder keeps their role", async () => {
+      const { account, session, boss } = owner();
+      const clerk = holding("Clerk", "gatepass-clerk");
+      const outcome = await press(boss, session, account.id, [DELETED], [person(boss), person({ personId: "p-ghost", roleCode: "ghost" })]);
+      expect(outcome.kind).toBe("REFUSED");
+      expect({ ...assignmentOf(clerk.id) }).toEqual({ role_code: "gatepass-clerk" });
+      expect(db.db.prepare("SELECT 1 FROM audit_log WHERE event_type = 'ROLE_ASSIGNMENT_CLEARED'").get()).toBeUndefined();
+    });
+
+    it("a computer holding older revisions switches in one press: the state settles a rename by itself", async () => {
+      // Pulled under an earlier build, while on local accounts. The log can no longer bring the rest.
+      const { account, session, boss } = owner();
+      await held(role({ roleCode: "billing-manager", name: "Billing Manager", revision: 1 }));
+      const desk = role({ roleCode: "billing-manager", name: "Billing Desk", revision: 2 });
+      const lead = role({ roleCode: "billing-lead", name: "Billing Manager", revision: 2 });
+
+      const outcome = await press(boss, session, account.id, [lead, desk]);
+
+      expect(outcome.kind).toBe("SWITCHED");
+      const names = db.db.prepare("SELECT role_code, role_name FROM roles WHERE role_code LIKE 'billing-%' ORDER BY role_code").all();
+      expect(names.map((row) => ({ ...row }))).toEqual([
+        { role_code: "billing-lead", role_name: "Billing Manager" },
+        { role_code: "billing-manager", role_name: "Billing Desk" },
+      ]);
+    });
+
+    it("two cloud roles that swapped names do not wait for each other", async () => {
+      const { account, session, boss } = owner();
+      await held(role({ roleCode: "role-a", name: "First", revision: 1 }));
+      await held(role({ roleCode: "role-b", name: "Second", revision: 1 }));
+      const outcome = await press(boss, session, account.id, [
+        role({ roleCode: "role-a", name: "Second", revision: 4 }),
+        role({ roleCode: "role-b", name: "First", revision: 4 }),
+      ]);
+      expect(outcome.kind).toBe("SWITCHED");
+      expect((db.db.prepare("SELECT role_name FROM roles WHERE role_code = 'role-a'").get() as { role_name: string }).role_name).toBe("Second");
+    });
+
+    it("a cloud person the state moved off a deleted role is not in its way: people load before deletions", async () => {
+      const { account, session, boss } = owner();
+      const data = await import("@erp/data");
+      await held(role({ revision: 1 }));
+      const old = data.readPersonPayload(person({ personId: "p-ali", roleCode: "gatepass-clerk" }));
+      if (old === null) throw new Error("not a person");
+      data.applyPersonRevision(db.db, old);
+
+      const outcome = await press(boss, session, account.id, [DELETED], [person(boss), person({ personId: "p-ali", revision: 2, roleCode: null })]);
+
+      expect(outcome).toMatchObject({ kind: "SWITCHED", clearedRoles: [] });
+      expect(assignmentOf("p-ali")).toBeUndefined();
+    });
+
+    it("when someone really must be reassigned it names them and the role, and pressing again after that works", async () => {
+      // A person this computer has heard of but the state leaves out: nothing here can say where they went.
+      const { account, session, boss } = owner();
+      const data = await import("@erp/data");
+      await held(role({ revision: 1 }));
+      const stray = data.readPersonPayload(person({ personId: "p-stray", displayName: "Stray", email: "stray@777.pk", roleCode: "gatepass-clerk" }));
+      if (stray === null) throw new Error("not a person");
+      data.applyPersonRevision(db.db, stray);
+
+      const refused = await press(boss, session, account.id, [DELETED]);
+
+      expect(refused).toEqual({ kind: "REFUSED", message: ACCOUNT_MESSAGES.SWITCH_ROLE_STILL_HELD("Stray", "Gatepass Clerk") });
+      expect(await mode()).toBe("LOCAL");
+      expect(db.getUserBySessionToken(session)?.id).toBe(account.id);
+
+      db.assignUserRole("p-stray", "store-operator");
+      expect((await press(boss, session, account.id, [DELETED])).kind).toBe("SWITCHED");
+    });
+
+    it("no refusal of the switch ever shows an internal code", () => {
+      const messages = [
+        ACCOUNT_MESSAGES.SWITCH_ROLE_STILL_HELD("Clerk", "Gatepass Clerk"),
+        ACCOUNT_MESSAGES.SWITCH_NAME_STILL_HELD("Billing Manager"),
+        ACCOUNT_MESSAGES.SWITCH_RECORD_MISSING,
+        ACCOUNT_MESSAGES.STATE_WAITING(ACCOUNT_MESSAGES.STATE_DECLINED),
+      ];
+      for (const message of messages) expect(message).not.toMatch(INTERNAL_CODE);
+    });
+
+    it("the switch answers at once, whatever it finds, and releases what was held for it", async () => {
+      const { account, session, boss } = owner();
+      const sync = await import("@erp/sync");
+      const data = await import("@erp/data");
+      const roleEvent = role({ roleCode: "store-operator", name: "Store Operator", revision: 1 });
+      sync.parkEvent(
+        db.db,
+        { seq: 7, nowMs: Date.now(), reason: data.HELD_FOR_SWITCH, envelope: { dedupeKey: "ACCOUNT_ROLE:store-operator:1", aggregateType: "ACCOUNT_ROLE", aggregateId: "store-operator", operation: "INSERT", payload: roleEvent, originDeviceId: "cloud", createdAt: "2026-11-04T08:00:00.000Z" } },
+        { baseMs: 900_000, maxMs: 900_000 }
+      );
+      const started = Date.now();
+      expect((await press(boss, session, account.id, [DELETED])).kind).toBe("SWITCHED");
+      expect(Date.now() - started).toBeLessThan(2_000);
+      expect(db.db.prepare("SELECT next_try_at FROM sync_inbox_parked").get()).toMatchObject({ next_try_at: 0 });
     });
   });
 
