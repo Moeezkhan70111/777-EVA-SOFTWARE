@@ -47,7 +47,9 @@ export interface AdminData {
   handleReviewAccessRequest: (requestId: string, decision: ReviewDecision, permissions?: string[], roleCode?: string) => Promise<void>;
   handleMemberPermissions: (userId: string, permissions: string[]) => Promise<void>;
   handleSaveMemberAccess: (userId: string, access: MemberAccessChange) => Promise<boolean>;
-  handleMemberRevoke: (userId: string) => Promise<void>;
+  /** Revoke and its undo: null when done, or why it was refused (shown in the confirmation). */
+  handleMemberRevoke: (userId: string) => Promise<string | null>;
+  handleMemberRestore: (userId: string) => Promise<string | null>;
   handleCreateRole: (input: RoleInput) => Promise<void>;
   handleUpdateRole: (code: string, input: RoleUpdate) => Promise<void>;
   handleDeleteRole: (code: string) => Promise<void>;
@@ -164,10 +166,22 @@ export const useAdminData = ({ api, push, session, sessionToken, setAuthError }:
     return true;
   };
 
-  const handleMemberRevoke = async (userId: string) => {
-    if (!sessionToken || typeof api.revokeUserAccess !== "function") return;
+  // Both re-read the members afterwards: under cloud accounts a revoke is stored as REVOKED, a
+  // local one as REJECTED, and only the data layer knows which.
+  const handleMemberRevoke = async (userId: string): Promise<string | null> => {
+    if (!sessionToken || typeof api.revokeUserAccess !== "function") return copy.auth.revokeFailed;
     const result = await api.revokeUserAccess(sessionToken, userId);
-    if (result.accepted) patchMember(userId, { accessStatus: ACCESS_STATUS.REJECTED });
+    if (!result.accepted) return result.reason ?? copy.auth.revokeFailed;
+    await refreshMembers();
+    return null;
+  };
+
+  const handleMemberRestore = async (userId: string): Promise<string | null> => {
+    if (!sessionToken || typeof api.restoreUserAccess !== "function") return copy.auth.restoreFailed;
+    const result = await api.restoreUserAccess(sessionToken, userId);
+    if (!result.accepted) return result.reason ?? copy.auth.restoreFailed;
+    await refreshMembers();
+    return null;
   };
 
   const handleCreateRole = async (input: RoleInput) => {
@@ -228,6 +242,7 @@ export const useAdminData = ({ api, push, session, sessionToken, setAuthError }:
     handleMemberPermissions,
     handleSaveMemberAccess,
     handleMemberRevoke,
+    handleMemberRestore,
     handleCreateRole,
     handleUpdateRole,
     handleDeleteRole,

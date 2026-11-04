@@ -901,6 +901,17 @@ export const usersMethods = {
     this.db.prepare("UPDATE app_users SET access_status = 'REJECTED', updated_at = ? WHERE id = ? AND role <> 'ADMIN'").run(new Date().toISOString(), userId);
   },
 
+  /** The undo of revokeUserAccess: a revoked or rejected person is approved again, keeping their role. */
+  restoreUserAccess(this: SqliteDatabase, userId: string, reviewerId: string): void {
+    requireLocalAccounts(this.db);
+    const admin = this.db.prepare("SELECT role FROM app_users WHERE id = ?").get(reviewerId) as { role?: string } | undefined;
+    if (admin?.role !== "ADMIN") throw new Error("Administrator access required");
+    const restored = this.db
+      .prepare("UPDATE app_users SET access_status = 'APPROVED', updated_at = ? WHERE id = ? AND role <> 'ADMIN' AND access_status IN ('REJECTED', 'REVOKED')")
+      .run(new Date().toISOString(), userId);
+    if (Number(restored.changes) === 0) throw new Error("Only a revoked or rejected person can be restored.");
+  },
+
   revokeSessionToken(this: SqliteDatabase, token: string): void {
     this.db
       .prepare("UPDATE user_sessions SET revoked_at = ? WHERE token = ?")

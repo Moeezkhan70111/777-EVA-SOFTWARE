@@ -1816,6 +1816,8 @@ export interface DesktopApi {
   workspaceUpdateStatus?(token: string, kind: "TASK" | "REQUEST", id: string, status: string): Promise<{ accepted: boolean; reason?: string }>;
   workspaceActivity?(token: string): Promise<{ accepted: boolean; activity: unknown[]; reason?: string }>;
   revokeUserAccess?(token: string, userId: string): Promise<{ accepted: boolean; reason?: string }>;
+  /** Undoes a revoke: the person is approved again with the role and screens they had. */
+  restoreUserAccess?(token: string, userId: string): Promise<{ accepted: boolean; reason?: string }>;
   getDashboard(): Promise<DashboardSnapshot>;
   listInventory(search: string): Promise<InventoryRow[]>;
   listInventoryUnits(): Promise<Array<Record<string, unknown>>>;

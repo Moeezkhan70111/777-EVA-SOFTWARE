@@ -47,6 +47,7 @@ export const IPC = {
   getUserNotifications: "erp:get-user-notifications",
   markNotificationRead: "erp:mark-notification-read",
   revokeUserAccess: "erp:revoke-user-access",
+  restoreUserAccess: "erp:restore-user-access",
   createPermissionRequest: "erp:create-permission-request",
   getPermissionRequests: "erp:get-permission-requests",
   getMyPermissionRequests: "erp:get-my-permission-requests",

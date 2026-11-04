@@ -15,6 +15,7 @@ export const ProfilePage = ({
   roles,
   onPermissions,
   onRevoke,
+  onRestore,
   onReview,
   onSaveAccess,
   onCreateRole,
@@ -38,7 +39,8 @@ export const ProfilePage = ({
     loginPolicy?: "ALWAYS_LOGGED_IN" | "DAILY_LOGIN";
   }>;
   onPermissions?: (id: string, permissions: string[]) => Promise<void>;
-  onRevoke?: (id: string) => Promise<void>;
+  onRevoke?: (id: string) => Promise<string | null>;
+  onRestore?: (id: string) => Promise<string | null>;
   onReview: (
     requestId: string,
     decision: "APPROVED" | "REJECTED",
@@ -70,7 +72,7 @@ export const ProfilePage = ({
           Logout
         </button>
       </div>
-      {members && onPermissions && onRevoke && (
+      {members && onPermissions && onRevoke && onRestore && (
         <>
           {onSwitchedToCloud && <CloudAccountsSwitchCard onSwitched={onSwitchedToCloud} />}
           <CloudRoleCopyCard />
@@ -85,6 +87,7 @@ export const ProfilePage = ({
             roleOptions={roleOptions}
             onPermissions={onPermissions}
             onRevoke={onRevoke}
+            onRestore={onRestore}
             onReview={onReview}
             onSaveAccess={onSaveAccess}
           />

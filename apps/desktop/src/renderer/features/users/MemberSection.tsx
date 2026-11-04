@@ -2,24 +2,36 @@ import React, { useState } from "react";
 import { NAV_PERMISSION_MODULES } from "../../components/layout/Navbar";
 import { describePerm } from "./permissions";
 import { formatDateTime } from "../../utils/dates";
+import { MEMBER_STATUS } from "./types";
 import type { Member } from "./types";
 import type { MemberAccessChange } from "../../types/desktopApi";
 import { copy } from "../../config/copy";
 import { CloudPasswordReset } from "../auth/CloudPasswordReset";
 import { CloudAdminToggle } from "../auth/CloudAdminToggle";
+import { MemberAccessButton } from "./MemberAccessButton";
+
+/** The list's label: the role, except for someone whose access ended -- that is said in words. */
+const memberLabel = (member: Member): string => {
+  if (member.role === "ADMIN") return "Admin";
+  if (member.accessStatus === MEMBER_STATUS.REVOKED) return copy.auth.statusRevoked;
+  if (member.accessStatus === MEMBER_STATUS.REJECTED) return copy.auth.statusRejected;
+  return (member.roleName ?? member.jobRole) || member.accessStatus;
+};
 
 export const MemberSection = ({
   members,
   roleOptions,
   onPermissions,
   onRevoke,
+  onRestore,
   onReview,
   onSaveAccess,
 }: {
   members: Member[];
   roleOptions: Array<{ code: string; name: string; permissions: string[] }>;
   onPermissions: (id: string, permissions: string[]) => Promise<void>;
-  onRevoke: (id: string) => Promise<void>;
+  onRevoke: (id: string) => Promise<string | null>;
+  onRestore: (id: string) => Promise<string | null>;
   onReview: (
     requestId: string,
     decision: "APPROVED" | "REJECTED",
@@ -98,9 +110,7 @@ export const MemberSection = ({
                 <span
                   className={`member-status ${member.accessStatus.toLowerCase()}`}
                 >
-                  {member.role === "ADMIN"
-                    ? "Admin"
-                    : (member.roleName ?? member.jobRole) || member.accessStatus}
+                  {memberLabel(member)}
                 </span>
               </span>
               <span className="member-login">
@@ -474,16 +484,12 @@ export const MemberSection = ({
               </div>
             )}
             <div className="member-modal-actions">
-              <button
-                type="button"
-                className="btn btn-danger"
-                onClick={() => {
-                  void onRevoke(selectedMember.id);
-                  setSelectedMember(null);
-                }}
-              >
-                Revoke Access
-              </button>
+              <MemberAccessButton
+                member={selectedMember}
+                onRevoke={onRevoke}
+                onRestore={onRestore}
+                onDone={() => setSelectedMember(null)}
+              />
               <CloudPasswordReset userId={selectedMember.id} />
               <CloudAdminToggle
                 userId={selectedMember.id}

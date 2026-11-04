@@ -299,6 +299,17 @@ export function registerUsersHandlers(ctx: IpcContext): void {
     catch (error) { return { accepted: false, reason: error instanceof Error ? error.message : "Unable to revoke access" }; }
   });
 
+  // The undo of a revoke: approved again, with the role, screens, job role and level they had (the
+  // cloud keeps them through a revoke, and setAccess sends them back unchanged).
+  ipcMain.handle(IPC.restoreUserAccess, async (_event, token?: string, userId?: string) => {
+    const admin = typeof token === "string" ? db.getUserBySessionToken(token.trim()) : null;
+    if (!admin || admin.role !== USER_ROLE.ADMIN || !userId) return { accepted: false, reason: "Administrator access required" };
+    const viaCloud = await cloud(token);
+    if (viaCloud) return setAccess(viaCloud, userId, { status: "APPROVED" });
+    try { db.restoreUserAccess(userId, admin.id); return { accepted: true }; }
+    catch (error) { return { accepted: false, reason: error instanceof Error ? error.message : "Unable to restore access" }; }
+  });
+
   const requirePermission = (token: string | undefined, permission: string) => {
     const user = typeof token === "string" ? db.getUserBySessionToken(token.trim()) : null;
     if (!user) throw new Error("Your session has expired. Please sign in again.");
