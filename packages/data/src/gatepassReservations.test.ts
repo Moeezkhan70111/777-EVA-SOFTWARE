@@ -390,7 +390,7 @@ test("over-reservation — GP1 3 + GP2 2 fill Current 5; GP3 for 1 is rejected, 
     assert.equal((await createGatepass(f.db, party, [{ variantId: red.variantId, quantity: 2 }])).accepted, true);
     const gp3 = await createGatepass(f.db, party, [{ variantId: red.variantId, quantity: 1 }]);
     assert.equal(gp3.outcome, "INSUFFICIENT_STOCK");
-    assert.match(gp3.reason ?? "", /Current Stock: 5\. Reserved: 5\. Reflected Stock: 0\. Requested: 1\./);
+    assert.match(gp3.reason ?? "", /In Store: 5\. Reserved: 5\. Available: 0\. Requested: 1\./);
     assert.deepEqual(f.db.listStoreStock().map((r) => [r.color, r.storeQuantity, r.reservedQuantity, r.reflectedQuantity]), [["RED", 5, 5, 0]]);
   } finally {
     f.cleanup();

@@ -120,8 +120,9 @@ const chooseParty = async (text: string) => {
   });
 };
 
-/** Clicks "+ Add Article", types, and picks the first match. */
+/** Clicks "+ Add Article" once the store has loaded (it is disabled until then), types, and picks the first match. */
 const addArticle = async (text: string) => {
+  await waitFor(() => expect(screen.getByTestId("gatepass-add-article")).toBeEnabled());
   await act(async () => {
     fireEvent.click(screen.getByTestId("gatepass-add-article"));
   });
@@ -163,6 +164,7 @@ describe("GatepassPage", () => {
     await screen.findByTestId("gatepass-articles-section");
     await waitFor(() => expect(api.listGatepassStoreStock).toHaveBeenCalledWith({ token: "token-1" }));
     expect(await screen.findByText("No articles added")).toBeInTheDocument();
+    expect(screen.getByText("Add an article to see its In Store, Reserved and Available figures by color and enter the Gatepass quantity.")).toBeInTheDocument();
     expect(screen.getByTestId("gatepass-summary-total")).toHaveTextContent("0");
     expect(screen.getByTestId("gatepass-summary-counts")).toHaveTextContent("0 Articles · 0 Colors");
     expect(screen.getByTestId("gatepass-summary-party")).toHaveTextContent("No party selected");
@@ -643,7 +645,7 @@ describe("GatepassPage", () => {
         return {
           accepted: false,
           outcome: "STOCK_CHANGED",
-          reason: "Reflected Stock changed before the Gatepass could be created. Please review the latest figures.",
+          reason: "Available stock changed before the Gatepass could be created. Please review the latest figures.",
           shortages: [{ productVariantId: "v-sk6-red-710", article: "SK6", color: "RED", size: "7/10", requested: 100, currentStock: 120, reserved: 40, reflected: 80, seen: 120 }],
         };
       },
@@ -662,8 +664,9 @@ describe("GatepassPage", () => {
     });
 
     const alert = await screen.findByTestId("gatepass-submit-error");
-    expect(alert).toHaveTextContent("Reflected Stock changed before the Gatepass could be created.");
-    expect(alert).toHaveTextContent("SK6 / RED / 7/10 — Current Stock 120, Reserved 40, Reflected Stock 80, Requested 100 (you saw 120)");
+    expect(alert).toHaveTextContent("Available stock changed before the Gatepass could be created.");
+    expect(alert).toHaveTextContent("SK6 / RED / 7/10 — In Store 120, Reserved 40, Available 80, Requested 100 (you saw 120)");
+    expect(alert).not.toHaveTextContent("Reflected");
     expect(calls).toBe(1);
     expect(screen.queryByTestId("gatepass-document")).not.toBeInTheDocument();
     // The store is re-read, the short article is opened, its row validates against 80, the other line is untouched.
