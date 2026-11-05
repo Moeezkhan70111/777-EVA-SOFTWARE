@@ -142,6 +142,15 @@ function writeNode(sql: SyncSqlHandle, spec: RecordTableSpec, node: RecordNode, 
   }
 }
 
+/**
+ * Writes a whole record as THIS computer's own change: capture stays on, so the builder sends it as
+ * the next revision. For a repair that puts a record back (restoreRemovedMaterials.ts), never for an
+ * arrival, which is another computer's change and goes through its contract.
+ */
+export function writeOwnRecord(sql: SyncSqlHandle, type: MasterRecordType, body: RecordNode): void {
+  writeNode(sql, MASTER_RECORDS[type], body, null);
+}
+
 /** A constraint the database raised while writing, as a wait -- or null for anything else. */
 function waitReason(type: MasterRecordType, recordId: string, deleting: boolean, error: unknown): string | null {
   const message = error instanceof Error ? error.message : "";
