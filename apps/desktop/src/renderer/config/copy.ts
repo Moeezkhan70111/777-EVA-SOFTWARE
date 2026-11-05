@@ -437,6 +437,13 @@ export const copy = {
       `This computer has not been able to check for updates for ${String(days)} ${days === 1 ? "day" : "days"}. ${reason} 777 ERP keeps working normally, but it will not receive new versions until this is fixed.`,
   },
 
+  // Said at sign-in on a computer set to the wrong time zone (hooks/useTimezoneWarning.ts).
+  timezone: {
+    wrongTitle: "⚠ This Computer Is On The Wrong Time Zone",
+    wrongBody: (zone: string) =>
+      `Windows is set to ${zone}, and 777 ERP works in Pakistan time. Some dates and times on this computer may be wrong until it is fixed. In Windows Settings, under Date & time, choose (UTC+05:00) Islamabad, Karachi: Pakistan Standard Time.`,
+  },
+
   // Said at sign-in on a computer that cannot number documents or print labels, because the
   // alternative is discovering it at the printer with a run of stickers to print.
   numberRange: {
