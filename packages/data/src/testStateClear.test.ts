@@ -9,6 +9,7 @@ import { backup, DatabaseSync } from "node:sqlite";
 import { SqliteDatabase } from "./sqliteDatabase.js";
 import {
   RETIRED_NOTE,
+  TEST_STATE_CLEAR_SCHEMA,
   TestStateClearRefused,
   applyTestStateClear,
   planTestStateClear,
@@ -21,11 +22,28 @@ const NOW = "2026-10-31T10:00:00.000Z";
 
 type Run = (sql: string, ...params: Array<string | number | null>) => void;
 
-/** A store database at the current schema, its device id set, and a copy of it to clear. */
+/**
+ * The migrations up to the schema the clear is built for (TEST_STATE_CLEAR_SCHEMA, 0.4.0's 099).
+ * The clear runs once, on PC2's database at that schema, on cutover day. Later migrations exist on
+ * this branch but never reach a database before the clear has run on it.
+ */
+function migrationsUpToClearSchema(into: string): string {
+  const source = path.resolve(import.meta.dirname, "../../../migrations/sqlite");
+  const ceiling = Number(/^(\d+)/.exec(TEST_STATE_CLEAR_SCHEMA)?.[1]);
+  fs.mkdirSync(into);
+  for (const file of fs.readdirSync(source)) {
+    const digits = /^(\d+)/.exec(file);
+    if (file.endsWith(".up.sql") && digits && Number(digits[1]) <= ceiling) fs.copyFileSync(path.join(source, file), path.join(into, file));
+  }
+  return into;
+}
+
+/** A store database at the clear's schema, its device id set, and a copy of it to clear. */
 async function withStore(work: (input: DatabaseSync, output: DatabaseSync, run: Run) => void, seed: (run: Run) => void): Promise<void> {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "erp-clear-"));
   try {
-    const store = new SqliteDatabase({ dbPath: path.join(dir, "in.db"), schemaPath: SCHEMA });
+    const migrationsDir = migrationsUpToClearSchema(path.join(dir, "migrations"));
+    const store = new SqliteDatabase({ dbPath: path.join(dir, "in.db"), schemaPath: SCHEMA, migrationsDir });
     const run: Run = (sql, ...params) => void store.db.prepare(sql).run(...params);
     run(`INSERT INTO app_settings (setting_key, setting_value, value_type, is_encrypted, updated_by, updated_at)
          VALUES ('device.id', ?, 'string', 0, 'test', ?) ON CONFLICT(setting_key) DO UPDATE SET setting_value = excluded.setting_value`, DEVICE, NOW);

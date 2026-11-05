@@ -28,6 +28,8 @@ export type WaitTier = "WAITING" | "STUCK" | "STALE";
 export type WaitCause =
   | { readonly kind: "MISSING"; readonly record: string; readonly id: string }
   | { readonly kind: "IN_USE"; readonly record: string; readonly id: string }
+  /** A material's removal, until its stock here reaches zero. Any arrival may be the movement that does it. */
+  | { readonly kind: "HOLDS_STOCK"; readonly id: string }
   | { readonly kind: "NAME_TAKEN"; readonly column: string }
   /** Moved aside so another record's revision could take its name; waits for its own revision. */
   | { readonly kind: "DISPLACED"; readonly columns: readonly string[] }
@@ -56,6 +58,9 @@ export interface WaitingSummary {
   readonly oldestSince: string | null;
 }
 
+/** The reason a material's removal waits with, followed by the material's id. */
+export const ITEM_HOLDS_STOCK_WAIT = `STILL_HOLDS_STOCK:${SYNC_AGGREGATE.INVENTORY_ITEM}:`;
+
 const UNKNOWN_TO_RECORD: Readonly<Record<string, string>> = {
   UNKNOWN_PARTY: SYNC_AGGREGATE.PARTY,
   UNKNOWN_INVENTORY_ITEM: SYNC_AGGREGATE.INVENTORY_ITEM,
@@ -71,6 +76,7 @@ const UNKNOWN_TO_RECORD: Readonly<Record<string, string>> = {
 
 /** The reason a contract parked an event with, as a cause. Unrecognised reasons are kept as they are. */
 export function waitCause(reason: string): WaitCause {
+  if (reason.startsWith(ITEM_HOLDS_STOCK_WAIT)) return { kind: "HOLDS_STOCK", id: reason.slice(ITEM_HOLDS_STOCK_WAIT.length) };
   const [code = "", ...rest] = reason.split(":");
   if ((code === "WAITING_FOR" || code === "STILL_IN_USE") && rest.length >= 2) {
     const [record = "", ...idParts] = rest;
@@ -233,6 +239,8 @@ export function describeWaiting(entry: WaitingEntry): { subject: string; waiting
       ? `a ${recordWords(cause.record)} not on this computer yet (${cause.id})`
       : cause.kind === "IN_USE"
         ? "removal: still in use on this computer"
+        : cause.kind === "HOLDS_STOCK"
+          ? "removal: it still holds stock on this computer"
         : cause.kind === "NAME_TAKEN"
           ? `its name, still held by another record here (${cause.column})`
           : cause.kind === "DISPLACED"

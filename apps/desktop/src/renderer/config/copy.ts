@@ -505,6 +505,7 @@ export const copy = {
     cause: {
       missing: (record: string, id: string) => `a ${record} that has not reached this computer (${id})`,
       inUse: "removal — it is still in use on this computer",
+      holdsStock: "removal — it still holds stock on this computer",
       nameTaken: "its name, still held by an out-of-date record here",
       displaced: "its own update — its name was lent to another record",
       other: (code: string) => `something this computer cannot name (${code})`,
@@ -812,7 +813,7 @@ export const copy = {
   removal: {
     deleteMaterial: "Delete this material",
     deleteMaterialTitle: (name: string) => `Delete ${name}?`,
-    deleteMaterialExplain: "This material has no stock, no movements and no labels, so deleting it removes it completely.",
+    deleteMaterialExplain: "This material holds no stock and nothing refers to it, so it can be removed.",
     deleteMaterialWarning: "This cannot be undone.",
     deleteMaterialDone: (name: string) => `${name} deleted.`,
     cannotDeleteTitle: "This material cannot be deleted",
@@ -825,9 +826,10 @@ export const copy = {
     showDisabled: "Show disabled",
     disabledBadge: "Disabled",
     enabled: (name: string) => `${name} is back in use.`,
-    eraseForGood: "Erase it for good",
+    eraseForGood: "Remove it",
+    keptOnRecord: "Stays on record",
     eraseAlsoTakes: (what: string) =>
-      `Nothing outside this material refers to it, so it can be erased for good. Its ${what} would go with it.`,
+      `It holds no stock and nothing outside it refers to it, so it can be removed. Its ${what} stay on record.`,
     checking: "Checking…",
     deleting: "Deleting…",
 
