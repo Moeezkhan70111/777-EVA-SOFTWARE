@@ -4,7 +4,7 @@ import type { LoginPolicy } from "@erp/domain";
 
 export type ReviewDecision = "APPROVED" | "REJECTED";
 import type { NoticeKind } from "../../state/NotificationsContext";
-import type { AuthUser, DesktopApi, MemberAccessChange } from "../../types/desktopApi";
+import type { AuthUser, DesktopApi, MemberAccessChange, MemberAccessReport } from "../../types/desktopApi";
 import { copy } from "../../config/copy";
 import type { AccessRequestRow, Member, PermissionRequestAdminView, RoleOption, RoleRecord, UserNotification } from "./types";
 
@@ -46,7 +46,8 @@ export interface AdminData {
   handleNotificationClick: (notification: UserNotification) => void;
   handleReviewAccessRequest: (requestId: string, decision: ReviewDecision, permissions?: string[], roleCode?: string) => Promise<void>;
   handleMemberPermissions: (userId: string, permissions: string[]) => Promise<void>;
-  handleSaveMemberAccess: (userId: string, access: MemberAccessChange) => Promise<boolean>;
+  /** What the save did, or null when it was refused (the reason is already on screen). */
+  handleSaveMemberAccess: (userId: string, access: MemberAccessChange) => Promise<MemberAccessReport | null>;
   /** Revoke and its undo: null when done, or why it was refused (shown in the confirmation). */
   handleMemberRevoke: (userId: string) => Promise<string | null>;
   handleMemberRestore: (userId: string) => Promise<string | null>;
@@ -155,15 +156,15 @@ export const useAdminData = ({ api, push, session, sessionToken, setAuthError }:
 
   // The member details' Save: one change, all saved or refused with the reason shown. It was four
   // calls, and a refused one (a role not in the cloud yet) was dropped with nothing said.
-  const handleSaveMemberAccess = async (userId: string, access: MemberAccessChange): Promise<boolean> => {
-    if (!sessionToken || typeof api.saveMemberAccess !== "function") return false;
+  const handleSaveMemberAccess = async (userId: string, access: MemberAccessChange): Promise<MemberAccessReport | null> => {
+    if (!sessionToken || typeof api.saveMemberAccess !== "function") return null;
     const result = await api.saveMemberAccess(sessionToken, userId, access);
-    if (!result.accepted) {
+    if (!result.accepted || !result.report) {
       push("error", copy.auth.memberSaveFailed, result.reason ?? "");
-      return false;
+      return null;
     }
     await refreshMembers();
-    return true;
+    return result.report;
   };
 
   // Both re-read the members afterwards: under cloud accounts a revoke is stored as REVOKED, a

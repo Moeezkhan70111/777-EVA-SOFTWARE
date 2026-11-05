@@ -59,7 +59,10 @@ const show = (
 
 describe("Save is one change per press (rehearsal, 2 Nov)", () => {
   it("sends the role, its name as job role, authority and extras together, once", async () => {
-    const onSaveAccess = vi.fn().mockResolvedValue(true);
+    const onSaveAccess = vi.fn().mockResolvedValue({
+      stored: { roleCode: "store", jobRole: "Store", authorityLevel: 10, extraPermissions: ["logs"] },
+      fields: [{ field: "ROLE", outcome: "CHANGED" }],
+    });
     show([member({ roleCode: "munshi", roleName: "Munshi", jobRole: "Munshi", additionalPermissions: ["logs"] })], undefined, onSaveAccess);
     await userEvent.click(screen.getByRole("button", { name: /Ali/ }));
     await userEvent.selectOptions(screen.getByRole("combobox"), "store");
@@ -70,12 +73,42 @@ describe("Save is one change per press (rehearsal, 2 Nov)", () => {
   });
 
   it("a refused Save does not say it saved", async () => {
-    const onSaveAccess = vi.fn().mockResolvedValue(false);
+    const onSaveAccess = vi.fn().mockResolvedValue(null);
     show([member({})], undefined, onSaveAccess);
     await userEvent.click(screen.getByRole("button", { name: /Ali/ }));
     await userEvent.click(screen.getByRole("button", { name: "Save Changes" }));
     expect(onSaveAccess).toHaveBeenCalledTimes(1);
     await waitFor(() => expect(screen.queryByText("Changes saved")).not.toBeInTheDocument());
+  });
+});
+
+describe("taking a role away (rehearsal, 5 Nov)", () => {
+  it("sends no role, and shows what the save reports", async () => {
+    const onSaveAccess = vi.fn().mockResolvedValue({
+      stored: { roleCode: null, jobRole: "", authorityLevel: 10, extraPermissions: [] },
+      fields: [{ field: "ROLE", outcome: "CHANGED" }, { field: "JOB_ROLE", outcome: "CHANGED" }],
+    });
+    show([member({ roleCode: "munshi", roleName: "Munshi", jobRole: "Munshi" })], undefined, onSaveAccess);
+    await userEvent.click(screen.getByRole("button", { name: /Ali/ }));
+    await userEvent.selectOptions(screen.getByRole("combobox"), "");
+    await userEvent.click(screen.getByRole("button", { name: "Save Changes" }));
+    expect(onSaveAccess.mock.calls[0]?.[1]).toMatchObject({ roleCode: null });
+    expect(await screen.findByText("Role removed")).toBeInTheDocument();
+    expect(screen.getByRole("combobox")).toHaveValue("");
+  });
+
+  it("a role the save did not take goes back to what the person still has, and says so", async () => {
+    const onSaveAccess = vi.fn().mockResolvedValue({
+      stored: { roleCode: "munshi", jobRole: "Munshi", authorityLevel: 10, extraPermissions: [] },
+      fields: [{ field: "ROLE", outcome: "NOT_SAVED" }],
+    });
+    show([member({ roleCode: "munshi", roleName: "Munshi", jobRole: "Munshi" })], undefined, onSaveAccess);
+    await userEvent.click(screen.getByRole("button", { name: /Ali/ }));
+    await userEvent.selectOptions(screen.getByRole("combobox"), "");
+    await userEvent.click(screen.getByRole("button", { name: "Save Changes" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("still Munshi");
+    expect(screen.getByRole("combobox")).toHaveValue("munshi");
+    expect(screen.queryByText("Changes saved")).not.toBeInTheDocument();
   });
 });
 

@@ -9,7 +9,7 @@
 // An admin's change to one field is sent as the person's WHOLE access decision, built from this
 // computer's copy of them: the cloud judges the whole (020's admin_set_access), never a fragment.
 
-import type { AccessSuggestion, AccountRolePayload, MemberAccessChange, PermissionRequestPayload, SqliteDatabase } from "@erp/data";
+import type { AccessSuggestion, AccountRolePayload, MemberAccessChange, MemberAccessReport, MemberAccessState, PermissionRequestPayload, PersonPayload, SqliteDatabase } from "@erp/data";
 import type { AccessDecision, AccountCallFailure, AccountDeclined, AccountFunctionCaller, RoleDefinition } from "@erp/sync";
 
 export interface CloudAdminDeps {
@@ -20,7 +20,10 @@ export interface CloudAdminDeps {
   readonly personToken: string | null;
 }
 
-export type AdminResult = { readonly accepted: true } | { readonly accepted: false; readonly reason: string };
+type AdminRefusal = { readonly accepted: false; readonly reason: string };
+export type AdminResult = { readonly accepted: true } | AdminRefusal;
+/** A member's Save: on acceptance, what it actually did. */
+export type SaveAccessResult = { readonly accepted: true; readonly report: MemberAccessReport } | AdminRefusal;
 
 /** What an admin is told. One place, for translation later (R21). */
 export const CLOUD_ADMIN_MESSAGES = {
@@ -66,13 +69,13 @@ const DECLINED_MESSAGES: Readonly<Record<string, string>> = {
 type Ready = { readonly caller: AccountFunctionCaller; readonly token: string };
 
 /** The caller and token, or why this cannot be asked of the cloud now. */
-function ready(deps: CloudAdminDeps): Ready | AdminResult {
+function ready(deps: CloudAdminDeps): Ready | AdminRefusal {
   if (deps.personToken === null) return { accepted: false, reason: CLOUD_ADMIN_MESSAGES.SIGN_IN_AGAIN };
   if (deps.caller === null) return { accepted: false, reason: CLOUD_ADMIN_MESSAGES.OFFLINE };
   return { caller: deps.caller, token: deps.personToken };
 }
 
-function refused(answer: AccountDeclined | AccountCallFailure): AdminResult {
+function refused(answer: AccountDeclined | AccountCallFailure): AdminRefusal {
   if (answer.kind === "DECLINED") return { accepted: false, reason: DECLINED_MESSAGES[answer.reason] ?? CLOUD_ADMIN_MESSAGES.OTHER(answer.reason) };
   if (answer.kind === "REFUSED") return { accepted: false, reason: CLOUD_ADMIN_MESSAGES.DEVICE_REFUSED };
   if (answer.kind === "UNREADABLE") return { accepted: false, reason: CLOUD_ADMIN_MESSAGES.UNREADABLE };
@@ -160,6 +163,16 @@ export async function suggestionFrom(db: SqliteDatabase, userId: string): Promis
 
 /** One change to one person, sent as their whole decision. */
 export async function setAccess(deps: CloudAdminDeps, personId: string, change: Partial<AccessDecision>): Promise<AdminResult> {
+  const sent = await sendAccess(deps, personId, change);
+  return sent.accepted ? { accepted: true } : sent;
+}
+
+/** Sends the decision, and answers with the person as the cloud now holds them. */
+async function sendAccess(
+  deps: CloudAdminDeps,
+  personId: string,
+  change: Partial<AccessDecision>
+): Promise<{ readonly accepted: true; readonly person: PersonPayload } | AdminRefusal> {
   const can = ready(deps);
   if ("accepted" in can) return can;
   const current = currentAccess(deps.db, personId);
@@ -171,7 +184,7 @@ export async function setAccess(deps: CloudAdminDeps, personId: string, change: 
   if (answer.kind !== "PERSON") return refused(answer);
   const data = await import("@erp/data");
   writeHere(deps.db, () => data.personWaitsFor(deps.db.db, answer.person), () => data.applyPersonRevision(deps.db.db, answer.person));
-  return { accepted: true };
+  return { accepted: true, person: answer.person };
 }
 
 /**
@@ -189,18 +202,26 @@ export function extrasBeyondRole(db: SqliteDatabase, roleCode: string | null, pe
  * revision in the log and one round trip, and a refusal (a role not in the cloud yet) refuses the
  * whole of it rather than leaving the rest saved. It was four calls (rehearsal, 2 Nov: four presses
  * made twelve revisions in two seconds, the role refused each time with nothing said).
+ *
+ * The report is read from the cloud's answer, not this computer's copy: the copy can wait for a role
+ * still on its way, and that wait is not the cloud having said no.
  */
-export async function saveMemberAccess(deps: CloudAdminDeps, personId: string, change: MemberAccessChange): Promise<AdminResult> {
+export async function saveMemberAccess(deps: CloudAdminDeps, personId: string, change: MemberAccessChange): Promise<SaveAccessResult> {
   const current = currentAccess(deps.db, personId);
   if (current === null) return { accepted: false, reason: CLOUD_ADMIN_MESSAGES.NOT_HERE };
-  const roleCode = change.roleCode ?? current.roleCode;
-  return setAccess(deps, personId, {
-    roleCode,
-    jobRole: change.jobRole ?? current.jobRole,
-    authorityLevel: change.authorityLevel,
-    extraPermissions: extrasBeyondRole(deps.db, roleCode, change.extraPermissions),
-  });
+  const data = await import("@erp/data");
+  const wanted = data.settleMemberAccess(current, change, deps.db.listRoles());
+  const sent = await sendAccess(deps, personId, wanted);
+  if (!sent.accepted) return sent;
+  return { accepted: true, report: data.reportMemberAccess(current, wanted, storedAccess(sent.person)) };
 }
+
+const storedAccess = (person: PersonPayload): MemberAccessState => ({
+  roleCode: person.roleCode,
+  jobRole: person.jobRole,
+  authorityLevel: person.authorityLevel,
+  extraPermissions: person.extraPermissions,
+});
 
 export async function resetPassword(deps: CloudAdminDeps, personId: string, newPassword: string): Promise<AdminResult> {
   const can = ready(deps);

@@ -2,7 +2,7 @@ import React from "react";
 import { MemberSection } from "../users/MemberSection";
 import { RolesSection } from "../users/RolesSection";
 import type { Member } from "../users/types";
-import type { AuthUser, MemberAccessChange } from "../../types/desktopApi";
+import type { AuthUser, MemberAccessChange, MemberAccessReport } from "../../types/desktopApi";
 import { CloudAccountsSwitchCard } from "./CloudAccountsSwitchCard";
 import { CloudRoleCopyCard } from "./CloudRoleCopyCard";
 
@@ -47,7 +47,7 @@ export const ProfilePage = ({
     permissions: string[],
     roleCode?: string,
   ) => Promise<void>;
-  onSaveAccess: (userId: string, access: MemberAccessChange) => Promise<boolean>;
+  onSaveAccess: (userId: string, access: MemberAccessChange) => Promise<MemberAccessReport | null>;
   onCreateRole: (input: { name: string; description?: string; permissions: string[]; loginPolicy?: "ALWAYS_LOGGED_IN" | "DAILY_LOGIN" }) => Promise<void>;
   onUpdateRole: (
     code: string,

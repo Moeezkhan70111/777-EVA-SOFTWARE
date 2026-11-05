@@ -24,9 +24,15 @@ import {
   type CloudAdminDeps,
 } from "../cloudAdmin";
 import { signedInTransport } from "../cloudSyncPass";
-import type { MemberAccessChange } from "@erp/data";
+import { MEMBER_AUTHORITY, type MemberAccessChange } from "@erp/data";
 
-/** The Save's payload from the renderer, checked: a blank role or job role means leave it as it is. */
+/** Refused rather than quietly moved into range: a clamp stores a number nobody typed. */
+export function authorityRefusal(level: number): string | null {
+  const inRange = level >= MEMBER_AUTHORITY.MIN && level <= MEMBER_AUTHORITY.MAX;
+  return inRange ? null : `Authority level must be between ${MEMBER_AUTHORITY.MIN} and ${MEMBER_AUTHORITY.MAX}.`;
+}
+
+/** The Save's payload from the renderer, checked: a blank role means no role, a blank job role leaves it as it is. */
 export function readMemberAccess(value: unknown): MemberAccessChange | null {
   if (typeof value !== "object" || value === null) return null;
   const input = value as Record<string, unknown>;
@@ -36,7 +42,7 @@ export function readMemberAccess(value: unknown): MemberAccessChange | null {
   return {
     roleCode: text(input.roleCode),
     jobRole: text(input.jobRole),
-    authorityLevel: Math.max(1, Math.min(99, Math.round(input.authorityLevel))),
+    authorityLevel: Math.round(input.authorityLevel),
     extraPermissions: input.extraPermissions.filter((code): code is string => typeof code === "string"),
   };
 }
@@ -132,9 +138,11 @@ export function registerUsersHandlers(ctx: IpcContext): void {
     if (!admin || admin.role !== USER_ROLE.ADMIN || typeof userId !== "string" || !userId) return { accepted: false, reason: "Administrator access required" };
     const change = readMemberAccess(access);
     if (change === null) return { accepted: false, reason: "The access to save could not be read" };
+    const outOfRange = authorityRefusal(change.authorityLevel);
+    if (outOfRange !== null) return { accepted: false, reason: outOfRange };
     const viaCloud = await cloud(token);
     if (viaCloud) return saveCloudMemberAccess(viaCloud, userId, change);
-    try { db.saveMemberAccess(userId, admin.id, change); return { accepted: true }; }
+    try { return { accepted: true, report: db.saveMemberAccess(userId, admin.id, change) }; }
     catch (error) { return { accepted: false, reason: error instanceof Error ? error.message : "Unable to save access" }; }
   });
 

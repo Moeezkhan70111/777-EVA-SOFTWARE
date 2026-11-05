@@ -93,10 +93,53 @@ describe("approving and changing people", () => {
       admin_set_access: answered({ ok: true, person: person({ revision: 2, roleCode: "munshi", jobRole: "Munshi", authorityLevel: 20, extraPermissions: ["logs"] }) }),
     });
     const result = await saveMemberAccess(deps(cloud), "p-ali", { roleCode: "munshi", jobRole: "Munshi", authorityLevel: 20, extraPermissions: ["stock", "logs"] });
-    expect(result).toEqual({ accepted: true });
+    expect(result.accepted).toBe(true);
     expect(cloud.calls).toHaveLength(1);
     expect(cloud.calls[0]?.args).toMatchObject({
       p_status: "PENDING", p_role_code: "munshi", p_job_role: "Munshi", p_authority_level: 20, p_extra_permissions: ["logs"],
+    });
+  });
+
+  describe("taking a role away, and what the Save reports", () => {
+    const heldRole = async () => {
+      const data = await import("@erp/data");
+      db.db.exec("BEGIN");
+      data.applyPersonRevision(db.db, data.readPersonPayload(person({ revision: 2, status: "APPROVED", roleCode: "munshi", jobRole: "Munshi" }))!);
+      db.db.exec("COMMIT");
+    };
+    const outcomes = (result: Awaited<ReturnType<typeof saveMemberAccess>>) =>
+      result.accepted ? Object.fromEntries(result.report.fields.map((entry) => [entry.field, entry.outcome])) : null;
+    const noRole = { roleCode: null, jobRole: "Munshi", authorityLevel: 10, extraPermissions: [] };
+
+    it("sends no role and no job role, and the role and its screens leave this computer", async () => {
+      await heldRole();
+      const cloud = new ScriptedCloud({ admin_set_access: answered({ ok: true, person: person({ revision: 3, status: "APPROVED", roleCode: null, jobRole: "" }) }) });
+
+      const result = await saveMemberAccess(deps(cloud), "p-ali", noRole);
+
+      expect(cloud.calls[0]?.args).toMatchObject({ p_role_code: null, p_job_role: "" });
+      expect(outcomes(result)).toMatchObject({ ROLE: "CHANGED", JOB_ROLE: "CHANGED" });
+      expect(db.db.prepare("SELECT role_code FROM user_role_assignments WHERE user_id = 'p-ali'").get()).toBeUndefined();
+      expect(db.recalculateEffectivePermissions("p-ali")).toEqual([]);
+    });
+
+    it("an answer that kept the role is NOT_SAVED, whatever was asked: the cloud's word is what counts", async () => {
+      await heldRole();
+      const cloud = new ScriptedCloud({ admin_set_access: answered({ ok: true, person: person({ revision: 3, status: "APPROVED", roleCode: "munshi", jobRole: "Munshi" }) }) });
+
+      const result = await saveMemberAccess(deps(cloud), "p-ali", noRole);
+
+      expect(outcomes(result)).toMatchObject({ ROLE: "NOT_SAVED" });
+      expect(result.accepted && result.report.stored.roleCode).toBe("munshi");
+    });
+
+    it("a role still on its way here is not called unsaved: the cloud has it, this copy only waits", async () => {
+      const cloud = new ScriptedCloud({ admin_set_access: answered({ ok: true, person: person({ revision: 2, roleCode: "brand-new", jobRole: "Brand New" }) }) });
+
+      const result = await saveMemberAccess(deps(cloud), "p-ali", { roleCode: "brand-new", jobRole: "Brand New", authorityLevel: 10, extraPermissions: [] });
+
+      expect(outcomes(result)).toMatchObject({ ROLE: "CHANGED" });
+      expect(db.db.prepare("SELECT role_code FROM user_role_assignments WHERE user_id = 'p-ali'").get()).toBeUndefined();
     });
   });
 

@@ -4,11 +4,12 @@ import { describePerm } from "./permissions";
 import { formatDateTime } from "../../utils/dates";
 import { MEMBER_STATUS } from "./types";
 import type { Member } from "./types";
-import type { MemberAccessChange } from "../../types/desktopApi";
+import type { MemberAccessChange, MemberAccessReport } from "../../types/desktopApi";
 import { copy } from "../../config/copy";
 import { CloudPasswordReset } from "../auth/CloudPasswordReset";
 import { CloudAdminToggle } from "../auth/CloudAdminToggle";
 import { MemberAccessButton } from "./MemberAccessButton";
+import { MemberSaveResult } from "./MemberSaveResult";
 
 /** The list's label: the role, except for someone whose access ended -- that is said in words. */
 const memberLabel = (member: Member): string => {
@@ -38,15 +39,15 @@ export const MemberSection = ({
     permissions: string[],
     roleCode?: string,
   ) => Promise<void>;
-  /** Save, as one change: false when it was refused (the reason is already on screen). */
-  onSaveAccess: (userId: string, access: MemberAccessChange) => Promise<boolean>;
+  /** Save, as one change: what it did, or null when it was refused (the reason is already on screen). */
+  onSaveAccess: (userId: string, access: MemberAccessChange) => Promise<MemberAccessReport | null>;
 }) => {
   const [selectedMember, setSelectedMember] = useState<Member | null>(null);
   const [draftAdditional, setDraftAdditional] = useState<string[]>([]);
   const [draftJobRole, setDraftJobRole] = useState("");
   const [draftAuthority, setDraftAuthority] = useState(10);
   const [selectedRoleCode, setSelectedRoleCode] = useState<string>("");
-  const [saved, setSaved] = useState(false);
+  const [saveReport, setSaveReport] = useState<MemberAccessReport | null>(null);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const openMember = (member: Member) => {
     // Someone waiting whose account moved up starts from what they had before (cloud 023): the admin
@@ -63,31 +64,36 @@ export const MemberSection = ({
     setDraftJobRole(start?.jobRole ?? member.jobRole);
     setSelectedRoleCode(start?.roleCode ?? member.roleCode ?? "");
     setDraftAuthority(start?.authorityLevel ?? member.authorityLevel);
-    setSaved(false);
+    setSaveReport(null);
     setShowAdvanced(false);
   };
+  const roleNameOf = (roleCode: string): string => roleOptions.find((role) => role.code === roleCode)?.name ?? roleCode;
   const save = async () => {
     if (!selectedMember) return;
-    // One change per press: a chosen role brings its name as the job role; with no role, a typed job
-    // role is kept; a null leaves that one as it is.
+    // One change per press: a chosen role brings its name as the job role, and "No role assigned"
+    // takes the role away. What is shown next is what the save reports, not what was asked for.
     const role = roleOptions.find((r) => r.code === selectedRoleCode);
-    const accepted = await onSaveAccess(selectedMember.id, {
+    const report = await onSaveAccess(selectedMember.id, {
       roleCode: selectedRoleCode || null,
       jobRole: selectedRoleCode ? role?.name ?? null : draftJobRole || null,
       authorityLevel: draftAuthority,
       extraPermissions: draftAdditional,
     });
-    if (!accepted) return;
+    if (report === null) return;
+    const { stored } = report;
     setSelectedMember({
       ...selectedMember,
-      additionalPermissions: draftAdditional,
-      authorityLevel: draftAuthority,
-      roleCode: selectedRoleCode || selectedMember.roleCode,
-      roleName: selectedRoleCode
-        ? roleOptions.find((r) => r.code === selectedRoleCode)?.name ?? selectedMember.roleName
-        : selectedMember.roleName,
+      additionalPermissions: stored.extraPermissions,
+      authorityLevel: stored.authorityLevel,
+      jobRole: stored.jobRole,
+      roleCode: stored.roleCode,
+      roleName: stored.roleCode === null ? null : roleNameOf(stored.roleCode),
     });
-    setSaved(true);
+    setSelectedRoleCode(stored.roleCode ?? "");
+    setDraftAdditional(stored.extraPermissions);
+    setDraftAuthority(stored.authorityLevel);
+    setDraftJobRole(stored.jobRole);
+    setSaveReport(report);
   };
   return (
     <>
@@ -478,11 +484,7 @@ export const MemberSection = ({
               </>
             )}
 
-            {saved && (
-              <div className="auth-success" role="status">
-                Changes saved
-              </div>
-            )}
+            {saveReport && <MemberSaveResult report={saveReport} roleName={roleNameOf} />}
             <div className="member-modal-actions">
               <MemberAccessButton
                 member={selectedMember}
