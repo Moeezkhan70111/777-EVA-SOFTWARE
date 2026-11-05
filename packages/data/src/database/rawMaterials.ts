@@ -348,7 +348,8 @@ export const rawMaterialsMethods = {
     // "ALL" includes disabled materials: without it a disabled one cannot be found at all,
     // and so cannot be put back in use or erased.
     const status = query.status ?? "ACTIVE";
-    const where: string[] = [];
+    // A removed material is gone from every list; its movements still name it in history.
+    const where: string[] = ["ii.removed_at IS NULL"];
     const args: Array<string> = [];
     if (status !== "ALL") {
       where.push("ii.status = ?");
@@ -735,8 +736,11 @@ export const rawMaterialsMethods = {
   /** Hides a material from pickers and stock without touching anything it took part in. */
   setInventoryItemStatus(this: SqliteDatabase, input: { itemId: string; status: "ACTIVE" | "INACTIVE"; updatedBy?: string }): void {
     if (input.status !== "ACTIVE" && input.status !== "INACTIVE") throw new Error("Unsupported status.");
-    const item = this.db.prepare("SELECT id, status FROM inventory_items WHERE id = ?").get(input.itemId) as { id: string; status: string } | undefined;
+    const item = this.db.prepare("SELECT id, status, removed_at FROM inventory_items WHERE id = ?").get(input.itemId) as
+      | { id: string; status: string; removed_at: string | null }
+      | undefined;
     if (!item) throw new Error("Raw material not found.");
+    if (item.removed_at) throw new Error("This material has been removed, so it cannot be put back in use.");
     this.db.prepare("UPDATE inventory_items SET status = ?, updated_by = ?, updated_at = ? WHERE id = ?")
       .run(input.status, input.updatedBy ?? null, new Date().toISOString(), input.itemId);
     this.writeInventoryAudit(input.itemId, "ITEM", input.itemId, "SET_STATUS", { status: item.status }, { status: input.status }, input.updatedBy);

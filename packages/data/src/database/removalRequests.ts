@@ -12,16 +12,12 @@
 // Emptiness is checked when the request is raised AND again inside the approving transaction,
 // because a material can be filed under the category while the request waits.
 //
-// A MATERIAL follows the same path, with one difference worth being clear about. Its own stock
-// ledger -- its movements and its balance -- goes WITH it, because that ledger describes nothing
-// else and would otherwise be left pointing at a material that no longer exists. What can never
-// go is anything OUTSIDE the material that names it: a printed QR label, a scan of one, a
-// purchase line, a machine program line. Those are stickers and documents out in the world, and
-// the answer there is still to disable the material rather than erase it.
-//
-// A stock correction sits on the ledger side of that line: it is a claim about THIS material
-// count, snapshotted with its own name and code, and it means nothing once the material it
-// counts is gone.
+// A MATERIAL follows the same path, but it is marked, never deleted (itemRemoval.ts). It must hold
+// no stock first: the operator issues or adjusts it to zero, so a movement says where it went. Its
+// ledger stays, because those movements replicate as append-only events and are facts the other
+// computers keep. Anything OUTSIDE the material that names it -- a printed QR label, a scan of one,
+// a purchase line, a machine program line -- still blocks it: those are stickers and documents out
+// in the world, and the answer there is to disable the material.
 //
 // These methods are merged onto SqliteDatabase (see sqliteDatabase.ts, "Feature modules").
 
@@ -29,6 +25,13 @@ import { NOTIFICATION_KIND, REMOVAL_STATUS, REMOVAL_TARGET } from "@erp/domain";
 import type { SqliteDatabase } from "../sqliteDatabase.js";
 import type { RemovalRequestRow } from "./types.js";
 import { allocateNumberInRange } from "./numberRange.js";
+import { heldStock, markItemRemoved, type HeldStock } from "./itemRemoval.js";
+
+const heldStockText = (held: HeldStock): string => `${held.quantity} ${held.unitCode ?? ""}`.trim();
+
+/** Why a material holding stock is refused, naming the quantity and what to do about it. */
+const stockRefusal = (name: string, held: HeldStock): string =>
+  `${name} still holds ${heldStockText(held)}. Issue or adjust it to zero first, so a movement shows where it went. Nothing was removed.`;
 
 const SELECT_REQUEST = `
   SELECT r.id, r.request_code, r.target_type, r.target_id, r.target_name, r.reason, r.status,
@@ -92,8 +95,11 @@ export const removalRequestsMethods = {
    * them with it. An empty list means it can go.
    */
   itemRemovalBlockers(this: SqliteDatabase, itemId: string): string[] {
-    const item = this.db.prepare("SELECT id FROM inventory_items WHERE id = ?").get(itemId) as { id: string } | undefined;
+    const item = this.db.prepare("SELECT id, removed_at FROM inventory_items WHERE id = ?").get(itemId) as
+      | { id: string; removed_at: string | null }
+      | undefined;
     if (!item) return ["This material no longer exists."];
+    if (item.removed_at) return ["This material has already been removed."];
 
     const count = (sql: string): number => Number((this.db.prepare(sql).get(itemId) as { n: number } | undefined)?.n ?? 0);
     const blockers: string[] = [];
@@ -101,6 +107,8 @@ export const removalRequestsMethods = {
       if (n > 0) blockers.push(`${n} ${n === 1 ? one : many}`);
     };
 
+    const held = heldStock(this.db, itemId);
+    if (held !== null) blockers.push(`${heldStockText(held)} in stock (issue or adjust it to zero first)`);
     add(count("SELECT COUNT(1) AS n FROM raw_material_qrs WHERE item_id = ?"), "QR label", "QR labels");
     add(count("SELECT COUNT(1) AS n FROM raw_material_qr_events WHERE item_id = ?"), "scan", "scans");
     add(count("SELECT COUNT(1) AS n FROM purchase_voucher_line_items WHERE item_id = ?"), "purchase line", "purchase lines");
@@ -113,18 +121,9 @@ export const removalRequestsMethods = {
     return blockers;
   },
 
-  /** What an approved removal would erase along with the material, in the operator's words. */
+  /** The history that stays on record after a removal, in the operator's words. */
   itemRemovalCost(this: SqliteDatabase, itemId: string): string[] {
     const cost: string[] = [];
-    const balance = this.db
-      .prepare(
-        `SELECT b.quantity_on_hand, u.code AS unit_code FROM inventory_stock_balances b
-         LEFT JOIN inventory_units u ON u.id = b.unit_id WHERE b.item_id = ?`
-      )
-      .get(itemId) as { quantity_on_hand: number; unit_code: string | null } | undefined;
-    if (balance && Number(balance.quantity_on_hand) !== 0) {
-      cost.push(`${Number(balance.quantity_on_hand)} ${balance.unit_code ?? ""}`.trim() + " still in stock");
-    }
     const movements = Number(
       (this.db.prepare("SELECT COUNT(1) AS n FROM inventory_stock_events WHERE item_id = ?").get(itemId) as
         | { n: number }
@@ -257,6 +256,9 @@ export const removalRequestsMethods = {
       .get(input.itemId) as { id: string; item_code: string; display_name: string } | undefined;
     if (!item) throw new Error("Raw material not found");
 
+    const held = heldStock(this.db, input.itemId);
+    if (held !== null) throw new Error(stockRefusal(item.display_name, held));
+
     const blockers = this.itemRemovalBlockers(input.itemId);
     if (blockers.length > 0) {
       throw new Error(
@@ -318,7 +320,7 @@ export const removalRequestsMethods = {
             crypto.randomUUID(),
             adminId,
             "Raw material removal to approve",
-            `${requester?.username ?? "A user"} asked to erase ${item.display_name} (${item.item_code})${cost.length > 0 ? `, which also erases ${cost.join(" and ")}` : ""}${reason ? ` -- "${reason}"` : ""} (${requestCode})`,
+            `${requester?.username ?? "A user"} asked to erase ${item.display_name} (${item.item_code})${cost.length > 0 ? ` (its ${cost.join(" and ")} stay on record)` : ""}${reason ? ` -- "${reason}"` : ""} (${requestCode})`,
             now,
             NOTIFICATION_KIND.REMOVAL_REQUESTED,
             item.id,
@@ -389,13 +391,15 @@ export const removalRequestsMethods = {
           }
           this.deleteEmptyInventoryCategory(request.target_id);
         } else {
+          const held = heldStock(this.db, request.target_id);
+          if (held !== null) throw new Error(stockRefusal(request.target_name, held));
           const blockers = this.itemRemovalBlockers(request.target_id);
           if (blockers.length > 0) {
             throw new Error(
               `${request.target_name} now has ${blockers.join(" and ")} recorded against it. Nothing was deleted.`
             );
           }
-          this.eraseInventoryItemWithLedger(request.target_id, reviewer.username);
+          this.removeInventoryItemKeepingHistory(request.target_id, reviewer.username);
         }
       }
 
@@ -446,36 +450,25 @@ export const removalRequestsMethods = {
   },
 
   /**
-   * Erases a material and the ledger that describes only it. Called only from inside an
-   * approving transaction, which has already proved nothing outside the material names it.
-   *
-   * Its stock movements and balance go too: they are this material's own history, and leaving
-   * them would leave rows pointing at a material that is not there. The audit trail keeps what
-   * was done, with the id let go, exactly as deleteInventoryItem does.
+   * Marks a material removed, keeping everything that happened to it. Called only from inside an
+   * approving transaction, which has already proved it holds no stock and that nothing outside
+   * it names it. The mark reaches the other computers as an ordinary revision.
    */
-  eraseInventoryItemWithLedger(this: SqliteDatabase, itemId: string, erasedBy?: string): void {
+  removeInventoryItemKeepingHistory(this: SqliteDatabase, itemId: string, removedBy?: string): void {
     const item = this.db
-      .prepare("SELECT id, item_code, display_name, category_id FROM inventory_items WHERE id = ?")
-      .get(itemId) as { id: string; item_code: string; display_name: string; category_id: string } | undefined;
+      .prepare("SELECT id, item_code, display_name, category_id, status FROM inventory_items WHERE id = ?")
+      .get(itemId) as { id: string; item_code: string; display_name: string; category_id: string; status: string } | undefined;
     if (!item) throw new Error("Raw material not found.");
 
-    this.db.prepare("DELETE FROM inventory_item_unit_steps WHERE item_id = ?").run(itemId);
-    this.db.prepare("DELETE FROM stock_correction_requests WHERE item_id = ?").run(itemId);
-    this.db.prepare("DELETE FROM inventory_stock_events WHERE item_id = ?").run(itemId);
-    this.db.prepare("DELETE FROM inventory_stock_balances WHERE item_id = ?").run(itemId);
-    this.db.prepare("DELETE FROM inventory_item_values WHERE item_id = ?").run(itemId);
-    this.db.prepare("DELETE FROM raw_material_qr_sequences WHERE item_id = ?").run(itemId);
-    this.db.prepare("UPDATE inventory_item_audit SET item_id = NULL WHERE item_id = ?").run(itemId);
-    this.db.prepare("DELETE FROM inventory_items WHERE id = ?").run(itemId);
-
+    markItemRemoved(this.db, itemId, new Date().toISOString(), removedBy ?? null);
     this.writeInventoryAudit(
-      null,
+      itemId,
       "ITEM",
       itemId,
-      "DELETE",
-      { itemCode: item.item_code, displayName: item.display_name, categoryId: item.category_id },
+      "REMOVE",
+      { itemCode: item.item_code, displayName: item.display_name, categoryId: item.category_id, status: item.status },
       null,
-      erasedBy
+      removedBy
     );
   },
 
