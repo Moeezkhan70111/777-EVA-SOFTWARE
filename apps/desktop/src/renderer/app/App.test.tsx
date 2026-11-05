@@ -5,7 +5,6 @@ import userEvent from "@testing-library/user-event";
 import { beforeAll, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
 import { NotificationsProvider } from "../state/NotificationsContext";
-import { SaleVoucherFormPage } from "../pages/SaleVoucherFormPage";
 
 beforeAll(() => {
   vi.spyOn(HTMLMediaElement.prototype, "play").mockImplementation(() => Promise.resolve());
@@ -256,8 +255,8 @@ describe("App", () => {
   it("renders production page via keyboard shortcut", async () => {
     renderApp();
     await userEvent.keyboard("{F2}");
-    expect(await screen.findByText("Live Production Terminal")).toBeInTheDocument();
-    expect(await screen.findByText("Recent Activity")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Live Production" })).toBeInTheDocument();
+    expect(await screen.findByText("Recent activity")).toBeInTheDocument();
   });
 
   it("opens the dispatch scanner immediately when a pending bill is selected", async () => {
@@ -383,7 +382,8 @@ describe("App", () => {
     await userEvent.type(input, "SK6_BLUE_7/10_001");
     await userEvent.keyboard("{Enter}");
     await waitFor(() => expect(api.processScan).toHaveBeenCalled());
-    expect(await screen.findByText("Unit Recorded Successfully")).toBeInTheDocument();
+    expect(await screen.findByText("✓ RECORDED")).toBeInTheDocument();
+    expect(screen.getByText("Unit recorded into today's production")).toBeInTheDocument();
   });
 
   it("shows scan error", async () => {
@@ -394,7 +394,9 @@ describe("App", () => {
     await userEvent.type(input, "SK6_BLUE_7/10_001");
     await userEvent.keyboard("{Enter}");
     await waitFor(() => expect(api.processScan).toHaveBeenCalled());
-    expect(await screen.findByText("Duplicate Scan")).toBeInTheDocument();
+    expect(await screen.findByText("✕ DUPLICATE SCAN")).toBeInTheDocument();
+    expect(within(screen.getByRole("region", { name: "Scanning station" })).getByText("This unit has already been scanned into production.")).toBeInTheDocument();
+    expect(screen.queryByText("✓ RECORDED")).not.toBeInTheDocument();
   });
 
   it("records a first scan even when the ArticleSize was not pre-created", async () => {
@@ -404,7 +406,7 @@ describe("App", () => {
     const input = await screen.findByPlaceholderText(/waiting for scan/i);
     await userEvent.type(input, "SK6_GREEN_7/10_00001");
     await userEvent.keyboard("{Enter}");
-    expect(await screen.findByText("Unit Recorded Successfully")).toBeInTheDocument();
+    expect(await screen.findByText("✓ RECORDED")).toBeInTheDocument();
   });
 
   it("shows Invalid QR Format for malformed scan results", async () => {
@@ -414,7 +416,8 @@ describe("App", () => {
     const input = await screen.findByPlaceholderText(/waiting for scan/i);
     await userEvent.type(input, "BAD_INPUT");
     await userEvent.keyboard("{Enter}");
-    expect(await screen.findByText("INVALID FORMAT")).toBeInTheDocument();
+    expect(await screen.findByText("✕ INVALID FORMAT")).toBeInTheDocument();
+    expect(within(screen.getByRole("region", { name: "Scanning station" })).getByText("Invalid QR format. Please check the carton label.")).toBeInTheDocument();
   });
 
   it("shows Backup button in navbar", async () => {
@@ -422,206 +425,7 @@ describe("App", () => {
     expect(await screen.findByRole("button", { name: /backup/i })).toBeInTheDocument();
   });
 
-  it("shows a party dropdown and product selector for sale vouchers", async () => {
-    const api = {
-      ...makeApi(),
-      listParties: vi.fn().mockResolvedValue({ rows: [{ id: "p-1", partyName: "ABC Traders", partyType: "CUSTOMER", status: "ACTIVE", createdAt: "2024-01-01" }], total: 1, page: 1, pageSize: 100 }),
-      listProducts: vi.fn().mockResolvedValue({ rows: [{ id: "prod-1", article: "SK30", color: "Blue", size: "M", description: null, costPrice: 100, sellingPrice: 150, mainGroupId: null, groupId: null, status: "ACTIVE", createdAt: "2024-01-01", updatedAt: "2024-01-01" }], total: 1, page: 1, pageSize: 100 }),
-      listInventory: vi.fn().mockResolvedValue([{ productId: "prod-1", article: "SK30", color: "Blue", size: "M", quantity: 14, costPrice: 100, sellingPrice: 150, stockValue: 1400, potentialRevenue: 2100, profitPotential: 700 }]),
-      listSaleVouchers: vi.fn().mockResolvedValue({ rows: [], total: 0, page: 1, pageSize: 100 })
-    };
-
-    Object.defineProperty(window, "desktop", {
-      value: {
-        versions: { node: "22", chrome: "128", electron: "43" },
-        api
-      },
-      configurable: true
-    });
-
-    render(
-      <NotificationsProvider>
-        <SaleVoucherFormPage onNavigate={() => undefined} />
-      </NotificationsProvider>
-    );
-
-    // Party dropdown has aria label via htmlFor="sv-party"
-    expect(await screen.findByRole("combobox", { name: /party/i })).toBeInTheDocument();
-    // Product dropdown is the second combobox on the page
-    expect(screen.getAllByRole("combobox").length).toBeGreaterThanOrEqual(2);
-    // Voucher number shown prominently as a number
-    expect(await screen.findByText("1")).toBeInTheDocument();
-    // Add Item section present
-    expect(await screen.findByText(/Add Item/i)).toBeInTheDocument();
-  });
-
-  it("prefills product rate and party discount when a single-color product is selected for a party", async () => {
-    const api = {
-      ...makeApi(),
-      listParties: vi.fn().mockResolvedValue({ rows: [{ id: "p-1", partyName: "ABC Traders", partyType: "CUSTOMER", status: "ACTIVE", createdAt: "2024-01-01" }], total: 1, page: 1, pageSize: 100 }),
-      listProducts: vi.fn().mockResolvedValue({ rows: [{ id: "prod-1", article: "SK30", color: "Blue", size: "M", description: null, costPrice: 100, sellingPrice: 150, mainGroupId: null, groupId: null, status: "ACTIVE", createdAt: "2024-01-01", updatedAt: "2024-01-01" }], total: 1, page: 1, pageSize: 100 }),
-      listInventory: vi.fn().mockResolvedValue([{ productId: "prod-1", article: "SK30", color: "Blue", size: "M", quantity: 14, costPrice: 100, sellingPrice: 150, stockValue: 1400, potentialRevenue: 2100, profitPotential: 700 }]),
-      resolveProductDiscount: vi.fn().mockResolvedValue({ discountPerPair: 35, source: "ARTICLE" }),
-      resolveProductDiscountWithPrice: vi.fn().mockResolvedValue({ discountPerPair: 35, source: "ARTICLE" }),
-      listSaleVouchers: vi.fn().mockResolvedValue({ rows: [], total: 0, page: 1, pageSize: 100 })
-    };
-
-    Object.defineProperty(window, "desktop", {
-      value: {
-        versions: { node: "22", chrome: "128", electron: "43" },
-        api
-      },
-      configurable: true
-    });
-
-    render(
-      <NotificationsProvider>
-        <SaleVoucherFormPage onNavigate={() => undefined} />
-      </NotificationsProvider>
-    );
-
-    const partySelect = await screen.findByRole("combobox", { name: /party/i });
-    await userEvent.selectOptions(partySelect, "p-1");
-
-    // Product dropdown is the second combobox
-    const productSelect = screen.getAllByRole("combobox")[1];
-    await userEvent.selectOptions(productSelect, "prod-1");
-
-    // Single-color product: auto-selects color and calls the price-aware resolver
-    await waitFor(() => expect(api.resolveProductDiscountWithPrice).toHaveBeenCalledWith("p-1", "prod-1", 150));
-    // Rate field should be prefilled with sellingPrice=150
-    await waitFor(() => expect(screen.getByDisplayValue("150")).toBeInTheDocument());
-    // Discount field should be prefilled with discountPerPair=35
-    await waitFor(() => expect(screen.getByDisplayValue("35")).toBeInTheDocument());
-  });
-
-  it("creates sequential vouchers and returns to the previous voucher from the blank next form", async () => {
-    const api = {
-      ...makeApi(),
-      listParties: vi.fn().mockResolvedValue({ rows: [{ id: "p-1", partyName: "ABC Traders", partyType: "CUSTOMER", status: "ACTIVE", createdAt: "2024-01-01" }], total: 1, page: 1, pageSize: 100 }),
-      listProducts: vi.fn().mockResolvedValue({
-        rows: [{ id: "prod-1", article: "SK30", color: "Blue", size: "M", description: null, costPrice: 100, sellingPrice: 150, mainGroupId: null, groupId: null, status: "ACTIVE", createdAt: "2024-01-01", updatedAt: "2024-01-01" }],
-        total: 1, page: 1, pageSize: 100
-      }),
-      listInventory: vi.fn().mockResolvedValue([
-        { productId: "prod-1", article: "SK30", color: "Blue", size: "M", quantity: 14, costPrice: 100, sellingPrice: 150, stockValue: 1400, potentialRevenue: 2100, profitPotential: 700 }
-      ]),
-      // first call = mount (no vouchers yet), second call = after save (voucher list updated)
-      listSaleVouchers: vi.fn()
-        .mockResolvedValueOnce({ rows: [], total: 0, page: 1, pageSize: 100 })
-        .mockResolvedValue({ rows: [{ id: "v-1", voucherNumber: "1", partyName: "ABC Traders", voucherDate: "2026-08-15", bookNo: "", subPartyName: null, totalQuantity: 2, totalAmount: 300, status: "DRAFT", createdAt: "2026-08-15" }], total: 1, page: 1, pageSize: 100 }),
-      createSaleVoucher: vi.fn().mockResolvedValue({ accepted: true, id: "v-1", voucherNumber: "1" }),
-      addVoucherLineItem: vi.fn().mockResolvedValue({ accepted: true, id: "li-1" }),
-      getSaleVoucher: vi.fn().mockResolvedValue({
-        id: "v-1", voucherNumber: "1", partyId: "p-1", partyName: "ABC Traders",
-        voucherDate: "2026-08-15", bookNo: "", subPartyName: null, subPartyNumber: null, remarks: null,
-        totalQuantity: 2, totalAmount: 300, status: "DRAFT",
-        lineItems: [{ id: "li-1", productVariantId: "prod-1", quantity: 2, priceType: "NORMAL" as const, unitPrice: 150, discount: 0, discountPerPair: 0, discountSource: "NONE" as const, totalPrice: 300, article: "SK30", color: "Blue", size: "M" }],
-        createdAt: "2026-08-15", updatedAt: "2026-08-15"
-      }),
-      updateSaleVoucher: vi.fn().mockResolvedValue({ accepted: true }),
-      deleteVoucherLineItem: vi.fn().mockResolvedValue({ accepted: true }),
-    };
-
-    Object.defineProperty(window, "desktop", {
-      value: { versions: { node: "22", chrome: "128", electron: "43" }, api },
-      configurable: true
-    });
-
-    render(
-      <NotificationsProvider>
-        <SaleVoucherFormPage onNavigate={() => undefined} />
-      </NotificationsProvider>
-    );
-
-    // Wait for party dropdown to load
-    const partySelect = await screen.findByRole("combobox", { name: /party/i });
-    await userEvent.selectOptions(partySelect, "p-1");
-
-    // Wait for product option to appear, then select it (single-color → auto-selects color+rate)
-    const productSelect = screen.getAllByRole("combobox")[1];
-    await waitFor(() => {
-      const opts = Array.from((productSelect as HTMLSelectElement).options);
-      expect(opts.some((o) => o.value === "prod-1")).toBe(true);
-    });
-    await userEvent.selectOptions(productSelect, "prod-1");
-
-    // Wait for rate to be auto-filled (150 from inventory)
-    await waitFor(() => expect(screen.getByDisplayValue("150")).toBeInTheDocument());
-
-    // Type qty and press Enter to add item
-    const qtyInputs = screen.getAllByPlaceholderText("Qty");
-    await userEvent.clear(qtyInputs[0]);
-    await userEvent.type(qtyInputs[0], "2");
-    await userEvent.keyboard("{Enter}");
-
-    // Item should appear in table
-    await waitFor(() => expect(screen.getAllByText("SK30").length).toBeGreaterThan(0));
-
-    // Save the voucher
-    await userEvent.click(screen.getAllByRole("button", { name: /create voucher/i })[0]);
-    await waitFor(() => expect(api.createSaleVoucher).toHaveBeenCalledTimes(1));
-    expect(api.createSaleVoucher.mock.calls[0][0]).toMatchObject({ partyId: "p-1" });
-
-    // After save: next voucher number "2" shown
-    await waitFor(() => expect(screen.getByText("2")).toBeInTheDocument());
-
-    // Navigate back to voucher #1
-    await userEvent.click(screen.getByRole("button", { name: /← Prev/i }));
-    await waitFor(() => expect(api.getSaleVoucher).toHaveBeenCalledWith("v-1"));
-  });
-
-  it("updates color stock breakdown when selecting different products", async () => {
-    // The component deduplicates products by article+size, using the first variant's id as option value.
-    // So "prod-a" is the option value for SK30 M, and "prod-b" for SK40 L.
-    const productA = { id: "prod-a", article: "SK30", color: "Blue", size: "M", description: null, costPrice: 100, sellingPrice: 150, mainGroupId: null, groupId: null, status: "ACTIVE", createdAt: "2024-01-01", updatedAt: "2024-01-01" };
-    const productB = { id: "prod-b", article: "SK40", color: "Black", size: "L", description: null, costPrice: 110, sellingPrice: 160, mainGroupId: null, groupId: null, status: "ACTIVE", createdAt: "2024-01-01", updatedAt: "2024-01-01" };
-    const api = {
-      ...makeApi(),
-      listParties: vi.fn().mockResolvedValue({ rows: [{ id: "p-1", partyName: "ABC Traders", partyType: "CUSTOMER", status: "ACTIVE", createdAt: "2024-01-01" }], total: 1, page: 1, pageSize: 100 }),
-      listProducts: vi.fn().mockResolvedValue({ rows: [productA, { ...productA, id: "prod-a-2", color: "Red" }, productB, { ...productB, id: "prod-b-2", color: "Grey" }], total: 4, page: 1, pageSize: 100 }),
-      listInventory: vi.fn().mockResolvedValue([
-        { productId: "prod-a", article: "SK30", color: "Blue", size: "M", quantity: 14, costPrice: 100, sellingPrice: 150, stockValue: 1400, potentialRevenue: 2100, profitPotential: 700 },
-        { productId: "prod-a-2", article: "SK30", color: "Red", size: "M", quantity: 6, costPrice: 100, sellingPrice: 150, stockValue: 600, potentialRevenue: 900, profitPotential: 300 },
-        { productId: "prod-b", article: "SK40", color: "Black", size: "L", quantity: 8, costPrice: 110, sellingPrice: 160, stockValue: 880, potentialRevenue: 1280, profitPotential: 400 },
-        { productId: "prod-b-2", article: "SK40", color: "Grey", size: "L", quantity: 3, costPrice: 110, sellingPrice: 160, stockValue: 330, potentialRevenue: 480, profitPotential: 150 }
-      ]),
-      listSaleVouchers: vi.fn().mockResolvedValue({ rows: [], total: 0, page: 1, pageSize: 100 })
-    };
-
-    Object.defineProperty(window, "desktop", {
-      value: {
-        versions: { node: "22", chrome: "128", electron: "43" },
-        api
-      },
-      configurable: true
-    });
-
-    render(
-      <NotificationsProvider>
-        <SaleVoucherFormPage onNavigate={() => undefined} />
-      </NotificationsProvider>
-    );
-
-    // Wait for products to load, then find product dropdown
-    await waitFor(() => expect(screen.getAllByRole("combobox").length).toBeGreaterThanOrEqual(2));
-    const productSelect = screen.getAllByRole("combobox")[1];
-    
-    // Wait for prod-a option to be rendered (products async loaded)
-    await waitFor(() => {
-      const opts = Array.from((productSelect as HTMLSelectElement).options);
-      expect(opts.some((o) => o.value === "prod-a")).toBe(true);
-    });
-
-    // Select SK30 M (prod-a is the first variant for this article+size)
-    await userEvent.selectOptions(productSelect, "prod-a");
-    // Stock strip shows raw pair quantities (same as Stock page)
-    await waitFor(() => expect(screen.getByText(/Blue:\s*14/)).toBeInTheDocument());
-    await waitFor(() => expect(screen.getByText(/Red:\s*6/)).toBeInTheDocument());
-
-    // Select SK40 L (prod-b is the first variant for this article+size)
-    await userEvent.selectOptions(productSelect, "prod-b");
-    await waitFor(() => expect(screen.getByText(/Black:\s*8/)).toBeInTheDocument());
-    await waitFor(() => expect(screen.getByText(/Grey:\s*3/)).toBeInTheDocument());
-  });
+  // The bill itself is tested where it lives: every bill is made from a gatepass (docs/23), so the
+  // party, lines, rate and less, saving, and walking the saved bills are in
+  // SaleVoucherFormPage.test.tsx and SaleVoucherFormPage.gatepass.test.tsx.
 });

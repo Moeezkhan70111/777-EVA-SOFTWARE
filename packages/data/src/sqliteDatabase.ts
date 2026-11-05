@@ -151,6 +151,7 @@ export {
   markRecordToSendAgain,
 } from "./database/masterRecords.js";
 export { buildStockEvents, stockEventPayloadOf } from "./database/stockEventSync.js";
+export { heldStock, markItemRemoved, type HeldStock } from "./database/itemRemoval.js";
 export type { StockEventBuildResult } from "./database/stockEventSync.js";
 export {
   CartonStockWouldGoNegative,

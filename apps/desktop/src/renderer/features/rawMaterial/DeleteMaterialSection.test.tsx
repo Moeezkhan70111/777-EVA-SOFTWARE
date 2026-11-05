@@ -3,6 +3,7 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DeleteMaterialSection } from "./DeleteMaterialSection";
+import { copy } from "../../config/copy";
 import { NotificationsProvider } from "../../state/NotificationsContext";
 
 // Three outcomes for a material that should not be in the list: disable it, put it back, or
@@ -46,7 +47,7 @@ describe("DeleteMaterialSection", () => {
     const api = installApi([]);
     const onDeleted = renderSection();
 
-    await userEvent.click(await screen.findByRole("button", { name: "Erase it for good" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Remove it" }));
     expect(await screen.findByRole("dialog", { name: "Delete RUBBER — GREY?" })).toBeInTheDocument();
     expect(api.removeInventoryItemForGood).not.toHaveBeenCalled();
 
@@ -56,14 +57,15 @@ describe("DeleteMaterialSection", () => {
   });
 
   it("says what the erase would take with it, and carries it into the confirmation", async () => {
-    installApi([], ["25 KG still in stock", "1 stock movement"]);
+    installApi([], ["2 stock movements", "1 stock correction"]);
     renderSection();
 
-    expect(await screen.findByText(/25 KG still in stock and 1 stock movement would go with it/)).toBeInTheDocument();
+    expect(await screen.findByText(/2 stock movements and 1 stock correction stay on record/)).toBeInTheDocument();
 
-    await userEvent.click(screen.getByRole("button", { name: "Erase it for good" }));
+    await userEvent.click(screen.getByRole("button", { name: "Remove it" }));
     const dialog = await screen.findByRole("dialog");
-    expect(dialog).toHaveTextContent("25 KG still in stock, 1 stock movement");
+    expect(dialog).toHaveTextContent("2 stock movements, 1 stock correction");
+    expect(dialog).toHaveTextContent(copy.removal.keptOnRecord);
   });
 
   it("will not erase a material something outside it names, and offers to disable it instead", async () => {
@@ -71,7 +73,7 @@ describe("DeleteMaterialSection", () => {
     renderSection();
 
     expect(await screen.findByText(/1 QR label, 3 scans/)).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Erase it for good" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Remove it" })).not.toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("button", { name: "Disable it instead" }));
     await waitFor(() => expect(api.setInventoryItemStatus).toHaveBeenCalledWith("item-1", "INACTIVE"));
@@ -91,7 +93,7 @@ describe("DeleteMaterialSection", () => {
     renderSection({ disabled: true });
 
     expect(await screen.findByTestId("material-enable")).toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: "Erase it for good" }));
+    await userEvent.click(screen.getByRole("button", { name: "Remove it" }));
     await userEvent.click(screen.getByRole("button", { name: "Delete" }));
     await waitFor(() => expect(api.removeInventoryItemForGood).toHaveBeenCalled());
   });
@@ -110,7 +112,7 @@ describe("DeleteMaterialSection", () => {
     api.removeInventoryItemForGood.mockResolvedValue({ accepted: false, reason: "A scan landed a moment ago." } as never);
     const onDeleted = renderSection();
 
-    await userEvent.click(await screen.findByRole("button", { name: "Erase it for good" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Remove it" }));
     await userEvent.click(screen.getByRole("button", { name: "Delete" }));
 
     expect(await screen.findByText(/A scan landed a moment ago/)).toBeInTheDocument();

@@ -173,12 +173,13 @@ export const copy = {
     noStockTitle: "The store holds no stock right now",
     noStockHint: "Cartons appear here once they are received by Store Move In.",
     noArticlesTitle: "No articles added",
-    noArticlesHint: "Add an article to see its Current Stock, Reserved and Reflected Stock by color and enter the Gatepass quantity.",
-    // The three stock figures. Reflected Stock is what a NEW gatepass may take; it is never
-    // labelled plain "Stock" so it cannot be mistaken for the physical Current Stock.
-    currentStock: "Current Stock",
+    noArticlesHint: "Add an article to see its In Store, Reserved and Available figures by color and enter the Gatepass quantity.",
+    // The three stock figures, in the operator's words (owner, 2026-11-04). Inside the system they
+    // stay Current Stock and Reflected Stock: Reflected Stock is what a NEW gatepass may take, and
+    // it is never labelled plain "Stock" so it cannot be mistaken for what is physically there.
+    currentStock: "In Store",
     reserved: "Reserved",
-    reflectedStock: "Reflected Stock",
+    reflectedStock: "Available",
     fullyReserved: "Fully reserved",
     stockAtCreation: "In Store at creation",
     gatepassQty: "Gatepass Qty",
@@ -227,7 +228,7 @@ export const copy = {
     qtyNotWhole: "Enter a whole number of cartons.",
     qtyNegative: "Quantity cannot be negative.",
     qtyFraction: "Enter whole cartons only.",
-    qtyExceeds: (available: number) => `Only ${available} available (Reflected Stock)`,
+    qtyExceeds: (available: number) => `Only ${available} available`,
     blockerParty: "Select a party first.",
     blockerErrors: "Fix the highlighted quantities first.",
     blockerLines: "Add an article and enter at least one quantity.",
@@ -259,7 +260,7 @@ export const copy = {
     saveFailed: "The Gatepass could not be saved. Nothing was changed — review the stock and try again.",
     stockLoadFailed: "Store stock could not be loaded. Try again.",
     shortageLine: (s: { currentStock: number; reserved: number; reflected: number; requested: number }) =>
-      `Current Stock ${s.currentStock}, Reserved ${s.reserved}, Reflected Stock ${s.reflected}, Requested ${s.requested}`,
+      `In Store ${s.currentStock}, Reserved ${s.reserved}, Available ${s.reflected}, Requested ${s.requested}`,
     youSaw: (seen: number) => `(you saw ${seen})`,
   },
 
@@ -554,6 +555,13 @@ export const copy = {
       `This computer has not been able to check for updates for ${String(days)} ${days === 1 ? "day" : "days"}. ${reason} 777 ERP keeps working normally, but it will not receive new versions until this is fixed.`,
   },
 
+  // Said at sign-in on a computer set to the wrong time zone (hooks/useTimezoneWarning.ts).
+  timezone: {
+    wrongTitle: "⚠ This Computer Is On The Wrong Time Zone",
+    wrongBody: (zone: string) =>
+      `Windows is set to ${zone}, and 777 ERP works in Pakistan time. Some dates and times on this computer may be wrong until it is fixed. In Windows Settings, under Date & time, choose (UTC+05:00) Islamabad, Karachi: Pakistan Standard Time.`,
+  },
+
   // Said at sign-in on a computer that cannot number documents or print labels, because the
   // alternative is discovering it at the printer with a run of stickers to print.
   numberRange: {
@@ -622,6 +630,7 @@ export const copy = {
     cause: {
       missing: (record: string, id: string) => `a ${record} that has not reached this computer (${id})`,
       inUse: "removal — it is still in use on this computer",
+      holdsStock: "removal — it still holds stock on this computer",
       nameTaken: "its name, still held by an out-of-date record here",
       displaced: "its own update — its name was lent to another record",
       other: (code: string) => `something this computer cannot name (${code})`,
@@ -929,7 +938,7 @@ export const copy = {
   removal: {
     deleteMaterial: "Delete this material",
     deleteMaterialTitle: (name: string) => `Delete ${name}?`,
-    deleteMaterialExplain: "This material has no stock, no movements and no labels, so deleting it removes it completely.",
+    deleteMaterialExplain: "This material holds no stock and nothing refers to it, so it can be removed.",
     deleteMaterialWarning: "This cannot be undone.",
     deleteMaterialDone: (name: string) => `${name} deleted.`,
     cannotDeleteTitle: "This material cannot be deleted",
@@ -942,9 +951,10 @@ export const copy = {
     showDisabled: "Show disabled",
     disabledBadge: "Disabled",
     enabled: (name: string) => `${name} is back in use.`,
-    eraseForGood: "Erase it for good",
+    eraseForGood: "Remove it",
+    keptOnRecord: "Stays on record",
     eraseAlsoTakes: (what: string) =>
-      `Nothing outside this material refers to it, so it can be erased for good. Its ${what} would go with it.`,
+      `It holds no stock and nothing outside it refers to it, so it can be removed. Its ${what} stay on record.`,
     checking: "Checking…",
     deleting: "Deleting…",
 

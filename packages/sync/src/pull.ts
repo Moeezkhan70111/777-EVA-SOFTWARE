@@ -50,6 +50,7 @@ import { applyEnvelope, type ApplyOutcome } from "./applyEnvelope.js";
 import type { SyncEnvelope } from "./contract.js";
 import {
   clearParkedEvents,
+  PARK_MAX_WAIT_MS,
   parkedEventsToTry,
   parkedSummary,
   parkEvent,
@@ -139,7 +140,7 @@ export class SyncPull {
     options: SyncPullOptions = {}
   ) {
     this.batchSize = options.batchSize ?? 200;
-    this.backoff = { baseMs: options.deferBaseMs ?? 30_000, maxMs: options.deferMaxMs ?? 900_000 };
+    this.backoff = { baseMs: options.deferBaseMs ?? 30_000, maxMs: options.deferMaxMs ?? PARK_MAX_WAIT_MS };
     this.now = options.now ?? (() => Date.now());
     this.project = options.project;
   }
@@ -224,7 +225,7 @@ export class SyncPull {
     let since = 0;
     let arrived: ReadonlySet<string> = tally.arrived;
     for (let round = 0; round < MAX_RETRY_ROUNDS; round += 1) {
-      const batch = parkedEventsToTry(this.sql, this.now(), arrived).filter(
+      const batch = parkedEventsToTry(this.sql, this.now(), arrived, this.backoff.maxMs).filter(
         (parked) => !tally.parkedNow.has(parked.envelope.dedupeKey) && !tried.has(parked.envelope.dedupeKey)
       );
       if (batch.length === 0) return;

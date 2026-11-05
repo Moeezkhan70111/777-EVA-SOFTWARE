@@ -63,6 +63,7 @@ export type SyncWaitTier = "WAITING" | "STUCK" | "STALE";
 export type SyncWaitCause =
   | { kind: "MISSING"; record: string; id: string }
   | { kind: "IN_USE"; record: string; id: string }
+  | { kind: "HOLDS_STOCK"; id: string }
   | { kind: "NAME_TAKEN"; column: string }
   | { kind: "DISPLACED"; columns: string[] }
   | { kind: "OTHER"; code: string };

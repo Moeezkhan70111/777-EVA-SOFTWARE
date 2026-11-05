@@ -27,6 +27,12 @@
 //                      computer cannot resolve. It resolves when the other record's revision arrives,
 //                      so it WAITS (ApplyMustWait), and a wait that lasts is made visible, never
 //                      silent (docs/37, the stock-screen slice).
+//   REMOVING A MATERIAL
+//                      decided by its STOCK HERE, not by what refers to it: its movements are
+//                      append-only, so "still in use" could never clear. While it holds stock the
+//                      removal waits, and an arriving movement re-examines it. At zero it applies,
+//                      whichever form it came in: a revision marked removed_at, or the bare
+//                      deletion of an older version, which keeps the row when history names it.
 //
 // A revision older than, or equal to, the one held here is a DUPLICATE: it has been superseded.
 // That is also how a parked older revision leaves the park once a newer one has applied.
@@ -34,6 +40,9 @@
 import {
   MASTER_RECORDS,
   MASTER_RECORD_TYPES,
+  SYNC_AGGREGATE,
+  heldStock,
+  markItemRemoved,
   readLeasedRecordPayload,
   withCaptureSuppressed,
   type CaptureHandle,
@@ -44,6 +53,7 @@ import {
 } from "@erp/data";
 import { ApplyMustWait, defineContract, type RegisteredContract } from "./applyContract.js";
 import { asRow, type SyncSqlHandle } from "./sqlPort.js";
+import { ITEM_HOLDS_STOCK_WAIT } from "./waiting.js";
 
 const exists = (sql: SyncSqlHandle, table: string, id: string): boolean =>
   asRow(sql.prepare(`SELECT 1 AS present FROM ${table} WHERE id = ? LIMIT 1`).get(id)) !== null;
@@ -188,11 +198,50 @@ function displace(sql: SyncSqlHandle, type: MasterRecordType, spec: RecordTableS
     .run(type, clash.id, JSON.stringify({ ...original }), new Date().toISOString());
 }
 
+const isItemRemoval = (type: MasterRecordType, revision: LeasedRecordPayload): boolean =>
+  type === SYNC_AGGREGATE.INVENTORY_ITEM && (revision.body === null || Boolean(revision.body.row.removed_at));
+
+/** A removal of a material still holding stock here waits. A superseded one has nothing to wait for. */
+function removalWait(sql: SyncSqlHandle, type: MasterRecordType, revision: LeasedRecordPayload): string | null {
+  if (!isItemRemoval(type, revision) || heldRevision(sql, type, revision.recordId) >= revision.revision) return null;
+  return heldStock(sql, revision.recordId) === null ? null : `${ITEM_HOLDS_STOCK_WAIT}${revision.recordId}`;
+}
+
+/**
+ * An older version's deletion of a material holding no stock here. With nothing naming it the row
+ * goes; with history naming it the row stays, marked, because that history is not this computer's
+ * to delete.
+ */
+function applyItemDeletion(sql: SyncSqlHandle, spec: RecordTableSpec, itemId: string, removedAt: string): void {
+  sql.exec("SAVEPOINT item_deletion");
+  try {
+    deleteRow(sql, spec, itemId);
+    sql.exec("RELEASE item_deletion");
+  } catch (error) {
+    sql.exec("ROLLBACK TO item_deletion");
+    sql.exec("RELEASE item_deletion");
+    if (!(error instanceof Error) || !error.message.includes("FOREIGN KEY constraint failed")) throw error;
+    markItemRemoved(sql as CaptureHandle, itemId, removedAt, null);
+  }
+}
+
+function writeDeletion(sql: SyncSqlHandle, type: MasterRecordType, spec: RecordTableSpec, recordId: string, replicatedAt: string): void {
+  if (type === SYNC_AGGREGATE.INVENTORY_ITEM) applyItemDeletion(sql, spec, recordId, replicatedAt);
+  else deleteRow(sql, spec, recordId);
+}
+
 /** The revision's writes, moving an out-of-date name aside when that is what stands in the way. */
-function writeRevision(sql: SyncSqlHandle, type: MasterRecordType, spec: RecordTableSpec, revision: LeasedRecordPayload, sender: string | null): void {
+function writeRevision(
+  sql: SyncSqlHandle,
+  type: MasterRecordType,
+  spec: RecordTableSpec,
+  revision: LeasedRecordPayload,
+  sender: string | null,
+  replicatedAt: string
+): void {
   for (let displaced = 0; ; displaced += 1) {
     try {
-      if (revision.body === null) deleteRow(sql, spec, revision.recordId);
+      if (revision.body === null) writeDeletion(sql, type, spec, revision.recordId, replicatedAt);
       else writeNode(sql, spec, revision.body, sender);
       return;
     } catch (error) {
@@ -222,14 +271,14 @@ function stampHeldRecord(sql: SyncSqlHandle, spec: RecordTableSpec, recordId: st
   });
 }
 
-function applyRevision(sql: SyncSqlHandle, type: MasterRecordType, revision: LeasedRecordPayload, sender: string | null): boolean {
+function applyRevision(sql: SyncSqlHandle, type: MasterRecordType, revision: LeasedRecordPayload, sender: string | null, replicatedAt: string): boolean {
   const spec = MASTER_RECORDS[type];
   if (heldRevision(sql, type, revision.recordId) >= revision.revision) {
     stampHeldRecord(sql, spec, revision.recordId, sender);
     return false;
   }
   // Suppressed throughout, the moving aside included: none of it is this computer's own change.
-  withCaptureSuppressed(sql as CaptureHandle, () => writeRevision(sql, type, spec, revision, sender));
+  withCaptureSuppressed(sql as CaptureHandle, () => writeRevision(sql, type, spec, revision, sender, replicatedAt));
   // This record's own revision has applied, so anything of it moved aside has its real values back.
   sql.prepare("DELETE FROM sync_displaced_records WHERE aggregate_type = ? AND record_id = ?").run(type, revision.recordId);
   sql
@@ -249,12 +298,14 @@ function leasedRecordContract(type: MasterRecordType): RegisteredContract {
     read: (payload) => readLeasedRecordPayload(type, payload),
     idOf: (revision) => revision.recordId,
     missing: (sql, revision) => {
+      const holdingStock = removalWait(sql, type, revision);
+      if (holdingStock !== null) return holdingStock;
       if (revision.body === null) return null;
       const carried = new Map<string, Set<string>>();
       idsIn(spec, revision.body, carried);
       return firstMissing(sql, spec, revision.body, carried);
     },
-    write: (sql, revision, _replicatedAt, sender) => applyRevision(sql, type, revision, sender),
+    write: (sql, revision, replicatedAt, sender) => applyRevision(sql, type, revision, sender, replicatedAt),
   });
 }
 

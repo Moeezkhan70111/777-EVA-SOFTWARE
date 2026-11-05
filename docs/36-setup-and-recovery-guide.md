@@ -758,7 +758,13 @@ Neither is a reason to rely on the order not mattering.
    refresh token is stored encrypted in `device-credential.bin` and the email and password are no
    longer needed — the URL and key still are.
 13. **Set `ERP_UPDATE_TOKEN`** (§5), or that PC will never receive a new version.
-14. **Install from a fresh installer. Never copy the data folder** between PCs — it carries
+14. **Set the time zone to Pakistan Standard Time, and confirm the clock is synced.** It is a Windows
+    setting the app cannot change, and a machine arrives set to whatever the shop left it on.
+    `tzutil /g` must print `Pakistan Standard Time`; if not, run `tzutil /s "Pakistan Standard Time"`
+    in an admin shell. `w32tm /query /status` must show a real `Source` and a recent `Last Successful
+    Sync Time`; if not, run `w32tm /resync /force`. A wrong zone now warns at sign-in, by name. A
+    wrong clock does not, so check it here.
+15. **Install from a fresh installer. Never copy the data folder** between PCs — it carries
     `device-identity.json`, and both machines would then claim to be the same workstation.
 
 ### 7.4 On the developer PC

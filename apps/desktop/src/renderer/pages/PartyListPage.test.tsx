@@ -35,6 +35,7 @@ function setupDesktop(parties: Party[]) {
       versions: { node: "22", chrome: "128", electron: "43" },
       api: {
         listParties: vi.fn().mockResolvedValue({ rows: parties, total: parties.length }),
+        listPartyGroups: vi.fn().mockResolvedValue([]),
       },
     },
     configurable: true,

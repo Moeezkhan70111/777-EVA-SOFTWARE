@@ -22,6 +22,8 @@ export const waitingForWords = (cause: SyncWaitCause): string => {
       return copy.syncWaiting.cause.missing(recordWord(cause.record), cause.id);
     case "IN_USE":
       return copy.syncWaiting.cause.inUse;
+    case "HOLDS_STOCK":
+      return copy.syncWaiting.cause.holdsStock;
     case "NAME_TAKEN":
       return copy.syncWaiting.cause.nameTaken;
     case "DISPLACED":
