@@ -1,0 +1,538 @@
+{
+  "about": "The six materials removed on PC2 on 4 Nov 2026, as production's sync_event_log holds them (read 5 Nov 2026, payload md5s checked against the log). Input to scripts/restore-removed-materials.mjs.",
+  "deviceId": "47c0dace-fe68-42cb-989c-e94f69c62c0f",
+  "materials": [
+    {
+      "itemCode": "RM-001017",
+      "expectedBalance": 42,
+      "deletionSeq": 18850,
+      "deletionRevision": 2,
+      "revisionSeq": 372,
+      "revision": {
+        "body": {
+          "row": {
+            "id": "30108180-c2d8-49c5-a72f-a66102a71912",
+            "status": "ACTIVE",
+            "item_code": "RM-001017",
+            "pack_name": null,
+            "created_at": "2026-10-28T09:03:01.952Z",
+            "created_by": "Moeezkhan123",
+            "updated_at": "2026-10-28T09:03:01.952Z",
+            "updated_by": null,
+            "category_id": "a126d910-e548-4515-8128-8fedc58aec28",
+            "display_name": "DANA — EVA — FAST — D GREY",
+            "signature_hash": "ffca3cfa78c4e7981ed84db54525ee651454f26a8cdb09060206e1a9549eae38",
+            "default_unit_id": "6b53af10-f873-4be0-9273-7ee7cab5407d",
+            "packing_unit_id": null,
+            "cost_price_paisa": null,
+            "origin_device_id": null,
+            "packing_quantity": null,
+            "default_section_id": null
+          },
+          "children": {
+            "inventory_item_values": [
+              {
+                "row": {
+                  "id": "95f15483-c0dd-47a8-801e-545cf53d2833",
+                  "item_id": "30108180-c2d8-49c5-a72f-a66102a71912",
+                  "field_id": "f5370b57-75e8-40c4-9175-7636b97b108c",
+                  "text_value": "D GREY",
+                  "number_value": null,
+                  "text_value_urdu": null
+                },
+                "children": {}
+              },
+              {
+                "row": {
+                  "id": "af98347e-f83f-4dbf-b29a-1ab2cdde6a9b",
+                  "item_id": "30108180-c2d8-49c5-a72f-a66102a71912",
+                  "field_id": "b2726bfa-cea2-4661-bf57-d8b37ca32b27",
+                  "text_value": "FAST",
+                  "number_value": null,
+                  "text_value_urdu": null
+                },
+                "children": {}
+              }
+            ],
+            "inventory_item_unit_steps": []
+          }
+        },
+        "deleted": false,
+        "recordId": "30108180-c2d8-49c5-a72f-a66102a71912",
+        "revision": 1
+      },
+      "movements": [
+        {
+          "seq": 15096,
+          "payload": {
+            "note": "Initial stock",
+            "itemId": "30108180-c2d8-49c5-a72f-a66102a71912",
+            "unitId": "6b53af10-f873-4be0-9273-7ee7cab5407d",
+            "eventId": "9f11d88f-56d6-488a-a65e-4f1f16e67263",
+            "partyId": null,
+            "quantity": 49,
+            "createdAt": "2026-10-28T09:03:01.952Z",
+            "createdBy": "Moeezkhan123",
+            "eventType": "RECEIVE",
+            "balanceDelta": 49,
+            "machineProgramId": null
+          }
+        },
+        {
+          "seq": 12975,
+          "payload": {
+            "note": "WWWW (SCR-000089, approved by Moeezkhan123)",
+            "itemId": "30108180-c2d8-49c5-a72f-a66102a71912",
+            "unitId": "6b53af10-f873-4be0-9273-7ee7cab5407d",
+            "eventId": "6477f424-13f2-4dd1-91ce-953540366903",
+            "partyId": null,
+            "quantity": -7,
+            "createdAt": "2026-10-31T11:18:37.858Z",
+            "createdBy": "Moeezkhan123",
+            "eventType": "ADJUST",
+            "balanceDelta": -7,
+            "machineProgramId": null
+          }
+        }
+      ]
+    },
+    {
+      "itemCode": "RM-001035",
+      "expectedBalance": 98,
+      "deletionSeq": 18854,
+      "deletionRevision": 2,
+      "revisionSeq": 723,
+      "revision": {
+        "body": {
+          "row": {
+            "id": "7d75d726-5229-4045-8603-6120a676faf7",
+            "status": "ACTIVE",
+            "item_code": "RM-001035",
+            "pack_name": null,
+            "created_at": "2026-10-28T09:22:51.465Z",
+            "created_by": "Moeezkhan123",
+            "updated_at": "2026-10-28T09:22:51.465Z",
+            "updated_by": null,
+            "category_id": "13be1246-b8f8-4ba1-a905-d1a9058f1cd3",
+            "display_name": "DANA — EVR — FAST — D GREY",
+            "signature_hash": "83d42b00464b15adcb8383f875cd472e7860a1a8b5b6b6287eb80599c0901918",
+            "default_unit_id": "6b53af10-f873-4be0-9273-7ee7cab5407d",
+            "packing_unit_id": null,
+            "cost_price_paisa": null,
+            "origin_device_id": null,
+            "packing_quantity": null,
+            "default_section_id": null
+          },
+          "children": {
+            "inventory_item_values": [
+              {
+                "row": {
+                  "id": "94d3b309-1b1f-4af0-942b-4551d7077786",
+                  "item_id": "7d75d726-5229-4045-8603-6120a676faf7",
+                  "field_id": "a748954e-0b5e-4501-8f0a-b42985bbec19",
+                  "text_value": "FAST",
+                  "number_value": null,
+                  "text_value_urdu": null
+                },
+                "children": {}
+              },
+              {
+                "row": {
+                  "id": "ccc00a4e-4e3e-435c-afce-fdb6d10418bb",
+                  "item_id": "7d75d726-5229-4045-8603-6120a676faf7",
+                  "field_id": "9028d721-dcf1-4fa2-9b25-ac3984759f59",
+                  "text_value": "D GREY",
+                  "number_value": null,
+                  "text_value_urdu": null
+                },
+                "children": {}
+              }
+            ],
+            "inventory_item_unit_steps": []
+          }
+        },
+        "deleted": false,
+        "recordId": "7d75d726-5229-4045-8603-6120a676faf7",
+        "revision": 1
+      },
+      "movements": [
+        {
+          "seq": 17062,
+          "payload": {
+            "note": "Initial stock",
+            "itemId": "7d75d726-5229-4045-8603-6120a676faf7",
+            "unitId": "6b53af10-f873-4be0-9273-7ee7cab5407d",
+            "eventId": "d5ec4ebf-a448-4fee-898f-93cd1ee14e46",
+            "partyId": null,
+            "quantity": 60,
+            "createdAt": "2026-10-28T09:22:51.465Z",
+            "createdBy": "Moeezkhan123",
+            "eventType": "RECEIVE",
+            "balanceDelta": 60,
+            "machineProgramId": null
+          }
+        },
+        {
+          "seq": 13634,
+          "payload": {
+            "note": "CCCC (SCR-000107, approved by Moeezkhan123)",
+            "itemId": "7d75d726-5229-4045-8603-6120a676faf7",
+            "unitId": "6b53af10-f873-4be0-9273-7ee7cab5407d",
+            "eventId": "77386ec5-3a8a-4563-973e-5862944c44e0",
+            "partyId": null,
+            "quantity": 38,
+            "createdAt": "2026-10-31T12:08:35.306Z",
+            "createdBy": "Moeezkhan123",
+            "eventType": "ADJUST",
+            "balanceDelta": 38,
+            "machineProgramId": null
+          }
+        }
+      ]
+    },
+    {
+      "itemCode": "RM-001036",
+      "expectedBalance": 7,
+      "deletionSeq": 18856,
+      "deletionRevision": 2,
+      "revisionSeq": 888,
+      "revision": {
+        "body": {
+          "row": {
+            "id": "a359a419-a064-4680-ab04-83a27f5bdc40",
+            "status": "ACTIVE",
+            "item_code": "RM-001036",
+            "pack_name": null,
+            "created_at": "2026-10-28T09:23:14.102Z",
+            "created_by": "Moeezkhan123",
+            "updated_at": "2026-10-28T09:23:14.102Z",
+            "updated_by": null,
+            "category_id": "13be1246-b8f8-4ba1-a905-d1a9058f1cd3",
+            "display_name": "DANA — EVR — VOTS — D GREY",
+            "signature_hash": "37ccfcb64c4328f6acee1e540ca8dc83a024fb3617cebb8f545a9d338dcbb030",
+            "default_unit_id": "6b53af10-f873-4be0-9273-7ee7cab5407d",
+            "packing_unit_id": null,
+            "cost_price_paisa": null,
+            "origin_device_id": null,
+            "packing_quantity": null,
+            "default_section_id": null
+          },
+          "children": {
+            "inventory_item_values": [
+              {
+                "row": {
+                  "id": "2348d5da-d8f7-421d-a124-d1120613cce2",
+                  "item_id": "a359a419-a064-4680-ab04-83a27f5bdc40",
+                  "field_id": "9028d721-dcf1-4fa2-9b25-ac3984759f59",
+                  "text_value": "D GREY",
+                  "number_value": null,
+                  "text_value_urdu": null
+                },
+                "children": {}
+              },
+              {
+                "row": {
+                  "id": "46cea2fa-522c-4ef1-9829-e1789888e050",
+                  "item_id": "a359a419-a064-4680-ab04-83a27f5bdc40",
+                  "field_id": "a748954e-0b5e-4501-8f0a-b42985bbec19",
+                  "text_value": "VOTS",
+                  "number_value": null,
+                  "text_value_urdu": null
+                },
+                "children": {}
+              }
+            ],
+            "inventory_item_unit_steps": []
+          }
+        },
+        "deleted": false,
+        "recordId": "a359a419-a064-4680-ab04-83a27f5bdc40",
+        "revision": 1
+      },
+      "movements": [
+        {
+          "seq": 16154,
+          "payload": {
+            "note": "Initial stock",
+            "itemId": "a359a419-a064-4680-ab04-83a27f5bdc40",
+            "unitId": "6b53af10-f873-4be0-9273-7ee7cab5407d",
+            "eventId": "bc23a015-19f9-45cf-af1d-f66cfea5dbc0",
+            "partyId": null,
+            "quantity": 7,
+            "createdAt": "2026-10-28T09:23:14.102Z",
+            "createdBy": "Moeezkhan123",
+            "eventType": "RECEIVE",
+            "balanceDelta": 7,
+            "machineProgramId": null
+          }
+        }
+      ]
+    },
+    {
+      "itemCode": "RM-001040",
+      "expectedBalance": 81,
+      "deletionSeq": 18855,
+      "deletionRevision": 2,
+      "revisionSeq": 1012,
+      "revision": {
+        "body": {
+          "row": {
+            "id": "bd6a12fb-82dc-48ad-ba19-3c56413283d2",
+            "status": "ACTIVE",
+            "item_code": "RM-001040",
+            "pack_name": null,
+            "created_at": "2026-10-28T09:25:06.183Z",
+            "created_by": "Moeezkhan123",
+            "updated_at": "2026-10-28T09:25:06.183Z",
+            "updated_by": null,
+            "category_id": "13be1246-b8f8-4ba1-a905-d1a9058f1cd3",
+            "display_name": "DANA — EVR — SPECIAL — D GREY",
+            "signature_hash": "8c1c61a3a0e78969508f61757269ad8cb2c7278c24f8edb5d2e18c6dcc1ecf96",
+            "default_unit_id": "6b53af10-f873-4be0-9273-7ee7cab5407d",
+            "packing_unit_id": null,
+            "cost_price_paisa": null,
+            "origin_device_id": null,
+            "packing_quantity": null,
+            "default_section_id": null
+          },
+          "children": {
+            "inventory_item_values": [
+              {
+                "row": {
+                  "id": "3718dc13-dd20-4588-9650-19e7674a15eb",
+                  "item_id": "bd6a12fb-82dc-48ad-ba19-3c56413283d2",
+                  "field_id": "9028d721-dcf1-4fa2-9b25-ac3984759f59",
+                  "text_value": "D GREY",
+                  "number_value": null,
+                  "text_value_urdu": null
+                },
+                "children": {}
+              },
+              {
+                "row": {
+                  "id": "811f8562-e70b-41a4-b088-be66815579d3",
+                  "item_id": "bd6a12fb-82dc-48ad-ba19-3c56413283d2",
+                  "field_id": "a748954e-0b5e-4501-8f0a-b42985bbec19",
+                  "text_value": "SPECIAL",
+                  "number_value": null,
+                  "text_value_urdu": null
+                },
+                "children": {}
+              }
+            ],
+            "inventory_item_unit_steps": []
+          }
+        },
+        "deleted": false,
+        "recordId": "bd6a12fb-82dc-48ad-ba19-3c56413283d2",
+        "revision": 1
+      },
+      "movements": [
+        {
+          "seq": 13679,
+          "payload": {
+            "note": "Initial stock",
+            "itemId": "bd6a12fb-82dc-48ad-ba19-3c56413283d2",
+            "unitId": "6b53af10-f873-4be0-9273-7ee7cab5407d",
+            "eventId": "7870e9eb-1056-4622-a249-df3e7d9c3320",
+            "partyId": null,
+            "quantity": 87,
+            "createdAt": "2026-10-28T09:25:06.183Z",
+            "createdBy": "Moeezkhan123",
+            "eventType": "RECEIVE",
+            "balanceDelta": 87,
+            "machineProgramId": null
+          }
+        },
+        {
+          "seq": 16811,
+          "payload": {
+            "note": "WWWW (SCR-000102, approved by Moeezkhan123)",
+            "itemId": "bd6a12fb-82dc-48ad-ba19-3c56413283d2",
+            "unitId": "6b53af10-f873-4be0-9273-7ee7cab5407d",
+            "eventId": "cf5ff2ef-e1dc-48d1-a362-c78bb01f3772",
+            "partyId": null,
+            "quantity": -7,
+            "createdAt": "2026-10-31T11:59:45.974Z",
+            "createdBy": "Moeezkhan123",
+            "eventType": "ADJUST",
+            "balanceDelta": -7,
+            "machineProgramId": null
+          }
+        },
+        {
+          "seq": 13718,
+          "payload": {
+            "note": "REUTRN BAHIR PARA THA (SCR-000115, approved by Moeezkhan123)",
+            "itemId": "bd6a12fb-82dc-48ad-ba19-3c56413283d2",
+            "unitId": "6b53af10-f873-4be0-9273-7ee7cab5407d",
+            "eventId": "79878e86-6817-4b40-bc6e-0c2d3112c01d",
+            "partyId": null,
+            "quantity": 1,
+            "createdAt": "2026-11-02T07:34:34.787Z",
+            "createdBy": "Moeezkhan123",
+            "eventType": "ADJUST",
+            "balanceDelta": 1,
+            "machineProgramId": null
+          }
+        }
+      ]
+    },
+    {
+      "itemCode": "RM-001133",
+      "expectedBalance": 8,
+      "deletionSeq": 18851,
+      "deletionRevision": 2,
+      "revisionSeq": 911,
+      "revision": {
+        "body": {
+          "row": {
+            "id": "a84714af-cf10-4ed6-bc07-04b757ee2d0d",
+            "status": "ACTIVE",
+            "item_code": "RM-001133",
+            "pack_name": null,
+            "created_at": "2026-10-31T11:23:15.409Z",
+            "created_by": "Moeezkhan123",
+            "updated_at": "2026-10-31T11:23:15.409Z",
+            "updated_by": null,
+            "category_id": "a126d910-e548-4515-8128-8fedc58aec28",
+            "display_name": "DANA — EVA — VOTS — D GREY",
+            "signature_hash": "c8306d27793d1e529c487dfe2515c4bf85cc74c896d9a6452eeada2a27708bb7",
+            "default_unit_id": "6b53af10-f873-4be0-9273-7ee7cab5407d",
+            "packing_unit_id": null,
+            "cost_price_paisa": null,
+            "origin_device_id": null,
+            "packing_quantity": null,
+            "default_section_id": null
+          },
+          "children": {
+            "inventory_item_values": [
+              {
+                "row": {
+                  "id": "023df52e-d1a1-4d09-b420-7c3d07ff4f70",
+                  "item_id": "a84714af-cf10-4ed6-bc07-04b757ee2d0d",
+                  "field_id": "b2726bfa-cea2-4661-bf57-d8b37ca32b27",
+                  "text_value": "VOTS",
+                  "number_value": null,
+                  "text_value_urdu": null
+                },
+                "children": {}
+              },
+              {
+                "row": {
+                  "id": "8715cb53-9117-4607-b6b2-82c73bfa9645",
+                  "item_id": "a84714af-cf10-4ed6-bc07-04b757ee2d0d",
+                  "field_id": "f5370b57-75e8-40c4-9175-7636b97b108c",
+                  "text_value": "D GREY",
+                  "number_value": null,
+                  "text_value_urdu": null
+                },
+                "children": {}
+              }
+            ],
+            "inventory_item_unit_steps": []
+          }
+        },
+        "deleted": false,
+        "recordId": "a84714af-cf10-4ed6-bc07-04b757ee2d0d",
+        "revision": 1
+      },
+      "movements": [
+        {
+          "seq": 18296,
+          "payload": {
+            "note": "CCCC (SCR-000093, approved by Moeezkhan123)",
+            "itemId": "a84714af-cf10-4ed6-bc07-04b757ee2d0d",
+            "unitId": "6b53af10-f873-4be0-9273-7ee7cab5407d",
+            "eventId": "f7263293-5609-4cb5-8402-c9fad26974af",
+            "partyId": null,
+            "quantity": 8,
+            "createdAt": "2026-10-31T11:23:42.320Z",
+            "createdBy": "Moeezkhan123",
+            "eventType": "ADJUST",
+            "balanceDelta": 8,
+            "machineProgramId": null
+          }
+        }
+      ]
+    },
+    {
+      "itemCode": "RM-001135",
+      "expectedBalance": 1,
+      "deletionSeq": 18853,
+      "deletionRevision": 2,
+      "revisionSeq": 572,
+      "revision": {
+        "body": {
+          "row": {
+            "id": "5db4d46e-591a-45be-ad55-3cbb0fbefc5a",
+            "status": "ACTIVE",
+            "item_code": "RM-001135",
+            "pack_name": null,
+            "created_at": "2026-10-31T11:25:51.172Z",
+            "created_by": "Moeezkhan123",
+            "updated_at": "2026-10-31T11:25:51.172Z",
+            "updated_by": null,
+            "category_id": "a126d910-e548-4515-8128-8fedc58aec28",
+            "display_name": "DANA — EVA — WELCOME — D GREY",
+            "signature_hash": "ad3afe835e1910327819cf2db1c8132f9415efededbfa508923106b704ad0f03",
+            "default_unit_id": "6b53af10-f873-4be0-9273-7ee7cab5407d",
+            "packing_unit_id": null,
+            "cost_price_paisa": null,
+            "origin_device_id": null,
+            "packing_quantity": null,
+            "default_section_id": null
+          },
+          "children": {
+            "inventory_item_values": [
+              {
+                "row": {
+                  "id": "212f0ba9-c3c6-46cf-9c21-faccdac6fc3c",
+                  "item_id": "5db4d46e-591a-45be-ad55-3cbb0fbefc5a",
+                  "field_id": "f5370b57-75e8-40c4-9175-7636b97b108c",
+                  "text_value": "D GREY",
+                  "number_value": null,
+                  "text_value_urdu": null
+                },
+                "children": {}
+              },
+              {
+                "row": {
+                  "id": "b975e580-3420-4c54-b2e6-d1667cf4db31",
+                  "item_id": "5db4d46e-591a-45be-ad55-3cbb0fbefc5a",
+                  "field_id": "b2726bfa-cea2-4661-bf57-d8b37ca32b27",
+                  "text_value": "WELCOME",
+                  "number_value": null,
+                  "text_value_urdu": null
+                },
+                "children": {}
+              }
+            ],
+            "inventory_item_unit_steps": []
+          }
+        },
+        "deleted": false,
+        "recordId": "5db4d46e-591a-45be-ad55-3cbb0fbefc5a",
+        "revision": 1
+      },
+      "movements": [
+        {
+          "seq": 18542,
+          "payload": {
+            "note": "Initial stock",
+            "itemId": "5db4d46e-591a-45be-ad55-3cbb0fbefc5a",
+            "unitId": "6b53af10-f873-4be0-9273-7ee7cab5407d",
+            "eventId": "fd7e4c48-77c1-442e-8b6e-636966e1b31c",
+            "partyId": null,
+            "quantity": 1,
+            "createdAt": "2026-10-31T11:25:51.172Z",
+            "createdBy": "Moeezkhan123",
+            "eventType": "RECEIVE",
+            "balanceDelta": 1,
+            "machineProgramId": null
+          }
+        }
+      ]
+    }
+  ]
+}

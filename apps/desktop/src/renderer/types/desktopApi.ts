@@ -30,6 +30,12 @@ export interface NumberBlockStatus {
   assignable: Array<{ block: number; lo: number; hi: number }>;
 }
 
+/** How far this computer's clock is from the cloud's. Mirrors ClockSkew in @erp/sync. */
+export interface ClockSkewReading {
+  direction: "AHEAD" | "BEHIND";
+  minutes: number;
+}
+
 /** This computer's cloud-sync situation. Read-only: asking for it syncs nothing. */
 export interface CloudSyncStatus {
   configured: boolean;
@@ -43,6 +49,8 @@ export interface CloudSyncStatus {
   pullCursor: number;
   /** The realtime doorbell (cloud migration 016). LISTENING: other computers' work arrives in seconds. */
   realtime?: "OFF" | "CONNECTING" | "LISTENING" | "RECONNECTING";
+  /** Set only when the cloud's replies say this computer's clock is out by more than the limit. */
+  clockSkew?: ClockSkewReading | null;
   /**
    * Present only while pulled events are parked, waiting for something that has not arrived yet:
    * how many, and the one at the earliest log position with why and when it is next tried.

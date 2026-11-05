@@ -1380,3 +1380,52 @@ test("master-data revisions go with their epoch, and each answer finds its own r
     await fake.close();
   }
 });
+
+// ─── This computer's clock, read off the replies ───
+
+const HOUR_MS = 60 * 60_000;
+
+async function withClock(clockOffsetMs: number, work: (fake: Fake, transport: SupabaseSyncTransport) => Promise<void>): Promise<void> {
+  const fake = await startFakeSupabase();
+  try {
+    const auth = new SupabaseDeviceAuth({ url: fake.url, anonKey: ANON_KEY, email: "pc1@example.invalid", password: PASSWORD });
+    const transport = new SupabaseSyncTransport({ url: fake.url, anonKey: ANON_KEY, auth, now: () => Date.now() + clockOffsetMs });
+    await work(fake, transport);
+  } finally {
+    await fake.close();
+  }
+}
+
+test("a good reply reads this computer's clock against the cloud's: PC2's 22 hours behind", async () => {
+  await withClock(-22 * HOUR_MS, async (_fake, transport) => {
+    assert.equal(transport.clockSkewMs(), null, "nothing is known before a reply");
+    await transport.fetchChanges(0, 10);
+    const skew = transport.clockSkewMs();
+    assert.ok(skew !== null);
+    assert.ok(Math.abs(skew + 22 * HOUR_MS) < 5_000, `read ${String(skew)}`);
+  });
+});
+
+test("a clock that is right reads as right", async () => {
+  await withClock(0, async (_fake, transport) => {
+    await transport.fetchChanges(0, 10);
+    const skew = transport.clockSkewMs();
+    assert.ok(skew !== null && Math.abs(skew) < 5_000);
+  });
+});
+
+test("an error reply is no reading, and a later one keeps the last good one", async () => {
+  await withClock(HOUR_MS, async (fake, transport) => {
+    fake.reply("/rest/v1/", 503, { message: "try later" });
+    await assert.rejects(() => transport.fetchChanges(0, 10));
+    assert.equal(transport.clockSkewMs(), null);
+
+    await transport.fetchChanges(0, 10);
+    const good = transport.clockSkewMs();
+    assert.ok(good !== null);
+
+    fake.reply("/rest/v1/", 503, { message: "try later" });
+    await assert.rejects(() => transport.fetchChanges(0, 10));
+    assert.equal(transport.clockSkewMs(), good);
+  });
+});

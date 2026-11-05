@@ -553,6 +553,15 @@ export const copy = {
   },
 
   // Said at sign-in on a computer set to the wrong time zone (hooks/useTimezoneWarning.ts).
+  clock: {
+    wrongTitle: "⚠ This Computer's Clock Is Wrong",
+    wrongBody: ({ direction, minutes }: { direction: "AHEAD" | "BEHIND"; minutes: number }) => {
+      const amount = minutes < 120 ? `${minutes} minutes` : `${Math.round(minutes / 60)} hours`;
+      const way = direction === "AHEAD" ? "ahead of" : "behind";
+      return `This computer's clock is about ${amount} ${way} the correct time, so the times it records will be wrong. Ask an administrator to correct the date and time in Windows.`;
+    },
+  },
+
   timezone: {
     wrongTitle: "⚠ This Computer Is On The Wrong Time Zone",
     wrongBody: (zone: string) =>

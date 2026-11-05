@@ -18,7 +18,7 @@ import { ipcMain } from "electron";
 import { IPC } from "../../shared/ipcChannels";
 import type { IpcContext } from "./context";
 import { rejection } from "../authorize";
-import { describeCloudSync, isCloudSyncConfigured, runCloudSyncPass } from "../cloudSyncPass";
+import { describeCloudSync, isCloudSyncConfigured, latestClockSkewMs, runCloudSyncPass } from "../cloudSyncPass";
 import { realtimeStatus } from "../realtimeWake";
 
 export interface CloudSyncOutcome {
@@ -105,6 +105,8 @@ export function registerCloudSyncHandlers(ctx: IpcContext): void {
       pullCursor: sync.readPullCursor(db.db),
       // Whether the cloud's doorbell is being listened to: LISTENING means seconds, not a minute.
       realtime: realtimeStatus(),
+      // Set only when the cloud's replies say this computer's clock is out by more than the limit.
+      clockSkew: sync.clockSkewOverLimit(latestClockSkewMs()),
       // Set only while something pulled is parked, waiting on something that has not arrived: how
       // many, and the one at the earliest log position.
       waitingFor:
