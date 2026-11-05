@@ -54,6 +54,10 @@ describe("the words", () => {
     expect(describeWait(entry({ name: null, cause: { kind: "DISPLACED", columns: ["party_name"] }, aggregateType: "PARTY", aggregateId: "p-a" })).subject).toBe("Party p-a");
   });
 
+  it("says a material's removal is waiting on its stock, not that it is in use", () => {
+    expect(describeWait(entry({ cause: { kind: "HOLDS_STOCK", id: "i-1" } })).waitingFor).toBe("removal — it still holds stock on this computer");
+  });
+
   it("takes only a well-formed answer from the main process", () => {
     expect(isSyncWaiting(summary([entry()]))).toBe(true);
     expect(isSyncWaiting({ entries: [{ dedupeKey: 1 }], waiting: 0, stuck: 0, stale: 0, unsentMarks: 0, deadLetters: 0 })).toBe(false);

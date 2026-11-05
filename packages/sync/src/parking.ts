@@ -24,6 +24,9 @@ export interface ParkingBackoff {
   readonly maxMs: number;
 }
 
+/** The longest a parked event ever waits for its next try. */
+export const PARK_MAX_WAIT_MS = 900_000;
+
 const nextTryAt = (attempts: number, nowMs: number, backoff: ParkingBackoff): number =>
   nowMs + Math.min(backoff.baseMs * 2 ** (attempts - 1), backoff.maxMs);
 
@@ -66,6 +69,10 @@ export function parkEvent(
  *     arrived -- any arrival might be the one that frees them, and there are only ever a few;
  *   * every other one only when its backoff has run out.
  *
+ * A stored time further off than the longest wait is not honoured. This code never writes one, so
+ * it can only have come from a clock that was wrong when it was written, and an event must not sit
+ * out a date nothing here chose.
+ *
  * TARGETED, NOT ALL. A first sync can hold thousands of events that arrived before what they need.
  * Retrying every one of them whenever anything new applied cost about ten seconds per page of 200,
  * on the main process, and froze the window (gate test, 2026-10-27). Each now waits for its own
@@ -74,14 +81,20 @@ export function parkEvent(
  * A row that no longer reads as an envelope is not returned. It cannot be applied, and leaving it
  * is the honest outcome: it stays visible in the summary rather than vanishing.
  */
-export function parkedEventsToTry(sql: SyncSqlHandle, nowMs: number, arrived: ReadonlySet<string>): ParkedEvent[] {
+export function parkedEventsToTry(
+  sql: SyncSqlHandle,
+  nowMs: number,
+  arrived: ReadonlySet<string>,
+  maxWaitMs: number = PARK_MAX_WAIT_MS
+): ParkedEvent[] {
   // Reasons first, without the envelopes: cheap even for thousands of rows.
   const waits = sql.prepare("SELECT dedupe_key, reason, next_try_at FROM sync_inbox_parked").all().map(asRow);
   const wanted = new Set<string>();
   for (const wait of waits) {
     if (wait === null) continue;
     const key = waitedForKey(String(wait.reason));
-    const due = Number(wait.next_try_at) <= nowMs;
+    const nextTry = Number(wait.next_try_at);
+    const due = nextTry <= nowMs || nextTry > nowMs + maxWaitMs;
     const freed = key === null ? arrived.size > 0 : arrived.has(key);
     if (due || freed) wanted.add(String(wait.dedupe_key));
   }

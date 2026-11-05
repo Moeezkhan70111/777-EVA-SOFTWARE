@@ -11,10 +11,9 @@ import { copy } from "../../config/copy";
 //
 //   Disable   hides it from the pickers and from stock, keeping everything it took part in.
 //   Enable    puts a disabled one back.
-//   Erase     takes it away for good, along with its OWN stock ledger. Refused outright when
-//             anything outside the material names it — a printed label, a scan, a purchase
-//             line, a machine program line, a stock correction — because those are records of
-//             what happened elsewhere and would be left pointing at nothing.
+//   Remove    takes it out of every list for good, keeping its stock ledger. Refused while it
+//             holds stock, and when anything outside it names it — a printed label, a scan, a
+//             purchase line, a machine program line.
 //
 // Erasing is an administrator's decision, so everybody else asks for it. The rule about who
 // may erase what lives in the main process — hiding a button is not authorisation.
@@ -42,7 +41,7 @@ export const DeleteMaterialSection: React.FC<DeleteMaterialSectionProps> = ({
   const api = useDesktopApi();
   const { push } = useNotifications();
   const [blockers, setBlockers] = useState<string[] | null>(null);
-  /** What erasing would take with it — its own stock and movements. */
+  /** The history that stays on record after removing it. */
   const [cost, setCost] = useState<string[]>([]);
   const [reason, setReason] = useState("");
   const [confirming, setConfirming] = useState(false);
@@ -176,7 +175,7 @@ export const DeleteMaterialSection: React.FC<DeleteMaterialSectionProps> = ({
           title={copy.removal.deleteMaterialTitle(displayName)}
           facts={[
             { label: "Raw Material", value: displayName },
-            ...(cost.length > 0 ? [{ label: "Also erased", value: cost.join(", ") }] : []),
+            ...(cost.length > 0 ? [{ label: copy.removal.keptOnRecord, value: cost.join(", ") }] : []),
           ]}
           explain={cost.length > 0 ? copy.removal.eraseAlsoTakes(cost.join(" and ")) : copy.removal.deleteMaterialExplain}
           warning={copy.removal.deleteMaterialWarning}

@@ -4,6 +4,7 @@ import { Navbar } from "../components/layout/Navbar";
 import { NotificationCenter } from "../components/layout/NotificationCenter";
 import { useAppUpdate } from "../hooks/useAppUpdate";
 import { useNumberRangeWarning } from "../hooks/useNumberRangeWarning";
+import { useTimezoneWarning } from "../hooks/useTimezoneWarning";
 import { DashboardPage } from "../pages/DashboardPage";
 import { StockPage } from "../pages/StockPage";
 import { RawMaterialInputPage } from "../pages/RawMaterialInputPage";
@@ -137,6 +138,7 @@ export const App = () => {
   // Said at sign-in, not at the printer: a computer with no number range can neither create a
   // numbered document nor print a QR label, and both refuse far too late to be useful.
   useNumberRangeWarning(session?.id ?? null);
+  useTimezoneWarning(session?.id ?? null);
 
   // App version for the navbar; settings are read once so the main process warms its cache.
   React.useEffect(() => {

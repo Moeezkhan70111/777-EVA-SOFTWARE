@@ -438,6 +438,13 @@ export const copy = {
       `This computer has not been able to check for updates for ${String(days)} ${days === 1 ? "day" : "days"}. ${reason} 777 ERP keeps working normally, but it will not receive new versions until this is fixed.`,
   },
 
+  // Said at sign-in on a computer set to the wrong time zone (hooks/useTimezoneWarning.ts).
+  timezone: {
+    wrongTitle: "⚠ This Computer Is On The Wrong Time Zone",
+    wrongBody: (zone: string) =>
+      `Windows is set to ${zone}, and 777 ERP works in Pakistan time. Some dates and times on this computer may be wrong until it is fixed. In Windows Settings, under Date & time, choose (UTC+05:00) Islamabad, Karachi: Pakistan Standard Time.`,
+  },
+
   // Said at sign-in on a computer that cannot number documents or print labels, because the
   // alternative is discovering it at the printer with a run of stickers to print.
   numberRange: {
@@ -506,6 +513,7 @@ export const copy = {
     cause: {
       missing: (record: string, id: string) => `a ${record} that has not reached this computer (${id})`,
       inUse: "removal — it is still in use on this computer",
+      holdsStock: "removal — it still holds stock on this computer",
       nameTaken: "its name, still held by an out-of-date record here",
       displaced: "its own update — its name was lent to another record",
       other: (code: string) => `something this computer cannot name (${code})`,
@@ -813,7 +821,7 @@ export const copy = {
   removal: {
     deleteMaterial: "Delete this material",
     deleteMaterialTitle: (name: string) => `Delete ${name}?`,
-    deleteMaterialExplain: "This material has no stock, no movements and no labels, so deleting it removes it completely.",
+    deleteMaterialExplain: "This material holds no stock and nothing refers to it, so it can be removed.",
     deleteMaterialWarning: "This cannot be undone.",
     deleteMaterialDone: (name: string) => `${name} deleted.`,
     cannotDeleteTitle: "This material cannot be deleted",
@@ -826,9 +834,10 @@ export const copy = {
     showDisabled: "Show disabled",
     disabledBadge: "Disabled",
     enabled: (name: string) => `${name} is back in use.`,
-    eraseForGood: "Erase it for good",
+    eraseForGood: "Remove it",
+    keptOnRecord: "Stays on record",
     eraseAlsoTakes: (what: string) =>
-      `Nothing outside this material refers to it, so it can be erased for good. Its ${what} would go with it.`,
+      `It holds no stock and nothing outside it refers to it, so it can be removed. Its ${what} stay on record.`,
     checking: "Checking…",
     deleting: "Deleting…",
 
