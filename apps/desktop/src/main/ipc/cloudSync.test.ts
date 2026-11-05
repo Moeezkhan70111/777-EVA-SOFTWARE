@@ -131,6 +131,9 @@ vi.mock("@erp/sync", () => {
       healthReports.push(report);
       return "REPORTED";
     }
+    clockSkewMs(): number | null {
+      return clockReading;
+    }
     /** Who holds each write lease. A project without leases unless a test says otherwise. */
     async fetchLeases(): Promise<Record<string, unknown>> {
       if (leaseThrows !== null) throw leaseThrows;
@@ -166,6 +169,8 @@ vi.mock("@erp/sync", () => {
     drainBacklog: (drain: { runOnce(): Promise<unknown> }) => drain.runOnce(),
     pullBacklog: (pull: { runOnce(): Promise<unknown> }) => pull.runOnce(),
     SUPABASE_PUSHABLE_AGGREGATES: ["QR_MASTER"] as readonly string[],
+    // The rule is proved in packages/sync; what matters here is that it is given the transport's reading.
+    clockSkewOverLimit: (skewMs: number | null) => (skewMs === null ? null : { direction: "BEHIND", minutes: skewMs }),
     // The status reads the queue. These stand in for the real SELECTs, which are proved against
     // disposable databases in packages/sync; what matters here is that the handler asks for them
     // and hands the summary the transport's own sendable list.
@@ -214,6 +219,8 @@ let summaryCalls: Array<Record<string, unknown>>;
 /** What the stubbed claim answers, and what it was asked for. */
 let claimOutcome: Record<string, unknown>;
 let claimThrows: Error | null;
+/** What the transport read this computer's clock as, in the stand-in's own units. */
+let clockReading: number | null;
 let claimRequests: Array<Record<string, unknown>>;
 /** What the stubbed heartbeat answers, and how many times it was asked. */
 let heartbeatOutcome: Record<string, unknown>;
@@ -408,6 +415,7 @@ beforeEach(() => {
   inFlight = null;
   claimOutcome = { ok: true, epoch: 4, holder: "holder-4" };
   claimThrows = null;
+  clockReading = null;
   claimRequests = [];
   heartbeatOutcome = { ok: true, epoch: 4, holder: "holder-4" };
   heartbeatThrows = null;
@@ -467,6 +475,7 @@ describe("cloud sync at the process boundary", () => {
       pullCursor: 7,
       // The realtime doorbell has not started in this process: no pass has made a session.
       realtime: "OFF",
+      clockSkew: null,
       waitingFor: undefined,
       // Added with the background loop (Phase 4). `schedule` is absent because this context has
       // no scheduler; the two run records come from sync_runs (migration 085) and are null here
@@ -666,6 +675,15 @@ describe("cloud sync at the process boundary", () => {
       "TIMER"
     );
   };
+
+  it("hands the renderer what the last pass read of this computer's clock", async () => {
+    setEnv({ ...GOOD_ENV, ERP_SUPABASE_URL: "https://zzclock.supabase.co" });
+    await run();
+    expect((await status()).clockSkew).toBeNull();
+
+    clockReading = 1320;
+    expect((await status()).clockSkew).toEqual({ direction: "BEHIND", minutes: 1320 });
+  });
 
   it("reports this computer's sync health, and does not send the same report again on the next pass", async () => {
     // The report state is per process, so take a fresh project to start from nothing.

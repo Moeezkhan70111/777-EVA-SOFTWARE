@@ -23,6 +23,8 @@ export interface JsonRequest {
 export interface JsonResponse {
   readonly status: number;
   readonly text: string;
+  /** The reply's Date header, for reading this computer's clock against (clockSkew.ts). */
+  readonly serverDate: string | null;
 }
 
 export class HttpError extends Error {
@@ -76,7 +78,7 @@ export async function requestJson(request: JsonRequest): Promise<JsonResponse> {
         response.on("data", (chunk: string) => {
           text += chunk;
         });
-        response.on("end", () => resolve({ status: response.statusCode ?? 0, text }));
+        response.on("end", () => resolve({ status: response.statusCode ?? 0, text, serverDate: response.headers.date ?? null }));
       }
     );
 

@@ -101,6 +101,9 @@ interface CachedTransport {
 
 let cachedTransport: CachedTransport | null = null;
 
+/** This computer's clock against the cloud's at the last good reply. Null until a pass has reached it. */
+export const latestClockSkewMs = (): number | null => cachedTransport?.transport.clockSkewMs() ?? null;
+
 /**
  * The last sync-health report this process sent, per project and device, so a report goes only when
  * it says something new or as a 15-minute keepalive (healthReport.ts). In memory: a restart sends one
