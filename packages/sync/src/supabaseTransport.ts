@@ -41,7 +41,8 @@ import {
 import { readDomainLeases, type DomainLease } from "./leases.js";
 import type { AccountCall, AccountFunctionName } from "./accountsClient.js";
 import { CLOUD_ORIGIN, type SyncEnvelope } from "./contract.js";
-import { HttpError, readServiceError, redactSecrets, requestJson } from "./httpJson.js";
+import { measureClockSkew } from "./clockSkew.js";
+import { HttpError, readServiceError, redactSecrets, requestJson, type JsonResponse } from "./httpJson.js";
 import type { FailureKind } from "./outboxQueue.js";
 import { asRow } from "./sqlPort.js";
 import type { SupabaseDeviceAuth } from "./supabaseAuth.js";
@@ -53,6 +54,8 @@ export interface SupabaseTransportOptions {
   readonly anonKey: string;
   readonly auth: SupabaseDeviceAuth;
   readonly timeoutMs?: number;
+  /** This computer's clock. A test passes its own, to be a computer whose clock is wrong. */
+  readonly now?: () => number;
 }
 
 /** What a successful claim hands back, and what every later write must present. */
@@ -175,8 +178,14 @@ const PERMANENT_CODES = new Set(["23503", "23514", "42501"]);
 export class SupabaseSyncTransport implements SyncTransport, SyncPullTransport {
   /** The claim this process holds. In memory only, and gone when the process is. */
   private held: ClaimHeld | null = null;
+  /** This computer's clock against the cloud's at the last good reply. Null before there is one. */
+  private latestClockSkewMs: number | null = null;
 
   constructor(private readonly options: SupabaseTransportOptions) {}
+
+  clockSkewMs(): number | null {
+    return this.latestClockSkewMs;
+  }
 
   /**
    * A current access token for this computer's session -- for the realtime doorbell, which joins its
@@ -1008,15 +1017,23 @@ export class SupabaseSyncTransport implements SyncTransport, SyncPullTransport {
    */
   private async authedRequest(
     build: (headers: Record<string, string>) => Parameters<typeof requestJson>[0]
-  ): Promise<{ status: number; text: string }> {
+  ): Promise<JsonResponse> {
     let refreshed = false;
     for (;;) {
       const response = await requestJson(build(await this.headers()));
+      this.readClock(response);
       if (response.status !== 401 || refreshed) return response;
       // Throw the token away and sign in again from the credentials.
       this.options.auth.signOut();
       refreshed = true;
     }
+  }
+
+  /** Only a good reply counts: an error page may come from a proxy, with a clock of its own. */
+  private readClock(response: JsonResponse): void {
+    if (response.status < 200 || response.status >= 300) return;
+    const skew = measureClockSkew(response.serverDate, (this.options.now ?? Date.now)());
+    if (skew !== null) this.latestClockSkewMs = skew;
   }
 }
 

@@ -762,16 +762,17 @@ Neither is a reason to rely on the order not mattering.
     setting the app cannot change, and a machine arrives set to whatever the shop left it on.
     `tzutil /g` must print `Pakistan Standard Time`; if not, run `tzutil /s "Pakistan Standard Time"`
     in an admin shell. `w32tm /query /status` must show a real `Source` and a recent `Last Successful
-    Sync Time`; if not, run `w32tm /resync /force`. A wrong zone now warns at sign-in, by name. A
-    wrong clock does not, so check it here.
+    Sync Time`; if not, run `w32tm /resync /force`. A wrong zone warns at sign-in, by name, and a
+    clock more than five minutes out warns after its first sync. Check both here anyway: a PC that
+    has not reached the cloud has nothing to compare its clock with.
 15. **Install from a fresh installer. Never copy the data folder** between PCs — it carries
     `device-identity.json`, and both machines would then claim to be the same workstation.
 
 ### 7.4 On the developer PC
 
-15. **Set `GH_TOKEN`** (§5) in the release terminal only.
-16. **Ship the first build that contains the updater:** `npm run release` from a clean tree.
-17. **Install that build by hand on every office PC.** The 0.3.1 currently installed contains no
+16. **Set `GH_TOKEN`** (§5) in the release terminal only.
+17. **Ship the first build that contains the updater:** `npm run release` from a clean tree.
+18. **Install that build by hand on every office PC.** The 0.3.1 currently installed contains no
     updater and will never update itself. This is a one-time round of the building; every
     release after it arrives on its own.
 
