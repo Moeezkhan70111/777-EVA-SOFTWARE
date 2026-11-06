@@ -438,6 +438,27 @@ export const usersMethods = {
     this.persistEffectivePermissions(userId);
   },
 
+  /**
+   * Takes screens out of the stored list (permissions_json). Someone with no role is read as an account
+   * that predates roles, whose screens live there, and the list is also where their worked-out screens
+   * are cached. So a screen unticked for them came straight back from the cache, and the admin saw it
+   * saved. Only the screens named go: the list cannot tell an old account's own screens from cached
+   * ones, and emptying it would strip an old account on any Save.
+   */
+  forgetStoredScreens(this: SqliteDatabase, userId: string, screens: readonly string[]): void {
+    if (screens.length === 0) return;
+    const row = this.db.prepare("SELECT permissions_json FROM app_users WHERE id = ?").get(userId) as { permissions_json?: string } | undefined;
+    let stored: unknown;
+    try {
+      stored = JSON.parse(row?.permissions_json ?? "[]");
+    } catch {
+      return; // Unreadable is already read as nothing, so there is nothing to take out.
+    }
+    if (!Array.isArray(stored)) return;
+    const kept = stored.filter((screen) => typeof screen === "string" && !screens.includes(this.normalizePermissionCode(screen)));
+    this.db.prepare("UPDATE app_users SET permissions_json = ? WHERE id = ?").run(JSON.stringify(kept), userId);
+  },
+
   setUserAdditionalPermissions(this: SqliteDatabase, userId: string, permissions: string[]): void {
     requireLocalAccounts(this.db);
     const user = this.db.prepare("SELECT id FROM app_users WHERE id = ?").get(userId) as { id?: string } | undefined;
@@ -451,6 +472,8 @@ export const usersMethods = {
     const normalized = Array.from(new Set((permissions ?? []).map((permission) => this.normalizePermissionCode(permission)).filter(Boolean)))
       .filter((permission) => !roleScreens.has(permission));
     const now = new Date().toISOString();
+    // The old extras leave the stored list as they leave the table; the ones kept are written back below.
+    this.forgetStoredScreens(userId, this.getUserAdditionalPermissions(userId));
     this.db.prepare("DELETE FROM user_additional_permissions WHERE user_id = ?").run(userId);
     for (const permission of normalized) {
       this.db.prepare("INSERT INTO user_additional_permissions (user_id, permission_code, granted_at) VALUES (?, ?, ?)").run(userId, permission, now);
