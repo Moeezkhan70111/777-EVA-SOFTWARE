@@ -60,6 +60,61 @@ export function removeRoleScreensFromExtrasOnce(db: SqlHandle, nowIso: string): 
   }
 }
 
+/** Set once the repair below has run: when, and how many screens it moved. */
+export const STORED_SCREENS_REPAIR_SETTING_KEY = "accounts.extras.stored_screens_moved";
+
+type NormalizeScreen = (screen: string) => string;
+
+function storedScreens(json: string, normalize: NormalizeScreen): string[] {
+  try {
+    const stored: unknown = JSON.parse(json);
+    if (!Array.isArray(stored)) return [];
+    const texts = stored.filter((screen): screen is string => typeof screen === "string");
+    return texts.map(normalize).filter((screen) => screen !== "");
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * ONCE PER DATABASE: makes the extra-screens table the whole truth for someone with no role.
+ *
+ * Their screens could also live only in permissions_json: an account that predates roles, or a screen
+ * unticked before that took effect. The member dialog reads the table, so it showed them unticked, or
+ * "No permissions assigned", while they could open them, and unticking did nothing because they were
+ * not ticked. Moved to the table they show ticked, and unticking takes them away. Nobody gains or
+ * loses a screen today. An administrator's row is left alone: they have every screen anyway.
+ */
+export function moveStoredScreensToExtrasOnce(db: SqlHandle, normalize: NormalizeScreen, nowIso: string): number | null {
+  if (db.prepare("SELECT 1 FROM app_settings WHERE setting_key = ?").get(STORED_SCREENS_REPAIR_SETTING_KEY) !== undefined) return null;
+  db.exec("BEGIN IMMEDIATE");
+  try {
+    const people = db
+      .prepare(
+        `SELECT u.id, u.permissions_json FROM app_users u
+          WHERE u.role <> 'ADMIN' AND NOT EXISTS (SELECT 1 FROM user_role_assignments a WHERE a.user_id = u.id)`
+      )
+      .all() as Array<{ id: string; permissions_json: string | null }>;
+    const insert = db.prepare("INSERT OR IGNORE INTO user_additional_permissions (user_id, permission_code, granted_at) VALUES (?, ?, ?)");
+    let moved = 0;
+    for (const person of people) {
+      for (const screen of new Set(storedScreens(person.permissions_json ?? "[]", normalize))) {
+        moved += Number(insert.run(person.id, screen, nowIso).changes);
+      }
+    }
+    db.prepare("INSERT INTO app_settings (setting_key, setting_value, updated_at) VALUES (?, ?, ?)").run(
+      STORED_SCREENS_REPAIR_SETTING_KEY,
+      JSON.stringify({ at: nowIso, moved }),
+      nowIso
+    );
+    db.exec("COMMIT");
+    return moved;
+  } catch (error) {
+    db.exec("ROLLBACK");
+    throw error;
+  }
+}
+
 export const usersMethods = {
   hashPassword(this: SqliteDatabase, password: string): { hash: string; salt: string } {
     const salt = randomBytes(16);

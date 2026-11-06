@@ -26,7 +26,7 @@ import { rawMaterialQrMethods, type RawMaterialQrMethods } from "./database/rawM
 import { dispatchMethods, type DispatchMethods } from "./database/dispatch.js";
 import { storeMethods, type StoreMethods } from "./database/store.js";
 import { gatepassMethods, type GatepassMethods } from "./database/gatepass.js";
-import { removeRoleScreensFromExtrasOnce, usersMethods, type UsersMethods } from "./database/users.js";
+import { moveStoredScreensToExtrasOnce, removeRoleScreensFromExtrasOnce, usersMethods, type UsersMethods } from "./database/users.js";
 import { rawMaterialsMethods, type RawMaterialsMethods } from "./database/rawMaterials.js";
 import { machineProgramsMethods, type MachineProgramsMethods } from "./database/machinePrograms.js";
 import { machineProgramStockMethods, type MachineProgramStockMethods } from "./database/machineProgramStock.js";
@@ -385,6 +385,8 @@ export class SqliteDatabase
     this.ensureDefaultRoles();
     // Once: a role's own screens out of each person's additional access (users.ts).
     removeRoleScreensFromExtrasOnce(this.db, new Date().toISOString());
+    // Once: someone with no role, their stored screens into the table the member dialog reads (users.ts).
+    moveStoredScreensToExtrasOnce(this.db, (screen) => this.normalizePermissionCode(screen), new Date().toISOString());
 
     // LAST, after every migration and every startup fix, so none of them counts as a change to
     // master data. Replaces the capture triggers with the current definitions -- and restores any a
