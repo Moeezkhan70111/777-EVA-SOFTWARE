@@ -321,3 +321,42 @@ the button. In this order, at a quiet time:
 
 The store is unusable for anyone not yet approved between steps 5 and 6. You are at the machine,
 with admin rights, for all of it.
+
+## 13. Known failure mode: access reported as changed when it was not
+
+This area has done the same thing four times. Each time a save succeeded, the screen agreed, and the
+person's access had not changed as it said.
+
+| Found | What the admin saw | What had happened |
+|---|---|---|
+| Rehearsal, 2 Nov | Save succeeded | The role was refused; job role, authority and extra screens were saved anyway |
+| Rehearsal, 5 Nov | "Changes saved" on "No role assigned" | A null role meant "leave it as it is", so the role stayed |
+| Fixing that, 5 Nov | "Role removed" (first version, caught by a test before commit) | The role went; its screens stayed in `permissions_json` |
+| Looking for more, 5 Nov | Extra screen unticked and saved, with no role | The screen came back from `permissions_json` (live on every PC until this fix) |
+
+A fifth, milder case came out of the same work: an authority of 150 was stored as 99 with nothing said.
+
+**Why it keeps happening.** Someone with no role is read as an account that predates roles, whose
+screens live in `permissions_json`, and that same column caches everyone's worked-out screens. So
+taking access away has to clear a cache that is also a source. And a save path that returns "accepted"
+says only that nothing threw.
+
+**The rule.** A save reports what it did, from what was stored: read back after the write, or the
+cloud's answer, never the request (`reportMemberAccess`, `packages/data/src/database/memberAccess.ts`).
+The screen shows that report. It does not assume.
+
+**What the report does not cover yet.** It compares role, job role, authority and the extra-screens
+table. It does not compare the screens the person can actually open, so a stale `permissions_json`
+would still be reported as saved.
+
+**Any change to access here must test, by default:**
+
+1. **Take it away, then ask what they can open.** Assert on `recalculateEffectivePermissions` and the
+   stored list, not on the table you wrote to. Do this with a role and with no role.
+2. **The old account.** Someone with no role and screens only in `permissions_json` keeps them when a
+   save takes nothing off.
+3. **A write that is quietly skipped.** The report must say Not saved. Break the code so it reports the
+   request instead of the store, and confirm a test fails.
+4. **Both paths.** Local accounts and cloud accounts are separate code.
+5. **On the real apps, for anything that takes access away.** Automated tests passed through the 5 Nov
+   defect's whole history; the rehearsal is what found it.
