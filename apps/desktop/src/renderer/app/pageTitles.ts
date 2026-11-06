@@ -1,9 +1,14 @@
+import { copy } from "../config/copy";
 import type { AppRoute } from "./routes";
+
+// The heading in the page header (components/layout/PageHeader), per screen.
 
 export const PAGE_TITLES: Record<AppRoute, string> = {
   home: "Dashboard",
   dashboard: "Business Overview",
   stock: "Current Stock",
+  "upper-stock": copy.nav.items.upperStock.label,
+  "dana-stock": copy.nav.items.danaStock.label,
   "raw-material": "Raw Material",
   "raw-material-setup": "Raw Material Setup",
   "raw-material-qr-generator": "Raw Material Labels",
@@ -24,18 +29,18 @@ export const PAGE_TITLES: Record<AppRoute, string> = {
   "munshi-stock": "Raw Material Stock",
   "store-receiving": "Store · Receiving",
   "store-issuing": "Store · Issuing",
-  "store-scanning": "Store Scanning",
-  "store-move-out": "Store Move Out",
+  "store-scanning": copy.nav.items.storeMoveIn.label,
+  "store-move-out": copy.nav.items.storeMoveOut.label,
   gatepass: "Create Gatepass",
   "gatepass-list": "Gatepass List",
   "gatepass-store-scan": "Gatepass — Store Scan",
   "gatepass-dispatch-scan": "Gatepass — Dispatch Scan",
   "party-list": "Party Management",
-  "party-form": "Add/Edit Party",
+  "party-form": "Party",
   "customer-ledger": "Customer Ledger",
   "customer-balance": "Customer Balance",
   "product-list": "Product Management",
-  "product-form": "Add/Edit Product",
+  "product-form": "Product",
   "product-lists": "Fields Management",
   "qr-generator": "QR Generator",
   "b-carton-generator": "B Carton Labels",

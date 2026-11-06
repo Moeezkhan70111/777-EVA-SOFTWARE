@@ -2019,6 +2019,10 @@ export interface DesktopApi {
   rawMaterialQrBatchDeleteBlockers(batchId: string): Promise<{ accepted: boolean; blockers?: string[]; reason?: string }>;
   deleteRawMaterialQrBatch(batchId: string): Promise<{ accepted: boolean; quantity?: number; nextSequence?: number; reason?: string }>;
   listInventoryItems(query?: Record<string, unknown>): Promise<Array<Record<string, unknown>>>;
+  /** One kind of raw material (UPPER, DANA) for its own page. Refused without that page's permission. */
+  listKindStock(kind: string, query?: Record<string, unknown>): Promise<unknown>;
+  /** The Upper Stock page's matrix. Refused without stock.upper.view. */
+  listUpperStockMatrix(query?: Record<string, unknown>): Promise<unknown>;
   createInventoryItem(input: Record<string, unknown>): Promise<{ accepted: boolean; id?: string; code?: string; displayName?: string; duplicate?: boolean; reenabled?: boolean; reason?: string }>;
   adjustInventoryStock(input: Record<string, unknown>): Promise<{ accepted: boolean; reason?: string }>;
   queryInventoryStock(filters?: Record<string, unknown>): Promise<{ itemCount: number; totalsByUnit: Array<{ unitId: string; unitCode: string; quantity: number }>; equivalent?: { unitId: string; unitCode: string; quantity: number } }>;

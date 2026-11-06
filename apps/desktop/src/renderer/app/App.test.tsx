@@ -2,9 +2,16 @@ import React from "react";
 import "@testing-library/jest-dom/vitest";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { beforeAll, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
 import { NotificationsProvider } from "../state/NotificationsContext";
+
+// What a window reload would come back to: the one way a route is asked for directly.
+const resumedRoute = vi.hoisted(() => ({ value: null as string | null }));
+vi.mock("../features/navigation/resumeRoute", async (original) => ({
+  ...(await original<typeof import("../features/navigation/resumeRoute")>()),
+  routeBeforeReload: () => resumedRoute.value,
+}));
 
 beforeAll(() => {
   vi.spyOn(HTMLMediaElement.prototype, "play").mockImplementation(() => Promise.resolve());
@@ -164,10 +171,13 @@ describe("App", () => {
     await userEvent.click(screen.getByRole("button", { name: /create administrator/i }));
 
     expect(api.bootstrapAdmin).toHaveBeenCalledWith("owner", "Password123", "Password123");
-    // Signed in as the new admin: the bootstrap screen is gone and the shell shows their name.
+    // Signed in as the new admin: the bootstrap screen is gone and the shell is up — the sidebar,
+    // and the top bar's profile, whose menu names them.
     // (Not asserting on Dashboard content here — that route is currently hidden by
     // visibleSections.ts for every signed-in user, a pre-existing, unrelated condition.)
-    expect(await screen.findByText("owner")).toBeInTheDocument();
+    expect(await screen.findByRole("navigation", { name: /main navigation/i })).toBeInTheDocument();
+    await userEvent.click(within(screen.getByRole("group", { name: "Account and notifications" })).getByRole("button", { name: "User Profile" }));
+    expect(within(await screen.findByRole("menu")).getAllByText("owner").length).toBeGreaterThan(0);
     expect(screen.queryByRole("heading", { name: /create administrator/i })).not.toBeInTheDocument();
   });
 
@@ -189,9 +199,61 @@ describe("App", () => {
     await userEvent.type(screen.getByLabelText(/password/i), "Password123");
     await userEvent.click(screen.getByRole("button", { name: /login/i }));
 
-    // Every role lands on its Dashboard, titled with the role — an admin with none is "Administrator".
-    expect(await screen.findByRole("heading", { name: "Administrator" })).toBeInTheDocument();
+    // Every role lands on its Dashboard: the page header names it, the line under it names the role
+    // (an admin with none is "Administrator").
+    expect(await screen.findByRole("heading", { level: 1, name: "Dashboard" })).toBeInTheDocument();
+    expect(screen.getByText("Administrator")).toBeInTheDocument();
     expect(screen.getByRole("navigation", { name: /main navigation/i })).toBeInTheDocument();
+  });
+
+  it("names the open page in the header, and follows navigation", async () => {
+    renderApp();
+    const heading = await screen.findByRole("heading", { level: 1, name: "Dashboard" });
+    expect(heading).toHaveClass("page-head-title");
+
+    await userEvent.click(within(screen.getByRole("navigation", { name: /main navigation/i })).getByRole("button", { name: "Business Overview" }));
+    expect(await screen.findByRole("heading", { level: 1, name: "Business Overview" })).toHaveClass("page-head-title");
+    expect(screen.queryByRole("heading", { level: 1, name: "Dashboard" })).not.toBeInTheDocument();
+  });
+
+  describe("Upper Stock and Dana Stock", () => {
+    const signedInAs = (permissions: string[]) => {
+      const api = makeApi();
+      sessionStoreState.activeToken = "tok-viewer";
+      api.getSession.mockResolvedValue({ id: "u-9", username: "viewer", role: "USER", accessStatus: "APPROVED", permissions });
+      const listKindStock = vi.fn().mockResolvedValue({ accepted: true, items: [], itemCount: 0, totalsByUnit: [], page: 1, pages: 1 });
+      const listUpperStockMatrix = vi.fn().mockResolvedValue({ accepted: true, articles: [], articleCount: 0, page: 1, pages: 1 });
+      renderApp(Object.assign(api, { listKindStock, listUpperStockMatrix }));
+      return { listKindStock, listUpperStockMatrix };
+    };
+    afterEach(() => {
+      resumedRoute.value = null;
+    });
+
+    it("goes from a card to its own page, which reads its own kind", async () => {
+      const { listKindStock, listUpperStockMatrix } = signedInAs(["stock.dana.view"]);
+      await userEvent.click(await screen.findByTestId("nav-tile-dana-stock"));
+      await waitFor(() => expect(document.querySelector(".page-head-title")).toHaveTextContent("Dana Stock"));
+      expect(listKindStock).toHaveBeenCalledWith("DANA", expect.anything());
+      expect(listUpperStockMatrix).not.toHaveBeenCalled();
+    });
+
+    // There is no address bar here. A window reload is what asks for a stored route directly.
+    it("falls back to the Dashboard when a profile asks for a page it may not open", async () => {
+      resumedRoute.value = "upper-stock";
+      const { listUpperStockMatrix } = signedInAs(["stock.dana.view"]);
+      expect(await screen.findByRole("heading", { level: 1, name: "Dashboard" })).toBeInTheDocument();
+      expect(screen.queryByRole("heading", { level: 1, name: "Upper Stock" })).not.toBeInTheDocument();
+      expect(screen.queryByTestId("nav-tile-upper-stock")).not.toBeInTheDocument();
+      expect(listUpperStockMatrix).not.toHaveBeenCalled();
+    });
+
+    it("opens that same request for a profile that holds the permission", async () => {
+      resumedRoute.value = "upper-stock";
+      const { listUpperStockMatrix } = signedInAs(["stock.upper.view"]);
+      await waitFor(() => expect(document.querySelector(".page-head-title")).toHaveTextContent("Upper Stock"));
+      await waitFor(() => expect(listUpperStockMatrix).toHaveBeenCalled());
+    });
   });
 
   it("starts a store operator on the Store page in Receiving, with no navbar, and Escape stays there (0.3.9, 0.4.1)", async () => {
@@ -246,8 +308,8 @@ describe("App", () => {
 
   it("renders dashboard", async () => {
     renderApp();
-    // Home first; the KPI overview is one of its tiles.
-    await userEvent.click(await screen.findByTestId("nav-tile-dashboard"));
+    // The KPI overview opens from the sidebar; Home holds only the stock cards.
+    await userEvent.click(within(await screen.findByRole("navigation", { name: /main navigation/i })).getByRole("button", { name: "Business Overview" }));
     expect(await screen.findByText("Today's Production")).toBeInTheDocument();
     expect(await screen.findAllByText("Current Stock")).not.toHaveLength(0);
   });

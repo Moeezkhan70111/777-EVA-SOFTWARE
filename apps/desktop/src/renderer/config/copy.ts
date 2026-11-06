@@ -1817,8 +1817,6 @@ export const copy = {
     stationEyebrow: "Store · Raw Material",
     machinePrograms: "Machine programs",
     resizeRail: "Resize the scan panel",
-    notifications: "Notifications",
-    noNotifications: "Nothing new.",
     modesLabel: "What the store is doing",
     // The two modes, named Move in and Move out since 0.4.2 (the owner's design).
     receiving: "Move in",
@@ -2418,16 +2416,83 @@ export const copy = {
     needsStockAccess: "Ask an admin for Stock access to use this",
   },
 
+  // The Upper Stock and Dana Stock pages (features/kindStock).
+  kindStock: {
+    search: "Search by name, colour, size or code",
+    materials: "Materials",
+    material: "Material",
+    type: "Type",
+    code: "Code",
+    inStore: "In store",
+    failedTitle: "Stock could not be read",
+    unreadable: "The stock figures could not be read. Try again.",
+    noMatchTitle: "Nothing matches that search",
+    noMatchHint: "Check the spelling, or clear the search to see everything.",
+    upperEmptyTitle: "No uppers in the store yet",
+    upperEmptyHint: "Uppers appear here once they are set up under UPPER in Raw Material and received into the store.",
+    danaEmptyTitle: "No dana in the store yet",
+    danaEmptyHint: "Dana appears here once it is set up under DANA in Raw Material and received into the store.",
+  },
+
+  // The Upper Stock page (features/upperStock).
+  upperStock: {
+    categoriesLabel: "Kind of upper",
+    categories: {
+      all: "All",
+      rubber: "Rubber Upper",
+      ragzine: "Ragzine Upper",
+      pvc: "PVC Upper",
+      pasting: "Pasting Upper",
+    },
+    searchLabel: "Search uppers",
+    searchPlaceholder: "Search upper (e.g. SK6, Slide, Velcro...)",
+    sortBy: "Sort by:",
+    sorts: {
+      nameAsc: "Item name (A–Z)",
+      nameDesc: "Item name (Z–A)",
+      stockDesc: "Highest stock first",
+      stockAsc: "Lowest stock first",
+    },
+    size: "Size",
+    total: "Total",
+    /** The matrix's last row: its one grand total, and the unit every figure above it is in. */
+    grandTotal: (unitCode: string) => `Total ${unitCode}`.trim(),
+    tableLabel: (article: string) => `${article} stock`,
+    foldLabel: (article: string) => `Show or hide ${article}`,
+    noArticle: "No article",
+    noColour: "No colour",
+    noSize: "No size",
+  },
+
+  // The bell and the profile, top right of every screen: in the app's top bar, or in the Store
+  // page's own header (components/layout/HeaderActions).
+  appHeader: {
+    label: "Account and notifications",
+    notifications: "Notifications",
+    noNotifications: "Nothing new.",
+    accessRequests: "Access Requests",
+    permissionRequests: "Permission Requests",
+  },
+
   // Home (the tile dashboard) and the sidebar. Both read the same catalogue
   // (features/navigation/navCatalogue.ts), so one label here names a page in both places.
   nav: {
     home: "Dashboard",
-    homeTitle: "Dashboard",
     /** The Dashboard title for an administrator who has no role of their own. */
     adminTitle: "Administrator",
     emptyTitle: "No pages assigned yet",
     emptyHint: "Your account has no pages assigned. Ask an administrator to give your account a role.",
+    /** A role with pages, but neither stock card: the dashboard has nothing of its own to show. */
+    noCardsTitle: "Your pages are in the sidebar",
+    noCardsHint: "Rest the pointer on the sidebar on the left to see every page you can open.",
     railLabel: "Main navigation",
+    // The rail's foot, and its pin (the sidebar is slim until hovered or pinned open).
+    rail: {
+      pin: "Keep sidebar open",
+      backup: "Backup",
+      backupHint: "Create backup (Ctrl+B)",
+      version: (version: string) => `777 ERP ${version}`,
+    },
     sections: {
       overview: "Overview",
       scanning: "Scanning",
@@ -2456,6 +2521,8 @@ export const copy = {
       gatepassCreate: { label: "Create Gatepass", line: "Cut a new gatepass for a party" },
       gatepassList: { label: "Gatepass List", line: "Open, follow and print gatepasses" },
       stock: { label: "Current Stock", line: "Finished goods in stock" },
+      upperStock: { label: "Upper Stock", line: "Uppers in the store" },
+      danaStock: { label: "Dana Stock", line: "Dana in the store" },
       rawMaterial: { label: "Raw Material", line: "Stock, receipts, labels and setup" },
       stockHistory: { label: "Stock History", line: "Every stock movement" },
       machineProgram: { label: "Machine Program", line: "Carton QRs generated, per item" },

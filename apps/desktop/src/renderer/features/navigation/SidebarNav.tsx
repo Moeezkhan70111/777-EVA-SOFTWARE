@@ -40,38 +40,45 @@ interface NavGroupProps {
 /** A section heading that folds its pages, listed as rows under it. */
 const NavGroup: React.FC<NavGroupProps> = ({ section, open, current, onToggle, onSelect }) => {
   const listId = `nav-section-${section.id}`;
+  // While the rail is slim its rows are hidden, so the heading carries the mark for the open page.
+  const holdsCurrent = section.items.some((entry) => isNavItemActive(entry, current));
   return (
     <div className="nav-group">
       <button
         type="button"
-        className={`nav-group-head${open ? " open" : ""}`}
+        className={`nav-group-head${open ? " open" : ""}${holdsCurrent ? " has-active" : ""}`}
         aria-expanded={open}
         aria-controls={listId}
+        data-tip={section.label}
         onClick={onToggle}
       >
         <span className="nav-top-icon" aria-hidden="true">{SECTION_ICONS[section.id]}</span>
         <span className="nav-top-label">{section.label}</span>
         <Chevron />
       </button>
-      {open && (
-        <ul id={listId} className="nav-group-items">
-          {section.items.map((item) => {
-            const active = isNavItemActive(item, current);
-            return (
-              <li key={item.route}>
-                <button
-                  type="button"
-                  className={`nav-item${active ? " active" : ""}`}
-                  aria-current={active ? "page" : undefined}
-                  onClick={() => onSelect(item.route)}
-                >
-                  {item.label}
-                </button>
-              </li>
-            );
-          })}
-        </ul>
-      )}
+      {/* Folds the rows away while the rail is slim (theme.css), so opening the rail lets them
+          grow in rather than appear all at once. */}
+      <div className="nav-group-items-wrap">
+        {open && (
+          <ul id={listId} className="nav-group-items">
+            {section.items.map((item) => {
+              const active = isNavItemActive(item, current);
+              return (
+                <li key={item.route} className={active ? "active" : undefined}>
+                  <button
+                    type="button"
+                    className={`nav-item${active ? " active" : ""}`}
+                    aria-current={active ? "page" : undefined}
+                    onClick={() => onSelect(item.route)}
+                  >
+                    {item.label}
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </div>
     </div>
   );
 };

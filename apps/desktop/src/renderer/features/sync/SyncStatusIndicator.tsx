@@ -129,10 +129,13 @@ export const SyncStatusIndicator: React.FC<SyncStatusIndicatorProps> = ({ onOpen
         aria-expanded={open}
         // The accessible name carries the whole answer, so a screen reader does not get "button".
         aria-label={`${copy.syncStatus.label}: ${headline}${age ? `. ${copy.syncStatus.lastSuccess} ${age}` : ""}`}
-        title={`${copy.syncStatus.label}: ${headline}`}
+        // The slim rail shows only the mark; its tooltip (useRailTooltip) says the rest.
+        data-tip={`${copy.syncStatus.label}: ${headline}`}
         onClick={() => setOpen((value) => !value)}
       >
-        <span className="sync-indicator-mark" aria-hidden="true">{mark}</span>
+        <span className="sync-indicator-mark" aria-hidden="true">
+          <span className="sync-indicator-dot">{mark}</span>
+        </span>
         <span className="sync-indicator-text">{headline}</span>
       </button>
 
@@ -222,7 +225,8 @@ const SyncDetailPanel: React.FC<SyncDetailPanelProps> = ({
     className="sync-detail"
     role="dialog"
     aria-label={copy.syncStatus.label}
-    style={{ top: `${String(Math.round(anchor.bottom + 8))}px`, right: `${String(Math.round(window.innerWidth - anchor.right))}px` }}
+    // Beside the rail's foot, bottom edges level: below it there is no room, and the rail is narrow.
+    style={{ bottom: `${String(Math.round(window.innerHeight - anchor.bottom))}px`, left: `${String(Math.round(anchor.right + 12))}px` }}
   >
     <div className="sync-detail-head">{headline}</div>
     <p className="sync-detail-body">{body}</p>

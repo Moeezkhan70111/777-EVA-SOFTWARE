@@ -21,7 +21,8 @@ import type { MutableTransactionContext } from "./shared.js";
 import { EFFECTIVE_PACK_NAME_SQL } from "./shared.js";
 import { ARTICLE_SQL, COLOUR_SQL, KIND_JOINS, KIND_SQL, SIZE_SQL, TYPE_SQL } from "./machineProgramSql.js";
 import type { UpperIssuePage, UpperIssueRow, UpperIssueSummary, UpperIssueTotals, UpperQuantity, UpperStockRow } from "./types.js";
-import { RAW_MATERIAL_KIND, RAW_MATERIAL_QR_STATUS, businessDayStartIso, roundQuantity } from "@erp/domain";
+import { RAW_MATERIAL_KIND, RAW_MATERIAL_QR_STATUS, buildUpperStockMatrix, businessDayStartIso, roundQuantity } from "@erp/domain";
+import type { UpperStockMatrix, UpperStockQuery } from "@erp/domain";
 
 type Row = Record<string, unknown>;
 
@@ -178,6 +179,14 @@ export const upperMoveOutMethods = {
       )
       .all(RAW_MATERIAL_KIND.UPPER) as Row[];
     return { packets: Number(packets.n ?? 0), quantities: toQuantities(quantities) };
+  },
+
+  /**
+   * The Upper Stock page: the same materials and balances as listUpperStock, arranged as a matrix
+   * per article (@erp/domain, buildUpperStockMatrix). No figure of its own.
+   */
+  listUpperStockMatrix(this: SqliteDatabase, query: UpperStockQuery = {}): UpperStockMatrix {
+    return buildUpperStockMatrix(this.listUpperStock(), query);
   },
 
   /**
