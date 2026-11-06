@@ -1,11 +1,11 @@
 import React, { useState } from "react";
 import { manualProductionCartons, type ManualProductionQuantity } from "@erp/domain";
-import { SearchableCombobox } from "../../components/shared/SearchableCombobox";
 import { StateView } from "../../components/shared/StateView";
 import { copy } from "../../config/copy";
 import type { Loaded } from "../../hooks/useLoaded";
 import type { MachineRecord } from "../../types/desktopApi";
-import { articlesOf, sizesOf, type ProductChoice } from "./productChoices";
+import { ProductFields, useProductPick } from "./ProductFields";
+import type { ProductChoice } from "./productChoices";
 import type { ManualProductionDraft, SaveOutcome } from "./useManualProduction";
 
 // RECORD PRODUCTION — the Manual Production form:
@@ -31,13 +31,6 @@ interface ManualProductionFormProps {
   onSave: (draft: ManualProductionDraft) => Promise<boolean>;
 }
 
-const Field: React.FC<{ label: string; children: React.ReactNode }> = ({ label, children }) => (
-  <div className="mpr-field">
-    <span className="input-label" aria-hidden="true">{label}</span>
-    {children}
-  </div>
-);
-
 /** Under the quantity: how to type it, the cartons it makes, or why it is not a quantity. */
 const quantityHint = (typed: boolean, quantity: ManualProductionQuantity): string => {
   if (!typed) return text.dozensHint;
@@ -52,30 +45,18 @@ const Outcome: React.FC<{ outcome: SaveOutcome }> = ({ outcome }) =>
   );
 
 export const ManualProductionForm: React.FC<ManualProductionFormProps> = ({ machine, products, busy, outcome, onSave }) => {
-  const [article, setArticle] = useState("");
-  const [articleSizeId, setArticleSizeId] = useState("");
-  const [color, setColor] = useState("");
+  const pick = useProductPick(products.value);
   const [dozens, setDozens] = useState("");
 
   if (products.loading && products.value.length === 0) return <StateView kind="loading" compact message={text.productsLoading} />;
   if (products.error) return <StateView kind="error" compact message={products.error} onRetry={() => void products.reload()} />;
   if (products.value.length === 0) return <StateView kind="empty" compact title={text.noProductsTitle} hint={text.noProductsHint} />;
 
-  const sizes = sizesOf(products.value, article);
-  const product = sizes.find((choice) => choice.articleSizeId === articleSizeId) ?? null;
+  const { product, articleSizeId, color } = pick;
   const quantity = manualProductionCartons(dozens);
   const badQuantity = dozens.trim() !== "" && !quantity.ok;
   const canSave = Boolean(machine && product && color && quantity.ok) && !busy;
 
-  const chooseArticle = (value: string) => {
-    setArticle(value);
-    setArticleSizeId("");
-    setColor("");
-  };
-  const chooseSize = (value: string) => {
-    setArticleSizeId(value);
-    setColor("");
-  };
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!canSave || !machine) return;
@@ -89,18 +70,7 @@ export const ManualProductionForm: React.FC<ManualProductionFormProps> = ({ mach
         <span className={machine ? "mpr-machine" : "mpr-machine is-missing"}>{machine ? text.machineLine(machine.name) : text.machineNeeded}</span>
       </div>
       <div className="mpr-grid">
-        <Field label={text.articleLabel}>
-          <SearchableCombobox dropdown ariaLabel={text.articleLabel} placeholder={text.chooseArticle} value={article}
-            options={articlesOf(products.value).map((name) => ({ value: name, label: name }))} onChange={chooseArticle} />
-        </Field>
-        <Field label={text.sizeLabel}>
-          <SearchableCombobox dropdown ariaLabel={text.sizeLabel} placeholder={text.chooseSize} value={articleSizeId}
-            options={sizes.map((choice) => ({ value: choice.articleSizeId, label: choice.size }))} onChange={chooseSize} />
-        </Field>
-        <Field label={text.colorLabel}>
-          <SearchableCombobox dropdown ariaLabel={text.colorLabel} placeholder={text.chooseColor} value={color}
-            emptyLabel={text.noColors} options={(product?.colors ?? []).map((name) => ({ value: name, label: name }))} onChange={setColor} />
-        </Field>
+        <ProductFields products={products.value} pick={pick} />
         <div className="mpr-field">
           <label className="input-label" htmlFor="mpr-dozens">{text.dozensLabel}</label>
           <input id="mpr-dozens" className="form-input mpr-dozens" inputMode="decimal" autoComplete="off" value={dozens}

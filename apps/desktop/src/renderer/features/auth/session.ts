@@ -178,6 +178,7 @@ export const routePermission: Partial<Record<AppRoute, PermissionCode>> = {
   settings: PERMISSION.SETTINGS,
   health: PERMISSION.HEALTH,
   logs: PERMISSION.LOGS,
+  "carton-stock": PERMISSION.CARTON_STOCK_ADMIN,
 };
 
 /**

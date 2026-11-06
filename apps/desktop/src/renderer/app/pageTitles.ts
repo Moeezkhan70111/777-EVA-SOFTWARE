@@ -8,6 +8,7 @@ export const PAGE_TITLES: Record<AppRoute, string> = {
   dashboard: "Business Overview",
   stock: "Current Stock",
   "upper-stock": copy.nav.items.upperStock.label,
+  "carton-stock": copy.nav.items.cartonStock.label,
   "dana-stock": copy.nav.items.danaStock.label,
   "raw-material": "Raw Material",
   "raw-material-setup": "Raw Material Setup",

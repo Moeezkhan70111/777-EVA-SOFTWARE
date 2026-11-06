@@ -327,7 +327,11 @@ const buildContext = (): IpcContext => {
         built.push({ what: "stock-events" });
         return { queued: 0, unqueued: 0, vanished: 0 };
       },
-      // Then the carton movements (docs/42).
+      // Then the carton movements (docs/42): any refused for a lease lost go again first.
+      resendCartonMovementsRefusedForLease: () => {
+        built.push({ what: "carton-resend" });
+        return 0;
+      },
       buildCartonStockEvents: () => {
         built.push({ what: "carton-stock-events" });
         return { queued: 0, unqueued: 0 };
@@ -714,8 +718,8 @@ describe("cloud sync at the process boundary", () => {
 
   it("builds changed master records, then stock movements, before the drain, so the same pass carries them", async () => {
     await run();
-    const order = built.map((entry) => entry.what).filter((what) => ["master-records", "label-runs", "stock-events", "carton-stock-events", "drain"].includes(what));
-    expect(order).toEqual(["master-records", "label-runs", "stock-events", "carton-stock-events", "drain"]);
+    const order = built.map((entry) => entry.what).filter((what) => ["master-records", "label-runs", "stock-events", "carton-resend", "carton-stock-events", "drain"].includes(what));
+    expect(order).toEqual(["master-records", "label-runs", "stock-events", "carton-resend", "carton-stock-events", "drain"]);
   });
 
   it("a failure to build master records is logged, and the pass still sends and reads", async () => {

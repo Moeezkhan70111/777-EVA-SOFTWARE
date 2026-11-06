@@ -73,6 +73,7 @@ export type SyncWaitCause =
   | { kind: "MISSING"; record: string; id: string }
   | { kind: "IN_USE"; record: string; id: string }
   | { kind: "HOLDS_STOCK"; id: string }
+  | { kind: "CARTONS_SHORT"; id: string }
   | { kind: "NAME_TAKEN"; column: string }
   | { kind: "DISPLACED"; columns: string[] }
   | { kind: "OTHER"; code: string };
@@ -1678,6 +1679,44 @@ export interface AccountsStatus {
 }
 
 /** What the member details' Save sends (data users.ts): a null role or job role leaves it as it is. */
+/** One adjustment as the form sends it. */
+export interface CartonAdjustDraft {
+  articleSizeId: string;
+  color: string;
+  direction: "IN" | "OUT";
+  cartons: number;
+  reason: string;
+}
+
+export interface CartonReconciliationRow {
+  variantId: string;
+  article: string;
+  size: string;
+  color: string;
+  produced: number;
+  adjusted: number;
+  issued: number;
+  movementStock: number;
+  qrInStore: number;
+  storeFigure: number;
+  difference: number;
+}
+
+/** Mirrors CartonReconciliation in @erp/data. */
+export interface CartonReconciliation {
+  rows: CartonReconciliationRow[];
+  page: number;
+  pageSize: number;
+  total: number;
+  movements: number;
+  fingerprint: string;
+  differences: number;
+  unsent: number;
+  refused: number;
+  waiting: number;
+  entriesBeforeFreshStart: number;
+}
+
 export interface MemberAccessChange {
   /** Null means no role: the person loses the one they have. */
   roleCode: string | null;
@@ -2268,6 +2307,8 @@ export interface DesktopApi {
   /** Whether a carton is recorded as produced, as the database says — for an uncertain outcome. */
   findProductionReceipt(qrId: string): Promise<{ accepted: boolean; receipt: ProductionReceipt | null; reason?: string }>;
   /** Manual Production: cartons typed in (in dozens) for a machine — its program today, store stock, the ledgers. */
+  adjustCartonStock(input: CartonAdjustDraft & { requestId: string }): Promise<{ accepted: boolean; reason?: string; duplicate?: boolean }>;
+  getCartonStockReconciliation(query: { page: number; pageSize: number }): Promise<{ accepted: boolean; reason?: string; reconciliation?: CartonReconciliation | null }>;
   recordManualProduction(input: { requestId: string; machineId: string; articleSizeId: string; color: string; dozens: string }): Promise<ManualProductionResult>;
   /** One business day's Manual Production (YYYY-MM-DD), newest first, a page at a time. */
   listManualProduction(query: { date: string; page?: number; pageSize?: number }): Promise<{ accepted: boolean; page: ManualProductionPage | null; reason?: string }>;

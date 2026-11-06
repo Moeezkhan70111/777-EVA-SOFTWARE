@@ -17,10 +17,10 @@
 // synced computer writes only as the current holder, caught up past the previous holder's last write.
 
 import { ipcMain as electronIpcMain } from "electron";
-import { LEASE_DOMAIN, type LeaseDomain } from "@erp/domain";
+import { CARTON_QR_ON_HOLD, LEASE_DOMAIN, type LeaseDomain } from "@erp/domain";
 import type { SqliteDatabase } from "@erp/data";
 import { isCloudSyncConfigured } from "./cloudSyncPass";
-import { leasesFor } from "./leaseChannels";
+import { CARTON_QR_HOLD_CHANNELS, leasesFor } from "./leaseChannels";
 import { LEASE_ERROR_NAME } from "../shared/leaseRefusal";
 
 type Listener = Parameters<typeof electronIpcMain.handle>[1];
@@ -36,6 +36,7 @@ let gate: LeaseGateDeps | null = null;
 /** Called once at startup, before any handler can run. */
 export function installLeaseGate(deps: LeaseGateDeps): void {
   gate = deps;
+  deps.db.cartonQrOnHold = CARTON_QR_ON_HOLD;
 }
 
 const DOMAIN_WORDS: Readonly<Record<LeaseDomain, string>> = {
@@ -129,9 +130,28 @@ function refusalMessage(domain: LeaseDomain, reason: string | null, holderLabel:
 
 const capitalise = (text: string): string => text.charAt(0).toUpperCase() + text.slice(1);
 
-/** Electron's ipcMain.handle, with the lease gate in front of every leased channel. */
+/** What an operator is told. One place, for translation later (R21). */
+export const CARTON_QR_HOLD_MESSAGE =
+  "Carton QR scanning is on hold: carton stock is recorded through Manual Production for now. Nothing was changed.";
+
+/** A QR action refused while carton QR is on hold. Named as a lease refusal, so every screen says it. */
+class CartonQrOnHold extends Error {
+  readonly code = "CARTON_QR_ON_HOLD";
+  constructor() {
+    super(CARTON_QR_HOLD_MESSAGE);
+    this.name = LEASE_ERROR_NAME;
+  }
+}
+
+/** Electron's ipcMain.handle, with the QR hold and the lease gate in front of the channels they cover. */
 export const ipcMain = {
   handle(channel: string, listener: Listener): void {
+    if (CARTON_QR_ON_HOLD && CARTON_QR_HOLD_CHANNELS.has(channel)) {
+      electronIpcMain.handle(channel, () => {
+        throw new CartonQrOnHold();
+      });
+      return;
+    }
     const domains = leasesFor(channel);
     if (domains.length === 0) {
       electronIpcMain.handle(channel, listener);

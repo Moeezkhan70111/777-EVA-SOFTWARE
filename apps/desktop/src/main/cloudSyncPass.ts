@@ -230,6 +230,13 @@ function buildStockEvents(db: SqliteDatabase, logger: StructuredLogger, deviceId
 /** Builds marked carton movements into queued events (docs/42). Never throws: a mark left here is built next pass. */
 function buildCartonStockEvents(db: SqliteDatabase, logger: StructuredLogger, deviceId: string): void {
   try {
+    const resent = db.resendCartonMovementsRefusedForLease(new Date().toISOString());
+    if (resent > 0) {
+      logger.log({
+        module: "sync", severity: "INFO", operation: "carton-stock-events", deviceId,
+        message: `${String(resent)} carton movement(s) refused while this computer did not hold the lease are being sent again.`,
+      });
+    }
     const built = db.buildCartonStockEvents(new Date().toISOString());
     if (built.unqueued > 0) {
       logger.log({

@@ -675,6 +675,7 @@ export class SupabaseSyncTransport implements SyncTransport, SyncPullTransport {
         manual_production_entry_id: event.manualProductionEntryId,
         gatepass_id: event.gatepassId,
         gatepass_line_id: event.gatepassLineId,
+        reason: event.reason,
         lease_epoch: leaseEpoch,
       });
     }

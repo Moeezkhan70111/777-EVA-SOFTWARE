@@ -1,3 +1,4 @@
+import { leaseRefusalText } from "../shared/leaseRefusal";
 import type { IpcMainInvokeEvent } from "electron";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { SqliteDatabase } from "@erp/data";
@@ -103,6 +104,48 @@ describe("the lease gate", () => {
     await expect(registered.get(IPC.removeInventoryItemForGood)?.(event, "item-1")).rejects.toMatchObject({ reason: "CATCHING_UP" });
     expect(asked).toEqual(["MASTER_DATA", "RAW_MATERIAL_STORE"]);
     expect(listener).not.toHaveBeenCalled();
+  });
+});
+
+describe("carton QR on hold (docs/42 section 9)", () => {
+  const HELD = [
+    IPC.processScan, IPC.receiveProduction, IPC.dispatchScan, IPC.returnScan,
+    IPC.storeEntryScan, IPC.storeExitScan, IPC.machineProgramCartonIn, IPC.markQrCodeDamaged,
+  ];
+
+  it("refuses every QR action that moves the carton figure, in words, before the handler runs", async () => {
+    const { ipcMain, installLeaseGate, CARTON_QR_HOLD_MESSAGE } = await loadGuard();
+    installLeaseGate({ db, deviceId: "desktop-store", dataRoot: "C:/erp" });
+    for (const channel of HELD) {
+      const listener = vi.fn();
+      ipcMain.handle(channel, listener);
+      await expect(Promise.resolve().then(() => registered.get(channel)?.(event, "QR-1"))).rejects.toThrow(CARTON_QR_HOLD_MESSAGE);
+      expect(listener, channel).not.toHaveBeenCalled();
+    }
+  });
+
+  it("is said by every screen, the way a lease refusal is", async () => {
+    const { ipcMain, CARTON_QR_HOLD_MESSAGE } = await loadGuard();
+    ipcMain.handle(IPC.processScan, vi.fn());
+    const refused = await Promise.resolve().then(() => registered.get(IPC.processScan)?.(event, "QR-1")).catch((error: unknown) => error);
+    expect(leaseRefusalText(refused)).toBe(CARTON_QR_HOLD_MESSAGE);
+  });
+
+  it("leaves labels, lookups and raw material QR working", async () => {
+    const { ipcMain, installLeaseGate } = await loadGuard();
+    installLeaseGate({ db, deviceId: "desktop-store", dataRoot: "C:/erp" });
+    for (const channel of [IPC.generateQrBatch, IPC.searchQrCodes, IPC.getQrDetail, IPC.getQrJourney, IPC.voidQrCode, IPC.restoreQrCode, IPC.returnLookup, IPC.listProductionReceipts]) {
+      const listener = vi.fn(() => "worked");
+      ipcMain.handle(channel, listener);
+      await expect(Promise.resolve(registered.get(channel)?.(event))).resolves.toBe("worked");
+    }
+  });
+
+  it("tells the data layer at startup, so a gatepass reserves nothing for scanners", async () => {
+    const { installLeaseGate } = await loadGuard();
+    const database = { ...db, cartonQrOnHold: false } as typeof db & { cartonQrOnHold: boolean };
+    installLeaseGate({ db: database, deviceId: "desktop-store", dataRoot: "C:/erp" });
+    expect(database.cartonQrOnHold).toBe(true);
   });
 });
 

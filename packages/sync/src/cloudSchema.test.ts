@@ -1,3 +1,4 @@
+import { CARTON_STOCK_EVENT_TYPE } from "@erp/domain";
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
@@ -2009,8 +2010,34 @@ test("026: the cloud log's payload is one the receiving computer accepts, field 
   assert.deepEqual(readCartonStockEventPayload(payloadFromTrigger("log_carton_stock_event_insert", issue, CARTON_STOCK_EVENTS)), {
     eventId: "ce-1", productVariantId: "v-1", eventType: "GATEPASS_ISSUE", quantity: 5, balanceDelta: -5, locationType: "WAREHOUSE",
     locationId: "factory-777", createdBy: "clerk", createdAt: "2026-11-03T05:00:00.000Z",
-    manualProductionEntryId: null, gatepassId: "g-1", gatepassLineId: "gl-1",
+    manualProductionEntryId: null, gatepassId: "g-1", gatepassLineId: "gl-1", reason: null,
   });
+});
+
+const CARTON_ADJUSTMENTS = read("migrations/supabase/027_carton_stock_adjustments.up.sql");
+
+test("027: an adjustment in the cloud's log is one the receiving computer accepts, with its reason", () => {
+  const adjustment = {
+    id: "ce-2", product_variant_id: "v-1", event_type: "CARTON_ADJUST_OUT", quantity: 3, balance_delta: -3, location_type: "WAREHOUSE",
+    location_id: "factory-777", created_by: "owner", created_at: "2026-11-06T05:00:00.000Z",
+    manual_production_entry_id: null, gatepass_id: null, gatepass_line_id: null, reason: "counted",
+  };
+  assert.deepEqual(readCartonStockEventPayload(payloadFromTrigger("log_carton_stock_event_insert", adjustment, CARTON_ADJUSTMENTS)), {
+    eventId: "ce-2", productVariantId: "v-1", eventType: "CARTON_ADJUST_OUT", quantity: 3, balanceDelta: -3, locationType: "WAREHOUSE",
+    locationId: "factory-777", createdBy: "owner", createdAt: "2026-11-06T05:00:00.000Z",
+    manualProductionEntryId: null, gatepassId: null, gatepassLineId: null, reason: "counted",
+  });
+});
+
+test("027: the cloud knows every movement type the computers do, by the same sign, and stores the reason it is sent", () => {
+  for (const type of Object.values(CARTON_STOCK_EVENT_TYPE)) {
+    const listed = CARTON_ADJUSTMENTS.match(new RegExp(`'${type}'`, "g")) ?? [];
+    assert.ok(listed.length >= 2, `${type} is in the table's check and the push's`);
+  }
+  assert.ok(CARTON_ADJUSTMENTS.includes("then -v_quantity else v_quantity"));
+  assert.match(CARTON_ADJUSTMENTS, /'GATEPASS_ISSUE', 'MANUAL_PRODUCTION_VOID', 'CARTON_ADJUST_OUT'\) then -v_quantity/);
+  assert.ok(CARTON_ADJUSTMENTS.includes("item->>'reason', account.device_id"), "the push stores the reason");
+  assert.ok(!/\brevoke\b/i.test(sqlOnly(CARTON_ADJUSTMENTS)), "create or replace keeps the grants, so it needs none");
 });
 
 test("026: the cloud builds the local dedupe key, unscoped, under the log's one ordering lock, and the type is under the carton lease", () => {

@@ -6,7 +6,7 @@ import { DatabaseSync } from "node:sqlite";
 import { dropCaptureTriggers, installCaptureTriggers } from "./database/masterCapture.js";
 import { buildLeasedRecordRevisions, markRecordToSendAgain, type BuildResult, type SendAgainOutcome } from "./database/masterRecords.js";
 import { buildStockEvents, type StockEventBuildResult } from "./database/stockEventSync.js";
-import { buildCartonStockEvents, type CartonStockBuildResult } from "./database/cartonStock.js";
+import { buildCartonStockEvents, resendCartonMovementsRefusedForLease, type CartonStockBuildResult } from "./database/cartonStock.js";
 import { buildLabelRuns, type LabelBuildResult } from "./database/labelRunSync.js";
 import { lastBackfillAt, planBackfill, runBackfill, type BackfillOutcome, type BackfillPlan } from "./database/backfill.js";
 import type {
@@ -63,6 +63,8 @@ import { productionReconciliationMethods, type ProductionReconciliationMethods }
 import { manualProductionMethods, type ManualProductionMethods } from "./database/manualProduction.js";
 import { manualProductionVoidMethods, type ManualProductionVoidMethods } from "./database/manualProductionVoid.js";
 import { gatepassCartonsMethods, type GatepassCartonsMethods } from "./database/gatepassCartons.js";
+import { cartonStockAdjustMethods, type CartonStockAdjustMethods } from "./database/cartonStockAdjust.js";
+import { cartonStockReconciliationMethods, type CartonStockReconciliationMethods } from "./database/cartonStockReconciliation.js";
 import type { BackupRecord, HealthSnapshot, MoneyDriftSummary, MoneyDriftViolation, SqliteDatabaseOptions } from "./database/types.js";
 
 // The data layer's public record shapes and constants live in ./database/types.ts and are
@@ -159,9 +161,13 @@ export {
   cartonStockEventDedupeKey,
   cartonStockEventPayloadOf,
   moveCartonStock,
+  resendCartonMovementsRefusedForLease,
   readCartonStockEventPayload,
 } from "./database/cartonStock.js";
 export type { CartonSql, CartonStockBuildResult, CartonStockEventPayload } from "./database/cartonStock.js";
+export { CARTON_ADJUST_DIRECTION, type CartonAdjustDirection, type CartonAdjustInput, type CartonAdjustResult } from "./database/cartonStockAdjust.js";
+export type { CartonReconciliation, CartonReconciliationRow } from "./database/cartonStockReconciliation.js";
+export { applyCartonStockReset, planCartonStockReset, verifyCartonStockReset, type CartonResetPlan } from "./database/cartonStockReset.js";
 export { buildLabelRuns } from "./database/labelRunSync.js";
 export type { LabelBuildResult } from "./database/labelRunSync.js";
 export { BACKFILL_SETTING_KEY, lastBackfillAt, planBackfill, runBackfill, stockMismatches } from "./database/backfill.js";
@@ -372,6 +378,8 @@ export class SqliteDatabase
    * here is exactly the kind of parallel mechanism CLAUDE.md §2 rules out.
    */
   preMigrationBackup: PreMigrationBackup | null = null;
+  /** Set by the application at startup, from @erp/domain's CARTON_QR_ON_HOLD (main/leaseGuard.ts). */
+  cartonQrOnHold = false;
 
   constructor(private readonly options: SqliteDatabaseOptions) {
     this.dbPath = options.dbPath;
@@ -1290,6 +1298,11 @@ export class SqliteDatabase
     return buildCartonStockEvents(this.db, nowIso);
   }
 
+  /** Movements refused for a lease lost, sent again once it is held (cartonStock.ts). Returns how many. */
+  resendCartonMovementsRefusedForLease(nowIso: string): number {
+    return resendCartonMovementsRefusedForLease(this.db, nowIso);
+  }
+
   /** Queues the label runs and packets the backfill marked, behind their materials (labelRunSync.ts). */
   buildLabelRuns(nowIso: string): LabelBuildResult {
     return buildLabelRuns(this.db, nowIso);
@@ -1594,7 +1607,9 @@ export interface SqliteDatabase
     ProductionReconciliationMethods,
     ManualProductionMethods,
     ManualProductionVoidMethods,
-    GatepassCartonsMethods {}
+    GatepassCartonsMethods,
+    CartonStockAdjustMethods,
+    CartonStockReconciliationMethods {}
 
 Object.assign(
   SqliteDatabase.prototype,
@@ -1639,5 +1654,7 @@ Object.assign(
   productionReconciliationMethods,
   manualProductionMethods,
   manualProductionVoidMethods,
-  gatepassCartonsMethods
+  gatepassCartonsMethods,
+  cartonStockAdjustMethods,
+  cartonStockReconciliationMethods
 );

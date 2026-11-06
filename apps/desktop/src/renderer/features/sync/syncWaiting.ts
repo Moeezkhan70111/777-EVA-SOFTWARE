@@ -24,12 +24,14 @@ export const waitingForWords = (cause: SyncWaitCause): string => {
       return copy.syncWaiting.cause.inUse;
     case "HOLDS_STOCK":
       return copy.syncWaiting.cause.holdsStock;
+    case "CARTONS_SHORT":
+      return copy.syncWaiting.cause.cartonsShort;
     case "NAME_TAKEN":
       return copy.syncWaiting.cause.nameTaken;
     case "DISPLACED":
       return copy.syncWaiting.cause.displaced;
     default:
-      return copy.syncWaiting.cause.other(cause.code);
+      return copy.syncWaiting.cause.other;
   }
 };
 

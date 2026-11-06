@@ -46,6 +46,8 @@ const READS = new Set([
   "listOpenMachinePrograms",
   // upperMoveOut
   "listUpperStock",
+  // manualProduction
+  "getCartonStockReconciliation",
   // syncWaiting
   "getSyncWaiting", "getFactorySyncHealth",
   // backfill
@@ -123,10 +125,11 @@ describe("lease classification", () => {
   });
 
   it("every movement of the carton figure needs the carton lease, and nothing else does (docs/42)", () => {
-    for (const channel of [IPC.recordManualProduction, IPC.voidManualProduction, IPC.createGatepass, IPC.cancelGatepass]) {
+    for (const channel of [IPC.recordManualProduction, IPC.voidManualProduction, IPC.adjustCartonStock, IPC.createGatepass, IPC.cancelGatepass]) {
       expect(leasesFor(channel)).toEqual([LEASE_DOMAIN.CARTON_STOCK]);
     }
     expect(leasesFor(IPC.listManualProduction)).toEqual([]);
+    expect(leasesFor(IPC.getCartonStockReconciliation)).toEqual([]);
     expect(leasesFor(IPC.listGatepassStoreStock)).toEqual([]);
   });
 });

@@ -270,6 +270,9 @@ export const IPC = {
   listProductionReceipts: "erp:list-production-receipts",
   findProductionReceipt: "erp:find-production-receipt",
   recordManualProduction: "erp:record-manual-production",
+  // Carton Stock: an administrator's adjustment, and the read-only reconciliation (docs/42).
+  adjustCartonStock: "erp:adjust-carton-stock",
+  getCartonStockReconciliation: "erp:get-carton-stock-reconciliation",
   listManualProduction: "erp:list-manual-production",
   voidManualProduction: "erp:void-manual-production",
   // Upper Move Out (Phase 3): upper packets issued to a named machine, and upper stock.

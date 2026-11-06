@@ -49,13 +49,13 @@ function writeCartonStockEvent(sql: SyncSqlHandle, event: CartonStockEventPayloa
         .prepare(
           `INSERT INTO carton_stock_events (
              id, product_variant_id, event_type, quantity, balance_delta, location_type, location_id, created_by, created_at,
-             origin_device_id, replicated_at, manual_production_entry_id, gatepass_id, gatepass_line_id
-           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             origin_device_id, replicated_at, manual_production_entry_id, gatepass_id, gatepass_line_id, reason
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
            ON CONFLICT(id) DO NOTHING`
         )
         .run(
           event.eventId, event.productVariantId, event.eventType, event.quantity, event.balanceDelta, event.locationType, event.locationId,
-          event.createdBy, event.createdAt, sender, replicatedAt, event.manualProductionEntryId, event.gatepassId, event.gatepassLineId
+          event.createdBy, event.createdAt, sender, replicatedAt, event.manualProductionEntryId, event.gatepassId, event.gatepassLineId, event.reason
         )
     ) > 0;
   if (!inserted) return false;

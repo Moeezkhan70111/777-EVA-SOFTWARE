@@ -13,9 +13,9 @@
 // this must never produce.
 
 import crypto from "node:crypto";
-import { CARTON_STOCK_EVENT_TYPE, cartonStockDelta, isCartonStockEventType, type CartonStockEventType } from "@erp/domain";
+import { CARTON_STOCK_EVENT_TYPE, cartonStockDelta, isCartonAdjustment, isCartonStockEventType, type CartonStockEventType } from "@erp/domain";
 import { IN_STORE_LOCATION_TYPE } from "@erp/application";
-import { enqueueSyncEvent, SYNC_AGGREGATE } from "./syncEvents.js";
+import { enqueueProductVariant, enqueueSyncEvent, heldLeaseEpoch, LEASE_DOMAIN, SYNC_AGGREGATE, type SyncWriteHandle } from "./syncEvents.js";
 import type { BuildHandle } from "./masterRecords.js";
 
 type Bindable = string | number | null;
@@ -93,6 +93,8 @@ function takeCartons(sql: CartonSql, move: { variantId: string; locationId: stri
 }
 
 export interface CartonStockMovement {
+  /** Set when the caller's request id is the movement's id. Otherwise one is made. */
+  readonly eventId?: string;
   readonly variantId: string;
   readonly eventType: CartonStockEventType;
   readonly cartons: number;
@@ -102,6 +104,26 @@ export interface CartonStockMovement {
   readonly manualProductionEntryId?: string | null;
   readonly gatepassId?: string | null;
   readonly gatepassLineId?: string | null;
+  /** Required on an adjustment: why the figure moved. */
+  readonly reason?: string | null;
+}
+
+/**
+ * The product goes first. Every movement names one, and another computer waits for it for ever if it
+ * never travels. A product used to travel only with its first QR carton, which Manual Production never
+ * makes. In the movement's own transaction, so the two commit together. Idempotent by dedupe key, so
+ * this costs one queue row per product for all time, and a queue that refuses never costs the movement.
+ */
+function queueProductOf(sql: CartonSql, variantId: string): void {
+  const variant = sql
+    .prepare("SELECT id, article, color, size, description, created_at FROM product_variants WHERE id = ? LIMIT 1")
+    .get(variantId) as { id: string; article: string; color: string; size: string; description: string | null; created_at: string } | undefined;
+  if (!variant) return;
+  enqueueProductVariant(
+    sql as unknown as SyncWriteHandle,
+    { variantId: variant.id, article: variant.article, color: variant.color, size: variant.size, description: variant.description, createdAt: variant.created_at },
+    crypto.randomUUID()
+  );
 }
 
 /**
@@ -109,18 +131,19 @@ export interface CartonStockMovement {
  * own transaction: the event and the figure change together or not at all.
  */
 export function recordCartonStockMovement(sql: CartonSql, movement: CartonStockMovement): string {
-  const id = crypto.randomUUID();
+  const id = movement.eventId ?? crypto.randomUUID();
   const delta = cartonStockDelta(movement.eventType, movement.cartons);
+  queueProductOf(sql, movement.variantId);
   sql
     .prepare(
       `INSERT INTO carton_stock_events (
          id, product_variant_id, event_type, quantity, balance_delta, location_type, location_id,
-         created_by, created_at, manual_production_entry_id, gatepass_id, gatepass_line_id
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+         created_by, created_at, manual_production_entry_id, gatepass_id, gatepass_line_id, reason
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .run(
       id, movement.variantId, movement.eventType, movement.cartons, delta, IN_STORE_LOCATION_TYPE, movement.locationId,
-      movement.createdBy, movement.createdAt, movement.manualProductionEntryId ?? null, movement.gatepassId ?? null, movement.gatepassLineId ?? null
+      movement.createdBy, movement.createdAt, movement.manualProductionEntryId ?? null, movement.gatepassId ?? null, movement.gatepassLineId ?? null, movement.reason ?? null
     );
   moveCartonStock(sql, { variantId: movement.variantId, locationId: movement.locationId, delta, nowIso: movement.createdAt });
   return id;
@@ -165,6 +188,7 @@ export interface CartonStockEventPayload {
   readonly manualProductionEntryId: string | null;
   readonly gatepassId: string | null;
   readonly gatepassLineId: string | null;
+  readonly reason: string | null;
 }
 
 export const cartonStockEventDedupeKey = (eventId: string): string => `${SYNC_AGGREGATE.CARTON_STOCK_EVENT}:${eventId}`;
@@ -187,19 +211,21 @@ export function readCartonStockEventPayload(payload: Record<string, unknown>): C
   const locationId = requiredText(payload.locationId);
   const createdAt = requiredText(payload.createdAt);
   const { eventType, quantity, balanceDelta } = payload;
-  const references = [payload.createdBy, payload.manualProductionEntryId, payload.gatepassId, payload.gatepassLineId].map(optionalText);
+  const references = [payload.createdBy, payload.manualProductionEntryId, payload.gatepassId, payload.gatepassLineId, payload.reason].map(optionalText);
   if (eventId === null || productVariantId === null || locationId === null || createdAt === null) return null;
   if (!isCartonStockEventType(eventType) || payload.locationType !== IN_STORE_LOCATION_TYPE) return null;
   if (typeof quantity !== "number" || !Number.isInteger(quantity) || quantity <= 0) return null;
   if (balanceDelta !== cartonStockDelta(eventType, quantity)) return null;
   if (references.some((reference) => !reference.ok)) return null;
-  const [createdBy, manualProductionEntryId, gatepassId, gatepassLineId] = references.map((reference) => reference.value);
+  const [createdBy, manualProductionEntryId, gatepassId, gatepassLineId, reason] = references.map((reference) => reference.value);
+  if (isCartonAdjustment(eventType) && (!reason || !createdBy)) return null;
   return {
     eventId, productVariantId, eventType, quantity, balanceDelta, locationType: IN_STORE_LOCATION_TYPE, locationId, createdAt,
     createdBy: createdBy ?? null,
     manualProductionEntryId: manualProductionEntryId ?? null,
     gatepassId: gatepassId ?? null,
     gatepassLineId: gatepassLineId ?? null,
+    reason: reason ?? null,
   };
 }
 
@@ -218,6 +244,7 @@ export function cartonStockEventPayloadOf(row: Record<string, unknown>): CartonS
     manualProductionEntryId: row.manual_production_entry_id ?? null,
     gatepassId: row.gatepass_id ?? null,
     gatepassLineId: row.gatepass_line_id ?? null,
+    reason: row.reason ?? null,
   });
 }
 
@@ -229,7 +256,9 @@ export interface CartonStockBuildResult {
 }
 
 /**
- * Queues every captured movement that carries a carton lease epoch, oldest first, in one transaction.
+ * Queues every captured movement that carries a carton lease epoch, in one transaction, in the order
+ * they were recorded. Not by the mark's time: two movements in one millisecond would then go by their
+ * random ids, and a take-out could leave ahead of the stock it takes from.
  * A mark without an epoch (made before this computer held the lease) is left: it was never this
  * computer's to send. An event is never deleted, so a mark always finds its row.
  */
@@ -237,8 +266,9 @@ export function buildCartonStockEvents(db: BuildHandle, nowIso: string, limit = 
   const type = SYNC_AGGREGATE.CARTON_STOCK_EVENT;
   const marks = db
     .prepare(
-      `SELECT record_id, lease_epoch FROM sync_dirty_records
-        WHERE aggregate_type = ? AND lease_epoch IS NOT NULL ORDER BY marked_at, record_id LIMIT ?`
+      `SELECT d.record_id, d.lease_epoch FROM sync_dirty_records d
+         LEFT JOIN carton_stock_events e ON e.id = d.record_id
+        WHERE d.aggregate_type = ? AND d.lease_epoch IS NOT NULL ORDER BY e.rowid, d.record_id LIMIT ?`
     )
     .all(type, limit) as Array<{ record_id: string; lease_epoch: number }>;
   if (marks.length === 0) return { queued: 0, unqueued: 0 };
@@ -279,6 +309,27 @@ function queueOne(db: BuildHandle, mark: { record_id: string; lease_epoch: numbe
     leaseEpoch: Number(mark.lease_epoch),
   });
   return ok || db.prepare("SELECT 1 AS here FROM sync_outbox WHERE dedupe_key = ?").all(dedupeKey).length > 0;
+}
+
+/**
+ * Movements the cloud refused because this computer had lost the carton lease when they were sent. They
+ * happened, and this computer's figure holds them, so they must not stay stuck or be dropped. Once it
+ * holds the lease again they go out under the epoch it holds now, as the same events: the dedupe key
+ * and the id are unchanged, so nothing can count twice. Until then they stay visible (reconciliation).
+ *
+ * Only NOT_LEASE_HOLDER: any other refusal is about the event, and sending it again cannot help.
+ */
+export function resendCartonMovementsRefusedForLease(db: BuildHandle, nowIso: string): number {
+  const epoch = heldLeaseEpoch(db, LEASE_DOMAIN.CARTON_STOCK);
+  if (epoch === null) return 0;
+  const result = db
+    .prepare(
+      `UPDATE sync_outbox
+          SET status = 'PENDING', lease_epoch = ?, lock_token = NULL, attempts = 0, transient_attempts = 0, available_at = ?, updated_at = ?
+        WHERE aggregate_type = ? AND status IN ('FAILED', 'DEAD_LETTER') AND last_error LIKE '%NOT_LEASE_HOLDER%' AND lease_epoch <> ?`
+    )
+    .run(epoch, nowIso, nowIso, SYNC_AGGREGATE.CARTON_STOCK_EVENT, epoch);
+  return Number(result.changes);
 }
 
 export { CARTON_STOCK_EVENT_TYPE };

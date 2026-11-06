@@ -25,6 +25,8 @@ export const MANUAL_PRODUCTION_MESSAGES = {
   VOID_BUSY: "The entry was not voided because another stock operation is in progress. Nothing was changed. Please try again.",
   NOT_RECORDED: "The production could not be recorded. Nothing was saved.",
   NOT_VOIDED: "The entry could not be voided. Nothing was changed.",
+  ADJUST_BUSY: "The adjustment was not saved because another stock operation is in progress. Nothing was changed. Please try again.",
+  NOT_ADJUSTED: "The adjustment could not be saved. Nothing was changed.",
 } as const;
 
 export function registerManualProductionHandlers(ctx: IpcContext): void {
@@ -89,6 +91,52 @@ export function registerManualProductionHandlers(ctx: IpcContext): void {
       const reason = refusalReason(error, MANUAL_PRODUCTION_MESSAGES.VOID_BUSY, MANUAL_PRODUCTION_MESSAGES.NOT_VOIDED);
       log("WARNING", "void-refused", error instanceof Error ? error.message : String(error), who.user.id);
       return { accepted: false, reason, entry: null };
+    }
+  });
+
+  // AN ADMINISTRATOR ONLY, from the session, whatever the screen sends: the figure moves on every computer.
+  // Who made it and the reason travel with the movement (docs/42 section 11).
+  const administrator = (event: IpcMainInvokeEvent) => {
+    try {
+      return { ok: true as const, user: authorizer.requireAdmin(event) };
+    } catch (error) {
+      return { ok: false as const, ...rejection(error, "Only an administrator can do this.") };
+    }
+  };
+
+  ipcMain.handle(IPC.adjustCartonStock, (event, input?: unknown) => {
+    const who = administrator(event);
+    if (!who.ok) return { accepted: false, reason: who.reason };
+    const fields = asRecord(input);
+    try {
+      const result = db.adjustCartonStock({
+        requestId: asString(fields.requestId),
+        articleSizeId: asString(fields.articleSizeId),
+        color: asString(fields.color),
+        direction: asString(fields.direction),
+        cartons: Number(fields.cartons),
+        reason: asString(fields.reason),
+        adjustedBy: who.user.username,
+        storeLocationId: scanContext.factoryId,
+      });
+      log("INFO", "adjust", JSON.stringify({ event: result.eventId, type: result.eventType, cartons: result.cartons, duplicate: result.duplicate, reason: asString(fields.reason) }), who.user.id);
+      return { accepted: true, duplicate: result.duplicate };
+    } catch (error) {
+      const reason = refusalReason(error, MANUAL_PRODUCTION_MESSAGES.ADJUST_BUSY, MANUAL_PRODUCTION_MESSAGES.NOT_ADJUSTED);
+      log("WARNING", "adjust-refused", error instanceof Error ? error.message : String(error), who.user.id);
+      return { accepted: false, reason };
+    }
+  });
+
+  ipcMain.handle(IPC.getCartonStockReconciliation, (event, query?: unknown) => {
+    const who = administrator(event);
+    if (!who.ok) return { accepted: false, reason: who.reason, reconciliation: null };
+    const input = asRecord(query);
+    try {
+      return { accepted: true, reconciliation: db.cartonStockReconciliation({ page: Number(input.page), pageSize: Number(input.pageSize) }) };
+    } catch (error) {
+      log("WARNING", "reconcile", error instanceof Error ? error.message : String(error));
+      return { accepted: false, reason: "This could not be loaded. Try again.", reconciliation: null };
     }
   });
 

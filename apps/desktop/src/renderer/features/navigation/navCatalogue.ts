@@ -83,6 +83,9 @@ const item = (
 
 const { items: t, sections: s } = copy.nav;
 
+/** Pages for administrators alone, by the owner's decision: no role is ever offered them. */
+export const ADMIN_ONLY_ROUTES: ReadonlySet<AppRoute> = new Set<AppRoute>(["carton-stock"]);
+
 export const NAV_SECTIONS: readonly NavSection[] = [
   {
     id: "overview",
@@ -156,6 +159,7 @@ export const NAV_SECTIONS: readonly NavSection[] = [
         ...item("dana-stock", t.danaStock, "dana"),
         feature: { artwork: DANA_STOCK_ARTWORK_URL, theme: "sky", artworkHasScene: true, badge: "dana", onDashboard: true },
       },
+      item("carton-stock", t.cartonStock, "stock"),
       item("raw-material", t.rawMaterial, "stock", ["raw-material-qr-generator"]),
       item("history", t.stockHistory, "history", ["stock-history"]),
       item("daily-production", t.dailyProduction, "daily"),

@@ -30,6 +30,8 @@ export type WaitCause =
   | { readonly kind: "IN_USE"; readonly record: string; readonly id: string }
   /** A material's removal, until its stock here reaches zero. Any arrival may be the movement that does it. */
   | { readonly kind: "HOLDS_STOCK"; readonly id: string }
+  /** A carton movement that would take the figure here below zero: this computer disagrees with its origin. */
+  | { readonly kind: "CARTONS_SHORT"; readonly id: string }
   | { readonly kind: "NAME_TAKEN"; readonly column: string }
   /** Moved aside so another record's revision could take its name; waits for its own revision. */
   | { readonly kind: "DISPLACED"; readonly columns: readonly string[] }
@@ -59,6 +61,9 @@ export interface WaitingSummary {
 }
 
 /** The reason a material's removal waits with, followed by the material's id. */
+/** The code a carton movement parks under (cartonStockEventContracts.ts). */
+const CARTONS_SHORT_WAIT = "CARTON_STOCK_WOULD_GO_NEGATIVE:";
+
 export const ITEM_HOLDS_STOCK_WAIT = `STILL_HOLDS_STOCK:${SYNC_AGGREGATE.INVENTORY_ITEM}:`;
 
 const UNKNOWN_TO_RECORD: Readonly<Record<string, string>> = {
@@ -77,6 +82,7 @@ const UNKNOWN_TO_RECORD: Readonly<Record<string, string>> = {
 /** The reason a contract parked an event with, as a cause. Unrecognised reasons are kept as they are. */
 export function waitCause(reason: string): WaitCause {
   if (reason.startsWith(ITEM_HOLDS_STOCK_WAIT)) return { kind: "HOLDS_STOCK", id: reason.slice(ITEM_HOLDS_STOCK_WAIT.length) };
+  if (reason.startsWith(CARTONS_SHORT_WAIT)) return { kind: "CARTONS_SHORT", id: reason.slice(CARTONS_SHORT_WAIT.length) };
   const [code = "", ...rest] = reason.split(":");
   if ((code === "WAITING_FOR" || code === "STILL_IN_USE") && rest.length >= 2) {
     const [record = "", ...idParts] = rest;
@@ -245,6 +251,8 @@ export function describeWaiting(entry: WaitingEntry): { subject: string; waiting
         ? "removal: still in use on this computer"
         : cause.kind === "HOLDS_STOCK"
           ? "removal: it still holds stock on this computer"
+        : cause.kind === "CARTONS_SHORT"
+          ? "this computer to hold enough cartons: its carton stock differs from the computer that wrote this"
         : cause.kind === "NAME_TAKEN"
           ? `its name, still held by another record here (${cause.column})`
           : cause.kind === "DISPLACED"

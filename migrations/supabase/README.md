@@ -6,8 +6,7 @@
   `check_accounts.sql`, `check_permission_requests.sql`, `check_first_admin.sql`, `check_suggested_access.sql`
   and `check_number_blocks.sql` pass. `024` is applied (its email check is in `make_first_admin`).
   `025` applied 3 Nov: `check_role_codes.sql` stopped at its step 3 before it and passes after it;
-  `check_accounts.sql` passes after it too. `026` is written and NOT applied to test yet: paste it,
-  then `check_carton_stock_events.sql`.
+  `check_accounts.sql` passes after it too. `026` applied to test 3 Nov and `027` on 6 Nov; `check_carton_stock_events.sql` covers both.
 - **Production** (`ykhvbmhmeefdtrzqeoxm`): the baseline and `002`–`018` applied 31 Oct, `factory-777`
   seeded, `verify_applied_state.sql` 34/34. No devices enrolled and no business data yet. The
   `check_*.sql` scripts are never run here.
@@ -80,7 +79,9 @@ Each file is a single transaction and each has a matching `.down.sql`. The down 
 safe on a project that has never been written to — once real rows exist, reversing the type
 changes would have to discard data to succeed, and they are written to fail instead.
 
-**Reverse in the opposite order: `026` → `025` → `024` → `023` → `022` → `021` → `020` → `019` → `018` → … → `003` → `002`.** Each down file's header
+`027_carton_stock_adjustments.up.sql` follows `026`: an administrator's carton adjustment reaches every computer, with who and why (docs/42 section 11). Test only. Not on production.
+
+**Reverse in the opposite order: `027` → `026` → `025` → `024` → `023` → `022` → `021` → `020` → `019` → `018` → … → `003` → `002`.** Each down file's header
 says what reversing it costs: `018`'s re-opens the PC2/PC3 failure, for example. Reversing `005`
 re-opens the cross-factory read, and reversing `006` re-opens unbound access, re-enables any
 device revoked before the rollback and discards the claim audit. Both headers say so. `004_rls_policies.down.sql` revokes a

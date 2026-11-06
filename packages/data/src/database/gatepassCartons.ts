@@ -73,7 +73,9 @@ export const gatepassCartonsMethods = {
   async issueGatepassCartons(this: SqliteDatabase, lines: GatepassLineToIssue[], issuedBy: string, tx: TransactionContext): Promise<void> {
     const context = tx as MutableTransactionContext;
     for (const line of lines) {
-      const split = splitGatepassLine(line.quantity, qrAvailableFor(context.db, line));
+      // While carton QR is on hold nothing would ever scan a reservation out: the whole line leaves now.
+      const qrAvailable = this.cartonQrOnHold ? 0 : qrAvailableFor(context.db, line);
+      const split = splitGatepassLine(line.quantity, qrAvailable);
       if (split.issueNow > 0) issueNow(context.db, line, split.issueNow, issuedBy, context.nowIso);
     }
   },

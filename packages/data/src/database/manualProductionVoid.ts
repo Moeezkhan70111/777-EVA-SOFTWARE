@@ -62,6 +62,7 @@ export const manualProductionVoidMethods = {
     try {
       const entry = this.manualEntryToVoid(entryId);
       if (entry.voidedAt !== null) throw new Error(`${entry.code} has already been voided.`);
+      this.refuseVoidBeforeFreshStart(entry);
       const nowIso = new Date().toISOString();
       const enteredOn = businessDateOf(entry.enteredAt);
       if (enteredOn !== businessDateOf(nowIso) && !input.mayVoidEarlierDays) {
@@ -85,6 +86,19 @@ export const manualProductionVoidMethods = {
     } catch (error) {
       try { this.db.exec("ROLLBACK"); } catch { /* ignore missing transaction state */ }
       throw error;
+    }
+  },
+
+  /**
+   * @internal An entry from before carton stock started fresh put nothing on the shared figure, so
+   * voiding it would take out cartons no other computer ever had. Its ledger line stays as it is.
+   */
+  refuseVoidBeforeFreshStart(this: SqliteDatabase, entry: { id: string; code: string }): void {
+    const stocked = this.db
+      .prepare("SELECT 1 AS here FROM carton_stock_events WHERE manual_production_entry_id = ? AND event_type = ? LIMIT 1")
+      .get(entry.id, CARTON_STOCK_EVENT_TYPE.MANUAL_PRODUCE);
+    if (!stocked) {
+      throw new Error(`${entry.code} was entered before carton stock started fresh, so it is not part of the stock. It cannot be voided. Nothing was changed.`);
     }
   },
 

@@ -1,7 +1,8 @@
 # 42 — Carton stock, replicated
 
-**Date:** 2026-11-03
-**Status:** Planned. Not started.
+**Date:** 2026-11-03, revised 2026-11-06
+**Status:** Built on `feat/carton-stock`, not shipped. Sections 9 and 11-14 are the current rules: read them first.
+**Scope (owner, 2026-11-06): MANUAL PRODUCTION ONLY.** QR-based production and carton movements are out of scope and on hold. See section 9.
 **Owner decision (2026-11-03):** cartons enter stock through Manual Production and leave through
 a **gatepass**. Stock falls **when the gatepass is made** — dispatch cannot be tracked today, so
 there is no later stage to settle against. Carton QR work is on hold and is not part of this plan.
@@ -326,8 +327,14 @@ Build it on a branch now; ship it after step 2.
 
 ## 9. What this does not do
 
-- Carton QR stays on hold. Nothing here turns it on, and §3.5 is written so that turning it on
-  later cannot double-count.
+- **Carton QR is on hold and out of scope (owner, 2026-11-06).** QR production, reservations, issuing, gatepass
+  scanning, receiving and transfers are not part of this work. Nothing is removed: QR code stays in place.
+  While `CARTON_QR_ON_HOLD` (`@erp/domain`) is true, the QR actions that would move the figure are refused at
+  the process boundary (`CARTON_QR_HOLD_CHANNELS`, `main/leaseChannels.ts`): process scan, receive production,
+  dispatch, return, store in, store out, machine program carton in, and marking a carton damaged. A gatepass
+  reserves nothing for scanners, so the whole line leaves as a movement. Printing labels, looking cartons up and
+  raw material QR carry on. One path is not refused: cancelling a sale voucher reverses an already-dispatched QR
+  carton, which moves this computer's figure. Reconciliation shows it as a difference.
 - Gatepasses themselves still do not replicate. Only the stock movement travels. The boss sees
   an accurate figure; he does not see the gatepass document.
 - Dispatch is still not tracked. Stock falls when the gatepass is made, which means cartons on the
@@ -409,3 +416,80 @@ process and the data layer.
 
 **Still required before shipping (§4, unchanged):** confirm on PC2 that carton stock is empty, or void the
 test entries from the screen once this is installed. The cutover and the cloud-accounts release come first (§8).
+
+---
+
+## 11. Manual carton adjustments (owner, 2026-11-06)
+
+An administrator corrects the figure, with a reason. No approval step.
+
+- Two movement types, `CARTON_ADJUST_IN` and `CARTON_ADJUST_OUT`, on the same append-only table. The type decides
+  the sign. To undo one, make the opposite one.
+- `reason` and `created_by` are required on an adjustment by the reader, the local table (103) and the cloud (027),
+  and travel with it. So every computer can say who moved the figure and why.
+- **Administrator only, read from the session** (`main/ipc/manualProduction.ts`). The cloud cannot check the person, as
+  for a void: a carton push carries no person token. It checks the computer's claim and lease.
+- Under the `CARTON_STOCK` lease, like every movement of the figure.
+- The screen's request id is the movement's id, so a retried Save cannot adjust twice. Taking out more than the store
+  holds is refused, never clamped.
+- Screen: Inventory > Carton Stock (`features/cartonStock`). The route's permission is never offered to a role.
+
+## 12. Reconciliation (read-only)
+
+Carton Stock shows, per product: produced (less voids), adjusted, issued (less cancels), what the movements add up to,
+QR cartons here, the store figure, and the difference.
+
+    difference = store figure - net of the movements - QR cartons in store here
+
+QR cartons are local to one computer and on hold, so they are counted apart and never mixed into the shared figure.
+
+**Comparing computers.** "Movement history" is a hash of every movement's id and change. The same movements give the
+same code, whatever order they arrived in. Two computers showing the same code and no difference agree exactly. It also
+counts what has not been sent, what the cloud refused, what is waiting to apply, and Manual Production entries from
+before the fresh start.
+
+## 13. The fresh start (owner, 2026-11-06)
+
+Production `ykhvbmhmeefdtrzqeoxm` is the authority for production business data. Existing local carton stock is
+disposable: it was never a movement, so it could never agree with another computer. It is **not** backfilled, uploaded
+or merged into the cloud. This replaces section 4's clearing script, and section 4's deleting of Manual Production entries
+is **withdrawn**: the contractor ledger and pay read them.
+
+**What is cleared, per computer, by `scripts/reset-carton-stock.mjs`:** the store figures. WAREHOUSE rows of
+`stock_projection_by_location` go to zero, and `stock_projection_by_variant` falls by what they held.
+
+**What is never touched:** Manual Production entries, the contractor ledger and payments, QR identities and scan history,
+production events, gatepasses, factory and gate figures, and every other table. The tool proves it by hashing every
+other table in the input and the output. Nothing is deleted from Supabase.
+
+**It stops, changing nothing,** when clearing could disagree with a record: QR cartons in the store, a live gatepass still
+owed cartons, a product total below its store rows, or movements already recorded.
+
+**How it runs:** on a copy, dry run by default, with before and after counts. Every computer must be cleared before the
+first movement: a computer still holding old stock disagrees with the others. Install, close the app, copy, dry run,
+apply, check, swap in. Do this on no live computer without the owner's go-ahead.
+
+**A void of an entry from before the fresh start is refused**: it has no `MANUAL_PRODUCE` movement, so it would take out
+cartons no other computer ever had. Such an entry stays on the ledger. Correct the stock with an adjustment, not a void.
+
+## 14. The lease, and a movement refused for losing it
+
+One writer at a time (section 6, kept by the owner on 2026-11-06). A second computer is refused before anything is
+written, naming who writes. The cloud refuses it too. Handover: the owner grants the lease, the old holder stops once it
+hears, and the new holder must catch up past the barrier before it may write.
+
+**A holder offline can write, and can lose the lease meanwhile.** Offline-first means it keeps working. When it comes
+back the cloud refuses those movements `NOT_LEASE_HOLDER`: its figure holds them, and other computers' do not. They are
+**not lost and not dropped**. Reconciliation counts them as refused, and when this computer holds the lease again they go
+out under the new epoch, as the same events (`resendCartonMovementsRefusedForLease`): same id and dedupe key, so nothing
+can count twice. If the owner never hands the lease back, the difference stays visible until they decide.
+
+## Migrations and dependencies
+
+| Migration | Needs | State |
+|---|---|---|
+| Local 101, 103 | 100 is on this branch; 102 is on main | Unreleased |
+| Cloud 026 | 006, 009, 011, and 018's guard through `claim_is_current` | TEST only |
+| Cloud 027 | 026 | See `migrations/supabase/README.md` |
+
+Production has 006, 009, 011 and 018. Neither 026 nor 027 is on it, and nothing here applies them.

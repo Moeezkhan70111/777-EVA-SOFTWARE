@@ -100,9 +100,26 @@ export const LEASED_CHANNELS: Readonly<Record<string, readonly LeaseDomain[]>> =
   // split. A gatepass is here because it takes its cartons out the moment it is made.
   [IPC.recordManualProduction]: CARTONS,
   [IPC.voidManualProduction]: CARTONS,
+  [IPC.adjustCartonStock]: CARTONS,
   [IPC.createGatepass]: CARTONS,
   [IPC.cancelGatepass]: CARTONS,
 };
+
+/**
+ * CARTON QR IS ON HOLD (docs/42 section 9). Every QR action that would move the carton figure. They move
+ * it on this computer only, and carton stock is now shared, so one scan would put computers out of step.
+ * Labels, lookups and raw material QR are not here: they do not touch the carton figure.
+ */
+export const CARTON_QR_HOLD_CHANNELS: ReadonlySet<string> = new Set([
+  IPC.processScan,
+  IPC.receiveProduction,
+  IPC.dispatchScan,
+  IPC.returnScan,
+  IPC.storeEntryScan,
+  IPC.storeExitScan,
+  IPC.machineProgramCartonIn,
+  IPC.markQrCodeDamaged,
+]);
 
 /**
  * Writes in the same modules that are deliberately NOT leased in Milestone 1, each with its reason.

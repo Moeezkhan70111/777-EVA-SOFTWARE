@@ -1,5 +1,5 @@
 -- NOT A MIGRATION. TEST PROJECT ONLY. Run whole through execute_sql or the SQL editor.
--- Functional check of 026 on TEST, after 011, 018 and 026 are applied. Leaves nothing behind: the block
+-- Functional check of 026 and 027 on TEST, after 011, 018, 026 and 027 are applied. Leaves nothing behind: the block
 -- ends by raising, so the temporary device, its claim, the carton lease, the movements and their log
 -- rows are all rolled back. PC rows are only READ, to copy not-null columns. Success is the error
 -- message 'CARTON_STOCK_EVENTS_CHECK_PASSED ...'. Set up exactly as check_stock_events.sql.
@@ -51,7 +51,7 @@ begin
      is distinct from jsonb_build_object('eventId', 'cs-check-1', 'productVariantId', 'v-check', 'eventType', 'MANUAL_PRODUCE',
        'quantity', 20, 'balanceDelta', 20, 'locationType', 'WAREHOUSE', 'locationId', 'factory-check',
        'createdBy', 'aslam', 'createdAt', '2026-11-03T05:00:00.000Z',
-       'manualProductionEntryId', 'mpe-check', 'gatepassId', null, 'gatepassLineId', null) then
+       'manualProductionEntryId', 'mpe-check', 'gatepassId', null, 'gatepassLineId', null, 'reason', null) then
     raise exception 'STEP 2: payload %', (select payload from public.sync_event_log where dedupe_key = 'CARTON_STOCK_EVENT:cs-check-1');
   end if;
   if (select factory_id from public.sync_event_log where dedupe_key = 'CARTON_STOCK_EVENT:cs-check-1') is not null then raise exception 'STEP 2: scoped'; end if;
@@ -95,6 +95,21 @@ begin
     raise exception 'STEP 5: the movements do not sum to zero';
   end if;
 
-  raise exception 'CARTON_STOCK_EVENTS_CHECK_PASSED: all 5 steps (rolled back, nothing kept)';
+  -- 6. An adjustment (027): the sign is the type's, and it must say why and who. The reason reaches the log.
+  r := public.push_carton_stock_event(1, holder, jsonb_build_array(
+    made || '{"id": "cs-adj-in", "event_type": "CARTON_ADJUST_IN", "quantity": 3, "balance_delta": 3, "manual_production_entry_id": null, "reason": "counted"}',
+    made || '{"id": "cs-adj-out", "event_type": "CARTON_ADJUST_OUT", "quantity": 3, "balance_delta": -3, "manual_production_entry_id": null, "reason": "counted"}',
+    made || '{"id": "cs-adj-why", "event_type": "CARTON_ADJUST_IN", "quantity": 3, "balance_delta": 3, "manual_production_entry_id": null, "reason": "   "}',
+    made || '{"id": "cs-adj-who", "event_type": "CARTON_ADJUST_IN", "quantity": 3, "balance_delta": 3, "manual_production_entry_id": null, "reason": "counted", "created_by": null}',
+    made || '{"id": "cs-adj-sign", "event_type": "CARTON_ADJUST_OUT", "quantity": 3, "balance_delta": 3, "manual_production_entry_id": null, "reason": "counted"}'));
+  if (select string_agg(coalesce(x->>'reason', x->>'outcome'), ',' order by ord) from jsonb_array_elements(r->'results') with ordinality as t(x, ord))
+     is distinct from 'INSERTED,INSERTED,PAYLOAD_INCOMPLETE,PAYLOAD_INCOMPLETE,DELTA_DOES_NOT_MATCH' then
+    raise exception 'STEP 6: %', r;
+  end if;
+  if (select payload->>'reason' from public.sync_event_log where dedupe_key = 'CARTON_STOCK_EVENT:cs-adj-out') is distinct from 'counted' then
+    raise exception 'STEP 6: the reason did not reach the log';
+  end if;
+
+  raise exception 'CARTON_STOCK_EVENTS_CHECK_PASSED: all 6 steps (rolled back, nothing kept)';
 end;
 $$;

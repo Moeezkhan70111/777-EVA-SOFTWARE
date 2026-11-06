@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { NAV_SECTIONS, visibleNavSections } from "./navCatalogue";
+import { ADMIN_ONLY_ROUTES, NAV_SECTIONS, visibleNavSections } from "./navCatalogue";
 import { routeAnyPermission, routePermission } from "../auth/session";
 import { NAV_PERMISSION_MODULES } from "../../components/layout/Navbar";
 import type { AuthUser } from "../../types/desktopApi";
@@ -41,8 +41,15 @@ describe("navigation catalogue", () => {
     for (const item of allItems) {
       const codes = routeAnyPermission[item.route] ?? [routePermission[item.route]];
       const offered = codes.some((code) => code !== undefined && assignable.has(code));
-      expect(offered, `${item.route} cannot be assigned`).toBe(true);
+      expect(offered, `${item.route} cannot be assigned`).toBe(!ADMIN_ONLY_ROUTES.has(item.route));
     }
+  });
+
+  // Carton adjustments are for administrators alone (owner, 6 Nov). The main process enforces it too.
+  it("shows an administrator-only page to an administrator and to no role", () => {
+    expect(ADMIN_ONLY_ROUTES).toEqual(new Set(["carton-stock"]));
+    const routesFor = (shown: ReturnType<typeof visibleNavSections>) => shown.flatMap((section) => section.items.map((entry) => entry.route));
+    expect(routesFor(visibleNavSections(user([...assignable])))).not.toContain("carton-stock");
   });
 
   it("no longer offers the retired navbar permission", () => {

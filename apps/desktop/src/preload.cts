@@ -277,6 +277,8 @@ contextBridge.exposeInMainWorld("desktop", {
     listProductionReceipts: (query: Record<string, unknown>) => ipcRenderer.invoke(IPC.listProductionReceipts, query),
     findProductionReceipt: (qrId: string) => ipcRenderer.invoke(IPC.findProductionReceipt, qrId),
     recordManualProduction: (input: Record<string, unknown>) => ipcRenderer.invoke(IPC.recordManualProduction, input),
+    adjustCartonStock: (input: Record<string, unknown>) => ipcRenderer.invoke(IPC.adjustCartonStock, input),
+    getCartonStockReconciliation: (query: Record<string, unknown>) => ipcRenderer.invoke(IPC.getCartonStockReconciliation, query),
     listManualProduction: (query: Record<string, unknown>) => ipcRenderer.invoke(IPC.listManualProduction, query),
     voidManualProduction: (input: Record<string, unknown>) => ipcRenderer.invoke(IPC.voidManualProduction, input),
     issueUpperToMachine: (rawScan: string, machineId: string) => ipcRenderer.invoke(IPC.issueUpperToMachine, rawScan, machineId),

@@ -87,6 +87,8 @@ export const PERMISSION = {
   SETTINGS: "settings",
   HEALTH: "health",
   LOGS: "logs",
+  /** Never granted to a role: an administrator holds every permission. */
+  CARTON_STOCK_ADMIN: "carton-stock",
 } as const;
 export type PermissionCode = (typeof PERMISSION)[keyof typeof PERMISSION];
 
