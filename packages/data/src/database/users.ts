@@ -3,7 +3,7 @@
 // These methods are merged onto SqliteDatabase (see sqliteDatabase.ts, "Feature modules").
 // `this` is the database instance; bodies are unchanged from the original class.
 
-import { reportMemberAccess, settleMemberAccess, type MemberAccessReport, type MemberAccessState } from "./memberAccess.js";
+import { reportMemberAccess, screensStillOpen, settleMemberAccess, type MemberAccessReport, type MemberAccessState } from "./memberAccess.js";
 import type { SqliteDatabase } from "../sqliteDatabase.js";
 import type { TransactionContext } from "@erp/application";
 import type { MutableTransactionContext } from "./shared.js";
@@ -829,7 +829,8 @@ export const usersMethods = {
   saveMemberAccess(this: SqliteDatabase, userId: string, reviewerId: string, access: MemberAccessChange): MemberAccessReport {
     requireLocalAccounts(this.db);
     const before = this.memberAccessState(userId);
-    const wanted = settleMemberAccess(before, access, this.listRoles());
+    const roles = this.listRoles();
+    const wanted = settleMemberAccess(before, access, roles);
     this.db.exec("BEGIN IMMEDIATE");
     try {
       if (wanted.roleCode === null) this.clearUserRole(userId);
@@ -844,7 +845,8 @@ export const usersMethods = {
       this.db.exec("ROLLBACK");
       throw error;
     }
-    return reportMemberAccess(before, wanted, this.memberAccessState(userId));
+    const stillOpen = screensStillOpen(before, wanted, roles, this.recalculateEffectivePermissions(userId));
+    return reportMemberAccess(before, wanted, this.memberAccessState(userId), stillOpen);
   },
 
   /** What a person has now, as this computer stores it. */

@@ -435,6 +435,7 @@ export const copy = {
       jobRoleNotSaved: (held: string) => `Job role was not saved: it is still ${held || "blank"}`,
       authorityNotSaved: (level: number) => `Authority level was not saved: it is still ${level}`,
       screensNotSaved: "Extra screens were not saved",
+      screensStillOpen: (names: string) => `This person can still open: ${names}`,
     },
     // Revoking and restoring a member's access (the member details' buttons).
     revokeAccess: "Revoke Access",
@@ -523,6 +524,11 @@ export const copy = {
     switchedTitle: "Cloud accounts are on",
     switchedBody: (people: number) =>
       `This computer now uses cloud accounts (${people} ${people === 1 ? "person" : "people"}). Approve people from the list below.`,
+    lossesTitle: "Some people would lose screens",
+    lossesExplain:
+      "Their access is different in the cloud, and the cloud's is used on every computer. Nothing has changed yet. To keep a screen, add it to the role in the cloud or give it to the person when you approve them.",
+    lossesWarning: "Tell these people before you go on: the screens will be gone when they next sign in.",
+    lossesConfirm: "Switch Anyway",
     roleClearedTitle: "Role removed",
     roleClearedBody: (username: string, roleName: string) =>
       `${username} had the role "${roleName}", which the cloud has removed. Choose a role for them when you approve them.`,

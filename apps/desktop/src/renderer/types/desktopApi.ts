@@ -1697,11 +1697,14 @@ export interface MemberAccessFieldResult {
 export interface MemberAccessReport {
   fields: MemberAccessFieldResult[];
   stored: { roleCode: string | null; jobRole: string; authorityLevel: number; extraPermissions: string[] };
+  /** Screens this save took off that the person can still open. */
+  screensStillOpen: string[];
 }
 
 export type SwitchToCloudAccountsResult =
   | { accepted: true; user: AuthUser | null; token: string; people: number; clearedRoles: Array<{ username: string; roleName: string }> }
-  | { accepted: false; reason: string };
+  /** accessLosses: nothing changed, and these people would lose screens. The admin must say to go on. */
+  | { accepted: false; reason: string; accessLosses?: Array<{ username: string; screens: string[] }> };
 
 export interface AuthUser {
   id: string;
@@ -1805,7 +1808,7 @@ export interface DesktopApi {
   /** Cloud accounts (docs/41): which this computer uses, and whether it is set up to reach its cloud at all. */
   getAccountsStatus?(): Promise<AccountsStatus>;
   /** An admin switching this computer to cloud accounts, by hand (docs/41 section 12). Signs everyone else out. */
-  switchToCloudAccounts?(token: string, email: string, password: string): Promise<SwitchToCloudAccountsResult>;
+  switchToCloudAccounts?(token: string, email: string, password: string, acceptLosses?: boolean): Promise<SwitchToCloudAccountsResult>;
   /** Cloud accounts only: an admin setting a new password for someone who forgot theirs (020). */
   resetMemberPassword?(token: string, userId: string, newPassword: string): Promise<{ accepted: boolean; reason?: string }>;
   /** Cloud accounts only: how many of this computer's roles the cloud has never seen, while it has none. */

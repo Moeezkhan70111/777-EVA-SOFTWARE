@@ -238,10 +238,10 @@ describe("the switch to cloud accounts: by hand, by an admin, at this computer",
       db.assignUserRole(account.id, roleCode);
       return account;
     };
-    const press = (boss: Record<string, unknown>, session: string, id: string, roles: unknown[], people: unknown[] = [person(boss)]) =>
+    const press = (boss: Record<string, unknown>, session: string, id: string, roles: unknown[], people: unknown[] = [person(boss)], acceptLosses = false) =>
       switchThisComputerToCloud(
         deps(new ScriptedCloud({ verify_login: signedIn(boss), account_state: answered({ ok: true, roles, people, requests: [] }) })),
-        request(session, id)
+        { ...request(session, id), acceptLosses }
       );
     const assignmentOf = (userId: string) => db.db.prepare("SELECT role_code FROM user_role_assignments WHERE user_id = ?").get(userId);
     const held = async (roleEvent: ReturnType<typeof role>) => {
@@ -267,6 +267,80 @@ describe("the switch to cloud accounts: by hand, by an admin, at this computer",
       expect(db.db.prepare("SELECT entity_id FROM audit_log WHERE event_type = 'ROLE_ASSIGNMENT_CLEARED'").all().map((row) => ({ ...row }))).toEqual([{ entity_id: clerk.id }]);
       const notice = db.db.prepare("SELECT message FROM user_notifications WHERE user_id = ? AND title = 'Role removed'").get(account.id) as { message: string };
       expect(notice.message).toContain('Clerk held "Gatepass Clerk"');
+    });
+
+    describe("a role that differs in the cloud (rehearsal, 6 Nov: Biller lost History, and nothing said)", () => {
+      const approved = (name: string, roleCode: string) => {
+        const account = holding(name, roleCode);
+        db.db.prepare("UPDATE app_users SET access_status = 'APPROVED' WHERE id = ?").run(account.id);
+        return account;
+      };
+      const screensOf = (roleCode: string) => db.listRoles().find((candidate) => candidate.code === roleCode)?.permissions ?? [];
+      const cloudRole = (permissions: string[]) => role({ roleCode: "store-operator", name: "Store Operator", revision: 1, permissions });
+      const pressWith = (boss: Record<string, unknown>, session: string, id: string, roles: unknown[], acceptLosses: boolean) =>
+        switchThisComputerToCloud(
+          deps(new ScriptedCloud({ verify_login: signedIn(boss), account_state: answered({ ok: true, roles, people: [person(boss)], requests: [] }) })),
+          { ...request(session, id), acceptLosses }
+        );
+
+      it("stops, names who loses which screens, and changes nothing at all", async () => {
+        const { account, session, boss } = owner();
+        const biller = approved("Biller", "store-operator");
+        const bills = db.createUserSession(biller.id);
+        const screens = screensOf("store-operator");
+        const [kept, ...lost] = screens;
+        const notices = () => db.db.prepare("SELECT COUNT(*) AS n FROM user_notifications").get();
+        const before = notices();
+
+        const outcome = await pressWith(boss, session, account.id, [cloudRole([kept ?? ""])], false);
+
+        expect(outcome).toEqual({ kind: "WOULD_LOSE_ACCESS", losses: [{ username: "Biller", screens: expect.arrayContaining(lost) }] });
+        expect(await mode()).toBe("LOCAL");
+        expect(screensOf("store-operator")).toEqual(screens);
+        expect(db.getUserBySessionToken(bills)?.id).toBe(biller.id);
+        expect(db.getUserBySessionToken(session)?.id).toBe(account.id);
+        expect(notices()).toEqual(before);
+        expect(db.recalculateEffectivePermissions(biller.id).sort()).toEqual([...screens].sort());
+      });
+
+      it("the admin saying go on switches, and the screens go as they were told", async () => {
+        const { account, session, boss } = owner();
+        const biller = approved("Biller", "store-operator");
+        const [kept] = screensOf("store-operator");
+
+        const outcome = await pressWith(boss, session, account.id, [cloudRole([kept ?? ""])], true);
+
+        expect(outcome.kind).toBe("SWITCHED");
+        expect(await mode()).toBe("CLOUD");
+        expect(db.recalculateEffectivePermissions(biller.id)).toEqual([kept]);
+      });
+
+      it("the same role, or one that only gains, says nothing", async () => {
+        const { account, session, boss } = owner();
+        approved("Biller", "store-operator");
+        const outcome = await pressWith(boss, session, account.id, [cloudRole([...screensOf("store-operator"), "logs"])], false);
+        expect(outcome.kind).toBe("SWITCHED");
+      });
+
+      it("a role the cloud has deleted is a loss too, and someone not approved has nothing to lose", async () => {
+        const { account, session, boss } = owner();
+        approved("Clerk", "gatepass-clerk");
+        holding("Waiting", "gatepass-clerk");
+        const screens = screensOf("gatepass-clerk");
+        const outcome = await pressWith(boss, session, account.id, [DELETED], false);
+        expect(outcome).toEqual({ kind: "WOULD_LOSE_ACCESS", losses: [{ username: "Clerk", screens }] });
+      });
+
+      it("a state that would have to wait is refused as before, not reported as a loss", async () => {
+        const { account, session, boss } = owner();
+        approved("Biller", "store-operator");
+        const outcome = await switchThisComputerToCloud(
+          deps(new ScriptedCloud({ verify_login: signedIn(boss), account_state: answered({ ok: true, roles: [], people: [person(boss), person({ personId: "p-ghost", roleCode: "ghost" })], requests: [] }), admin_import_roles: ROLES_COPIED })),
+          request(session, account.id)
+        );
+        expect(outcome.kind).toBe("REFUSED");
+        expect(await mode()).toBe("LOCAL");
+      });
     });
 
     it("a refused switch clears nothing: the local-only holder keeps their role", async () => {
@@ -315,7 +389,11 @@ describe("the switch to cloud accounts: by hand, by an admin, at this computer",
       if (old === null) throw new Error("not a person");
       data.applyPersonRevision(db.db, old);
 
-      const outcome = await press(boss, session, account.id, [DELETED], [person(boss), person({ personId: "p-ali", revision: 2, roleCode: null })]);
+      const people = [person(boss), person({ personId: "p-ali", revision: 2, roleCode: null })];
+
+      // Ali really does lose the role's screens here, so the admin is told first.
+      expect(await press(boss, session, account.id, [DELETED], people)).toMatchObject({ kind: "WOULD_LOSE_ACCESS", losses: [{ screens: ["gatepass"] }] });
+      const outcome = await press(boss, session, account.id, [DELETED], people, true);
 
       expect(outcome).toMatchObject({ kind: "SWITCHED", clearedRoles: [] });
       expect(assignmentOf("p-ali")).toBeUndefined();

@@ -123,6 +123,24 @@ describe("approving and changing people", () => {
       expect(db.recalculateEffectivePermissions("p-ali")).toEqual([]);
     });
 
+    it("a Save that changes nothing asks nothing of the cloud: the log is append-only, and noise there is for ever", async () => {
+      await heldRole();
+      const cloud = new ScriptedCloud({});
+      const result = await saveMemberAccess(deps(cloud), "p-ali", { roleCode: "munshi", jobRole: null, authorityLevel: 10, extraPermissions: [] });
+      expect(cloud.calls).toEqual([]);
+      expect(result.accepted && result.report.fields.every((entry) => entry.outcome === "UNCHANGED")).toBe(true);
+    });
+
+    it("a screen the cloud took off that this computer still opens is reported", async () => {
+      await heldRole();
+      db.db.exec(`CREATE TRIGGER keep_screen AFTER UPDATE OF permissions_json ON app_users
+        WHEN NEW.id = 'p-ali' AND NEW.permissions_json NOT LIKE '%stock%'
+        BEGIN UPDATE app_users SET role = 'ADMIN' WHERE id = NEW.id; END`);
+      const cloud = new ScriptedCloud({ admin_set_access: answered({ ok: true, person: person({ revision: 3, status: "APPROVED", roleCode: null, jobRole: "" }) }) });
+      const result = await saveMemberAccess(deps(cloud), "p-ali", noRole);
+      expect(result.accepted && result.report.screensStillOpen).toContain("stock");
+    });
+
     it("an answer that kept the role is NOT_SAVED, whatever was asked: the cloud's word is what counts", async () => {
       await heldRole();
       const cloud = new ScriptedCloud({ admin_set_access: answered({ ok: true, person: person({ revision: 3, status: "APPROVED", roleCode: "munshi", jobRole: "Munshi" }) }) });
@@ -131,6 +149,14 @@ describe("approving and changing people", () => {
 
       expect(outcomes(result)).toMatchObject({ ROLE: "NOT_SAVED" });
       expect(result.accepted && result.report.stored.roleCode).toBe("munshi");
+    });
+
+    it("while this copy waits for a role on its way, its old screens are not called still open: it has not changed yet", async () => {
+      await heldRole();
+      const cloud = new ScriptedCloud({ admin_set_access: answered({ ok: true, person: person({ revision: 3, status: "APPROVED", roleCode: "brand-new", jobRole: "Brand New" }) }) });
+      const result = await saveMemberAccess(deps(cloud), "p-ali", { roleCode: "brand-new", jobRole: "Brand New", authorityLevel: 10, extraPermissions: [] });
+      expect(db.recalculateEffectivePermissions("p-ali")).toContain("stock");
+      expect(result.accepted && result.report.screensStillOpen).toEqual([]);
     });
 
     it("a role still on its way here is not called unsaved: the cloud has it, this copy only waits", async () => {

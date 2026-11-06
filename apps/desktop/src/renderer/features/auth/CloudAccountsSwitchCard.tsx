@@ -4,6 +4,7 @@ import { copy } from "../../config/copy";
 import { useDesktopApi } from "../../hooks/useDesktopApi";
 import { useNotifications } from "../../state/NotificationsContext";
 import type { AuthUser } from "../../types/desktopApi";
+import { describePerm } from "../users/permissions";
 import { PasswordField } from "./PasswordField";
 import { useSession } from "./SessionContext";
 import { useAccountsStatus } from "./useAccountsStatus";
@@ -65,6 +66,8 @@ const SwitchForm = ({
   const [password, setPassword] = useState("");
   const [confirming, setConfirming] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
+  // Who would lose which screens: said before anything changes, and only going on switches.
+  const [losses, setLosses] = useState<Array<{ username: string; screens: string[] }> | null>(null);
 
   const open = () => {
     if (!email.trim() || !password) {
@@ -76,10 +79,14 @@ const SwitchForm = ({
   };
 
   /** Resolves with the reason to stay open, or null once switched (ConfirmDialog's contract). */
-  const switchNow = async (): Promise<string | null> => {
-    const result = await api.switchToCloudAccounts?.(token, email.trim(), password);
+  const switchNow = async (acceptLosses = false): Promise<string | null> => {
+    const result = await api.switchToCloudAccounts?.(token, email.trim(), password, acceptLosses);
     if (!result) return copy.cloudAccounts.statusFailed;
-    if (!result.accepted) return result.reason;
+    if (!result.accepted) {
+      if (!result.accessLosses) return result.reason;
+      setLosses(result.accessLosses);
+      return null;
+    }
     if (result.user) await onSwitched(result.user, result.token);
     push("success", copy.cloudAccounts.switchedTitle, copy.cloudAccounts.switchedBody(result.people));
     for (const { username, roleName } of result.clearedRoles) {
@@ -127,8 +134,21 @@ const SwitchForm = ({
           confirmLabel={copy.cloudAccounts.confirm}
           busyLabel={copy.cloudAccounts.switching}
           tone="danger"
-          onConfirm={switchNow}
+          onConfirm={() => switchNow()}
           onClose={() => setConfirming(false)}
+        />
+      )}
+      {losses && (
+        <ConfirmDialog
+          title={copy.cloudAccounts.lossesTitle}
+          facts={losses.map(({ username, screens }) => ({ label: username, value: screens.map(describePerm).join(", ") }))}
+          explain={copy.cloudAccounts.lossesExplain}
+          warning={copy.cloudAccounts.lossesWarning}
+          confirmLabel={copy.cloudAccounts.lossesConfirm}
+          busyLabel={copy.cloudAccounts.switching}
+          tone="danger"
+          onConfirm={() => switchNow(true)}
+          onClose={() => setLosses(null)}
         />
       )}
     </section>

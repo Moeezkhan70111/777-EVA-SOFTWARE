@@ -1,6 +1,7 @@
 import React from "react";
 import type { MemberAccessFieldResult, MemberAccessReport } from "../../types/desktopApi";
 import { copy } from "../../config/copy";
+import { describePerm } from "./permissions";
 
 // WHAT THE SAVE DID, IN WORDS, FROM THE SAVE'S OWN REPORT.
 //
@@ -34,22 +35,27 @@ const worthSaying = (result: MemberAccessFieldResult, changed: readonly MemberAc
 export const MemberSaveResult = ({ report, roleName }: { report: MemberAccessReport; roleName: RoleName }) => {
   const changed = report.fields.filter((result) => result.outcome === "CHANGED");
   const notSaved = report.fields.filter((result) => result.outcome === "NOT_SAVED");
+  const stillOpen = report.screensStillOpen.map(describePerm).join(", ");
+  const allWell = notSaved.length === 0 && stillOpen === "";
   const said = changed.filter((result) => worthSaying(result, changed)).map((result) => savedLine(result, report, roleName));
 
-  if (changed.length === 0 && notSaved.length === 0) {
+  if (changed.length === 0 && allWell) {
     return <div className="text-muted text-small" role="status">{SAVE.nothingChanged}</div>;
   }
   return (
     <>
-      {notSaved.length > 0 && (
+      {!allWell && (
         <div className="auth-error" role="alert">
           <strong>{SAVE.notSavedTitle}</strong>
-          <ul>{notSaved.map((result) => <li key={result.field}>{notSavedLine(result, report, roleName)}</li>)}</ul>
+          <ul>
+            {notSaved.map((result) => <li key={result.field}>{notSavedLine(result, report, roleName)}</li>)}
+            {stillOpen !== "" && <li>{SAVE.screensStillOpen(stillOpen)}</li>}
+          </ul>
         </div>
       )}
       {said.length > 0 && (
         <div className="auth-success" role="status">
-          <strong>{notSaved.length > 0 ? SAVE.partlySavedTitle : SAVE.savedTitle}</strong>
+          <strong>{allWell ? SAVE.savedTitle : SAVE.partlySavedTitle}</strong>
           <ul>{said.map((line) => <li key={line}>{line}</li>)}</ul>
         </div>
       )}
