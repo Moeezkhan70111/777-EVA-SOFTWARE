@@ -46,7 +46,7 @@ import {
 
 /**
  * Reads a movement event's material through its QR to its item, for the printed slip's category
- * badges. Each is a LEFT JOIN on a key, so an event is still exactly one row.
+ * badges and the Store page's lists. Each is a LEFT JOIN on a key, so an event is still exactly one row.
  */
 const EVENT_ITEM_JOINS = `
          LEFT JOIN raw_material_qrs q ON q.id = e.qr_id
@@ -1199,6 +1199,7 @@ export const rawMaterialQrMethods = {
       scans: scans.map((scan) => ({
         qrId: String(scan.qr_id),
         itemDisplayName: String(scan.item_display_name),
+        categoryLabel: scan.category_id ? this.categoryPathName(String(scan.category_id)) : "",
         quantity: Number(scan.quantity),
         unitCode: scan.unit_code ? String(scan.unit_code) : "",
         receivedAt: String(scan.event_ts_local),
@@ -1497,6 +1498,7 @@ export const rawMaterialQrMethods = {
       scans: rows.map((row) => ({
         qrId: String(row.qr_id),
         itemDisplayName: String(row.item_display_name),
+        categoryLabel: row.category_id ? this.categoryPathName(String(row.category_id)) : "",
         quantity: Number(row.quantity),
         unitCode: row.unit_code ? String(row.unit_code) : "",
         sectionName: row.section_name ? String(row.section_name) : null,

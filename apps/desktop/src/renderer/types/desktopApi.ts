@@ -2817,6 +2817,8 @@ export interface RawMaterialReceivingSessionSummary {
   scans: Array<{
     qrId: string;
     itemDisplayName: string;
+    /** Where the material sits now: "TOP — SUB", or "TOP", or "" when its item cannot be found. */
+    categoryLabel?: string;
     quantity: number;
     unitCode: string;
     receivedAt: string;
@@ -2899,6 +2901,8 @@ export interface RawMaterialIssueSessionSummary {
   scans: Array<{
     qrId: string;
     itemDisplayName: string;
+    /** Where the material sits now: "TOP — SUB", or "TOP", or "" when its item cannot be found. */
+    categoryLabel?: string;
     quantity: number;
     unitCode: string;
     sectionName: string | null;

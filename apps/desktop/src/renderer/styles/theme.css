@@ -262,6 +262,31 @@
   --sp-mode-off-icon:      #3E68A7;
   --sp-mode-shadow:        0 8px 24px rgba(8, 119, 232, 0.14);
   --sp-mode-on-shadow:     0 6px 16px rgba(8, 119, 232, 0.32);
+  /* How the switch's and the tabs' blue thumb slides (1 Nov 2026: shared by both). */
+  --sp-slide:              380ms cubic-bezier(0.4, 0, 0.2, 1);
+  /* The scan rails (1 Nov 2026): the supplier field, the scan panel and its Start button, in the
+     same blue as Move in | Move out. */
+  --sp-blue:               var(--sp-mode-on-start);   /* white text on it: 4.3:1 */
+  --sp-blue-cyan:          var(--sp-mode-on-end);     /* the light end of the Start gradient: large bold text only */
+  --sp-blue-soft:          #EAF3FF;      /* icon tiles */
+  --sp-blue-wash:          #F3F8FF;      /* the scan panel's ground */
+  --sp-blue-line:          #C9DDFB;      /* the scan panel's and icon tiles' outline */
+  --sp-ready:              #16A34A;      /* the Ready dot; the word beside it says it too */
+  /* The Stock tab's category colours (1 Nov 2026): a category's pill and its names' second part.
+     Each carries white bold 11px text at 4.5:1 or more. */
+  --sp-cat-1:              #0369A1;      /* sky,    5.9:1 */
+  --sp-cat-2:              #3730A3;      /* indigo, 9.0:1 */
+  --sp-cat-3:              #0F766E;      /* teal,   5.4:1 */
+  --sp-cat-4:              #9D174D;      /* rose,   7.9:1 */
+  --sp-cat-5:              #B45309;      /* amber,  5.0:1 */
+  --sp-cat-6:              #6D28D9;      /* violet, 7.1:1 */
+  --sp-radius-panel:       16px;
+  --sp-control-height-lg:  56px;
+  /* The whole scan rail drawn at this size (1 Nov 2026): the owner wanted it as it looked at 80% page
+     zoom. One number, so the rail can be made bigger or smaller again without touching its parts. */
+  --sp-rail-scale:         0.8;
+  /* Which way a rail moves material, along its top edge (1 Nov 2026): Move in blue, Move out red. */
+  --sp-rail-edge:          5px;
   --radius-tab:            var(--sp-radius-tab);
   --danger-tint:        #fee2e2;
   --danger-strong:      #b91c1c;
@@ -1780,6 +1805,23 @@ select {
 }
 
 /* ════════════════════════════════════════════════════════ PAGER ════════════════════════════════════════════════════════ */
+/* ‹ 1 … 4 5 6 … 20 › — round buttons; the current page on the switch's blue (1 Nov 2026). */
+.pager-numbered { display: flex; align-items: center; gap: 8px; }
+.pager-round {
+  display: inline-flex; align-items: center; justify-content: center; min-width: 40px; height: 40px; padding: 0 10px;
+  border-radius: 999px; border: 1px solid var(--sp-line); background: var(--white); color: var(--sp-navy);
+  font: inherit; font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums; cursor: pointer; box-shadow: var(--sp-card-shadow);
+  transition: background-color 180ms ease, color 180ms ease, border-color 180ms ease;
+}
+.pager-round svg { width: 18px; height: 18px; }
+.pager-round:hover:not(:disabled):not([aria-current="page"]) { border-color: var(--sp-blue-line); color: var(--sp-mode-on-start); }
+.pager-round[aria-current="page"] {
+  border-color: transparent; color: var(--white);
+  background: linear-gradient(90deg, var(--sp-mode-on-start), var(--sp-mode-on-end)); box-shadow: var(--sp-mode-on-shadow);
+}
+.pager-round:disabled { opacity: 0.45; cursor: default; }
+.pager-round:focus-visible { outline: 3px solid var(--sp-navy-2); outline-offset: 2px; }
+.pager-gap { padding: 0 2px; color: var(--sp-muted); }
 .pager { display: flex; align-items: center; gap: 8px; margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--chrome-line); }
 .pager-info { font-size: 0.82rem; color: var(--text-3); flex: 1; font-weight: 600; }
 
@@ -5624,6 +5666,60 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .combobox-chevron svg { width: 18px; height: 18px; transition: transform .15s var(--ease-out-expo); }
 .combobox-chevron:hover { color: var(--text); }
 .pv-item-combobox.is-open .combobox-chevron svg { transform: rotate(180deg); }
+/* A picture at the start of the field (the `icon` prop), in place of the search mark. */
+.pv-item-combobox--icon .form-input { padding-left: 38px; }
+.combobox-icon {
+  position: absolute; left: 11px; top: 50%; transform: translateY(-50%); z-index: 1;
+  display: flex; color: var(--text-3); pointer-events: none;
+}
+.combobox-icon svg { width: 18px; height: 18px; }
+/* A badge's picture (an option's badgeIcon), before its words. */
+.city-option-badge-icon { display: inline-flex; flex: none; }
+.city-option-badge-icon svg { width: 14px; height: 14px; }
+
+/* The panel (the `searchPlaceholder` prop, 1 Nov 2026): a select-like field, and under it a white
+   panel with its own search box and the rows — name, code under it, type badge on the right. */
+.pv-item-combobox--panel .form-input { cursor: pointer; caret-color: transparent; }
+.pv-item-dropdown.combobox-panel {
+  display: flex; flex-direction: column; overflow: hidden; padding: 14px 10px 10px 14px;
+  background: var(--white); border: 1px solid var(--sp-line); border-radius: var(--sp-radius-panel);
+  box-shadow: 0 18px 40px rgba(12, 27, 56, 0.14), 0 2px 6px rgba(12, 27, 56, 0.06);
+}
+.combobox-panel-search { position: relative; flex: none; margin: 0 4px 10px 0; }
+.combobox-panel-search-icon {
+  position: absolute; left: 14px; top: 50%; transform: translateY(-50%);
+  display: flex; color: var(--sp-muted); pointer-events: none;
+}
+.combobox-panel-search-icon svg { width: 20px; height: 20px; }
+.combobox-panel .combobox-panel-search-input, .combobox-panel .combobox-panel-search-input:focus {
+  width: 100%; height: 48px; margin: 0; padding: 0 14px 0 44px;
+  border: 1.5px solid var(--sp-line); border-radius: var(--sp-radius-panel); outline: none; box-shadow: none;
+  background: var(--white); color: var(--sp-navy); font: inherit; font-size: 15px;
+}
+.combobox-panel .combobox-panel-search-input:focus { border-color: var(--sp-blue); box-shadow: 0 0 0 3px color-mix(in srgb, var(--sp-blue) 14%, transparent); }
+.combobox-panel .combobox-panel-search-input::placeholder { color: var(--sp-muted); opacity: 1; }
+.combobox-panel-list {
+  flex: 1; min-height: 0; overflow-y: auto; padding-right: 6px;
+  scrollbar-width: thin; scrollbar-color: var(--sp-blue-line) transparent;
+}
+.combobox-panel-list::-webkit-scrollbar { width: 6px; }
+.combobox-panel-list::-webkit-scrollbar-thumb { background: var(--sp-blue-line); border-radius: 999px; }
+.combobox-panel .city-option {
+  padding: 10px 14px; border-bottom: 1px solid var(--sp-line); border-radius: 0; color: var(--sp-navy);
+}
+.combobox-panel .city-option:last-child { border-bottom-color: transparent; }
+.combobox-panel .city-option:hover, .combobox-panel .city-option.highlighted {
+  background: var(--sp-blue-soft); border-bottom-color: transparent; border-radius: var(--sp-radius-control); color: var(--sp-title-top);
+}
+.combobox-panel .city-option-head { align-items: center; gap: 12px; }
+.combobox-panel .city-option-label { font-size: 16px; font-weight: 700; }
+.combobox-panel .city-option-detail { margin-top: 2px; font-size: 13px; color: var(--sp-muted); }
+.combobox-panel .city-option-badge { display: inline-flex; align-items: center; gap: 7px; height: 30px; padding: 0 14px; border-radius: 999px; font-size: 13px; font-weight: 700; letter-spacing: 0; text-transform: none; box-shadow: none; }
+.combobox-panel .city-option-badge-icon svg { width: 16px; height: 16px; }
+/* The words on the tints are the darker blue and green, so they read at 13px (4.5:1 and more). */
+.combobox-panel .badge-info { background: var(--sp-blue-soft); border: 1px solid var(--sp-blue-line); color: var(--sp-title-top); }
+.combobox-panel .badge-ok { background: var(--success-soft); border: 1px solid var(--success-line); color: var(--success-strong); }
+.combobox-panel .city-options-empty { padding: 16px 12px; color: var(--sp-muted); font-size: 14px; }
 
 /* The fixed dropdown itself — extends city-options */
 .pv-item-dropdown {
@@ -6192,6 +6288,7 @@ tr.has-error .gp-qty-stepper input { color: var(--err); }
    TAB STRIP  ·  components/shared/TabStrip
    One tab strip for the app. Flat  fills and uniform borders only, per the
    paint-safety note on the product-detail block. */
+.tab-strip-thumb { display: none; }
 .tab-strip {
   display: inline-flex;
   gap: 2px;
@@ -6281,6 +6378,130 @@ tr.has-error .gp-qty-stepper input { color: var(--err); }
 .rm-chip--warn.is-active { background: var(--warn); border-color: var(--warn); color: var(--white); }
 
 /* ── Totals strip ─────────────────────────────────────────────────────── */
+/* ── The Stock tab's category buttons (1 Nov 2026) ─────────────────────────────
+   Every category as a pill; the chosen one on the Move in | Move out switch's blue. Choosing one
+   slides in a second, lighter row with what lies beneath it. Still for anyone who asks for less motion. */
+.rm-catbar { display: flex; flex-direction: column; gap: 8px; margin: 2px 0 14px; }
+.rm-catbar-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.rm-catbar-btn {
+  display: inline-flex; align-items: center; min-height: 38px; padding: 0 16px; border-radius: 999px;
+  border: 1.5px solid var(--sp-line); background: var(--white); color: var(--sp-mode-off-text);
+  font: inherit; font-size: 13px; font-weight: 700; letter-spacing: 0.01em; white-space: nowrap; cursor: pointer;
+  box-shadow: var(--sp-card-shadow);
+  transition: background-color 220ms ease, color 220ms ease, border-color 220ms ease, box-shadow 220ms ease, transform 160ms ease;
+}
+.rm-catbar-btn:hover { border-color: var(--sp-blue-line); color: var(--sp-mode-on-start); transform: translateY(-1px); }
+.rm-catbar-btn:active { transform: scale(0.97); }
+.rm-catbar-btn:focus-visible { outline: 3px solid var(--sp-navy-2); outline-offset: 2px; }
+.rm-catbar-btn--category[aria-pressed="true"] {
+  border-color: transparent; color: var(--white);
+  background: linear-gradient(90deg, var(--sp-mode-on-start), var(--sp-mode-on-end)); box-shadow: var(--sp-mode-on-shadow);
+}
+/* The second row: lighter, set into a pale band, so the two rows read as a category and its parts. */
+.rm-catbar-row--sub {
+  padding: 8px 10px; border-radius: 20px; background: var(--sp-sky-bottom); border: 1px solid var(--sp-line);
+  animation: rm-catbar-in 280ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+.rm-catbar-sub-mark { padding: 0 2px 0 4px; color: var(--sp-mode-off-icon); font-weight: 700; }
+.rm-catbar-btn--sub { min-height: 32px; padding: 0 13px; font-size: 12.5px; box-shadow: none; }
+.rm-catbar-btn--sub[aria-pressed="true"] { background: var(--sp-blue-soft); border-color: var(--sp-blue); color: var(--sp-title-top); }
+@keyframes rm-catbar-in { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) {
+  .rm-catbar-btn { transition: none; }
+  .rm-catbar-btn:hover, .rm-catbar-btn:active { transform: none; }
+  .rm-catbar-row--sub { animation: none; }
+}
+
+/* ── The Stock tab's list, grouped (1 Nov 2026) ──────────────────────────────────
+   A white card: the column names once at the top; each category under its coloured pill with what
+   it holds; sub-categories under small headings; a row a material — its name and code, the figure on
+   the shelf, the measured total when it says something more, and View details; a foot with the count
+   and the pages. Archivo for reading, figures in even-width digits so they line up; the monospace
+   face only for codes, where telling 0 from O matters. */
+.rm-cat-tone-0 { --rm-tone: var(--sp-cat-1); }
+.rm-cat-tone-1 { --rm-tone: var(--sp-cat-2); }
+.rm-cat-tone-2 { --rm-tone: var(--sp-cat-3); }
+.rm-cat-tone-3 { --rm-tone: var(--sp-cat-4); }
+.rm-cat-tone-4 { --rm-tone: var(--sp-cat-5); }
+.rm-cat-tone-5 { --rm-tone: var(--sp-cat-6); }
+.rm-stock-groups {
+  --rm-stock-cols: minmax(0, 1fr) 140px 130px 132px;
+  display: flex; flex-direction: column; gap: 18px; padding: 0 20px 14px;
+  background: var(--white); border-radius: var(--sp-radius-card) var(--sp-radius-card) 0 0; box-shadow: var(--sp-card-shadow);
+  font-family: var(--sp-font);
+}
+/* The column names, held at the top of the pane while the list scrolls under them. */
+.rm-stock-columns {
+  position: sticky; top: 0; z-index: 2; display: grid; grid-template-columns: var(--rm-stock-cols); gap: 18px;
+  margin: 0 -20px; padding: 14px 42px 10px; background: var(--white); border-bottom: 1px solid var(--sp-line);
+  border-radius: var(--sp-radius-card) var(--sp-radius-card) 0 0;
+  font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--sp-muted);
+}
+.rm-stock-columns span:nth-child(2), .rm-stock-columns span:nth-child(3) { text-align: right; }
+.rm-stock-group-head { display: flex; align-items: center; gap: 16px; margin-bottom: 4px; }
+.rm-stock-pill {
+  margin: 0; padding: 6px 16px; border-radius: 999px; background: var(--rm-tone); color: var(--white);
+  font-size: 12px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; white-space: nowrap;
+}
+.rm-stock-group-line { flex: 1; height: 1px; background: linear-gradient(90deg, var(--sp-line), transparent); }
+.rm-stock-group-count { font-size: 12.5px; font-weight: 600; color: var(--sp-muted); white-space: nowrap; }
+.rm-stock-sub-head {
+  margin: 10px 0 2px 22px; font-size: 12px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--rm-tone);
+}
+.rm-stock-rows { list-style: none; margin: 0; padding: 0; }
+.rm-stock-row {
+  display: grid; grid-template-columns: var(--rm-stock-cols); align-items: center; gap: 18px;
+  padding: 14px 22px; border-radius: var(--sp-radius-control);
+  transition: background-color 180ms ease, box-shadow 180ms ease;
+}
+.rm-stock-rows > .rm-stock-row + .rm-stock-row { border-top: 1px solid var(--sp-line); }
+/* Hovered: a pale ground and the category's colour along its left edge. */
+.rm-stock-row:hover { background: var(--sp-sky-bottom); box-shadow: inset 3px 0 0 var(--rm-tone); }
+.rm-stock-name-block { display: flex; flex-direction: column; align-items: flex-start; gap: 5px; min-width: 0; }
+.rm-stock-name-line { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; }
+.rm-stock-row .rm-stock-name {
+  padding: 0; border: 0; background: none; cursor: pointer; text-align: left;
+  font-family: var(--sp-font); font-size: 16px; font-weight: 700; letter-spacing: -0.005em; color: var(--sp-navy); overflow-wrap: anywhere;
+}
+.rm-stock-name-rest { color: var(--rm-tone); font-weight: 600; }
+.rm-stock-row .rm-stock-name:hover, .rm-stock-row .rm-stock-name:focus-visible { text-decoration: underline; text-underline-offset: 4px; outline: none; }
+/* Nothing in store, said in words. */
+.rm-stock-out {
+  padding: 2px 9px; border-radius: 999px; background: var(--danger-tint); color: var(--danger-strong);
+  font-size: 11.5px; font-weight: 700; white-space: nowrap;
+}
+.rm-stock-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 12px; }
+.rm-stock-code { font-family: var(--sp-font-code); font-size: 12px; font-weight: 500; color: var(--sp-muted); }
+.rm-stock-cost { font-size: 12.5px; font-weight: 600; color: var(--sp-muted); }
+.rm-stock-figure { display: flex; flex-direction: column; align-items: flex-end; gap: 3px; font-variant-numeric: tabular-nums; }
+.rm-stock-figure strong { font-size: 22px; font-weight: 700; line-height: 1.05; letter-spacing: -0.01em; color: var(--sp-navy); }
+.rm-stock-figure span { font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--sp-muted); }
+.rm-stock-figure--muted strong { font-size: 18px; font-weight: 600; color: var(--sp-muted); }
+.rm-stock-row--empty .rm-stock-figure--main strong { color: var(--sp-muted); }
+.rm-stock-row .rm-stock-open {
+  width: 100%; padding: 10px 16px; border-radius: 999px; border: 1.5px solid var(--sp-line); background: var(--white); color: var(--rm-tone);
+  font-family: var(--sp-font); font-size: 13px; font-weight: 700; white-space: nowrap; cursor: pointer;
+  box-shadow: var(--sp-card-shadow); transition: background-color 180ms ease, color 180ms ease, border-color 180ms ease, transform 160ms ease;
+}
+.rm-stock-row .rm-stock-open:hover { background: var(--rm-tone); border-color: var(--rm-tone); color: var(--white); transform: translateY(-1px); }
+.rm-stock-row .rm-stock-open:focus-visible { outline: 3px solid var(--sp-navy-2); outline-offset: 2px; }
+.rm-stock-foot {
+  display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; padding: 14px 20px;
+  background: var(--sp-blue-wash); border-top: 1px solid var(--sp-line); border-radius: 0 0 var(--sp-radius-card) var(--sp-radius-card);
+  box-shadow: var(--sp-card-shadow); font-family: var(--sp-font);
+}
+.rm-stock-foot-count { font-size: 13px; font-weight: 600; color: var(--sp-muted); }
+/* Narrow: no column names; the name on its own line, the figures and the button under it. */
+@media (max-width: 760px) {
+  .rm-stock-columns { display: none; }
+  .rm-stock-row { grid-template-columns: 1fr 1fr auto; }
+  .rm-stock-name-block { grid-column: 1 / -1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .rm-stock-row, .rm-stock-row .rm-stock-open { transition: none; }
+  .rm-stock-row .rm-stock-open:hover { transform: none; }
+}
+
 .rm-kpis {
   display: flex;
   align-items: center;
@@ -8028,7 +8249,7 @@ tr.has-error .gp-qty-stepper input { color: var(--err); }
    The blue pill is one thumb behind both halves (0.4.3): changing mode slides it across while the
    names and icons cross-fade between navy and white, so the switch moves rather than blinks. */
 .sp-modes {
-  --sp-mode-slide: 380ms cubic-bezier(0.4, 0, 0.2, 1);
+  --sp-mode-slide: var(--sp-slide);
   position: relative; align-self: center; flex-shrink: 0; display: grid; grid-template-columns: 1fr 1fr; width: min(100%, 460px);
   border-radius: 999px; background: var(--white); box-shadow: var(--sp-mode-shadow);
 }
@@ -8063,10 +8284,10 @@ tr.has-error .gp-qty-stepper input { color: var(--err); }
   .sp-modes::before, .sp-mode, .sp-mode-icon, .sp-mode-chip { transition: none; }
 }
 
-/* Work area | handle | scan rail (0.4.1). The rail's width is --sp-rail-width: this default, or the
+/* Work area | handle | scan rail (0.4.1). The rail's width is --sp-rail-width: this default (half, 1 Nov 2026), or the
    share the operator dragged it to (StorePage sets it, clamped). Every child is placed by column, so
    the modes and an open program can swap without the grid reflowing. */
-.sp-body { --sp-rail-width: clamp(330px, 30%, 400px); flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) 16px var(--sp-rail-width); }
+.sp-body { --sp-rail-width: clamp(330px, 50%, calc(100% - 436px)); flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) 16px var(--sp-rail-width); }
 .sp-body > .sp-work-slot, .sp-body > .sp-work { grid-column: 1; grid-row: 1; }
 .sp-body > .sp-split { grid-column: 2; grid-row: 1; }
 .sp-body > .sp-rail { grid-column: 3; grid-row: 1; }
@@ -8092,8 +8313,101 @@ tr.has-error .gp-qty-stepper input { color: var(--err); }
 .sp-page .qr-input-card, .sp-page .si-manual-open, .sp-page .rm-new-page, .sp-page .sp-issued-row, .sp-page .workspace-panel {
   background: var(--white); border: 0; border-radius: var(--sp-radius-card); box-shadow: var(--sp-card-shadow);
 }
-.sp-rail { position: relative; display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+.sp-rail { position: relative; display: flex; flex-direction: column; min-height: 0; overflow: hidden; zoom: var(--sp-rail-scale); }
 .sp-rail .ssn { min-height: 0; flex: 1; }
+/* Move in's station sits in a wrapper with its head (ScanInRail). The wrapper fills the rail, so the
+   station under the head scrolls; as a plain block it grew past the rail and a long session was cut
+   off at the bottom with no scroll bar (1 Nov 2026). Move out's station is the rail's own child. */
+.si-material-station { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+/* Move in or Move out at a glance: a blue or red top edge. The rail's name says it too. */
+.sp-rail--in { border-top: var(--sp-rail-edge) solid var(--sp-blue); }
+.sp-rail--out { border-top: var(--sp-rail-edge) solid var(--sp-red); }
+/* Move out's party picker on the Store page, laid out as Move in's (the picker full width, its badge after it). */
+.sp-rail .ssn-party-row { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; flex-shrink: 0; }
+
+/* ── The scan rails (1 Nov 2026) ─────────────────────────────────────────────
+   Head: a blue tile, the name and its line, and Ready / Not Ready on the right. Under it the
+   supplier as one tall field, then the scan panel on a pale blue wash with Start session inside.
+   The station's own stylesheet comes after this one, so its rules are outranked with `.sp-rail .ssn`
+   rather than by order. A verdict keeps the station's tone colours; only the idle panel is blue. */
+.sp-rail .si-scan-head { gap: 16px; padding: 22px 22px 18px; border-bottom: 0; }
+.sp-rail .si-scan-mark {
+  width: 56px; height: 56px; border-radius: var(--sp-radius-card);
+  background: var(--sp-blue-soft); border: 1px solid var(--sp-blue-line); color: var(--sp-blue);
+}
+.sp-rail .si-scan-mark svg { width: 30px; height: 30px; }
+.si-scan-text { flex: 1; min-width: 0; }
+/* The name with Ready / Not Ready right beside it. */
+.si-scan-title-row { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 12px; }
+.si-scan-actions { display: flex; align-items: center; gap: 10px; flex: none; }
+.sp-page .sp-rail .si-scan-title { font-size: 22px; font-weight: 800; letter-spacing: -0.02em; }
+.sp-rail .si-scan-line { margin-top: 4px; font-size: 14px; color: var(--sp-muted); }
+.si-scan-state {
+  display: inline-flex; align-items: center; gap: 7px; flex: none;
+  height: 30px; padding: 0 13px; border-radius: 999px; white-space: nowrap;
+  background: var(--white); border: 1px solid var(--sp-line); box-shadow: var(--sp-card-shadow);
+  font-size: 13px; font-weight: 700; color: var(--sp-muted);
+}
+.si-scan-state-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--sp-faint); }
+.si-scan-state--ready { color: var(--sp-navy); }
+.si-scan-state--ready .si-scan-state-dot { background: var(--sp-ready); }
+
+.sp-rail .ssn--embedded { padding: 0 22px 22px; gap: 16px; }
+.sp-rail .ssn .ssn-supplier-pick { flex: 1 1 100%; }
+.sp-rail .pv-item-combobox--panel .form-input {
+  height: var(--sp-control-height-lg); padding-left: 54px; padding-right: 48px;
+  border: 2px solid var(--sp-blue); border-radius: var(--sp-radius-panel);
+  font-size: 16px; font-weight: 700; color: var(--sp-navy);
+}
+.sp-rail .pv-item-combobox--panel .form-input::placeholder { color: var(--sp-navy); opacity: 1; }
+.sp-rail .pv-item-combobox--panel .form-input:focus { border-color: var(--sp-blue); box-shadow: 0 0 0 4px color-mix(in srgb, var(--sp-blue) 14%, transparent); }
+.sp-rail .pv-item-combobox--panel .combobox-icon { left: 18px; color: var(--sp-navy); }
+.sp-rail .pv-item-combobox--panel .combobox-icon svg { width: 24px; height: 24px; }
+.sp-rail .pv-item-combobox--panel .combobox-chevron { right: 10px; color: var(--sp-navy); }
+.sp-rail .pv-item-combobox--panel .combobox-chevron svg { width: 22px; height: 22px; }
+
+.sp-rail .ssn .ssn-scan { border-width: 1.5px; border-radius: var(--sp-radius-panel); box-shadow: none; }
+.sp-rail .ssn .ssn-scan--idle {
+  border-color: var(--sp-blue-line);
+  background:
+    radial-gradient(120% 75% at 115% 105%, var(--sp-blue-soft) 0 48%, transparent 49%),
+    linear-gradient(160deg, var(--sp-blue-soft), var(--sp-blue-wash) 45%, var(--white) 80%);
+}
+.sp-rail .ssn .ssn-scan--idle::before { display: none; }
+.sp-rail .ssn .ssn-scan-stage { padding: 32px 22px 30px; }
+.sp-rail .ssn .ssn-ready-icon { width: 76px; height: 76px; margin-bottom: 8px; border: 0; border-radius: 22px; background: var(--sp-blue-soft); }
+.sp-rail .ssn .ssn-ready-icon::before { display: none; }
+.sp-rail .ssn .ssn-ready-icon svg { width: 40px; height: 40px; }
+.sp-rail .ssn .ssn-ready-icon path { stroke: var(--sp-blue); }
+.sp-rail .ssn .ssn-scan--idle .ssn-scan-title { font-size: 30px; font-weight: 800; letter-spacing: -0.03em; color: var(--sp-navy); }
+.sp-rail .ssn .ssn-scan--idle .ssn-scan-message { font-size: 15px; font-weight: 500; color: var(--sp-muted); }
+.sp-rail .ssn .ssn-btn--hero {
+  width: min(100%, 300px); height: var(--sp-control-height-lg); border-radius: var(--sp-radius-panel); font-size: 18px;
+  background: linear-gradient(90deg, var(--sp-blue-cyan), var(--sp-blue));
+  box-shadow: 0 10px 24px color-mix(in srgb, var(--sp-blue) 28%, transparent);
+}
+.sp-rail .ssn .ssn-btn--hero:hover:not(:disabled) { background: var(--sp-blue); }
+/* While a session is open: who it is with, large, across the top of the scan panel, and its type
+   in the same badge as the supplier list's rows. */
+.sp-rail .ssn .ssn-scan-header { padding: 18px 22px; border-bottom-color: var(--sp-line); background: var(--white); }
+.sp-rail .ssn .ssn-scan-party-eyebrow { font-family: var(--sp-font-code); font-size: 11px; font-weight: 600; letter-spacing: 0.14em; color: var(--sp-muted); }
+.sp-rail .ssn .ssn-scan-party-name { font-size: 26px; font-weight: 800; letter-spacing: -0.03em; color: var(--sp-navy); }
+.sp-rail .ssn .ssn-scan-party .party-type-badge {
+  gap: 7px; height: 32px; padding: 0 14px; border-radius: 999px; box-shadow: none;
+  font-size: 14px; font-weight: 700; letter-spacing: 0; text-transform: none;
+}
+.sp-rail .ssn .ssn-scan-party .party-type-badge-icon svg { width: 17px; height: 17px; }
+.sp-rail .ssn .ssn-scan-party .badge-info { background: var(--sp-blue-soft); border: 1px solid var(--sp-blue-line); color: var(--sp-title-top); }
+.sp-rail .ssn .ssn-scan-party .badge-ok { background: var(--success-soft); border: 1px solid var(--success-line); color: var(--success-strong); }
+/* The Store's red (its main action, 0.3.9) for what ends or finishes a session: End Session in the
+   scan panel, Print Receipt in the rail's head. White on it is 4.8:1. */
+.sp-rail .ssn .ssn-btn--end-session {
+  background: var(--sp-red);
+  box-shadow: 0 10px 24px color-mix(in srgb, var(--sp-red) 28%, transparent);
+}
+.sp-rail .ssn .ssn-btn--end-session:hover:not(:disabled) { background: var(--sp-red-hover); }
+.sp-rail .si-scan-print { padding: 0 22px; font-size: 15px; font-weight: 700; }
+.sp-rail .ssn .ssn-btn--hero:focus-visible { outline: 3px solid var(--sp-navy-2); outline-offset: 3px; }
 .sp-page .si-manual-open, .sp-page .rm-new-page { padding: 22px 24px; }
 .sp-page .si-manual-open .mo-manual, .sp-page .si-manual-head { padding-left: 0; padding-right: 0; }
 .sp-paused { display: flex; flex-direction: column; gap: 8px; padding: 18px 20px; }
@@ -8116,17 +8430,34 @@ tr.has-error .gp-qty-stepper input { color: var(--err); }
 .sp-page td, .sp-page .rm-num, .sp-page .cell-mono, .sp-issued-row { font-variant-numeric: tabular-nums; }
 .sp-page .cell-mono, .sp-issued-code { font-family: var(--sp-font-code); }
 
-/* Tabs: rounded segments. The active one solid navy with white text; the rest plain muted text. */
+/* Tabs (1 Nov 2026): as the Move in | Move out switch above them — a white pill strip, and one blue
+   thumb behind the selected tab that slides to the next (TabStrip places it, measuring the tab).
+   The words cross-fade from navy to white with it. Still for anyone who asks for less motion. */
 .sp-page .tab-strip {
-  display: flex; flex-wrap: wrap; gap: 4px; padding: 5px; flex-shrink: 0;
-  background: var(--white); border: 0; border-radius: var(--sp-radius-card); box-shadow: var(--sp-card-shadow);
+  position: relative; display: flex; flex-wrap: wrap; gap: 4px; padding: 6px; flex-shrink: 0;
+  background: var(--white); border: 0; border-radius: 26px; box-shadow: var(--sp-mode-shadow);
 }
+.sp-page .tab-strip-thumb {
+  display: block; position: absolute; top: 0; left: 0; z-index: 0; pointer-events: none;
+  width: var(--tab-thumb-w, 0); height: var(--tab-thumb-h, 0);
+  transform: translate(var(--tab-thumb-x, 0), var(--tab-thumb-y, 0));
+  border-radius: 999px; background: linear-gradient(90deg, var(--sp-mode-on-start), var(--sp-mode-on-end));
+  box-shadow: var(--sp-mode-on-shadow);
+}
+.sp-page .tab-strip-thumb[data-shown="false"] { opacity: 0; }
+.sp-page .tab-strip-thumb[data-ready="true"] { transition: transform var(--sp-slide), width var(--sp-slide), height var(--sp-slide), opacity 200ms ease; }
 .sp-page .tab-strip-btn {
-  min-height: 40px; padding: 8px 16px; border: 0; border-radius: var(--sp-radius-tab);
-  background: transparent; color: var(--sp-muted); font-size: 14px; font-weight: 600; box-shadow: none;
+  position: relative; z-index: 1; min-height: 42px; padding: 8px 18px; border: 0; border-radius: 999px;
+  background: transparent; color: var(--sp-mode-off-text); font-size: 14px; font-weight: 600; box-shadow: none;
+  transition: color var(--sp-slide), background-color 160ms ease;
 }
-.sp-page .tab-strip-btn:hover { color: var(--sp-navy); background: var(--sp-ground); }
-.sp-page .tab-strip-btn.is-active { background: var(--sp-navy); color: var(--white); box-shadow: none; }
+.sp-page .tab-strip-btn:not(.is-active):hover { background: var(--sp-sky-bottom); color: var(--sp-mode-on-start); }
+.sp-page .tab-strip-btn.is-active { background: transparent; color: var(--white); font-weight: 700; box-shadow: none; }
+.sp-page .tab-strip-btn:focus-visible { outline: 3px solid var(--sp-navy-2); outline-offset: 2px; }
+.sp-page .tab-strip-btn.is-active .tab-strip-badge { background: rgba(255, 255, 255, 0.2); color: var(--white); }
+@media (prefers-reduced-motion: reduce) {
+  .sp-page .tab-strip-thumb[data-ready="true"], .sp-page .tab-strip-btn { transition: none; }
+}
 
 /* Inputs and selects. */
 .sp-page .form-input, .sp-page select {
@@ -8134,6 +8465,65 @@ tr.has-error .gp-qty-stepper input { color: var(--err); }
   background: var(--white); color: var(--sp-navy); font-size: 14px;
 }
 .sp-page .form-input:focus, .sp-page select:focus { border-color: var(--sp-navy-2); box-shadow: 0 0 0 3px rgba(29, 55, 105, 0.14); }
+
+/* ── Dropdowns in the Store page's tabs (1 Nov 2026) ─────────────────────────
+   Every native <select> — category, unit, filters, setup — is drawn like the scan rail's fields,
+   and so is its open list: Chromium's customisable select (appearance: base-select) lets the list
+   (::picker(select)) and its rows be styled while the control stays native, with its keyboard,
+   its form value and its accessibility. A browser without it shows the plain select. */
+.sp-page select, .sp-page select.form-input {
+  appearance: base-select;
+  /* One row: the chosen value, then the arrow at the far end (the shared .form-input is a block). */
+  display: flex; align-items: center; gap: 10px;
+  min-height: var(--sp-control-height); padding: 0 12px 0 14px;
+  border: 1.5px solid var(--sp-line); border-radius: var(--sp-radius-control);
+  background: var(--white); color: var(--sp-navy); font: inherit; font-size: 14px; font-weight: 600;
+  cursor: pointer; transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+.sp-page select:hover:not(:disabled) { border-color: var(--sp-blue-line); }
+.sp-page select:focus-visible, .sp-page select:open {
+  border-color: var(--sp-blue); outline: none;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--sp-blue) 14%, transparent);
+}
+.sp-page select:disabled { background: var(--sp-ground); color: var(--sp-muted); cursor: not-allowed; }
+/* Nothing chosen yet ("Select a category…"): it reads as a hint, not a value. */
+.sp-page select:has(option[value=""]:checked) { color: var(--sp-muted); font-weight: 500; }
+/* The arrow: the party pickers' chevron, turning over while the list is open. */
+.sp-page select::picker-icon {
+  content: ""; flex: none; margin-left: auto; width: 18px; height: 18px; background: var(--sp-navy);
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E") center / contain no-repeat;
+  transition: rotate 150ms ease;
+}
+.sp-page select:open::picker-icon { rotate: 180deg; }
+@media (prefers-reduced-motion: reduce) { .sp-page select::picker-icon { transition: none; } }
+/* The open list: a white panel, as the party pickers' panel. */
+.sp-page select::picker(select) {
+  appearance: base-select;
+  margin-block: 4px; padding: 6px; max-height: 340px;
+  border: 1px solid var(--sp-line); border-radius: var(--sp-radius-panel);
+  background: var(--white); box-shadow: 0 18px 40px rgba(12, 27, 56, 0.14), 0 2px 6px rgba(12, 27, 56, 0.06);
+}
+.sp-page select option {
+  gap: 10px; min-height: 40px; padding: 8px 12px; border-radius: var(--sp-radius-control);
+  color: var(--sp-navy); font-size: 14px; font-weight: 500;
+}
+.sp-page select option:hover, .sp-page select option:focus-visible { background: var(--sp-blue-soft); color: var(--sp-title-top); outline: none; }
+.sp-page select option:checked { color: var(--sp-title-top); font-weight: 700; }
+.sp-page select option::checkmark { color: var(--sp-blue); }
+.sp-page select option[value=""] { color: var(--sp-muted); }
+.sp-page select option:disabled { color: var(--sp-faint); cursor: not-allowed; }
+/* The searchable pickers in the tabs (By hand, Labels, Receipts): the same field as the selects
+   beside them, in the work area only: the scan rails draw theirs larger (.sp-rail .pv-item-combobox--panel). */
+.sp-work .pv-item-combobox--panel .form-input {
+  height: var(--sp-control-height); border: 1.5px solid var(--sp-line); border-radius: var(--sp-radius-control);
+  color: var(--sp-navy); font-size: 14px; font-weight: 600; transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+.sp-work .pv-item-combobox--panel .form-input::placeholder { color: var(--sp-muted); font-weight: 500; opacity: 1; }
+.sp-work .pv-item-combobox--panel .form-input:hover { border-color: var(--sp-blue-line); }
+.sp-work .pv-item-combobox--panel.is-open .form-input, .sp-work .pv-item-combobox--panel .form-input:focus-visible {
+  border-color: var(--sp-blue); box-shadow: 0 0 0 3px color-mix(in srgb, var(--sp-blue) 14%, transparent);
+}
+.sp-work .pv-item-combobox--panel .combobox-icon, .sp-work .pv-item-combobox--panel .combobox-chevron { color: var(--sp-navy); }
 
 /* Buttons: the main action solid red; secondary white with a light border and a soft shadow. */
 .sp-page .btn { min-height: 44px; border-radius: var(--sp-radius-control); font-weight: 600; }
@@ -9295,6 +9685,9 @@ tr.has-error .gp-qty-stepper input { color: var(--err); }
 /* Store movements (0.3.8): what kind of party is chosen, and the party a Move Out session is locked to. */
 .party-type-badge { margin-top: 6px; align-self: flex-start; }
 .ssn-toolbar .party-type-badge { margin-top: 0; }
+/* The badge's picture (a supplier's box, a contractor's hard hat), before its word. */
+.party-type-badge-icon { display: inline-flex; flex: none; }
+.party-type-badge-icon svg { width: 13px; height: 13px; }
 /* A tag beside an option's label in a picker list: the label wraps, the tag keeps its width. */
 .city-option-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
 .city-option-badge { flex-shrink: 0; }

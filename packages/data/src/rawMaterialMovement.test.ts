@@ -444,6 +444,8 @@ test("a session records the delivery it took in, grouped by material for printin
     );
     assert.deepEqual(summary.scans.map((scan) => scan.qrId), [big.labels[0], big.labels[1], small.labels[0]]);
     assert.equal(summary.scans[0].actor, "store-op");
+    // Each scan carries where its material sits, for the on-screen list (a top-level category here).
+    assert.deepEqual(summary.scans.map((scan) => scan.categoryLabel), ["RUBBER UPPER", "RUBBER UPPER", "RUBBER UPPER"]);
     // Where each material sits, for the printed slip's badges.
     assert.deepEqual(summary.byMaterial.map((row) => row.categoryLabel), ["RUBBER UPPER", "RUBBER UPPER"]);
   } finally {
@@ -726,6 +728,9 @@ test("an issue session records what left, grouped by destination for the slip", 
     ]);
     assert.equal(summary.scans.length, 3);
     assert.equal(summary.scans[0].sectionName, null);
+    // Where each material sits, for the Store page's Move out lists — and still one row a packet.
+    assert.equal(summary.scans[0].categoryLabel, "RUBBER UPPER");
+    assert.ok(summary.byMaterial.every((row) => row.categoryLabel !== undefined));
   } finally {
     f.cleanup();
   }

@@ -1,10 +1,15 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useId, useRef, useState } from "react";
 import { copy } from "../../config/copy";
+import { ComboboxOptionList } from "./ComboboxOptionList";
 
 // Inline searchable combobox that drops UP or DOWN relative to its own position, using a
 // fixed-positioned overlay so nothing clips it. Originally written for the Purchase Voucher
 // item/supplier pickers; shared here so any picker over a searchable value/label list (Party,
 // Raw Material Item, …) uses one implementation (R1 — do not copy-paste UI).
+//
+// THE PANEL (1 Nov 2026, the scan stations' party pickers): given a `searchPlaceholder`, the field
+// is a plain select — it shows the pick, or the placeholder — and the list opens under it as a
+// panel with its own search box at the top, which takes the typing.
 export interface SearchableComboboxOption {
   value: string;
   /** The main line — what tells this option apart. Also what the input shows once picked. */
@@ -15,6 +20,10 @@ export interface SearchableComboboxOption {
   keywords?: string;
   /** A short tag beside the label in the list, in words (e.g. a party's type: "Supplier"). */
   badge?: string;
+  /** The badge's colour, from the app's badge classes: badge-info (the default) or badge-ok. */
+  badgeTone?: "info" | "ok";
+  /** A picture before the badge's words. It only repeats them. */
+  badgeIcon?: React.ReactNode;
 }
 
 /** Lower-case, with the separators labels use (— · , |) turned into plain spaces. */
@@ -34,6 +43,54 @@ export const matchesSearch = (option: SearchableComboboxOption, query: string): 
 
 /** The list never shrinks below this, so a long name stays readable in a narrow column. */
 const MIN_DROPDOWN_WIDTH = 380;
+/** How tall the list may grow, and what one row and the panel's search box take, for placing it. */
+const LIST_MAX_HEIGHT = 320;
+const PANEL_MAX_HEIGHT = 440;
+const ROW_HEIGHT = 52;
+const PANEL_ROW_HEIGHT = 60;
+const PANEL_SEARCH_HEIGHT = 76;
+
+/**
+ * Where the fixed list goes: under the field when it fits (or fits better), else above it.
+ *
+ * `rect` and the window are in screen pixels; the list's own pixels are scaled by any CSS zoom
+ * around the field (the Store page's scan rail is drawn at 80%), so every length it is given is
+ * divided by that zoom. `wanted` and `maxHeight` are in the list's own pixels.
+ */
+const placeList = (field: HTMLElement, wanted: number, maxHeight: number): React.CSSProperties => {
+  const zoom = field.currentCSSZoom || 1;
+  const rect = field.getBoundingClientRect();
+  const spaceBelow = window.innerHeight - rect.bottom;
+  const spaceAbove = rect.top;
+  // Wider than the input when the input is narrow, but never past the right edge of the window.
+  const width = Math.min(Math.max(rect.width, MIN_DROPDOWN_WIDTH * zoom), window.innerWidth - rect.left - 12);
+  // Each case clears the other edge explicitly: the shared .city-options rule sets `top`, and a
+  // list pinned by both top and bottom collapses to a sliver when it drops up.
+  const below = spaceBelow >= wanted * zoom || spaceBelow >= spaceAbove;
+  return {
+    position: "fixed",
+    top: below ? (rect.bottom + 2) / zoom : "auto",
+    bottom: below ? "auto" : (window.innerHeight - rect.top + 2) / zoom,
+    right: "auto",
+    left: rect.left / zoom,
+    width: width / zoom,
+    maxHeight: Math.min(maxHeight, ((below ? spaceBelow : spaceAbove) - 8) / zoom),
+    zIndex: 9999,
+  };
+};
+
+const ChevronIcon: React.FC = () => (
+  <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+    <path d="M6 9l6 6 6-6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+  </svg>
+);
+
+const SearchIcon: React.FC = () => (
+  <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+    <circle cx="11" cy="11" r="6.5" stroke="currentColor" strokeWidth="2" />
+    <path d="M16 16l4.5 4.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+  </svg>
+);
 
 export const SearchableCombobox: React.FC<{
   value: string;
@@ -50,28 +107,58 @@ export const SearchableCombobox: React.FC<{
    * a search box whose pick is cleared as soon as the text is edited.
    */
   dropdown?: boolean;
-}> = ({ value, options, placeholder, emptyLabel = "No results found", ariaLabel, onChange, onEnter, dropdown = false }) => {
+  /** A picture at the start of the field (a person for a party picker), in place of the search mark. */
+  icon?: React.ReactNode;
+  /** Opens the list as a panel with its own search box, saying this. Implies `dropdown`. */
+  searchPlaceholder?: string;
+}> = ({ value, options, placeholder, emptyLabel = "No results found", ariaLabel, onChange, onEnter, dropdown = false, icon, searchPlaceholder }) => {
+  const panel = searchPlaceholder !== undefined;
+  const isDropdown = dropdown || panel;
+  const listId = useId();
   const wrapRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
+  // Set when the field is given its focus back after a pick or Escape, so that focus does not reopen it.
+  const quietFocus = useRef(false);
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
   const [highlight, setHighlight] = useState(0);
   const [listStyle, setListStyle] = useState<React.CSSProperties>({});
 
   const selected = options.find((o) => o.value === value);
-  const displayValue = selected && !open ? selected.label : query;
+  const displayValue = panel ? (selected?.label ?? "") : selected && !open ? selected.label : query;
   // While an option is picked the input shows its label; that is not a search, so list everything.
   const searching = !(selected && query === selected.label);
   const filtered = searching ? options.filter((o) => matchesSearch(o, query)) : options;
   // An open dropdown starts with an empty filter; the current pick shows faintly behind it.
-  const shownPlaceholder = dropdown && selected ? selected.label : placeholder;
+  const shownPlaceholder = isDropdown && selected ? selected.label : placeholder;
 
   // sync display when value/selected changes externally
   useEffect(() => {
     if (selected && !open) setQuery(selected.label);
     if (!value && !open) setQuery("");
   }, [value, selected, open]);
+
+  // The panel's search box takes the typing as soon as it opens.
+  useEffect(() => {
+    if (open && panel) searchRef.current?.focus();
+  }, [open, panel]);
+
+  // The open panel follows its field when the field changes size or the window does (the Store
+  // rail being dragged wider, a window resized), rather than staying where it first opened.
+  useEffect(() => {
+    const field = inputRef.current;
+    if (!open || !panel || !field) return;
+    const follow = () => setListStyle((style) => ({ ...style, ...placeList(field, Number(style.maxHeight) || PANEL_MAX_HEIGHT, PANEL_MAX_HEIGHT) }));
+    window.addEventListener("resize", follow);
+    const observer = typeof ResizeObserver === "function" ? new ResizeObserver(follow) : null;
+    observer?.observe(field);
+    return () => {
+      window.removeEventListener("resize", follow);
+      observer?.disconnect();
+    };
+  }, [open, panel]);
 
   // close on outside click
   useEffect(() => {
@@ -87,43 +174,27 @@ export const SearchableCombobox: React.FC<{
   }, [open]);
 
   // position the fixed dropdown relative to the input
-  const openDropdown = () => {
+  const openDropdown = (seed = "") => {
     if (!inputRef.current) return;
-    const rect = inputRef.current.getBoundingClientRect();
-    const spaceBelow = window.innerHeight - rect.bottom;
-    const spaceAbove = rect.top;
-    const dropHeight = Math.min(320, (dropdown ? options.length : filtered.length) * 52 + 8);
-    // Wider than the input when the input is narrow, but never past the right edge of the window.
-    const width = Math.min(Math.max(rect.width, MIN_DROPDOWN_WIDTH), window.innerWidth - rect.left - 12);
-
-    // Each case clears the other edge explicitly: the shared .city-options rule sets `top`, and a
-    // list pinned by both top and bottom collapses to a sliver when it drops up.
-    if (spaceBelow >= dropHeight || spaceBelow >= spaceAbove) {
-      setListStyle({
-        position: "fixed",
-        top: rect.bottom + 2,
-        bottom: "auto",
-        right: "auto",
-        left: rect.left,
-        width,
-        maxHeight: Math.min(320, spaceBelow - 8),
-        zIndex: 9999,
-      });
-    } else {
-      setListStyle({
-        position: "fixed",
-        top: "auto",
-        bottom: window.innerHeight - rect.top + 2,
-        right: "auto",
-        left: rect.left,
-        width,
-        maxHeight: Math.min(320, spaceAbove - 8),
-        zIndex: 9999,
-      });
-    }
-    if (dropdown) setQuery("");
+    const rows = isDropdown ? options.length : filtered.length;
+    const wanted = panel
+      ? Math.min(PANEL_MAX_HEIGHT, rows * PANEL_ROW_HEIGHT + PANEL_SEARCH_HEIGHT)
+      : Math.min(LIST_MAX_HEIGHT, rows * ROW_HEIGHT + 8);
+    setListStyle(placeList(inputRef.current, wanted, panel ? PANEL_MAX_HEIGHT : LIST_MAX_HEIGHT));
+    if (isDropdown) setQuery(seed);
     setOpen(true);
     setHighlight(0);
+  };
+
+  const focusFieldQuietly = () => {
+    if (!panel) return;
+    quietFocus.current = true;
+    inputRef.current?.focus();
+  };
+
+  const close = () => {
+    setOpen(false);
+    focusFieldQuietly();
   };
 
   const toggleFromArrow = () => {
@@ -138,13 +209,55 @@ export const SearchableCombobox: React.FC<{
   const select = (opt: SearchableComboboxOption) => {
     onChange(opt.value);
     setQuery(opt.label);
-    setOpen(false);
     setHighlight(0);
+    close();
   };
 
+  /** The keys that move through the list and pick from it, in the field or the panel's search box. */
+  const onListKeys = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      if (!open) openDropdown();
+      else setHighlight((i) => Math.min(i + 1, filtered.length - 1));
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setHighlight((i) => Math.max(i - 1, 0));
+    } else if (e.key === "Enter") {
+      if (open && filtered.length > 0) {
+        e.preventDefault();
+        select(filtered[highlight] ?? filtered[0]);
+        onEnter?.();
+      }
+    } else if (e.key === "Escape") {
+      e.stopPropagation();
+      close();
+    }
+  };
+
+  /** The panel's field is a select: a typed letter opens it with that letter already searched. */
+  const onPanelFieldKeys = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (!open && e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey && e.key !== " ") {
+      e.preventDefault();
+      openDropdown(e.key);
+    } else if (!open && (e.key === "Enter" || e.key === " ")) {
+      e.preventDefault();
+      openDropdown();
+    } else {
+      onListKeys(e);
+    }
+  };
+
+  const list = (
+    <ComboboxOptionList id={listId} options={filtered} value={value} highlight={highlight} emptyLabel={emptyLabel} onSelect={select} />
+  );
+
   return (
-    <div ref={wrapRef} className={`pv-item-combobox${dropdown ? " pv-item-combobox--dropdown" : ""}${open ? " is-open" : ""}`}>
-      {dropdown ? null : <span className="city-search-icon" aria-hidden="true">⌕</span>}
+    <div
+      ref={wrapRef}
+      className={`pv-item-combobox${isDropdown ? " pv-item-combobox--dropdown" : ""}${icon ? " pv-item-combobox--icon" : ""}${panel ? " pv-item-combobox--panel" : ""}${open ? " is-open" : ""}`}
+    >
+      {icon ? <span className="combobox-icon" aria-hidden="true">{icon}</span> : null}
+      {!icon && !isDropdown ? <span className="city-search-icon" aria-hidden="true">⌕</span> : null}
       <input
         ref={inputRef}
         type="text"
@@ -155,36 +268,26 @@ export const SearchableCombobox: React.FC<{
         autoComplete="off"
         role="combobox"
         aria-expanded={open}
+        aria-controls={open ? listId : undefined}
         aria-autocomplete="list"
+        readOnly={panel}
         onChange={(e) => {
           setQuery(e.target.value);
-          if (value && !dropdown) onChange("");
-          if (!open) openDropdown();
+          if (value && !isDropdown) onChange("");
+          if (!open) openDropdown(e.target.value);
           else setHighlight(0);
         }}
-        onFocus={() => { if (!open) openDropdown(); }}
-        onClick={() => { if (dropdown && !open) openDropdown(); }}
-        onKeyDown={(e) => {
-          if (e.key === "ArrowDown") {
-            e.preventDefault();
-            if (!open) openDropdown();
-            else setHighlight((i) => Math.min(i + 1, filtered.length - 1));
-          } else if (e.key === "ArrowUp") {
-            e.preventDefault();
-            setHighlight((i) => Math.max(i - 1, 0));
-          } else if (e.key === "Enter") {
-            if (open && filtered.length > 0) {
-              e.preventDefault();
-              select(filtered[highlight] ?? filtered[0]);
-              onEnter?.();
-            }
-          } else if (e.key === "Escape") {
-            e.stopPropagation();
-            setOpen(false);
+        onFocus={() => {
+          if (quietFocus.current) {
+            quietFocus.current = false;
+            return;
           }
+          if (!open) openDropdown();
         }}
+        onClick={() => { if (isDropdown && !open) openDropdown(); }}
+        onKeyDown={panel ? onPanelFieldKeys : onListKeys}
       />
-      {dropdown ? (
+      {isDropdown ? (
         <button
           type="button"
           className="combobox-chevron"
@@ -194,9 +297,7 @@ export const SearchableCombobox: React.FC<{
           onMouseDown={(e) => e.preventDefault()}
           onClick={toggleFromArrow}
         >
-          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-            <path d="M6 9l6 6 6-6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
+          <ChevronIcon />
         </button>
       ) : value && (
         <button
@@ -209,37 +310,34 @@ export const SearchableCombobox: React.FC<{
       )}
 
       {/* Fixed-positioned dropdown — never clipped by overflow */}
-      {open && (
-        <div
-          ref={listRef}
-          className="pv-item-dropdown city-options"
-          style={listStyle}
-          role="listbox"
-        >
-          {filtered.length === 0
-            ? <div className="city-options-empty">{emptyLabel}</div>
-            : filtered.map((opt, idx) => (
-              <button
-                key={opt.value}
-                type="button"
-                className={`city-option${idx === highlight ? " highlighted" : ""}`}
-                role="option"
-                aria-selected={opt.value === value}
-                onMouseDown={(e) => e.preventDefault()}
-                onClick={() => select(opt)}
-              >
-                {opt.badge ? (
-                  <span className="city-option-head">
-                    <span className="city-option-label">{opt.label}</span>
-                    <span className="badge badge-info city-option-badge">{opt.badge}</span>
-                  </span>
-                ) : (
-                  <span className="city-option-label">{opt.label}</span>
-                )}
-                {opt.detail ? <span className="city-option-detail">{opt.detail}</span> : null}
-              </button>
-            ))
-          }
+      {open && !panel && (
+        <div ref={listRef} id={listId} className="pv-item-dropdown city-options" style={listStyle} role="listbox">
+          {list}
+        </div>
+      )}
+      {open && panel && (
+        <div ref={listRef} className="pv-item-dropdown combobox-panel" style={listStyle}>
+          <div className="combobox-panel-search">
+            <span className="combobox-panel-search-icon" aria-hidden="true"><SearchIcon /></span>
+            <input
+              ref={searchRef}
+              type="text"
+              className="combobox-panel-search-input"
+              value={query}
+              placeholder={searchPlaceholder}
+              aria-label={searchPlaceholder}
+              aria-controls={listId}
+              autoComplete="off"
+              onChange={(e) => {
+                setQuery(e.target.value);
+                setHighlight(0);
+              }}
+              onKeyDown={onListKeys}
+            />
+          </div>
+          <div id={listId} className="combobox-panel-list" role="listbox" aria-label={ariaLabel}>
+            {list}
+          </div>
         </div>
       )}
     </div>

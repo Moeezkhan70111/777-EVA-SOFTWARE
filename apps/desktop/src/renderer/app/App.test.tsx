@@ -317,7 +317,8 @@ describe("App", () => {
   it("renders production page via keyboard shortcut", async () => {
     renderApp();
     await userEvent.keyboard("{F2}");
-    expect(await screen.findByRole("heading", { name: "Live Production" })).toBeInTheDocument();
+    // The page header and the page's own heading (hidden by CSS, which tests do not apply) both name it.
+    expect((await screen.findAllByRole("heading", { name: "Live Production" })).length).toBeGreaterThan(0);
     expect(await screen.findByText("Recent activity")).toBeInTheDocument();
   });
 

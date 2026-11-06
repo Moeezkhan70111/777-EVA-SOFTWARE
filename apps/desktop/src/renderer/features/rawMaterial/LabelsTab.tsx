@@ -12,6 +12,7 @@ import { copy } from "../../config/copy";
 import { StepHeading } from "../../components/shared/StepHeading";
 import { SearchableCombobox } from "../../components/shared/SearchableCombobox";
 import { partyOption } from "../parties/partyOption";
+import { PersonIcon } from "../store/StoreIcons";
 import { StateView } from "../../components/shared/StateView";
 import { ConfirmDialog, type ConfirmFact } from "../../components/shared/ConfirmDialog";
 import { formatQuantity, materialLabelAttributes, packName, type InventoryItemRow } from "./rawMaterial";
@@ -352,7 +353,8 @@ export const LabelsTab: React.FC<LabelsTabProps> = ({ username, configByItem, pr
                 emptyLabel="No suppliers found"
                 ariaLabel={copy.columns.supplier}
                 onChange={setPartyId}
-                dropdown
+                icon={<PersonIcon />}
+                searchPlaceholder={copy.store.searchParty}
               />
               <p className="field-help">From Party Management — suppliers cannot be created here.</p>
             </div>

@@ -1,5 +1,5 @@
 import React from "react";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { RawMaterialWorkspace } from "./RawMaterialWorkspace";
@@ -136,15 +136,14 @@ describe("RawMaterialWorkspace", () => {
     installApi();
     renderWorkspace(["stock"]);
 
-    await waitFor(() => expect(screen.getByText("RUBBER UPPER — SK6 — RED — 7/10")).toBeInTheDocument());
-
-    const ready = screen.getByText("RUBBER UPPER — SK6 — RED — 7/10").closest("tr")!;
+    // Each material is a row named in full (the group heading carries its category on screen).
+    const ready = await screen.findByRole("listitem", { name: "RUBBER UPPER — SK6 — RED — 7/10" });
     // Two labelled packets in the store holding 12 dozen between them — counted, not divided.
-    expect(ready).toHaveTextContent("2 PACKETS");
+    expect(within(ready).getByLabelText("In store: 2 PACKETS")).toBeInTheDocument();
     expect(ready).toHaveTextContent("12");
 
     // Raw material routes were removed on 2026-10-07, so no row names a destination.
-    const bare = screen.getByText("RAGZINE — BLACK").closest("tr")!;
+    const bare = screen.getByRole("listitem", { name: "RAGZINE — BLACK" });
     expect(bare).not.toHaveTextContent("No route");
   });
 
@@ -153,20 +152,19 @@ describe("RawMaterialWorkspace", () => {
     installApi({ domain: "RAW_MATERIAL_STORE", canWrite: false, reason: "HELD_ELSEWHERE", holderLabel: "Store PC" });
     renderWorkspace(["stock"]);
 
-    await waitFor(() => expect(screen.getByText("RUBBER UPPER — SK6 — RED — 7/10")).toBeInTheDocument());
-    const ready = screen.getByText("RUBBER UPPER — SK6 — RED — 7/10").closest("tr")!;
+    const ready = await screen.findByRole("listitem", { name: "RUBBER UPPER — SK6 — RED — 7/10" });
     await waitFor(() => expect(ready).not.toHaveTextContent("PACKETS"));
-    expect(ready.querySelectorAll("td")[1]).toHaveTextContent("12DOZ");
+    expect(within(ready).getByLabelText(/^In store:/)).toHaveTextContent("12DOZ");
   });
 
   it("no longer asks for setup: routes are gone and a packet's contents are typed per label run", async () => {
     installApi();
     renderWorkspace(["stock"]);
 
-    await waitFor(() => expect(screen.getByText("RUBBER UPPER — SK6 — RED — 7/10")).toBeInTheDocument());
+    await screen.findByRole("listitem", { name: "RUBBER UPPER — SK6 — RED — 7/10" });
     expect(screen.queryByRole("button", { name: /need setup/i })).not.toBeInTheDocument();
     // The material that used to be flagged is an ordinary row now.
-    expect(screen.getByText("RAGZINE — BLACK")).toBeInTheDocument();
+    expect(screen.getByRole("listitem", { name: "RAGZINE — BLACK" })).toBeInTheDocument();
   });
 
   it("shows a stock user the Stock and Receipts tabs, and neither Labels nor Setup", async () => {
@@ -254,25 +252,25 @@ describe("RawMaterialWorkspace when data changes underneath it", () => {
   it("updates the stock in place when stock arrives: no refresh, no loading state, same screen", async () => {
     const { api, announce } = installLiveApi();
     renderWorkspace(["stock"]);
-    const before = await screen.findByText("RAGZINE — BLACK");
-    expect(before.closest("tr")).toHaveTextContent("0");
+    const before = await screen.findByRole("listitem", { name: "RAGZINE — BLACK" });
+    expect(before).toHaveTextContent("0");
 
     // Another computer received 37 dozen of it.
     api.listInventoryItems.mockResolvedValue(ITEMS.map((item) => (item.id === "item-bare" ? { ...item, quantity_on_hand: 37 } : item)));
     const reads = api.listInventoryItems.mock.calls.length;
     announce(["STOCK", "SYNC"]);
 
-    await waitFor(() => expect(screen.getByText("RAGZINE — BLACK").closest("tr")).toHaveTextContent("37"));
+    await waitFor(() => expect(screen.getByRole("listitem", { name: "RAGZINE — BLACK" })).toHaveTextContent("37"));
     expect(api.listInventoryItems.mock.calls.length).toBe(reads + 1);
     expect(screen.queryByText("Loading raw materials…")).toBeNull();
-    // The same row element: the table was never taken down and rebuilt.
-    expect(screen.getByText("RAGZINE — BLACK")).toBe(before);
+    // The same row element: the list was never taken down and rebuilt.
+    expect(screen.getByRole("listitem", { name: "RAGZINE — BLACK" })).toBe(before);
   });
 
   it("ignores a change of something the screen does not show, and reloads once for a burst", async () => {
     const { api, announce } = installLiveApi();
     renderWorkspace(["stock"]);
-    await screen.findByText("RAGZINE — BLACK");
+    await screen.findByRole("listitem", { name: "RAGZINE — BLACK" });
     const reads = api.listInventoryItems.mock.calls.length;
 
     announce(["PARTIES"]);
@@ -290,7 +288,7 @@ describe("RawMaterialWorkspace when data changes underneath it", () => {
   it("stops listening when the screen closes", async () => {
     const { listeners } = installLiveApi();
     const { unmount } = renderWorkspace(["stock"]);
-    await screen.findByText("RAGZINE — BLACK");
+    await screen.findByRole("listitem", { name: "RAGZINE — BLACK" });
     expect(listeners.size).toBeGreaterThan(0);
     unmount();
     expect(listeners.size).toBe(0);

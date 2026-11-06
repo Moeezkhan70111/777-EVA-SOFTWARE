@@ -68,6 +68,14 @@ export const SetupIcon: React.FC = () => (
   </svg>
 );
 
+/** A head and shoulders: the party a session is opened against. */
+export const PersonIcon: React.FC = () => (
+  <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+    <circle cx="12" cy="8" r="4" stroke="currentColor" strokeWidth="2" />
+    <path d="M4.5 20.5c.9-3.6 3.9-5.8 7.5-5.8s6.6 2.2 7.5 5.8" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+  </svg>
+);
+
 /** A handheld scanner reading a box: receiving packets into the store. */
 export const ScanInIcon: React.FC = () => (
   <svg viewBox="0 0 48 48" fill="none" aria-hidden="true">

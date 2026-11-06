@@ -1,6 +1,7 @@
 import type { SearchableComboboxOption } from "../../components/shared/SearchableCombobox";
 import { copy } from "../../config/copy";
 import type { Party } from "../../types/desktopApi";
+import { partyTypeLook } from "./partyTypeLook";
 
 // A party as one row of a party picker: its name, with its type beside it as a badge, so
 // the type is seen while choosing and not only once chosen. One mapping for every store picker
@@ -15,6 +16,7 @@ export const partyOption = (party: Party): SearchableComboboxOption => {
     value: party.id,
     label: party.partyName,
     badge: type,
+    ...partyTypeLook(party.partyType),
     // The code is not shown (owner, 6 Nov 2026), but typing it still finds the party, and typing
     // "contractor" finds the contractors.
     keywords: [party.partyCode, type].filter(Boolean).join(" "),
