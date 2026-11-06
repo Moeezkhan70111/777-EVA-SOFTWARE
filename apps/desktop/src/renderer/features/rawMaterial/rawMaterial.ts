@@ -168,6 +168,17 @@ export const itemCategoryLabel = (item: InventoryItemRow): string => {
 };
 
 /**
+ * What tells a material apart in its category. Its name is "CATEGORY — SUB — A — B — C" and the
+ * category part is the same for all of them, so this is [A, B, C]. A name that does not start with
+ * its category (it was moved since) is kept whole.
+ */
+export const materialNameParts = (displayName: string, categoryLabel: string): string[] => {
+  const prefix = categoryLabel ? `${categoryLabel} — ` : "";
+  const distinguishing = prefix && displayName.startsWith(prefix) ? displayName.slice(prefix.length) : displayName;
+  return distinguishing.split(" — ").filter(Boolean);
+};
+
+/**
  * A material as a picker option. Its name is "CATEGORY — SUB — A — B — C"; the category part
  * is the same for every material in a sub-category, so the big line is what tells them apart
  * (SK19 · BROWN · 8/13) and the category and code go on the small line under it.

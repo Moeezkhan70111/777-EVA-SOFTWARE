@@ -255,7 +255,7 @@ contextBridge.exposeInMainWorld("desktop", {
     getProductImage: (article: string) => ipcRenderer.invoke(IPC.getProductImage, article),
     saveProductImage: (article: string, dataUrl: string) => ipcRenderer.invoke(IPC.saveProductImage, article, dataUrl),
     saveRateList: (payload: { html: string; fileName: string }) => ipcRenderer.invoke(IPC.saveRateList, payload),
-    printDocument: (payload: { html: string; pageSize?: { widthIn: number; heightIn: number } }) =>
+    printDocument: (payload: { html: string; pageSize?: { widthIn: number; heightIn: number }; printer?: string }) =>
       ipcRenderer.invoke(IPC.printDocument, payload),
     listHistory: (query: Record<string, unknown>) => ipcRenderer.invoke(IPC.listHistory, query),
     listDispatchHistory: (query: Record<string, unknown>) => ipcRenderer.invoke(IPC.listDispatchHistory, query),

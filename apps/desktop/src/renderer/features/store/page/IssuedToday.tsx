@@ -5,7 +5,8 @@ import { useDesktopApi } from "../../../hooks/useDesktopApi";
 import { formatTime, toIsoDate } from "../../../utils/dates";
 import type { RawMaterialIssueSessionRow } from "../../../types/desktopApi";
 import { useNotifications } from "../../../state/NotificationsContext";
-import { openIssueSlipPrintWindow } from "../../rawMaterial/issueSlip";
+import { printIssueSlip } from "../../rawMaterial/issueSlip";
+import { announceVoucherPrint } from "../../rawMaterial/storeVoucher";
 
 // ISSUED TODAY — every issue session started today, on every computer, as Receipts lists every
 // receiving session (owner, 0.3.9). Each says who its packets went to and how many, whether it is
@@ -27,7 +28,7 @@ const useReprint = (username?: string) => {
   return useCallback(
     async (sessionId: string) => {
       const summary = await api.getRawMaterialIssueSessionSummary(sessionId);
-      if (summary && !openIssueSlipPrintWindow(summary, username)) push("error", copy.toast.popupBlocked, copy.storeStation.popupBlocked);
+      if (summary) announceVoucherPrint(await printIssueSlip(summary, username), push);
     },
     [api, push, username]
   );

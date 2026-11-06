@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { renderReceivingReceiptHtml } from "./receivingReceipt";
+import { quantityFigure } from "./storeVoucher";
 import type { RawMaterialReceivingSessionSummary } from "../../types/desktopApi";
 
 const summaryWith = (overrides: Partial<RawMaterialReceivingSessionSummary> = {}): RawMaterialReceivingSessionSummary => ({
@@ -29,6 +30,15 @@ const summaryWith = (overrides: Partial<RawMaterialReceivingSessionSummary> = {}
 /** The voucher as a BROWSER reads it, which is the only thing the storekeeper ever sees. */
 const parse = (html: string): Document => new DOMParser().parseFromString(html, "text/html");
 
+describe("quantityFigure", () => {
+  const row = (quantity: number, unitCode: string) => ({ itemDisplayName: "X", packets: 1, quantity, unitCode });
+  it("is a bare number for one unit, names several, and says nothing for none", () => {
+    expect(quantityFigure([row(12, "DOZ"), row(8, "DOZ")])).toBe("20");
+    expect(quantityFigure([row(25, "KG"), row(20, "DOZ")])).toBe("25 KG + 20 DOZ");
+    expect(quantityFigure([])).toBe("");
+  });
+});
+
 describe("renderReceivingReceiptHtml", () => {
   // Every other test here reads the HTML as a STRING, and a string says nothing about whether a
   // browser can render it: an unclosed <title> swallowed the whole body once and left the print
@@ -45,7 +55,13 @@ describe("renderReceivingReceiptHtml", () => {
     expect(body).toContain("Raw Material Received");
     expect(body).toContain("RMI-000003");
     expect(body).toContain("Vots Chemicals");
-    expect(body).toContain("DANA — EVA — RED");
+    // Spaces between a name's parts on the slip: the dashes made each row longer.
+    expect(body).toContain("DANA EVA RED");
+    // The category moves out of the name, into badges.
+    const badged = parse(renderReceivingReceiptHtml(summaryWith({ byMaterial: [{ itemDisplayName: "DANA — EVA — RED", categoryLabel: "DANA — EVA", packets: 1, quantity: 25, unitCode: "KG" }] })));
+    expect(badged.querySelector(".materials-table tbody td")?.firstChild?.textContent).toBe("RED");
+    expect(Array.from(badged.querySelectorAll(".cat-badge")).map((badge) => badge.textContent)).toEqual(["DANA", "EVA"]);
+    expect(body).not.toContain("DANA — EVA — RED");
     expect(body).toContain("175 KG");
     expect(body).toContain("Received by");
     expect(body).toContain("Printed by: storekeeper");

@@ -1,5 +1,5 @@
 import type { RawMaterialReceivingSessionSummary } from "../../types/desktopApi";
-import { openStoreVoucherPrintWindow, renderStoreVoucherHtml, type StoreVoucher, type StoreVoucherOptions } from "./storeVoucher";
+import { printStoreVoucher, renderStoreVoucherHtml, type StoreVoucher, type StoreVoucherOptions, type VoucherPrintOutcome } from "./storeVoucher";
 
 // The printed voucher for one supplier's delivery — the store voucher (storeVoucher.ts) filled in
 // for Move In. The Move Out slip is the same voucher (issueSlip.ts).
@@ -23,6 +23,6 @@ const receivingVoucher = (summary: RawMaterialReceivingSessionSummary): StoreVou
 export const renderReceivingReceiptHtml = (summary: RawMaterialReceivingSessionSummary, options: ReceivingReceiptOptions = {}): string =>
   renderStoreVoucherHtml(receivingVoucher(summary), options);
 
-/** Opens the voucher in the print window. Returns false when the popup was blocked. */
-export const openReceivingReceiptPrintWindow = (summary: RawMaterialReceivingSessionSummary, printedBy?: string | null): boolean =>
-  openStoreVoucherPrintWindow(receivingVoucher(summary), printedBy);
+/** Sends the voucher to the slip printer (storeVoucher.ts). */
+export const printReceivingReceipt = (summary: RawMaterialReceivingSessionSummary, printedBy?: string | null): Promise<VoucherPrintOutcome> =>
+  printStoreVoucher(receivingVoucher(summary), printedBy);

@@ -141,22 +141,22 @@ describe("Store page — layout", () => {
     expect(modeButton(/Move out/)).toHaveAttribute("aria-pressed", "false");
   });
 
-  it("offers Receiving's seven tabs, and Issuing's four, in order, Daily report last in each", async () => {
+  it("offers Receiving's eight tabs, and Issuing's five, in order, Daily report last in each", async () => {
     installApi();
     renderPage();
     const tabsOf = (label: string) => within(screen.getByRole("tablist", { name: label })).getAllByRole("tab").map((tab) => tab.textContent);
-    expect(tabsOf("Move in sections")).toEqual(["Add material", "Labels", "Stock", "Receipts", "By hand", "Setup", "Daily report"]);
+    expect(tabsOf("Move in sections")).toEqual(["Add material", "Labels", "Stock", "Receipts", "By hand", "Setup", "QR Journey", "Daily report"]);
     // The inactive mode is hidden, from assistive technology too: Issuing's tabs appear with Issuing.
     expect(screen.queryByRole("tablist", { name: "Move out sections" })).toBeNull();
     fireEvent.click(modeButton(/Move out/));
-    expect(tabsOf("Move out sections")).toEqual(["By hand", "Issued today", "Stock", "Daily report"]);
+    expect(tabsOf("Move out sections")).toEqual(["By hand", "Issued today", "Stock", "QR Journey", "Daily report"]);
   });
 
   it("shows only the tabs the account may open", async () => {
     installApi();
     renderPage({ access: { stock: false, labels: false, settings: false } });
     const receivingTabs = within(screen.getByRole("tablist", { name: "Move in sections" })).getAllByRole("tab").map((tab) => tab.textContent);
-    expect(receivingTabs).toEqual(["By hand", "Daily report"]);
+    expect(receivingTabs).toEqual(["By hand", "QR Journey", "Daily report"]);
     expect(screen.getByTestId("hand-IN")).toBeInTheDocument();
   });
 });
@@ -212,16 +212,19 @@ describe("Store page — the two modes", () => {
 describe("Store page — the scan panels, as released", () => {
   afterEach(() => vi.restoreAllMocks());
 
-  it("hosts Scan Material as Store In had it: the supplier, Start session, READY TO SCAN", async () => {
+  it("arranges Scan Material as Scan Out: its box the rail's own child, so it scrolls, then New session, End session, Print slip, the supplier", async () => {
     installApi({ receivingOpen: false });
     renderPage();
     const rail = screen.getByRole("complementary", { name: "Scan Material" });
-    expect(await within(rail).findByRole("button", { name: /Start session/ })).toBeDisabled();
+    expect(await within(rail).findByRole("button", { name: /New session/ })).toBeDisabled();
+    expect(within(rail).getByRole("button", { name: /End session/ })).toBeDisabled();
+    expect(within(rail).getByRole("button", { name: /Print slip/ })).toBeDisabled();
+    expect(rail.querySelector(":scope > .ssn")).not.toBeNull();
     expect(within(rail).getByTestId("scan-status")).toHaveTextContent("READY TO SCAN");
     expect(within(rail).getByLabelText("Scanner input")).toBeDisabled();
   });
 
-  it("offers contractors as well as suppliers to receive from, each with its type (0.4.1)", async () => {
+  it("offers suppliers only to receive from, by name with no code, and still finds one by its code (6 Nov 2026)", async () => {
     installApi({ receivingOpen: false });
     renderPage();
     const rail = screen.getByRole("complementary", { name: "Scan Material" });
@@ -230,7 +233,16 @@ describe("Store page — the scan panels, as released", () => {
       fireEvent.focus(await within(rail).findByRole("combobox", { name: "Supplier" }));
     });
     expect(await screen.findByRole("option", { name: /SHEHZAD RUBBER/ })).toHaveTextContent("Supplier");
-    expect(screen.getByRole("option", { name: /DANIYAL/ })).toHaveTextContent("Contractor");
+    expect(screen.queryByRole("option", { name: /DANIYAL/ })).toBeNull();
+    expect(screen.getByRole("option", { name: /SHEHZAD RUBBER/ })).not.toHaveTextContent("PTY-1");
+    fireEvent.change(within(rail).getByRole("combobox", { name: "Supplier" }), { target: { value: "PTY-1" } });
+    expect(screen.getByRole("option", { name: /SHEHZAD RUBBER/ })).toBeInTheDocument();
+  });
+
+  it("shows packets and what they hold on the switch: Open · 2/50", async () => {
+    installApi();
+    renderPage();
+    await waitFor(() => expect(modeButton(/Move in/)).toHaveTextContent("Open · 2/50"));
   });
 
   it("hosts Scan Out as Store Out had it: the party with its type, New session, End session, Print slip", async () => {

@@ -1,3 +1,4 @@
+import type { PrinterRole } from "../../shared/printerRole";
 import type { ClaimPartyRole, ContractorLedger, ContractorRole, LeaseDomain, ReceiveProductionOutcome, StoreDailyReport, StoreDirection, UpperIssueOutcome, UpperProductionComparison, UpperReconciliation } from "@erp/domain";
 
 export type SortOrder = "ASC" | "DESC";
@@ -2018,7 +2019,7 @@ export interface DesktopApi {
   rawMaterialQrBatchDeleteBlockers(batchId: string): Promise<{ accepted: boolean; blockers?: string[]; reason?: string }>;
   deleteRawMaterialQrBatch(batchId: string): Promise<{ accepted: boolean; quantity?: number; nextSequence?: number; reason?: string }>;
   listInventoryItems(query?: Record<string, unknown>): Promise<Array<Record<string, unknown>>>;
-  createInventoryItem(input: Record<string, unknown>): Promise<{ accepted: boolean; id?: string; code?: string; displayName?: string; duplicate?: boolean; reason?: string }>;
+  createInventoryItem(input: Record<string, unknown>): Promise<{ accepted: boolean; id?: string; code?: string; displayName?: string; duplicate?: boolean; reenabled?: boolean; reason?: string }>;
   adjustInventoryStock(input: Record<string, unknown>): Promise<{ accepted: boolean; reason?: string }>;
   queryInventoryStock(filters?: Record<string, unknown>): Promise<{ itemCount: number; totalsByUnit: Array<{ unitId: string; unitCode: string; quantity: number }>; equivalent?: { unitId: string; unitCode: string; quantity: number } }>;
   listInventoryStockEvents(itemId: string, limit?: number): Promise<InventoryStockEventRow[]>;
@@ -2166,8 +2167,8 @@ export interface DesktopApi {
   getProductImage(article: string): Promise<string | null>;
   saveProductImage(article: string, dataUrl: string): Promise<{ accepted: boolean; fileName?: string; reason?: string }>;
   saveRateList(payload: { html: string; fileName: string }): Promise<{ accepted: boolean; canceled?: boolean; filePath?: string; reason?: string }>;
-  /** Prints a ready-made document on the default printer, with no dialog. Page size in inches. */
-  printDocument(payload: { html: string; pageSize?: { widthIn: number; heightIn: number } }): Promise<{ accepted: boolean; reason?: string }>;
+  /** Prints a ready-made document with no dialog: on the default printer, or the one `printer` names by role. Page size in inches. */
+  printDocument(payload: { html: string; pageSize?: { widthIn: number; heightIn: number }; printer?: PrinterRole }): Promise<{ accepted: boolean; reason?: string }>;
   listHistory(query: Record<string, unknown>): Promise<PagedResult<HistoryRow>>;
   listDispatchHistory(query: Record<string, unknown>): Promise<PagedResult<HistoryRow>>;
   listDispatchSessions(filter?: Record<string, unknown>): Promise<DispatchSessionSummary[]>;
@@ -2807,7 +2808,8 @@ export interface RawMaterialReceivingSession {
 export interface RawMaterialReceivingSessionSummary {
   session: RawMaterialReceivingSession;
   totalPackets: number;
-  byMaterial: Array<{ itemDisplayName: string; packets: number; quantity: number; unitCode: string }>;
+  /** categoryLabel is where the material sits now: "TOP — SUB", or "" when its item cannot be found. */
+  byMaterial: Array<{ itemDisplayName: string; categoryLabel?: string; packets: number; quantity: number; unitCode: string }>;
   scans: Array<{
     qrId: string;
     itemDisplayName: string;
@@ -2883,8 +2885,8 @@ export interface RawMaterialIssueSessionSummary {
   /** That party's name, for the printed slip; null when the session has no party yet. */
   partyName: string | null;
   totalPackets: number;
-  /** One line per material and unit — what the printed slip totals. */
-  byMaterial: Array<{ itemDisplayName: string; packets: number; quantity: number; unitCode: string }>;
+  /** One line per material and unit — what the printed slip totals. categoryLabel as on a receipt. */
+  byMaterial: Array<{ itemDisplayName: string; categoryLabel?: string; packets: number; quantity: number; unitCode: string }>;
   bySection: Array<{
     sectionName: string;
     packets: number;

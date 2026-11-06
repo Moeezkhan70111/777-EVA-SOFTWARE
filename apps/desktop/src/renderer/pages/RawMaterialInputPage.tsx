@@ -14,10 +14,13 @@ import { useNotifications } from "../state/NotificationsContext";
 import { playScanSound } from "../utils/playScanSound";
 import { copy } from "../config/copy";
 import { formatDateTime } from "../utils/dates";
-import { openReceivingReceiptPrintWindow } from "../features/rawMaterial/receivingReceipt";
+import { printReceivingReceipt } from "../features/rawMaterial/receivingReceipt";
+import { announceVoucherPrint, quantityFigure } from "../features/rawMaterial/storeVoucher";
 import { isCompleteQr, sanitizeScanInput } from "../utils/qr";
 import { LEASE_DOMAIN, isRawMaterialReceiptPartyType, isValidRawMaterialQrId } from "@erp/domain";
 import { LeasedStation } from "../features/store/LeasedStation";
+import { LockedParty } from "../features/store/LockedParty";
+import { StepHeading } from "../components/shared/StepHeading";
 import { ReaderStation } from "../features/store/ReaderStation";
 import type { StationStatus } from "../features/store/page/stationStatus";
 import {
@@ -146,9 +149,6 @@ const RawMaterialInputStation: React.FC<RawMaterialInputPageProps> = ({ token, u
 
   const open = session?.status === "OPEN";
   const scannerReady = Boolean(open);
-  // On the desk there is no room for empty cards: the session tally and the recent list
-  // appear once there is a session to show. The full-screen station keeps its fixed layout.
-  const showSessionDetails = !embedded || session !== null;
 
   const load = useCallback(async () => {
     setLoadError(null);
@@ -198,7 +198,7 @@ const RawMaterialInputStation: React.FC<RawMaterialInputPageProps> = ({ token, u
 
   // The Store page's mode switch shows this panel's session state, even while it is hidden.
   useEffect(() => {
-    onStatus?.({ sessionId: open ? (session?.id ?? null) : null, open: open, packets: summary?.totalPackets ?? 0 });
+    onStatus?.({ sessionId: open ? (session?.id ?? null) : null, open: open, packets: summary?.totalPackets ?? 0, quantity: quantityFigure(summary?.byMaterial ?? []) });
   }, [onStatus, session, summary]);
 
 
@@ -315,9 +315,7 @@ const RawMaterialInputStation: React.FC<RawMaterialInputPageProps> = ({ token, u
 
   const print = () => {
     if (!summary) return;
-    if (!openReceivingReceiptPrintWindow(summary, username)) {
-      push("error", copy.toast.popupBlocked, "Allow popups to print the receipt");
-    }
+    void printReceivingReceipt(summary, username).then((outcome) => announceVoucherPrint(outcome, push));
   };
 
   const scanRows: StationScanRow[] = (summary?.scans ?? [])
@@ -352,40 +350,16 @@ const RawMaterialInputStation: React.FC<RawMaterialInputPageProps> = ({ token, u
         onBack={onBack}
         scannerPill={scannerPill}
       >
-        {open ? (
-          <>
-            {/* The party this session receives from, and what it is. */}
-            <PartyTypeBadge partyType={suppliers.find((party) => party.id === session?.partyId)?.partyType} />
-            <button type="button" className="ssn-btn" onClick={() => void endSession()} disabled={busy}>
-              End session
-            </button>
-            <button type="button" className="ssn-btn" onClick={print} disabled={!summary}>
-              Print receipt
-            </button>
-          </>
-        ) : (
-          <>
-            <div className="ssn-supplier-pick">
-              <SearchableCombobox
-                value={partyId}
-                options={supplierOptions}
-                onChange={setPartyId}
-                ariaLabel={copy.columns.supplier}
-                placeholder={supplierOptions.length === 0 ? "No suppliers yet" : "Choose supplier…"}
-              />
-            </div>
-            <PartyTypeBadge partyType={suppliers.find((party) => party.id === partyId)?.partyType} />
-            <button type="button" className="ssn-btn" onClick={() => void startSession()} disabled={busy || !partyId}>
-              <PlusIcon />
-              Start session
-            </button>
-            {summary && summary.totalPackets > 0 ? (
-              <button type="button" className="ssn-btn ssn-btn--ghost" onClick={print}>
-                Print last receipt
-              </button>
-            ) : null}
-          </>
-        )}
+        <button type="button" className="ssn-btn" onClick={() => void startSession()} disabled={busy || open || !partyId}>
+          <PlusIcon />
+          New session
+        </button>
+        <button type="button" className="ssn-btn" onClick={() => void endSession()} disabled={busy || !open}>
+          End session
+        </button>
+        <button type="button" className="ssn-btn" onClick={print} disabled={!summary || summary.totalPackets === 0}>
+          Print slip
+        </button>
         {onNavigate ? (
           <button
             type="button"
@@ -398,23 +372,50 @@ const RawMaterialInputStation: React.FC<RawMaterialInputPageProps> = ({ token, u
         ) : null}
       </StationToolbar>
 
+      {loadError ? null : (
+        <section className="qr-step">
+          <StepHeading index={1} done={Boolean(partyId)} title={copy.scanIn.partyStep} />
+          <div className="qr-step-body">
+            {open ? (
+              <LockedParty
+                name={session?.partyName}
+                partyType={suppliers.find((party) => party.id === session?.partyId)?.partyType}
+                note={copy.scanIn.partyLocked}
+              />
+            ) : (
+              <>
+                <SearchableCombobox
+                  dropdown
+                  value={partyId}
+                  options={supplierOptions}
+                  onChange={setPartyId}
+                  ariaLabel={copy.columns.supplier}
+                  placeholder={supplierOptions.length === 0 ? "No suppliers yet" : "Choose supplier…"}
+                />
+                <PartyTypeBadge partyType={suppliers.find((party) => party.id === partyId)?.partyType} />
+                <p className="field-help">{copy.scanIn.partyHelp}</p>
+              </>
+            )}
+          </div>
+        </section>
+      )}
+
       <div className="ssn-workspace">
         {loadError ? (
           <StationBlocked title="Raw Material Input is not available" message={loadError} onRetry={() => void load()} />
         ) : (
           <>
             <ScanPanel
-              feedback={open ? feedback : { ...IDLE, message: "Choose a supplier and start a session to begin." }}
+              feedback={feedback}
               inputRef={inputRef}
               inputVal={inputVal}
               onInputChange={setInputVal}
               onKeyDown={handleKeyDown}
               onFocusScanner={focusScanner}
               disabled={!scannerReady}
-              disabledHint="Start a session first"
+              disabledHint={partyId ? copy.scanIn.pressNew : copy.scanIn.startHint}
             />
-            {showSessionDetails && (
-              <aside className="ssn-side">
+            <aside className="ssn-side">
                 <SessionCard
                   code={session?.code ?? null}
                   meta={
@@ -434,15 +435,13 @@ const RawMaterialInputStation: React.FC<RawMaterialInputPageProps> = ({ token, u
                   subhead="By material"
                   emptyLabel="Nothing received yet."
                 />
-                {/* On the desk the scan panel and the recent list already show the last packet. */}
-                {embedded ? null : <LastScanCard title="Last received" row={scanRows[0] ?? null} />}
-              </aside>
-            )}
+                <LastScanCard title="Last received" row={scanRows[0] ?? null} />
+            </aside>
           </>
         )}
       </div>
 
-      {!loadError && showSessionDetails && (
+      {!loadError && (
         <RecentScansCard
           title="Recently received"
           note={`Last ${RECENT_LIMIT} in this session`}

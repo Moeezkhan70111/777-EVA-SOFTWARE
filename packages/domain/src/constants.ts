@@ -92,6 +92,13 @@ export type PermissionCode = (typeof PERMISSION)[keyof typeof PERMISSION];
  */
 export const QR_GENERATOR_ACCESS: readonly PermissionCode[] = [PERMISSION.QR_GENERATOR, PERMISSION.STORE_SCANNING];
 
+/**
+ * Who may remove a material outright, with nobody to approve it: every store operator (owner,
+ * 6 Nov 2026), and administrators, who hold every permission. The rules on what may be removed do
+ * not depend on who asks: database/removalRequests.ts holds them for everyone.
+ */
+export const MATERIAL_REMOVAL_ACCESS: readonly PermissionCode[] = [PERMISSION.STORE_SCANNING];
+
 // ─── QR lifecycle ────────────────────────────────────────────────────────────
 
 export const QR_STATUS = {

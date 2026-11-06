@@ -8,7 +8,8 @@ import { StateView } from "../../components/shared/StateView";
 import { copy } from "../../config/copy";
 import { formatDate, formatDateTime, isoDateDaysAgo, toIsoDate } from "../../utils/dates";
 import { formatWholeMoney } from "../../app/format";
-import { openReceivingReceiptPrintWindow } from "./receivingReceipt";
+import { printReceivingReceipt } from "./receivingReceipt";
+import { announceVoucherPrint } from "./storeVoucher";
 import { downloadCsv, exportFileName } from "../../utils/exportFile";
 import { buildPurchaseLinesSheet } from "./rawMaterialExports";
 import { formatQuantity } from "./rawMaterial";
@@ -191,9 +192,7 @@ export const ReceiptsTab: React.FC<ReceiptsTabProps> = ({ username, onNavigate }
         push("error", copy.toast.notFound, "That delivery could not be read.");
         return;
       }
-      if (!openReceivingReceiptPrintWindow(summary, username)) {
-        push("error", copy.toast.popupBlocked, "Allow popups to print the receipt");
-      }
+      announceVoucherPrint(await printReceivingReceipt(summary, username), push);
     } catch {
       push("error", copy.toast.failed, "That delivery could not be read.");
     }

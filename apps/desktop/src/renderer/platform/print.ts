@@ -4,6 +4,7 @@
 // Electron, where a popup window with the print dialog is the right behaviour; on the
 // planned Android/iOS shell this module is the single place to swap in a native bridge.
 
+import type { PrinterRole } from "../../shared/printerRole";
 import { BRAND_LOGO_URL } from "../config/branding";
 import { desktopApi } from "../hooks/useDesktopApi";
 
@@ -50,13 +51,13 @@ export interface PrintPageSize {
 export type PrintDirectResult = { printed: true } | { printed: false; reason: string };
 
 /**
- * Prints a ready-made document straight on the computer's default printer — no preview
- * window, no print dialog. Callers confirm with the operator first. On the desktop this goes
- * through the main process; a mobile shell would route it to its native print bridge here.
+ * Prints a ready-made document straight on the computer's default printer, or on the one a role
+ * names — no preview window, no print dialog. On the desktop this goes through the main process;
+ * a mobile shell would route it to its native print bridge here.
  */
-export const printDocumentDirect = async (html: string, pageSize?: PrintPageSize): Promise<PrintDirectResult> => {
+export const printDocumentDirect = async (html: string, pageSize?: PrintPageSize, printer?: PrinterRole): Promise<PrintDirectResult> => {
   try {
-    const result = await desktopApi().printDocument({ html, pageSize });
+    const result = await desktopApi().printDocument({ html, pageSize, printer });
     return result.accepted ? { printed: true } : { printed: false, reason: result.reason ?? "The printer did not accept the job" };
   } catch (error) {
     return { printed: false, reason: error instanceof Error ? error.message : "Could not print" };

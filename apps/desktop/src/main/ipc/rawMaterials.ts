@@ -7,7 +7,7 @@
 import { ipcMain } from "../leaseGuard";
 import { IPC } from "../../shared/ipcChannels";
 import type { IpcContext } from "./context";
-import { PERMISSION, asBoolean, asNumber, asOptionalNumber, asOptionalString, asRecord, asString, asStringRecord, isRecord, optionalOneOf } from "@erp/domain";
+import { MATERIAL_REMOVAL_ACCESS, PERMISSION, asBoolean, asNumber, asOptionalNumber, asOptionalString, asRecord, asString, asStringRecord, isRecord, optionalOneOf } from "@erp/domain";
 import { rejection } from "../authorize";
 
 /** Absent → undefined (leave the pack alone), blank → null (clear it), otherwise the figure. */
@@ -285,6 +285,8 @@ export function registerRawMaterialsHandlers(ctx: IpcContext): void {
         packName: asOptionalString(input?.packName),
         packingQuantity: asOptionalNumber(input?.packingQuantity),
         packingUnitId: asOptionalString(input?.packingUnitId),
+        // Someone making a disabled material again means to have it back.
+        enableIfDisabled: true,
       });
       return { accepted: true, ...created };
     } catch (error) {
@@ -470,12 +472,12 @@ export function registerRawMaterialsHandlers(ctx: IpcContext): void {
 
   ipcMain.handle(IPC.removeInventoryItemForGood, (event, itemId?: string, reason?: string) => {
     try {
-      const admin = authorizer.requireAdmin(event);
+      const user = authorizer.requireAnyPermission(event, MATERIAL_REMOVAL_ACCESS);
       return {
         accepted: true,
-        request: db.applyAdminItemRemoval({
+        request: db.applyDirectItemRemoval({
           itemId: asString(itemId),
-          adminId: admin.id,
+          userId: user.id,
           reason: asOptionalString(reason),
         }),
       };
