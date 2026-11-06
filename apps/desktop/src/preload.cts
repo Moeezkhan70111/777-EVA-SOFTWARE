@@ -68,6 +68,7 @@ contextBridge.exposeInMainWorld("desktop", {
     workspaceUpdateStatus: (token: string, kind: "TASK" | "REQUEST", id: string, status: string) => ipcRenderer.invoke(IPC.workspaceStatus, token, kind, id, status),
     workspaceActivity: (token: string) => ipcRenderer.invoke(IPC.workspaceActivity, token),
     revokeUserAccess: (token: string, userId: string) => ipcRenderer.invoke(IPC.revokeUserAccess, token, userId),
+    restoreUserAccess: (token: string, userId: string) => ipcRenderer.invoke(IPC.restoreUserAccess, token, userId),
     createPermissionRequest: (token: string, permissionCode: string, reason?: string) => ipcRenderer.invoke(IPC.createPermissionRequest, token, permissionCode, reason),
     getPermissionRequests: (token?: string) => ipcRenderer.invoke(IPC.getPermissionRequests, token),
     getMyPermissionRequests: (token?: string) => ipcRenderer.invoke(IPC.getMyPermissionRequests, token),

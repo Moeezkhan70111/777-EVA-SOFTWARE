@@ -9,7 +9,7 @@ import { CloudPasswordReset } from "./CloudPasswordReset";
 import { CloudRoleCopyCard } from "./CloudRoleCopyCard";
 import { RookieScreen } from "./RookieScreen";
 import { SessionProvider } from "./SessionContext";
-import { NotificationsProvider } from "../../state/NotificationsContext";
+import { NotificationsProvider, useNotifications } from "../../state/NotificationsContext";
 import { copy } from "../../config/copy";
 import type { AuthUser } from "../../types/desktopApi";
 
@@ -84,12 +84,21 @@ describe("the waiting screen", () => {
 });
 
 describe("the switch to cloud accounts", () => {
+  const Notices = () => (
+    <ul>
+      {useNotifications().notices.map((notice) => (
+        <li key={notice.id}>{notice.message}</li>
+      ))}
+    </ul>
+  );
+
   const show = (user: AuthUser, onSwitched = vi.fn().mockResolvedValue(undefined)) => {
     render(
       <NotificationsProvider>
         <SessionProvider user={user} token="session-owner">
           <CloudAccountsSwitchCard onSwitched={onSwitched} />
         </SessionProvider>
+        <Notices />
       </NotificationsProvider>
     );
     return onSwitched;
@@ -132,12 +141,23 @@ describe("the switch to cloud accounts", () => {
   });
 
   it("on confirmation switches with this session, the email and the password, and hands over the session", async () => {
-    api.switchToCloudAccounts.mockResolvedValue({ accepted: true, user: ADMIN, token: "session-owner", people: 3 });
+    api.switchToCloudAccounts.mockResolvedValue({ accepted: true, user: ADMIN, token: "session-owner", people: 3, clearedRoles: [] });
     const onSwitched = show(ADMIN);
     await fillAndPress();
     await userEvent.click(within(await screen.findByRole("dialog")).getByRole("button", { name: copy.cloudAccounts.confirm }));
     await waitFor(() => expect(onSwitched).toHaveBeenCalledWith(ADMIN, "session-owner"));
     expect(api.switchToCloudAccounts).toHaveBeenCalledWith("session-owner", "boss@777.pk", "owner1234");
+  });
+
+  it("says who lost a role the cloud had removed, by name, so the admin chooses one when approving them", async () => {
+    api.switchToCloudAccounts.mockResolvedValue({
+      accepted: true, user: ADMIN, token: "session-owner", people: 3, clearedRoles: [{ username: "Clerk", roleName: "Gatepass Clerk" }],
+    });
+    const onSwitched = show(ADMIN);
+    await fillAndPress();
+    await userEvent.click(within(await screen.findByRole("dialog")).getByRole("button", { name: copy.cloudAccounts.confirm }));
+    await waitFor(() => expect(onSwitched).toHaveBeenCalled());
+    expect(await screen.findByText(/Clerk had the role "Gatepass Clerk", which the cloud has removed/)).toBeInTheDocument();
   });
 
   it("keeps the dialog open and says why when the main process refuses", async () => {

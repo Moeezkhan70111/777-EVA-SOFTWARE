@@ -3,6 +3,7 @@
 // These methods are merged onto SqliteDatabase (see sqliteDatabase.ts, "Feature modules").
 // `this` is the database instance; bodies are unchanged from the original class.
 
+import { reportMemberAccess, settleMemberAccess, type MemberAccessReport, type MemberAccessState } from "./memberAccess.js";
 import type { SqliteDatabase } from "../sqliteDatabase.js";
 import type { TransactionContext } from "@erp/application";
 import type { MutableTransactionContext } from "./shared.js";
@@ -145,7 +146,9 @@ export function effectivePermissionsFor(sql: AccountSqlHandle, userId: string): 
 
 /** What the member details' Save sends: a null role or job role leaves that one as it is. */
 export interface MemberAccessChange {
+  /** Null means no role: the person loses the one they have. */
   readonly roleCode: string | null;
+  /** Null leaves it as it is. */
   readonly jobRole: string | null;
   readonly authorityLevel: number;
   readonly extraPermissions: readonly string[];
@@ -416,6 +419,22 @@ export const usersMethods = {
        VALUES (?, ?, ?, ?, ?)
        ON CONFLICT(user_id) DO UPDATE SET role_code = excluded.role_code, assigned_by = excluded.assigned_by, assigned_at = excluded.assigned_at, updated_at = excluded.updated_at`
     ).run(userId, roleCode, assignedBy ?? null, now, now);
+    this.persistEffectivePermissions(userId);
+  },
+
+  /** Takes the role away. Its screens go by forgetRoleScreens, once the rest of the Save is written. */
+  clearUserRole(this: SqliteDatabase, userId: string): void {
+    requireLocalAccounts(this.db);
+    this.db.prepare("DELETE FROM user_role_assignments WHERE user_id = ?").run(userId);
+  },
+
+  /**
+   * After a role is taken away. Someone with no role is read as an account that predates roles, whose
+   * screens live in permissions_json, and that list still holds the lost role's: emptied, or they keep
+   * them. Only for a role just lost: an account that truly predates roles has nothing else.
+   */
+  forgetRoleScreens(this: SqliteDatabase, userId: string): void {
+    this.db.prepare("UPDATE app_users SET permissions_json = '[]' WHERE id = ?").run(userId);
     this.persistEffectivePermissions(userId);
   },
 
@@ -724,21 +743,37 @@ export const usersMethods = {
   /**
    * The member details' Save, as one change: role, job role, authority and extra screens all
    * written, or none. It used to be four separate calls from the screen, and one refused part left
-   * the rest saved with nothing said (rehearsal, 2 Nov). A null role or job role leaves it as it is.
+   * the rest saved with nothing said (rehearsal, 2 Nov). A null role means no role; a null job role
+   * leaves it as it is. Answers with what is stored afterwards, read back, never what was asked.
    */
-  saveMemberAccess(this: SqliteDatabase, userId: string, reviewerId: string, access: MemberAccessChange): void {
+  saveMemberAccess(this: SqliteDatabase, userId: string, reviewerId: string, access: MemberAccessChange): MemberAccessReport {
     requireLocalAccounts(this.db);
+    const before = this.memberAccessState(userId);
+    const wanted = settleMemberAccess(before, access, this.listRoles());
     this.db.exec("BEGIN IMMEDIATE");
     try {
-      if (access.roleCode !== null) this.assignUserRole(userId, access.roleCode, reviewerId);
-      if (access.jobRole !== null) this.updateMemberJobRole(userId, reviewerId, access.jobRole);
-      this.updateMemberAuthorityLevel(userId, reviewerId, access.authorityLevel);
-      this.setUserAdditionalPermissions(userId, [...access.extraPermissions]);
+      if (wanted.roleCode === null) this.clearUserRole(userId);
+      else this.assignUserRole(userId, wanted.roleCode, reviewerId);
+      if (wanted.jobRole !== before.jobRole) this.updateMemberJobRole(userId, reviewerId, wanted.jobRole);
+      this.updateMemberAuthorityLevel(userId, reviewerId, wanted.authorityLevel);
+      this.setUserAdditionalPermissions(userId, [...wanted.extraPermissions]);
+      // Last, so an extra taken off in this same Save is not read back from the stored list.
+      if (before.roleCode !== null && wanted.roleCode === null) this.forgetRoleScreens(userId);
       this.db.exec("COMMIT");
     } catch (error) {
       this.db.exec("ROLLBACK");
       throw error;
     }
+    return reportMemberAccess(before, wanted, this.memberAccessState(userId));
+  },
+
+  /** What a person has now, as this computer stores it. */
+  memberAccessState(this: SqliteDatabase, userId: string): MemberAccessState {
+    const row = this.db
+      .prepare("SELECT u.job_role, u.authority_level, a.role_code FROM app_users u LEFT JOIN user_role_assignments a ON a.user_id = u.id WHERE u.id = ?")
+      .get(userId) as { job_role: string; authority_level: number; role_code: string | null } | undefined;
+    if (!row) throw new Error("User not found");
+    return { roleCode: row.role_code, jobRole: row.job_role, authorityLevel: row.authority_level, extraPermissions: this.getUserAdditionalPermissions(userId) };
   },
 
   getJobRoleOptions(this: SqliteDatabase): string[] {
@@ -899,6 +934,17 @@ export const usersMethods = {
     const admin = this.db.prepare("SELECT role FROM app_users WHERE id = ?").get(reviewerId) as { role?: string } | undefined;
     if (admin?.role !== "ADMIN") throw new Error("Administrator access required");
     this.db.prepare("UPDATE app_users SET access_status = 'REJECTED', updated_at = ? WHERE id = ? AND role <> 'ADMIN'").run(new Date().toISOString(), userId);
+  },
+
+  /** The undo of revokeUserAccess: a revoked or rejected person is approved again, keeping their role. */
+  restoreUserAccess(this: SqliteDatabase, userId: string, reviewerId: string): void {
+    requireLocalAccounts(this.db);
+    const admin = this.db.prepare("SELECT role FROM app_users WHERE id = ?").get(reviewerId) as { role?: string } | undefined;
+    if (admin?.role !== "ADMIN") throw new Error("Administrator access required");
+    const restored = this.db
+      .prepare("UPDATE app_users SET access_status = 'APPROVED', updated_at = ? WHERE id = ? AND role <> 'ADMIN' AND access_status IN ('REJECTED', 'REVOKED')")
+      .run(new Date().toISOString(), userId);
+    if (Number(restored.changes) === 0) throw new Error("Only a revoked or rejected person can be restored.");
   },
 
   revokeSessionToken(this: SqliteDatabase, token: string): void {

@@ -314,6 +314,7 @@ export const App = () => {
             roles={admin.roles}
             onPermissions={admin.handleMemberPermissions}
             onRevoke={admin.handleMemberRevoke}
+            onRestore={admin.handleMemberRestore}
             onReview={admin.handleReviewAccessRequest}
             onSaveAccess={admin.handleSaveMemberAccess}
             onCreateRole={admin.handleCreateRole}

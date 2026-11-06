@@ -15,7 +15,7 @@
 // that row. Words for screens are composed from copy.ts in the renderer; describeWaiting below is the
 // plain English the cloud report carries for whoever reads it there.
 
-import { MASTER_RECORDS, isMasterRecordType, SYNC_AGGREGATE } from "@erp/data";
+import { HELD_FOR_SWITCH, MASTER_RECORDS, isMasterRecordType, SYNC_AGGREGATE } from "@erp/data";
 import type { SyncEnvelope } from "./contract.js";
 import { asRow, type SyncSqlHandle } from "./sqlPort.js";
 
@@ -135,7 +135,10 @@ function describePayload(envelope: SyncEnvelope): { name: string | null; itemId:
 export function waitingSummary(sql: SyncSqlHandle, nowMs: number): WaitingSummary {
   let rows: Array<Record<string, unknown>>;
   try {
-    rows = sql.prepare("SELECT dedupe_key, envelope_json, reason, parked_at FROM sync_inbox_parked ORDER BY parked_at, seq").all() as Array<Record<string, unknown>>;
+    // Not a held account revision: a PC on local accounts is working as it should, for as long as it likes.
+    rows = sql
+      .prepare("SELECT dedupe_key, envelope_json, reason, parked_at FROM sync_inbox_parked WHERE reason <> ? ORDER BY parked_at, seq")
+      .all(HELD_FOR_SWITCH) as Array<Record<string, unknown>>;
   } catch {
     // Before migration 091 there is no park, and nothing can be waiting.
     return { entries: [], waiting: 0, stuck: 0, stale: 0, oldestSince: null };

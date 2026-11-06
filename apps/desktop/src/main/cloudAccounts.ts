@@ -18,7 +18,7 @@
 // PERSON TOKENS prove to the cloud that a person, not just this computer, is asking (020). They live
 // in memory, per session, and never on disk: a restart means signing in again for admin work.
 
-import type { SqliteDatabase, StructuredLogger, PersonPayload } from "@erp/data";
+import type { AccountRolePayload, RoleHolder, SqliteDatabase, StructuredLogger, PersonPayload } from "@erp/data";
 import type { AccountFunctionCaller, AccountStateAnswer, SignInAnswer } from "@erp/sync";
 import { copyRolesBeforeSwitch, suggestionFrom } from "./cloudAdmin";
 
@@ -66,6 +66,14 @@ export const ACCOUNT_MESSAGES = {
   ROLES_NOT_COPIED: (reason: string) =>
     `Nothing was changed: this computer's roles could not be copied to the cloud (${reason}). Nobody was signed out. Try again in a moment.`,
   STATE_WAITING: (reason: string) => `Nothing was changed: the cloud's accounts could not all be loaded here (${reason}). Try again in a moment.`,
+  STATE_DECLINED: "the cloud declined to send them",
+  // Only a record the state itself left out reaches these: each names what to do, and pressing again works.
+  SWITCH_ROLE_STILL_HELD: (people: string, role: string) =>
+    `Nothing was changed: ${people} still has the role "${role}", which the cloud has removed. Give them another role in Members on this computer, then press the button again.`,
+  SWITCH_NAME_STILL_HELD: (name: string) =>
+    `Nothing was changed: another role on this computer is still called "${name}", and the cloud needs that name. Rename it in Roles on this computer, then press the button again.`,
+  SWITCH_RECORD_MISSING:
+    "Nothing was changed: a role or person the cloud's accounts refer to was not sent with them. Nobody was signed out. Press the button again; if this comes back, ask the owner to check the accounts in the cloud.",
   SWITCH_NOT_READY:
     "This version cannot switch to cloud accounts yet: approving people from this computer is not finished, so anyone signed out could not get back in. Nothing was changed.",
 } as const;
@@ -108,7 +116,14 @@ export interface SwitchRequest {
 }
 
 export type SwitchOutcome =
-  | { readonly kind: "SWITCHED"; readonly userId: string; readonly sessionToken: string; readonly people: number }
+  | {
+      readonly kind: "SWITCHED";
+      readonly userId: string;
+      readonly sessionToken: string;
+      readonly people: number;
+      /** This computer's own people whose role the cloud had deleted: they need one when approved. */
+      readonly clearedRoles: readonly RoleHolder[];
+    }
   | { readonly kind: "REFUSED"; readonly message: string };
 
 export async function switchThisComputerToCloud(
@@ -136,8 +151,8 @@ export async function switchThisComputerToCloud(
 
   const state = await cloudStateWithRoles(deps.db, deps.caller, admin.token);
   if (typeof state === "string") return { kind: "REFUSED", message: state };
-  const waiting = loadStateAndSwitch(deps.db, data, state);
-  if (waiting !== null) return { kind: "REFUSED", message: ACCOUNT_MESSAGES.STATE_WAITING(waiting) };
+  const loaded = loadStateAndSwitch(deps.db, data, state);
+  if (loaded.waiting !== null) return { kind: "REFUSED", message: explainWait(deps.db, data, loaded.waiting) };
 
   const person = admin.person;
   deps.db.writeLocalCredential(person.personId, deps.db.hashPassword(request.password), person.credentialVersion, now.toISOString());
@@ -149,7 +164,7 @@ export async function switchThisComputerToCloud(
     module: "auth", severity: "INFO", operation: "cloud-accounts", deviceId: deps.deviceId,
     message: `This computer now uses cloud accounts, switched by ${person.email}: ${state.people.length} people, ${state.roles.length} roles. Everyone else here was signed out.`,
   });
-  return { kind: "SWITCHED", userId: person.personId, sessionToken, people: state.people.length };
+  return { kind: "SWITCHED", userId: person.personId, sessionToken, people: state.people.length, clearedRoles: loaded.cleared };
 }
 
 /**
@@ -191,26 +206,55 @@ type DataModule = typeof import("@erp/data");
 /**
  * Everything, then the switch, in one transaction. A record that would have to wait is a reason to
  * change nothing: a half-loaded account state is worse than none.
+ *
+ * Deleted roles go after the people: everyone the cloud knows has by then moved off them, whatever
+ * this computer last heard, so only its own people can still hold one. Held events are released last:
+ * the next pull settles each one, and any logged after this state was read is applied then.
  */
-function loadStateAndSwitch(db: SqliteDatabase, data: DataModule, state: Extract<AccountStateAnswer, { kind: "STATE" }>): string | null {
+function loadStateAndSwitch(
+  db: SqliteDatabase,
+  data: DataModule,
+  state: Extract<AccountStateAnswer, { kind: "STATE" }>
+): { waiting: string | null; cleared: RoleHolder[] } {
+  const cleared: RoleHolder[] = [];
+  const applyRole = (role: AccountRolePayload) => data.applyAccountRoleRevision(db.db, role);
+  const roleWaits = (role: AccountRolePayload) => data.accountRoleWaitsFor(db.db, role);
+  const deleteRole = (role: AccountRolePayload) => {
+    cleared.push(...data.localOnlyHolders(db.db, role.roleCode));
+    return applyRole(role);
+  };
   db.db.exec("BEGIN IMMEDIATE TRANSACTION");
   try {
+    data.freeRoleNamesForState(db.db, state.roles);
     const waiting =
-      applyAll(state.roles, (role) => data.accountRoleWaitsFor(db.db, role), (role) => data.applyAccountRoleRevision(db.db, role)) ??
+      applyAll(state.roles.filter((role) => !role.deleted), roleWaits, applyRole) ??
       applyAll(state.people, (person) => data.personWaitsFor(db.db, person), (person) => data.applyPersonRevision(db.db, person)) ??
+      applyAll(state.roles.filter((role) => role.deleted), roleWaits, deleteRole) ??
       applyAll(state.requests, (request) => data.permissionRequestWaitsFor(db.db, request), (request) => data.applyPermissionRequestRevision(db.db, request));
     if (waiting !== null) {
       db.db.exec("ROLLBACK");
-      return waiting;
+      return { waiting, cleared: [] };
     }
     data.endLocalOnlySessions(db.db);
     data.enterCloudAccountsMode(db.db, "cloud-accounts-switch");
+    data.releaseEventsHeldForSwitch(db.db);
     db.db.exec("COMMIT");
-    return null;
+    return { waiting: null, cleared };
   } catch (error) {
     db.db.exec("ROLLBACK");
     throw error;
   }
+}
+
+/** A wait, as the person at the button reads it: what is wrong and what to do, never its code. */
+function explainWait(db: SqliteDatabase, data: DataModule, reason: string): string {
+  if (reason.startsWith(data.ROLE_STILL_HELD_WAIT)) {
+    const roleCode = reason.slice(data.ROLE_STILL_HELD_WAIT.length);
+    const holders = data.roleHolders(db.db, roleCode);
+    return ACCOUNT_MESSAGES.SWITCH_ROLE_STILL_HELD(holders.map((holder) => holder.username).join(", "), holders[0]?.roleName ?? roleCode);
+  }
+  if (reason.startsWith(data.ROLE_NAME_WAIT)) return ACCOUNT_MESSAGES.SWITCH_NAME_STILL_HELD(reason.slice(data.ROLE_NAME_WAIT.length));
+  return ACCOUNT_MESSAGES.SWITCH_RECORD_MISSING;
 }
 
 function applyAll<T>(records: readonly T[], waitsFor: (record: T) => string | null, apply: (record: T) => boolean): string | null {
@@ -341,7 +385,7 @@ function declinedMessage(reason: string, retryAfterSeconds?: number): string {
 }
 
 function describeFailure(state: Exclude<AccountStateAnswer, { kind: "STATE" }>): string {
-  if (state.kind === "DECLINED") return `the cloud said ${state.reason}`;
+  if (state.kind === "DECLINED") return ACCOUNT_MESSAGES.STATE_DECLINED;
   if (state.kind === "REFUSED" || state.kind === "UNREACHABLE") return state.message;
   return state.kind === "UNREADABLE" ? "the cloud's account state could not be read" : "not supported";
 }

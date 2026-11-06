@@ -2,7 +2,7 @@ import React from "react";
 import { MemberSection } from "../users/MemberSection";
 import { RolesSection } from "../users/RolesSection";
 import type { Member } from "../users/types";
-import type { AuthUser, MemberAccessChange } from "../../types/desktopApi";
+import type { AuthUser, MemberAccessChange, MemberAccessReport } from "../../types/desktopApi";
 import { CloudAccountsSwitchCard } from "./CloudAccountsSwitchCard";
 import { CloudRoleCopyCard } from "./CloudRoleCopyCard";
 
@@ -15,6 +15,7 @@ export const ProfilePage = ({
   roles,
   onPermissions,
   onRevoke,
+  onRestore,
   onReview,
   onSaveAccess,
   onCreateRole,
@@ -38,14 +39,15 @@ export const ProfilePage = ({
     loginPolicy?: "ALWAYS_LOGGED_IN" | "DAILY_LOGIN";
   }>;
   onPermissions?: (id: string, permissions: string[]) => Promise<void>;
-  onRevoke?: (id: string) => Promise<void>;
+  onRevoke?: (id: string) => Promise<string | null>;
+  onRestore?: (id: string) => Promise<string | null>;
   onReview: (
     requestId: string,
     decision: "APPROVED" | "REJECTED",
     permissions: string[],
     roleCode?: string,
   ) => Promise<void>;
-  onSaveAccess: (userId: string, access: MemberAccessChange) => Promise<boolean>;
+  onSaveAccess: (userId: string, access: MemberAccessChange) => Promise<MemberAccessReport | null>;
   onCreateRole: (input: { name: string; description?: string; permissions: string[]; loginPolicy?: "ALWAYS_LOGGED_IN" | "DAILY_LOGIN" }) => Promise<void>;
   onUpdateRole: (
     code: string,
@@ -70,7 +72,7 @@ export const ProfilePage = ({
           Logout
         </button>
       </div>
-      {members && onPermissions && onRevoke && (
+      {members && onPermissions && onRevoke && onRestore && (
         <>
           {onSwitchedToCloud && <CloudAccountsSwitchCard onSwitched={onSwitchedToCloud} />}
           <CloudRoleCopyCard />
@@ -85,6 +87,7 @@ export const ProfilePage = ({
             roleOptions={roleOptions}
             onPermissions={onPermissions}
             onRevoke={onRevoke}
+            onRestore={onRestore}
             onReview={onReview}
             onSaveAccess={onSaveAccess}
           />

@@ -115,7 +115,13 @@ export function registerSessionHandlers(ctx: IpcContext): void {
     );
     if (outcome.kind === "REFUSED") return { accepted: false, reason: outcome.message };
     authorizer.bind(event, outcome.sessionToken);
-    return { accepted: true, user: db.getUserBySessionToken(outcome.sessionToken), token: outcome.sessionToken, people: outcome.people };
+    return {
+      accepted: true,
+      user: db.getUserBySessionToken(outcome.sessionToken),
+      token: outcome.sessionToken,
+      people: outcome.people,
+      clearedRoles: outcome.clearedRoles.map(({ username, roleName }) => ({ username, roleName })),
+    };
   });
 
   // Under cloud accounts there is no first admin to make here: the screen that asks must not appear.

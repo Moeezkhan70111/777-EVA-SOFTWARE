@@ -14,9 +14,13 @@
 //     a rejection makes them useless, and a stale check must not let anyone in offline.
 //   * Losing access ends the person's open sessions on this PC.
 //   * The local refusals (accountsMode.ts) do not apply: these ARE the cloud's decisions.
+//   * A deleted role leaves nobody holding it. The cloud refuses to delete a role any cloud person
+//     has (020), so only someone it has never heard of can still hold it here. The deletion's own
+//     revision clears them: it reaches every PC, and a later PC reads it from the account state.
 //
 // Every payload is read by a reader below before anything is written. Nothing is defaulted (R25).
 
+import { createHash } from "node:crypto";
 import type { AccountSqlHandle } from "./accountsMode.js";
 import { effectivePermissionsFor, normalizePermissionCode } from "./users.js";
 
@@ -206,6 +210,11 @@ export function readPermissionRequestPayload(payload: Record<string, unknown>): 
 //
 // A wait, never a refusal: what it needs is earlier in the log, or on its way (applyContract.ts).
 
+/** A deleted role a cloud person still holds here: their move off it is in the log. Tried on any arrival. */
+export const ROLE_STILL_HELD_WAIT = `STILL_IN_USE:${ACCOUNT_RECORD.ACCOUNT_ROLE}:`;
+/** A role whose name another cloud role still has here: that role's rename is in the log. */
+export const ROLE_NAME_WAIT = "WAITING_FOR:ROLE_NAME:";
+
 export function personWaitsFor(sql: AccountSqlHandle, person: PersonPayload): string | null {
   // Superseded: nothing will be written, so there is nothing to wait for. Waiting would be for ever.
   if (heldRevision(sql, ACCOUNT_RECORD.PERSON, person.personId) >= person.revision) return null;
@@ -223,12 +232,10 @@ export function personWaitsFor(sql: AccountSqlHandle, person: PersonPayload): st
  */
 export function accountRoleWaitsFor(sql: AccountSqlHandle, role: AccountRolePayload): string | null {
   if (heldRevision(sql, ACCOUNT_RECORD.ACCOUNT_ROLE, role.roleCode) >= role.revision) return null;
-  if (role.deleted && exists(sql, "SELECT 1 FROM user_role_assignments WHERE role_code = ?", role.roleCode)) {
-    return `WAITING_FOR:ROLE_UNASSIGNED:${role.roleCode}`;
-  }
+  if (role.deleted && cloudPersonHolds(sql, role.roleCode)) return `${ROLE_STILL_HELD_WAIT}${role.roleCode}`;
   const holder = role.deleted ? undefined : nameHolder(sql, role);
   if (holder !== undefined && heldRevision(sql, ACCOUNT_RECORD.ACCOUNT_ROLE, holder) > 0) {
-    return `WAITING_FOR:ROLE_NAME:${role.name}`;
+    return `${ROLE_NAME_WAIT}${role.name}`;
   }
   return null;
 }
@@ -268,6 +275,7 @@ export function applyAccountRoleRevision(sql: AccountSqlHandle, role: AccountRol
 
   sql.prepare("DELETE FROM role_permissions WHERE role_code = ?").run(role.roleCode);
   if (role.deleted) {
+    clearLocalOnlyHolders(sql, role, now);
     sql.prepare("DELETE FROM roles WHERE role_code = ?").run(role.roleCode);
   } else {
     stepAsideFromName(sql, role, now);
@@ -320,6 +328,44 @@ export function endLocalOnlySessions(sql: AccountSqlHandle, now = new Date().toI
     )
     .run(now) as { changes?: number | bigint };
   return Number(ended.changes ?? 0);
+}
+
+/** Someone holding a role here, and the role's name, for a screen or a notice. */
+export interface RoleHolder {
+  readonly userId: string;
+  readonly username: string;
+  readonly roleName: string;
+}
+
+const HOLDERS_SELECT = `SELECT a.user_id AS userId, u.username AS username, r.role_name AS roleName
+  FROM user_role_assignments a
+  JOIN app_users u ON u.id = a.user_id
+  JOIN roles r ON r.role_code = a.role_code
+  WHERE a.role_code = ?`;
+const SENT_BY_CLOUD = `EXISTS (SELECT 1 FROM sync_record_revisions s
+  WHERE s.aggregate_type = '${ACCOUNT_RECORD.PERSON}' AND s.record_id = a.user_id)`;
+
+/** Everyone holding a role here, for the words of a switch that cannot go on. */
+export function roleHolders(sql: AccountSqlHandle, roleCode: string): RoleHolder[] {
+  return sql.prepare(HOLDERS_SELECT).all(roleCode) as unknown as RoleHolder[];
+}
+
+/** Holders the cloud has never sent: this PC's own people, who a cloud deletion cannot have considered. */
+export function localOnlyHolders(sql: AccountSqlHandle, roleCode: string): RoleHolder[] {
+  return sql.prepare(`${HOLDERS_SELECT} AND NOT ${SENT_BY_CLOUD}`).all(roleCode) as unknown as RoleHolder[];
+}
+
+/**
+ * The switch only, before it writes a role. The state is the whole catalogue, so a role about to
+ * change gives up its old name first: otherwise a PC holding an older revision would wait for a
+ * rename that only the log could bring, and a PC on local accounts does not apply the log.
+ */
+export function freeRoleNamesForState(sql: AccountSqlHandle, roles: readonly AccountRolePayload[]): void {
+  const rename = sql.prepare("UPDATE roles SET role_name = ? WHERE role_code = ?");
+  for (const role of roles) {
+    const held = heldRevision(sql, ACCOUNT_RECORD.ACCOUNT_ROLE, role.roleCode);
+    if (held > 0 && held < role.revision) rename.run(`(updating) ${role.roleCode}`, role.roleCode);
+  }
 }
 
 // ─── The parts ──────────────────────────────────────────────────────────────
@@ -377,6 +423,39 @@ function writeAssignments(sql: AccountSqlHandle, person: PersonPayload, now: str
   for (const permission of person.extraPermissions) insert.run(person.personId, normalizePermissionCode(permission), now);
 }
 
+function cloudPersonHolds(sql: AccountSqlHandle, roleCode: string): boolean {
+  return exists(sql, `SELECT 1 FROM user_role_assignments a WHERE a.role_code = ? AND ${SENT_BY_CLOUD}`, roleCode);
+}
+
+const ROLE_ASSIGNMENT_CLEARED = "ROLE_ASSIGNMENT_CLEARED";
+
+/**
+ * The cloud deleted a role this PC's own people still hold. Their assignment goes with it, since
+ * nothing is left for it to point at, and an admin chooses a role when approving them. Their extra
+ * screens stay. Runs once per revision (the caller's check), so it cannot repeat or conflict.
+ */
+function clearLocalOnlyHolders(sql: AccountSqlHandle, role: AccountRolePayload, now: string): void {
+  const admins = sql.prepare("SELECT id FROM app_users WHERE role = 'ADMIN' AND access_status = 'APPROVED'").all() as Array<{ id: string }>;
+  for (const holder of localOnlyHolders(sql, role.roleCode)) {
+    sql.prepare("DELETE FROM user_role_assignments WHERE user_id = ?").run(holder.userId);
+    persistPermissions(sql, holder.userId, now);
+    auditClearedAssignment(sql, holder, role, now);
+    for (const admin of admins) {
+      notify(sql, admin.id, "Role removed", `${holder.username} held "${holder.roleName}", which the cloud has removed. Choose a role when you approve them.`, now);
+    }
+  }
+}
+
+function auditClearedAssignment(sql: AccountSqlHandle, holder: RoleHolder, role: AccountRolePayload, now: string): void {
+  const payload = JSON.stringify({ roleCode: role.roleCode, roleName: holder.roleName, revision: role.revision, username: holder.username });
+  sql
+    .prepare(
+      `INSERT INTO audit_log (id, event_type, event_version, entity_type, entity_id, occurred_at, payload_json, hash_sha256, created_at)
+       VALUES (?, ?, 1, 'USER', ?, ?, ?, ?, ?)`
+    )
+    .run(crypto.randomUUID(), ROLE_ASSIGNMENT_CLEARED, holder.userId, now, payload, createHash("sha256").update(payload).digest("hex"), now);
+}
+
 /** The code of the other role that already has this role's name here, if any. */
 function nameHolder(sql: AccountSqlHandle, role: AccountRolePayload): string | undefined {
   const row = sql.prepare("SELECT role_code FROM roles WHERE role_name = ? AND role_code <> ?").get(role.name, role.roleCode) as
@@ -423,7 +502,13 @@ function endAccess(sql: AccountSqlHandle, personId: string, now: string): void {
   sql.prepare("DELETE FROM user_credentials WHERE user_id = ?").run(personId);
 }
 
+/**
+ * Everyone here is written by the cloud's decision, so their role and extras are the whole answer.
+ * The list is emptied first: someone left with no role would otherwise read it back as the old
+ * permissions of an account that predates roles, and keep the screens of the role they just lost.
+ */
 function persistPermissions(sql: AccountSqlHandle, userId: string, now: string): void {
+  sql.prepare("UPDATE app_users SET permissions_json = '[]' WHERE id = ?").run(userId);
   const permissions = effectivePermissionsFor(sql, userId);
   sql.prepare("UPDATE app_users SET permissions_json = ?, updated_at = ? WHERE id = ?").run(JSON.stringify(permissions), now, userId);
 }

@@ -1,4 +1,12 @@
+import { ACCESS_STATUS } from "@erp/domain";
 import type { AccessStatus, LoginPolicy, UserRole } from "@erp/domain";
+
+/**
+ * A member's status. A person, unlike a request, can also be REVOKED: under cloud accounts that is
+ * what an admin's revoke stores (a local revoke stores REJECTED).
+ */
+export const MEMBER_STATUS = { ...ACCESS_STATUS, REVOKED: "REVOKED" } as const;
+export type MemberStatus = (typeof MEMBER_STATUS)[keyof typeof MEMBER_STATUS];
 
 export interface Member {
   id: string;
@@ -6,7 +14,7 @@ export interface Member {
   role: UserRole;
   jobRole: string;
   authorityLevel: number;
-  accessStatus: AccessStatus;
+  accessStatus: MemberStatus;
   permissions: string[];
   lastLoginAt: string | null;
   accessRequestId?: string | null;

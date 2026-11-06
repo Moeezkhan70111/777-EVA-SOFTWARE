@@ -50,6 +50,7 @@ const LOCAL_ACCOUNT_CHANGES: Array<[string, (db: SqliteDatabase) => unknown]> = 
   ["saveMemberAccess", (db) => db.saveMemberAccess("u-1", "u-admin", { roleCode: "munshi", jobRole: "Munshi", authorityLevel: 20, extraPermissions: ["logs"] })],
   ["updateUserPermissions", (db) => db.updateUserPermissions("u-1", "u-admin", ["logs"])],
   ["revokeUserAccess", (db) => db.revokeUserAccess("u-1", "u-admin")],
+  ["restoreUserAccess", (db) => db.restoreUserAccess("u-1", "u-admin")],
   ["changePasswordForUser", (db) => db.changePasswordForUser("u-1", "old12345", "new12345")],
 ];
 
@@ -58,6 +59,23 @@ test("a PC starts in local accounts, where its own first admin and sign-up still
     assert.equal(readAccountsMode(db.db), ACCOUNTS_MODE.LOCAL);
     const admin = db.bootstrapFirstAdmin("Owner", "owner1234");
     assert.equal(db.authenticateUser("Owner", "owner1234")?.id, admin.id);
+  });
+});
+
+test("under local accounts a revoke can be undone by an admin, and only a revoke", () => {
+  withDatabase((db) => {
+    const admin = db.bootstrapFirstAdmin("Owner", "owner1234");
+    const person = db.createUserAccount("Someone", "some1234");
+    const status = () => (db.db.prepare("SELECT access_status FROM app_users WHERE id = ?").get(person.id) as { access_status: string }).access_status;
+
+    db.revokeUserAccess(person.id, admin.id);
+    assert.equal(status(), "REJECTED");
+    assert.throws(() => db.restoreUserAccess(person.id, person.id), /Administrator access required/);
+    assert.equal(status(), "REJECTED", "a refused restore changes nothing");
+
+    db.restoreUserAccess(person.id, admin.id);
+    assert.equal(status(), "APPROVED");
+    assert.throws(() => db.restoreUserAccess(person.id, admin.id), /Only a revoked or rejected person/);
   });
 });
 

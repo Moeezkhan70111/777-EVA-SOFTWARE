@@ -45,6 +45,24 @@ export function readAccountsMode(sql: AccountSqlHandle): AccountsMode {
   return row?.setting_value === ACCOUNTS_MODE.CLOUD ? ACCOUNTS_MODE.CLOUD : ACCOUNTS_MODE.LOCAL;
 }
 
+/**
+ * Why an account revision is parked on a PC still on local accounts. Local mode is today's
+ * behaviour, unchanged (docs/41 section 7): the PC's own roles, people and assignments are not the
+ * cloud's to rewrite until an admin here presses the switch. The event is held rather than dropped,
+ * so one logged after the switch read the cloud's state, but pulled before it committed, still lands.
+ */
+export const HELD_FOR_SWITCH = "WAITING_FOR:CLOUD_ACCOUNTS:switch";
+
+/** What an account revision waits for before anything else: this PC's switch. Null once it switched. */
+export function waitForSwitch(sql: AccountSqlHandle): string | null {
+  return readAccountsMode(sql) === ACCOUNTS_MODE.CLOUD ? null : HELD_FOR_SWITCH;
+}
+
+/** Called by the switch: the next pull tries every held event, and each settles as applied or superseded. */
+export function releaseEventsHeldForSwitch(sql: AccountSqlHandle): void {
+  sql.prepare("UPDATE sync_inbox_parked SET next_try_at = 0 WHERE reason = ?").run(HELD_FOR_SWITCH);
+}
+
 /** Refuses a local account change on a PC whose accounts come from the cloud. */
 export function requireLocalAccounts(sql: AccountSqlHandle): void {
   if (readAccountsMode(sql) === ACCOUNTS_MODE.CLOUD) throw new LocalAccountsClosedError();

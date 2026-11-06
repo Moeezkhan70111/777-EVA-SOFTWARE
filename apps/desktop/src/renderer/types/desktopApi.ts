@@ -1678,14 +1678,28 @@ export interface AccountsStatus {
 
 /** What the member details' Save sends (data users.ts): a null role or job role leaves it as it is. */
 export interface MemberAccessChange {
+  /** Null means no role: the person loses the one they have. */
   roleCode: string | null;
+  /** Null leaves it as it is. */
   jobRole: string | null;
   authorityLevel: number;
   extraPermissions: string[];
 }
 
+/** One field of a member's Save. Mirrors MemberAccessFieldResult in @erp/data. */
+export interface MemberAccessFieldResult {
+  field: "ROLE" | "JOB_ROLE" | "AUTHORITY" | "EXTRA_SCREENS";
+  outcome: "CHANGED" | "UNCHANGED" | "NOT_SAVED";
+}
+
+/** What a member's Save actually did. Mirrors MemberAccessReport in @erp/data. */
+export interface MemberAccessReport {
+  fields: MemberAccessFieldResult[];
+  stored: { roleCode: string | null; jobRole: string; authorityLevel: number; extraPermissions: string[] };
+}
+
 export type SwitchToCloudAccountsResult =
-  | { accepted: true; user: AuthUser | null; token: string; people: number }
+  | { accepted: true; user: AuthUser | null; token: string; people: number; clearedRoles: Array<{ username: string; roleName: string }> }
   | { accepted: false; reason: string };
 
 export interface AuthUser {
@@ -1807,7 +1821,7 @@ export interface DesktopApi {
   reviewPermissionRequest?(token: string, requestId: string, decision: "APPROVED" | "REJECTED", reviewNotes?: string): Promise<{ accepted: boolean; permissionCode?: string; userId?: string; status?: "APPROVED" | "REJECTED"; reason?: string }>;
   setUserAdditionalPermissions?(token: string, userId: string, permissions: string[]): Promise<{ accepted: boolean; reason?: string }>;
   /** The member details' Save as one change: all of it saved, or refused with the reason. */
-  saveMemberAccess?(token: string, userId: string, access: MemberAccessChange): Promise<{ accepted: boolean; reason?: string }>;
+  saveMemberAccess?(token: string, userId: string, access: MemberAccessChange): Promise<{ accepted: boolean; reason?: string; report?: MemberAccessReport }>;
   getUserAdditionalPermissions?(token: string, userId: string): Promise<{ accepted: boolean; permissions: string[]; reason?: string }>;
   updateUserPermissions?(token: string, userId: string, permissions: string[]): Promise<{ accepted: boolean; reason?: string }>;
   updateMemberJobRole?(token: string, userId: string, jobRole: string): Promise<{ accepted: boolean; reason?: string }>;
@@ -1838,6 +1852,8 @@ export interface DesktopApi {
   workspaceUpdateStatus?(token: string, kind: "TASK" | "REQUEST", id: string, status: string): Promise<{ accepted: boolean; reason?: string }>;
   workspaceActivity?(token: string): Promise<{ accepted: boolean; activity: unknown[]; reason?: string }>;
   revokeUserAccess?(token: string, userId: string): Promise<{ accepted: boolean; reason?: string }>;
+  /** Undoes a revoke: the person is approved again with the role and screens they had. */
+  restoreUserAccess?(token: string, userId: string): Promise<{ accepted: boolean; reason?: string }>;
   getDashboard(): Promise<DashboardSnapshot>;
   listInventory(search: string): Promise<InventoryRow[]>;
   listInventoryUnits(): Promise<Array<Record<string, unknown>>>;

@@ -1,5 +1,5 @@
 -- NOT A MIGRATION. TEST PROJECT ONLY. Run whole through execute_sql or the SQL editor.
--- Functional check of 015 on TEST, after 011 and 015 are applied. Leaves nothing behind: the block
+-- Functional check of 015 on TEST, after 011, 015 and 018 are applied. Leaves nothing behind: the block
 -- ends by raising, so the temporary device, its claim, the lease, the movements and their log rows
 -- are all rolled back. PC rows are only READ, to copy not-null columns. Success is the error
 -- message 'STOCK_EVENTS_CHECK_PASSED ...'.
@@ -24,6 +24,9 @@ begin
           || jsonb_build_object('auth_user_id', uid, 'device_id', b, 'workstation_id', 'ws-se-check',
                                 'label', 'se check', 'claim_holder', holder, 'claim_epoch', 1))).*
     from public.device_accounts d where d.device_id = 'desktop-main';
+  -- Since 018 a claim counts only with a registered number block. 997 is beyond any computer (the
+  -- app assigns 1-99), as in check_number_blocks.sql, and is rolled back with the rest.
+  insert into public.number_blocks (block, device_id, auth_user_id) values (997, b, uid);
   perform set_config('request.jwt.claims', jsonb_build_object('sub', uid, 'role', 'authenticated')::text, true);
 
   -- 1. No lease: refused, and nothing written.

@@ -82,6 +82,9 @@ const SwitchForm = ({
     if (!result.accepted) return result.reason;
     if (result.user) await onSwitched(result.user, result.token);
     push("success", copy.cloudAccounts.switchedTitle, copy.cloudAccounts.switchedBody(result.people));
+    for (const { username, roleName } of result.clearedRoles) {
+      push("warning", copy.cloudAccounts.roleClearedTitle, copy.cloudAccounts.roleClearedBody(username, roleName), 0);
+    }
     return null;
   };
 
