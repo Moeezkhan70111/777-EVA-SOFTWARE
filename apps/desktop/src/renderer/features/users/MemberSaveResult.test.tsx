@@ -10,7 +10,7 @@ const stored = { roleCode: "store", jobRole: "Store", authorityLevel: 20, extraP
 const fields = (over: Partial<Record<MemberAccessFieldResult["field"], MemberAccessFieldResult["outcome"]>>): MemberAccessFieldResult[] =>
   (["ROLE", "JOB_ROLE", "AUTHORITY", "EXTRA_SCREENS"] as const).map((field) => ({ field, outcome: over[field] ?? "UNCHANGED" }));
 
-const show = (report: MemberAccessReport) => render(<MemberSaveResult report={report} roleName={(code) => (code === "store" ? "Store Operator" : code)} />);
+const show = (shown: Omit<MemberAccessReport, "screensStillOpen"> & Partial<MemberAccessReport>) => render(<MemberSaveResult report={{ screensStillOpen: [], ...shown }} roleName={(code) => (code === "store" ? "Store Operator" : code)} />);
 
 describe("what the member dialog says after a save", () => {
   it("names the role removed, and does not repeat the job role that went with it", () => {
@@ -60,6 +60,19 @@ describe("what the member dialog says after a save", () => {
     expect(alert).toHaveTextContent("Job role was not saved");
     expect(alert).toHaveTextContent("Authority level was not saved: it is still 20");
     expect(alert).toHaveTextContent("Extra screens were not saved");
+  });
+
+  it("a screen still open is an alert by name, and never plain Changes saved, though every field took", () => {
+    show({ stored, fields: fields({ ROLE: "CHANGED" }), screensStillOpen: ["stock"] });
+    expect(screen.getByRole("alert")).toHaveTextContent("can still open: Current Stock");
+    expect(screen.getByRole("status")).toHaveTextContent("Partly saved");
+    expect(screen.queryByText("Changes saved")).not.toBeInTheDocument();
+  });
+
+  it("a screen still open is said even when no field changed", () => {
+    show({ stored, fields: fields({}), screensStillOpen: ["stock"] });
+    expect(screen.getByRole("alert")).toHaveTextContent("can still open");
+    expect(screen.queryByText("Nothing changed")).not.toBeInTheDocument();
   });
 
   it("when part took and part did not, says both, and never plain Changes saved", () => {

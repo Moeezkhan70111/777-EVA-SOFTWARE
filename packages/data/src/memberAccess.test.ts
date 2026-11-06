@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { reportMemberAccess, settleMemberAccess, type MemberAccessReport } from "./database/memberAccess.js";
+import { changesNothing, reportMemberAccess, settleMemberAccess, type MemberAccessReport } from "./database/memberAccess.js";
 import { SqliteDatabase } from "./sqliteDatabase.js";
 
 // THE MEMBER DETAILS' SAVE IS ONE CHANGE (rehearsal, 2 Nov). It was four calls from the screen; a
@@ -223,4 +223,61 @@ test("a number moved into range below the screen is reported as not saved, not a
     assert.equal(outcomes(report).AUTHORITY, "NOT_SAVED");
     assert.equal(report.stored.authorityLevel, 99);
   });
+});
+
+// THE REPORT'S BLIND SPOT, CLOSED. It compared the extras table, so a screen still open from somewhere
+// else was reported as saved: how the no-role gap stayed hidden (docs/41 section 13).
+
+/** Something this code does not know about puts a screen back, whatever the save writes. */
+const screenKeepsComingBack = (db: SqliteDatabase, userId: string, screen: string) =>
+  db.db.exec(`CREATE TRIGGER keep_screen AFTER UPDATE OF permissions_json ON app_users
+    WHEN NEW.id = '${userId}' AND NEW.permissions_json NOT LIKE '%${screen}%'
+    BEGIN UPDATE app_users SET permissions_json = '["${screen}"]' WHERE id = NEW.id; END`);
+
+test("an extra taken off that is still open is reported, though every field looks saved", () => {
+  withDatabase((db) => {
+    const admin = db.bootstrapFirstAdmin("Owner", "owner1234");
+    const { id } = db.createUserAccount("Aslam", "aslam1234");
+    db.saveMemberAccess(id, admin.id, { roleCode: null, jobRole: null, authorityLevel: 20, extraPermissions: ["logs"] });
+    screenKeepsComingBack(db, id, "logs");
+
+    const report = db.saveMemberAccess(id, admin.id, { roleCode: null, jobRole: null, authorityLevel: 20, extraPermissions: [] });
+
+    assert.equal(outcomes(report).EXTRA_SCREENS, "CHANGED", "the table did change");
+    assert.deepEqual(report.screensStillOpen, ["logs"]);
+  });
+});
+
+test("a role taken away whose screen is still open is reported too", () => {
+  withRoleHolder((db, ids, role) => {
+    screenKeepsComingBack(db, ids.person, role.screen);
+    const report = db.saveMemberAccess(ids.person, ids.admin, { roleCode: null, jobRole: null, authorityLevel: 20, extraPermissions: ["logs"] });
+    assert.deepEqual(report.screensStillOpen, [role.screen]);
+  });
+});
+
+test("nothing still open after a save that did what it said", () => {
+  withRoleHolder((db, ids, role) => {
+    const removed = db.saveMemberAccess(ids.person, ids.admin, { roleCode: null, jobRole: null, authorityLevel: 20, extraPermissions: [] });
+    assert.deepEqual(removed.screensStillOpen, []);
+    const back = db.saveMemberAccess(ids.person, ids.admin, { roleCode: role.code, jobRole: null, authorityLevel: 20, extraPermissions: [] });
+    assert.deepEqual(back.screensStillOpen, []);
+  });
+});
+
+test("a screen moved from an extra to the role is not called still open: it was never taken off", () => {
+  withRoleHolder((db, ids, role) => {
+    db.saveMemberAccess(ids.person, ids.admin, { roleCode: null, jobRole: null, authorityLevel: 20, extraPermissions: [role.screen] });
+    const report = db.saveMemberAccess(ids.person, ids.admin, { roleCode: role.code, jobRole: null, authorityLevel: 20, extraPermissions: [] });
+    assert.deepEqual(report.screensStillOpen, []);
+  });
+});
+
+test("changing nothing is recognised, and any one change is not", () => {
+  const state = { roleCode: "store", jobRole: "Store", authorityLevel: 20, extraPermissions: ["a", "b"] };
+  assert.equal(changesNothing(state, { ...state, extraPermissions: ["b", "a"] }), true);
+  assert.equal(changesNothing(state, { ...state, roleCode: null }), false);
+  assert.equal(changesNothing(state, { ...state, jobRole: "" }), false);
+  assert.equal(changesNothing(state, { ...state, authorityLevel: 21 }), false);
+  assert.equal(changesNothing(state, { ...state, extraPermissions: ["a"] }), false);
 });

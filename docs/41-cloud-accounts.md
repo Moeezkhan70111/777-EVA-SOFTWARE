@@ -345,9 +345,14 @@ says only that nothing threw.
 cloud's answer, never the request (`reportMemberAccess`, `packages/data/src/database/memberAccess.ts`).
 The screen shows that report. It does not assume.
 
-**What the report does not cover yet.** It compares role, job role, authority and the extra-screens
-table. It does not compare the screens the person can actually open, so a stale `permissions_json`
-would still be reported as saved.
+**The report checks the result, not the writes.** Beyond role, job role, authority and the extra-screens
+table, it works out what the person can open afterwards and names anything taken off that is still
+open (`screensStillOpen`). The fields can all be right and the person keep a screen; that is how the
+fourth case stayed hidden.
+
+**The switch says who loses what before it happens** (section 7). A role here can differ from the
+cloud's under one code, and the cloud's wins. The switch works out the losses with its own writes,
+rolls them back, and asks the admin standing there before going on.
 
 **Any change to access here must test, by default:**
 

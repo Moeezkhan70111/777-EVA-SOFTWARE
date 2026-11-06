@@ -7,6 +7,8 @@
 //   settleMemberAccess   what the person's access should be, from what they have and what was asked
 //   reportMemberAccess   field by field, what was stored against what was wanted. Stored is read
 //                        back after the write, or is the cloud's own answer, never the request.
+//   screensStillOpen     what was taken off and can still be opened. The fields can all be right
+//                        and the person keep a screen from somewhere else (docs/41 section 13).
 
 import { normalizePermissionCode, type MemberAccessChange } from "./users.js";
 
@@ -46,6 +48,8 @@ export interface MemberAccessReport {
   readonly fields: readonly MemberAccessFieldResult[];
   /** What the person has now. The screen shows this, not what it asked for. */
   readonly stored: MemberAccessState;
+  /** Screens this save took off that the person can still open. Empty when it did what it said. */
+  readonly screensStillOpen: readonly string[];
 }
 
 interface RoleFacts {
@@ -91,11 +95,39 @@ function outcomeOf<T>(before: T, wanted: T, stored: T, same: (a: T, b: T) => boo
   return same(before, stored) ? FIELD_OUTCOME.UNCHANGED : FIELD_OUTCOME.CHANGED;
 }
 
+const screensGivenBy = (state: MemberAccessState, roles: readonly RoleFacts[]): string[] => {
+  const roleScreens = roles.find((role) => role.code === state.roleCode)?.permissions ?? [];
+  return [...roleScreens, ...state.extraPermissions].map(normalizePermissionCode);
+};
+
+/** What the save took away that the person can still open, from the screens worked out afterwards. */
+export function screensStillOpen(
+  before: MemberAccessState,
+  wanted: MemberAccessState,
+  roles: readonly RoleFacts[],
+  openNow: readonly string[]
+): string[] {
+  const kept = new Set(screensGivenBy(wanted, roles));
+  const open = new Set(openNow.map(normalizePermissionCode));
+  return [...new Set(screensGivenBy(before, roles))].filter((screen) => !kept.has(screen) && open.has(screen));
+}
+
+/** True when saving this would change nothing, so there is nothing to send or write. */
+export function changesNothing(current: MemberAccessState, wanted: MemberAccessState): boolean {
+  return reportMemberAccess(current, wanted, current).fields.every((result) => result.outcome === FIELD_OUTCOME.UNCHANGED);
+}
+
 /** What the save did, field by field. */
-export function reportMemberAccess(before: MemberAccessState, wanted: MemberAccessState, stored: MemberAccessState): MemberAccessReport {
+export function reportMemberAccess(
+  before: MemberAccessState,
+  wanted: MemberAccessState,
+  stored: MemberAccessState,
+  stillOpen: readonly string[] = []
+): MemberAccessReport {
   const equal = <T>(a: T, b: T): boolean => a === b;
   return {
     stored,
+    screensStillOpen: stillOpen,
     fields: [
       { field: ACCESS_FIELD.ROLE, outcome: outcomeOf(before.roleCode, wanted.roleCode, stored.roleCode, equal) },
       { field: ACCESS_FIELD.JOB_ROLE, outcome: outcomeOf(before.jobRole, wanted.jobRole, stored.jobRole, equal) },

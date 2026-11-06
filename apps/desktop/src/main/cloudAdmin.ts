@@ -210,10 +210,16 @@ export async function saveMemberAccess(deps: CloudAdminDeps, personId: string, c
   const current = currentAccess(deps.db, personId);
   if (current === null) return { accepted: false, reason: CLOUD_ADMIN_MESSAGES.NOT_HERE };
   const data = await import("@erp/data");
-  const wanted = data.settleMemberAccess(current, change, deps.db.listRoles());
+  const roles = deps.db.listRoles();
+  const wanted = data.settleMemberAccess(current, change, roles);
+  // The log is append-only: a Save that changes nothing leaves no row in it for good.
+  if (data.changesNothing(current, wanted)) return { accepted: true, report: data.reportMemberAccess(current, wanted, current) };
   const sent = await sendAccess(deps, personId, wanted);
   if (!sent.accepted) return sent;
-  return { accepted: true, report: data.reportMemberAccess(current, wanted, storedAccess(sent.person)) };
+  // Still waiting here for a role on its way: this copy has not changed, so it cannot say what is open.
+  const appliedHere = data.personWaitsFor(deps.db.db, sent.person) === null;
+  const stillOpen = appliedHere ? data.screensStillOpen(current, wanted, roles, deps.db.recalculateEffectivePermissions(personId)) : [];
+  return { accepted: true, report: data.reportMemberAccess(current, wanted, storedAccess(sent.person), stillOpen) };
 }
 
 const storedAccess = (person: PersonPayload): MemberAccessState => ({

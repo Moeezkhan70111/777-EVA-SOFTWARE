@@ -18,7 +18,7 @@
 // PERSON TOKENS prove to the cloud that a person, not just this computer, is asking (020). They live
 // in memory, per session, and never on disk: a restart means signing in again for admin work.
 
-import type { AccountRolePayload, RoleHolder, SqliteDatabase, StructuredLogger, PersonPayload } from "@erp/data";
+import type { AccessLoss, AccountRolePayload, RoleHolder, SqliteDatabase, StructuredLogger, PersonPayload } from "@erp/data";
 import type { AccountFunctionCaller, AccountStateAnswer, SignInAnswer } from "@erp/sync";
 import { copyRolesBeforeSwitch, suggestionFrom } from "./cloudAdmin";
 
@@ -113,6 +113,8 @@ export interface SwitchRequest {
   readonly localUsername: string;
   readonly email: string;
   readonly password: string;
+  /** The admin has been told who would lose which screens, and said to go on. */
+  readonly acceptLosses?: boolean;
 }
 
 export type SwitchOutcome =
@@ -124,6 +126,8 @@ export type SwitchOutcome =
       /** This computer's own people whose role the cloud had deleted: they need one when approved. */
       readonly clearedRoles: readonly RoleHolder[];
     }
+  /** Nothing changed: these people would lose screens, and the admin standing here must say so first. */
+  | { readonly kind: "WOULD_LOSE_ACCESS"; readonly losses: readonly AccessLoss[] }
   | { readonly kind: "REFUSED"; readonly message: string };
 
 export async function switchThisComputerToCloud(
@@ -151,6 +155,10 @@ export async function switchThisComputerToCloud(
 
   const state = await cloudStateWithRoles(deps.db, deps.caller, admin.token);
   if (typeof state === "string") return { kind: "REFUSED", message: state };
+  if (request.acceptLosses !== true) {
+    const losses = accessLostBySwitching(deps.db, data, state);
+    if (losses.length > 0) return { kind: "WOULD_LOSE_ACCESS", losses };
+  }
   const loaded = loadStateAndSwitch(deps.db, data, state);
   if (loaded.waiting !== null) return { kind: "REFUSED", message: explainWait(deps.db, data, loaded.waiting) };
 
@@ -217,20 +225,9 @@ function loadStateAndSwitch(
   state: Extract<AccountStateAnswer, { kind: "STATE" }>
 ): { waiting: string | null; cleared: RoleHolder[] } {
   const cleared: RoleHolder[] = [];
-  const applyRole = (role: AccountRolePayload) => data.applyAccountRoleRevision(db.db, role);
-  const roleWaits = (role: AccountRolePayload) => data.accountRoleWaitsFor(db.db, role);
-  const deleteRole = (role: AccountRolePayload) => {
-    cleared.push(...data.localOnlyHolders(db.db, role.roleCode));
-    return applyRole(role);
-  };
   db.db.exec("BEGIN IMMEDIATE TRANSACTION");
   try {
-    data.freeRoleNamesForState(db.db, state.roles);
-    const waiting =
-      applyAll(state.roles.filter((role) => !role.deleted), roleWaits, applyRole) ??
-      applyAll(state.people, (person) => data.personWaitsFor(db.db, person), (person) => data.applyPersonRevision(db.db, person)) ??
-      applyAll(state.roles.filter((role) => role.deleted), roleWaits, deleteRole) ??
-      applyAll(state.requests, (request) => data.permissionRequestWaitsFor(db.db, request), (request) => data.applyPermissionRequestRevision(db.db, request));
+    const waiting = applyAccountState(db, data, state, cleared);
     if (waiting !== null) {
       db.db.exec("ROLLBACK");
       return { waiting, cleared: [] };
@@ -243,6 +240,45 @@ function loadStateAndSwitch(
   } catch (error) {
     db.db.exec("ROLLBACK");
     throw error;
+  }
+}
+
+/** The cloud's accounts, written here. Inside the caller's transaction. Answers with what it must wait for, or null. */
+function applyAccountState(
+  db: SqliteDatabase,
+  data: DataModule,
+  state: Extract<AccountStateAnswer, { kind: "STATE" }>,
+  cleared: RoleHolder[]
+): string | null {
+  const applyRole = (role: AccountRolePayload) => data.applyAccountRoleRevision(db.db, role);
+  const roleWaits = (role: AccountRolePayload) => data.accountRoleWaitsFor(db.db, role);
+  const deleteRole = (role: AccountRolePayload) => {
+    cleared.push(...data.localOnlyHolders(db.db, role.roleCode));
+    return applyRole(role);
+  };
+  data.freeRoleNamesForState(db.db, state.roles);
+  return (
+    applyAll(state.roles.filter((role) => !role.deleted), roleWaits, applyRole) ??
+    applyAll(state.people, (person) => data.personWaitsFor(db.db, person), (person) => data.applyPersonRevision(db.db, person)) ??
+    applyAll(state.roles.filter((role) => role.deleted), roleWaits, deleteRole) ??
+    applyAll(state.requests, (request) => data.permissionRequestWaitsFor(db.db, request), (request) => data.applyPermissionRequestRevision(db.db, request))
+  );
+}
+
+/**
+ * Who would lose which screens, worked out by the switch's own writes and then rolled back whole. A
+ * role here can differ from the cloud's under the same code, and the cloud's wins: without this,
+ * someone finds out on Monday that a screen they used on Friday has gone, with nothing saying why.
+ * A state that would have to wait reports nothing here: the real load refuses it and says why.
+ */
+function accessLostBySwitching(db: SqliteDatabase, data: DataModule, state: Extract<AccountStateAnswer, { kind: "STATE" }>): AccessLoss[] {
+  const before = data.accessOfEveryone(db.db);
+  db.db.exec("BEGIN IMMEDIATE TRANSACTION");
+  try {
+    const waiting = applyAccountState(db, data, state, []);
+    return waiting === null ? data.accessLost(before, data.accessOfEveryone(db.db)) : [];
+  } finally {
+    db.db.exec("ROLLBACK");
   }
 }
 

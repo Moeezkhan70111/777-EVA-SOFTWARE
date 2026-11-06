@@ -97,7 +97,7 @@ export function registerSessionHandlers(ctx: IpcContext): void {
   // THE SWITCH, BY HAND (docs/41 section 12): an admin signed in here, at this computer, after the
   // screen has said what it does and they have confirmed. Never automatic: applying a migration must
   // never be what signs a store out. Everyone else here is signed out by it.
-  ipcMain.handle(IPC.switchToCloudAccounts, async (event, token?: string, email?: string, password?: string) => {
+  ipcMain.handle(IPC.switchToCloudAccounts, async (event, token?: string, email?: string, password?: string, acceptLosses?: unknown) => {
     let admin;
     try {
       admin = authorizer.requireAdmin(event, token);
@@ -111,9 +111,10 @@ export function registerSessionHandlers(ctx: IpcContext): void {
 
     const outcome = await switchThisComputerToCloud(
       { ...(await accountDeps()), logger, deviceId, switchReady: CLOUD_ACCOUNTS_SWITCH_READY },
-      { sessionToken, localUserId: admin.id, localUsername: admin.username, email: givenEmail, password: givenPassword }
+      { sessionToken, localUserId: admin.id, localUsername: admin.username, email: givenEmail, password: givenPassword, acceptLosses: acceptLosses === true }
     );
     if (outcome.kind === "REFUSED") return { accepted: false, reason: outcome.message };
+    if (outcome.kind === "WOULD_LOSE_ACCESS") return { accepted: false, reason: "", accessLosses: outcome.losses };
     authorizer.bind(event, outcome.sessionToken);
     return {
       accepted: true,

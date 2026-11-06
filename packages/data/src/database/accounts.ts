@@ -545,3 +545,30 @@ function noticeDecision(sql: AccountSqlHandle, request: PermissionRequestPayload
     now
   );
 }
+
+/** Someone who could open these screens on this computer and would not after a change. */
+export interface AccessLoss {
+  readonly username: string;
+  readonly screens: readonly string[];
+}
+
+type AccessSnapshot = ReadonlyMap<string, { readonly username: string; readonly screens: readonly string[] }>;
+
+/** What each approved person other than an administrator can open here now. */
+export function accessOfEveryone(sql: AccountSqlHandle): AccessSnapshot {
+  const people = sql
+    .prepare("SELECT id, username FROM app_users WHERE role <> 'ADMIN' AND access_status = 'APPROVED'")
+    .all() as Array<{ id: string; username: string }>;
+  return new Map(people.map((person) => [person.id, { username: person.username, screens: effectivePermissionsFor(sql, person.id) }]));
+}
+
+/** Who loses which screens between two snapshots. Someone no longer approved has lost all of theirs. */
+export function accessLost(before: AccessSnapshot, after: AccessSnapshot): AccessLoss[] {
+  const losses: AccessLoss[] = [];
+  for (const [id, person] of before) {
+    const kept = new Set(after.get(id)?.screens ?? []);
+    const screens = person.screens.filter((screen) => !kept.has(screen));
+    if (screens.length > 0) losses.push({ username: person.username, screens });
+  }
+  return losses;
+}

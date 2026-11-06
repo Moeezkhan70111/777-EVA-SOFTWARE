@@ -60,6 +60,7 @@ const show = (
 describe("Save is one change per press (rehearsal, 2 Nov)", () => {
   it("sends the role, its name as job role, authority and extras together, once", async () => {
     const onSaveAccess = vi.fn().mockResolvedValue({
+      screensStillOpen: [],
       stored: { roleCode: "store", jobRole: "Store", authorityLevel: 10, extraPermissions: ["logs"] },
       fields: [{ field: "ROLE", outcome: "CHANGED" }],
     });
@@ -85,6 +86,7 @@ describe("Save is one change per press (rehearsal, 2 Nov)", () => {
 describe("taking a role away (rehearsal, 5 Nov)", () => {
   it("sends no role, and shows what the save reports", async () => {
     const onSaveAccess = vi.fn().mockResolvedValue({
+      screensStillOpen: [],
       stored: { roleCode: null, jobRole: "", authorityLevel: 10, extraPermissions: [] },
       fields: [{ field: "ROLE", outcome: "CHANGED" }, { field: "JOB_ROLE", outcome: "CHANGED" }],
     });
@@ -99,6 +101,7 @@ describe("taking a role away (rehearsal, 5 Nov)", () => {
 
   it("a role the save did not take goes back to what the person still has, and says so", async () => {
     const onSaveAccess = vi.fn().mockResolvedValue({
+      screensStillOpen: [],
       stored: { roleCode: "munshi", jobRole: "Munshi", authorityLevel: 10, extraPermissions: [] },
       fields: [{ field: "ROLE", outcome: "NOT_SAVED" }],
     });

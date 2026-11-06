@@ -146,7 +146,44 @@ describe("the switch to cloud accounts", () => {
     await fillAndPress();
     await userEvent.click(within(await screen.findByRole("dialog")).getByRole("button", { name: copy.cloudAccounts.confirm }));
     await waitFor(() => expect(onSwitched).toHaveBeenCalledWith(ADMIN, "session-owner"));
-    expect(api.switchToCloudAccounts).toHaveBeenCalledWith("session-owner", "boss@777.pk", "owner1234");
+    expect(api.switchToCloudAccounts).toHaveBeenCalledWith("session-owner", "boss@777.pk", "owner1234", false);
+  });
+
+  describe("when people would lose screens (rehearsal, 6 Nov)", () => {
+    const WOULD_LOSE = { accepted: false, reason: "", accessLosses: [{ username: "Biller", screens: ["stock"] }] };
+
+    it("names them and what they lose, in screen names, and has not switched", async () => {
+      api.switchToCloudAccounts.mockResolvedValue(WOULD_LOSE);
+      const onSwitched = show(ADMIN);
+      await fillAndPress();
+      await userEvent.click(within(await screen.findByRole("dialog")).getByRole("button", { name: copy.cloudAccounts.confirm }));
+      const dialog = await screen.findByRole("dialog", { name: copy.cloudAccounts.lossesTitle });
+      expect(within(dialog).getByText("Biller")).toBeInTheDocument();
+      expect(within(dialog).getByText("Current Stock")).toBeInTheDocument();
+      expect(onSwitched).not.toHaveBeenCalled();
+    });
+
+    it("going on sends the admin's word, and only then is it switched", async () => {
+      api.switchToCloudAccounts.mockResolvedValueOnce(WOULD_LOSE).mockResolvedValueOnce({ accepted: true, user: ADMIN, token: "session-owner", people: 3, clearedRoles: [] });
+      const onSwitched = show(ADMIN);
+      await fillAndPress();
+      await userEvent.click(within(await screen.findByRole("dialog")).getByRole("button", { name: copy.cloudAccounts.confirm }));
+      const dialog = await screen.findByRole("dialog", { name: copy.cloudAccounts.lossesTitle });
+      await userEvent.click(within(dialog).getByRole("button", { name: copy.cloudAccounts.lossesConfirm }));
+      await waitFor(() => expect(onSwitched).toHaveBeenCalled());
+      expect(api.switchToCloudAccounts).toHaveBeenLastCalledWith("session-owner", "boss@777.pk", "owner1234", true);
+    });
+
+    it("backing out sends nothing more", async () => {
+      api.switchToCloudAccounts.mockResolvedValue(WOULD_LOSE);
+      show(ADMIN);
+      await fillAndPress();
+      await userEvent.click(within(await screen.findByRole("dialog")).getByRole("button", { name: copy.cloudAccounts.confirm }));
+      const dialog = await screen.findByRole("dialog", { name: copy.cloudAccounts.lossesTitle });
+      await userEvent.click(within(dialog).getByRole("button", { name: /cancel/i }));
+      await waitFor(() => expect(screen.queryByRole("dialog", { name: copy.cloudAccounts.lossesTitle })).not.toBeInTheDocument());
+      expect(api.switchToCloudAccounts).toHaveBeenCalledTimes(1);
+    });
   });
 
   it("says who lost a role the cloud had removed, by name, so the admin chooses one when approving them", async () => {
