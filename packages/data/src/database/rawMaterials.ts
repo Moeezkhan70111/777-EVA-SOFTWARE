@@ -7,8 +7,9 @@ import type { SqliteDatabase } from "../sqliteDatabase.js";
 import { createHash } from "node:crypto";
 import { EFFECTIVE_PACK_NAME_SQL, normalizeInventoryText, normalizePackName } from "./shared.js";
 import type { DatabaseSync } from "node:sqlite";
-import { STOCK_EVENT_NOTE, fromPaisaOrNull, packetsInStore as countPacketsInStore, toPaisaOrNull } from "@erp/domain";
-import type { InventoryStockEventRow, RawMaterialHop, RawMaterialMovementConfigRow, RawMaterialSetupTemplate, WorkSection } from "./types.js";
+import { KIND_STOCK_MAX_PAGE_SIZE, KIND_STOCK_PAGE_SIZE, STOCK_EVENT_NOTE, fromPaisaOrNull, packetsInStore as countPacketsInStore, toPaisaOrNull } from "@erp/domain";
+import type { StockKind } from "@erp/domain";
+import type { InventoryStockEventRow, KindStockPage, KindStockTotal, RawMaterialHop, RawMaterialMovementConfigRow, RawMaterialSetupTemplate, WorkSection } from "./types.js";
 import { allocateNumberInRange, orderByCode } from "./numberRange.js";
 
 function readWorkSectionByName(db: DatabaseSync, name: string): WorkSection | undefined {
@@ -22,6 +23,20 @@ function readWorkSectionByName(db: DatabaseSync, name: string): WorkSection | un
     name: String(row.name),
     status: String(row.status),
   };
+}
+
+/** What these materials hold, added up per unit and never across units. */
+function stockTotalsByUnit(items: Array<Record<string, unknown>>): KindStockTotal[] {
+  const totals = new Map<string, KindStockTotal>();
+  for (const item of items) {
+    const unitId = item.default_unit_id as string | null;
+    const quantity = Number(item.quantity_on_hand ?? 0);
+    if (!unitId || !quantity) continue;
+    const entry = totals.get(unitId) ?? { unitId, unitCode: String(item.unit_code ?? ""), quantity: 0 };
+    entry.quantity += quantity;
+    totals.set(unitId, entry);
+  }
+  return Array.from(totals.values());
 }
 
 export const rawMaterialsMethods = {
@@ -403,6 +418,37 @@ export const rawMaterialsMethods = {
     }));
   },
 
+  /**
+   * One kind of raw material for its own page (Upper Stock, Dana Stock): everything under that
+   * top-level category, however deep, read through listInventoryItems so a balance here is the same
+   * balance everywhere. The caller gets the fields the page shows and nothing else: no cost price.
+   * No such category is not an error, only a store with none of that kind set up yet.
+   */
+  listKindStock(this: SqliteDatabase, kind: StockKind, query: { search?: string; page?: number; pageSize?: number } = {}): KindStockPage {
+    const pageSize = Math.min(Math.max(Math.trunc(query.pageSize ?? KIND_STOCK_PAGE_SIZE), 1), KIND_STOCK_MAX_PAGE_SIZE);
+    const category = this.db
+      .prepare("SELECT id FROM inventory_categories WHERE parent_id IS NULL AND status = 'ACTIVE' AND UPPER(name) = ?")
+      .get(kind) as { id: string } | undefined;
+    const items = category ? this.listInventoryItems({ categoryId: category.id, search: query.search }) : [];
+    const pages = Math.max(Math.ceil(items.length / pageSize), 1);
+    const page = Math.min(Math.max(Math.trunc(query.page ?? 1), 1), pages);
+    return {
+      kind,
+      items: items.slice((page - 1) * pageSize, page * pageSize).map((item) => ({
+        id: String(item.id),
+        code: String(item.item_code ?? ""),
+        name: String(item.display_name ?? ""),
+        subCategory: String(item.sub_category_name ?? ""),
+        quantity: Number(item.quantity_on_hand ?? 0),
+        unitCode: String(item.unit_code ?? ""),
+      })),
+      itemCount: items.length,
+      totalsByUnit: stockTotalsByUnit(items),
+      page,
+      pages,
+    };
+  },
+
   /** Filters items exactly like listInventoryItems, then aggregates their stock per unit and (optionally) converts to a target unit. */
   queryInventoryStock(this: SqliteDatabase, filters: { search?: string; categoryId?: string; attributes?: Record<string, string>; targetUnitId?: string } = {}): {
     itemCount: number;
@@ -410,16 +456,7 @@ export const rawMaterialsMethods = {
     equivalent?: { unitId: string; unitCode: string; quantity: number };
   } {
     const items = this.listInventoryItems({ search: filters.search, categoryId: filters.categoryId, attributes: filters.attributes });
-    const totals = new Map<string, { unitId: string; unitCode: string; quantity: number }>();
-    for (const item of items) {
-      const unitId = item.default_unit_id as string | null;
-      const quantity = Number(item.quantity_on_hand ?? 0);
-      if (!unitId || !quantity) continue;
-      const entry = totals.get(unitId) ?? { unitId, unitCode: String(item.unit_code ?? ""), quantity: 0 };
-      entry.quantity += quantity;
-      totals.set(unitId, entry);
-    }
-    const totalsByUnit = Array.from(totals.values());
+    const totalsByUnit = stockTotalsByUnit(items);
     const result: { itemCount: number; totalsByUnit: typeof totalsByUnit; equivalent?: { unitId: string; unitCode: string; quantity: number } } = { itemCount: items.length, totalsByUnit };
     if (filters.targetUnitId) {
       let convertedTotal = 0;
@@ -453,7 +490,7 @@ export const rawMaterialsMethods = {
    * materials behind. Both paths run the same validation, the same signature/duplicate rule
    * and the same audit write; there is no second way to create a material.
    */
-  insertInventoryItem(this: SqliteDatabase, input: { categoryId: string; values: Record<string, unknown>; valuesUrdu?: Record<string, unknown>; unitId?: string; stockQuantity?: number; costPrice?: number; createdBy?: string; packName?: string | null; packingQuantity?: number | null; packingUnitId?: string | null }): { id: string; code: string; displayName: string; duplicate?: boolean } {
+  insertInventoryItem(this: SqliteDatabase, input: { categoryId: string; values: Record<string, unknown>; valuesUrdu?: Record<string, unknown>; unitId?: string; stockQuantity?: number; costPrice?: number; createdBy?: string; packName?: string | null; packingQuantity?: number | null; packingUnitId?: string | null; enableIfDisabled?: boolean }): { id: string; code: string; displayName: string; duplicate?: boolean; reenabled?: boolean } {
     const category = this.db.prepare("SELECT * FROM inventory_categories WHERE id = ? AND status = 'ACTIVE'").get(input.categoryId) as Record<string, unknown> | undefined;
     if (!category) throw new Error("Category not found");
     // A material may be filed at any level, including in a category that also has
@@ -466,8 +503,17 @@ export const rawMaterialsMethods = {
       if (value == null || String(value).trim() === "") throw new Error(`${field.label} is required`);
     }
     const signature = this.inventorySignature(input.categoryId, fields, input.values);
-    const existing = this.db.prepare("SELECT id, item_code, display_name FROM inventory_items WHERE category_id = ? AND signature_hash = ? AND status = 'ACTIVE' LIMIT 1").get(input.categoryId, signature.hash) as { id: string; item_code: string; display_name: string } | undefined;
-    if (existing) return { id: existing.id, code: existing.item_code, displayName: existing.display_name, duplicate: true };
+    // ANY status: a disabled material still owns its signature (UNIQUE(category_id, signature_hash)),
+    // so looking only at active ones sent the insert into the constraint. It is the same material,
+    // so someone making it again gets it back, with its code and history. A removed one has already
+    // let go of its signature (itemRemoval.ts), so it is made afresh.
+    const existing = this.db.prepare("SELECT id, item_code, display_name, status FROM inventory_items WHERE category_id = ? AND signature_hash = ? LIMIT 1").get(input.categoryId, signature.hash) as { id: string; item_code: string; display_name: string; status: string } | undefined;
+    if (existing) {
+      const found = { id: existing.id, code: existing.item_code, displayName: existing.display_name };
+      if (existing.status === "ACTIVE" || !input.enableIfDisabled) return { ...found, duplicate: true };
+      this.setInventoryItemStatus({ itemId: existing.id, status: "ACTIVE", updatedBy: input.createdBy });
+      return { ...found, reenabled: true };
+    }
     const displayName = this.buildInventoryDisplayName(this.categoryPathName(input.categoryId), fields, input.values);
     const next = { n: allocateNumberInRange(this, "inventoryItemCode") };
     const itemCode = `RM-${String(next.n).padStart(6, "0")}`;
@@ -509,7 +555,7 @@ export const rawMaterialsMethods = {
   },
 
   /** Creates one raw material in its own transaction. */
-  createInventoryItem(this: SqliteDatabase, input: { categoryId: string; values: Record<string, unknown>; valuesUrdu?: Record<string, unknown>; unitId?: string; stockQuantity?: number; costPrice?: number; createdBy?: string; packName?: string | null; packingQuantity?: number | null; packingUnitId?: string | null }): { id: string; code: string; displayName: string; duplicate?: boolean } {
+  createInventoryItem(this: SqliteDatabase, input: { categoryId: string; values: Record<string, unknown>; valuesUrdu?: Record<string, unknown>; unitId?: string; stockQuantity?: number; costPrice?: number; createdBy?: string; packName?: string | null; packingQuantity?: number | null; packingUnitId?: string | null; enableIfDisabled?: boolean }): { id: string; code: string; displayName: string; duplicate?: boolean; reenabled?: boolean } {
     this.db.exec("BEGIN IMMEDIATE TRANSACTION");
     try {
     const created = this.insertInventoryItem(input);

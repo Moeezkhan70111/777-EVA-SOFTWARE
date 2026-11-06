@@ -31,7 +31,7 @@ const renderSection = (options: { onDeleted?: ReturnType<typeof vi.fn>; disabled
         itemId="item-1"
         displayName="RUBBER — GREY"
         disabled={options.disabled ?? false}
-        isAdmin={options.isAdmin ?? true}
+        canRemove={options.isAdmin ?? true}
         onDeleted={onDeleted}
         onChanged={async () => {}}
       />

@@ -44,6 +44,14 @@ import {
   withdrawUnsentSyncEvents,
 } from "./syncEvents.js";
 
+/**
+ * Reads a movement event's material through its QR to its item, for the printed slip's category
+ * badges and the Store page's lists. Each is a LEFT JOIN on a key, so an event is still exactly one row.
+ */
+const EVENT_ITEM_JOINS = `
+         LEFT JOIN raw_material_qrs q ON q.id = e.qr_id
+         LEFT JOIN inventory_items ii ON ii.id = q.item_id`;
+
 export const rawMaterialQrMethods = {
   /**
    * Reserves the next N serials for a party+item combination and permanently records each
@@ -1091,7 +1099,7 @@ export const rawMaterialQrMethods = {
       .get(partyId) as { id: string; party_name: string; party_type: string } | undefined;
     if (!party) throw new Error("That supplier was not found.");
     if (!isRawMaterialReceiptPartyType(party.party_type)) {
-      throw new Error(`Only a supplier's or a contractor's delivery is received here, and ${party.party_name} is neither. Nothing was started.`);
+      throw new Error(`Only a supplier's delivery is received here, and ${party.party_name} is not a supplier. Nothing was started.`);
     }
 
     const now = new Date().toISOString();
@@ -1162,15 +1170,15 @@ export const rawMaterialQrMethods = {
 
     const scans = this.db
       .prepare(
-        `SELECT e.qr_id, e.item_display_name, e.quantity, e.event_ts_local, e.actor, u.code AS unit_code
+        `SELECT e.qr_id, e.item_display_name, e.quantity, e.event_ts_local, e.actor, u.code AS unit_code, ii.category_id
          FROM raw_material_qr_events e
-         LEFT JOIN inventory_units u ON u.id = e.unit_id
+         LEFT JOIN inventory_units u ON u.id = e.unit_id${EVENT_ITEM_JOINS}
          WHERE e.session_id = ? AND e.event_type = 'STORE_ENTRY'
          ORDER BY e.event_ts_local ASC, e.rowid ASC`
       )
       .all(session.id) as Array<Record<string, unknown>>;
 
-    const byMaterial = new Map<string, { itemDisplayName: string; packets: number; quantity: number; unitCode: string }>();
+    const byMaterial = new Map<string, { itemDisplayName: string; categoryLabel: string; packets: number; quantity: number; unitCode: string }>();
     for (const scan of scans) {
       const name = String(scan.item_display_name);
       const unitCode = scan.unit_code ? String(scan.unit_code) : "";
@@ -1180,7 +1188,7 @@ export const rawMaterialQrMethods = {
         existing.packets += 1;
         existing.quantity += Number(scan.quantity);
       } else {
-        byMaterial.set(key, { itemDisplayName: name, packets: 1, quantity: Number(scan.quantity), unitCode });
+        byMaterial.set(key, { itemDisplayName: name, categoryLabel: scan.category_id ? this.categoryPathName(String(scan.category_id)) : "", packets: 1, quantity: Number(scan.quantity), unitCode });
       }
     }
 
@@ -1191,6 +1199,7 @@ export const rawMaterialQrMethods = {
       scans: scans.map((scan) => ({
         qrId: String(scan.qr_id),
         itemDisplayName: String(scan.item_display_name),
+        categoryLabel: scan.category_id ? this.categoryPathName(String(scan.category_id)) : "",
         quantity: Number(scan.quantity),
         unitCode: scan.unit_code ? String(scan.unit_code) : "",
         receivedAt: String(scan.event_ts_local),
@@ -1432,10 +1441,10 @@ export const rawMaterialQrMethods = {
     const rows = this.db
       .prepare(
         `SELECT e.qr_id, e.item_display_name, e.quantity, e.event_ts_local, e.actor,
-                u.code AS unit_code, ws.name AS section_name
+                u.code AS unit_code, ws.name AS section_name, ii.category_id
          FROM raw_material_qr_events e
          LEFT JOIN inventory_units u ON u.id = e.unit_id
-         LEFT JOIN work_sections ws ON ws.id = e.section_id
+         LEFT JOIN work_sections ws ON ws.id = e.section_id${EVENT_ITEM_JOINS}
          WHERE e.session_id = ? AND e.event_type = 'STORE_EXIT'
          ORDER BY e.event_ts_local ASC, e.rowid ASC`
       )
@@ -1446,7 +1455,7 @@ export const rawMaterialQrMethods = {
       { sectionName: string; packets: number; materials: Map<string, { itemDisplayName: string; packets: number; quantity: number; unitCode: string }> }
     >();
     // The slip's summary: one line per material and unit, whatever section it went through.
-    const byMaterial = new Map<string, { itemDisplayName: string; packets: number; quantity: number; unitCode: string }>();
+    const byMaterial = new Map<string, { itemDisplayName: string; categoryLabel: string; packets: number; quantity: number; unitCode: string }>();
 
     for (const row of rows) {
       // Nothing carries a destination since routes were removed, so the slip is one list.
@@ -1468,7 +1477,7 @@ export const rawMaterialQrMethods = {
         total.packets += 1;
         total.quantity += Number(row.quantity);
       } else {
-        byMaterial.set(`${name}|${unitCode}`, { itemDisplayName: name, packets: 1, quantity: Number(row.quantity), unitCode });
+        byMaterial.set(`${name}|${unitCode}`, { itemDisplayName: name, categoryLabel: row.category_id ? this.categoryPathName(String(row.category_id)) : "", packets: 1, quantity: Number(row.quantity), unitCode });
       }
     }
 
@@ -1489,6 +1498,7 @@ export const rawMaterialQrMethods = {
       scans: rows.map((row) => ({
         qrId: String(row.qr_id),
         itemDisplayName: String(row.item_display_name),
+        categoryLabel: row.category_id ? this.categoryPathName(String(row.category_id)) : "",
         quantity: Number(row.quantity),
         unitCode: row.unit_code ? String(row.unit_code) : "",
         sectionName: row.section_name ? String(row.section_name) : null,

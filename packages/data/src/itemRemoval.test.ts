@@ -227,3 +227,65 @@ test("a disabled material can still be removed once it is empty — being hidden
   db.applyAdminItemRemoval({ itemId, adminId: admin.id });
   assert.equal(removed(), true);
 });
+
+// ─── A STORE OPERATOR REMOVING A MATERIAL, AND MAKING ONE AGAIN (owner, 6 Nov 2026) ────────────
+
+test("someone allowed to remove directly does so at once, under the same rules, with their name on it", () => {
+  const { db, clerk, itemId, removed, emptyStock, movements } = createFixture();
+  assert.throws(() => db.applyDirectItemRemoval({ itemId, userId: clerk.id }), /25/, "stock still refuses it, naming the quantity");
+  assert.equal(removed(), false);
+
+  emptyStock();
+  const before = movements();
+  const request = db.applyDirectItemRemoval({ itemId, userId: clerk.id, reason: "entered by mistake" });
+  assert.equal(request.status, "APPROVED");
+  assert.equal(removed(), true);
+  assert.equal(movements(), before, "every movement stays");
+
+  const audit = db.db.prepare("SELECT changed_by FROM inventory_item_audit WHERE entity_id = ? AND action = 'REMOVE'").get(itemId) as { changed_by: string };
+  assert.equal(audit.changed_by, "aslam", "the removal carries their name");
+
+  const second = createFixture();
+  second.emptyStock();
+  second.printLabel(1);
+  assert.throws(() => second.db.applyDirectItemRemoval({ itemId: second.itemId, userId: second.clerk.id }), /QR label/, "a printed label still refuses it");
+});
+
+test("an administrator's approval is still an administrator's: a request cannot be approved by anyone else", () => {
+  const { db, clerk, itemId, emptyStock } = createFixture();
+  emptyStock();
+  const request = db.createItemRemovalRequest({ itemId, requestedBy: clerk.id });
+  assert.throws(() => db.reviewRemovalRequest({ requestId: request.id, reviewerId: clerk.id, decision: "APPROVED" }), /Administrator access required/);
+});
+
+test("making a removed material again makes a new one, with no constraint error", () => {
+  const { db, clerk, itemId, categoryId, unitId, emptyStock } = createFixture();
+  emptyStock();
+  db.applyDirectItemRemoval({ itemId, userId: clerk.id });
+  const again = db.createInventoryItem({ categoryId, unitId, values: { grade: "WRONG" }, enableIfDisabled: true });
+  assert.notEqual(again.id, itemId);
+  assert.equal(again.duplicate, undefined);
+  assert.equal(again.reenabled, undefined);
+});
+
+test("making a disabled material again brings the same one back, with its code and history, and no constraint error", () => {
+  const { db, itemId, categoryId, unitId, movements } = createFixture();
+  db.setInventoryItemStatus({ itemId, status: "INACTIVE" });
+  const before = movements();
+  const again = db.createInventoryItem({ categoryId, unitId, stockQuantity: 99, values: { grade: "WRONG" }, createdBy: "aslam", enableIfDisabled: true });
+  assert.equal(again.id, itemId);
+  assert.equal(again.reenabled, true);
+  const row = db.db.prepare("SELECT status FROM inventory_items WHERE id = ?").get(itemId) as { status: string };
+  assert.equal(row.status, "ACTIVE");
+  assert.equal(movements(), before, "the opening stock typed the second time moved nothing");
+});
+
+test("an import that names a disabled material reports a duplicate, and leaves it disabled", () => {
+  const { db, itemId, categoryId, unitId } = createFixture();
+  db.setInventoryItemStatus({ itemId, status: "INACTIVE" });
+  const again = db.createInventoryItem({ categoryId, unitId, values: { grade: "WRONG" } });
+  assert.equal(again.id, itemId);
+  assert.equal(again.duplicate, true);
+  const row = db.db.prepare("SELECT status FROM inventory_items WHERE id = ?").get(itemId) as { status: string };
+  assert.equal(row.status, "INACTIVE");
+});

@@ -14,19 +14,29 @@ import { useNotifications } from "../state/NotificationsContext";
 import { playScanSound } from "../utils/playScanSound";
 import { copy } from "../config/copy";
 import { formatDateTime } from "../utils/dates";
-import { openReceivingReceiptPrintWindow } from "../features/rawMaterial/receivingReceipt";
+import { printReceivingReceipt } from "../features/rawMaterial/receivingReceipt";
+import { announceVoucherPrint, quantityFigure } from "../features/rawMaterial/storeVoucher";
 import { isCompleteQr, sanitizeScanInput } from "../utils/qr";
 import { LEASE_DOMAIN, isRawMaterialReceiptPartyType, isValidRawMaterialQrId } from "@erp/domain";
 import { LeasedStation } from "../features/store/LeasedStation";
+import { LockedParty } from "../features/store/LockedParty";
+import { StepHeading } from "../components/shared/StepHeading";
 import { ReaderStation } from "../features/store/ReaderStation";
+import { PersonIcon } from "../features/store/StoreIcons";
+import { ScanPartyHeader } from "../features/store/ScanPartyHeader";
+import { ScanSessionButton } from "../features/store/ScanSessionButton";
+import { materialScanRow, sessionGroups } from "../features/rawMaterial/sessionGroups";
+import { quantityTotalLine } from "../features/rawMaterial/storeVoucher";
 import type { StationStatus } from "../features/store/page/stationStatus";
 import {
   LastScanCard,
   PlusIcon,
   RecentScansCard,
+  RecentScansList,
   SCAN_STATION_CSS,
   ScanPanel,
   SessionCard,
+  SessionGroupsCard,
   StationBlocked,
   StationToolbar,
 } from "../features/scanStation/scanStation";
@@ -46,7 +56,7 @@ const RECENT_LIMIT = 12;
 
 const IDLE: ScanStationFeedback = {
   tone: "idle",
-  title: "READY TO SCAN",
+  title: copy.store.readyToScan,
   message: "Scan a raw material packet",
   result: null,
   seq: 0,
@@ -119,9 +129,14 @@ interface RawMaterialInputPageProps {
   active?: boolean;
   /** Where this panel's session stands, for the Store page's mode switch. */
   onStatus?: (status: StationStatus) => void;
+  /**
+   * Given where the screen around the station shows Print receipt (the Store page's rail head): the
+   * station hands it the print action while a session is open, and leaves its own button out.
+   */
+  onPrintReceipt?: (print: (() => void) | null) => void;
 }
 
-const RawMaterialInputStation: React.FC<RawMaterialInputPageProps> = ({ token, username, onBack, onNavigate, embedded = false, active = true, onStatus }) => {
+const RawMaterialInputStation: React.FC<RawMaterialInputPageProps> = ({ token, username, onBack, onNavigate, embedded = false, active = true, onStatus, onPrintReceipt }) => {
   const api = useDesktopApi();
   const { push } = useNotifications();
 
@@ -198,7 +213,7 @@ const RawMaterialInputStation: React.FC<RawMaterialInputPageProps> = ({ token, u
 
   // The Store page's mode switch shows this panel's session state, even while it is hidden.
   useEffect(() => {
-    onStatus?.({ sessionId: open ? (session?.id ?? null) : null, open: open, packets: summary?.totalPackets ?? 0 });
+    onStatus?.({ sessionId: open ? (session?.id ?? null) : null, open: open, packets: summary?.totalPackets ?? 0, quantity: quantityFigure(summary?.byMaterial ?? []) });
   }, [onStatus, session, summary]);
 
 
@@ -313,23 +328,25 @@ const RawMaterialInputStation: React.FC<RawMaterialInputPageProps> = ({ token, u
     }
   }, [inputVal, submitScan]);
 
-  const print = () => {
+  const print = useCallback(() => {
     if (!summary) return;
-    if (!openReceivingReceiptPrintWindow(summary, username)) {
-      push("error", copy.toast.popupBlocked, "Allow popups to print the receipt");
-    }
-  };
+    void printReceivingReceipt(summary, username).then((outcome) => announceVoucherPrint(outcome, push));
+  }, [summary, username, push]);
+
+  // Print receipt in the screen around the station, for as long as there is a session to print.
+  useEffect(() => {
+    if (!onPrintReceipt) return undefined;
+    onPrintReceipt(open && summary ? print : null);
+    return () => onPrintReceipt(null);
+  }, [onPrintReceipt, open, summary, print]);
 
   const scanRows: StationScanRow[] = (summary?.scans ?? [])
     .slice(-RECENT_LIMIT)
     .reverse()
-    .map((scan) => ({
-      key: `${scan.qrId}|${scan.receivedAt}`,
-      qrId: scan.qrId,
-      product: `${scan.itemDisplayName} · ${scan.quantity} ${scan.unitCode}`.trim(),
-      at: scan.receivedAt,
-      badge: "In Store",
-    }));
+    .map((scan) => materialScanRow(scan, scan.receivedAt, "In Store"));
+  const sessionMeta = session
+    ? `${session.partyName} · started ${formatDateTime(session.startedAt)}${session.startedBy ? ` · ${session.startedBy}` : ""}`
+    : "No session open. Choose a supplier above.";
 
   return (
     <div
@@ -350,40 +367,44 @@ const RawMaterialInputStation: React.FC<RawMaterialInputPageProps> = ({ token, u
         eyebrow={embedded ? undefined : copy.storePage.stationEyebrow}
         title={embedded ? undefined : "Raw Material Input"}
         onBack={onBack}
-        scannerPill={scannerPill}
+        // On the Store page the rail's head says Ready / Not Ready, so the scanner pill is left out.
+        scannerPill={embedded ? undefined : scannerPill}
       >
-        {open ? (
-          <>
-            {/* The party this session receives from, and what it is. */}
-            <PartyTypeBadge partyType={suppliers.find((party) => party.id === session?.partyId)?.partyType} />
-            <button type="button" className="ssn-btn" onClick={() => void endSession()} disabled={busy}>
-              End session
-            </button>
-            <button type="button" className="ssn-btn" onClick={print} disabled={!summary}>
-              Print receipt
-            </button>
-          </>
+        {embedded ? (
+          open ? null : (
+            <>
+              <div className="ssn-supplier-pick">
+                <SearchableCombobox
+                  value={partyId}
+                  options={supplierOptions}
+                  onChange={setPartyId}
+                  ariaLabel={copy.columns.supplier}
+                  placeholder={supplierOptions.length === 0 ? "No suppliers yet" : copy.store.selectSupplier}
+                  icon={<PersonIcon />}
+                  searchPlaceholder={copy.store.searchParty}
+                  emptyLabel={copy.store.noPartyMatch}
+                />
+              </div>
+              <PartyTypeBadge partyType={suppliers.find((party) => party.id === partyId)?.partyType} />
+              {summary && summary.totalPackets > 0 ? (
+                <button type="button" className="ssn-btn ssn-btn--ghost" onClick={print}>
+                  Print last receipt
+                </button>
+              ) : null}
+            </>
+          )
         ) : (
           <>
-            <div className="ssn-supplier-pick">
-              <SearchableCombobox
-                value={partyId}
-                options={supplierOptions}
-                onChange={setPartyId}
-                ariaLabel={copy.columns.supplier}
-                placeholder={supplierOptions.length === 0 ? "No suppliers yet" : "Choose supplier…"}
-              />
-            </div>
-            <PartyTypeBadge partyType={suppliers.find((party) => party.id === partyId)?.partyType} />
-            <button type="button" className="ssn-btn" onClick={() => void startSession()} disabled={busy || !partyId}>
+            <button type="button" className="ssn-btn" onClick={() => void startSession()} disabled={busy || open || !partyId}>
               <PlusIcon />
-              Start session
+              New session
             </button>
-            {summary && summary.totalPackets > 0 ? (
-              <button type="button" className="ssn-btn ssn-btn--ghost" onClick={print}>
-                Print last receipt
-              </button>
-            ) : null}
+            <button type="button" className="ssn-btn" onClick={() => void endSession()} disabled={busy || !open}>
+              End session
+            </button>
+            <button type="button" className="ssn-btn" onClick={print} disabled={!summary || summary.totalPackets === 0}>
+              Print slip
+            </button>
           </>
         )}
         {onNavigate ? (
@@ -398,42 +419,100 @@ const RawMaterialInputStation: React.FC<RawMaterialInputPageProps> = ({ token, u
         ) : null}
       </StationToolbar>
 
+      {/* The full screen names its party in a step; the rail does it in the field above and the panel. */}
+      {loadError || embedded ? null : (
+        <section className="qr-step">
+          <StepHeading index={1} done={Boolean(partyId)} title={copy.scanIn.partyStep} />
+          <div className="qr-step-body">
+            {open ? (
+              <LockedParty
+                name={session?.partyName}
+                partyType={suppliers.find((party) => party.id === session?.partyId)?.partyType}
+                note={copy.scanIn.partyLocked}
+              />
+            ) : (
+              <>
+                <SearchableCombobox
+                  dropdown
+                  value={partyId}
+                  options={supplierOptions}
+                  onChange={setPartyId}
+                  ariaLabel={copy.columns.supplier}
+                  placeholder={supplierOptions.length === 0 ? "No suppliers yet" : "Choose supplier…"}
+                />
+                <PartyTypeBadge partyType={suppliers.find((party) => party.id === partyId)?.partyType} />
+                <p className="field-help">{copy.scanIn.partyHelp}</p>
+              </>
+            )}
+          </div>
+        </section>
+      )}
+
       <div className="ssn-workspace">
         {loadError ? (
           <StationBlocked title="Raw Material Input is not available" message={loadError} onRetry={() => void load()} />
         ) : (
           <>
+            {/* The panel carries the session's own controls: Start session until one is open (there
+                is nothing a scan could land in yet), then who it is with across the top and End
+                session under the scan. */}
             <ScanPanel
-              feedback={open ? feedback : { ...IDLE, message: "Choose a supplier and start a session to begin." }}
+              feedback={open || !embedded ? feedback : { ...IDLE, message: copy.store.scanToBegin }}
+              header={
+                embedded && open && session ? (
+                  <ScanPartyHeader
+                    eyebrow={copy.store.receivingFrom}
+                    name={session.partyName}
+                    partyType={suppliers.find((party) => party.id === session.partyId)?.partyType}
+                  />
+                ) : undefined
+              }
+              action={embedded ? <ScanSessionButton open={open} busy={busy} onStart={() => void startSession()} onEnd={() => void endSession()} /> : undefined}
+              // The rail leaves the box out until it could take a scan; the full screen keeps its layout.
+              showDock={open || !embedded}
               inputRef={inputRef}
               inputVal={inputVal}
               onInputChange={setInputVal}
               onKeyDown={handleKeyDown}
               onFocusScanner={focusScanner}
               disabled={!scannerReady}
-              disabledHint="Start a session first"
+              disabledHint={partyId ? copy.scanIn.pressNew : copy.scanIn.startHint}
             />
             {showSessionDetails && (
               <aside className="ssn-side">
-                <SessionCard
-                  code={session?.code ?? null}
-                  meta={
-                    session
-                      ? `${session.partyName} · started ${formatDateTime(session.startedAt)}${session.startedBy ? ` · ${session.startedBy}` : ""}`
-                      : "No session open. Choose a supplier above."
-                  }
-                  tallies={(summary?.byMaterial ?? []).map((row) => ({
-                    key: row.itemDisplayName,
-                    label: row.itemDisplayName,
-                    count: row.packets,
-                    countLabel: `${row.packets} · ${row.quantity} ${row.unitCode}`,
-                  }))}
-                  total={summary?.totalPackets ?? 0}
-                  totalNoun="packets"
-                  groupNoun="Materials"
-                  subhead="By material"
-                  emptyLabel="Nothing received yet."
-                />
+                {/* The Store page's rail groups the session by category, like the recent list;
+                    the full-screen station keeps its card. */}
+                {embedded ? (
+                  <SessionGroupsCard
+                    title={copy.store.thisSession}
+                    code={session?.code ?? null}
+                    meta={sessionMeta}
+                    groups={sessionGroups(summary?.byMaterial ?? [], copy.store.noCategory)}
+                    total={summary?.totalPackets ?? 0}
+                    // Per unit, as the printed receipt totals it, so the two can never disagree.
+                    totalAmount={quantityTotalLine(summary?.byMaterial ?? [])}
+                    countLabel={copy.storeStation.packets}
+                    totalLabel={copy.columns.total}
+                    emptyLabel={copy.store.nothingReceivedYet}
+                  />
+                ) : (
+                  <SessionCard
+                    code={session?.code ?? null}
+                    meta={sessionMeta}
+                    tallies={(summary?.byMaterial ?? []).map((row) => ({
+                      key: row.itemDisplayName,
+                      label: row.itemDisplayName,
+                      count: row.packets,
+                      // "1 packet · 1 BUNDLE", not "1 · 1 BUNDLE", which reads as a decimal.
+                      countLabel: `${copy.storeStation.packets(row.packets)} · ${row.quantity} ${row.unitCode}`,
+                    }))}
+                    total={summary?.totalPackets ?? 0}
+                    totalNoun="packets"
+                    groupNoun="Materials"
+                    subhead="By material"
+                    emptyLabel="Nothing received yet."
+                  />
+                )}
                 {/* On the desk the scan panel and the recent list already show the last packet. */}
                 {embedded ? null : <LastScanCard title="Last received" row={scanRows[0] ?? null} />}
               </aside>
@@ -443,12 +522,22 @@ const RawMaterialInputStation: React.FC<RawMaterialInputPageProps> = ({ token, u
       </div>
 
       {!loadError && showSessionDetails && (
-        <RecentScansCard
-          title="Recently received"
-          note={`Last ${RECENT_LIMIT} in this session`}
-          emptyLabel="No packets received in this session yet."
-          rows={scanRows}
-        />
+        // The Store page's rail lists them line by line; the full-screen station keeps its table.
+        embedded ? (
+          <RecentScansList
+            title={copy.store.recentlyReceived}
+            note={copy.store.lastInSession(RECENT_LIMIT)}
+            emptyLabel={copy.store.nothingReceivedYet}
+            rows={scanRows}
+          />
+        ) : (
+          <RecentScansCard
+            title={copy.store.recentlyReceived}
+            note={copy.store.lastInSession(RECENT_LIMIT)}
+            emptyLabel={copy.store.nothingReceivedYet}
+            rows={scanRows}
+          />
+        )
       )}
     </div>
   );

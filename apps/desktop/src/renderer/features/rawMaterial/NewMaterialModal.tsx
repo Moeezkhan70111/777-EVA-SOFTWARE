@@ -186,7 +186,9 @@ export const NewMaterialModal: React.FC<NewMaterialModalProps> = ({
         push("error", "Material not created", result.reason ?? "The material could not be saved.");
         return;
       }
-      if (result.duplicate) {
+      if (result.reenabled) {
+        push("info", copy.materialRemade.title, copy.materialRemade.body(result.code ?? "", result.displayName ?? ""));
+      } else if (result.duplicate) {
         push("info", "This material already exists", `${result.code} · ${result.displayName}`);
       } else {
         push("success", "Material created", `${result.code} · ${result.displayName}`);

@@ -1276,6 +1276,34 @@ export interface UpperIssueSummary {
   stock: UpperIssueTotals;
 }
 
+/** What a set of materials holds in one stock unit. */
+export interface KindStockTotal {
+  unitId: string;
+  unitCode: string;
+  quantity: number;
+}
+
+/** One material on the Upper Stock or Dana Stock page. */
+export interface KindStockRow {
+  id: string;
+  code: string;
+  name: string;
+  /** The kind of it under the top-level category; empty when it is filed on the category itself. */
+  subCategory: string;
+  quantity: number;
+  unitCode: string;
+}
+
+/** One page of a kind's materials, with the totals of all of them, not just this page. */
+export interface KindStockPage {
+  kind: string;
+  items: KindStockRow[];
+  itemCount: number;
+  totalsByUnit: KindStockTotal[];
+  page: number;
+  pages: number;
+}
+
 /** One upper material in the store. */
 export interface UpperStockRow {
   itemId: string;
@@ -1586,10 +1614,13 @@ export interface RawMaterialReceivingSession {
 export interface RawMaterialReceivingSessionSummary {
   session: RawMaterialReceivingSession;
   totalPackets: number;
-  byMaterial: Array<{ itemDisplayName: string; packets: number; quantity: number; unitCode: string }>;
+  /** categoryLabel is where the material sits now: "TOP — SUB", or "" when its item cannot be found. */
+  byMaterial: Array<{ itemDisplayName: string; categoryLabel: string; packets: number; quantity: number; unitCode: string }>;
   scans: Array<{
     qrId: string;
     itemDisplayName: string;
+    /** Where the material sits now: "TOP — SUB", or "TOP", or "" when its item cannot be found. */
+    categoryLabel: string;
     quantity: number;
     unitCode: string;
     receivedAt: string;
@@ -1627,8 +1658,8 @@ export interface RawMaterialIssueSessionSummary {
   /** That party's name, for the printed slip; null when the session has no party yet. */
   partyName: string | null;
   totalPackets: number;
-  /** One line per material and unit — what the printed slip totals. */
-  byMaterial: Array<{ itemDisplayName: string; packets: number; quantity: number; unitCode: string }>;
+  /** One line per material and unit — what the printed slip totals. categoryLabel as on a receipt. */
+  byMaterial: Array<{ itemDisplayName: string; categoryLabel: string; packets: number; quantity: number; unitCode: string }>;
   bySection: Array<{
     sectionName: string;
     packets: number;
@@ -1637,6 +1668,8 @@ export interface RawMaterialIssueSessionSummary {
   scans: Array<{
     qrId: string;
     itemDisplayName: string;
+    /** Where the material sits now: "TOP — SUB", or "TOP", or "" when its item cannot be found. */
+    categoryLabel: string;
     quantity: number;
     unitCode: string;
     sectionName: string | null;

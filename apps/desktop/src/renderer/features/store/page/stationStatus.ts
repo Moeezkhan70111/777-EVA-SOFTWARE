@@ -8,6 +8,8 @@ export interface StationStatus {
   sessionId: string | null;
   open: boolean;
   packets: number;
+  /** What those packets hold: "20", or "25 KG + 20 DOZ" for a session of several units. */
+  quantity: string;
 }
 
-export const NO_SESSION: StationStatus = { sessionId: null, open: false, packets: 0 };
+export const NO_SESSION: StationStatus = { sessionId: null, open: false, packets: 0, quantity: "" };

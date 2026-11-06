@@ -185,7 +185,7 @@ export const PurchaseVoucherFormPage: React.FC<PurchaseVoucherFormPageProps> = (
       {/* Header */}
       <div className="page-header">
         <div>
-          <h1>{voucherId ? "Edit Purchase Bill" : "New Purchase Bill"}</h1>
+          <h1 className="page-detail-title">{voucherId ? "Edit Purchase Bill" : "New Purchase Bill"}</h1>
           <p>Record a supplier bill for raw materials.</p>
         </div>
         <button type="button" className="party-back-link" onClick={() => onNavigate("purchase-voucher-list")}>

@@ -6,7 +6,7 @@ import { useWriteLease } from "../../sync/useWriteLease";
 import { CartonInStation } from "../programOut/CartonInStation";
 import { ProgramOutPanel } from "../programOut/ProgramOutPanel";
 import { isProgramClosed } from "../programClose/useProgramClose";
-import { ScanInIcon } from "../StoreIcons";
+import { ScanRailHeader } from "./ScanRailHeader";
 import type { StoreMode } from "./storeTabs";
 import type { StoreProgram } from "./useStoreProgram";
 
@@ -43,7 +43,7 @@ export const ProgramRail: React.FC<{ store: StoreProgram; mode: StoreMode; token
   if (!program) return null;
   if (mode === "receiving") {
     return (
-      <aside className="sp-rail" aria-label={copy.programOut.cartonInStationTitle(program.code)}>
+      <aside className="sp-rail sp-rail--in" aria-label={copy.programOut.cartonInStationTitle(program.code)}>
         <CartonInStation
           token={token}
           programId={program.id}
@@ -56,16 +56,9 @@ export const ProgramRail: React.FC<{ store: StoreProgram; mode: StoreMode; token
     );
   }
   return (
-    <aside className="sp-rail si-scan mo-scan" aria-label={copy.moveOut.scanTitle}>
-      <header className="si-scan-head">
-        <span className="si-scan-mark" aria-hidden="true">
-          <ScanInIcon />
-        </span>
-        <div>
-          <h2 className="si-scan-title">{copy.moveOut.scanTitle}</h2>
-          <p className="si-scan-line">{copy.storePage.programs.pausedTitle(program.code)}</p>
-        </div>
-      </header>
+    <aside className="sp-rail sp-rail--out si-scan mo-scan" aria-label={copy.moveOut.scanTitle}>
+      {/* Paused, so Not Ready: the program's own scanner is the one box listening. */}
+      <ScanRailHeader title={copy.moveOut.scanTitle} line={copy.storePage.programs.pausedTitle(program.code)} ready={false} />
       <div className="sp-paused" data-testid="scan-paused">
         <p>{copy.storePage.programs.scanOutPaused}</p>
         <p className="field-help">{copy.storePage.programs.closeToResume}</p>

@@ -6,6 +6,9 @@ export const APP_ROUTES = [
   // The KPI overview. A page like any other, behind the "dashboard" permission.
   "dashboard",
   "stock",
+  // One kind of raw material each, behind a permission of its own (stock.upper.view, stock.dana.view).
+  "upper-stock",
+  "dana-stock",
   // The Raw Material workspace. One destination with four tabs; the two routes after it are
   // deep links onto a tab, kept so the permissions that used to gate a page still gate it.
   "raw-material",

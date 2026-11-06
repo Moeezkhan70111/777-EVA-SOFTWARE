@@ -210,6 +210,8 @@ contextBridge.exposeInMainWorld("desktop", {
     rawMaterialQrBatchDeleteBlockers: (batchId: string) => ipcRenderer.invoke(IPC.rawMaterialQrBatchDeleteBlockers, batchId),
     addInventoryFieldOption: (input: Record<string, unknown>) => ipcRenderer.invoke(IPC.addInventoryFieldOption, input),
     listInventoryItems: (query?: Record<string, unknown>) => ipcRenderer.invoke(IPC.listInventoryItems, query),
+    listKindStock: (kind: string, query?: Record<string, unknown>) => ipcRenderer.invoke(IPC.listKindStock, kind, query),
+    listUpperStockMatrix: (query?: Record<string, unknown>) => ipcRenderer.invoke(IPC.listUpperStockMatrix, query),
     createInventoryItem: (input: Record<string, unknown>) => ipcRenderer.invoke(IPC.createInventoryItem, input),
     adjustInventoryStock: (input: Record<string, unknown>) => ipcRenderer.invoke(IPC.adjustInventoryStock, input),
     queryInventoryStock: (filters?: Record<string, unknown>) => ipcRenderer.invoke(IPC.queryInventoryStock, filters),
@@ -263,7 +265,7 @@ contextBridge.exposeInMainWorld("desktop", {
     getProductImage: (article: string) => ipcRenderer.invoke(IPC.getProductImage, article),
     saveProductImage: (article: string, dataUrl: string) => ipcRenderer.invoke(IPC.saveProductImage, article, dataUrl),
     saveRateList: (payload: { html: string; fileName: string }) => ipcRenderer.invoke(IPC.saveRateList, payload),
-    printDocument: (payload: { html: string; pageSize?: { widthIn: number; heightIn: number } }) =>
+    printDocument: (payload: { html: string; pageSize?: { widthIn: number; heightIn: number }; printer?: string }) =>
       ipcRenderer.invoke(IPC.printDocument, payload),
     listHistory: (query: Record<string, unknown>) => ipcRenderer.invoke(IPC.listHistory, query),
     listDispatchHistory: (query: Record<string, unknown>) => ipcRenderer.invoke(IPC.listDispatchHistory, query),

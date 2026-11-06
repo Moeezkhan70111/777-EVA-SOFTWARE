@@ -3,6 +3,7 @@ import { STORE_DIRECTION } from "@erp/domain";
 import type { AppRoute } from "../../../app/routes";
 import { copy } from "../../../config/copy";
 import { StateView } from "../../../components/shared/StateView";
+import { QrJourneyPage } from "../../../pages/QrJourneyPage";
 import { TabStrip } from "../../../components/shared/TabStrip";
 import { RawMaterialSection } from "../../rawMaterial/RawMaterialSection";
 import type { useRawMaterialLookups } from "../../rawMaterial/useRawMaterialLookups";
@@ -44,12 +45,14 @@ export const ReceivingWorkArea: React.FC<ReceivingWorkAreaProps> = (props) => {
     if (tab === "material") return <NewMaterialForm lookups={lookups} formKey={formKey} onDone={() => setFormKey((key) => key + 1)} />;
     if (tab === "byHand") return <ManualEntry token={token} />;
     if (tab === "report") return <StoreDailyReport direction={STORE_DIRECTION.IN} token={token} />;
+    if (tab === "journey") return <QrJourneyPage username={username} />;
     return (
       <RawMaterialSection
         tab={tab}
         lookups={lookups}
         username={username}
         isAdmin={isAdmin}
+        canRemoveMaterial={access.removeMaterial}
         onGenerateLabels={access.labels ? openLabelsFor : () => select("labels")}
         labelsItemId={labelsItemId}
         onLabelsItemConsumed={() => setLabelsItemId(undefined)}

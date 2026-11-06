@@ -101,17 +101,53 @@
   --shadow-inset-sm:    none;
 
   --navbar-h:           56px;
-  /* The navigation rail down the left: navy ground, white type. Pointed at the blue ramp's
-     darkest step so the chrome belongs to the same family as the action blue, and so changing
-     the company's chrome colour is these five lines (R3). */
-  --sidebar-w:          216px;
-  --sidebar-bg:         var(--sp-navy);
-  --sidebar-ink:        #ffffff;
-  --sidebar-ink-dim:    rgba(255, 255, 255, 0.72);
-  --sidebar-hover:      rgba(255, 255, 255, 0.10);
-  --sidebar-active:     var(--sp-navy-2);
-  --sidebar-line:       rgba(255, 255, 255, 0.12);
-  --sidebar-mark:       var(--accent-mid);
+  /* The navigation rail down the left, in the Store page's language: a white surface on its
+     hairline, navy type, the Move-in blue for what is open. Slim (icons) until hovered or pinned;
+     --sidebar-w is what the page makes room for, and turns into the open width when pinned
+     (the .app-shell:has() rule by the rail). Changing the chrome is these lines (R3). */
+  --sidebar-w:          68px;
+  --sidebar-w-slim:     68px;
+  --sidebar-w-open:     240px;
+  --sidebar-speed:      200ms;
+  --sidebar-bg:         var(--white);
+  --sidebar-ink:        var(--sp-navy);
+  --sidebar-ink-dim:    var(--sp-muted);
+  --sidebar-hover:      var(--sp-ground);
+  --sidebar-active:     color-mix(in srgb, var(--sp-mode-on-start) 9%, var(--white));
+  --sidebar-active-ink: var(--sp-navy-2);
+  --sidebar-line:       var(--sp-line);
+  --sidebar-mark:       var(--sp-mode-on-start);
+  --sidebar-shadow:     0 1px 2px rgba(12, 27, 56, 0.06), 0 18px 44px rgba(12, 27, 56, 0.14);
+  --sidebar-tip-bg:     var(--sp-navy);
+  /* The page header (PageHeader) on every screen: the Store page's, top padding and row. The
+     sidebar's brand row is the same height, so the logo stays on one line wherever it is. */
+  --page-head-top:      22px;
+  --page-head-row:      72px;
+  --app-head-h:         calc(var(--page-head-top) + var(--page-head-row));
+  /* The ground behind every screen but the Store page: the Store's sky, much quieter, settling
+     into the Store's ground. White cards then read as surfaces on it. */
+  --app-ground-top:     color-mix(in srgb, var(--sp-sky-top) 55%, var(--sp-ground));
+  /* The Dashboard's two cards (the owner's design). The surface steps are the design's own, so the
+     artwork's feathered edge melts into them. */
+  --dash-card-radius:   18px;
+  --dash-card-start:    #F6F9FE;
+  --dash-card-mid:      #EFF4FD;
+  --dash-card-end:      #E8EFFD;
+  --dash-card-wave:     #DFEAFD;
+  --dash-card-shadow:   0 2px 6px rgba(8, 119, 232, 0.08), 0 16px 36px rgba(8, 119, 232, 0.14);
+  --dash-card-lift:     0 4px 10px rgba(8, 119, 232, 0.10), 0 22px 44px rgba(8, 119, 232, 0.20);
+  /* The Upper Stock matrix: its head, the size and total cells, and the fields above it. */
+  --us-head:            #E8EEF7;
+  --us-size:            #F1F5FB;
+  --us-chip:            #DCE9FB;
+  --us-total:           #E6F0FC;
+  --us-bar:             #DDE7F5;
+  --us-band-navy:       linear-gradient(100deg, #0E2A5E 0%, #124085 60%, #1A5AAE 100%);
+  --us-band-blue:       linear-gradient(100deg, #1A5CBB 0%, #2070D0 60%, #2A80DC 100%);
+  --us-band-sheen:      linear-gradient(115deg, transparent 58%, rgba(255, 255, 255, 0.07) 58.2%, transparent 84%);
+  --us-wash:            rgba(255, 255, 255, 0.45);
+  --us-field-line:      #BFD3EE;
+  --us-field-shadow:    0 1px 2px rgba(12, 27, 56, 0.05), 0 4px 12px rgba(12, 27, 56, 0.05);
   --ink-2:              var(--sc-muted-foreground);
 
   /* Semantic aliases — use these in components instead of raw hex values.
@@ -226,6 +262,31 @@
   --sp-mode-off-icon:      #3E68A7;
   --sp-mode-shadow:        0 8px 24px rgba(8, 119, 232, 0.14);
   --sp-mode-on-shadow:     0 6px 16px rgba(8, 119, 232, 0.32);
+  /* How the switch's and the tabs' blue thumb slides (1 Nov 2026: shared by both). */
+  --sp-slide:              380ms cubic-bezier(0.4, 0, 0.2, 1);
+  /* The scan rails (1 Nov 2026): the supplier field, the scan panel and its Start button, in the
+     same blue as Move in | Move out. */
+  --sp-blue:               var(--sp-mode-on-start);   /* white text on it: 4.3:1 */
+  --sp-blue-cyan:          var(--sp-mode-on-end);     /* the light end of the Start gradient: large bold text only */
+  --sp-blue-soft:          #EAF3FF;      /* icon tiles */
+  --sp-blue-wash:          #F3F8FF;      /* the scan panel's ground */
+  --sp-blue-line:          #C9DDFB;      /* the scan panel's and icon tiles' outline */
+  --sp-ready:              #16A34A;      /* the Ready dot; the word beside it says it too */
+  /* The Stock tab's category colours (1 Nov 2026): a category's pill and its names' second part.
+     Each carries white bold 11px text at 4.5:1 or more. */
+  --sp-cat-1:              #0369A1;      /* sky,    5.9:1 */
+  --sp-cat-2:              #3730A3;      /* indigo, 9.0:1 */
+  --sp-cat-3:              #0F766E;      /* teal,   5.4:1 */
+  --sp-cat-4:              #9D174D;      /* rose,   7.9:1 */
+  --sp-cat-5:              #B45309;      /* amber,  5.0:1 */
+  --sp-cat-6:              #6D28D9;      /* violet, 7.1:1 */
+  --sp-radius-panel:       16px;
+  --sp-control-height-lg:  56px;
+  /* The whole scan rail drawn at this size (1 Nov 2026): the owner wanted it as it looked at 80% page
+     zoom. One number, so the rail can be made bigger or smaller again without touching its parts. */
+  --sp-rail-scale:         0.8;
+  /* Which way a rail moves material, along its top edge (1 Nov 2026): Move in blue, Move out red. */
+  --sp-rail-edge:          5px;
   --radius-tab:            var(--sp-radius-tab);
   --danger-tint:        #fee2e2;
   --danger-strong:      #b91c1c;
@@ -294,159 +355,286 @@ html, body { margin: 0; height: 100%; overflow-x: hidden; background: var(--bg);
 
 /* ─── App Shell ──────────────────────────────────────── */
 .app-shell { height: 100vh; display: flex; flex-direction: row; overflow: hidden; }
-/* ─── Navigation: a navy rail down the left ──────────────────────────────
- * The chrome moved from a bar across the top to a rail down the side on
- * 2026-10-08, at the owner's request: navy ground, white type, a picture
- * beside every section. It keeps the same markup the top bar used, so one
- * component still owns the sections, the profile menu and the notifications.
+/* ─── Navigation: the rail down the left ──────────────────────────────────
+ * In the Store page's language (2026-11): a white surface on the Store's hairline, navy type,
+ * Archivo, the Store's row radius, and the Move-in blue for what is open — a soft tint and a
+ * short bar on the rail's edge. Built on the --sidebar-* tokens above (R3).
  *
- * Built entirely on this file's own tokens — --sidebar-* below, which are
- * named for their role and point at the central navy/blue ramp, so the
- * company's chrome colour is those four lines and nothing else.
+ * TWO WIDTHS. .navbar is the box the page makes room for: the slim width, or the open width once
+ * pinned. .navbar-panel is the rail itself, laid over that box: it widens on hover/focus OVER the
+ * page, so nothing on the page moves while the user only looks. Everything in the rail is anchored
+ * to its left edge (logo, icons, the rows' left) so opening it reveals the labels to the right
+ * and nothing slides about. The width is the only property that animates; labels fade.
  *
- * Every effect is from the paint-safe set (flat fills, uniform 1px borders +
- * radius, ordinary --shadow-*, transform/opacity). No gradients, inset
- * shadows, drop-shadows or backdrop-filter: on this hardware each of those
- * costs 50-100ms the first time it is drawn. The current-section marker is a
- * positioned bar rather than a border-left for the same reason.
+ * Paint-safe as before: flat fills, 1px borders, ordinary shadows; no gradients, backdrop-filter
+ * or drop-shadow (each costs 50-100ms on first draw on this hardware).
  */
 
 .navbar {
-  width: var(--sidebar-w);
-  min-width: var(--sidebar-w);
+  position: relative;
+  /* Above the page (z-index 1), below the dialog layer (500): a dialog covers the rail. */
+  z-index: 400;
+  flex: 0 0 var(--sidebar-w-slim);
+  width: var(--sidebar-w-slim);
   height: 100%;
+}
+.navbar.is-pinned { flex-basis: var(--sidebar-w-open); width: var(--sidebar-w-open); }
+/* Anything that clears the rail (a drawer's backdrop) follows it when it is pinned open. */
+.app-shell:has(> .navbar.is-pinned) { --sidebar-w: var(--sidebar-w-open); }
+
+.navbar-panel {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: var(--sidebar-w-slim);
   display: flex;
   flex-direction: column;
-  gap: 0;
-  flex-shrink: 0;
-  position: relative;
-  /* Above the page (z-index 1), below the dialog layer (500): a dialog covers the rail, which
-     is what a modal means. The rail's own flyout is portalled and carries its own z-index. */
-  z-index: 400;
-  overflow: visible;
+  overflow: hidden;
   background: var(--sidebar-bg);
   border-right: 1px solid var(--sidebar-line);
+  color: var(--sidebar-ink);
+  font-family: var(--sp-font);
+  transition: width var(--sidebar-speed) var(--ease-out-expo), box-shadow var(--sidebar-speed) ease;
 }
+.navbar.is-expanded .navbar-panel { width: var(--sidebar-w-open); }
+/* Opened over the page: lifted off it. Pinned, it sits level with the page. */
+.navbar.is-expanded:not(.is-pinned) .navbar-panel { box-shadow: var(--sidebar-shadow); }
 
+/* The brand row is exactly as tall as the page header, so the logo sits on the header's line. */
 .navbar-brand {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  padding: 16px 12px;
-  flex-shrink: 0;
-  border-bottom: 1px solid var(--sidebar-line);
+  display: flex; justify-content: center; align-items: center; flex-shrink: 0;
+  box-sizing: border-box; height: var(--app-head-h); padding: var(--page-head-top) 11px 0;
 }
-/* The white logo (logo-white.png, transparent) sits straight on the navy, centred in the rail. */
-.navbar-logo-img { display: block; height: 58px; width: 10rem; max-width: 100%;  }
+/* The 777 SEVEN mark, the Store header's at the header's size. Only while the rail is open: slim,
+   the page header carries the logo instead (.page-head-logo), so there is never two on screen.
+   It fades in a beat after the rail starts to open and out at once as it closes. */
+.navbar-logo-img {
+  display: block; flex-shrink: 0; width: auto; height: 50px;
+  opacity: 0; visibility: hidden;
+  transition: opacity .12s ease, visibility 0s linear .12s;
+}
+.navbar.is-expanded .navbar-logo-img { opacity: 1; visibility: visible; transition: opacity .18s ease .06s, visibility 0s; }
 
-/* ── The sections: Home, then each section's pages as rows under its heading ── */
+/* ── The rows: Home, then each section's pages under its heading ── */
 
 .navbar-nav {
   display: flex;
   flex-direction: column;
-  align-items: stretch;
+  gap: 2px;
   flex: 1;
   min-height: 0;
-  padding: 8px;
-  gap: 2px;
+  padding: 4px 10px 10px;
+  overflow-x: hidden;
   overflow-y: auto;
-  overflow-x: visible;
+  scroll-behavior: smooth;
 }
-/* A quiet scrollbar on the navy, rather than the browser's grey slab. */
 .navbar-nav::-webkit-scrollbar { width: 6px; }
-.navbar-nav::-webkit-scrollbar-thumb { background: var(--sidebar-hover); border-radius: 3px; }
+.navbar-nav::-webkit-scrollbar-thumb { background: var(--sidebar-line); border-radius: 3px; }
+/* Slim, a scrollbar would push the icons off centre; the list still scrolls with the wheel. */
+.navbar:not(.is-expanded) .navbar-nav::-webkit-scrollbar { width: 0; }
 
 .nav-top-btn,
 .nav-group-head {
   position: relative;
   display: flex;
   align-items: center;
-  gap: 10px;
   width: 100%;
-  min-height: 38px;
-  padding: 0 10px;
-  border: 1px solid transparent;
-  border-radius: var(--radius-md);
+  min-height: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--sp-radius-tab);
   background: transparent;
   color: var(--sidebar-ink-dim);
   font: inherit;
-  font-size: 0.82rem;
-  font-weight: 600;
-  letter-spacing: -0.005em;
+  font-size: 13.5px;
+  font-weight: 500;
   white-space: nowrap;
   text-align: left;
   cursor: pointer;
-  transition: background-color .12s ease, color .12s ease;
+  transition: background-color .15s ease, color .15s ease;
 }
-.nav-top-icon { display: flex; align-items: center; justify-content: center; flex: 0 0 auto; width: 18px; height: 18px; }
-.nav-top-icon svg { width: 100%; height: 100%; }
-.nav-top-label { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+/* The picture sits in a fixed 48px column: the slim rail's whole row, so it is centred there and
+   never moves when the rail opens. */
+.nav-top-icon { display: flex; align-items: center; justify-content: center; flex: 0 0 48px; height: 44px; }
+.nav-top-icon svg { width: 20px; height: 20px; }
+.nav-top-label { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; opacity: 0; transition: opacity .12s ease; }
+.navbar.is-expanded .nav-top-label { opacity: 1; transition: opacity .2s ease .06s; }
 
 .nav-top-btn:hover,
-.nav-group-head:hover { background: var(--sidebar-hover); color: var(--sidebar-ink); }
-.nav-top-btn:focus-visible,
-.nav-group-head:focus-visible,
-.nav-item:focus-visible {
-  outline: none;
-  border-color: var(--sidebar-ink);
+.nav-group-head:hover,
+.nav-item:hover { background: var(--sidebar-hover); color: var(--sidebar-ink); }
+.navbar .nav-top-btn:focus-visible,
+.navbar .nav-group-head:focus-visible,
+.navbar .nav-item:focus-visible,
+.navbar .sync-indicator:focus-visible {
+  outline: 2px solid var(--sidebar-mark);
+  outline-offset: -2px;
   box-shadow: none;
 }
 
-/* Current section: a tint plus a bar down its left edge. A positioned element,
-   never a border-left — see the note at the top. */
+/* The open page: a soft tint, the Move-in blue on its picture, and a short bar on the rail's
+   edge. A positioned bar, never a border-left (a slow first paint here). */
 .nav-top-btn.active,
-.nav-item.active { background: var(--sidebar-active); color: var(--sidebar-ink); font-weight: 700; }
+.nav-item.active { background: var(--sidebar-active); color: var(--sidebar-active-ink); font-weight: 600; }
+.nav-top-btn.active .nav-top-icon,
+.nav-group-head.has-active .nav-top-icon { color: var(--sidebar-mark); }
 .nav-top-btn.active::after,
-.nav-item.active::after {
+.navbar:not(.is-expanded) .nav-group-head.has-active::after {
   content: "";
   position: absolute;
-  left: 0;
-  top: 7px;
-  bottom: 7px;
+  left: -10px;
+  top: 11px;
+  bottom: 11px;
   width: 3px;
-  border-radius: 0 2px 2px 0;
+  border-radius: 0 3px 3px 0;
   background: var(--sidebar-mark);
 }
+/* Slim, a section's rows are hidden, so its heading wears the open page's tint. */
+.navbar:not(.is-expanded) .nav-group-head.has-active { background: var(--sidebar-active); }
+.nav-group-head.has-active { color: var(--sidebar-active-ink); }
 
 /* A section heading folds its rows open and shut; the chevron points right while shut. */
 .nav-group { display: flex; flex-direction: column; }
-.nav-group-head { margin-top: 6px; }
-/* A page that stands on its own (Machine Program) sits between the sections with the same gap. */
-.nav-group + .nav-top-btn, .nav-top-btn + .nav-top-btn { margin-top: 6px; }
 .nav-group-head .chevron {
-  width: 13px;
-  height: 13px;
   flex: 0 0 auto;
-  opacity: .5;
-  transition: transform .15s var(--ease-out-expo);
+  width: 14px;
+  height: 14px;
+  margin-right: 12px;
+  opacity: 0;
+  transition: transform .15s var(--ease-out-expo), opacity .12s ease;
 }
+.navbar.is-expanded .nav-group-head .chevron { opacity: .45; }
 .nav-group-head:not(.open) .chevron { transform: rotate(-90deg); }
 
-/* One row per page — the same pages as the Home tiles. Indented under the heading's label. */
-.nav-group-items { display: flex; flex-direction: column; gap: 1px; margin: 0 0 2px; padding: 0 0 0 28px; list-style: none; }
-.nav-item {
+/* The rows fold away while the rail is slim, and grow back in as it opens. */
+.nav-group-items-wrap {
+  display: grid;
+  grid-template-rows: 1fr;
+  opacity: 1;
+  transition: grid-template-rows var(--sidebar-speed) var(--ease-out-expo), opacity .2s ease, visibility 0s;
+}
+.navbar:not(.is-expanded) .nav-group-items-wrap {
+  grid-template-rows: 0fr;
+  opacity: 0;
+  visibility: hidden;
+  transition: grid-template-rows var(--sidebar-speed) var(--ease-out-expo), opacity .12s ease, visibility 0s linear var(--sidebar-speed);
+}
+
+/* One row per page, under its heading's label, on a hairline that runs down from the heading's
+   picture; the open page lights its piece of the line. */
+.nav-group-items {
   position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-height: 0;
+  overflow: hidden;
+  margin: 0;
+  padding: 2px 0 6px 40px;
+  list-style: none;
+}
+.nav-group-items::before { content: ""; position: absolute; left: 23.5px; top: 0; bottom: 8px; width: 1px; background: var(--sidebar-line); }
+.nav-group-items li { position: relative; }
+.nav-group-items li.active::before { content: ""; position: absolute; left: -17px; top: 9px; bottom: 9px; width: 2px; border-radius: 2px; background: var(--sidebar-mark); }
+.nav-item {
   display: block;
   width: 100%;
-  min-height: 34px;
+  min-height: 38px;
   padding: 0 10px;
-  border: 1px solid transparent;
-  border-radius: var(--radius-md);
+  border: 0;
+  border-radius: var(--sp-radius-tab);
   background: transparent;
   color: var(--sidebar-ink-dim);
   font: inherit;
-  font-size: 0.8rem;
-  font-weight: 500;
+  font-size: 13px;
+  font-weight: 450;
   text-align: left;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   cursor: pointer;
-  transition: background-color .12s ease, color .12s ease;
+  transition: background-color .15s ease, color .15s ease;
 }
-.nav-item:hover { background: var(--sidebar-hover); color: var(--sidebar-ink); }
-.nav-item, .nav-top-btn { border-radius: var(--radius-tab); }
+
+/* ── The foot: sharing status, Backup, the pin, the version ── */
+
+.navbar-foot {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex-shrink: 0;
+  padding: 8px 10px 10px;
+  border-top: 1px solid var(--sidebar-line);
+}
+.nav-pin[aria-pressed="true"] { color: var(--sidebar-active-ink); }
+.nav-pin[aria-pressed="true"] .nav-top-icon { color: var(--sidebar-mark); }
+.navbar-version {
+  width: 48px;
+  padding-top: 4px;
+  color: var(--sp-faint);
+  font-size: 10.5px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  white-space: nowrap;
+}
+
+/* The slim rail's name tags (useRailTooltip): portalled beside the rail, never clipped by it. */
+.rail-tooltip {
+  position: fixed;
+  z-index: 1200;
+  padding: 6px 10px;
+  border-radius: var(--sp-radius-control);
+  background: var(--sidebar-tip-bg);
+  color: var(--white);
+  font-family: var(--sp-font);
+  font-size: 12.5px;
+  font-weight: 500;
+  white-space: nowrap;
+  pointer-events: none;
+  box-shadow: var(--shadow-md);
+  transform: translateY(-50%);
+  animation: rail-tip-in .12s ease-out;
+}
+@keyframes rail-tip-in {
+  from { opacity: 0; transform: translate(-4px, -50%); }
+  to   { opacity: 1; transform: translate(0, -50%); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .navbar-panel, .navbar-logo-img, .page-head-logo, .nav-top-label, .nav-group-items-wrap, .nav-group-head .chevron { transition: none; }
+  .navbar-nav { scroll-behavior: auto; }
+  .rail-tooltip { animation: none; }
+}
+
+/* ── The page beside the rail: the page header, then the page ────────────
+   The ground is the Store's sky made quiet: a faint blue at the top settling into the Store's ground,
+   with one of its beams. It stays put behind the scrolling page, and a page with a surface of its
+   own (the Store page's sky, the scan stations) simply covers it. */
+
+.app-main {
+  flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column;
+  background:
+    linear-gradient(112deg, transparent 64%, var(--sp-sky-beam) 64.2%, transparent 90%),
+    linear-gradient(180deg, var(--app-ground-top) 0, var(--sp-ground) 340px);
+}
+/* The same inset as the Store page's header, so the header does not shift between screens. */
+.app-head { flex-shrink: 0; padding: var(--page-head-top) 28px 0; }
+.app-head + .page-content:not(.page-content--fullscreen) { padding: 14px 28px 28px; }
+/* A full-screen station paints a flat ground of its own, which would end the header in a hard band:
+   beside the sidebar it shows the shell's instead. Only this outermost layer, which never changes:
+   a scan's success and error colours live on the cards inside it. !important because one station
+   sets its ground inline. The Store page has no .app-head, so it keeps its sky. */
+.app-head + .page-content--fullscreen > :not(.sync-notice) { background: transparent !important; }
+
+/* The page header names the page, so a page's own heading would only repeat it. Hidden here, in
+   one place, rather than cut from some forty pages, which keep working and testing unchanged. A
+   heading that says MORE than the page's name (Edit or New, a gatepass number) is marked
+   .page-detail-title and stays. Actions that sat opposite a heading stay on the right; a row left
+   with nothing in it goes. */
+.app-head + .page-content h1:not(.page-detail-title),
+.app-head + .page-content div.page-title { display: none; }
+.app-head + .page-content .page-header > h1:not(.page-detail-title):first-child + * { margin-left: auto; }
+.app-head + .page-content .page-header:has(> h1:not(.page-detail-title):only-child) { display: none; }
 
 /* ── Popovers: profile menu, notifications ─────────────────────────────── */
 
@@ -491,65 +679,32 @@ html, body { margin: 0; height: 100%; overflow-x: hidden; background: var(--bg);
 .nav-dd-item:hover svg { opacity: .85; }
 .nav-dd-item.active svg { opacity: 1; color: var(--action); }
 
-/* ── The foot of the rail: version, notifications, the signed-in user ──── */
+/* ── The bell and the profile, top right (HeaderActions) ──────────────────
+   Drawn as the Store page header draws them: the bell in the header's blue, the profile as a
+   round portrait. The top bar is shorter than the Store header, so its portrait is smaller. */
 
-.navbar-right {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 6px;
-  padding: 8px;
-  margin-left: 0;
-  margin-top: auto;
-  flex-shrink: 0;
-  border-top: 1px solid var(--sidebar-line);
-}
-
-.navbar-version {
-  padding: 3px 8px;
-  border: 1px solid var(--sidebar-line);
-  border-radius: 999px;
-  background: var(--sidebar-hover);
-  color: var(--sidebar-ink-dim);
-  font-size: 0.66rem;
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-
-/* Ghost icon buttons, shadcn "ghost" size icon — on navy, so they take the rail's ink. */
-.notification-trigger,
-.navbar-right .btn-secondary {
+.header-actions { display: flex; align-items: center; gap: 22px; }
+.notification-trigger {
+  position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  height: 32px;
-  min-height: 32px;
-  border: 1px solid transparent;
-  border-radius: var(--radius-md);
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
   background: transparent;
-  color: var(--sidebar-ink-dim);
-  cursor: pointer;
-  transition: background-color .12s ease, color .12s ease;
-}
-.notification-trigger { position: relative; width: 32px; }
-.navbar-right .btn-secondary { padding: 0 11px; font-size: 0.76rem; font-weight: 600; box-shadow: none; }
-.notification-trigger:hover,
-.navbar-right .btn-secondary:hover { background: var(--sidebar-hover); color: var(--sidebar-ink); box-shadow: none; }
-.notification-trigger[aria-expanded="true"] { background: var(--sidebar-hover); color: var(--sidebar-ink); }
-.notification-trigger:focus-visible,
-.navbar-right .btn-secondary:focus-visible {
-  outline: 2px solid var(--sidebar-ink);
-  outline-offset: 1px;
-  border-color: transparent;
+  color: var(--sp-bell);
   box-shadow: none;
+  cursor: pointer;
+  transition: background-color .12s ease;
 }
-.notification-trigger svg { width: 16px; height: 16px; }
-
-/* The rail's popovers open upward and to the right, out of the foot. */
-.navbar-right .notification-panel,
-.navbar-right .profile-menu { top: auto; bottom: 0; left: calc(100% + 6px); right: auto; }
-
+.notification-trigger svg { width: 24px; height: 24px; }
+.notification-trigger svg path { fill: currentColor; }
+.notification-trigger:hover,
+.notification-trigger[aria-expanded="true"] { background: var(--sp-ground); }
+.notification-trigger:focus-visible { outline: 3px solid var(--sp-navy-2); outline-offset: 2px; }
 .notification-menu-wrap { position: relative; }
 .notification-badge {
   position: absolute;
@@ -569,51 +724,6 @@ html, body { margin: 0; height: 100%; overflow-x: hidden; background: var(--bg);
 
 /* ── Profile ───────────────────────────────────────────────────────────── */
 
-.profile-menu-wrap { position: relative; }
-.profile-menu-trigger {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  height: 32px;
-  padding: 0 8px 0 4px;
-  border: 1px solid transparent;
-  border-radius: var(--radius-md);
-  background: transparent;
-  color: var(--text-2);
-  font: inherit;
-  font-size: 0.78rem;
-  font-weight: 550;
-  max-width: 190px;
-  cursor: pointer;
-  transition: background-color .12s ease;
-}
-/* In the rail's foot the trigger takes the rail's ink, not the page's. */
-.navbar-right .profile-menu-trigger { color: var(--sidebar-ink-dim); max-width: 100%; }
-.navbar-right .profile-menu-trigger:hover,
-.navbar-right .profile-menu-trigger[aria-expanded="true"] { background: var(--sidebar-hover); color: var(--sidebar-ink); }
-.profile-menu-trigger:hover,
-.profile-menu-trigger[aria-expanded="true"] { background: var(--surface-2); }
-.profile-menu-trigger:focus-visible {
-  outline: 2px solid var(--sidebar-ink);
-  outline-offset: 1px;
-  border-color: transparent;
-  box-shadow: none;
-}
-.profile-menu-icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 25px;
-  height: 25px;
-  flex-shrink: 0;
-  border-radius: 999px;
-  background: var(--primary-blue);
-  color: var(--white);
-}
-.profile-menu-user-icon { width: 13px; height: 13px; }
-.profile-menu-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.profile-menu-trigger .chevron { width: 13px; height: 13px; opacity: .45; transition: transform .15s var(--ease-out-expo); }
-.profile-menu-trigger[aria-expanded="true"] .chevron { transform: rotate(180deg); }
 
 .profile-menu { top: calc(100% + 6px); right: 0; min-width: 210px; }
 .profile-menu-item {
@@ -641,7 +751,7 @@ html, body { margin: 0; height: 100%; overflow-x: hidden; background: var(--bg);
 
 /* ── Notifications panel ───────────────────────────────────────────────── */
 
-.notification-panel { top: calc(100% + 6px); right: 0; width: 320px; }
+.notification-panel { top: calc(100% + 6px); right: 0; width: 320px; max-height: calc(100vh - var(--app-head-h) - 24px); overflow-y: auto; }
 .notification-panel-empty { margin: 0; padding: 4px 9px 9px; color: var(--text-3); font-size: 0.8rem; }
 .notification-panel-title {
   padding: 6px 9px 7px;
@@ -692,14 +802,14 @@ html, body { margin: 0; height: 100%; overflow-x: hidden; background: var(--bg);
 
 
 /* ─── Page Content ───────────────────────────────────── */
-.page-content { flex: 1; overflow-y: auto; padding: 24px; background-color: white; }
+.page-content { flex: 1; overflow-y: auto; padding: 24px; background-color: transparent; }
 .page-content.page-content--fullscreen,
 .page-content--fullscreen {
   padding: 0 !important;
   overflow: hidden !important;
   display: flex;
   flex-direction: column;
-  height: 100vh;
+  min-height: 0; /* the column beside the rail gives the height (.app-main) */
   background: transparent;
 }
 
@@ -1700,6 +1810,23 @@ select {
 }
 
 /* ════════════════════════════════════════════════════════ PAGER ════════════════════════════════════════════════════════ */
+/* ‹ 1 … 4 5 6 … 20 › — round buttons; the current page on the switch's blue (1 Nov 2026). */
+.pager-numbered { display: flex; align-items: center; gap: 8px; }
+.pager-round {
+  display: inline-flex; align-items: center; justify-content: center; min-width: 40px; height: 40px; padding: 0 10px;
+  border-radius: 999px; border: 1px solid var(--sp-line); background: var(--white); color: var(--sp-navy);
+  font: inherit; font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums; cursor: pointer; box-shadow: var(--sp-card-shadow);
+  transition: background-color 180ms ease, color 180ms ease, border-color 180ms ease;
+}
+.pager-round svg { width: 18px; height: 18px; }
+.pager-round:hover:not(:disabled):not([aria-current="page"]) { border-color: var(--sp-blue-line); color: var(--sp-mode-on-start); }
+.pager-round[aria-current="page"] {
+  border-color: transparent; color: var(--white);
+  background: linear-gradient(90deg, var(--sp-mode-on-start), var(--sp-mode-on-end)); box-shadow: var(--sp-mode-on-shadow);
+}
+.pager-round:disabled { opacity: 0.45; cursor: default; }
+.pager-round:focus-visible { outline: 3px solid var(--sp-navy-2); outline-offset: 2px; }
+.pager-gap { padding: 0 2px; color: var(--sp-muted); }
 .pager { display: flex; align-items: center; gap: 8px; margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--chrome-line); }
 .pager-info { font-size: 0.82rem; color: var(--text-3); flex: 1; font-weight: 600; }
 
@@ -1956,7 +2083,8 @@ select {
 .report-total-value { font-size: 1.65rem; font-weight: 800; color: var(--text); }
 
 /* ════════════════════════════════════════════════════════ NOTIFICATIONS ════════════════════════════════════════════════════════ */
-.notice-wrap { position: fixed; top: 14px; right: 14px; width: min(360px, calc(100vw - 28px)); display: flex; flex-direction: column; gap: 8px; z-index: 1000; pointer-events: none; }
+/* Below the top bar and the Store header, so a toast never sits over the bell or the profile. */
+.notice-wrap { position: fixed; top: calc(var(--app-head-h) + 8px); right: 14px; width: min(360px, calc(100vw - 28px)); display: flex; flex-direction: column; gap: 8px; z-index: 1000; pointer-events: none; }
 .notice {
   background: var(--chrome-bg); border: 1px solid var(--glass-90);
   border-left-width: 5px; border-radius: var(--radius-lg);
@@ -1981,24 +2109,36 @@ select {
 /* ── Sync status indicator (rail) ──────────────────────────────────────────
    Flat fills and a plain 1px border throughout: gradients, drop-shadow and inset shadows each
    stall the GPU on first draw in this app, and this sits in the rail that paints first.
-   Colour never carries the meaning alone — every state also shows a mark and a word (R18). */
-.sync-indicator-wrap { display: flex; align-items: center; }
+   Colour never carries the meaning alone — every state also shows a mark and a word (R18).
+   Drawn as one of the rail's rows: the mark in the picture column, the words as its label, which
+   fade in as the rail opens (the slim rail's tooltip says them meanwhile). */
+.sync-indicator-wrap { display: block; }
 .sync-indicator {
-  display: inline-flex; align-items: center; gap: 6px;
-  min-height: 32px; padding: 0 10px;
-  border: 1px solid var(--glass-90); border-radius: var(--radius-md);
-  background: transparent; color: var(--sidebar-ink);
-  font-size: 0.74rem; font-weight: 700; cursor: pointer; white-space: nowrap;
+  display: flex; align-items: center; width: 100%;
+  min-height: 44px; padding: 0;
+  border: 0; border-radius: var(--sp-radius-tab);
+  background: transparent; color: var(--sidebar-ink-dim);
+  font: inherit; font-size: 13.5px; font-weight: 500; text-align: left; cursor: pointer; white-space: nowrap;
+  transition: background-color .15s ease, color .15s ease;
 }
-.sync-indicator:hover { background: var(--sidebar-hover); }
-.sync-indicator-mark { font-weight: 900; line-height: 1; }
-.sync-indicator-text { letter-spacing: .01em; }
+.sync-indicator:hover { background: var(--sidebar-hover); color: var(--sidebar-ink); }
+.sync-indicator-mark { display: flex; align-items: center; justify-content: center; flex: 0 0 48px; }
+/* The mark on a small tinted disc, so the slim rail shows a status, not a stray character. */
+.sync-indicator-dot {
+  display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px;
+  border-radius: 50%; background: var(--sp-ground); font-size: 12px; font-weight: 900; line-height: 1;
+}
+.sync-dot-working   .sync-indicator-dot { background: var(--ok-bg); }
+.sync-dot-waiting   .sync-indicator-dot { background: var(--warn-bg); }
+.sync-dot-attention .sync-indicator-dot { background: var(--white); }
+.sync-indicator-text { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; opacity: 0; transition: opacity .12s ease; }
+.navbar.is-expanded .sync-indicator-text { opacity: 1; transition: opacity .2s ease .06s; }
 .sync-dot-working   .sync-indicator-mark { color: var(--ok); }
 .sync-dot-waiting   .sync-indicator-mark { color: var(--warn); }
 .sync-dot-attention .sync-indicator-mark { color: var(--err); }
 .sync-dot-off       .sync-indicator-mark { color: var(--text-3); }
 /* The one state worth catching an eye that is looking elsewhere. */
-.sync-dot-attention { border-color: var(--err); }
+.sync-dot-attention { color: var(--err); background: var(--err-bg); }
 
 /* Portalled out of the rail, which clips on both axes. Above the rail (400), below modals. */
 .sync-detail {
@@ -2949,13 +3089,13 @@ select:focus, textarea:focus, .form-input:focus { border-color: var(--primary-bl
 .status-dot.ok { box-shadow: none; }
 button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 2px solid var(--primary-blue-light); outline-offset: 2px; }
 @media (max-width: 760px) {
-  .navbar { height: auto; min-height: 58px; flex-wrap: wrap; }
-  .navbar-brand { height: 58px; padding: 0 14px; }
-  .navbar-logo-img { height: 40px; }
-  .navbar-nav { order: 3; flex-basis: 100%; height: auto; min-height: 44px; padding: 0 10px 8px; overflow: visible; flex-wrap: wrap; }
-  /* On a phone the Home tiles are the navigation; the bar keeps only Home. */
-  .nav-group { display: none; }
-  .navbar-right { padding: 0 12px 0 0; }
+  /* On a narrow screen a pinned rail would leave the page too little room: it stays slim beside
+     the page and opens over it, as it does when hovered. */
+  .app-shell:has(> .navbar.is-pinned) { --sidebar-w: var(--sidebar-w-slim); }
+  .navbar.is-pinned { flex-basis: var(--sidebar-w-slim); width: var(--sidebar-w-slim); }
+  .navbar.is-pinned .navbar-panel { box-shadow: var(--sidebar-shadow); }
+  .app-head { padding: 16px 14px 0; }
+  .app-head + .page-content:not(.page-content--fullscreen) { padding: 12px 14px 20px; }
   .page-content { padding: 20px 14px; }
   .card, .form-card, .party-form { padding: 16px; }
   .page-header { align-items: flex-start; flex-direction: column; gap: 10px; }
@@ -5531,6 +5671,60 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .combobox-chevron svg { width: 18px; height: 18px; transition: transform .15s var(--ease-out-expo); }
 .combobox-chevron:hover { color: var(--text); }
 .pv-item-combobox.is-open .combobox-chevron svg { transform: rotate(180deg); }
+/* A picture at the start of the field (the `icon` prop), in place of the search mark. */
+.pv-item-combobox--icon .form-input { padding-left: 38px; }
+.combobox-icon {
+  position: absolute; left: 11px; top: 50%; transform: translateY(-50%); z-index: 1;
+  display: flex; color: var(--text-3); pointer-events: none;
+}
+.combobox-icon svg { width: 18px; height: 18px; }
+/* A badge's picture (an option's badgeIcon), before its words. */
+.city-option-badge-icon { display: inline-flex; flex: none; }
+.city-option-badge-icon svg { width: 14px; height: 14px; }
+
+/* The panel (the `searchPlaceholder` prop, 1 Nov 2026): a select-like field, and under it a white
+   panel with its own search box and the rows — name, code under it, type badge on the right. */
+.pv-item-combobox--panel .form-input { cursor: pointer; caret-color: transparent; }
+.pv-item-dropdown.combobox-panel {
+  display: flex; flex-direction: column; overflow: hidden; padding: 14px 10px 10px 14px;
+  background: var(--white); border: 1px solid var(--sp-line); border-radius: var(--sp-radius-panel);
+  box-shadow: 0 18px 40px rgba(12, 27, 56, 0.14), 0 2px 6px rgba(12, 27, 56, 0.06);
+}
+.combobox-panel-search { position: relative; flex: none; margin: 0 4px 10px 0; }
+.combobox-panel-search-icon {
+  position: absolute; left: 14px; top: 50%; transform: translateY(-50%);
+  display: flex; color: var(--sp-muted); pointer-events: none;
+}
+.combobox-panel-search-icon svg { width: 20px; height: 20px; }
+.combobox-panel .combobox-panel-search-input, .combobox-panel .combobox-panel-search-input:focus {
+  width: 100%; height: 48px; margin: 0; padding: 0 14px 0 44px;
+  border: 1.5px solid var(--sp-line); border-radius: var(--sp-radius-panel); outline: none; box-shadow: none;
+  background: var(--white); color: var(--sp-navy); font: inherit; font-size: 15px;
+}
+.combobox-panel .combobox-panel-search-input:focus { border-color: var(--sp-blue); box-shadow: 0 0 0 3px color-mix(in srgb, var(--sp-blue) 14%, transparent); }
+.combobox-panel .combobox-panel-search-input::placeholder { color: var(--sp-muted); opacity: 1; }
+.combobox-panel-list {
+  flex: 1; min-height: 0; overflow-y: auto; padding-right: 6px;
+  scrollbar-width: thin; scrollbar-color: var(--sp-blue-line) transparent;
+}
+.combobox-panel-list::-webkit-scrollbar { width: 6px; }
+.combobox-panel-list::-webkit-scrollbar-thumb { background: var(--sp-blue-line); border-radius: 999px; }
+.combobox-panel .city-option {
+  padding: 10px 14px; border-bottom: 1px solid var(--sp-line); border-radius: 0; color: var(--sp-navy);
+}
+.combobox-panel .city-option:last-child { border-bottom-color: transparent; }
+.combobox-panel .city-option:hover, .combobox-panel .city-option.highlighted {
+  background: var(--sp-blue-soft); border-bottom-color: transparent; border-radius: var(--sp-radius-control); color: var(--sp-title-top);
+}
+.combobox-panel .city-option-head { align-items: center; gap: 12px; }
+.combobox-panel .city-option-label { font-size: 16px; font-weight: 700; }
+.combobox-panel .city-option-detail { margin-top: 2px; font-size: 13px; color: var(--sp-muted); }
+.combobox-panel .city-option-badge { display: inline-flex; align-items: center; gap: 7px; height: 30px; padding: 0 14px; border-radius: 999px; font-size: 13px; font-weight: 700; letter-spacing: 0; text-transform: none; box-shadow: none; }
+.combobox-panel .city-option-badge-icon svg { width: 16px; height: 16px; }
+/* The words on the tints are the darker blue and green, so they read at 13px (4.5:1 and more). */
+.combobox-panel .badge-info { background: var(--sp-blue-soft); border: 1px solid var(--sp-blue-line); color: var(--sp-title-top); }
+.combobox-panel .badge-ok { background: var(--success-soft); border: 1px solid var(--success-line); color: var(--success-strong); }
+.combobox-panel .city-options-empty { padding: 16px 12px; color: var(--sp-muted); font-size: 14px; }
 
 /* The fixed dropdown itself — extends city-options */
 .pv-item-dropdown {
@@ -6099,6 +6293,7 @@ tr.has-error .gp-qty-stepper input { color: var(--err); }
    TAB STRIP  ·  components/shared/TabStrip
    One tab strip for the app. Flat  fills and uniform borders only, per the
    paint-safety note on the product-detail block. */
+.tab-strip-thumb { display: none; }
 .tab-strip {
   display: inline-flex;
   gap: 2px;
@@ -6188,6 +6383,130 @@ tr.has-error .gp-qty-stepper input { color: var(--err); }
 .rm-chip--warn.is-active { background: var(--warn); border-color: var(--warn); color: var(--white); }
 
 /* ── Totals strip ─────────────────────────────────────────────────────── */
+/* ── The Stock tab's category buttons (1 Nov 2026) ─────────────────────────────
+   Every category as a pill; the chosen one on the Move in | Move out switch's blue. Choosing one
+   slides in a second, lighter row with what lies beneath it. Still for anyone who asks for less motion. */
+.rm-catbar { display: flex; flex-direction: column; gap: 8px; margin: 2px 0 14px; }
+.rm-catbar-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.rm-catbar-btn {
+  display: inline-flex; align-items: center; min-height: 38px; padding: 0 16px; border-radius: 999px;
+  border: 1.5px solid var(--sp-line); background: var(--white); color: var(--sp-mode-off-text);
+  font: inherit; font-size: 13px; font-weight: 700; letter-spacing: 0.01em; white-space: nowrap; cursor: pointer;
+  box-shadow: var(--sp-card-shadow);
+  transition: background-color 220ms ease, color 220ms ease, border-color 220ms ease, box-shadow 220ms ease, transform 160ms ease;
+}
+.rm-catbar-btn:hover { border-color: var(--sp-blue-line); color: var(--sp-mode-on-start); transform: translateY(-1px); }
+.rm-catbar-btn:active { transform: scale(0.97); }
+.rm-catbar-btn:focus-visible { outline: 3px solid var(--sp-navy-2); outline-offset: 2px; }
+.rm-catbar-btn--category[aria-pressed="true"] {
+  border-color: transparent; color: var(--white);
+  background: linear-gradient(90deg, var(--sp-mode-on-start), var(--sp-mode-on-end)); box-shadow: var(--sp-mode-on-shadow);
+}
+/* The second row: lighter, set into a pale band, so the two rows read as a category and its parts. */
+.rm-catbar-row--sub {
+  padding: 8px 10px; border-radius: 20px; background: var(--sp-sky-bottom); border: 1px solid var(--sp-line);
+  animation: rm-catbar-in 280ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+.rm-catbar-sub-mark { padding: 0 2px 0 4px; color: var(--sp-mode-off-icon); font-weight: 700; }
+.rm-catbar-btn--sub { min-height: 32px; padding: 0 13px; font-size: 12.5px; box-shadow: none; }
+.rm-catbar-btn--sub[aria-pressed="true"] { background: var(--sp-blue-soft); border-color: var(--sp-blue); color: var(--sp-title-top); }
+@keyframes rm-catbar-in { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) {
+  .rm-catbar-btn { transition: none; }
+  .rm-catbar-btn:hover, .rm-catbar-btn:active { transform: none; }
+  .rm-catbar-row--sub { animation: none; }
+}
+
+/* ── The Stock tab's list, grouped (1 Nov 2026) ──────────────────────────────────
+   A white card: the column names once at the top; each category under its coloured pill with what
+   it holds; sub-categories under small headings; a row a material — its name and code, the figure on
+   the shelf, the measured total when it says something more, and View details; a foot with the count
+   and the pages. Archivo for reading, figures in even-width digits so they line up; the monospace
+   face only for codes, where telling 0 from O matters. */
+.rm-cat-tone-0 { --rm-tone: var(--sp-cat-1); }
+.rm-cat-tone-1 { --rm-tone: var(--sp-cat-2); }
+.rm-cat-tone-2 { --rm-tone: var(--sp-cat-3); }
+.rm-cat-tone-3 { --rm-tone: var(--sp-cat-4); }
+.rm-cat-tone-4 { --rm-tone: var(--sp-cat-5); }
+.rm-cat-tone-5 { --rm-tone: var(--sp-cat-6); }
+.rm-stock-groups {
+  --rm-stock-cols: minmax(0, 1fr) 140px 130px 132px;
+  display: flex; flex-direction: column; gap: 18px; padding: 0 20px 14px;
+  background: var(--white); border-radius: var(--sp-radius-card) var(--sp-radius-card) 0 0; box-shadow: var(--sp-card-shadow);
+  font-family: var(--sp-font);
+}
+/* The column names, held at the top of the pane while the list scrolls under them. */
+.rm-stock-columns {
+  position: sticky; top: 0; z-index: 2; display: grid; grid-template-columns: var(--rm-stock-cols); gap: 18px;
+  margin: 0 -20px; padding: 14px 42px 10px; background: var(--white); border-bottom: 1px solid var(--sp-line);
+  border-radius: var(--sp-radius-card) var(--sp-radius-card) 0 0;
+  font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--sp-muted);
+}
+.rm-stock-columns span:nth-child(2), .rm-stock-columns span:nth-child(3) { text-align: right; }
+.rm-stock-group-head { display: flex; align-items: center; gap: 16px; margin-bottom: 4px; }
+.rm-stock-pill {
+  margin: 0; padding: 6px 16px; border-radius: 999px; background: var(--rm-tone); color: var(--white);
+  font-size: 12px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; white-space: nowrap;
+}
+.rm-stock-group-line { flex: 1; height: 1px; background: linear-gradient(90deg, var(--sp-line), transparent); }
+.rm-stock-group-count { font-size: 12.5px; font-weight: 600; color: var(--sp-muted); white-space: nowrap; }
+.rm-stock-sub-head {
+  margin: 10px 0 2px 22px; font-size: 12px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--rm-tone);
+}
+.rm-stock-rows { list-style: none; margin: 0; padding: 0; }
+.rm-stock-row {
+  display: grid; grid-template-columns: var(--rm-stock-cols); align-items: center; gap: 18px;
+  padding: 14px 22px; border-radius: var(--sp-radius-control);
+  transition: background-color 180ms ease, box-shadow 180ms ease;
+}
+.rm-stock-rows > .rm-stock-row + .rm-stock-row { border-top: 1px solid var(--sp-line); }
+/* Hovered: a pale ground and the category's colour along its left edge. */
+.rm-stock-row:hover { background: var(--sp-sky-bottom); box-shadow: inset 3px 0 0 var(--rm-tone); }
+.rm-stock-name-block { display: flex; flex-direction: column; align-items: flex-start; gap: 5px; min-width: 0; }
+.rm-stock-name-line { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; }
+.rm-stock-row .rm-stock-name {
+  padding: 0; border: 0; background: none; cursor: pointer; text-align: left;
+  font-family: var(--sp-font); font-size: 16px; font-weight: 700; letter-spacing: -0.005em; color: var(--sp-navy); overflow-wrap: anywhere;
+}
+.rm-stock-name-rest { color: var(--rm-tone); font-weight: 600; }
+.rm-stock-row .rm-stock-name:hover, .rm-stock-row .rm-stock-name:focus-visible { text-decoration: underline; text-underline-offset: 4px; outline: none; }
+/* Nothing in store, said in words. */
+.rm-stock-out {
+  padding: 2px 9px; border-radius: 999px; background: var(--danger-tint); color: var(--danger-strong);
+  font-size: 11.5px; font-weight: 700; white-space: nowrap;
+}
+.rm-stock-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 12px; }
+.rm-stock-code { font-family: var(--sp-font-code); font-size: 12px; font-weight: 500; color: var(--sp-muted); }
+.rm-stock-cost { font-size: 12.5px; font-weight: 600; color: var(--sp-muted); }
+.rm-stock-figure { display: flex; flex-direction: column; align-items: flex-end; gap: 3px; font-variant-numeric: tabular-nums; }
+.rm-stock-figure strong { font-size: 22px; font-weight: 700; line-height: 1.05; letter-spacing: -0.01em; color: var(--sp-navy); }
+.rm-stock-figure span { font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--sp-muted); }
+.rm-stock-figure--muted strong { font-size: 18px; font-weight: 600; color: var(--sp-muted); }
+.rm-stock-row--empty .rm-stock-figure--main strong { color: var(--sp-muted); }
+.rm-stock-row .rm-stock-open {
+  width: 100%; padding: 10px 16px; border-radius: 999px; border: 1.5px solid var(--sp-line); background: var(--white); color: var(--rm-tone);
+  font-family: var(--sp-font); font-size: 13px; font-weight: 700; white-space: nowrap; cursor: pointer;
+  box-shadow: var(--sp-card-shadow); transition: background-color 180ms ease, color 180ms ease, border-color 180ms ease, transform 160ms ease;
+}
+.rm-stock-row .rm-stock-open:hover { background: var(--rm-tone); border-color: var(--rm-tone); color: var(--white); transform: translateY(-1px); }
+.rm-stock-row .rm-stock-open:focus-visible { outline: 3px solid var(--sp-navy-2); outline-offset: 2px; }
+.rm-stock-foot {
+  display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; padding: 14px 20px;
+  background: var(--sp-blue-wash); border-top: 1px solid var(--sp-line); border-radius: 0 0 var(--sp-radius-card) var(--sp-radius-card);
+  box-shadow: var(--sp-card-shadow); font-family: var(--sp-font);
+}
+.rm-stock-foot-count { font-size: 13px; font-weight: 600; color: var(--sp-muted); }
+/* Narrow: no column names; the name on its own line, the figures and the button under it. */
+@media (max-width: 760px) {
+  .rm-stock-columns { display: none; }
+  .rm-stock-row { grid-template-columns: 1fr 1fr auto; }
+  .rm-stock-name-block { grid-column: 1 / -1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .rm-stock-row, .rm-stock-row .rm-stock-open { transition: none; }
+  .rm-stock-row .rm-stock-open:hover { transform: none; }
+}
+
 .rm-kpis {
   display: flex;
   align-items: center;
@@ -7348,9 +7667,9 @@ tr.has-error .gp-qty-stepper input { color: var(--err); }
 }
 
 /* ── Home: the tile dashboard every role starts on ─────────────────────── */
-.nav-page { max-width: 1240px; margin: 0 auto; padding: 28px 0 48px; }
-.nav-page-header { margin-bottom: 28px; text-align: center; }
-.nav-page-header h1 { margin: 0; font-size: 3cap; font-weight: 800; letter-spacing: -0.02em; color: var(--accent-navy); }
+.nav-page { max-width: 1240px; margin: 0 auto; padding: 0 0 48px; }
+/* Whose desk this is, under the page header. Quiet: the header names the page. */
+.nav-page-desk { margin: 0 0 20px; color: var(--sp-muted); font-family: var(--sp-font); font-size: 13px; font-weight: 600; letter-spacing: 0.08em; text-align: center; text-transform: uppercase; }
 .nav-page-section { margin-bottom: 28px; }
 .nav-page-section-label { margin: 0 0 12px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.07em; color: var(--text-3); }
 .nav-page-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; }
@@ -7446,6 +7765,183 @@ tr.has-error .gp-qty-stepper input { color: var(--err); }
 }
 .feature-card-go svg { width: 18px; height: 18px; }
 .feature-card:hover .feature-card-go { background: var(--fc-accent); color: var(--white); transform: translateX(2px); }
+
+/* The Dashboard's own cards (the owner's design): an icon tile in the corner, the artwork across the
+   card, the name and a round arrow under it, a soft wave along the foot. Same FeatureCard, its own
+   theme. Sized by the grid, so the two are always identical; they stack when there is no room for
+   two side by side, and a single card keeps the same size. */
+.nav-page-grid--dashboard { grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 420px)); justify-content: center; gap: 28px; }
+.feature-card--sky {
+  --fc-accent: var(--sp-mode-on-start);
+  --fc-ink: var(--sp-navy-2);
+  --fc-title-accent: var(--sp-navy-2);
+  --fc-line: var(--white);
+  padding: 0; border: 1px solid var(--white); border-radius: var(--dash-card-radius);
+  background: linear-gradient(115deg, var(--dash-card-start) 0%, var(--dash-card-mid) 55%, var(--dash-card-end) 100%);
+  box-shadow: var(--dash-card-shadow); font-family: var(--sp-font);
+}
+.feature-card--sky:hover { box-shadow: var(--dash-card-lift); }
+.feature-card--sky::after {
+  content: ""; position: absolute; left: 12%; right: -24%; bottom: -30%; height: 46%; border-radius: 50%;
+  background: var(--dash-card-wave); transform: rotate(-7deg);
+}
+.feature-card-badge {
+  position: absolute; z-index: 2; top: 5.5%; left: 6%; display: grid; place-items: center; width: 58px; height: 58px;
+  border-radius: 16px; background: var(--dash-card-wave); color: var(--sp-mode-on-start);
+  box-shadow: 0 0 0 1px var(--white), 0 6px 14px rgba(8, 119, 232, 0.12);
+}
+.feature-card-badge svg { width: 30px; height: 30px; }
+.feature-card--sky .feature-card-art { z-index: 1; aspect-ratio: 654 / 364; margin: 11.5% 0 0; }
+.feature-card--sky .feature-card-img { object-fit: contain; object-position: center bottom; }
+.feature-card--sky .feature-card-foot { position: relative; z-index: 1; align-items: center; padding: 6px 6.5% 6%; }
+.feature-card--sky .feature-card-bar { display: none; }
+.feature-card--sky .feature-card-title { font-size: 1.75rem; }
+.feature-card--sky .feature-card-go {
+  width: 48px; height: 48px; background: var(--white); box-shadow: 0 4px 12px rgba(8, 119, 232, 0.16);
+}
+.feature-card--sky .feature-card-go svg { width: 22px; height: 22px; }
+
+/* Upper Stock and Dana Stock: balances line up on the right. */
+.kind-stock-page .data-table th, .kind-stock-page .data-table td { text-align: left; }
+.kind-stock-page .data-table .kind-stock-quantity { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.kind-stock-page .search-wrap input { width: min(26rem, 100%); }
+
+/* With no sidebar (a store operator) the page area is a full-screen one that does not scroll: these
+   two pages scroll themselves, and clear the floating profile pill. */
+.page-content--fullscreen > .nav-page,
+.page-content--fullscreen > .kind-stock-page {
+  box-sizing: border-box; flex: 1; width: 100%; max-width: none; min-height: 0; overflow-y: auto; padding: 64px 28px 28px;
+}
+
+/* ── Upper Stock: the store's uppers, one card per article ─────────────────
+   The owner's design: pills and search on a faint wash, then a white card per article, its name
+   beside a blue mark, its kind and what it holds across the head, and a compact ruled matrix. Dark
+   blue only where it means something: the chosen tab and the grand total. */
+.upper-stock-page { font-family: var(--sp-font); color: var(--sp-navy); }
+.us-panel { display: flex; flex-direction: column; gap: 14px; padding: 12px; border-radius: var(--dash-card-radius); background: var(--us-wash); }
+
+/* The five kinds as pills, all on one row on a desktop; on a narrow window the row scrolls. */
+.us-tabs.tab-strip {
+  display: flex; flex-wrap: nowrap; gap: 14px; width: auto; max-width: none; padding: 0; overflow-x: auto;
+  border: 0; border-radius: 0; background: transparent; box-shadow: none;
+}
+.us-tabs .tab-strip-btn {
+  display: inline-flex; flex: 1 1 0; align-items: center; justify-content: center; gap: 12px; min-height: 44px; padding: 0 16px;
+  border: 1px solid var(--white); border-radius: var(--sp-radius-control); background: var(--white); color: var(--sp-navy);
+  font: inherit; font-size: 15px; font-weight: 600; white-space: nowrap; box-shadow: var(--us-field-shadow);
+  transition: background-color .15s ease, border-color .15s ease, color .15s ease;
+}
+.us-tabs .tab-strip-btn:hover { background: var(--sp-ground); color: var(--sp-navy); }
+.us-tabs .tab-strip-btn.is-active { border-color: var(--sp-navy); background: var(--sp-navy); color: var(--white); box-shadow: none; }
+.tab-strip-icon { display: inline-flex; flex: 0 0 auto; width: 24px; height: 24px; color: var(--sp-mode-on-start); }
+.tab-strip-icon svg { width: 100%; height: 100%; }
+
+/* Search and sort on one row. The search is the page's main tool, so it stands off the wash. */
+.us-toolbar { display: flex; flex-wrap: wrap; align-items: stretch; gap: 14px; }
+.us-search {
+  display: flex; flex: 1 1 320px; align-items: center; gap: 14px; min-height: 44px; padding: 0 18px;
+  border: 1px solid var(--us-field-line); border-radius: var(--sp-radius-control);
+  background: var(--white); box-shadow: var(--us-field-shadow); cursor: text;
+}
+.us-search:focus-within { border-color: var(--sp-mode-on-start); box-shadow: 0 0 0 3px rgba(8, 119, 232, 0.14); }
+.us-search-icon { display: inline-flex; flex: 0 0 auto; width: 22px; height: 22px; color: var(--sp-muted); }
+.us-search-icon svg { width: 100%; height: 100%; }
+.upper-stock-page .us-search input {
+  flex: 1; width: 100%; min-width: 0; height: auto; padding: 0; border: 0; border-radius: 0; outline: none;
+  background: transparent; box-shadow: none; color: var(--sp-navy); font: inherit; font-size: 15px;
+}
+.us-search input::placeholder { color: var(--sp-muted); }
+.us-sort {
+  position: relative; display: inline-flex; flex: 0 0 auto; align-items: center; gap: 10px; min-width: 300px; min-height: 44px; padding: 0 16px;
+  border: 1px solid var(--white); border-radius: var(--sp-radius-control);
+  background: var(--white); box-shadow: var(--us-field-shadow); color: var(--sp-navy); font-size: 14px; font-weight: 600;
+}
+.us-sort:focus-within { border-color: var(--sp-mode-on-start); }
+.us-sort-icon { display: inline-flex; flex: 0 0 auto; width: 22px; height: 22px; color: var(--sp-navy); }
+.us-sort-icon svg { width: 100%; height: 100%; }
+.upper-stock-page .us-sort select {
+  flex: 1; min-width: 0; min-height: 0; padding: 0 24px 0 0; border: 0; outline: none; appearance: none; background: transparent; box-shadow: none;
+  color: var(--sp-navy); font: inherit; font-weight: 600; cursor: pointer;
+}
+.us-sort-arrow { position: absolute; right: 14px; display: inline-flex; width: 18px; height: 18px; pointer-events: none; transform: rotate(180deg); }
+.us-sort-arrow svg { width: 100%; height: 100%; }
+
+/* One article, one white card, headed by a blue band: the owner's design. Bands alternate between
+   navy and blue so neighbouring articles part at a glance while scanning down the page. */
+.us-articles { display: flex; flex-direction: column; gap: 18px; }
+.us-article { padding: 14px; border: 1px solid var(--sp-line); border-radius: var(--dash-card-radius); background: var(--white); box-shadow: var(--sp-card-shadow); }
+.us-article-head {
+  display: flex; align-items: center; gap: 16px; min-height: 62px; padding: 8px 12px 8px 20px; border-radius: 12px;
+  background: var(--us-band-sheen), var(--us-band-navy); color: var(--white);
+}
+.us-article:nth-child(even) .us-article-head { background: var(--us-band-sheen), var(--us-band-blue); }
+.us-article-head:has(+ .us-table-scroll:not([hidden])) { margin-bottom: 12px; }
+.us-article-icon { display: inline-flex; flex: 0 0 auto; width: 30px; height: 30px; }
+.us-article-icon svg { width: 100%; height: 100%; }
+.upper-stock-page .us-article-name {
+  margin: 0; padding-right: 18px; border-right: 1px solid rgba(255, 255, 255, 0.3);
+  color: var(--white); font-size: 26px; font-weight: 800; line-height: 1.3; letter-spacing: -0.01em;
+}
+.us-article-category { padding: 5px 16px; border-radius: 999px; background: rgba(255, 255, 255, 0.18); color: var(--white); font-size: 14px; font-weight: 600; white-space: nowrap; }
+.us-article-stock {
+  display: inline-flex; align-items: center; gap: 10px; margin-left: auto; padding: 8px 16px; border-radius: 10px;
+  background: var(--white); color: var(--sp-navy-2); font-size: 15px; font-weight: 700; white-space: nowrap; font-variant-numeric: tabular-nums;
+}
+.us-article-stock-icon { display: inline-flex; width: 22px; height: 22px; color: var(--sp-mode-on-start); }
+.us-article-stock-icon svg { width: 100%; height: 100%; }
+.us-fold {
+  display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; width: 40px; height: 40px; padding: 0;
+  border: 0; border-radius: 10px; background: rgba(255, 255, 255, 0.16); color: var(--white); cursor: pointer;
+  transition: background-color .12s ease;
+}
+.us-fold:hover { background: rgba(255, 255, 255, 0.28); }
+.upper-stock-page .us-fold:focus-visible { outline: 2px solid var(--white); outline-offset: 1px; }
+.us-fold svg { width: 22px; height: 22px; transition: transform .18s var(--ease-out-expo); }
+.us-fold.is-shut svg { transform: rotate(180deg); }
+
+.us-table-scroll { overflow-x: auto; border-radius: var(--sp-radius-control); }
+.us-table-scroll:focus-visible { outline: 2px solid var(--sp-mode-on-start); outline-offset: 2px; }
+.us-table { width: 100%; min-width: 100%; border-collapse: separate; border-spacing: 0; font-variant-numeric: tabular-nums; }
+.us-table th, .us-table td {
+  height: 40px; padding: 0 12px; vertical-align: middle; border-right: 1px solid var(--sp-line); border-bottom: 1px solid var(--sp-line);
+  color: var(--sp-navy); font-size: 15px; font-weight: 500; text-align: center; white-space: nowrap;
+}
+.us-table th:last-child, .us-table td:last-child { border-right: 0; }
+.us-table thead th { height: 44px; background: var(--us-head); font-size: 13px; font-weight: 700; }
+.us-table tbody tr:hover td, .us-table tbody tr:hover th { background: var(--sp-ground); }
+
+/* The size stays put while the colours scroll under it, and the totals stay in view. */
+.us-table .us-size { position: sticky; left: 0; z-index: 1; width: 148px; min-width: 112px; padding: 0 10px; background: var(--white); font-weight: 700; }
+.us-table thead .us-size { background: var(--us-head); font-size: 15px; }
+.us-size-pill { display: flex; align-items: center; justify-content: center; gap: 6px; padding: 4px 8px; border-radius: 8px; background: var(--sp-navy-2); color: var(--white); }
+.us-type { padding: 0 5px; border-radius: 5px; background: var(--white); color: var(--sp-navy-2); font-size: 10.5px; font-weight: 700; line-height: 16px; }
+.us-colour { display: inline-flex; align-items: center; justify-content: center; gap: 9px; }
+.us-swatch.color-swatch { width: 26px; height: 14px; border-radius: 4px; }
+.us-table .us-total { position: sticky; right: 0; z-index: 1; width: 168px; min-width: 96px; background: var(--us-total); font-weight: 800; }
+.us-table thead .us-total { background: var(--us-head); font-size: 15px; font-weight: 700; }
+.us-table tbody tr:hover .us-total { background: var(--us-total); }
+
+/* One grand total, on a bar of its own under the table. No row of totals per colour: the owner's
+   rule. The cells stay in the table, so the figure lines up with the Total column; the bar is drawn
+   behind them, leaving a gap above it. */
+.us-table tfoot th, .us-table tfoot td { position: relative; isolation: isolate; height: 54px; padding-top: 12px; border-right: 0; border-bottom: 0; background: var(--white); }
+.us-table tfoot th::before, .us-table tfoot td::before { content: ""; position: absolute; z-index: -1; inset: 12px 0 0; }
+.us-table .us-grand-label { padding-left: 0; font-size: 15px; font-weight: 800; letter-spacing: 0.01em; text-align: left; text-transform: uppercase; }
+.us-table .us-grand-label::before { border-radius: 10px 0 0 10px; background: var(--us-bar); }
+.us-grand-text { position: sticky; left: 18px; }
+.us-table .us-grand { position: sticky; right: 0; z-index: 1; color: var(--white); font-size: 18px; font-weight: 800; }
+.us-table .us-grand::before { border-radius: 0 10px 10px 0; background: var(--us-band-navy); }
+
+.page-content--fullscreen > .upper-stock-page {
+  box-sizing: border-box; flex: 1; width: 100%; max-width: none; min-height: 0; overflow-y: auto; padding: 64px 28px 28px;
+}
+@media (max-width: 760px) {
+  .us-panel { padding: 8px; }
+  .us-tabs .tab-strip-btn { flex: 0 0 auto; }
+  .us-sort { flex: 1 1 100%; min-width: 0; }
+  .us-table .us-size { width: 92px; min-width: 92px; }
+  .us-article-head { flex-wrap: wrap; }
+}
 
 /* ── Store Station: pick your job (Move In / Move Out) ─────────────────────
    Two big cards in the Machine Program style. Move In wears the primary blue,
@@ -7697,11 +8193,26 @@ tr.has-error .gp-qty-stepper input { color: var(--err); }
 .sp-page button, .sp-page input, .sp-page select, .sp-page textarea { font-family: inherit; }
 
 /* The header (0.4.1): brand left, STORE centred on the page, bell and profile right. Three columns,
-   the outer two equal, so STORE stays in the middle whatever sits beside it. */
-.sp-head { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: var(--space-3); flex-shrink: 0; min-height: 72px; }
-.sp-logo { justify-self: start; display: block; height: 50px; width: auto; }
-.sp-title {
-  justify-self: center; position: relative; margin: 0; padding: 0 6px 10px;
+   the outer two equal, so STORE stays in the middle whatever sits beside it. Since the sidebar
+   redesign every screen wears it (PageHeader): the Store page on its sky, the rest in .app-head. */
+.page-head {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: var(--space-3);
+  flex-shrink: 0; min-height: var(--page-head-row); font-family: var(--sp-font);
+}
+.page-head-logo {
+  justify-self: start; display: block; height: 50px; width: auto;
+  transition: opacity .16s ease .08s, transform var(--sidebar-speed) var(--ease-out-expo), visibility 0s;
+}
+/* ONE LOGO ON SCREEN: while the sidebar is open (hovered, focused or pinned) its own logo shows, so
+   this one steps aside towards it — faded and nudged left, keeping its column so the title never
+   moves. It leaves at once and comes back a beat after the sidebar's has gone. A store operator has
+   no sidebar, so theirs always shows. */
+.app-shell:has(> .navbar.is-expanded) .page-head-logo {
+  opacity: 0; visibility: hidden; transform: translateX(-14px);
+  transition: opacity .12s ease, transform var(--sidebar-speed) var(--ease-out-expo), visibility 0s linear .12s;
+}
+.page-head-title {
+  justify-self: center; position: relative; margin: 0; padding: 0 6px 10px; white-space: nowrap;
   font-family: var(--sp-font-display); font-weight: 400; font-size: 76px; line-height: 0.62; letter-spacing: 0.03em;
   text-transform: uppercase; transform: skewX(-6deg);
   background: linear-gradient(180deg, var(--sp-title-top), var(--sp-title-bottom));
@@ -7710,7 +8221,7 @@ tr.has-error .gp-qty-stepper input { color: var(--err); }
 /* STORE's rule (0.4.2): it draws out from the centre as the page opens, then a cyan-to-blue shimmer
    flows along it. The gradient starts and ends on the same colour and is twice the line's width, so
    the loop has no seam; the mask keeps the ends fading out. Still for anyone who asks for less motion. */
-.sp-title::after {
+.page-head-title::after {
   content: ""; position: absolute; left: -10px; right: -10px; bottom: 0; height: 2px; border-radius: 2px;
   background: linear-gradient(90deg, var(--sp-title-rule), var(--sp-title-top) 25%, var(--sp-title-rule) 50%, var(--sp-title-top) 75%, var(--sp-title-rule));
   background-size: 200% 100%;
@@ -7721,16 +8232,12 @@ tr.has-error .gp-qty-stepper input { color: var(--err); }
 }
 @keyframes sp-rule-draw { from { transform: scaleX(0); opacity: 0; } to { transform: scaleX(1); opacity: 1; } }
 @keyframes sp-rule-flow { from { background-position: 0% 0; } to { background-position: -200% 0; } }
-@media (prefers-reduced-motion: reduce) { .sp-title::after { animation: none; } }
-.sp-head-actions { justify-self: end; display: flex; align-items: center; gap: 22px; }
-.sp-head .notification-trigger {
-  display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; padding: 0;
-  border: 0; border-radius: 50%; background: transparent; color: var(--sp-bell); box-shadow: none;
-}
-.sp-head .notification-trigger svg { width: 24px; height: 24px; }
-.sp-head .notification-trigger svg path { fill: currentColor; }
-.sp-head .notification-trigger:hover, .sp-head .notification-trigger[aria-expanded="true"] { background: var(--white); color: var(--sp-bell); }
-.sp-head .notification-badge {
+@media (prefers-reduced-motion: reduce) { .page-head-title::after { animation: none; } }
+.page-head-actions { justify-self: end; display: flex; align-items: center; gap: 22px; }
+/* The bell itself is drawn once, with HeaderActions (the block by the popovers); on the sky its
+   hover is white rather than the ground. */
+.page-head .notification-trigger:hover, .page-head .notification-trigger[aria-expanded="true"] { background: var(--white); color: var(--sp-bell); }
+.header-actions .notification-badge {
   top: 2px; right: 3px; min-width: 14px; height: 14px; padding: 0 3px;
   background: var(--sp-badge); color: var(--white); font-size: 9px; font-weight: 700; line-height: 14px;
 }
@@ -7740,14 +8247,14 @@ tr.has-error .gp-qty-stepper input { color: var(--err); }
   background: transparent; box-shadow: var(--sp-avatar-shadow); cursor: pointer;
 }
 .profile-avatar img { display: block; width: 100%; height: 100%; border-radius: 50%; }
-.profile-avatar:focus-visible, .sp-head .notification-trigger:focus-visible { outline: 3px solid var(--sp-navy-2); outline-offset: 2px; }
+.profile-avatar:focus-visible { outline: 3px solid var(--sp-navy-2); outline-offset: 2px; }
 
 /* Move in | Move out (0.4.2, the owner's design): one white pill centred under STORE, the active
    half a blue pill inside it with a white icon and name. An open session shows as a chip.
    The blue pill is one thumb behind both halves (0.4.3): changing mode slides it across while the
    names and icons cross-fade between navy and white, so the switch moves rather than blinks. */
 .sp-modes {
-  --sp-mode-slide: 380ms cubic-bezier(0.4, 0, 0.2, 1);
+  --sp-mode-slide: var(--sp-slide);
   position: relative; align-self: center; flex-shrink: 0; display: grid; grid-template-columns: 1fr 1fr; width: min(100%, 460px);
   border-radius: 999px; background: var(--white); box-shadow: var(--sp-mode-shadow);
 }
@@ -7757,6 +8264,8 @@ tr.has-error .gp-qty-stepper input { color: var(--err); }
   transition: transform var(--sp-mode-slide);
 }
 .sp-modes[data-mode="issuing"]::before { transform: translateX(100%); }
+/* Room for "Open · 3/50 KG + 1 BUNDLE": wider only while a session is open on either half. */
+.sp-modes:has(.sp-mode-chip) { width: min(100%, 760px); }
 .sp-mode {
   position: relative; z-index: 1;
   display: inline-flex; align-items: center; justify-content: center; gap: 12px; min-height: 58px; padding: 0 20px;
@@ -7780,10 +8289,10 @@ tr.has-error .gp-qty-stepper input { color: var(--err); }
   .sp-modes::before, .sp-mode, .sp-mode-icon, .sp-mode-chip { transition: none; }
 }
 
-/* Work area | handle | scan rail (0.4.1). The rail's width is --sp-rail-width: this default, or the
+/* Work area | handle | scan rail (0.4.1). The rail's width is --sp-rail-width: this default (half, 1 Nov 2026), or the
    share the operator dragged it to (StorePage sets it, clamped). Every child is placed by column, so
    the modes and an open program can swap without the grid reflowing. */
-.sp-body { --sp-rail-width: clamp(330px, 30%, 400px); flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) 16px var(--sp-rail-width); }
+.sp-body { --sp-rail-width: clamp(330px, 50%, calc(100% - 436px)); flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) 16px var(--sp-rail-width); }
 .sp-body > .sp-work-slot, .sp-body > .sp-work { grid-column: 1; grid-row: 1; }
 .sp-body > .sp-split { grid-column: 2; grid-row: 1; }
 .sp-body > .sp-rail { grid-column: 3; grid-row: 1; }
@@ -7802,15 +8311,108 @@ tr.has-error .gp-qty-stepper input { color: var(--err); }
 .sp-work { min-width: 0; min-height: 0; display: flex; flex-direction: column; gap: 14px; }
 .sp-work-pane { flex: 1; min-height: 0; overflow-y: auto; padding: 2px 4px 2px 2px; }
 .sp-work-pane .rm-new-page { max-width: none; }
-.sp-work-pane > .mpi-page { overflow: visible; overscroll-behavior: auto; }
+.sp-work-pane > .mpi-page, .sp-work-pane > .qr-journey-page { overflow: visible; overscroll-behavior: auto; }
 
 /* Cards: white, 14px, no border — the ground and a soft shadow set them apart. */
 .sp-rail, .sp-page .card, .sp-page .form-card, .sp-page .table-container, .sp-page .stock-table-panel,
 .sp-page .qr-input-card, .sp-page .si-manual-open, .sp-page .rm-new-page, .sp-page .sp-issued-row, .sp-page .workspace-panel {
   background: var(--white); border: 0; border-radius: var(--sp-radius-card); box-shadow: var(--sp-card-shadow);
 }
-.sp-rail { position: relative; display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+.sp-rail { position: relative; display: flex; flex-direction: column; min-height: 0; overflow: hidden; zoom: var(--sp-rail-scale); }
 .sp-rail .ssn { min-height: 0; flex: 1; }
+/* Move in's station sits in a wrapper with its head (ScanInRail). The wrapper fills the rail, so the
+   station under the head scrolls; as a plain block it grew past the rail and a long session was cut
+   off at the bottom with no scroll bar (1 Nov 2026). Move out's station is the rail's own child. */
+.si-material-station { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+/* Move in or Move out at a glance: a blue or red top edge. The rail's name says it too. */
+.sp-rail--in { border-top: var(--sp-rail-edge) solid var(--sp-blue); }
+.sp-rail--out { border-top: var(--sp-rail-edge) solid var(--sp-red); }
+/* Move out's party picker on the Store page, laid out as Move in's (the picker full width, its badge after it). */
+.sp-rail .ssn-party-row { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; flex-shrink: 0; }
+
+/* ── The scan rails (1 Nov 2026) ─────────────────────────────────────────────
+   Head: a blue tile, the name and its line, and Ready / Not Ready on the right. Under it the
+   supplier as one tall field, then the scan panel on a pale blue wash with Start session inside.
+   The station's own stylesheet comes after this one, so its rules are outranked with `.sp-rail .ssn`
+   rather than by order. A verdict keeps the station's tone colours; only the idle panel is blue. */
+.sp-rail .si-scan-head { gap: 16px; padding: 22px 22px 18px; border-bottom: 0; }
+.sp-rail .si-scan-mark {
+  width: 56px; height: 56px; border-radius: var(--sp-radius-card);
+  background: var(--sp-blue-soft); border: 1px solid var(--sp-blue-line); color: var(--sp-blue);
+}
+.sp-rail .si-scan-mark svg { width: 30px; height: 30px; }
+.si-scan-text { flex: 1; min-width: 0; }
+/* The name with Ready / Not Ready right beside it. */
+.si-scan-title-row { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 12px; }
+.si-scan-actions { display: flex; align-items: center; gap: 10px; flex: none; }
+.sp-page .sp-rail .si-scan-title { font-size: 22px; font-weight: 800; letter-spacing: -0.02em; }
+.sp-rail .si-scan-line { margin-top: 4px; font-size: 14px; color: var(--sp-muted); }
+.si-scan-state {
+  display: inline-flex; align-items: center; gap: 7px; flex: none;
+  height: 30px; padding: 0 13px; border-radius: 999px; white-space: nowrap;
+  background: var(--white); border: 1px solid var(--sp-line); box-shadow: var(--sp-card-shadow);
+  font-size: 13px; font-weight: 700; color: var(--sp-muted);
+}
+.si-scan-state-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--sp-faint); }
+.si-scan-state--ready { color: var(--sp-navy); }
+.si-scan-state--ready .si-scan-state-dot { background: var(--sp-ready); }
+
+.sp-rail .ssn--embedded { padding: 0 22px 22px; gap: 16px; }
+.sp-rail .ssn .ssn-supplier-pick { flex: 1 1 100%; }
+.sp-rail .pv-item-combobox--panel .form-input {
+  height: var(--sp-control-height-lg); padding-left: 54px; padding-right: 48px;
+  border: 2px solid var(--sp-blue); border-radius: var(--sp-radius-panel);
+  font-size: 16px; font-weight: 700; color: var(--sp-navy);
+}
+.sp-rail .pv-item-combobox--panel .form-input::placeholder { color: var(--sp-navy); opacity: 1; }
+.sp-rail .pv-item-combobox--panel .form-input:focus { border-color: var(--sp-blue); box-shadow: 0 0 0 4px color-mix(in srgb, var(--sp-blue) 14%, transparent); }
+.sp-rail .pv-item-combobox--panel .combobox-icon { left: 18px; color: var(--sp-navy); }
+.sp-rail .pv-item-combobox--panel .combobox-icon svg { width: 24px; height: 24px; }
+.sp-rail .pv-item-combobox--panel .combobox-chevron { right: 10px; color: var(--sp-navy); }
+.sp-rail .pv-item-combobox--panel .combobox-chevron svg { width: 22px; height: 22px; }
+
+.sp-rail .ssn .ssn-scan { border-width: 1.5px; border-radius: var(--sp-radius-panel); box-shadow: none; }
+.sp-rail .ssn .ssn-scan--idle {
+  border-color: var(--sp-blue-line);
+  background:
+    radial-gradient(120% 75% at 115% 105%, var(--sp-blue-soft) 0 48%, transparent 49%),
+    linear-gradient(160deg, var(--sp-blue-soft), var(--sp-blue-wash) 45%, var(--white) 80%);
+}
+.sp-rail .ssn .ssn-scan--idle::before { display: none; }
+.sp-rail .ssn .ssn-scan-stage { padding: 32px 22px 30px; }
+.sp-rail .ssn .ssn-ready-icon { width: 76px; height: 76px; margin-bottom: 8px; border: 0; border-radius: 22px; background: var(--sp-blue-soft); }
+.sp-rail .ssn .ssn-ready-icon::before { display: none; }
+.sp-rail .ssn .ssn-ready-icon svg { width: 40px; height: 40px; }
+.sp-rail .ssn .ssn-ready-icon path { stroke: var(--sp-blue); }
+.sp-rail .ssn .ssn-scan--idle .ssn-scan-title { font-size: 30px; font-weight: 800; letter-spacing: -0.03em; color: var(--sp-navy); }
+.sp-rail .ssn .ssn-scan--idle .ssn-scan-message { font-size: 15px; font-weight: 500; color: var(--sp-muted); }
+.sp-rail .ssn .ssn-btn--hero {
+  width: min(100%, 300px); height: var(--sp-control-height-lg); border-radius: var(--sp-radius-panel); font-size: 18px;
+  background: linear-gradient(90deg, var(--sp-blue-cyan), var(--sp-blue));
+  box-shadow: 0 10px 24px color-mix(in srgb, var(--sp-blue) 28%, transparent);
+}
+.sp-rail .ssn .ssn-btn--hero:hover:not(:disabled) { background: var(--sp-blue); }
+/* While a session is open: who it is with, large, across the top of the scan panel, and its type
+   in the same badge as the supplier list's rows. */
+.sp-rail .ssn .ssn-scan-header { padding: 18px 22px; border-bottom-color: var(--sp-line); background: var(--white); }
+.sp-rail .ssn .ssn-scan-party-eyebrow { font-family: var(--sp-font-code); font-size: 11px; font-weight: 600; letter-spacing: 0.14em; color: var(--sp-muted); }
+.sp-rail .ssn .ssn-scan-party-name { font-size: 26px; font-weight: 800; letter-spacing: -0.03em; color: var(--sp-navy); }
+.sp-rail .ssn .ssn-scan-party .party-type-badge {
+  gap: 7px; height: 32px; padding: 0 14px; border-radius: 999px; box-shadow: none;
+  font-size: 14px; font-weight: 700; letter-spacing: 0; text-transform: none;
+}
+.sp-rail .ssn .ssn-scan-party .party-type-badge-icon svg { width: 17px; height: 17px; }
+.sp-rail .ssn .ssn-scan-party .badge-info { background: var(--sp-blue-soft); border: 1px solid var(--sp-blue-line); color: var(--sp-title-top); }
+.sp-rail .ssn .ssn-scan-party .badge-ok { background: var(--success-soft); border: 1px solid var(--success-line); color: var(--success-strong); }
+/* The Store's red (its main action, 0.3.9) for what ends or finishes a session: End Session in the
+   scan panel, Print Receipt in the rail's head. White on it is 4.8:1. */
+.sp-rail .ssn .ssn-btn--end-session {
+  background: var(--sp-red);
+  box-shadow: 0 10px 24px color-mix(in srgb, var(--sp-red) 28%, transparent);
+}
+.sp-rail .ssn .ssn-btn--end-session:hover:not(:disabled) { background: var(--sp-red-hover); }
+.sp-rail .si-scan-print { padding: 0 22px; font-size: 15px; font-weight: 700; }
+.sp-rail .ssn .ssn-btn--hero:focus-visible { outline: 3px solid var(--sp-navy-2); outline-offset: 3px; }
 .sp-page .si-manual-open, .sp-page .rm-new-page { padding: 22px 24px; }
 .sp-page .si-manual-open .mo-manual, .sp-page .si-manual-head { padding-left: 0; padding-right: 0; }
 .sp-paused { display: flex; flex-direction: column; gap: 8px; padding: 18px 20px; }
@@ -7833,17 +8435,34 @@ tr.has-error .gp-qty-stepper input { color: var(--err); }
 .sp-page td, .sp-page .rm-num, .sp-page .cell-mono, .sp-issued-row { font-variant-numeric: tabular-nums; }
 .sp-page .cell-mono, .sp-issued-code { font-family: var(--sp-font-code); }
 
-/* Tabs: rounded segments. The active one solid navy with white text; the rest plain muted text. */
+/* Tabs (1 Nov 2026): as the Move in | Move out switch above them — a white pill strip, and one blue
+   thumb behind the selected tab that slides to the next (TabStrip places it, measuring the tab).
+   The words cross-fade from navy to white with it. Still for anyone who asks for less motion. */
 .sp-page .tab-strip {
-  display: flex; flex-wrap: wrap; gap: 4px; padding: 5px; flex-shrink: 0;
-  background: var(--white); border: 0; border-radius: var(--sp-radius-card); box-shadow: var(--sp-card-shadow);
+  position: relative; display: flex; flex-wrap: wrap; gap: 4px; padding: 6px; flex-shrink: 0;
+  background: var(--white); border: 0; border-radius: 26px; box-shadow: var(--sp-mode-shadow);
 }
+.sp-page .tab-strip-thumb {
+  display: block; position: absolute; top: 0; left: 0; z-index: 0; pointer-events: none;
+  width: var(--tab-thumb-w, 0); height: var(--tab-thumb-h, 0);
+  transform: translate(var(--tab-thumb-x, 0), var(--tab-thumb-y, 0));
+  border-radius: 999px; background: linear-gradient(90deg, var(--sp-mode-on-start), var(--sp-mode-on-end));
+  box-shadow: var(--sp-mode-on-shadow);
+}
+.sp-page .tab-strip-thumb[data-shown="false"] { opacity: 0; }
+.sp-page .tab-strip-thumb[data-ready="true"] { transition: transform var(--sp-slide), width var(--sp-slide), height var(--sp-slide), opacity 200ms ease; }
 .sp-page .tab-strip-btn {
-  min-height: 40px; padding: 8px 16px; border: 0; border-radius: var(--sp-radius-tab);
-  background: transparent; color: var(--sp-muted); font-size: 14px; font-weight: 600; box-shadow: none;
+  position: relative; z-index: 1; min-height: 42px; padding: 8px 18px; border: 0; border-radius: 999px;
+  background: transparent; color: var(--sp-mode-off-text); font-size: 14px; font-weight: 600; box-shadow: none;
+  transition: color var(--sp-slide), background-color 160ms ease;
 }
-.sp-page .tab-strip-btn:hover { color: var(--sp-navy); background: var(--sp-ground); }
-.sp-page .tab-strip-btn.is-active { background: var(--sp-navy); color: var(--white); box-shadow: none; }
+.sp-page .tab-strip-btn:not(.is-active):hover { background: var(--sp-sky-bottom); color: var(--sp-mode-on-start); }
+.sp-page .tab-strip-btn.is-active { background: transparent; color: var(--white); font-weight: 700; box-shadow: none; }
+.sp-page .tab-strip-btn:focus-visible { outline: 3px solid var(--sp-navy-2); outline-offset: 2px; }
+.sp-page .tab-strip-btn.is-active .tab-strip-badge { background: rgba(255, 255, 255, 0.2); color: var(--white); }
+@media (prefers-reduced-motion: reduce) {
+  .sp-page .tab-strip-thumb[data-ready="true"], .sp-page .tab-strip-btn { transition: none; }
+}
 
 /* Inputs and selects. */
 .sp-page .form-input, .sp-page select {
@@ -7851,6 +8470,65 @@ tr.has-error .gp-qty-stepper input { color: var(--err); }
   background: var(--white); color: var(--sp-navy); font-size: 14px;
 }
 .sp-page .form-input:focus, .sp-page select:focus { border-color: var(--sp-navy-2); box-shadow: 0 0 0 3px rgba(29, 55, 105, 0.14); }
+
+/* ── Dropdowns in the Store page's tabs (1 Nov 2026) ─────────────────────────
+   Every native <select> — category, unit, filters, setup — is drawn like the scan rail's fields,
+   and so is its open list: Chromium's customisable select (appearance: base-select) lets the list
+   (::picker(select)) and its rows be styled while the control stays native, with its keyboard,
+   its form value and its accessibility. A browser without it shows the plain select. */
+.sp-page select, .sp-page select.form-input {
+  appearance: base-select;
+  /* One row: the chosen value, then the arrow at the far end (the shared .form-input is a block). */
+  display: flex; align-items: center; gap: 10px;
+  min-height: var(--sp-control-height); padding: 0 12px 0 14px;
+  border: 1.5px solid var(--sp-line); border-radius: var(--sp-radius-control);
+  background: var(--white); color: var(--sp-navy); font: inherit; font-size: 14px; font-weight: 600;
+  cursor: pointer; transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+.sp-page select:hover:not(:disabled) { border-color: var(--sp-blue-line); }
+.sp-page select:focus-visible, .sp-page select:open {
+  border-color: var(--sp-blue); outline: none;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--sp-blue) 14%, transparent);
+}
+.sp-page select:disabled { background: var(--sp-ground); color: var(--sp-muted); cursor: not-allowed; }
+/* Nothing chosen yet ("Select a category…"): it reads as a hint, not a value. */
+.sp-page select:has(option[value=""]:checked) { color: var(--sp-muted); font-weight: 500; }
+/* The arrow: the party pickers' chevron, turning over while the list is open. */
+.sp-page select::picker-icon {
+  content: ""; flex: none; margin-left: auto; width: 18px; height: 18px; background: var(--sp-navy);
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E") center / contain no-repeat;
+  transition: rotate 150ms ease;
+}
+.sp-page select:open::picker-icon { rotate: 180deg; }
+@media (prefers-reduced-motion: reduce) { .sp-page select::picker-icon { transition: none; } }
+/* The open list: a white panel, as the party pickers' panel. */
+.sp-page select::picker(select) {
+  appearance: base-select;
+  margin-block: 4px; padding: 6px; max-height: 340px;
+  border: 1px solid var(--sp-line); border-radius: var(--sp-radius-panel);
+  background: var(--white); box-shadow: 0 18px 40px rgba(12, 27, 56, 0.14), 0 2px 6px rgba(12, 27, 56, 0.06);
+}
+.sp-page select option {
+  gap: 10px; min-height: 40px; padding: 8px 12px; border-radius: var(--sp-radius-control);
+  color: var(--sp-navy); font-size: 14px; font-weight: 500;
+}
+.sp-page select option:hover, .sp-page select option:focus-visible { background: var(--sp-blue-soft); color: var(--sp-title-top); outline: none; }
+.sp-page select option:checked { color: var(--sp-title-top); font-weight: 700; }
+.sp-page select option::checkmark { color: var(--sp-blue); }
+.sp-page select option[value=""] { color: var(--sp-muted); }
+.sp-page select option:disabled { color: var(--sp-faint); cursor: not-allowed; }
+/* The searchable pickers in the tabs (By hand, Labels, Receipts): the same field as the selects
+   beside them, in the work area only: the scan rails draw theirs larger (.sp-rail .pv-item-combobox--panel). */
+.sp-work .pv-item-combobox--panel .form-input {
+  height: var(--sp-control-height); border: 1.5px solid var(--sp-line); border-radius: var(--sp-radius-control);
+  color: var(--sp-navy); font-size: 14px; font-weight: 600; transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+.sp-work .pv-item-combobox--panel .form-input::placeholder { color: var(--sp-muted); font-weight: 500; opacity: 1; }
+.sp-work .pv-item-combobox--panel .form-input:hover { border-color: var(--sp-blue-line); }
+.sp-work .pv-item-combobox--panel.is-open .form-input, .sp-work .pv-item-combobox--panel .form-input:focus-visible {
+  border-color: var(--sp-blue); box-shadow: 0 0 0 3px color-mix(in srgb, var(--sp-blue) 14%, transparent);
+}
+.sp-work .pv-item-combobox--panel .combobox-icon, .sp-work .pv-item-combobox--panel .combobox-chevron { color: var(--sp-navy); }
 
 /* Buttons: the main action solid red; secondary white with a light border and a soft shadow. */
 .sp-page .btn { min-height: 44px; border-radius: var(--sp-radius-control); font-weight: 600; }
@@ -7867,10 +8545,10 @@ tr.has-error .gp-qty-stepper input { color: var(--err); }
 /* Tablet and narrower: the scan rail first, the work area under it. */
 @media (max-width: 900px) {
   .sp-page { overflow-y: auto; height: auto; padding: 16px; }
-  .sp-head { min-height: 0; }
-  .sp-logo { height: 34px; }
-  .sp-title { font-size: 58px; }
-  .sp-head-actions { gap: 16px; }
+  .page-head { min-height: 0; }
+  .page-head-logo { height: 34px; }
+  .page-head-title { font-size: 58px; }
+  .page-head-actions, .page-head .header-actions { gap: 16px; }
   .sp-body { grid-template-columns: minmax(0, 1fr); gap: 16px; }
   .sp-body > .sp-work-slot, .sp-body > .sp-work, .sp-body > .sp-rail { grid-column: 1; grid-row: auto; }
   .sp-body > .sp-split { display: none; }
@@ -8301,7 +8979,7 @@ tr.has-error .gp-qty-stepper input { color: var(--err); }
 .mpi-band { flex: 0 0 auto; border: 1px solid var(--line-soft); border-radius: var(--radius-2xl); overflow: hidden; }
 .mpi-band-head {
   display: flex; align-items: baseline; gap: 13px;
-  padding: 11px 17px; background: var(--sidebar-bg); color: #fff;
+  padding: 11px 17px; background: var(--sp-navy); color: #fff;
 }
 .mpi-band-no { font-size: 1.08rem; font-weight: 900; }
 .mpi-band-sole { padding-left: 13px; border-left: 1px solid rgba(255,255,255,.3); font-size: .95rem; color: #dbe7f7; }
@@ -8341,7 +9019,7 @@ tr.has-error .gp-qty-stepper input { color: var(--err); }
 }
 .mpi-total { flex: 1 1 0; min-width: 200px; display: flex; align-items: center; gap: 15px; padding: 15px 22px; }
 .mpi-total + .mpi-total { border-left: 1px solid var(--line-soft); }
-.mpi-total-icon { flex: 0 0 auto; display: inline-flex; color: var(--sidebar-bg); }
+.mpi-total-icon { flex: 0 0 auto; display: inline-flex; color: var(--sp-navy); }
 .mpi-total-icon svg { width: 36px; height: 36px; fill: currentColor; display: block; }
 .mpi-total-words dt { margin: 0; font-size: .86rem; color: var(--foreground-muted); }
 .mpi-total-words dd {
@@ -9012,6 +9690,9 @@ tr.has-error .gp-qty-stepper input { color: var(--err); }
 /* Store movements (0.3.8): what kind of party is chosen, and the party a Move Out session is locked to. */
 .party-type-badge { margin-top: 6px; align-self: flex-start; }
 .ssn-toolbar .party-type-badge { margin-top: 0; }
+/* The badge's picture (a supplier's box, a contractor's hard hat), before its word. */
+.party-type-badge-icon { display: inline-flex; flex: none; }
+.party-type-badge-icon svg { width: 13px; height: 13px; }
 /* A tag beside an option's label in a picker list: the label wraps, the tag keeps its width. */
 .city-option-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
 .city-option-badge { flex-shrink: 0; }

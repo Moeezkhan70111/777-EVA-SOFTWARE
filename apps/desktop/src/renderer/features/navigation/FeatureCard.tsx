@@ -1,6 +1,7 @@
 import React, { useId } from "react";
 import type { AppRoute } from "../../app/routes";
 import type { FeatureCardSpec, NavItem } from "./navCatalogue";
+import { NAV_ICONS } from "./NavIcons";
 
 // The Home dashboard card: the page's artwork on a soft cloud, a short accent bar, the page's
 // name, and a round arrow to go in.
@@ -60,6 +61,11 @@ export const FeatureCard: React.FC<FeatureCardProps> = ({ item, feature, onSelec
       onClick={() => onSelect(item.route)}
       data-testid={`nav-tile-${item.route}`}
     >
+      {feature.badge ? (
+        <span className="feature-card-badge" aria-hidden="true">
+          {NAV_ICONS[feature.badge]}
+        </span>
+      ) : null}
       <span className={`feature-card-art${feature.artworkHasScene ? " feature-card-art--scene" : ""}`} aria-hidden="true">
         {feature.artworkHasScene ? null : <Scene />}
         <img className="feature-card-img" src={feature.artwork} alt="" draggable={false} />

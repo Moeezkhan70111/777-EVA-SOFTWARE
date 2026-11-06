@@ -54,3 +54,19 @@ describe("canOpenRoute — the carton QR Generator (0.3.6)", () => {
     for (const route of routes) expect(canOpenRoute(user(["stock", "gatepass"]), route)).toBe(false);
   });
 });
+
+describe("canOpenRoute — Upper Stock and Dana Stock", () => {
+  it("opens each page to its own permission alone", () => {
+    expect(canOpenRoute(user(["stock.upper.view"]), "upper-stock")).toBe(true);
+    expect(canOpenRoute(user(["stock.upper.view"]), "dana-stock")).toBe(false);
+    expect(canOpenRoute(user(["stock.dana.view"]), "dana-stock")).toBe(true);
+    expect(canOpenRoute(user(["stock.dana.view"]), "upper-stock")).toBe(false);
+  });
+
+  it("opens both to a profile holding both, and neither to one holding neither", () => {
+    const both = user(["stock.upper.view", "stock.dana.view"]);
+    expect(canOpenRoute(both, "upper-stock") && canOpenRoute(both, "dana-stock")).toBe(true);
+    const neither = user(["stock", "store-scanning", "raw-material-setup"]);
+    expect(canOpenRoute(neither, "upper-stock") || canOpenRoute(neither, "dana-stock")).toBe(false);
+  });
+});

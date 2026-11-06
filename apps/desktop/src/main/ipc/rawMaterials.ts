@@ -7,7 +7,7 @@
 import { ipcMain } from "../leaseGuard";
 import { IPC } from "../../shared/ipcChannels";
 import type { IpcContext } from "./context";
-import { PERMISSION, asBoolean, asNumber, asOptionalNumber, asOptionalString, asRecord, asString, asStringRecord, isRecord, optionalOneOf } from "@erp/domain";
+import { MATERIAL_REMOVAL_ACCESS, PERMISSION, STOCK_KIND_PERMISSION, UPPER_STOCK_CATEGORY, UPPER_STOCK_SORT, asBoolean, asNumber, asOptionalNumber, asOptionalString, asRecord, asString, asStringRecord, isRecord, isStockKind, optionalOneOf } from "@erp/domain";
 import { rejection } from "../authorize";
 
 /** Absent → undefined (leave the pack alone), blank → null (clear it), otherwise the figure. */
@@ -270,6 +270,41 @@ export function registerRawMaterialsHandlers(ctx: IpcContext): void {
     })
   );
 
+  // Upper Stock and Dana Stock: each page's own permission, and nothing else opens it. The kind is
+  // checked here and the category found from it in the data layer, so a screen cannot ask for one
+  // category under the other's permission.
+  ipcMain.handle(IPC.listKindStock, (event, kind?: unknown, query?: Record<string, unknown>) => {
+    try {
+      if (!isStockKind(kind)) return { accepted: false, reason: "That stock page does not exist." };
+      authorizer.requirePermission(event, STOCK_KIND_PERMISSION[kind]);
+      return {
+        accepted: true,
+        ...db.listKindStock(kind, { search: asOptionalString(query?.search), page: asOptionalNumber(query?.page), pageSize: asOptionalNumber(query?.pageSize) }),
+      };
+    } catch (error) {
+      return rejection(error, "Could not read this stock");
+    }
+  });
+
+  // The Upper Stock page's matrix, behind that page's permission. An unknown category or sort falls
+  // back to the default rather than failing, like every other optional filter here.
+  ipcMain.handle(IPC.listUpperStockMatrix, (event, query?: Record<string, unknown>) => {
+    try {
+      authorizer.requirePermission(event, PERMISSION.STOCK_UPPER_VIEW);
+      return {
+        accepted: true,
+        ...db.listUpperStockMatrix({
+          category: optionalOneOf(query?.category, Object.values(UPPER_STOCK_CATEGORY)),
+          sort: optionalOneOf(query?.sort, Object.values(UPPER_STOCK_SORT)),
+          search: asOptionalString(query?.search),
+          page: asOptionalNumber(query?.page),
+        }),
+      };
+    } catch (error) {
+      return rejection(error, "Could not read upper stock");
+    }
+  });
+
   ipcMain.handle(IPC.createInventoryItem, (event, input?: Record<string, unknown>) => {
     try {
       const user = authorizer.requirePermission(event, PERMISSION.STOCK);
@@ -285,6 +320,8 @@ export function registerRawMaterialsHandlers(ctx: IpcContext): void {
         packName: asOptionalString(input?.packName),
         packingQuantity: asOptionalNumber(input?.packingQuantity),
         packingUnitId: asOptionalString(input?.packingUnitId),
+        // Someone making a disabled material again means to have it back.
+        enableIfDisabled: true,
       });
       return { accepted: true, ...created };
     } catch (error) {
@@ -470,12 +507,12 @@ export function registerRawMaterialsHandlers(ctx: IpcContext): void {
 
   ipcMain.handle(IPC.removeInventoryItemForGood, (event, itemId?: string, reason?: string) => {
     try {
-      const admin = authorizer.requireAdmin(event);
+      const user = authorizer.requireAnyPermission(event, MATERIAL_REMOVAL_ACCESS);
       return {
         accepted: true,
-        request: db.applyAdminItemRemoval({
+        request: db.applyDirectItemRemoval({
           itemId: asString(itemId),
-          adminId: admin.id,
+          userId: user.id,
           reason: asOptionalString(reason),
         }),
       };

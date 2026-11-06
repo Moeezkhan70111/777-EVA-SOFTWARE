@@ -4,53 +4,57 @@ import { copy } from "../../config/copy";
 import type { AuthUser } from "../../types/desktopApi";
 import { StateView } from "../../components/shared/StateView";
 import { isAdmin } from "../auth/session";
-import { visibleNavSections } from "./navCatalogue";
+import { visibleNavSections, type NavSection } from "./navCatalogue";
 import { FeatureCard } from "./FeatureCard";
 import { NavTile } from "./NavTile";
 
-// Every role's front door: the pages the user's role has been given. The sidebar lists the same
+// Every role's front door: the Dashboard's own cards, Upper Stock and Dana Stock, each shown only to a
+// profile that may open it. Every other page opens from the sidebar; a user with no sidebar (a store
+// operator) still gets the full list below them (listAllPages). The sidebar lists the same
 // pages (navCatalogue.ts), so the Dashboard and the rail never disagree. A role with nothing
 // assigned gets an explanation instead of a blank screen.
 //
-//               Munshi                         ← the user's role
-//     [ Machine Program ] [ Create Gatepass ]      ← every large card, together, centred
-//     GATEPASS
-//     [ Gatepass List ]                            ← the rest as compact tiles, by section
+//               MUNSHI                         ← the user's role, under the page header
+//     [ Upper Stock ] [ Dana Stock ]               ← the cards this profile may open
+//     GATEPASS                                     ← with no sidebar only: every other page
+//     [ Gatepass List ]
 //
 // Pages with a large card (FeatureCard) come first, side by side; the rest stay compact tiles
 // under their section until their artwork is made. A large card names its own page, so it has
 // no section heading over it.
 
 /**
- * The page is titled with the user's role (e.g. "Munshi"), so each role sees its own desk.
- * An administrator without a role is "Administrator"; anyone else without one sees "Dashboard".
- * (The sidebar row keeps the name Dashboard.)
+ * The page header names the page (Dashboard); the line under it names the user's role (e.g.
+ * "Munshi"), so each role still sees its own desk. An administrator without a role is
+ * "Administrator"; anyone else without one has no line, since it would only repeat the header.
  */
-export const dashboardTitle = (user: AuthUser): string =>
-  user.roleName ?? (isAdmin(user) ? copy.nav.adminTitle : copy.nav.homeTitle);
+export const deskName = (user: AuthUser): string | null => user.roleName ?? (isAdmin(user) ? copy.nav.adminTitle : null);
 
 interface HomePageProps {
   user: AuthUser;
   onNavigate: (route: AppRoute) => void;
   /** Pages this computer does not offer whatever the role: the ledgers, off the Accounts holder. */
   hiddenRoutes?: ReadonlySet<AppRoute>;
+  /**
+   * List every page this user may open, under the Dashboard's own cards. For a user with no
+   * sidebar, a store operator, for whom Home (F1) is the only way to those pages.
+   */
+  listAllPages?: boolean;
 }
 
-export const HomePage: React.FC<HomePageProps> = ({ user, onNavigate, hiddenRoutes }) => {
-  const sections = visibleNavSections(user, hiddenRoutes);
-  const featured = sections.flatMap((section) => section.items.flatMap((item) => (item.feature ? [{ item, feature: item.feature }] : [])));
+/** Every page of this user's with a large card, and which section's page is which. */
+const featuredPages = (sections: readonly NavSection[]) =>
+  sections.flatMap((section) => section.items.flatMap((item) => (item.feature ? [{ item, feature: item.feature }] : [])));
+
+/** Every other card and tile: the list a user with no sidebar reaches their pages from. */
+const AllPages: React.FC<{ sections: readonly NavSection[]; onNavigate: (route: AppRoute) => void }> = ({ sections, onNavigate }) => {
+  const featured = featuredPages(sections).filter(({ feature }) => !feature.onDashboard);
   const tileSections = sections
     .map((section) => ({ ...section, items: section.items.filter((item) => !item.feature) }))
     .filter((section) => section.items.length > 0);
 
   return (
-    <div className="nav-page">
-      <header className="nav-page-header">
-        <h1>{dashboardTitle(user)}</h1>
-      </header>
-
-      {sections.length === 0 ? <StateView kind="empty" title={copy.nav.emptyTitle} hint={copy.nav.emptyHint} /> : null}
-
+    <>
       {featured.length > 0 ? (
         <div className="nav-page-section nav-page-grid nav-page-grid--feature">
           {featured.map(({ item, feature }) => (
@@ -69,6 +73,34 @@ export const HomePage: React.FC<HomePageProps> = ({ user, onNavigate, hiddenRout
           </div>
         </section>
       ))}
+    </>
+  );
+};
+
+export const HomePage: React.FC<HomePageProps> = ({ user, onNavigate, hiddenRoutes, listAllPages = false }) => {
+  const sections = visibleNavSections(user, hiddenRoutes);
+  const desk = deskName(user);
+  // Only the cards this user's permissions open: visibleNavSections has already asked canOpenRoute.
+  const cards = featuredPages(sections).filter(({ feature }) => feature.onDashboard);
+
+  return (
+    <div className="nav-page">
+      {desk ? <p className="nav-page-desk">{desk}</p> : null}
+
+      {sections.length === 0 ? <StateView kind="empty" title={copy.nav.emptyTitle} hint={copy.nav.emptyHint} /> : null}
+      {sections.length > 0 && cards.length === 0 && !listAllPages ? (
+        <StateView kind="empty" title={copy.nav.noCardsTitle} hint={copy.nav.noCardsHint} />
+      ) : null}
+
+      {cards.length > 0 ? (
+        <div className="nav-page-section nav-page-grid nav-page-grid--dashboard">
+          {cards.map(({ item, feature }) => (
+            <FeatureCard key={item.route} item={item} feature={feature} onSelect={onNavigate} />
+          ))}
+        </div>
+      ) : null}
+
+      {listAllPages ? <AllPages sections={sections} onNavigate={onNavigate} /> : null}
     </div>
   );
 };

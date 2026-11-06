@@ -9,6 +9,8 @@ export * from "./constants.js";
 export * from "./validate.js";
 export * from "./gatepassStock.js";
 export * from "./machineProgram.js";
+export * from "./kindStock.js";
+export * from "./upperStockMatrix.js";
 export * from "./contractorPricing.js";
 export * from "./machineProgramReconciliation.js";
 export * from "./contractorLedger.js";

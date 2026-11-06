@@ -208,6 +208,63 @@ export function removeRoleScreensFromExtrasOnce(db: SqlHandle, nowIso: string): 
   }
 }
 
+/** Set once the repair below has run: when, and how many screens it moved. */
+export const STORED_SCREENS_REPAIR_SETTING_KEY = "accounts.extras.stored_screens_moved";
+
+type NormalizeScreen = (screen: string) => string;
+
+function storedScreens(json: string, normalize: NormalizeScreen): string[] {
+  try {
+    const stored: unknown = JSON.parse(json);
+    if (!Array.isArray(stored)) return [];
+    const texts = stored.filter((screen): screen is string => typeof screen === "string");
+    return texts.map(normalize).filter((screen) => screen !== "");
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * ONCE PER DATABASE: makes the extra-screens table the whole truth for someone with no role.
+ *
+ * Their screens could also live only in permissions_json: an account that predates roles, or a screen
+ * unticked before that took effect. The member dialog reads the table, so it showed them unticked, or
+ * "No permissions assigned", while they could open them, and unticking did nothing because they were
+ * not ticked. Moved to the table they show ticked, and unticking takes them away. Nobody gains or
+ * loses a screen today. An administrator's row is left alone: they have every screen anyway.
+ */
+export function moveStoredScreensToExtrasOnce(db: SqlHandle, normalize: NormalizeScreen, nowIso: string): number | null {
+  // Under cloud accounts the extras here are the cloud's, written by its revisions.
+  if (readAccountsMode(db) === ACCOUNTS_MODE.CLOUD) return null;
+  if (db.prepare("SELECT 1 FROM app_settings WHERE setting_key = ?").get(STORED_SCREENS_REPAIR_SETTING_KEY) !== undefined) return null;
+  db.exec("BEGIN IMMEDIATE");
+  try {
+    const people = db
+      .prepare(
+        `SELECT u.id, u.permissions_json FROM app_users u
+          WHERE u.role <> 'ADMIN' AND NOT EXISTS (SELECT 1 FROM user_role_assignments a WHERE a.user_id = u.id)`
+      )
+      .all() as Array<{ id: string; permissions_json: string | null }>;
+    const insert = db.prepare("INSERT OR IGNORE INTO user_additional_permissions (user_id, permission_code, granted_at) VALUES (?, ?, ?)");
+    let moved = 0;
+    for (const person of people) {
+      for (const screen of new Set(storedScreens(person.permissions_json ?? "[]", normalize))) {
+        moved += Number(insert.run(person.id, screen, nowIso).changes);
+      }
+    }
+    db.prepare("INSERT INTO app_settings (setting_key, setting_value, updated_at) VALUES (?, ?, ?)").run(
+      STORED_SCREENS_REPAIR_SETTING_KEY,
+      JSON.stringify({ at: nowIso, moved }),
+      nowIso
+    );
+    db.exec("COMMIT");
+    return moved;
+  } catch (error) {
+    db.exec("ROLLBACK");
+    throw error;
+  }
+}
+
 export const usersMethods = {
   hashPassword(this: SqliteDatabase, password: string): { hash: string; salt: string } {
     const salt = randomBytes(16);
@@ -438,6 +495,27 @@ export const usersMethods = {
     this.persistEffectivePermissions(userId);
   },
 
+  /**
+   * Takes screens out of the stored list (permissions_json). Someone with no role is read as an account
+   * that predates roles, whose screens live there, and the list is also where their worked-out screens
+   * are cached. So a screen unticked for them came straight back from the cache, and the admin saw it
+   * saved. Only the screens named go: the list cannot tell an old account's own screens from cached
+   * ones, and emptying it would strip an old account on any Save.
+   */
+  forgetStoredScreens(this: SqliteDatabase, userId: string, screens: readonly string[]): void {
+    if (screens.length === 0) return;
+    const row = this.db.prepare("SELECT permissions_json FROM app_users WHERE id = ?").get(userId) as { permissions_json?: string } | undefined;
+    let stored: unknown;
+    try {
+      stored = JSON.parse(row?.permissions_json ?? "[]");
+    } catch {
+      return; // Unreadable is already read as nothing, so there is nothing to take out.
+    }
+    if (!Array.isArray(stored)) return;
+    const kept = stored.filter((screen) => typeof screen === "string" && !screens.includes(this.normalizePermissionCode(screen)));
+    this.db.prepare("UPDATE app_users SET permissions_json = ? WHERE id = ?").run(JSON.stringify(kept), userId);
+  },
+
   setUserAdditionalPermissions(this: SqliteDatabase, userId: string, permissions: string[]): void {
     requireLocalAccounts(this.db);
     const user = this.db.prepare("SELECT id FROM app_users WHERE id = ?").get(userId) as { id?: string } | undefined;
@@ -451,6 +529,8 @@ export const usersMethods = {
     const normalized = Array.from(new Set((permissions ?? []).map((permission) => this.normalizePermissionCode(permission)).filter(Boolean)))
       .filter((permission) => !roleScreens.has(permission));
     const now = new Date().toISOString();
+    // The old extras leave the stored list as they leave the table; the ones kept are written back below.
+    this.forgetStoredScreens(userId, this.getUserAdditionalPermissions(userId));
     this.db.prepare("DELETE FROM user_additional_permissions WHERE user_id = ?").run(userId);
     for (const permission of normalized) {
       this.db.prepare("INSERT INTO user_additional_permissions (user_id, permission_code, granted_at) VALUES (?, ?, ?)").run(userId, permission, now);

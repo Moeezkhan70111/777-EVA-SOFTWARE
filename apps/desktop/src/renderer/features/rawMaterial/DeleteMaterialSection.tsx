@@ -15,15 +15,17 @@ import { copy } from "../../config/copy";
 //             holds stock, and when anything outside it names it — a printed label, a scan, a
 //             purchase line, a machine program line.
 //
-// Erasing is an administrator's decision, so everybody else asks for it. The rule about who
-// may erase what lives in the main process — hiding a button is not authorisation.
+// An administrator or a store operator removes it directly (6 Nov 2026); everybody else asks an
+// administrator. The rule about who may erase what lives in the main process — hiding a button is
+// not authorisation.
 
 interface DeleteMaterialSectionProps {
   itemId: string;
   displayName: string;
   /** Already INACTIVE: the section offers to switch it back on. */
   disabled: boolean;
-  isAdmin: boolean;
+  /** May remove it directly, not only ask for it. */
+  canRemove: boolean;
   /** Closes the drawer once the material is gone. */
   onDeleted: () => void;
   /** Re-reads the list after a disable, an enable or a refusal. */
@@ -34,7 +36,7 @@ export const DeleteMaterialSection: React.FC<DeleteMaterialSectionProps> = ({
   itemId,
   displayName,
   disabled,
-  isAdmin,
+  canRemove,
   onDeleted,
   onChanged,
 }) => {
@@ -140,7 +142,7 @@ export const DeleteMaterialSection: React.FC<DeleteMaterialSectionProps> = ({
           <p className="field-help">
             {cost.length > 0 ? copy.removal.eraseAlsoTakes(cost.join(" and ")) : copy.removal.deleteMaterialExplain}
           </p>
-          {isAdmin ? null : <p className="field-help">{copy.removal.askAdminExplain}</p>}
+          {canRemove ? null : <p className="field-help">{copy.removal.askAdminExplain}</p>}
           <label className="input-label" htmlFor={`rm-item-removal-reason-${itemId}`}>
             {copy.removal.removalReasonLabel}
           </label>
@@ -154,12 +156,12 @@ export const DeleteMaterialSection: React.FC<DeleteMaterialSectionProps> = ({
           <div className="rm-correction-actions">
             <button
               type="button"
-              className={isAdmin ? "btn btn-danger" : "btn btn-secondary"}
+              className={canRemove ? "btn btn-danger" : "btn btn-secondary"}
               disabled={busy}
               data-testid="material-erase"
-              onClick={() => (isAdmin ? setConfirming(true) : void askToErase())}
+              onClick={() => (canRemove ? setConfirming(true) : void askToErase())}
             >
-              {busy ? copy.removal.sending : isAdmin ? copy.removal.eraseForGood : copy.removal.askAdminToRemove}
+              {busy ? copy.removal.sending : canRemove ? copy.removal.eraseForGood : copy.removal.askAdminToRemove}
             </button>
             {disabled ? null : (
               <button type="button" className="btn btn-ghost" disabled={busy} onClick={() => void setStatus("INACTIVE")}>

@@ -1929,9 +1929,86 @@ export const copy = {
     lookupLastMove: "Last moved",
   },
 
+  // Making a material that exists but is disabled (6 Nov 2026).
+  materialRemade: {
+    title: "This material was disabled, so it is back in use",
+    body: (code: string, name: string) => `${code} · ${name}. It keeps its code and history. Any opening stock or cost typed here was not added.`,
+  },
+
+  // Move In's scan panel, in Move Out's arrangement (6 Nov 2026).
+  scanIn: {
+    partyStep: "Receiving from",
+    partyHelp: "Choose who the packets came from, then press New session.",
+    partyLocked: "Every packet in this session comes from this supplier. End the session to choose another.",
+    startHint: "Choose the supplier, then press New session",
+    pressNew: "Press New session to start",
+  },
+
+  // A store slip going to the slip printer (Nov 2026).
+  storeVoucherPrint: {
+    sentTitle: "Sent to the slip printer",
+    sentBody: "The slip is printing on the Star TSP800II.",
+    notSentTitle: "Not sent to the slip printer",
+    windowBody: (reason: string) => `${reason}. The slip is open in a window, to print from there.`,
+    blockedBody: (reason: string) => `${reason}. Allow popups to print the slip from a window instead.`,
+  },
+
+  // The Stock tab's category buttons (1 Nov 2026).
+  rawMaterialStock: {
+    categoryFilter: "Filter by category",
+    subCategoryFilter: (category: string) => `Filter within ${category}`,
+    allCategories: "All",
+    allOf: (category: string) => `All ${category}`,
+    groupCount: (materials: number, inStock: number) =>
+      `${materials.toLocaleString()} material${materials === 1 ? "" : "s"} · ${inStock.toLocaleString()} in stock`,
+    showing: (from: number, to: number, total: number) =>
+      `${from.toLocaleString()}–${to.toLocaleString()} of ${total.toLocaleString()} materials`,
+    inStore: "In store",
+    totalQty: "Total quantity",
+    columnMaterial: "Material",
+    /** Over the grey figure: the same stock measured out, shown only when it says something more. */
+    columnTotal: "Total",
+    outOfStock: "Out of stock",
+    cost: (rupees: string) => `Cost Rs. ${rupees}`,
+    viewDetails: "View details",
+    correctionWaiting: "Correction waiting",
+  },
+
   store: {
     scanMaterialTitle: "Scan Material",
     scanMaterialLine: "Scan a QR code to receive material into stock.",
+    // The scan panels' own words (1 Nov 2026 look), like READY TO SCAN inside them: the pill in a
+    // rail's head says whether a scan would land now.
+    railReady: "Ready",
+    railNotReady: "Not Ready",
+    selectSupplier: "Select Supplier",
+    /** The search box at the top of a scan station's open party list. */
+    searchParty: "Search supplier or contractor…",
+    noPartyMatch: "No supplier or contractor matches that.",
+    /** The search box at the top of a material picker's open list (By hand). */
+    searchMaterial: "Search material by name or code…",
+    /** The Receipts filter's first row, and what it shows while nothing narrows the list. */
+    allSuppliers: "All suppliers",
+    readyToScan: "Ready to Scan",
+    scanToBegin: "Scan a packet QR code to begin receiving.",
+    startSession: "Start Session",
+    endSession: "End Session",
+    printReceipt: "Print Receipt",
+    recentlyReceived: "Recently Received",
+    thisSession: "This Session",
+    // Move out on the Store page, in the same words as Move in.
+    selectParty: "Select Supplier or Contractor",
+    movingOutTo: "Moving out to",
+    scanToBeginIssuing: "Scan a packet QR code to begin issuing.",
+    recentlyIssued: "Recently Issued",
+    nothingIssuedYet: "No packets issued in this session yet.",
+    chooseParty: "Choose a supplier or contractor",
+    chooseMoveOutParty: "Pick who the packets are going to, then press Start Session.",
+    noCategory: "No category",
+    lastInSession: (n: number) => `Last ${n} in this session`,
+    nothingReceivedYet: "No packets received in this session yet.",
+    /** Above the party's name at the top of the scan panel, while a session is open. */
+    receivingFrom: "Receiving from",
     moveInTitle: "Move In",
     operator: "Operator",
     qrTitle: "Raw Material QR",
@@ -1947,7 +2024,6 @@ export const copy = {
     nothingStarted: "Nothing started",
     packets: (n: number) => `${n.toLocaleString()} packet${n === 1 ? "" : "s"}`,
     reprintSlip: "Reprint slip",
-    popupBlocked: "Allow popups to print the slip",
   },
 
   // RECEIPTS — the deliveries received, on the Store page's Receipts tab and the Raw Material workspace.
@@ -1968,14 +2044,13 @@ export const copy = {
     stationEyebrow: "Store · Raw Material",
     machinePrograms: "Machine programs",
     resizeRail: "Resize the scan panel",
-    notifications: "Notifications",
-    noNotifications: "Nothing new.",
     modesLabel: "What the store is doing",
     // The two modes, named Move in and Move out since 0.4.2 (the owner's design).
     receiving: "Move in",
     issuing: "Move out",
     /** The chip on a mode whose session is open: its packets so far. */
-    modeOpen: (n: number) => `Open · ${n.toLocaleString()}`,
+    /** Packets, then what they hold: "Open · 1/20". */
+    modeOpen: (n: number, quantity?: string) => `Open · ${n.toLocaleString()}${quantity ? `/${quantity}` : ""}`,
     keyHint: "Press 1 or 2",
     receivingSections: "Move in sections",
     issuingSections: "Move out sections",
@@ -1988,6 +2063,7 @@ export const copy = {
       setup: "Setup",
       issuedToday: "Issued today",
       dailyReport: "Daily report",
+      qrJourney: "QR Journey",
     },
     noTabs: "Nothing here for your account",
     noTabsHint: "Ask an administrator for stock, label or setup access.",
@@ -2567,16 +2643,83 @@ export const copy = {
     needsStockAccess: "Ask an admin for Stock access to use this",
   },
 
+  // The Upper Stock and Dana Stock pages (features/kindStock).
+  kindStock: {
+    search: "Search by name, colour, size or code",
+    materials: "Materials",
+    material: "Material",
+    type: "Type",
+    code: "Code",
+    inStore: "In store",
+    failedTitle: "Stock could not be read",
+    unreadable: "The stock figures could not be read. Try again.",
+    noMatchTitle: "Nothing matches that search",
+    noMatchHint: "Check the spelling, or clear the search to see everything.",
+    upperEmptyTitle: "No uppers in the store yet",
+    upperEmptyHint: "Uppers appear here once they are set up under UPPER in Raw Material and received into the store.",
+    danaEmptyTitle: "No dana in the store yet",
+    danaEmptyHint: "Dana appears here once it is set up under DANA in Raw Material and received into the store.",
+  },
+
+  // The Upper Stock page (features/upperStock).
+  upperStock: {
+    categoriesLabel: "Kind of upper",
+    categories: {
+      all: "All",
+      rubber: "Rubber Upper",
+      ragzine: "Ragzine Upper",
+      pvc: "PVC Upper",
+      pasting: "Pasting Upper",
+    },
+    searchLabel: "Search uppers",
+    searchPlaceholder: "Search upper (e.g. SK6, Slide, Velcro...)",
+    sortBy: "Sort by:",
+    sorts: {
+      nameAsc: "Item name (A–Z)",
+      nameDesc: "Item name (Z–A)",
+      stockDesc: "Highest stock first",
+      stockAsc: "Lowest stock first",
+    },
+    size: "Size",
+    total: "Total",
+    /** The matrix's last row: its one grand total, and the unit every figure above it is in. */
+    grandTotal: (unitCode: string) => `Total ${unitCode}`.trim(),
+    tableLabel: (article: string) => `${article} stock`,
+    foldLabel: (article: string) => `Show or hide ${article}`,
+    noArticle: "No article",
+    noColour: "No colour",
+    noSize: "No size",
+  },
+
+  // The bell and the profile, top right of every screen: in the app's top bar, or in the Store
+  // page's own header (components/layout/HeaderActions).
+  appHeader: {
+    label: "Account and notifications",
+    notifications: "Notifications",
+    noNotifications: "Nothing new.",
+    accessRequests: "Access Requests",
+    permissionRequests: "Permission Requests",
+  },
+
   // Home (the tile dashboard) and the sidebar. Both read the same catalogue
   // (features/navigation/navCatalogue.ts), so one label here names a page in both places.
   nav: {
     home: "Dashboard",
-    homeTitle: "Dashboard",
     /** The Dashboard title for an administrator who has no role of their own. */
     adminTitle: "Administrator",
     emptyTitle: "No pages assigned yet",
     emptyHint: "Your account has no pages assigned. Ask an administrator to give your account a role.",
+    /** A role with pages, but neither stock card: the dashboard has nothing of its own to show. */
+    noCardsTitle: "Your pages are in the sidebar",
+    noCardsHint: "Rest the pointer on the sidebar on the left to see every page you can open.",
     railLabel: "Main navigation",
+    // The rail's foot, and its pin (the sidebar is slim until hovered or pinned open).
+    rail: {
+      pin: "Keep sidebar open",
+      backup: "Backup",
+      backupHint: "Create backup (Ctrl+B)",
+      version: (version: string) => `777 ERP ${version}`,
+    },
     sections: {
       overview: "Overview",
       scanning: "Scanning",
@@ -2605,6 +2748,8 @@ export const copy = {
       gatepassCreate: { label: "Create Gatepass", line: "Cut a new gatepass for a party" },
       gatepassList: { label: "Gatepass List", line: "Open, follow and print gatepasses" },
       stock: { label: "Current Stock", line: "Finished goods in stock" },
+      upperStock: { label: "Upper Stock", line: "Uppers in the store" },
+      danaStock: { label: "Dana Stock", line: "Dana in the store" },
       rawMaterial: { label: "Raw Material", line: "Stock, receipts, labels and setup" },
       stockHistory: { label: "Stock History", line: "Every stock movement" },
       machineProgram: { label: "Machine Program", line: "Carton QRs generated, per item" },

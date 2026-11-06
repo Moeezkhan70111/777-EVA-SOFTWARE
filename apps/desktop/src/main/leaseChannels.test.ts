@@ -28,7 +28,7 @@ const READS = new Set([
   "listInventoryItems", "getInventoryImportColumns", "previewCategoryMove", "previewInventoryItemMove",
   "getInventoryItemUnitLadder", "listInventoryItemUnitLadders", "itemRemovalBlockers", "inventoryItemColourSiblings",
   "listUnitLadderPresets", "categoryRemovalBlockers", "listRemovalRequestsForTarget", "listStockCorrectionRequests",
-  "listStockCorrectionRequestsForItem", "listInventoryStockEvents", "queryInventoryStock",
+  "listStockCorrectionRequestsForItem", "listInventoryStockEvents", "queryInventoryStock", "listKindStock", "listUpperStockMatrix",
   // rawMaterialQr
   "rawMaterialQrBatchDeleteBlockers", "listRawMaterialQrBatches", "listRawMaterialQrsForBatch", "getRawMaterialQrLabel",
   "getRawMaterialQrSequenceState",

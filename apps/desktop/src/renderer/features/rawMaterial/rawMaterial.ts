@@ -168,19 +168,27 @@ export const itemCategoryLabel = (item: InventoryItemRow): string => {
 };
 
 /**
- * A material as a picker option. Its name is "CATEGORY — SUB — A — B — C"; the category part
- * is the same for every material in a sub-category, so the big line is what tells them apart
- * (SK19 · BROWN · 8/13) and the category and code go on the small line under it.
+ * What tells a material apart from the others in its category. Its name is "CATEGORY — SUB — A — B — C"
+ * and the category part is the same for every material in a sub-category, so this is [A, B, C]. A
+ * name that does not start with its category (renamed since) is kept whole, as one part.
+ */
+export const materialNameParts = (displayName: string, categoryLabel: string): string[] => {
+  const prefix = categoryLabel ? `${categoryLabel} — ` : "";
+  const distinguishing = prefix && displayName.startsWith(prefix) ? displayName.slice(prefix.length) : displayName;
+  return distinguishing.split(" — ").filter(Boolean);
+};
+
+/**
+ * A material as a picker option: the big line is what tells it apart (SK19 · BROWN · 8/13) and
+ * the category and code go on the small line under it.
  */
 export const materialPickerOption = (item: InventoryItemRow): { value: string; label: string; detail: string; keywords: string } => {
   const name = String(item.display_name ?? "");
   const category = itemCategoryLabel(item);
   const code = String(item.item_code ?? "");
-  const prefix = category ? `${category} — ` : "";
-  const distinguishing = prefix && name.startsWith(prefix) ? name.slice(prefix.length) : name;
   return {
     value: String(item.id),
-    label: distinguishing.split(" — ").join(" · ") || name,
+    label: materialNameParts(name, category).join(" · ") || name,
     detail: [category, code].filter(Boolean).join(" · "),
     keywords: name,
   };

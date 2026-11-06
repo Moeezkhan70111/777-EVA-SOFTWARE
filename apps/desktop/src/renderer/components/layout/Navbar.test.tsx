@@ -1,7 +1,8 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import React from "react";
 import { Navbar } from "./Navbar";
+import { CLOSE_DELAY_MS, OPEN_DELAY_MS } from "../../features/navigation/useSidebarRail";
 import type { AuthUser } from "../../types/desktopApi";
 
 // The sidebar lists Home and then exactly the pages the user's role has been given, as rows
@@ -28,9 +29,6 @@ const renderNavbar = (user: AuthUser, current: React.ComponentProps<typeof Navba
       appVersion="1.0.0"
       onBackup={vi.fn()}
       user={user}
-      onProfile={vi.fn()}
-      onChangePassword={vi.fn()}
-      onLogout={vi.fn()}
     />
   );
   return { onSelect, rail: screen.getByRole("navigation", { name: /main navigation/i }) };
@@ -139,33 +137,96 @@ describe("Navbar sidebar", () => {
   });
 });
 
-describe("Navbar notifications panel", () => {
-  const openPanel = () => {
+// The rail is slim (pictures only) until hovered, focused from the keyboard, or pinned open.
+describe("Navbar rail", () => {
+  const railBox = () => document.querySelector(".navbar") as HTMLElement;
+  const panel = () => document.querySelector(".navbar-panel") as HTMLElement;
+  const wait = (ms: number) => act(() => vi.advanceTimersByTime(ms));
+
+  beforeEach(() => {
+    window.localStorage.clear();
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("starts slim, and carries neither the bell nor the profile", () => {
     renderNavbar(ADMIN);
-    fireEvent.click(screen.getByRole("button", { name: "Access requests" }));
-    expect(screen.getByText("Notifications")).toBeInTheDocument();
-  };
-
-  it("closes when the user clicks anywhere else on the screen", () => {
-    openPanel();
-    fireEvent.mouseDown(document.body);
-    expect(screen.queryByText("Notifications")).not.toBeInTheDocument();
+    expect(railBox()).not.toHaveClass("is-expanded");
+    expect(screen.queryByRole("button", { name: "Notifications" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "User Profile" })).not.toBeInTheDocument();
   });
 
-  it("closes on Escape", () => {
-    openPanel();
-    fireEvent.keyDown(document, { key: "Escape" });
-    expect(screen.queryByText("Notifications")).not.toBeInTheDocument();
+  it("takes the list back to the top when it closes, so the slim icons are not left cut off", () => {
+    renderNavbar(ADMIN);
+    const list = screen.getByRole("navigation", { name: /main navigation/i });
+    fireEvent.mouseEnter(panel());
+    wait(OPEN_DELAY_MS);
+    list.scrollTop = 300;
+
+    fireEvent.mouseLeave(panel());
+    wait(CLOSE_DELAY_MS);
+    expect(list.scrollTop).toBe(0);
   });
 
-  it("stays open for a click inside it, and the bell still toggles it shut", () => {
-    openPanel();
-    fireEvent.mouseDown(screen.getByText("Notifications"));
-    expect(screen.getByText("Notifications")).toBeInTheDocument();
+  it("opens when the pointer rests on it and closes when it leaves; a quick pass does nothing", () => {
+    renderNavbar(ADMIN);
+    fireEvent.mouseEnter(panel());
+    wait(OPEN_DELAY_MS - 50);
+    fireEvent.mouseLeave(panel());
+    wait(OPEN_DELAY_MS);
+    expect(railBox()).not.toHaveClass("is-expanded");
 
-    const bell = screen.getByRole("button", { name: "Access requests" });
-    fireEvent.mouseDown(bell);
-    fireEvent.click(bell);
-    expect(screen.queryByText("Notifications")).not.toBeInTheDocument();
+    fireEvent.mouseEnter(panel());
+    wait(OPEN_DELAY_MS);
+    expect(railBox()).toHaveClass("is-expanded");
+    // Moving down the list and back in before the close delay keeps it open.
+    fireEvent.mouseLeave(panel());
+    wait(CLOSE_DELAY_MS - 50);
+    fireEvent.mouseEnter(panel());
+    wait(CLOSE_DELAY_MS);
+    expect(railBox()).toHaveClass("is-expanded");
+
+    fireEvent.mouseLeave(panel());
+    wait(CLOSE_DELAY_MS);
+    expect(railBox()).not.toHaveClass("is-expanded");
+  });
+
+  it("stays open once pinned, and this computer remembers it", () => {
+    const { unmount } = render(<Navbar current="home" onSelect={vi.fn()} appVersion="v1.0.0" onBackup={vi.fn()} user={ADMIN} />);
+    const pin = screen.getByRole("button", { name: "Keep sidebar open" });
+    expect(pin).toHaveAttribute("aria-pressed", "false");
+    fireEvent.click(pin);
+    expect(pin).toHaveAttribute("aria-pressed", "true");
+    expect(railBox()).toHaveClass("is-pinned", "is-expanded");
+
+    fireEvent.mouseLeave(panel());
+    wait(CLOSE_DELAY_MS);
+    expect(railBox()).toHaveClass("is-expanded");
+
+    unmount();
+    renderNavbar(ADMIN);
+    expect(railBox()).toHaveClass("is-pinned", "is-expanded");
+    fireEvent.click(screen.getByRole("button", { name: "Keep sidebar open" }));
+    expect(railBox()).not.toHaveClass("is-expanded");
+  });
+
+  it("names a picture beside the slim rail, and not once the rail is open", () => {
+    renderNavbar(ADMIN);
+    fireEvent.mouseOver(within(panel()).getByRole("button", { name: "Billing" }));
+    expect(document.querySelector(".rail-tooltip")).toHaveTextContent("Billing");
+
+    fireEvent.mouseEnter(panel());
+    wait(OPEN_DELAY_MS);
+    expect(document.querySelector(".rail-tooltip")).not.toBeInTheDocument();
+  });
+
+  it("keeps Backup and the version in its foot", () => {
+    const onBackup = vi.fn();
+    render(<Navbar current="home" onSelect={vi.fn()} appVersion="v1.0.0" onBackup={onBackup} user={ADMIN} />);
+    fireEvent.click(screen.getByRole("button", { name: "Backup" }));
+    expect(onBackup).toHaveBeenCalled();
+    expect(screen.getByText("v1.0.0")).toBeInTheDocument();
   });
 });

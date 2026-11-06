@@ -325,7 +325,7 @@ export const GatepassListPage: React.FC<GatepassListPageProps> = ({ token, usern
             <button type="button" className="gp-back" onClick={closeDetail}>
               ← Gatepass List
             </button>
-            <h1 className="page-title gp-detail-title">
+            <h1 className="page-title page-detail-title gp-detail-title">
               Gatepass {detail?.code ?? ""}
               {detail && <StatusBadge status={detail.status} />}
             </h1>

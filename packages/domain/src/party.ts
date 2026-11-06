@@ -14,7 +14,7 @@ export const isRawMaterialIssuePartyType = (partyType: string): boolean =>
 
 /**
  * Who raw material may be RECEIVED from — a Move In session, a by-hand move in, and the parties
- * labels are printed for: suppliers and contractors (owner, 0.4.1; suppliers only in 0.3.9). One
+ * labels are printed for: suppliers only (owner, 6 Nov 2026; contractors too from 0.4.1). One
  * list for all three, because a packet is received only into a session for the party its label
  * names: a party labels cannot be printed for could never receive anything.
  *
@@ -22,7 +22,7 @@ export const isRawMaterialIssuePartyType = (partyType: string): boolean =>
  * program, so the program's reconciliation sees it. Receiving it here instead would count it as a
  * new delivery and leave the program short.
  */
-export const RAW_MATERIAL_RECEIPT_PARTY_TYPES: readonly PartyType[] = ['SUPPLIER', CONTRACTOR_PARTY_TYPE];
+export const RAW_MATERIAL_RECEIPT_PARTY_TYPES: readonly PartyType[] = ['SUPPLIER'];
 
 export const isRawMaterialReceiptPartyType = (partyType: string): boolean =>
   (RAW_MATERIAL_RECEIPT_PARTY_TYPES as readonly string[]).includes(partyType);

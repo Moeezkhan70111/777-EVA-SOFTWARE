@@ -1,7 +1,9 @@
 import { copy } from "../../config/copy";
 import { escapeHtml } from "../../utils/html";
 import { formatClockTime, formatDashedDate } from "../../utils/dates";
-import { loadLogoDataUrl, openPrintDocumentAsync } from "../../platform/print";
+import { PRINTER_ROLE } from "../../../shared/printerRole";
+import { materialNameParts } from "./rawMaterial";
+import { loadLogoDataUrl, openPrintDocument, printDocumentDirect } from "../../platform/print";
 
 // THE STORE VOUCHER — the one printed layout for a store session: the company letterhead, what
 // happened and with whom, the session it was done under, and what it totalled by material. The
@@ -10,51 +12,67 @@ import { loadLogoDataUrl, openPrintDocumentAsync } from "../../platform/print";
 // It is the physical slip that goes with the goods, not a transaction log. Every packet's own scan
 // (QR, exact time) already lives in QR Management/Journey; this is the summary a storekeeper hands
 // over and files.
+//
+// IT IS A SLIP ON A ROLL (Nov 2026): 4 inches wide, as long as it needs to be, and black only, since
+// a thermal head has no greys to give a shaded heading. Pressing print sends it straight to the
+// store's Star TSP800II, not the computer's default printer, which QR labels keep. A computer
+// without that printer, or a job it refuses, gets the same slip in a window to print from instead.
 
 const PRINT_STYLES = `
   * { box-sizing: border-box; }
-  @page { size: A4 portrait; margin: 12mm; }
-  body { font-family: "Segoe UI", Helvetica, Arial, sans-serif; margin: 24px; color: #111; font-size: 13px; }
-  .print-actions { text-align: center; margin-bottom: 18px; }
+  @page { margin: 0; }
+  body { font-family: "Segoe UI", Helvetica, Arial, sans-serif; width: 4in; margin: 0; padding: 2mm 3mm; color: #000; font-size: 13px; }
+  .print-actions { text-align: center; margin: 10px 0 14px; }
   .print-actions button {
-    padding: 10px 26px; font-size: 13px; font-weight: 600; letter-spacing: .04em;
+    padding: 8px 18px; font-size: 12px; font-weight: 600; letter-spacing: .04em;
     text-transform: uppercase; background: #17365d; color: #fff; border: none; border-radius: 4px; cursor: pointer;
   }
-  .doc { max-width: 800px; margin: 5px}
+  .doc { width: 100%; }
 
-  .doc-head { border: 1.5px solid #111; border-radius: 8px; overflow: hidden; }
-  .doc-head-logo { padding: 12px; text-align: center; border-bottom: 1.5px solid #111; }
-  .doc-head-logo img { height: 46px; width: auto; }
-  .doc-head-logo .brand-text { font-size: 20px; font-weight: 900; letter-spacing: .04em; color: #17365d; }
-  .doc-head-title { display: grid; grid-template-columns: 1fr 1fr; text-transform: uppercase; }
-  .doc-head-title div { padding: 10px 12px; text-align: center; font-weight: 800; font-size: 13px; letter-spacing: .05em; }
-  .doc-head-title div:first-child { border-right: 1.5px solid #111; }
+  .doc-head { border: 1.5px solid #000; border-radius: 6px; overflow: hidden; }
+  .doc-head-logo { padding: 8px; text-align: center; border-bottom: 1.5px solid #000; }
+  .doc-head-logo img { height: 40px; width: auto; filter: grayscale(1) contrast(1.4); }
+  .doc-head-logo .brand-text { font-size: 18px; font-weight: 900; letter-spacing: .04em; }
+  .doc-head-title { text-transform: uppercase; }
+  .doc-head-title div { padding: 6px 8px; text-align: center; font-weight: 800; font-size: 13px; letter-spacing: .04em; overflow-wrap: anywhere; }
+  .doc-head-title div:first-child { border-bottom: 1px solid #000; }
 
-  .session-table { width: 100%; border-collapse: collapse; margin-top: 14px; }
-  .session-table th, .session-table td { border: 1px solid #111; padding: 8px 10px; text-align: center; }
-  .session-table th { background: #eef2f7; font-size: 10.5px; text-transform: uppercase; letter-spacing: .07em; color: #17365d; }
-  .session-table td { font-weight: 700; font-size: 13px; font-variant-numeric: tabular-nums; }
+  .session-table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+  .session-table th, .session-table td { border: 1px solid #000; padding: 5px 4px; text-align: center; }
+  .session-table th { font-size: 10px; text-transform: uppercase; letter-spacing: .05em; }
+  .session-table td { font-weight: 700; font-size: 12px; font-variant-numeric: tabular-nums; }
 
   .summary-heading {
-    text-align: center; font-size: 15px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase;
-    margin: 26px 0 8px; padding-bottom: 8px; border-bottom: 2px solid #111;
+    text-align: center; font-size: 13px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase;
+    margin: 14px 0 6px; padding-bottom: 5px; border-bottom: 2px solid #000;
   }
 
-  .materials-table { width: 100%; border-collapse: collapse; margin-top: 8px; }
-  .materials-table th, .materials-table td { border: 1px solid #111; padding: 7px 10px; }
-  .materials-table th { background: #eef2f7; font-size: 10.5px; text-transform: uppercase; letter-spacing: .06em; color: #17365d; text-align: left; }
+  .materials-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+  .materials-table th, .materials-table td { border: 1px solid #000; padding: 3px 4px; overflow-wrap: anywhere; }
+  .materials-table th { font-size: 10px; text-transform: uppercase; letter-spacing: .04em; text-align: left; }
+  .materials-table th.num { width: 40px; }
+  .materials-table th.num:last-child { width: 72px; }
   .materials-table th.num, .materials-table td.num { text-align: center; }
-  .materials-table tbody td { font-size: 13px; font-weight: 600; }
-  .materials-table tfoot td { font-weight: 800; font-size: 13px; background: #f5f7fa; }
+  .materials-table tbody td { font-size: 12px; font-weight: 600; }
+  .materials-table tfoot td { font-weight: 800; font-size: 13px; }
+  .materials-table tr { break-inside: avoid; }
+  /* A material's category and sub-category, after its name, on the same line when they fit. */
+  .cat-badge {
+    display: inline-block; margin-left: 4px; padding: 0 5px; border: 1px solid #000; border-radius: 999px;
+    font-size: 9.5px; font-weight: 700; line-height: 1.4; white-space: nowrap;
+  }
 
-  .sign { margin-top: 70px; padding-top: 10px; border-top: 1px solid #111; display: grid; grid-template-columns: 1fr 1fr 1fr; }
-  .sign div { text-align: center; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; color: #444; }
-  .printed-by { margin-top: 16px; text-align: right; font-size: 10px; color: #777; text-transform: uppercase; letter-spacing: .04em; }
-  @media print { .print-actions { display: none; } body { margin: 0; } }
+  /* Room above each name to sign by hand. */
+  .sign { margin-top: 44px; padding-top: 6px; border-top: 1px solid #000; display: grid; grid-template-columns: 1fr 1fr 1fr; break-inside: avoid; }
+  .sign div { text-align: center; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; }
+  .printed-by { margin-top: 8px; text-align: right; font-size: 10px; text-transform: uppercase; letter-spacing: .04em; }
+  @media print { .print-actions { display: none; } }
 `;
 
 export interface StoreVoucherMaterial {
   itemDisplayName: string;
+  /** Where it sits: "TOP — SUB". Printed as badges, and left out of the name. */
+  categoryLabel?: string;
   packets: number;
   quantity: number;
   unitCode: string;
@@ -78,6 +96,8 @@ export interface StoreVoucherOptions {
   logoDataUrl?: string;
   /** The operator viewing/printing this voucher right now — may differ from who did the session. */
   printedBy?: string | null;
+  /** Leaves out the on-screen Print button, for a slip going straight to the printer. */
+  noPrintButton?: boolean;
 }
 
 /** Started -> closed, as one line. A session still open has no end yet, so it says so rather than guessing one. */
@@ -105,17 +125,41 @@ export const quantityTotalLine = (byMaterial: StoreVoucherMaterial[]): string =>
   return [...totalsByUnit.entries()].map(([unit, quantity]) => `${quantity} ${unit}`.trim()).join(" + ");
 };
 
+/** A material's name for the slip: no category (its badges say that), and spaces between its parts, to keep rows short. */
+export const slipMaterialName = (displayName: string, categoryLabel = ""): string =>
+  materialNameParts(displayName, categoryLabel).join(" ");
+
+/** The category and sub-category as badges. */
+const categoryBadges = (categoryLabel = ""): string =>
+  categoryLabel
+    .split(" — ")
+    .filter(Boolean)
+    .map((part) => `<span class="cat-badge">${escapeHtml(part)}</span>`)
+    .join("");
+
+/**
+ * The second figure on the Store page's mode switch: what a session's packets hold. A bare number
+ * for one unit, "1/20". Units cannot be added together, so several are said by name.
+ */
+export const quantityFigure = (byMaterial: StoreVoucherMaterial[]): string => {
+  const units = new Set(byMaterial.map((material) => material.unitCode || ""));
+  if (units.size === 0) return "";
+  if (units.size > 1) return quantityTotalLine(byMaterial);
+  return String(Number(byMaterial.reduce((sum, material) => sum + material.quantity, 0).toFixed(3)));
+};
+
 const materialsTable = (voucher: StoreVoucher): string => {
   const e = escapeHtml;
   const rows = voucher.byMaterial
-    .map((row) => `<tr><td>${e(row.itemDisplayName)}</td><td class="num">${row.packets}</td><td class="num">${row.quantity} ${e(row.unitCode)}</td></tr>`)
+    .map((row) => `<tr><td>${e(slipMaterialName(row.itemDisplayName, row.categoryLabel))}${categoryBadges(row.categoryLabel)}</td><td class="num">${row.packets}</td><td class="num">${row.quantity} ${e(row.unitCode)}</td></tr>`)
     .join("");
   const total =
     voucher.byMaterial.length > 0
-      ? `<tfoot><tr><td>Total</td><td class="num">${voucher.totalPackets}</td><td class="num">${e(quantityTotalLine(voucher.byMaterial))}</td></tr></tfoot>`
+      // Two rows, wide cells: a session of several units has a long quantity line for a 4 inch slip.
+      ? `<tfoot><tr><td>Total packets</td><td class="num" colspan="2">${voucher.totalPackets}</td></tr><tr><td>Total quantity</td><td class="num" colspan="2">${e(quantityTotalLine(voucher.byMaterial))}</td></tr></tfoot>`
       : "";
   return `<table class="materials-table">
-      <thead><tr><th>Material</th><th class="num">Packets</th><th class="num">Quantity</th></tr></thead>
+      <thead><tr><th>Material</th><th class="num">Pkts</th><th class="num">Qty</th></tr></thead>
       <tbody>${rows || `<tr><td colspan="3">${e(voucher.nothingLine)}</td></tr>`}</tbody>
       ${total}
     </table>`;
@@ -135,7 +179,7 @@ export const renderStoreVoucherHtml = (voucher: StoreVoucher, options: StoreVouc
   <style>${PRINT_STYLES}</style>
 </head>
 <body>
-  <div class="print-actions"><button onclick="window.print()">${e(copy.reports.printOrSave)}</button></div>
+  ${options.noPrintButton ? "" : `<div class="print-actions"><button onclick="window.print()">${e(copy.reports.printOrSave)}</button></div>`}
   <div class="doc">
     <div class="doc-head">
       <div class="doc-head-logo">
@@ -170,10 +214,40 @@ export const renderStoreVoucherHtml = (voucher: StoreVoucher, options: StoreVouc
 </html>`;
 };
 
-/**
- * Opens the voucher in the print window. Returns false when the popup was blocked so the
- * caller can tell the operator. The window is opened synchronously (inside the click) and
- * filled once the logo has been read, so popup blockers see a user-initiated open.
- */
-export const openStoreVoucherPrintWindow = (voucher: StoreVoucher, printedBy?: string | null): boolean =>
-  openPrintDocumentAsync(loadLogoDataUrl().then((logoDataUrl) => renderStoreVoucherHtml(voucher, { logoDataUrl, printedBy })));
+/** What became of pressing print. */
+export type VoucherPrintOutcome =
+  | { kind: "printed" }
+  /** The slip printer could not take it, for `reason`: the slip is in a window to print from. */
+  | { kind: "window"; reason: string }
+  /** The slip printer could not take it, and the window was blocked too. */
+  | { kind: "blocked"; reason: string }
+  /** The press before this one is still printing. Without this, an impatient second press is a second slip. */
+  | { kind: "busy" };
+
+let printing = false;
+
+/** Sends the voucher to the slip printer, or failing that opens it in a window to print from. */
+export const printStoreVoucher = async (voucher: StoreVoucher, printedBy?: string | null): Promise<VoucherPrintOutcome> => {
+  if (printing) return { kind: "busy" };
+  printing = true;
+  try {
+    const logoDataUrl = await loadLogoDataUrl();
+    const slip = renderStoreVoucherHtml(voucher, { logoDataUrl, printedBy, noPrintButton: true });
+    const direct = await printDocumentDirect(slip, undefined, PRINTER_ROLE.SLIP);
+    if (direct.printed) return { kind: "printed" };
+    const opened = openPrintDocument(renderStoreVoucherHtml(voucher, { logoDataUrl, printedBy })).opened;
+    return { kind: opened ? "window" : "blocked", reason: direct.reason };
+  } finally {
+    printing = false;
+  }
+};
+
+/** Tells the operator what became of pressing print. */
+export const announceVoucherPrint = (
+  outcome: VoucherPrintOutcome,
+  push: (kind: "success" | "warning" | "error", title: string, message?: string) => void
+): void => {
+  if (outcome.kind === "printed") push("success", copy.storeVoucherPrint.sentTitle, copy.storeVoucherPrint.sentBody);
+  if (outcome.kind === "window") push("warning", copy.storeVoucherPrint.notSentTitle, copy.storeVoucherPrint.windowBody(outcome.reason));
+  if (outcome.kind === "blocked") push("error", copy.storeVoucherPrint.notSentTitle, copy.storeVoucherPrint.blockedBody(outcome.reason));
+};

@@ -1,7 +1,7 @@
 import React, { useCallback, useRef, useState } from "react";
 import type { AppRoute } from "../../../app/routes";
-import { BRAND_LOGO_URL } from "../../../config/branding";
 import { copy } from "../../../config/copy";
+import { PageHeader } from "../../../components/layout/PageHeader";
 import { SplitHandle, splitWidth, useSplitFraction } from "../../../components/shared/SplitHandle";
 import { useRawMaterialLookups } from "../../rawMaterial/useRawMaterialLookups";
 import { SCAN_STATION_CSS } from "../../scanStation/scanStation";
@@ -40,7 +40,7 @@ import { NO_SESSION, type StationStatus } from "./stationStatus";
 // and disarmed meanwhile: the program's own scanner is the one box listening.
 
 /** The scan rail's share of the page: its limits, and the default the CSS starts from (theme.css). */
-const RAIL = { min: 0.2, max: 0.6, default: 0.3, minPx: 300, workMinPx: 420, storageKey: "erp.store.rail-width" } as const;
+const RAIL = { min: 0.2, max: 0.6, default: 0.5, minPx: 300, workMinPx: 420, storageKey: "erp.store.rail-width" } as const;
 
 interface StorePageProps {
   mode: StoreMode;
@@ -53,8 +53,8 @@ interface StorePageProps {
   /** Absent when this account may not open the Carton QR Generator. */
   onOpenCartonQr?: () => void;
   /**
-   * The header's right-hand side: the bell and the profile avatar, for a store operator, who has no
-   * navbar (App builds them). Everyone else has both in the navbar, so this is left empty.
+   * The header's right-hand side: the bell and the profile avatar (App builds them, as
+   * HeaderActions). The page has no top bar over it, so this is where everyone's bell lives here.
    */
   headerActions?: React.ReactNode;
   /** Shows the Machine programs button (hidden since 0.4.1). */
@@ -91,19 +91,21 @@ export const StorePage: React.FC<StorePageProps> = (props) => {
     <div className="sp-page">
       <style>{SCAN_STATION_CSS}</style>
       {/* The owner's header design (0.4.1): the brand on the left, STORE in the middle, the bell and
-          the profile on the right, on the sky that runs down the page. */}
-      <header className="sp-head">
-        <img className="sp-logo" src={BRAND_LOGO_URL} alt={copy.app.brandLine} />
-        <h1 className="sp-title">{copy.storePage.title}</h1>
-        <div className="sp-head-actions">
-          {props.showMachinePrograms ? (
-            <button type="button" className="btn btn-secondary" aria-haspopup="dialog" onClick={programs.openDialog}>
-              {copy.storePage.machinePrograms}
-            </button>
-          ) : null}
-          {props.headerActions}
-        </div>
-      </header>
+          the profile on the right, on the sky that runs down the page. Every other screen now
+          wears the same header (PageHeader); this page draws its own so it sits on the sky. */}
+      <PageHeader
+        title={copy.storePage.title}
+        actions={
+          <>
+            {props.showMachinePrograms ? (
+              <button type="button" className="btn btn-secondary" aria-haspopup="dialog" onClick={programs.openDialog}>
+                {copy.storePage.machinePrograms}
+              </button>
+            ) : null}
+            {props.headerActions}
+          </>
+        }
+      />
 
       <ModeSwitch
         mode={mode}
@@ -130,12 +132,20 @@ export const StorePage: React.FC<StorePageProps> = (props) => {
           onChange={setRailFraction}
           className="sp-split"
         />
-        <ScanInRail token={token} username={username} hidden={!showing("receiving")} active={mode === "receiving" && free} onStatus={setReceivingStatus} />
+        <ScanInRail
+          token={token}
+          username={username}
+          hidden={!showing("receiving")}
+          active={mode === "receiving" && free}
+          status={receivingStatus}
+          onStatus={setReceivingStatus}
+        />
         <ScanOutRail
           token={token}
           username={username}
           hidden={!showing("issuing")}
           active={mode === "issuing" && free}
+          status={issuingStatus}
           onStatus={setIssuingStatus}
           onMachineProgramScan={programs.openProgram}
         />

@@ -47,6 +47,12 @@ export const PERMISSION = {
   GATEPASS: "gatepass",
   GATEPASS_CANCEL: "gatepass-cancel",
   STOCK: "stock",
+  /**
+   * The Upper Stock and Dana Stock pages. Independent of each other and of STOCK: a role may hold
+   * either, both or neither. Dotted, as the owner named them; they are text like every other code.
+   */
+  STOCK_UPPER_VIEW: "stock.upper.view",
+  STOCK_DANA_VIEW: "stock.dana.view",
   HISTORY: "history",
   PARTY_LIST: "party-list",
   PARTY_FORM: "party-form",
@@ -91,6 +97,13 @@ export type PermissionCode = (typeof PERMISSION)[keyof typeof PERMISSION];
  * offers the page, so the two cannot disagree.
  */
 export const QR_GENERATOR_ACCESS: readonly PermissionCode[] = [PERMISSION.QR_GENERATOR, PERMISSION.STORE_SCANNING];
+
+/**
+ * Who may remove a material outright, with nobody to approve it: every store operator (owner,
+ * 6 Nov 2026), and administrators, who hold every permission. The rules on what may be removed do
+ * not depend on who asks: database/removalRequests.ts holds them for everyone.
+ */
+export const MATERIAL_REMOVAL_ACCESS: readonly PermissionCode[] = [PERMISSION.STORE_SCANNING];
 
 // ─── QR lifecycle ────────────────────────────────────────────────────────────
 

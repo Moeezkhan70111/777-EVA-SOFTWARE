@@ -464,7 +464,7 @@ export const PartyFormPage: React.FC<PartyFormPageProps> = ({ partyId, onNavigat
       <div className="party-form-heading">
         <div className="headingAddParty">
         
-        <h1>{partyId ? "Edit Party" : "Add New Party"}</h1>
+        <h1 className="page-detail-title">{partyId ? "Edit Party" : "Add New Party"}</h1>
          {!partyId && <p>Create a new party to manage transactions and balances.</p>}
          </div>
          <button type="button" className="party-back-link" onClick={() => onNavigate("party-list")}>

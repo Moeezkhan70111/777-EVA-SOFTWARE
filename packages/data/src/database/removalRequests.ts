@@ -352,7 +352,15 @@ export const removalRequestsMethods = {
       | { id: string; role?: string; username?: string }
       | undefined;
     if (reviewer?.role !== "ADMIN") throw new Error("Administrator access required");
+    return this.decideRemovalRequest(input, reviewer.username);
+  },
 
+  /** Carries a decision out. Who may decide is the caller's to check. */
+  decideRemovalRequest(
+    this: SqliteDatabase,
+    input: { requestId: string; reviewerId: string; decision: "APPROVED" | "REJECTED"; reviewNotes?: string },
+    reviewerName?: string
+  ): RemovalRequestRow {
     const request = this.db
       .prepare(
         "SELECT id, request_code, target_type, target_id, target_name, status, requested_by FROM removal_requests WHERE id = ?"
@@ -399,7 +407,7 @@ export const removalRequestsMethods = {
               `${request.target_name} now has ${blockers.join(" and ")} recorded against it. Nothing was deleted.`
             );
           }
-          this.removeInventoryItemKeepingHistory(request.target_id, reviewer.username);
+          this.removeInventoryItemKeepingHistory(request.target_id, reviewerName);
         }
       }
 
@@ -447,6 +455,18 @@ export const removalRequestsMethods = {
       reviewerId: input.adminId,
       decision: REMOVAL_STATUS.APPROVED,
     });
+  },
+
+  /**
+   * Someone allowed to remove a material directly (a store operator, or an administrator: the main
+   * process checks) doing so, carried out at once. The same record and the same refusals as a request
+   * an administrator approves: no stock, nothing outside it naming it, and their name on the removal.
+   */
+  applyDirectItemRemoval(this: SqliteDatabase, input: { itemId: string; userId: string; reason?: string }): RemovalRequestRow {
+    const user = this.db.prepare("SELECT username FROM app_users WHERE id = ?").get(input.userId) as { username?: string } | undefined;
+    if (!user) throw new Error("User not found");
+    const request = this.createItemRemovalRequest({ itemId: input.itemId, requestedBy: input.userId, reason: input.reason });
+    return this.decideRemovalRequest({ requestId: request.id, reviewerId: input.userId, decision: REMOVAL_STATUS.APPROVED }, user.username);
   },
 
   /**
