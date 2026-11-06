@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { STORED_SCREENS_REPAIR_SETTING_KEY, moveStoredScreensToExtrasOnce } from "./database/users.js";
 import { SqliteDatabase } from "./sqliteDatabase.js";
 
 // TAKING AN EXTRA SCREEN OFF SOMEONE WITH NO ROLE (found 5 Nov, live on every PC).
@@ -118,4 +119,84 @@ test("an unreadable stored list does not stop the Save", () => {
     assert.doesNotThrow(() => db.setUserAdditionalPermissions(id, []));
     assert.deepEqual(screens(db, id), []);
   });
+});
+
+// THE DIALOG SAID "NO PERMISSIONS ASSIGNED" WHILE THEY COULD OPEN SCREENS. It reads the extras table, and
+// these screens were only in the stored list. Once per database they move, so the table is the truth.
+
+const repair = (db: SqliteDatabase) => {
+  db.db.prepare("DELETE FROM app_settings WHERE setting_key = ?").run(STORED_SCREENS_REPAIR_SETTING_KEY);
+  return moveStoredScreensToExtrasOnce(db.db, (screen) => db.normalizePermissionCode(screen), "2026-11-06T00:00:00.000Z");
+};
+const listed = (db: SqliteDatabase, id: string) => db.listMembers().find((member) => member.id === id);
+
+test("an old account's screens show as extras afterwards, and nobody gains or loses a screen", () => {
+  withDatabase((db) => {
+    const id = oldAccount(db, ["logs", "current stock"]);
+    const before = screens(db, id);
+    assert.deepEqual(listed(db, id)?.additionalPermissions, [], "the state the dialog was wrong about");
+
+    assert.equal(repair(db), 2);
+
+    assert.deepEqual(screens(db, id), before);
+    assert.deepEqual(listed(db, id)?.additionalPermissions?.slice().sort(), before);
+  });
+});
+
+test("after it, unticking an old account's screen takes it away", () => {
+  withDatabase((db) => {
+    const id = oldAccount(db, ["logs", "stock"]);
+    repair(db);
+    db.setUserAdditionalPermissions(id, ["stock"]);
+    assert.deepEqual(screens(db, id), ["stock"]);
+    db.setUserAdditionalPermissions(id, []);
+    assert.deepEqual(screens(db, id), []);
+  });
+});
+
+test("it runs once: a screen taken off later does not come back when the database opens again", () => {
+  withDatabase((db) => {
+    const id = oldAccount(db, ["logs"]);
+    repair(db);
+    db.setUserAdditionalPermissions(id, []);
+    db.db.prepare("UPDATE app_users SET permissions_json = ? WHERE id = ?").run(JSON.stringify(["logs"]), id);
+    assert.equal(moveStoredScreensToExtrasOnce(db.db, (screen) => screen, "2026-11-07T00:00:00.000Z"), null);
+    assert.deepEqual(db.getUserAdditionalPermissions(id), []);
+  });
+});
+
+test("it leaves someone with a role alone, and an administrator", () => {
+  withDatabase((db, adminId) => {
+    const { id } = db.createUserAccount("Aslam", "aslam1234");
+    db.assignUserRole(id, "store-operator", adminId);
+    repair(db);
+    assert.deepEqual(db.getUserAdditionalPermissions(id), []);
+    assert.deepEqual(db.getUserAdditionalPermissions(adminId), []);
+  });
+});
+
+test("an unreadable stored list moves nothing and stops nothing", () => {
+  withDatabase((db) => {
+    const { id } = db.createUserAccount("Aslam", "aslam1234");
+    db.db.prepare("UPDATE app_users SET permissions_json = 'not json' WHERE id = ?").run(id);
+    assert.equal(repair(db), 0);
+    assert.deepEqual(db.getUserAdditionalPermissions(id), []);
+  });
+});
+
+test("it runs when a database opens: no test or caller has to ask for it", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "erp-extras-open-"));
+  const options = { dbPath: path.join(dir, "pc.db"), schemaPath: path.resolve(process.cwd(), "src/local-schema.sql") };
+  const first = new SqliteDatabase(options);
+  try {
+    first.bootstrapFirstAdmin("Owner", "owner1234");
+    const id = oldAccount(first, ["logs"]);
+    first.db.prepare("DELETE FROM app_settings WHERE setting_key = ?").run(STORED_SCREENS_REPAIR_SETTING_KEY);
+    first.close();
+    const again = new SqliteDatabase(options);
+    assert.deepEqual(again.getUserAdditionalPermissions(id), ["logs"]);
+    again.close();
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
