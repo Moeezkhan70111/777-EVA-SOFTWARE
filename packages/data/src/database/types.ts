@@ -1268,6 +1268,34 @@ export interface UpperIssueSummary {
   stock: UpperIssueTotals;
 }
 
+/** What a set of materials holds in one stock unit. */
+export interface KindStockTotal {
+  unitId: string;
+  unitCode: string;
+  quantity: number;
+}
+
+/** One material on the Upper Stock or Dana Stock page. */
+export interface KindStockRow {
+  id: string;
+  code: string;
+  name: string;
+  /** The kind of it under the top-level category; empty when it is filed on the category itself. */
+  subCategory: string;
+  quantity: number;
+  unitCode: string;
+}
+
+/** One page of a kind's materials, with the totals of all of them, not just this page. */
+export interface KindStockPage {
+  kind: string;
+  items: KindStockRow[];
+  itemCount: number;
+  totalsByUnit: KindStockTotal[];
+  page: number;
+  pages: number;
+}
+
 /** One upper material in the store. */
 export interface UpperStockRow {
   itemId: string;

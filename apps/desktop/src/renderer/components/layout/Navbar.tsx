@@ -1,35 +1,14 @@
-import { BRAND_LOGO_WHITE_URL } from "../../config/branding";
-import React, { useCallback, useRef, useState } from "react";
+import React, { useRef } from "react";
 import type { AppRoute } from "../../app/routes";
+import { BRAND_LOGO_URL } from "../../config/branding";
+import { copy } from "../../config/copy";
 import type { AuthUser } from "../../types/desktopApi";
+import { RAIL_ICONS } from "../../features/navigation/NavIcons";
+import { RailLink } from "../../features/navigation/RailLink";
 import { SidebarNav } from "../../features/navigation/SidebarNav";
-import { useDismissOnOutsideClick } from "../../hooks/useDismissOnOutsideClick";
-import { NotificationBell, UserNotificationList, unreadCount } from "./NotificationBell";
+import { useRailTooltip } from "../../features/navigation/useRailTooltip";
+import { useSidebarRail, useSlimRailScroll } from "../../features/navigation/useSidebarRail";
 import { SyncStatusIndicator } from "../../features/sync/SyncStatusIndicator";
-
-/* ── Icon helpers ─────────────────────────────────────── */
-const ChevronDown = () => (
-  <svg className="chevron" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-    <path d="m6 9 6 6 6-6" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
-  </svg>
-);
-
-const UserIcon = () => (
-  <svg
-    className="profile-menu-user-icon"
-    viewBox="0 0 24 24"
-    fill="none"
-    aria-hidden="true"
-  >
-    <circle cx="12" cy="8" r="3.25" stroke="currentColor" strokeWidth="1.8" />
-    <path
-      d="M5.5 19c.7-3.15 3.05-4.75 6.5-4.75s5.8 1.6 6.5 4.75"
-      stroke="currentColor"
-      strokeWidth="1.8"
-      strokeLinecap="round"
-    />
-  </svg>
-);
 
 // Every permission an administrator can give a role or a user (Profile & Roles). A page the
 // user holds the permission for appears as a card on their Home and as a row in the sidebar
@@ -82,6 +61,8 @@ export const NAV_PERMISSION_MODULES = [
     label: "Inventory",
     children: [
       ["stock", "Current Stock"],
+      ["stock.upper.view", "Upper Stock"],
+      ["stock.dana.view", "Dana Stock"],
       ["history", "Stock History"],
       ["daily-production", "Daily Production"],
       ["daily-dispatch", "Daily Dispatch"],
@@ -158,611 +139,57 @@ interface NavbarProps {
   user: AuthUser | null;
   /** Pages this computer does not offer whatever the role: the ledgers, off the Accounts holder. */
   hiddenRoutes?: ReadonlySet<AppRoute>;
-  onProfile: () => void;
-  onChangePassword: () => void;
-  onLogout: () => void;
-  accessRequests?: Array<{
-    id: string;
-    username: string;
-    status: "PENDING" | "APPROVED" | "REJECTED";
-  }>;
-  roleOptions?: Array<{ code: string; name: string; permissions: string[] }>;
-  onReviewAccessRequest?: (
-    requestId: string,
-    decision: "APPROVED" | "REJECTED",
-    permissions?: string[],
-    roleCode?: string,
-  ) => void;
-  permissionRequests?: Array<{
-    id: string;
-    userId: string;
-    username: string;
-    permissionCode: string;
-    reason: string | null;
-    status: "PENDING" | "APPROVED" | "REJECTED";
-  }>;
-  onReviewPermissionRequest?: (
-    requestId: string,
-    decision: "APPROVED" | "REJECTED",
-  ) => void;
-  notifications?: Array<{
-    id: string;
-    title: string;
-    message: string;
-    createdAt: string;
-    readAt: string | null;
-    kind?: string | null;
-    entityId?: string | null;
-    severity?: "INFO" | "WARNING" | "CRITICAL";
-  }>;
-  onNotificationClick?: (notification: {
-    id: string;
-    title: string;
-    message: string;
-    createdAt: string;
-    readAt: string | null;
-    kind?: string | null;
-    entityId?: string | null;
-    severity?: "INFO" | "WARNING" | "CRITICAL";
-  }) => void;
-  savedProfiles?: Array<{
-    id: string;
-    username: string;
-    token: string;
-    role: "USER" | "ADMIN";
-    lastUsedAt?: string;
-  }>;
-  onSwitchProfile?: (token: string) => Promise<void> | void;
-  onAddAccount?: () => void;
 }
 
-const permLabelMap: Record<string, string> = {};
-for (const module of NAV_PERMISSION_MODULES) {
-  permLabelMap[module.id] = module.label;
-  for (const [childId, childLabel] of module.children) {
-    permLabelMap[childId] = childLabel;
-  }
-}
-const describePermission = (code: string) => permLabelMap[code] ?? code;
+// THE SIDEBAR: slim by default — one picture per row, no logo — and open on hover, on keyboard
+// focus, or for good once pinned (useSidebarRail). Its panel always lies over the page; the outer
+// box is what the page makes room for: the slim width, or the open width once pinned. So hovering
+// never moves the page, and pinning moves it once.
+//
+// The logo shows here only while the rail is open; slim, the page header carries it (PageHeader).
+//
+// Navigation and the rail's own foot only: whether this computer is sharing its work, Backup,
+// the pin, the version. The bell and the profile are top right of the page (HeaderActions), where
+// the Store page header puts them.
 
-export const Navbar = ({
-  current,
-  onSelect,
-  appVersion,
-  onBackup,
-  user,
-  hiddenRoutes,
-  onProfile,
-  onChangePassword,
-  onLogout,
-  accessRequests = [],
-  roleOptions = [],
-  onReviewAccessRequest,
-  permissionRequests = [],
-  onReviewPermissionRequest,
-  notifications = [],
-  onNotificationClick,
-  savedProfiles = [],
-  onSwitchProfile,
-  onAddAccount,
-}: NavbarProps) => {
-  const [openProfile, setOpenProfile] = useState(false);
-  const [requestPermissions, setRequestPermissions] = useState<
-    Record<string, string[]>
-  >({});
-  const [requestRoleCodes, setRequestRoleCodes] = useState<
-    Record<string, string>
-  >({});
-  const [expandedRequests, setExpandedRequests] = useState<
-    Record<string, boolean>
-  >({});
-  const profileRef = useRef<HTMLDivElement | null>(null);
-
-  // The profile pop-up closes on a click anywhere else on the screen, or on Escape (the bell's does too).
-  const closeProfile = useCallback(() => setOpenProfile(false), []);
-  useDismissOnOutsideClick(profileRef, openProfile, closeProfile);
-
-  // Waiting for an administrator: shown on the bell beside the user's own unread notifications.
-  const pendingRequests =
-    accessRequests.filter((request) => request.status === "PENDING").length +
-    permissionRequests.filter((pr) => pr.status === "PENDING").length;
+export const Navbar = ({ current, onSelect, appVersion, onBackup, user, hiddenRoutes }: NavbarProps) => {
+  const rail = useSidebarRail();
+  const tips = useRailTooltip(!rail.expanded);
+  const { onMouseLeave } = rail.railHandlers;
+  const panel = useRef<HTMLDivElement>(null);
+  useSlimRailScroll(panel, rail.expanded, current);
 
   return (
-    <nav className="navbar">
-      {/* Brand */}
-      <div className="navbar-brand">
-        <img
-          src={BRAND_LOGO_WHITE_URL}
-          alt="777 Seven Logo"
-          className="navbar-logo-img"
-        />
+    <div className={`navbar${rail.expanded ? " is-expanded" : ""}${rail.pinned ? " is-pinned" : ""}`}>
+      <div
+        ref={panel}
+        className="navbar-panel"
+        {...rail.railHandlers}
+        onMouseOver={tips.onMouseOver}
+        onMouseLeave={() => {
+          tips.hide();
+          onMouseLeave();
+        }}
+      >
+        <div className="navbar-brand">
+          <img src={BRAND_LOGO_URL} alt={copy.app.brandLine} className="navbar-logo-img" />
+        </div>
+
+        {/* Home and the pages this user's role has been given — the same cards Home shows. */}
+        {user && <SidebarNav user={user} current={current} onSelect={onSelect} hiddenRoutes={hiddenRoutes} />}
+
+        <div className="navbar-foot">
+          {/* Whether this computer is sharing its work with the others, in four words
+              (features/sync/syncHealth.ts). */}
+          {user && <SyncStatusIndicator onOpenSettings={() => onSelect("settings")} />}
+          <RailLink icon={RAIL_ICONS.backup} label={copy.nav.rail.backup} tip={copy.nav.rail.backupHint} onClick={onBackup} />
+          <RailLink icon={RAIL_ICONS.pin} label={copy.nav.rail.pin} pressed={rail.pinned} className="nav-pin" onClick={rail.togglePinned} />
+          <span className="navbar-version" data-tip={copy.nav.rail.version(appVersion)}>
+            {appVersion}
+          </span>
+        </div>
       </div>
-
-      {/* Home and the pages this user's role has been given — the same cards Home shows. */}
-      {user && <SidebarNav user={user} current={current} onSelect={onSelect} hiddenRoutes={hiddenRoutes} />}
-
-      {/* Right side */}
-      <div className="navbar-right">
-        <span className="navbar-version">{appVersion}</span>
-        {/* Whether this computer is sharing its work with the others, in four words. Its own
-            component: the answer is derived from eight numbers (features/sync/syncHealth.ts)
-            and this file is long enough already. */}
-        {user && <SyncStatusIndicator onOpenSettings={() => onSelect("settings")} />}
-        {user && (
-          <NotificationBell label="Access requests" count={pendingRequests + unreadCount(notifications)}>
-            <div className="notification-panel-title">Notifications</div>
-            <UserNotificationList notifications={notifications} onNotificationClick={onNotificationClick} />{" "}
-            {user.role === "ADMIN" && (accessRequests.length > 0 || permissionRequests.length > 0) && (
-              <div className="notification-panel-title notification-panel-subtitle">
-                Access Requests
-              </div>
-            )}
-            {accessRequests.map((request) => (
-              <div className="access-request" key={request.id}>
-                <div className="access-request-head">
-                  <strong>{request.username}</strong>
-                  <span
-                    className={`access-request-status ${request.status.toLowerCase()}`}
-                  >
-                    {request.status}
-                  </span>
-                </div>
-                {request.status === "PENDING" && onReviewAccessRequest && (
-                  <>
-                    <label className="member-role-field" style={{ margin: "8px 0", display: "block" }}>
-                      <span style={{ fontSize: "12px", color: "var(--text-3)", display: "block", marginBottom: "4px" }}>Role</span>
-                      <select
-                        value={requestRoleCodes[request.id] ?? ""}
-                        onChange={(event) => {
-                          const nextCode = event.target.value;
-                          setRequestRoleCodes((current) => ({
-                            ...current,
-                            [request.id]: nextCode,
-                          }));
-                          const nextRole = roleOptions.find((role) => role.code === nextCode);
-                          if (nextRole) {
-                            setRequestPermissions((current) => ({
-                              ...current,
-                              [request.id]: [...nextRole.permissions],
-                            }));
-                          }
-                        }}
-                        style={{
-                          width: "100%",
-                          padding: "6px 10px",
-                          borderRadius: "8px",
-                          border: "1px solid #e5e7eb",
-                          fontSize: "13px",
-                          background: "var(--white)",
-                        }}
-                      >
-                        <option value="">Select a role…</option>
-                        {roleOptions.map((role) => (
-                          <option value={role.code} key={role.code}>
-                            {role.name}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                    <button
-                      type="button"
-                      className="btn btn-ghost btn-sm"
-                      style={{
-                        width: "100%",
-                        marginBottom: "8px",
-                        fontSize: "12px",
-                        color: "#4b5563",
-                      }}
-                      onClick={() =>
-                        setExpandedRequests((current) => ({
-                          ...current,
-                          [request.id]: !current[request.id],
-                        }))
-                      }
-                    >
-                      {expandedRequests[request.id]
-                        ? "▾ Additional Access (override)"
-                        : "▸ Additional Access (override)"}
-                    </button>
-                    {expandedRequests[request.id] && (
-                      <div
-                        className="permission-selector"
-                        style={{
-                          background: "var(--surface-faint)",
-                          padding: "10px",
-                          borderRadius: "8px",
-                          marginBottom: "8px",
-                        }}
-                      >
-                        {NAV_PERMISSION_MODULES.map((module) => {
-                          const hasChildren = module.children.length > 0;
-                          const moduleEnabled =
-                            (requestPermissions[request.id] ?? []).includes(
-                              module.id,
-                            ) ||
-                            module.children.some(([childId]) =>
-                              (requestPermissions[request.id] ?? []).includes(
-                                childId,
-                              ),
-                            );
-                          return (
-                            <div
-                              key={module.id}
-                              style={{ marginBottom: "4px" }}
-                            >
-                              <label
-                                style={{
-                                  display: "flex",
-                                  alignItems: "center",
-                                  gap: "6px",
-                                  fontSize: "12px",
-                                }}
-                              >
-                                <span
-                                  style={{
-                                    fontWeight: hasChildren
-                                      ? 600
-                                      : 400,
-                                  }}
-                                >
-                                  {module.label}
-                                </span>
-                                {!hasChildren && (
-                                  <input
-                                    type="checkbox"
-                                    checked={(
-                                      requestPermissions[request.id] ?? []
-                                    ).includes(module.id)}
-                                    onChange={(event) =>
-                                      setRequestPermissions(
-                                        (current) => ({
-                                          ...current,
-                                          [request.id]: event.target.checked
-                                            ? [
-                                                ...new Set([
-                                                  ...(current[
-                                                    request.id
-                                                  ] ?? []),
-                                                  module.id,
-                                                ]),
-                                              ]
-                                            : (current[request.id] ??
-                                                []
-                                              ).filter(
-                                                (item) =>
-                                                  item !== module.id,
-                                              ),
-                                        }),
-                                      )
-                                    }
-                                  />
-                                )}
-                              </label>
-                              {hasChildren && (
-                                <div
-                                  style={{
-                                    paddingLeft: "16px",
-                                    display: "grid",
-                                    gridTemplateColumns: "1fr 1fr",
-                                    gap: "2px 12px",
-                                  }}
-                                >
-                                  {module.children.map(
-                                    ([childId, childLabel]) => (
-                                      <label
-                                        key={childId}
-                                        style={{
-                                          display: "flex",
-                                          alignItems: "center",
-                                          gap: "4px",
-                                          fontSize: "11px",
-                                          color: "#4b5563",
-                                        }}
-                                      >
-                                        <input
-                                          type="checkbox"
-                                          checked={(
-                                            requestPermissions[
-                                              request.id
-                                            ] ?? []
-                                          ).includes(childId)}
-                                          onChange={(event) =>
-                                            setRequestPermissions(
-                                              (current) => ({
-                                                ...current,
-                                                [request.id]: event.target
-                                                  .checked
-                                                  ? [
-                                                      ...new Set([
-                                                        ...(current[
-                                                          request.id
-                                                        ] ?? []),
-                                                        childId,
-                                                      ]),
-                                                    ]
-                                                  : (current[
-                                                      request.id
-                                                    ] ?? []
-                                                  ).filter(
-                                                    (item) =>
-                                                      item !== childId,
-                                                  ),
-                                              }),
-                                            )
-                                          }
-                                        />
-                                        {childLabel}
-                                      </label>
-                                    ),
-                                  )}
-                                </div>
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-                    <div className="access-request-actions">
-                      <button
-                        type="button"
-                        className="btn btn-primary btn-sm"
-                        onClick={() =>
-                          onReviewAccessRequest(
-                            request.id,
-                            "APPROVED",
-                            requestPermissions[request.id] ?? [],
-                            requestRoleCodes[request.id] || undefined,
-                          )
-                        }
-                      >
-                        Approve Access
-                      </button>
-                      <button
-                        type="button"
-                        className="btn btn-secondary btn-sm"
-                        onClick={() =>
-                          onReviewAccessRequest(
-                            request.id,
-                            "REJECTED",
-                            requestPermissions[request.id] ?? [],
-                            requestRoleCodes[request.id] || undefined,
-                          )
-                        }
-                      >
-                        Reject Access
-                      </button>
-                    </div>
-                  </>
-                )}
-              </div>
-            ))}
-            {user.role === "ADMIN" && permissionRequests.length > 0 && (
-              <div className="notification-panel-title notification-panel-subtitle">
-                Permission Requests
-              </div>
-            )}
-            {permissionRequests.map((pr) => (
-              <div className="access-request" key={pr.id}>
-                <div className="access-request-head">
-                  <div>
-                    <strong>{pr.username}</strong>
-                    <div
-                      style={{
-                        fontSize: "12px",
-                        color: "#4b5563",
-                        marginTop: "2px",
-                      }}
-                    >
-                      needs <strong>{describePermission(pr.permissionCode)}</strong>
-                    </div>
-                    {pr.reason && (
-                      <div
-                        style={{
-                          fontSize: "11px",
-                          color: "var(--text-3)",
-                          marginTop: "4px",
-                          fontStyle: "italic",
-                        }}
-                      >
-                        “{pr.reason}”
-                      </div>
-                    )}
-                  </div>
-                  <span
-                    className={`access-request-status ${pr.status.toLowerCase()}`}
-                  >
-                    {pr.status}
-                  </span>
-                </div>
-                {pr.status === "PENDING" && onReviewPermissionRequest && (
-                  <div className="access-request-actions">
-                    <button
-                      type="button"
-                      className="btn btn-primary btn-sm"
-                      onClick={() =>
-                        onReviewPermissionRequest(pr.id, "APPROVED")
-                      }
-                    >
-                      Approve
-                    </button>
-                    <button
-                      type="button"
-                      className="btn btn-secondary btn-sm"
-                      onClick={() =>
-                        onReviewPermissionRequest(pr.id, "REJECTED")
-                      }
-                    >
-                      Reject
-                    </button>
-                  </div>
-                )}
-              </div>
-            ))}
-          </NotificationBell>
-        )}
-        <button
-          type="button"
-          className="btn btn-secondary btn-sm"
-          onClick={onBackup}
-          title="Create Backup (Ctrl+B)"
-        >
-          Backup
-        </button>
-        {user && (
-          <div className="profile-menu-wrap" ref={profileRef}>
-            <button
-              type="button"
-              className="profile-menu-trigger"
-              onClick={() => setOpenProfile((prev) => !prev)}
-              aria-label="Open user menu"
-              aria-expanded={openProfile}
-              aria-haspopup="menu"
-            >
-              <span className="profile-menu-icon">
-                <UserIcon />
-              </span>
-              <span className="profile-menu-name">{user.username}</span>
-              <ChevronDown />
-            </button>
-            {openProfile && (
-              <div className="profile-menu" role="menu" style={{ width: 235, padding: "8px" }}>
-                <div style={{ padding: "4px 8px 8px", borderBottom: "1px solid var(--chrome-line)", marginBottom: 6 }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <span className="profile-menu-icon" style={{ width: 28, height: 28 }}>
-                      <UserIcon />
-                    </span>
-                    <div style={{ minWidth: 0, flex: 1 }}>
-                      <div style={{ fontWeight: 700, fontSize: "0.84rem", color: "var(--chrome-ink)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                        {user.username}
-                      </div>
-                      <div style={{ fontSize: "0.68rem", color: "var(--chrome-muted)", fontWeight: 600 }}>
-                        {user.role === "ADMIN" ? "Administrator" : "Standard User"}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <div style={{ padding: "4px 8px 3px", fontSize: "0.68rem", fontWeight: 700, color: "var(--chrome-link-strong)", textTransform: "uppercase", letterSpacing: "0.06em" }}>
-                  Switch Profile
-                </div>
-                
-                <div style={{ display: "flex", flexDirection: "column", gap: 2, marginBottom: 6 }}>
-                  {savedProfiles && savedProfiles.length > 0 ? (
-                    savedProfiles.map((p) => {
-                      const isCurrent = p.id === user.id || p.username.toLowerCase() === user.username.toLowerCase();
-                      return (
-                        <button
-                          key={p.id || p.token}
-                          type="button"
-                          className={`nav-dd-item ${isCurrent ? "active" : ""}`}
-                          style={{
-                            display: "flex",
-                            alignItems: "center",
-                            justifyContent: "space-between",
-                            padding: "6px 8px",
-                            fontSize: "0.78rem",
-                            borderRadius: 8,
-                            opacity: isCurrent ? 1 : 0.85,
-                          }}
-                          onClick={() => {
-                            if (!isCurrent && onSwitchProfile) {
-                              void onSwitchProfile(p.token);
-                            }
-                            setOpenProfile(false);
-                          }}
-                        >
-                          <div style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
-                            <span
-                              style={{
-                                width: 20,
-                                height: 20,
-                                borderRadius: "50%",
-                                background: isCurrent ? "var(--chrome-link)" : "var(--neutral-300)",
-                                color: "var(--white)",
-                                display: "inline-flex",
-                                alignItems: "center",
-                                justifyContent: "center",
-                                fontSize: "0.65rem",
-                                fontWeight: 700,
-                                flexShrink: 0,
-                              }}
-                            >
-                              {p.username.slice(0, 1).toUpperCase()}
-                            </span>
-                            <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontWeight: isCurrent ? 700 : 500 }}>
-                              {p.username}
-                            </span>
-                          </div>
-                          {isCurrent ? (
-                            <span style={{ fontSize: "0.64rem", color: "var(--chrome-link-strong)", fontWeight: 700, background: "rgba(49,130,206,0.12)", padding: "1px 6px", borderRadius: 999 }}>Active</span>
-                          ) : (
-                            <span style={{ fontSize: "0.64rem", color: "var(--chrome-muted)" }}>Switch</span>
-                          )}
-                        </button>
-                      );
-                    })
-                  ) : null}
-
-                  {onAddAccount && (
-                    <button
-                      type="button"
-                      className="nav-dd-item"
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 6,
-                        padding: "6px 8px",
-                        fontSize: "0.76rem",
-                        color: "var(--chrome-link-strong)",
-                        fontWeight: 600,
-                      }}
-                      onClick={() => {
-                        onAddAccount();
-                        setOpenProfile(false);
-                      }}
-                    >
-                      <span style={{ fontSize: "0.9rem", fontWeight: 700 }}>+</span> Add Account
-                    </button>
-                  )}
-                </div>
-
-                <div style={{ borderTop: "1px solid var(--chrome-line)", margin: "4px 0" }} />
-
-                <button
-                  type="button"
-                  className="profile-menu-item"
-                  onClick={() => {
-                    onProfile();
-                    setOpenProfile(false);
-                  }}
-                >
-                  Profile & Roles
-                </button>
-                <button
-                  type="button"
-                  className="profile-menu-item"
-                  onClick={() => {
-                    onChangePassword();
-                    setOpenProfile(false);
-                  }}
-                >
-                  Change Password
-                </button>
-                <button
-                  type="button"
-                  className="profile-menu-item danger"
-                  onClick={() => {
-                    onLogout();
-                    setOpenProfile(false);
-                  }}
-                >
-                  Logout
-                </button>
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-    </nav>
+      {tips.tooltip}
+    </div>
   );
 };

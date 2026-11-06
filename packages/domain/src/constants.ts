@@ -47,6 +47,12 @@ export const PERMISSION = {
   GATEPASS: "gatepass",
   GATEPASS_CANCEL: "gatepass-cancel",
   STOCK: "stock",
+  /**
+   * The Upper Stock and Dana Stock pages. Independent of each other and of STOCK: a role may hold
+   * either, both or neither. Dotted, as the owner named them; they are text like every other code.
+   */
+  STOCK_UPPER_VIEW: "stock.upper.view",
+  STOCK_DANA_VIEW: "stock.dana.view",
   HISTORY: "history",
   PARTY_LIST: "party-list",
   PARTY_FORM: "party-form",

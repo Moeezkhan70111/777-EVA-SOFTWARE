@@ -710,7 +710,7 @@ export const ProductFormPage: React.FC<ProductFormPageProps> = ({ productId, onN
   return (
     <div className="page product-form-page">
       <div className="party-form-heading">
-        <h1>{productId ? "Edit Product" : "Create New Product"}</h1>
+        <h1 className="page-detail-title">{productId ? "Edit Product" : "Create New Product"}</h1>
         <button type="button" className="product-back-link" onClick={() => onNavigate("product-list")}>
           <span aria-hidden="true">←</span> Back to List
         </button>

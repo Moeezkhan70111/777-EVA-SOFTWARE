@@ -131,6 +131,9 @@ export const routePermission: Partial<Record<AppRoute, PermissionCode>> = {
   "gatepass-list": PERMISSION.GATEPASS,
 
   stock: PERMISSION.STOCK,
+  // Independent of Stock and of each other: a profile may hold either, both or neither.
+  "upper-stock": PERMISSION.STOCK_UPPER_VIEW,
+  "dana-stock": PERMISSION.STOCK_DANA_VIEW,
   // The Raw Material workspace itself is gated by routeAnyPermission below, because it holds
   // what used to be three separately-permissioned pages. These two are deep links onto one of
   // its tabs, and keep exactly the permission their page had.

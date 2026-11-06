@@ -74,3 +74,17 @@ describe("navigation catalogue", () => {
     expect(routes).toEqual(["munshi-home", "gatepass", "gatepass-list"]);
   });
 });
+
+describe("Upper Stock and Dana Stock in the catalogue", () => {
+  it("are offered in the role editor one by one", () => {
+    expect(assignable.has("stock.upper.view")).toBe(true);
+    expect(assignable.has("stock.dana.view")).toBe(true);
+  });
+
+  it("list in the sidebar only for the profile that holds them", () => {
+    const routes = (permissions: string[]) => visibleNavSections(user(permissions)).flatMap((section) => section.items.map((item) => item.route));
+    expect(routes(["stock.upper.view"])).toEqual(["upper-stock"]);
+    expect(routes(["stock.dana.view"])).toEqual(["dana-stock"]);
+    expect(routes(["stock.upper.view", "stock.dana.view"])).toEqual(["upper-stock", "dana-stock"]);
+  });
+});

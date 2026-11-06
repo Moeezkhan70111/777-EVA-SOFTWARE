@@ -23,11 +23,38 @@ const COLOR_HEX: Record<string, string> = {
   purple: "#7c3aed",
   khaki: "#b4a67a",
   cream: "#f5e7c7",
+  mustard: "#d9a520",
+  orange: "#ea7317",
+  yellow: "#facc15",
+  sky: "#38bdf8",
+  golden: "#d4a017",
+  skin: "#e8b796",
+  neon: "#a3e635",
+  commando: "#4b5320",
+  "army green": "#4b5320",
+  "dark caramel": "#8a5a2b",
+  "smoke grey": "#7d8590",
+  "sand grey": "#b8ad9a",
+  "silver grey": "#cbd5e1",
+  "light coffee": "#a47c5b",
+  "light coffe": "#a47c5b",
+  "brown mitalic": "#7a4e2d",
 };
 
-export const getColorHex = (color: string): string => {
+const UNKNOWN_COLOUR = "#64748b";
+
+export const getColorHex = (color: string): string => COLOR_HEX[color.trim().toLowerCase()] ?? UNKNOWN_COLOUR;
+
+/**
+ * The swatch's fill. A colour the store names from two (BLACK RED) is drawn as both, half and half;
+ * one nobody has mapped is a neutral grey, and its printed name still says what it is.
+ */
+export const swatchBackground = (color: string): string => {
   const normalized = color.trim().toLowerCase();
-  return COLOR_HEX[normalized] ?? (color ? `#${(normalized.replace(/[^a-z]/g, "") || "64748b").slice(0, 6)}` : "#64748b");
+  if (COLOR_HEX[normalized]) return COLOR_HEX[normalized];
+  const [first, second] = normalized.split(/\s+/).flatMap((word) => COLOR_HEX[word] ?? []);
+  if (first && second) return `linear-gradient(90deg, ${first} 50%, ${second} 50%)`;
+  return first ?? UNKNOWN_COLOUR;
 };
 
 interface ColorSwatchProps {
@@ -40,5 +67,5 @@ interface ColorSwatchProps {
  * name beside it, so colour is never the sole cue (R18).
  */
 export const ColorSwatch: React.FC<ColorSwatchProps> = ({ color, className }) => (
-  <span className={`color-swatch${className ? ` ${className}` : ""}`} style={{ background: getColorHex(color) }} aria-hidden="true" />
+  <span className={`color-swatch${className ? ` ${className}` : ""}`} style={{ background: swatchBackground(color) }} aria-hidden="true" />
 );

@@ -7,8 +7,9 @@ import type { SqliteDatabase } from "../sqliteDatabase.js";
 import { createHash } from "node:crypto";
 import { EFFECTIVE_PACK_NAME_SQL, normalizeInventoryText, normalizePackName } from "./shared.js";
 import type { DatabaseSync } from "node:sqlite";
-import { STOCK_EVENT_NOTE, fromPaisaOrNull, packetsInStore as countPacketsInStore, toPaisaOrNull } from "@erp/domain";
-import type { InventoryStockEventRow, RawMaterialHop, RawMaterialMovementConfigRow, RawMaterialSetupTemplate, WorkSection } from "./types.js";
+import { KIND_STOCK_MAX_PAGE_SIZE, KIND_STOCK_PAGE_SIZE, STOCK_EVENT_NOTE, fromPaisaOrNull, packetsInStore as countPacketsInStore, toPaisaOrNull } from "@erp/domain";
+import type { StockKind } from "@erp/domain";
+import type { InventoryStockEventRow, KindStockPage, KindStockTotal, RawMaterialHop, RawMaterialMovementConfigRow, RawMaterialSetupTemplate, WorkSection } from "./types.js";
 import { allocateNumberInRange } from "./numberRange.js";
 
 function readWorkSectionByName(db: DatabaseSync, name: string): WorkSection | undefined {
@@ -22,6 +23,20 @@ function readWorkSectionByName(db: DatabaseSync, name: string): WorkSection | un
     name: String(row.name),
     status: String(row.status),
   };
+}
+
+/** What these materials hold, added up per unit and never across units. */
+function stockTotalsByUnit(items: Array<Record<string, unknown>>): KindStockTotal[] {
+  const totals = new Map<string, KindStockTotal>();
+  for (const item of items) {
+    const unitId = item.default_unit_id as string | null;
+    const quantity = Number(item.quantity_on_hand ?? 0);
+    if (!unitId || !quantity) continue;
+    const entry = totals.get(unitId) ?? { unitId, unitCode: String(item.unit_code ?? ""), quantity: 0 };
+    entry.quantity += quantity;
+    totals.set(unitId, entry);
+  }
+  return Array.from(totals.values());
 }
 
 export const rawMaterialsMethods = {
@@ -402,6 +417,37 @@ export const rawMaterialsMethods = {
     }));
   },
 
+  /**
+   * One kind of raw material for its own page (Upper Stock, Dana Stock): everything under that
+   * top-level category, however deep, read through listInventoryItems so a balance here is the same
+   * balance everywhere. The caller gets the fields the page shows and nothing else: no cost price.
+   * No such category is not an error, only a store with none of that kind set up yet.
+   */
+  listKindStock(this: SqliteDatabase, kind: StockKind, query: { search?: string; page?: number; pageSize?: number } = {}): KindStockPage {
+    const pageSize = Math.min(Math.max(Math.trunc(query.pageSize ?? KIND_STOCK_PAGE_SIZE), 1), KIND_STOCK_MAX_PAGE_SIZE);
+    const category = this.db
+      .prepare("SELECT id FROM inventory_categories WHERE parent_id IS NULL AND status = 'ACTIVE' AND UPPER(name) = ?")
+      .get(kind) as { id: string } | undefined;
+    const items = category ? this.listInventoryItems({ categoryId: category.id, search: query.search }) : [];
+    const pages = Math.max(Math.ceil(items.length / pageSize), 1);
+    const page = Math.min(Math.max(Math.trunc(query.page ?? 1), 1), pages);
+    return {
+      kind,
+      items: items.slice((page - 1) * pageSize, page * pageSize).map((item) => ({
+        id: String(item.id),
+        code: String(item.item_code ?? ""),
+        name: String(item.display_name ?? ""),
+        subCategory: String(item.sub_category_name ?? ""),
+        quantity: Number(item.quantity_on_hand ?? 0),
+        unitCode: String(item.unit_code ?? ""),
+      })),
+      itemCount: items.length,
+      totalsByUnit: stockTotalsByUnit(items),
+      page,
+      pages,
+    };
+  },
+
   /** Filters items exactly like listInventoryItems, then aggregates their stock per unit and (optionally) converts to a target unit. */
   queryInventoryStock(this: SqliteDatabase, filters: { search?: string; categoryId?: string; attributes?: Record<string, string>; targetUnitId?: string } = {}): {
     itemCount: number;
@@ -409,16 +455,7 @@ export const rawMaterialsMethods = {
     equivalent?: { unitId: string; unitCode: string; quantity: number };
   } {
     const items = this.listInventoryItems({ search: filters.search, categoryId: filters.categoryId, attributes: filters.attributes });
-    const totals = new Map<string, { unitId: string; unitCode: string; quantity: number }>();
-    for (const item of items) {
-      const unitId = item.default_unit_id as string | null;
-      const quantity = Number(item.quantity_on_hand ?? 0);
-      if (!unitId || !quantity) continue;
-      const entry = totals.get(unitId) ?? { unitId, unitCode: String(item.unit_code ?? ""), quantity: 0 };
-      entry.quantity += quantity;
-      totals.set(unitId, entry);
-    }
-    const totalsByUnit = Array.from(totals.values());
+    const totalsByUnit = stockTotalsByUnit(items);
     const result: { itemCount: number; totalsByUnit: typeof totalsByUnit; equivalent?: { unitId: string; unitCode: string; quantity: number } } = { itemCount: items.length, totalsByUnit };
     if (filters.targetUnitId) {
       let convertedTotal = 0;

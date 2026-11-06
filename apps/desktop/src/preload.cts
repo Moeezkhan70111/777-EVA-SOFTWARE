@@ -202,6 +202,8 @@ contextBridge.exposeInMainWorld("desktop", {
     rawMaterialQrBatchDeleteBlockers: (batchId: string) => ipcRenderer.invoke(IPC.rawMaterialQrBatchDeleteBlockers, batchId),
     addInventoryFieldOption: (input: Record<string, unknown>) => ipcRenderer.invoke(IPC.addInventoryFieldOption, input),
     listInventoryItems: (query?: Record<string, unknown>) => ipcRenderer.invoke(IPC.listInventoryItems, query),
+    listKindStock: (kind: string, query?: Record<string, unknown>) => ipcRenderer.invoke(IPC.listKindStock, kind, query),
+    listUpperStockMatrix: (query?: Record<string, unknown>) => ipcRenderer.invoke(IPC.listUpperStockMatrix, query),
     createInventoryItem: (input: Record<string, unknown>) => ipcRenderer.invoke(IPC.createInventoryItem, input),
     adjustInventoryStock: (input: Record<string, unknown>) => ipcRenderer.invoke(IPC.adjustInventoryStock, input),
     queryInventoryStock: (filters?: Record<string, unknown>) => ipcRenderer.invoke(IPC.queryInventoryStock, filters),

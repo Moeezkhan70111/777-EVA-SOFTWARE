@@ -1,11 +1,13 @@
 import React, { useCallback, useMemo, useRef, useState } from "react";
-import { ACCESS_STATUS, PERMISSION, USER_ROLE } from "@erp/domain";
+import { ACCESS_STATUS, PERMISSION, RAW_MATERIAL_KIND, USER_ROLE } from "@erp/domain";
 import { Navbar } from "../components/layout/Navbar";
 import { NotificationCenter } from "../components/layout/NotificationCenter";
 import { useAppUpdate } from "../hooks/useAppUpdate";
 import { useNumberRangeWarning } from "../hooks/useNumberRangeWarning";
 import { DashboardPage } from "../pages/DashboardPage";
 import { StockPage } from "../pages/StockPage";
+import { KindStockPage } from "../features/kindStock/KindStockPage";
+import { UpperStockPage } from "../features/upperStock/UpperStockPage";
 import { RawMaterialInputPage } from "../pages/RawMaterialInputPage";
 import { RawMaterialOutputPage } from "../pages/RawMaterialOutputPage";
 import { RawMaterialWorkspace } from "../features/rawMaterial/RawMaterialWorkspace";
@@ -20,7 +22,10 @@ import { DispatchHistoryPage } from "../pages/DispatchHistoryPage";
 import { LiveReturnPage } from "../pages/LiveReturnPage";
 import { ReturnHistoryPage } from "../pages/ReturnHistoryPage";
 import { StorePage } from "../features/store/page/StorePage";
-import { StoreHeaderActions } from "../features/store/page/StoreHeaderActions";
+import { AccessRequestList, pendingRequestCount } from "../components/layout/AccessRequestList";
+import { PageHeader } from "../components/layout/PageHeader";
+import { PAGE_TITLES } from "./pageTitles";
+import { HeaderActions } from "../components/layout/HeaderActions";
 import { STORE_MODE_ROUTE, isStoreRoute, storeModeOfRoute, type StoreMode } from "../features/store/page/storeTabs";
 import { StoreWorkspacePage } from "../features/store/StoreWorkspacePage";
 import { StoreScanningPage } from "../pages/StoreScanningPage";
@@ -233,29 +238,62 @@ export const App = () => {
     setRoute(next);
   }, []);
 
-  // A store operator has no navbar: their bell and profile ride in the Store page header (0.4.1).
-  const storeHeaderActions = useMemo(
-    () =>
-      session && isStoreOperator(session) ? (
-        <StoreHeaderActions
-          user={session}
-          notifications={admin.userNotifications}
-          onNotificationClick={onNotificationClick}
-          savedProfiles={savedProfiles}
-          onSwitchProfile={auth.handleSwitchProfile}
-          onAddAccount={auth.handleAddAccount}
-          onLogout={auth.handleLogout}
-          onChangePassword={() => setRoute("change-password")}
-          onProfile={() => setRoute("profile")}
-        />
-      ) : undefined,
-    [session, admin.userNotifications, onNotificationClick, savedProfiles, auth]
-  );
+  // The bell and the profile, top right: in the Store page header, or in the top bar over every
+  // other screen. A store operator has no sidebar and so no access requests to review (0.4.1).
+  const headerActions = useMemo(() => {
+    if (!session) return undefined;
+    const requests = isStoreOperator(session)
+      ? undefined
+      : {
+          count: pendingRequestCount(admin.accessRequests, admin.permissionRequests),
+          panel: (
+            <AccessRequestList
+              isAdmin={session.role === USER_ROLE.ADMIN}
+              accessRequests={admin.accessRequests}
+              roleOptions={admin.roleOptions}
+              onReviewAccessRequest={admin.handleReviewAccessRequest}
+              permissionRequests={admin.permissionRequests}
+              onReviewPermissionRequest={admin.handleReviewPermissionRequest}
+            />
+          ),
+        };
+    return (
+      <HeaderActions
+        user={session}
+        notifications={admin.userNotifications}
+        onNotificationClick={onNotificationClick}
+        savedProfiles={savedProfiles}
+        onSwitchProfile={auth.handleSwitchProfile}
+        onAddAccount={auth.handleAddAccount}
+        onLogout={auth.handleLogout}
+        onChangePassword={() => setRoute("change-password")}
+        onProfile={() => setRoute("profile")}
+        requests={requests}
+      />
+    );
+  }, [
+    session,
+    admin.accessRequests,
+    admin.permissionRequests,
+    admin.roleOptions,
+    admin.handleReviewAccessRequest,
+    admin.handleReviewPermissionRequest,
+    admin.userNotifications,
+    onNotificationClick,
+    savedProfiles,
+    auth,
+  ]);
 
   // Every approved role gets the sidebar; what it lists comes from the role's permissions. Two do
   // not, and have the floating profile menu instead: a user still waiting for access (the Rookie
   // screen), and a store operator, who works on the Store page alone (0.4.1).
   const showNavbar = !!session && NAV_ACTIVE && session.accessStatus === ACCESS_STATUS.APPROVED && !isStoreOperator(session);
+  // What is actually on screen: a page this user may not open falls back to Home (see `content`),
+  // and the header must name that, not the route that was asked for.
+  const shownRoute: AppRoute = session && canOpenRoute(session, route) && !hiddenRoutes.has(route) ? route : HOME_ROUTE;
+  // The Store page draws the page header itself, on its sky; every other screen beside the
+  // sidebar gets it here.
+  const showPageHeader = showNavbar && !isAddingAccount && !isStoreRoute(shownRoute);
 
   const content = useMemo(() => {
     if (needsBootstrap) {
@@ -280,7 +318,7 @@ export const App = () => {
 
     // A page this role has not been given (a keyboard shortcut, a stale route after the
     // role changed) falls back to Home rather than to any one page.
-    const home = <HomePage user={session} onNavigate={setRoute} hiddenRoutes={hiddenRoutes} />;
+    const home = <HomePage user={session} onNavigate={setRoute} hiddenRoutes={hiddenRoutes} listAllPages={!showNavbar} />;
     if (!canOpenRoute(session, route) || hiddenRoutes.has(route)) return home;
 
     const canOpenRawMaterial = canOpenRoute(session, "raw-material");
@@ -326,6 +364,11 @@ export const App = () => {
         return <DashboardPage />;
       case "stock":
         return <StockPage />;
+      // Two pages, two permissions (routePermission above decided whether we got here at all).
+      case "upper-stock":
+        return <UpperStockPage />;
+      case "dana-stock":
+        return <KindStockPage kind={RAW_MATERIAL_KIND.DANA} />;
       // One workspace, three doors. The two deep-link routes keep the permission their old
       // page had, and open on the tab that replaced it.
       case "raw-material":
@@ -418,7 +461,7 @@ export const App = () => {
             onOpenCartonQr={canOpenRoute(session, "qr-generator") ? () => setRoute("qr-generator") : undefined}
             initialProgramId={storeProgramId}
             onInitialProgramConsumed={() => setStoreProgramId(undefined)}
-            headerActions={storeHeaderActions}
+            headerActions={headerActions}
           />
         );
       // The Munshi's station, and the raw material Stock section opened from it. Stock is the
@@ -631,6 +674,7 @@ export const App = () => {
     isAddingAccount,
     needsBootstrap,
     hiddenRoutes,
+    showNavbar,
     leaveForm,
     leavePartyForm,
     navigateTo,
@@ -642,7 +686,7 @@ export const App = () => {
     selectedProductId,
     session,
     sessionToken,
-    storeHeaderActions,
+    headerActions,
     storeProgramId,
     workspaceTab,
   ]);
@@ -660,19 +704,6 @@ export const App = () => {
               onBackup={onBackup}
               user={session}
               hiddenRoutes={hiddenRoutes}
-              onProfile={() => setRoute("profile")}
-              onChangePassword={() => setRoute("change-password")}
-              onLogout={auth.handleLogout}
-              accessRequests={admin.accessRequests}
-              onReviewAccessRequest={admin.handleReviewAccessRequest}
-              notifications={admin.userNotifications}
-              onNotificationClick={onNotificationClick}
-              roleOptions={admin.roleOptions}
-              permissionRequests={admin.permissionRequests}
-              onReviewPermissionRequest={admin.handleReviewPermissionRequest}
-              savedProfiles={savedProfiles}
-              onSwitchProfile={auth.handleSwitchProfile}
-              onAddAccount={auth.handleAddAccount}
             />
           )}
 
@@ -688,10 +719,17 @@ export const App = () => {
             />
           )}
 
-          <main className={`page-content${!showNavbar || FULLSCREEN_ROUTES.has(route) ? " page-content--fullscreen" : ""}`}>
-            {session && !isAddingAccount ? <SyncWaitingNotice onOpenHealth={() => setRoute("health")} /> : null}
-            {content}
-          </main>
+          <div className="app-main">
+            {showPageHeader ? (
+              <div className="app-head">
+                <PageHeader title={PAGE_TITLES[shownRoute]} actions={headerActions} />
+              </div>
+            ) : null}
+            <main className={`page-content${!showNavbar || FULLSCREEN_ROUTES.has(route) ? " page-content--fullscreen" : ""}`}>
+              {session && !isAddingAccount ? <SyncWaitingNotice onOpenHealth={() => setRoute("health")} /> : null}
+              {content}
+            </main>
+          </div>
 
           <NotificationCenter />
         </div>

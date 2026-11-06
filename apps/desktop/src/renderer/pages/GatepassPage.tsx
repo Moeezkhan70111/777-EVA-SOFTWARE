@@ -221,7 +221,7 @@ export const GatepassPage: React.FC<GatepassPageProps> = ({ token, onNavigate })
     <div className="page gatepass-page gp-compose">
       <header className="gp-topbar">
         <div className="gp-topbar-main">
-          <h1 className="page-title" data-testid="gatepass-title">
+          <h1 className={`page-title${viewing ? " page-detail-title" : ""}`} data-testid="gatepass-title">
             {viewing ? `${copy.gatepass.title} ${viewing.code}` : copy.gatepass.title}
           </h1>
           {viewing ? <GatepassStatusBadge status={viewing.status} /> : <GatepassSteps partyDone={Boolean(partyId)} articlesDone={articlesReady} />}

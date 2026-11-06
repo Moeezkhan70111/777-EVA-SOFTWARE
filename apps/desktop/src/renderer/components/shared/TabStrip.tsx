@@ -9,6 +9,8 @@ export interface TabStripItem<T extends string> {
   label: string;
   /** Optional count or warning shown after the label, e.g. "3". */
   badge?: string;
+  /** A small picture before the label; decorative, the label is what is read. */
+  icon?: React.ReactNode;
   /** Marks the badge as a warning rather than a neutral count. */
   badgeTone?: "neutral" | "warn";
 }
@@ -18,11 +20,13 @@ interface TabStripProps<T extends string> {
   /** The selected tab, or null when none is — the page is showing something else in their place. */
   active: T | null;
   onSelect: (id: T) => void;
+  /** Extra class on the strip, for a page that draws its tabs its own way. */
+  className?: string;
   /** Names the strip for screen readers, e.g. "Raw material sections". */
   label: string;
 }
 
-export function TabStrip<T extends string>({ items, active, onSelect, label }: TabStripProps<T>) {
+export function TabStrip<T extends string>({ items, active, onSelect, label, className }: TabStripProps<T>) {
   const move = (from: number, delta: number) => {
     const next = (from + delta + items.length) % items.length;
     onSelect(items[next].id);
@@ -30,7 +34,7 @@ export function TabStrip<T extends string>({ items, active, onSelect, label }: T
   };
 
   return (
-    <div className="tab-strip" role="tablist" aria-label={label}>
+    <div className={`tab-strip${className ? ` ${className}` : ""}`} role="tablist" aria-label={label}>
       {items.map((item, index) => {
         const selected = item.id === active;
         return (
@@ -49,6 +53,7 @@ export function TabStrip<T extends string>({ items, active, onSelect, label }: T
               if (event.key === "ArrowLeft") { event.preventDefault(); move(index, -1); }
             }}
           >
+            {item.icon ? <span className="tab-strip-icon" aria-hidden="true">{item.icon}</span> : null}
             {item.label}
             {item.badge ? (
               <span className={`tab-strip-badge${item.badgeTone === "warn" ? " tab-strip-badge--warn" : ""}`}>

@@ -21,3 +21,10 @@ export const GATEPASS_LIST_ARTWORK_URL = "./assets/gatepass/gatepass-list.svg";
  * the owner's header design (60px). Replace the file with the original artwork for a sharper one.
  */
 export const STORE_AVATAR_URL = "./assets/store/avatar.png";
+
+/**
+ * The two Dashboard cards: the uppers, and the Dana bags with their pellets. Cut from the owner's
+ * dashboard design with the card surface around them made transparent, so they sit on the live card.
+ */
+export const UPPER_STOCK_ARTWORK_URL = "./assets/stock/upper-stock.png";
+export const DANA_STOCK_ARTWORK_URL = "./assets/stock/dana-stock.png";

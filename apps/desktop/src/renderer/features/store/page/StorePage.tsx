@@ -1,7 +1,7 @@
 import React, { useCallback, useRef, useState } from "react";
 import type { AppRoute } from "../../../app/routes";
-import { BRAND_LOGO_URL } from "../../../config/branding";
 import { copy } from "../../../config/copy";
+import { PageHeader } from "../../../components/layout/PageHeader";
 import { SplitHandle, splitWidth, useSplitFraction } from "../../../components/shared/SplitHandle";
 import { useRawMaterialLookups } from "../../rawMaterial/useRawMaterialLookups";
 import { SCAN_STATION_CSS } from "../../scanStation/scanStation";
@@ -53,8 +53,8 @@ interface StorePageProps {
   /** Absent when this account may not open the Carton QR Generator. */
   onOpenCartonQr?: () => void;
   /**
-   * The header's right-hand side: the bell and the profile avatar, for a store operator, who has no
-   * navbar (App builds them). Everyone else has both in the navbar, so this is left empty.
+   * The header's right-hand side: the bell and the profile avatar (App builds them, as
+   * HeaderActions). The page has no top bar over it, so this is where everyone's bell lives here.
    */
   headerActions?: React.ReactNode;
   /** Shows the Machine programs button (hidden since 0.4.1). */
@@ -91,19 +91,21 @@ export const StorePage: React.FC<StorePageProps> = (props) => {
     <div className="sp-page">
       <style>{SCAN_STATION_CSS}</style>
       {/* The owner's header design (0.4.1): the brand on the left, STORE in the middle, the bell and
-          the profile on the right, on the sky that runs down the page. */}
-      <header className="sp-head">
-        <img className="sp-logo" src={BRAND_LOGO_URL} alt={copy.app.brandLine} />
-        <h1 className="sp-title">{copy.storePage.title}</h1>
-        <div className="sp-head-actions">
-          {props.showMachinePrograms ? (
-            <button type="button" className="btn btn-secondary" aria-haspopup="dialog" onClick={programs.openDialog}>
-              {copy.storePage.machinePrograms}
-            </button>
-          ) : null}
-          {props.headerActions}
-        </div>
-      </header>
+          the profile on the right, on the sky that runs down the page. Every other screen now
+          wears the same header (PageHeader); this page draws its own so it sits on the sky. */}
+      <PageHeader
+        title={copy.storePage.title}
+        actions={
+          <>
+            {props.showMachinePrograms ? (
+              <button type="button" className="btn btn-secondary" aria-haspopup="dialog" onClick={programs.openDialog}>
+                {copy.storePage.machinePrograms}
+              </button>
+            ) : null}
+            {props.headerActions}
+          </>
+        }
+      />
 
       <ModeSwitch
         mode={mode}

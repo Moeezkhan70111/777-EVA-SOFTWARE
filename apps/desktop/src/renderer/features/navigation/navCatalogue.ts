@@ -1,5 +1,11 @@
 import type { AppRoute } from "../../app/routes";
-import { CREATE_GATEPASS_ARTWORK_URL, GATEPASS_LIST_ARTWORK_URL, MACHINE_ARTWORK_URL } from "../../config/artwork";
+import {
+  CREATE_GATEPASS_ARTWORK_URL,
+  DANA_STOCK_ARTWORK_URL,
+  GATEPASS_LIST_ARTWORK_URL,
+  MACHINE_ARTWORK_URL,
+  UPPER_STOCK_ARTWORK_URL,
+} from "../../config/artwork";
 import { copy } from "../../config/copy";
 import type { AuthUser } from "../../types/desktopApi";
 import { canOpenRoute } from "../auth/session";
@@ -24,7 +30,7 @@ import { canOpenRoute } from "../auth/session";
 export type NavSectionId = keyof typeof copy.nav.sections;
 
 /** Colour family of a large dashboard card. Mapped to theme tokens in theme.css (R3). */
-export type FeatureTheme = "blue" | "green";
+export type FeatureTheme = "blue" | "green" | "sky";
 
 /** What a page needs to be drawn as a large dashboard card. */
 export interface FeatureCardSpec {
@@ -32,6 +38,10 @@ export interface FeatureCardSpec {
   theme: FeatureTheme;
   /** The artwork already includes its own cloud and sparks, so the card does not draw them. */
   artworkHasScene?: boolean;
+  /** A small icon tile in the card's corner. */
+  badge?: NavIconId;
+  /** One of the Dashboard's own cards. Everything else opens from the sidebar (HomePage). */
+  onDashboard?: boolean;
 }
 
 /** Decorative colour family of a section's tiles. Mapped to theme tokens in theme.css (R3). */
@@ -41,7 +51,8 @@ export type NavTone = "action" | "ok" | "warn" | "info" | "neutral";
 export type NavIconId =
   | "dashboard" | "workspace" | "scan" | "dispatch" | "return" | "store" | "voucher"
   | "stock" | "history" | "daily" | "party" | "product" | "qr" | "cash" | "ledger"
-  | "balance" | "purchase" | "settings" | "health" | "logs" | "machine";
+  | "balance" | "purchase" | "settings" | "health" | "logs" | "machine" | "upper" | "dana"
+  | "ragzine" | "pvc" | "pasting";
 
 export interface NavItem {
   route: AppRoute;
@@ -137,6 +148,14 @@ export const NAV_SECTIONS: readonly NavSection[] = [
     tone: "info",
     items: [
       item("stock", t.stock, "stock"),
+      {
+        ...item("upper-stock", t.upperStock, "upper"),
+        feature: { artwork: UPPER_STOCK_ARTWORK_URL, theme: "sky", artworkHasScene: true, badge: "upper", onDashboard: true },
+      },
+      {
+        ...item("dana-stock", t.danaStock, "dana"),
+        feature: { artwork: DANA_STOCK_ARTWORK_URL, theme: "sky", artworkHasScene: true, badge: "dana", onDashboard: true },
+      },
       item("raw-material", t.rawMaterial, "stock", ["raw-material-qr-generator"]),
       item("history", t.stockHistory, "history", ["stock-history"]),
       item("daily-production", t.dailyProduction, "daily"),
