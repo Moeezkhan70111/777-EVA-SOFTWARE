@@ -1755,6 +1755,30 @@ export const copy = {
     lookupLastMove: "Last moved",
   },
 
+  // A store slip going to the slip printer (Nov 2026).
+  // Making a material that exists but is disabled (6 Nov 2026).
+  materialRemade: {
+    title: "This material was disabled, so it is back in use",
+    body: (code: string, name: string) => `${code} · ${name}. It keeps its code and history. Any opening stock or cost typed here was not added.`,
+  },
+
+  // Move In's scan panel, in Move Out's arrangement (6 Nov 2026).
+  scanIn: {
+    partyStep: "Receiving from",
+    partyHelp: "Choose who the packets came from, then press New session.",
+    partyLocked: "Every packet in this session comes from this supplier. End the session to choose another.",
+    startHint: "Choose the supplier, then press New session",
+    pressNew: "Press New session to start",
+  },
+
+  storeVoucherPrint: {
+    sentTitle: "Sent to the slip printer",
+    sentBody: "The slip is printing on the Star TSP800II.",
+    notSentTitle: "Not sent to the slip printer",
+    windowBody: (reason: string) => `${reason}. The slip is open in a window, to print from there.`,
+    blockedBody: (reason: string) => `${reason}. Allow popups to print the slip from a window instead.`,
+  },
+
   store: {
     scanMaterialTitle: "Scan Material",
     scanMaterialLine: "Scan a QR code to receive material into stock.",
@@ -1773,7 +1797,6 @@ export const copy = {
     nothingStarted: "Nothing started",
     packets: (n: number) => `${n.toLocaleString()} packet${n === 1 ? "" : "s"}`,
     reprintSlip: "Reprint slip",
-    popupBlocked: "Allow popups to print the slip",
   },
 
   // RECEIPTS — the deliveries received, on the Store page's Receipts tab and the Raw Material workspace.
@@ -1801,7 +1824,8 @@ export const copy = {
     receiving: "Move in",
     issuing: "Move out",
     /** The chip on a mode whose session is open: its packets so far. */
-    modeOpen: (n: number) => `Open · ${n.toLocaleString()}`,
+    /** Packets, then what they hold: "Open · 1/20". */
+    modeOpen: (n: number, quantity?: string) => `Open · ${n.toLocaleString()}${quantity ? `/${quantity}` : ""}`,
     keyHint: "Press 1 or 2",
     receivingSections: "Move in sections",
     issuingSections: "Move out sections",
@@ -1814,6 +1838,7 @@ export const copy = {
       setup: "Setup",
       issuedToday: "Issued today",
       dailyReport: "Daily report",
+      qrJourney: "QR Journey",
     },
     noTabs: "Nothing here for your account",
     noTabsHint: "Ask an administrator for stock, label or setup access.",

@@ -45,6 +45,8 @@ interface MaterialDrawerProps {
   sections: WorkSection[];
   /** Administrators approve corrections; everyone else sends them for approval. */
   isAdmin: boolean;
+  /** A store operator: removes a material directly, as an administrator does. */
+  canRemoveMaterial?: boolean;
   /** The whole tree, so this material can be filed somewhere else. */
   categories: CategoryRow[];
   onClose: () => void;
@@ -62,6 +64,7 @@ export const MaterialDrawer: React.FC<MaterialDrawerProps> = ({
   units,
   sections,
   isAdmin,
+  canRemoveMaterial = false,
   categories,
   onClose,
   onChanged,
@@ -367,7 +370,7 @@ export const MaterialDrawer: React.FC<MaterialDrawerProps> = ({
             itemId={id}
             displayName={String(item.display_name ?? "")}
             disabled={String(item.status ?? "ACTIVE") === "INACTIVE"}
-            isAdmin={isAdmin}
+            canRemove={isAdmin || canRemoveMaterial}
             onDeleted={onClose}
             onChanged={onChanged}
           />

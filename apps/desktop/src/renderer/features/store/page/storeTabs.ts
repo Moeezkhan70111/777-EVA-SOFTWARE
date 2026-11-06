@@ -30,13 +30,15 @@ export interface StoreAccess {
   labels: boolean;
   /** Raw material setup. */
   settings: boolean;
+  /** Removing a material directly: a store operator (the main process checks it too). */
+  removeMaterial?: boolean;
 }
 
 type Needs = keyof StoreAccess | null;
 
 // The Daily report is a tab in each mode (0.4.1), last, for everyone who can see the page.
-export type ReceivingTab = "material" | "labels" | "stock" | "receipts" | "byHand" | "setup" | "report";
-export type IssuingTab = "byHand" | "issuedToday" | "stock" | "report";
+export type ReceivingTab = "material" | "labels" | "stock" | "receipts" | "byHand" | "setup" | "journey" | "report";
+export type IssuingTab = "byHand" | "issuedToday" | "stock" | "journey" | "report";
 
 interface TabDef<T extends string> {
   id: T;
@@ -53,6 +55,7 @@ export const RECEIVING_TABS: readonly TabDef<ReceivingTab>[] = [
   { id: "receipts", label: t.receipts, needs: "stock" },
   { id: "byHand", label: t.byHand, needs: null },
   { id: "setup", label: t.setup, needs: "settings" },
+  { id: "journey", label: t.qrJourney, needs: null },
   { id: "report", label: t.dailyReport, needs: null },
 ];
 
@@ -60,6 +63,7 @@ export const ISSUING_TABS: readonly TabDef<IssuingTab>[] = [
   { id: "byHand", label: t.byHand, needs: null },
   { id: "issuedToday", label: t.issuedToday, needs: null },
   { id: "stock", label: t.stock, needs: "stock" },
+  { id: "journey", label: t.qrJourney, needs: null },
   { id: "report", label: t.dailyReport, needs: null },
 ];
 

@@ -453,7 +453,7 @@ export const rawMaterialsMethods = {
    * materials behind. Both paths run the same validation, the same signature/duplicate rule
    * and the same audit write; there is no second way to create a material.
    */
-  insertInventoryItem(this: SqliteDatabase, input: { categoryId: string; values: Record<string, unknown>; valuesUrdu?: Record<string, unknown>; unitId?: string; stockQuantity?: number; costPrice?: number; createdBy?: string; packName?: string | null; packingQuantity?: number | null; packingUnitId?: string | null }): { id: string; code: string; displayName: string; duplicate?: boolean } {
+  insertInventoryItem(this: SqliteDatabase, input: { categoryId: string; values: Record<string, unknown>; valuesUrdu?: Record<string, unknown>; unitId?: string; stockQuantity?: number; costPrice?: number; createdBy?: string; packName?: string | null; packingQuantity?: number | null; packingUnitId?: string | null; enableIfDisabled?: boolean }): { id: string; code: string; displayName: string; duplicate?: boolean; reenabled?: boolean } {
     const category = this.db.prepare("SELECT * FROM inventory_categories WHERE id = ? AND status = 'ACTIVE'").get(input.categoryId) as Record<string, unknown> | undefined;
     if (!category) throw new Error("Category not found");
     // A material may be filed at any level, including in a category that also has
@@ -466,8 +466,17 @@ export const rawMaterialsMethods = {
       if (value == null || String(value).trim() === "") throw new Error(`${field.label} is required`);
     }
     const signature = this.inventorySignature(input.categoryId, fields, input.values);
-    const existing = this.db.prepare("SELECT id, item_code, display_name FROM inventory_items WHERE category_id = ? AND signature_hash = ? AND status = 'ACTIVE' LIMIT 1").get(input.categoryId, signature.hash) as { id: string; item_code: string; display_name: string } | undefined;
-    if (existing) return { id: existing.id, code: existing.item_code, displayName: existing.display_name, duplicate: true };
+    // ANY status: a disabled material still owns its signature (UNIQUE(category_id, signature_hash)),
+    // so looking only at active ones sent the insert into the constraint. It is the same material,
+    // so someone making it again gets it back, with its code and history. A removed one has already
+    // let go of its signature (itemRemoval.ts), so it is made afresh.
+    const existing = this.db.prepare("SELECT id, item_code, display_name, status FROM inventory_items WHERE category_id = ? AND signature_hash = ? LIMIT 1").get(input.categoryId, signature.hash) as { id: string; item_code: string; display_name: string; status: string } | undefined;
+    if (existing) {
+      const found = { id: existing.id, code: existing.item_code, displayName: existing.display_name };
+      if (existing.status === "ACTIVE" || !input.enableIfDisabled) return { ...found, duplicate: true };
+      this.setInventoryItemStatus({ itemId: existing.id, status: "ACTIVE", updatedBy: input.createdBy });
+      return { ...found, reenabled: true };
+    }
     const displayName = this.buildInventoryDisplayName(this.categoryPathName(input.categoryId), fields, input.values);
     const next = { n: allocateNumberInRange(this, "inventoryItemCode") };
     const itemCode = `RM-${String(next.n).padStart(6, "0")}`;
@@ -509,7 +518,7 @@ export const rawMaterialsMethods = {
   },
 
   /** Creates one raw material in its own transaction. */
-  createInventoryItem(this: SqliteDatabase, input: { categoryId: string; values: Record<string, unknown>; valuesUrdu?: Record<string, unknown>; unitId?: string; stockQuantity?: number; costPrice?: number; createdBy?: string; packName?: string | null; packingQuantity?: number | null; packingUnitId?: string | null }): { id: string; code: string; displayName: string; duplicate?: boolean } {
+  createInventoryItem(this: SqliteDatabase, input: { categoryId: string; values: Record<string, unknown>; valuesUrdu?: Record<string, unknown>; unitId?: string; stockQuantity?: number; costPrice?: number; createdBy?: string; packName?: string | null; packingQuantity?: number | null; packingUnitId?: string | null; enableIfDisabled?: boolean }): { id: string; code: string; displayName: string; duplicate?: boolean; reenabled?: boolean } {
     this.db.exec("BEGIN IMMEDIATE TRANSACTION");
     try {
     const created = this.insertInventoryItem(input);

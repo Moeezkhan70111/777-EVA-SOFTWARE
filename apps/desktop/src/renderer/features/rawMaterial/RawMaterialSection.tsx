@@ -27,6 +27,8 @@ export interface RawMaterialSectionProps {
   /** The logged-in operator; recorded against label generation. */
   username?: string;
   isAdmin: boolean;
+  /** A store operator: removes a material directly, as an administrator does. */
+  canRemoveMaterial?: boolean;
   /** What a material's "Generate labels" does — usually switch to the Labels section for it. */
   onGenerateLabels: (itemId: string) => void;
   /** A material the Labels section should open on. */
@@ -43,6 +45,7 @@ const RawMaterialSectionBody: React.FC<RawMaterialSectionProps> = ({
   lookups,
   username,
   isAdmin,
+  canRemoveMaterial,
   onGenerateLabels,
   labelsItemId,
   onLabelsItemConsumed,
@@ -66,6 +69,7 @@ const RawMaterialSectionBody: React.FC<RawMaterialSectionProps> = ({
         onLookupsChanged={lookups.reload}
         onGenerateLabels={onGenerateLabels}
         isAdmin={isAdmin}
+        canRemoveMaterial={canRemoveMaterial}
         initialItemId={initialItemId}
         onInitialItemConsumed={onInitialItemConsumed ?? (() => {})}
       />

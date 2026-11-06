@@ -11,6 +11,7 @@ import {
 import { copy } from "../../config/copy";
 import { StepHeading } from "../../components/shared/StepHeading";
 import { SearchableCombobox } from "../../components/shared/SearchableCombobox";
+import { partyOption } from "../parties/partyOption";
 import { StateView } from "../../components/shared/StateView";
 import { ConfirmDialog, type ConfirmFact } from "../../components/shared/ConfirmDialog";
 import { formatQuantity, materialLabelAttributes, packName, type InventoryItemRow } from "./rawMaterial";
@@ -151,7 +152,7 @@ export const LabelsTab: React.FC<LabelsTabProps> = ({ username, configByItem, pr
 
   const selectedParty = useMemo(() => suppliers.find((party) => party.id === partyId) ?? null, [suppliers, partyId]);
   const partyOptions = useMemo(
-    () => suppliers.map((party) => ({ value: party.id, label: `${party.partyCode} — ${party.partyName}` })),
+    () => suppliers.map(partyOption),
     [suppliers]
   );
 

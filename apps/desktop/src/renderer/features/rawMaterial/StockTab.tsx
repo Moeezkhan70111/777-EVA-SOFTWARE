@@ -53,6 +53,8 @@ interface StockTabProps {
   onGenerateLabels: (itemId: string) => void;
   /** Administrators approve corrections; everyone else sends them for approval. */
   isAdmin: boolean;
+  /** A store operator: removes a material directly, as an administrator does. */
+  canRemoveMaterial?: boolean;
   /** A material can be opened straight from a notification about it. */
   initialItemId?: string;
   onInitialItemConsumed: () => void;
@@ -73,6 +75,7 @@ export const StockTab: React.FC<StockTabProps> = ({
   onLookupsChanged,
   onGenerateLabels,
   isAdmin,
+  canRemoveMaterial,
   initialItemId,
   onInitialItemConsumed,
 }) => {
@@ -606,6 +609,7 @@ export const StockTab: React.FC<StockTabProps> = ({
           categories={categories}
           onClose={() => setOpenItemId(null)}
           isAdmin={isAdmin}
+          canRemoveMaterial={canRemoveMaterial}
           onChanged={load}
           onLookupsChanged={onLookupsChanged}
           onGenerateLabels={(id) => {

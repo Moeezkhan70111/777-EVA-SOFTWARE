@@ -3,6 +3,7 @@ import { STORE_DIRECTION } from "@erp/domain";
 import type { AppRoute } from "../../../app/routes";
 import { copy } from "../../../config/copy";
 import { TabStrip } from "../../../components/shared/TabStrip";
+import { QrJourneyPage } from "../../../pages/QrJourneyPage";
 import { RawMaterialSection } from "../../rawMaterial/RawMaterialSection";
 import type { useRawMaterialLookups } from "../../rawMaterial/useRawMaterialLookups";
 import { StoreDailyReport } from "../dailyReport/StoreDailyReport";
@@ -33,6 +34,7 @@ export const IssuingWorkArea: React.FC<IssuingWorkAreaProps> = (props) => {
   const pane = (() => {
     if (tab === "report") return <StoreDailyReport direction={STORE_DIRECTION.OUT} token={token} />;
     if (tab === "issuedToday") return <IssuedToday refreshKey={sessionKey} username={username} />;
+    if (tab === "journey") return <QrJourneyPage username={username} />;
     if (tab === "stock") {
       return (
         <RawMaterialSection
@@ -40,6 +42,7 @@ export const IssuingWorkArea: React.FC<IssuingWorkAreaProps> = (props) => {
           lookups={lookups}
           username={username}
           isAdmin={isAdmin}
+          canRemoveMaterial={access.removeMaterial}
           onGenerateLabels={() => undefined}
           onLabelsItemConsumed={() => undefined}
           onNavigate={onNavigate}

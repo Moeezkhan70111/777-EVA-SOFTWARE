@@ -4,7 +4,7 @@ import { MoveInIcon, MoveOutIcon } from "../StoreIcons";
 import type { StoreMode } from "./storeTabs";
 
 // MOVE IN | MOVE OUT (0.4.2, the owner's design) — one pill under STORE, a blue thumb behind the
-// active half that slides across when the mode changes (0.4.3; data-mode tells the CSS where). A session open on either half shows as a small "Open · n" chip, so one left open on the
+// active half that slides across when the mode changes (0.4.3; data-mode tells the CSS where). A session open on either half shows as a small "Open · packets/quantity" chip, so one left open on the
 // other side is still seen from this one; the full state line is there for screen readers. Which
 // half is on is said by aria-pressed, never by colour alone.
 
@@ -12,6 +12,7 @@ import type { StoreMode } from "./storeTabs";
 export interface ModeSession {
   open: boolean;
   packets: number;
+  quantity?: string;
 }
 
 const stateLine = (session: ModeSession): string =>
@@ -31,7 +32,7 @@ const ModeHalf: React.FC<{ mode: StoreMode; label: string; session: ModeSession;
     <button type="button" className={`sp-mode sp-mode--${mode}`} aria-pressed={active} onClick={() => onSelect(mode)}>
       <span className="sp-mode-icon"><Icon /></span>
       <span className="sp-mode-name">{label}</span>
-      {session.open ? <span className="sp-mode-chip" aria-hidden="true">{copy.storePage.modeOpen(session.packets)}</span> : null}
+      {session.open ? <span className="sp-mode-chip" aria-hidden="true">{copy.storePage.modeOpen(session.packets, session.quantity)}</span> : null}
       <span className="sr-only">{stateLine(session)}</span>
     </button>
   );

@@ -10,11 +10,14 @@ import type { AppRoute } from "../app/routes";
 import { useNotifications } from "../state/NotificationsContext";
 import { playScanSound } from "../utils/playScanSound";
 import { copy } from "../config/copy";
-import { openIssueSlipPrintWindow } from "../features/rawMaterial/issueSlip";
+import { printIssueSlip } from "../features/rawMaterial/issueSlip";
+import { announceVoucherPrint } from "../features/rawMaterial/storeVoucher";
 import { formatDateTime } from "../utils/dates";
 import { isCompleteQr, sanitizeScanInput } from "../utils/qr";
 import { LEASE_DOMAIN, isMachineProgramCodeScan, isRawMaterialIssuePartyType, isValidRawMaterialQrId } from "@erp/domain";
 import { LeasedStation } from "../features/store/LeasedStation";
+import { LockedParty } from "../features/store/LockedParty";
+import { quantityFigure } from "../features/rawMaterial/storeVoucher";
 import { ReaderStation } from "../features/store/ReaderStation";
 import type { StationStatus } from "../features/store/page/stationStatus";
 import {
@@ -144,15 +147,6 @@ function scanHintFor(partyId: string, session: RawMaterialIssueSession | null): 
   if (session?.status === "CLOSED") return copy.moveOut.scanSessionClosed;
   return copy.moveOut.scanPressNew;
 }
-
-/** The party a running session is locked to: its name and type, and why it cannot be changed. */
-const LockedParty: React.FC<{ party: Party | undefined }> = ({ party }) => (
-  <div className="mo-locked-party" data-testid="locked-party">
-    <strong>{party ? `${party.partyCode} — ${party.partyName}` : "—"}</strong>
-    <PartyTypeBadge partyType={party?.partyType} />
-    <p className="field-help">🔒 {copy.moveOut.scanPartyLocked}</p>
-  </div>
-);
 
 interface RawMaterialOutputPageProps {
   /** Session token; the main process authorises every issue call with it. */
@@ -330,7 +324,7 @@ const RawMaterialOutputStation: React.FC<RawMaterialOutputPageProps> = ({
 
   // The Store page's mode switch shows this panel's session state, even while it is hidden.
   useEffect(() => {
-    onStatus?.({ sessionId: session?.status === "OPEN" ? (session?.id ?? null) : null, open: session?.status === "OPEN", packets: summary?.totalPackets ?? 0 });
+    onStatus?.({ sessionId: session?.status === "OPEN" ? (session?.id ?? null) : null, open: session?.status === "OPEN", packets: summary?.totalPackets ?? 0, quantity: quantityFigure(summary?.byMaterial ?? []) });
   }, [onStatus, session, summary]);
 
 
@@ -422,9 +416,7 @@ const RawMaterialOutputStation: React.FC<RawMaterialOutputPageProps> = ({
 
   const print = () => {
     if (!summary) return;
-    if (!openIssueSlipPrintWindow(summary, username)) {
-      push("error", copy.toast.popupBlocked, "Allow popups to print the issue slip");
-    }
+    void printIssueSlip(summary, username).then((outcome) => announceVoucherPrint(outcome, push));
   };
 
   const scanRows: StationScanRow[] = (summary?.scans ?? [])
@@ -490,7 +482,11 @@ const RawMaterialOutputStation: React.FC<RawMaterialOutputPageProps> = ({
             {partiesError ? (
               <StateView kind="error" compact message={partiesError} onRetry={() => void loadParties()} />
             ) : locked ? (
-              <LockedParty party={parties.find((party) => party.id === sessionPartyId)} />
+              <LockedParty
+                name={parties.find((party) => party.id === sessionPartyId)?.partyName}
+                partyType={parties.find((party) => party.id === sessionPartyId)?.partyType}
+                note={copy.moveOut.scanPartyLocked}
+              />
             ) : (
               <>
                 <SearchableCombobox

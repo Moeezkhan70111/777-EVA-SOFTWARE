@@ -1,5 +1,5 @@
 import type { RawMaterialIssueSessionSummary } from "../../types/desktopApi";
-import { openStoreVoucherPrintWindow, renderStoreVoucherHtml, type StoreVoucher, type StoreVoucherOptions } from "./storeVoucher";
+import { printStoreVoucher, renderStoreVoucherHtml, type StoreVoucher, type StoreVoucherOptions, type VoucherPrintOutcome } from "./storeVoucher";
 
 // The printed slip for one Move Out session — the same store voucher as the Move In receipt
 // (storeVoucher.ts), filled in for what left the store and the party it went to (0.3.8).
@@ -17,6 +17,6 @@ const issueVoucher = (summary: RawMaterialIssueSessionSummary): StoreVoucher => 
 export const renderIssueSlipHtml = (summary: RawMaterialIssueSessionSummary, options: StoreVoucherOptions = {}): string =>
   renderStoreVoucherHtml(issueVoucher(summary), options);
 
-/** Opens the slip in the print window. Returns false when the popup was blocked. */
-export const openIssueSlipPrintWindow = (summary: RawMaterialIssueSessionSummary, printedBy?: string | null): boolean =>
-  openStoreVoucherPrintWindow(issueVoucher(summary), printedBy);
+/** Sends the slip to the slip printer (storeVoucher.ts). */
+export const printIssueSlip = (summary: RawMaterialIssueSessionSummary, printedBy?: string | null): Promise<VoucherPrintOutcome> =>
+  printStoreVoucher(issueVoucher(summary), printedBy);

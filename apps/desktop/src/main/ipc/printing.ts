@@ -1,9 +1,9 @@
-// Printing a ready-made document straight to the computer's default printer.
+// Printing a ready-made document straight to a printer: the computer's default one, or the one a
+// job's role names (shared/printerRole.ts; only store slips name one, QR labels never do).
 //
 // The renderer builds the document (e.g. a run of QR labels) and asks for it to be printed;
 // it never opens a preview window of its own. The document is loaded into a hidden window
-// and sent to the system default printer without a dialog — the operator has already
-// confirmed inside the app.
+// and sent to that printer without a dialog — the operator has already confirmed inside the app.
 //
 // IPC handlers are registered per feature; every write is authorised through ctx.authorizer
 // (see ../authorize.ts) and every channel name comes from shared/ipcChannels.ts.
@@ -12,6 +12,8 @@ import { BrowserWindow, ipcMain } from "electron";
 import fs from "node:fs";
 import path from "node:path";
 import { IPC } from "../../shared/ipcChannels";
+import { PRINTER_ROLE } from "../../shared/printerRole";
+import { findSlipPrinter, slipPageSize } from "../slipPrinter";
 import type { IpcContext } from "./context";
 
 const MICRONS_PER_INCH = 25400;
@@ -34,8 +36,14 @@ const pageSizeMicrons = (value: unknown): { width: number; height: number } | nu
   return { width: Math.round(widthIn * MICRONS_PER_INCH), height: Math.round(heightIn * MICRONS_PER_INCH) };
 };
 
-/** Sends the loaded page to the default printer; resolves with Chromium's answer. */
-const printSilently = (window: BrowserWindow, pageSize: { width: number; height: number } | null): Promise<PrintDocumentResult> =>
+interface PrintTarget {
+  pageSize: { width: number; height: number } | null;
+  /** The printer by name; left out, the computer's default printer. */
+  deviceName?: string;
+}
+
+/** Sends the loaded page to its printer; resolves with Chromium's answer. */
+const printSilently = (window: BrowserWindow, { pageSize, deviceName }: PrintTarget): Promise<PrintDocumentResult> =>
   new Promise((resolve) => {
     window.webContents.print(
       {
@@ -43,15 +51,24 @@ const printSilently = (window: BrowserWindow, pageSize: { width: number; height:
         printBackground: true,
         margins: { marginType: "none" },
         ...(pageSize ? { pageSize } : {}),
+        ...(deviceName ? { deviceName } : {}),
       },
       (success, failureReason) => resolve(success ? { accepted: true } : { accepted: false, reason: failureReason || "The printer did not accept the job" })
     );
   });
 
+/** Where a slip goes and how long its page is, or why it cannot be printed here. */
+const slipTarget = async (window: BrowserWindow): Promise<PrintTarget | { refused: string }> => {
+  const deviceName = findSlipPrinter(await window.webContents.getPrintersAsync());
+  if (!deviceName) return { refused: "The slip printer (Star TSP800II) is not installed on this computer" };
+  const height = (await window.webContents.executeJavaScript("document.body.getBoundingClientRect().height")) as number;
+  return { deviceName, pageSize: slipPageSize(height) };
+};
+
 export function registerPrintingHandlers(ctx: IpcContext): void {
   const { logger, authorizer, deviceId, paths } = ctx;
 
-  ipcMain.handle(IPC.printDocument, async (event, payload?: { html?: unknown; pageSize?: unknown }): Promise<PrintDocumentResult> => {
+  ipcMain.handle(IPC.printDocument, async (event, payload?: { html?: unknown; pageSize?: unknown; printer?: unknown }): Promise<PrintDocumentResult> => {
     authorizer.requireUser(event);
     if (typeof payload?.html !== "string" || payload.html.trim() === "") {
       return { accepted: false, reason: "Nothing to print" };
@@ -63,7 +80,9 @@ export function registerPrintingHandlers(ctx: IpcContext): void {
     try {
       fs.writeFileSync(tempHtmlPath, payload.html, "utf8");
       await printWindow.loadFile(tempHtmlPath);
-      const result = await printSilently(printWindow, pageSizeMicrons(payload.pageSize));
+      const target = payload.printer === PRINTER_ROLE.SLIP ? await slipTarget(printWindow) : { pageSize: pageSizeMicrons(payload.pageSize) };
+      if ("refused" in target) return { accepted: false, reason: target.refused };
+      const result = await printSilently(printWindow, target);
       if (!result.accepted) {
         logger.log({ module: "printing", severity: "WARNING", operation: "print-document", deviceId, message: `Print failed: ${result.reason}` });
       }

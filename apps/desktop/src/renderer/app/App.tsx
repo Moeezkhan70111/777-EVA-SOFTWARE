@@ -416,6 +416,7 @@ export const App = () => {
               stock: hasPermission(session, PERMISSION.STOCK),
               labels: hasPermission(session, PERMISSION.RAW_MATERIAL_QR_GENERATOR),
               settings: hasPermission(session, PERMISSION.SETTINGS) || hasPermission(session, PERMISSION.RAW_MATERIAL_SETUP),
+              removeMaterial: hasPermission(session, PERMISSION.STORE_SCANNING),
             }}
             onModeChange={(next) => setRoute(STORE_MODE_ROUTE[next])}
             onNavigate={setRoute}
