@@ -191,14 +191,14 @@ export interface NumberSite {
 }
 
 export const NUMBER_SITES = {
-  cashVoucher: { table: "cash_vouchers", column: "voucher_number", parse: { kind: "INT" }, noun: "cash voucher numbers", origin: "origin_device_id" },
-  saleVoucher: { table: "sale_vouchers", column: "voucher_number", parse: { kind: "INT" }, noun: "sale voucher numbers", external: true, origin: "origin_device_id" },
+  cashVoucher: { table: "cash_vouchers", column: "voucher_number", parse: { kind: "INT" }, noun: "cash voucher numbers", origin: "origin_device_id", travelsAs: "CASH_VOUCHER" },
+  saleVoucher: { table: "sale_vouchers", column: "voucher_number", parse: { kind: "INT" }, noun: "sale voucher numbers", external: true, origin: "origin_device_id", travelsAs: "SALE_VOUCHER" },
   purchaseVoucher: { table: "purchase_vouchers", column: "voucher_number", parse: { kind: "INT" }, noun: "purchase voucher numbers", external: true, origin: "origin_device_id" },
-  gatepass: { table: "gatepasses", column: "gatepass_number", parse: { kind: "INT" }, noun: "gatepass numbers", origin: "origin_device_id" },
+  gatepass: { table: "gatepasses", column: "gatepass_number", parse: { kind: "INT" }, noun: "gatepass numbers", origin: "origin_device_id", travelsAs: "GATEPASS" },
   machineProgram: { table: "machine_programs", column: "program_number", parse: { kind: "INT" }, noun: "machine program numbers", origin: "origin_device_id" },
-  manualProduction: { table: "manual_production_entries", column: "entry_number", parse: { kind: "INT" }, noun: "manual production numbers", origin: "origin_device_id" },
+  manualProduction: { table: "manual_production_entries", column: "entry_number", parse: { kind: "INT" }, noun: "manual production numbers", origin: "origin_device_id", travelsAs: "MANUAL_PRODUCTION_ENTRY" },
   partyCode: { table: "parties", column: "party_code", parse: { kind: "SUFFIX", from: 5 }, noun: "party codes", origin: "origin_device_id", travelsAs: "PARTY" },
-  productCode: { table: "article_sizes", column: "product_code", parse: { kind: "SUFFIX", from: 5 }, where: "product_code IS NOT NULL", noun: "product codes", origin: "origin_device_id" },
+  productCode: { table: "article_sizes", column: "product_code", parse: { kind: "SUFFIX", from: 5 }, where: "product_code IS NOT NULL", noun: "product codes", origin: "origin_device_id", travelsAs: "ARTICLE_SIZE" },
   rmReceivingSession: { table: "raw_material_receiving_sessions", column: "session_number", parse: { kind: "INT" }, noun: "raw material receiving numbers", origin: "device_id" },
   rmIssueSession: { table: "raw_material_issue_sessions", column: "session_number", parse: { kind: "INT" }, noun: "raw material issue numbers", origin: "device_id" },
   storeReceivingSession: { table: "store_receiving_sessions", column: "session_number", parse: { kind: "INT" }, noun: "store receiving numbers", origin: "device_id" },

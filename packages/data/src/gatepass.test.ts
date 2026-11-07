@@ -503,7 +503,7 @@ test("concurrency — two clerks creating at once against the same stock: both f
   }
 });
 
-test("isolation — creating a gatepass changes no QR, no event, no stock projection, no voucher, no ledger and assigns no codes", async () => {
+test("isolation — creating a gatepass changes no QR, no event, no stock projection, no ledger and assigns no codes; it makes one bill with no lines", async () => {
   const f = createFixture();
   try {
     const partyId = createParty(f.db, "ABC TRADERS");
@@ -526,7 +526,11 @@ test("isolation — creating a gatepass changes no QR, no event, no stock projec
     assert.equal(result.accepted, true, result.reason);
 
     const after = untouchableState(f.raw);
-    assert.deepEqual(after, before, "nothing outside gatepasses / gatepass_lines / audit_log changed");
+    assert.deepEqual(
+      after,
+      { ...before, saleVouchers: before.saleVouchers + 1, dispatchSessions: before.dispatchSessions + 1 },
+      "nothing outside gatepasses / gatepass_lines / audit_log changed, but the one generated bill, with no lines and so no money"
+    );
     assert.equal(f.db.getCurrentPartyBalance(partyId), balanceBefore, "customer balance unchanged");
 
     // Every carton is still In Store, in the WAREHOUSE location, with its full event history intact.
@@ -794,10 +798,13 @@ test("billing link — a sale voucher made from a gatepass remembers it; a secon
     const created = await gatepassCreator(f.db).execute({ partyId, lines: [{ productVariantId: red.variantId, quantity: 3 }], actor: "clerk" });
     const gatepassId = created.gatepassId!;
 
-    assert.equal(f.db.findSaleVoucherByGatepass(gatepassId), null);
+    const generated = f.db.findSaleVoucherByGatepass(gatepassId);
+    assert.ok(generated, "the gatepass made its bill");
+    assert.equal(f.db.getSaleVoucher(generated.id)?.lineItems.length, 0, "with no lines until it is entered");
     assert.throws(() => f.db.createSaleVoucher({ partyId, voucherDate: "2026-09-16", bookNo: "B1", gatepassId: "no-such-gatepass" }), (e: unknown) => (e as { code?: string }).code === "GATEPASS_NOT_FOUND");
 
     const bill = f.db.createSaleVoucher({ partyId, voucherDate: "2026-09-16", bookNo: "B1", gatepassId });
+    assert.equal(bill.id, generated.id, "making the bill by hand takes up the generated one: there is only ever one");
     const doc = f.db.getSaleVoucher(bill.id)!;
     assert.equal(doc.gatepassId, gatepassId);
     assert.equal(doc.gatepassCode, "GP-000001");

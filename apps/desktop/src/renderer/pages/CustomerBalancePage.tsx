@@ -4,6 +4,10 @@ import { useDesktopApi } from "../hooks/useDesktopApi";
 import type { PartyGroup } from "../types/desktopApi";
 import { copy } from "../config/copy";
 import { formatDate, toIsoDate } from "../utils/dates";
+import { useDataChanged } from "../hooks/useDataChanged";
+import { DATA_KIND } from "../../shared/dataChange";
+
+const MONEY_CHANGES = [DATA_KIND.BILLING, DATA_KIND.CASH];
 
 interface CustomerBalanceRow {
   partyId: string;
@@ -50,6 +54,7 @@ export const CustomerBalancePage: React.FC<{ onNavigate: (route: AppRoute) => vo
   };
 
   useEffect(() => { void loadBalances(); }, [asOfDate]);
+  useDataChanged(MONEY_CHANGES, () => void loadBalances());
 
   // Client-side filter by group and search
   const filtered = useMemo(() => {

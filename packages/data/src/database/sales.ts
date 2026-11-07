@@ -21,6 +21,24 @@ const articleSizeKey = (article: string, size: string): string =>
 const parseDiscountSource = (value: unknown): DiscountSource =>
   typeof value === "string" && DISCOUNT_SOURCES.has(value) ? (value as DiscountSource) : DISCOUNT_SOURCE.NONE;
 
+// A party's totals as of a date (?1), for the balance list. Exact integer arithmetic over *_paisa columns.
+const SALES_PAISA_SQL = `(SELECT COALESCE(SUM(sv.total_amount_paisa), 0) FROM sale_vouchers sv
+  WHERE sv.party_id = p.id AND sv.deleted_at IS NULL AND sv.voucher_date <= ?1)`;
+const RETURNS_PAISA_SQL = `(SELECT COALESCE(SUM(sr.total_amount_paisa), 0) FROM sale_returns sr
+  WHERE sr.party_id = p.id AND sr.deleted_at IS NULL AND sr.status = 'ACTIVE' AND sr.return_date <= ?1)`;
+/**
+ * What cash vouchers paid or received for this party: its own lines when a voucher has lines, else the header. The
+ * same rule as the ledger and the limit check. A voucher's header names only its first party, so reading headers
+ * alone left every other party on the voucher out of the balance list.
+ */
+const cashPaisaSql = (column: "receipt_amount_paisa" | "payment_amount_paisa"): string => `(
+  (SELECT COALESCE(SUM(cv.${column}), 0) FROM cash_vouchers cv
+    WHERE cv.party_id = p.id AND cv.deleted_at IS NULL AND cv.status = 'ACTIVE' AND cv.voucher_date <= ?1
+      AND NOT EXISTS (SELECT 1 FROM cash_voucher_lines l WHERE l.voucher_id = cv.id))
+  + (SELECT COALESCE(SUM(l.${column}), 0) FROM cash_voucher_lines l JOIN cash_vouchers cv ON cv.id = l.voucher_id
+    WHERE l.party_id = p.id AND cv.deleted_at IS NULL AND cv.status = 'ACTIVE' AND cv.voucher_date <= ?1)
+)`;
+
 export const salesMethods = {
   // One rule per party × product group: saving again updates the figure (and revives a
   // deleted rule), exactly as the article and price-range rules behave.
@@ -361,8 +379,9 @@ export const salesMethods = {
     /** The gatepass this bill is made from. Must exist, be CREATED, and not be billed already. */
     gatepassId?: string | null;
   }): { id: string; voucherNumber: string } {
-    const id = crypto.randomUUID();
+    let id: string = crypto.randomUUID();
     const now = new Date().toISOString();
+    let generatedBill: { id: string; voucherNumber: string } | null = null;
 
     // ── GATEPASS LINK ─────────────────────────────────────────────────────────
     const gatepassId = typeof input.gatepassId === "string" && input.gatepassId.trim() ? input.gatepassId.trim() : null;
@@ -373,7 +392,11 @@ export const salesMethods = {
       if (gatepass.status === "CANCELLED") throw new GatepassBillingError("GATEPASS_CANCELLED", `${code} was cancelled. It cannot be billed.`);
       const existing = this.db.prepare("SELECT id, voucher_number FROM sale_vouchers WHERE gatepass_id = ? AND deleted_at IS NULL LIMIT 1").get(gatepassId) as { id: string; voucher_number: string } | undefined;
       if (existing) {
-        throw new GatepassBillingError("GATEPASS_ALREADY_BILLED", `${code} already has Sale Voucher #${existing.voucher_number}.`, { id: String(existing.id), voucherNumber: String(existing.voucher_number) });
+        // The gatepass's generated bill, not entered yet, IS this bill: there is still only one (docs/43).
+        const entered = gatepass.status !== "CREATED" || this.billHasLines(String(existing.id));
+        if (entered) throw new GatepassBillingError("GATEPASS_ALREADY_BILLED", `${code} already has Sale Voucher #${existing.voucher_number}.`, { id: String(existing.id), voucherNumber: String(existing.voucher_number) });
+        generatedBill = { id: String(existing.id), voucherNumber: String(existing.voucher_number) };
+        id = generatedBill.id;
       }
     }
     
@@ -413,9 +436,17 @@ export const salesMethods = {
     let voucherNumber = input.voucherNumber;
     if (!voucherNumber || !voucherNumber.trim()) {
       // Only the FALLBACK is ranged: a number typed from the paper book above always wins.
-      voucherNumber = String(allocateNumberInRange(this, "saleVoucher"));
+      voucherNumber = generatedBill ? generatedBill.voucherNumber : String(allocateNumberInRange(this, "saleVoucher"));
     }
 
+    if (generatedBill) {
+      this.db
+        .prepare(
+          `UPDATE sale_vouchers SET voucher_number = ?, voucher_date = ?, book_no = ?, sub_party_name = ?, sub_party_name_urdu = ?,
+             sub_party_number = ?, remarks = ?, updated_at = ? WHERE id = ?`
+        )
+        .run(voucherNumber, input.voucherDate, input.bookNo, input.subPartyName || null, input.subPartyNameUrdu || null, input.subPartyNumber || null, input.remarks || null, now, id);
+    } else {
     this.db
       .prepare(
         `INSERT INTO sale_vouchers (
@@ -440,6 +471,7 @@ export const salesMethods = {
       );
 
     this.createDispatchSession(id);
+    }
 
     // Billing is what moves a Gatepass out of its issued state. Guarded: if it is not CREATED
     // any more (cancelled, or billed by someone else a moment ago) nothing moves, and the
@@ -458,13 +490,7 @@ export const salesMethods = {
     //                                        take it back to CREATED, where a cancel puts them back
     //
     // Only the status moves: no scan, stock movement or attribution is written or changed.
-    if (gatepassId) {
-      const work = this.gatepassDeskWork(gatepassId);
-      const billed = this.advanceGatepassStatus({ gatepassId, from: "CREATED", to: "BILLED", actor: null, notify: work.storeOwes });
-      if (billed && work.gateOwes && !work.storeOwes) {
-        this.advanceGatepassStatus({ gatepassId, from: "BILLED", to: "AT_GATE", actor: null, reason: "Scanned out of the store before billing" });
-      }
-    }
+    if (gatepassId) this.moveGatepassOnBilling(gatepassId);
 
       this.db.exec("COMMIT");
       return { id, voucherNumber };
@@ -472,6 +498,127 @@ export const salesMethods = {
       try { this.db.exec("ROLLBACK"); } catch { /* ignore missing transaction state */ }
       throw error;
     }
+  },
+
+  /** @internal The gatepass leaves CREATED because its bill is entered. See the note in createSaleVoucher. */
+  moveGatepassOnBilling(this: SqliteDatabase, gatepassId: string): void {
+    const work = this.gatepassDeskWork(gatepassId);
+    const billed = this.advanceGatepassStatus({ gatepassId, from: "CREATED", to: "BILLED", actor: null, notify: work.storeOwes });
+    if (billed && work.gateOwes && !work.storeOwes) {
+      this.advanceGatepassStatus({ gatepassId, from: "BILLED", to: "AT_GATE", actor: null, reason: "Scanned out of the store before billing" });
+    }
+  },
+
+  /** @internal Whether a bill has been entered: it has lines. Until then it carries no money. */
+  billHasLines(this: SqliteDatabase, voucherId: string): boolean {
+    return this.db.prepare("SELECT 1 AS found FROM sale_voucher_line_items WHERE voucher_id = ? AND deleted_at IS NULL LIMIT 1").get(voucherId) !== undefined;
+  },
+
+  /**
+   * @internal A gatepass's bill, generated in the gatepass's own transaction (docs/43): a number and the link,
+   * no lines and so no money. The balance limit is checked when the bill is entered and has an amount. The
+   * unique index on a live bill per gatepass is what makes a second one impossible.
+   */
+  createBillForGatepassInTransaction(this: SqliteDatabase, input: { gatepassId: string; partyId: string; voucherDate: string; nowIso: string }): { id: string; voucherNumber: string } {
+    const id = crypto.randomUUID();
+    const voucherNumber = String(allocateNumberInRange(this, "saleVoucher"));
+    this.db
+      .prepare(
+        `INSERT INTO sale_vouchers (id, voucher_number, party_id, voucher_date, book_no, total_quantity, total_amount_paisa, status, created_at, updated_at, gatepass_id)
+         VALUES (?, ?, ?, ?, '', 0, 0, 'DRAFT', ?, ?, ?)`
+      )
+      .run(id, voucherNumber, input.partyId, input.voucherDate, input.nowIso, input.nowIso, input.gatepassId);
+    this.createDispatchSession(id);
+    return { id, voucherNumber };
+  },
+
+  /** @internal A cancelled gatepass takes its unentered bill with it. A bill with lines stays, by this WHERE. */
+  cancelUnenteredBillInTransaction(this: SqliteDatabase, input: { gatepassId: string; reason: string; cancelledAt: string }): void {
+    const bill = this.db
+      .prepare("SELECT id FROM sale_vouchers WHERE gatepass_id = ? AND deleted_at IS NULL LIMIT 1")
+      .get(input.gatepassId) as { id: string } | undefined;
+    if (!bill || this.billHasLines(bill.id)) return;
+    this.db
+      .prepare("UPDATE sale_vouchers SET status = 'CANCELLED', deleted_at = ?, delete_reason = ?, updated_at = ? WHERE id = ?")
+      .run(input.cancelledAt, input.reason, input.cancelledAt, bill.id);
+    const session = this.db.prepare("SELECT id FROM dispatch_sessions WHERE voucher_id = ? LIMIT 1").get(bill.id) as { id: string } | undefined;
+    if (session) this.cancelDispatchSession(session.id);
+  },
+
+  /**
+   * BILL ENTRY (docs/43): the desk's rates go onto the gatepass's generated bill, all of it or none of it, in one
+   * transaction. This is the moment the customer owes: the debit is the bill's total, and nothing else
+   * writes it. Stock is not touched, because the gatepass already took the cartons.
+   *
+   * Entering a bill already entered changes nothing and reports `duplicate`: a Save pressed twice, or retried after an
+   * answer that never arrived, cannot debit the customer twice.
+   */
+  enterGatepassBill(this: SqliteDatabase, voucherId: string, input: {
+    bookNo: string;
+    subPartyNameUrdu?: string;
+    remarks?: string;
+    lines: Array<{ productVariantId: string; quantity: number; unitPrice: number; discount?: number; priceType?: "NORMAL" | "B_TYPE" }>;
+  }): { id: string; voucherNumber: string; duplicate: boolean } {
+    this.db.exec("BEGIN IMMEDIATE TRANSACTION");
+    try {
+      const bill = this.db
+        .prepare(
+          `SELECT sv.id, sv.voucher_number, sv.party_id, sv.gatepass_id, sv.deleted_at, g.status AS gatepass_status, g.gatepass_number
+           FROM sale_vouchers sv LEFT JOIN gatepasses g ON g.id = sv.gatepass_id WHERE sv.id = ?`
+        )
+        .get(voucherId) as { id: string; voucher_number: string; party_id: string; gatepass_id: string | null; deleted_at: string | null; gatepass_status: string | null; gatepass_number: number | null } | undefined;
+      if (!bill || bill.deleted_at || !bill.gatepass_id) throw new GatepassBillingError("GATEPASS_NOT_FOUND", "This bill was not made from a gatepass, or has been deleted.");
+      if (bill.gatepass_status === "CANCELLED") throw new GatepassBillingError("GATEPASS_CANCELLED", `${formatGatepassCode(Number(bill.gatepass_number))} was cancelled. It cannot be billed.`);
+      if (this.billHasLines(bill.id)) {
+        this.db.exec("COMMIT");
+        return { id: bill.id, voucherNumber: String(bill.voucher_number), duplicate: true };
+      }
+      this.db
+        .prepare("UPDATE sale_vouchers SET book_no = ?, sub_party_name_urdu = ?, remarks = ?, updated_at = ? WHERE id = ?")
+        .run(input.bookNo, input.subPartyNameUrdu || null, input.remarks || null, new Date().toISOString(), bill.id);
+      this.moveGatepassOnBilling(bill.gatepass_id);
+      for (const line of input.lines) this.addVoucherLineItem(bill.id, line);
+      this.assertBillCoversGatepass(bill.id, bill.gatepass_id, input.lines.length);
+      this.assertWithinBalanceLimit(bill.party_id, bill.id);
+      this.db.exec("COMMIT");
+      return { id: bill.id, voucherNumber: String(bill.voucher_number), duplicate: false };
+    } catch (error) {
+      try { this.db.exec("ROLLBACK"); } catch { /* ignore missing transaction state */ }
+      throw error;
+    }
+  },
+
+  /** @internal Every article + size the gatepass sent is on the bill. A line refused here is a part-billed dispatch. */
+  assertBillCoversGatepass(this: SqliteDatabase, voucherId: string, gatepassId: string, lineCount: number): void {
+    const rule = this.voucherGatepassRule(voucherId);
+    const expected = this.gatepassBillQuantities(gatepassId);
+    if (!rule || lineCount === expected.size) return;
+    throw new BillDoesNotMatchGatepassError({
+      mismatch: "LINE_MISSING",
+      gatepassCode: rule.code,
+      line: "",
+      message: `${rule.code} carries ${expected.size} line(s), and this bill has ${lineCount}. A bill must carry everything its gatepass sent.`,
+    });
+  },
+
+  /** @internal Refuses a just-entered bill that takes the party over its limit. Rolled back by the caller. */
+  assertWithinBalanceLimit(this: SqliteDatabase, partyId: string, voucherId: string): void {
+    const party = this.db.prepare("SELECT balance_limit_paisa FROM parties WHERE id = ? AND deleted_at IS NULL LIMIT 1").get(partyId) as { balance_limit_paisa: number | null } | undefined;
+    if (party?.balance_limit_paisa == null) return;
+    const limit = fromPaisa(Number(party.balance_limit_paisa));
+    const projectedBalance = this.getCurrentPartyBalance(partyId);
+    if (projectedBalance <= limit) return;
+    const total = this.db.prepare("SELECT total_amount_paisa FROM sale_vouchers WHERE id = ?").get(voucherId) as { total_amount_paisa: number };
+    const voucherAmount = fromPaisa(Number(total.total_amount_paisa));
+    const currentBalance = subtractMoney(projectedBalance, voucherAmount);
+    throw new PartyBalanceLimitExceededError({
+      currentBalance,
+      voucherAmount,
+      projectedBalance,
+      limit,
+      available: Math.max(0, subtractMoney(limit, currentBalance)),
+      exceeded: subtractMoney(projectedBalance, limit),
+    });
   },
 
   getSaleVoucher(this: SqliteDatabase, voucherId: string): SaleVoucherRecord | null {
@@ -812,6 +959,7 @@ export const salesMethods = {
   addVoucherLineItem(this: SqliteDatabase, voucherId: string, input: { productVariantId: string; quantity: number; unitPrice: number; discount?: number; priceType?: "NORMAL" | "B_TYPE" }): { id: string } {
     // What went out is the gatepass's to say; refused before anything is written.
     this.assertBillLineMatchesGatepass({ voucherId, productVariantId: input.productVariantId, dozens: input.quantity });
+    this.assertBillIsBeingEntered(voucherId);
 
     const id = crypto.randomUUID();
     const now = new Date().toISOString();
@@ -852,6 +1000,20 @@ export const salesMethods = {
     this.recalculateVoucherTotals(voucherId);
 
     return { id };
+  },
+
+  /**
+   * @internal A gatepass's generated bill takes its lines all together, through enterGatepassBill, which moves
+   * the gatepass first. One line slipped in here would debit the customer on a gatepass still open to cancelling.
+   */
+  assertBillIsBeingEntered(this: SqliteDatabase, voucherId: string): void {
+    const open = this.db
+      .prepare(
+        `SELECT 1 AS found FROM sale_vouchers sv JOIN gatepasses g ON g.id = sv.gatepass_id
+         WHERE sv.id = ? AND sv.deleted_at IS NULL AND g.status = 'CREATED' LIMIT 1`
+      )
+      .get(voucherId);
+    if (open) throw new GatepassBillingError("GATEPASS_NOT_FOUND", "Enter the whole bill and save it. Its lines are saved together.");
   },
 
   deleteVoucherLineItem(this: SqliteDatabase, itemId: string): void {
@@ -963,6 +1125,11 @@ export const salesMethods = {
       .get(voucherId) as { id: string } | undefined;
 
     const dispatchedEvents = session ? this.listDispatchedEventsForSession(session.id) : [];
+    // Reversing a QR dispatch moves this computer's carton figure with no movement (docs/42 section 9), so while
+    // carton QR is on hold a bill with QR cartons out on it is refused, and nothing changes.
+    if (this.cartonQrOnHold && dispatchedEvents.length > 0) {
+      throw new Error(`This bill has ${dispatchedEvents.length} carton QR dispatch(es) on it, and carton QR is on hold, so it cannot be deleted now. Nothing was changed.`);
+    }
     const ambiguousEvents = this.findAmbiguousLegacyDispatchEvents(voucherId, voucher.created_at);
 
     this.db.exec("BEGIN IMMEDIATE TRANSACTION");
@@ -1054,7 +1221,7 @@ export const salesMethods = {
       .prepare(
         `SELECT id, voucher_number, voucher_date, book_no, sub_party_name, remarks, total_amount_paisa, total_quantity
          FROM sale_vouchers
-         WHERE party_id = ? AND deleted_at IS NULL AND voucher_date >= ? AND voucher_date <= ?
+         WHERE party_id = ? AND deleted_at IS NULL AND total_amount_paisa <> 0 AND voucher_date >= ? AND voucher_date <= ?
          ORDER BY voucher_date ASC, created_at ASC`
       )
       .all(partyId, fromDate, toDate) as Array<Record<string, unknown>>;
@@ -1235,101 +1402,33 @@ export const salesMethods = {
            p.id AS party_id,
            p.party_name,
            p.city,
-           (
-             SELECT COALESCE(SUM(sv.total_amount_paisa), 0)
-             FROM sale_vouchers sv
-             WHERE sv.party_id = p.id
-               AND sv.deleted_at IS NULL
-               AND sv.voucher_date <= ?
-           ) AS total_sales_paisa,
-           (
-             SELECT COALESCE(SUM(cv.receipt_amount_paisa), 0)
-             FROM cash_vouchers cv
-             WHERE cv.party_id = p.id
-               AND cv.deleted_at IS NULL
-               AND cv.status = 'ACTIVE'
-               AND cv.voucher_date <= ?
-           ) AS total_receipts_paisa,
-           (
-             SELECT COALESCE(SUM(cv.payment_amount_paisa), 0)
-             FROM cash_vouchers cv
-             WHERE cv.party_id = p.id
-               AND cv.deleted_at IS NULL
-               AND cv.status = 'ACTIVE'
-               AND cv.voucher_date <= ?
-           ) AS total_payments_paisa,
-           (
-             SELECT COALESCE(SUM(sr.total_amount_paisa), 0)
-             FROM sale_returns sr
-             WHERE sr.party_id = p.id
-               AND sr.deleted_at IS NULL
-               AND sr.status = 'ACTIVE'
-               AND sr.return_date <= ?
-           ) AS total_returns_paisa,
-           (
-             SELECT COALESCE(SUM(sv.total_amount_paisa), 0)
-             FROM sale_vouchers sv
-             WHERE sv.party_id = p.id
-               AND sv.deleted_at IS NULL
-               AND sv.voucher_date <= ?
-           )
-           + (
-             SELECT COALESCE(SUM(cv.payment_amount_paisa), 0)
-             FROM cash_vouchers cv
-             WHERE cv.party_id = p.id
-               AND cv.deleted_at IS NULL
-               AND cv.status = 'ACTIVE'
-               AND cv.voucher_date <= ?
-           )
-           - (
-             SELECT COALESCE(SUM(cv.receipt_amount_paisa), 0)
-             FROM cash_vouchers cv
-             WHERE cv.party_id = p.id
-               AND cv.deleted_at IS NULL
-               AND cv.status = 'ACTIVE'
-               AND cv.voucher_date <= ?
-           )
-           - (
-             SELECT COALESCE(SUM(sr.total_amount_paisa), 0)
-             FROM sale_returns sr
-             WHERE sr.party_id = p.id
-               AND sr.deleted_at IS NULL
-               AND sr.status = 'ACTIVE'
-               AND sr.return_date <= ?
-           ) AS balance_paisa,
+           ${SALES_PAISA_SQL} AS total_sales_paisa,
+           ${cashPaisaSql("receipt_amount_paisa")} AS total_receipts_paisa,
+           ${cashPaisaSql("payment_amount_paisa")} AS total_payments_paisa,
+           ${RETURNS_PAISA_SQL} AS total_returns_paisa,
+           ${SALES_PAISA_SQL} + ${cashPaisaSql("payment_amount_paisa")} - ${cashPaisaSql("receipt_amount_paisa")} - ${RETURNS_PAISA_SQL} AS balance_paisa,
            (
              SELECT MAX(dt)
              FROM (
                SELECT sv.voucher_date AS dt
                FROM sale_vouchers sv
-               WHERE sv.party_id = p.id AND sv.deleted_at IS NULL AND sv.voucher_date <= ?
+               WHERE sv.party_id = p.id AND sv.deleted_at IS NULL AND sv.total_amount_paisa <> 0 AND sv.voucher_date <= ?1
                UNION ALL
                SELECT cv.voucher_date AS dt
                FROM cash_vouchers cv
-               WHERE cv.party_id = p.id AND cv.deleted_at IS NULL AND cv.status = 'ACTIVE' AND cv.voucher_date <= ?
+               WHERE cv.deleted_at IS NULL AND cv.status = 'ACTIVE' AND cv.voucher_date <= ?1
+                 AND (cv.party_id = p.id OR EXISTS (SELECT 1 FROM cash_voucher_lines l WHERE l.voucher_id = cv.id AND l.party_id = p.id))
                UNION ALL
                SELECT sr.return_date AS dt
                FROM sale_returns sr
-               WHERE sr.party_id = p.id AND sr.deleted_at IS NULL AND sr.status = 'ACTIVE' AND sr.return_date <= ?
+               WHERE sr.party_id = p.id AND sr.deleted_at IS NULL AND sr.status = 'ACTIVE' AND sr.return_date <= ?1
              )
            ) AS last_voucher_date
          FROM parties p
          WHERE p.deleted_at IS NULL AND p.party_type = 'CUSTOMER' AND p.status = 'ACTIVE'
          ORDER BY balance_paisa DESC, p.party_name ASC`
       )
-      .all(
-        asOfDate,
-        asOfDate,
-        asOfDate,
-        asOfDate,
-        asOfDate,
-        asOfDate,
-        asOfDate,
-        asOfDate,
-        asOfDate,
-        asOfDate,
-        asOfDate,
-      ) as Array<Record<string, unknown>>;
+      .all(asOfDate) as Array<Record<string, unknown>>;
 
     return {
       rows: rows.map((row) => ({

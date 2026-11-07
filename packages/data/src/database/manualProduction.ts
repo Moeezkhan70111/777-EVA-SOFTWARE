@@ -12,6 +12,10 @@
 //      event every other computer receives, and the figure Current Stock reads (IN_STORE_STOCK_SQL)
 // The Contractor Ledger and Reconciliation read the entries beside the carton QRs, voided ones never.
 //
+// AN ENTRY STANDS ON ITS OWN (docs/43). It carries its program's number and reference, the machine's name, both
+// contractors and the rates in force when it was saved. So a later price change does not rewrite what a
+// contractor earned, and the entry reads the same on a computer that does not have the program.
+//
 // The quantity is checked by @erp/domain's manualProductionCartons, the same rule the screen shows.
 // Only an existing, active colour of an active product can be stocked — no variant is created here.
 // A Save retried with the same request id returns the entry it already made and adds nothing.
@@ -21,7 +25,7 @@
 import type { SqliteDatabase } from "../sqliteDatabase.js";
 import type { ManualProductionEntry, ManualProductionPage, ManualProductionResult, ProductionReceiptSummaryLine } from "./types.js";
 import { formatMachineProgramCodeNumber } from "@erp/application";
-import { CARTON_STOCK_EVENT_TYPE, businessDayStartIso, cartonsToDozens, formatManualProductionCode, manualProductionCartons } from "@erp/domain";
+import { CARTON_STOCK_EVENT_TYPE, RATE_SOURCE, businessDayStartIso, cartonsToDozens, formatManualProductionCode, manualProductionCartons } from "@erp/domain";
 import { allocateNumberInRange } from "./numberRange.js";
 import { recordCartonStockMovement } from "./cartonStock.js";
 
@@ -51,9 +55,8 @@ export interface ManualProductionInput {
 
 const ENTRY_SELECT = `
   SELECT e.id, e.entry_number, e.article, e.size, e.color, e.cartons, e.entry_ts, e.created_by,
-         e.voided_at, e.voided_by, e.void_reason, mp.program_number, mp.machine_name_snapshot
-  FROM manual_production_entries e
-  JOIN machine_programs mp ON mp.id = e.machine_program_id`;
+         e.voided_at, e.voided_by, e.void_reason, e.program_number, e.machine_name
+  FROM manual_production_entries e`;
 
 const toEntry = (row: Row): ManualProductionEntry => {
   const cartons = Number(row.cartons ?? 0);
@@ -66,7 +69,7 @@ const toEntry = (row: Row): ManualProductionEntry => {
     cartons,
     equivalentDozens: cartonsToDozens(cartons),
     programCode: formatMachineProgramCodeNumber(Number(row.program_number)),
-    machineName: text(row.machine_name_snapshot),
+    machineName: text(row.machine_name),
     enteredAt: text(row.entry_ts),
     enteredBy: textOrNull(row.created_by),
     voidedAt: textOrNull(row.voided_at),
@@ -103,7 +106,7 @@ export const manualProductionMethods = {
       const variant = this.stockableVariant(input.articleSizeId, input.color);
       const nowIso = new Date().toISOString();
       const program = this.openMachineDayProgramInTransaction({ machineId: input.machineId, createdBy: input.createdBy, nowIso });
-      const id = this.insertManualProductionEntry({ requestId, variant, cartons: quantity.cartons, programId: program.id, machineId: input.machineId, storeLocationId, createdBy: input.createdBy, nowIso });
+      const id = this.insertManualProductionEntry({ requestId, variant, cartons: quantity.cartons, programId: program.id, storeLocationId, createdBy: input.createdBy, nowIso });
       recordCartonStockMovement(this.db, {
         variantId: variant.id,
         eventType: CARTON_STOCK_EVENT_TYPE.MANUAL_PRODUCE,
@@ -147,23 +150,51 @@ export const manualProductionMethods = {
   /** @internal Writes the entry under the next number. Call ONLY inside BEGIN IMMEDIATE. */
   insertManualProductionEntry(
     this: SqliteDatabase,
-    input: { requestId: string; variant: StockableVariant; cartons: number; programId: string; machineId: string; storeLocationId: string; createdBy: string | null; nowIso: string }
+    input: { requestId: string; variant: StockableVariant; cartons: number; programId: string; storeLocationId: string; createdBy: string | null; nowIso: string }
   ): string {
     const next = { n: allocateNumberInRange(this, "manualProduction") };
     const id = crypto.randomUUID();
     const { variant } = input;
+    const program = this.db
+      .prepare("SELECT program_number, machine_id, machine_name_snapshot, contractor_party_id, packing_contractor_party_id FROM machine_programs WHERE id = ?")
+      .get(input.programId) as Row;
+    const rates = this.manualProductionRates(input.programId, variant.articleSizeId);
     this.db
       .prepare(
         `INSERT INTO manual_production_entries (
            id, entry_number, request_id, machine_program_id, machine_id, article_size_id, product_variant_id,
-           article, size, color, cartons, stock_location_id, entry_ts, created_by, created_at
-         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+           article, size, color, cartons, stock_location_id, entry_ts, created_by, created_at,
+           program_ref, program_number, machine_name, contractor_party_id, packing_contractor_party_id,
+           machine_rate_paisa, packing_rate_paisa, printing_rate_paisa, rate_source
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
       .run(
-        id, Number(next.n), input.requestId, input.programId, input.machineId, variant.articleSizeId, variant.id,
-        variant.article, variant.size, variant.color, input.cartons, input.storeLocationId, input.nowIso, input.createdBy, input.nowIso
+        id, Number(next.n), input.requestId, input.programId, text(program.machine_id), variant.articleSizeId, variant.id,
+        variant.article, variant.size, variant.color, input.cartons, input.storeLocationId, input.nowIso, input.createdBy, input.nowIso,
+        input.programId, Number(program.program_number), text(program.machine_name_snapshot), textOrNull(program.contractor_party_id), textOrNull(program.packing_contractor_party_id),
+        rates.machine, rates.packing, rates.printing, rates.source
       );
     return id;
+  },
+
+  /**
+   * @internal The rates this work is paid at, as they stand now: what the program agreed for the product, or the
+   * product's standard (Add Product). The same rule the Contractor Ledger reads (docs/28). Copied onto the entry.
+   */
+  manualProductionRates(this: SqliteDatabase, programId: string, articleSizeId: string): { machine: number | null; packing: number | null; printing: number | null; source: string | null } {
+    const agreed = this.db
+      .prepare("SELECT machine_rate_paisa, packing_rate_paisa, printing_rate_paisa FROM machine_program_article_rates WHERE program_id = ? AND article_size_id = ?")
+      .get(programId, articleSizeId) as Row | undefined;
+    const standard = this.db
+      .prepare("SELECT machine_rate_paisa, packing_rate_paisa, printing_rate_paisa FROM article_sizes WHERE id = ?")
+      .get(articleSizeId) as Row | undefined;
+    const row = agreed ?? standard;
+    const paisa = (value: unknown): number | null => (value == null ? null : Number(value));
+    const machine = paisa(row?.machine_rate_paisa);
+    const packing = paisa(row?.packing_rate_paisa);
+    const printing = paisa(row?.printing_rate_paisa);
+    if (machine === null && packing === null && printing === null) return { machine, packing, printing, source: null };
+    return { machine, packing, printing, source: agreed ? RATE_SOURCE.PROGRAM : RATE_SOURCE.PRODUCT };
   },
 
   /** @internal The entry a Save already made, if it was made. */

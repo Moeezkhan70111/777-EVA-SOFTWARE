@@ -57,8 +57,10 @@ export const SaleVoucherFormPage: React.FC<SaleVoucherFormPageProps> = ({ vouche
   /** Starts busy when something is to be opened, so the gatepass picker does not flash first. */
   const [loading, setLoading] = useState(Boolean(voucherId || fromGatepassId));
   const bill = useBillLines(partyId);
-  const balance = usePartyBalance(partyId);
+  const [billsSaved, setBillsSaved] = useState(0);
+  const balance = usePartyBalance(partyId, billsSaved);
 
+  const [billNotEntered, setBillNotEntered] = useState(false);
   /** The gatepass already opened on this mount, so StrictMode's double effect fills the form once. */
   const openedGatepassRef = useRef<string | null>(null);
   const hasBill = Boolean(activeId) || gatepassLink !== null;
@@ -83,7 +85,10 @@ export const SaleVoucherFormPage: React.FC<SaleVoucherFormPageProps> = ({ vouche
   // ── one bill on screen ────────────────────────────────────────────────────
   // A saved bill's less follows the party's rules as they stand when it is opened.
   const showVoucher = async (voucher: SaleVoucher, index: number) => {
-    const lines = await priceSavedLines(api, voucher.partyId, voucher.lineItems);
+    // A gatepass's generated bill has no lines until it is entered: the gatepass says what they are.
+    const notEntered = voucher.lineItems.length === 0 && Boolean(voucher.gatepassId) && voucher.gatepassStatus === "CREATED";
+    const lines = notEntered ? await linesOfGatepass(voucher.gatepassId ?? "") : await priceSavedLines(api, voucher.partyId, voucher.lineItems);
+    setBillNotEntered(notEntered);
     setVoucherNumber(voucher.voucherNumber);
     setPartyId(voucher.partyId);
     setPartySnapshot({ partyName: voucher.partyName, partyCode: "" });
@@ -92,6 +97,15 @@ export const SaleVoucherFormPage: React.FC<SaleVoucherFormPageProps> = ({ vouche
     bill.load(lines);
     setActiveId(voucher.id);
     setCurIdx(index);
+  };
+
+  const linesOfGatepass = async (gatepassId: string): Promise<BillLine[]> => {
+    const gatepass = await api.getGatepass(gatepassId, { token });
+    if (!gatepass) return [];
+    const draft = voucherDraftFromGatepass(gatepass);
+    const { lines, missingRate } = await priceLinesFromGatepass(api, draft.partyId, draft.lines);
+    if (missingRate.length > 0) push("warning", copy.billing.missingRateTitle, copy.billing.missingRateBody(missingRate.join(", ")), 10000);
+    return lines;
   };
 
   const showDraft = (gatepass: Gatepass, lines: BillLine[], nextNumber: string, index: number) => {
@@ -140,6 +154,10 @@ export const SaleVoucherFormPage: React.FC<SaleVoucherFormPageProps> = ({ vouche
     if (!existing) return false;
     const snapshot = await vouchers.refresh();
     const voucher = await loadVoucher(existing.id, snapshot.ids.indexOf(existing.id));
+    if (voucher && voucher.lineItems.length === 0 && voucher.gatepassStatus === "CREATED") {
+      push("success", copy.billing.prefilledTitle(voucher.gatepassCode ?? ""), copy.billing.enterGeneratedBill);
+      return true;
+    }
     // The cancelled-gatepass banner says everything when that is the case.
     if (voucher?.gatepassStatus !== "CANCELLED") push("info", copy.billing.alreadyBilledTitle, copy.billing.alreadyBilledBody(existing.voucherNumber));
     return true;
@@ -299,7 +317,7 @@ export const SaleVoucherFormPage: React.FC<SaleVoucherFormPageProps> = ({ vouche
     return true;
   };
 
-  const explainRefusal = (refusal: Awaited<ReturnType<typeof api.createSaleVoucher>>) => {
+  const explainRefusal = (refusal: Pick<Awaited<ReturnType<typeof api.createSaleVoucher>>, "errorCode" | "reason" | "currentBalance" | "voucherAmount" | "projectedBalance" | "limit" | "available">) => {
     if (refusal.errorCode === "PARTY_BALANCE_LIMIT_EXCEEDED") {
       const money = (value?: number) => formatWholeMoney(value ?? 0);
       push("error", copy.billing.limitExceededTitle, copy.billing.limitExceededBody({ current: money(refusal.currentBalance), voucher: money(refusal.voucherAmount), projected: money(refusal.projectedBalance), limit: money(refusal.limit), available: money(refusal.available) }));
@@ -330,13 +348,26 @@ export const SaleVoucherFormPage: React.FC<SaleVoucherFormPageProps> = ({ vouche
     return created.id;
   };
 
+  /** The gatepass's generated bill, all of it at once. Nothing is saved if any of it is refused. */
+  const enterBill = async (id: string): Promise<boolean> => {
+    const entered = await api.enterGatepassBill(id, { bookNo: fields.bookNo, subPartyNameUrdu: fields.subPartyNameUrdu, remarks: fields.remarks, lines: bill.lines.map(lineInput) });
+    if (!entered.accepted) {
+      explainRefusal(entered);
+      return false;
+    }
+    push("success", copy.toast.created, copy.billing.saved(voucherNumber));
+    return true;
+  };
+
   const save = async () => {
     if (!partyId) { push("error", copy.toast.required, copy.billing.partyRequired); return; }
     if (bill.lines.length === 0) { push("error", copy.billing.noLines, copy.billing.noLinesBody); return; }
     setLoading(true);
     try {
-      const savedId = activeId ? (await saveExisting(activeId) ? activeId : null) : await createNew();
+      const saveActive = billNotEntered ? enterBill : saveExisting;
+      const savedId = activeId ? (await saveActive(activeId) ? activeId : null) : await createNew();
       if (!savedId) return;
+      setBillsSaved((saved) => saved + 1);
       // The saved bill stays on screen, linked to its gatepass, ready to print.
       const snapshot = await vouchers.refresh();
       await loadVoucher(savedId, snapshot.ids.indexOf(savedId));

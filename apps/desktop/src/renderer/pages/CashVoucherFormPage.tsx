@@ -134,6 +134,8 @@ export const CashVoucherFormPage: React.FC<CashVoucherFormPageProps> = ({ vouche
   const [maxVoucherNumber, setMaxVoucherNumber] = useState<number>(1);
 
   const voucherNumInputRef = useRef<HTMLInputElement>(null);
+  /** One press of Save: kept until an answer arrives, so a retry cannot make a second payment. */
+  const saveRequestRef = useRef(crypto.randomUUID());
   const partyFieldRefs = useRef<Record<string, HTMLSelectElement | null>>({});
 
   const updateLine = (lineId: string, changes: Partial<VoucherLine>) => {
@@ -356,6 +358,7 @@ export const CashVoucherFormPage: React.FC<CashVoucherFormPageProps> = ({ vouche
       } else {
         // Create new
         const result = await api.createCashVoucher({
+          requestId: saveRequestRef.current,
           partyId: firstLine.partyId,
           voucherDate,
           modeOfTransfer: firstLine.modeOfTransfer,
@@ -365,6 +368,7 @@ export const CashVoucherFormPage: React.FC<CashVoucherFormPageProps> = ({ vouche
           lines: normalizedLines,
         });
         if (result.accepted && result.voucherId) {
+          saveRequestRef.current = crypto.randomUUID();
           push("success", copy.toast.saved, `Cash voucher #${voucherNumber} created`);
           setCurrentId(result.voucherId);
           // Prepare next blank voucher

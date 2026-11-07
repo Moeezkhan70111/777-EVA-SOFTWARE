@@ -18,10 +18,19 @@ const GUARDED_MODULES = [
   "rawMaterials", "rawMaterialQr", "store", "parties", "machinePrograms", "upperMoveOut", "syncWaiting", "backfill",
   // Carton stock (docs/42): Manual Production and gatepasses move the carton figure.
   "manualProduction", "gatepass",
+  // The production-to-cash workflow (docs/43): products, bills and cash vouchers replicate.
+  "products", "sales", "cash",
 ];
 
 /** Channels these modules register that only read. Checked by hand, one by one. */
 const READS = new Set([
+  // products
+  "listProducts", "getProduct", "getSaleableVariant", "listProductListEntries", "getProductImage", "saveRateList", "listProductGroups",
+  "listArticleSeries", "listProductTypes", "listProductSubGroups", "listMainGroups", "listUniqueArticles", "listUniqueSizesByArticle", "listUniqueColorsByArticle",
+  // sales
+  "listSaleReturns", "getPartyDiscountReport", "resolveProductDiscount", "resolveProductDiscountWithPrice", "findSaleVoucherByGatepass", "getSaleVoucher", "listSaleVouchers",
+  // cash
+  "getNextCashVoucherNumber", "getCashVoucher", "getCashVoucherByNumber", "listCashVouchers", "getCustomerLedgerWithCash",
   // rawMaterials
   "listInventoryUnits", "listWorkSections", "listRawMaterialMovementConfig", "getRawMaterialSetupTemplate",
   "listInventoryUnitConversions", "listInventoryCategories", "inventoryFieldOptionUsage", "inventoryItemDeleteBlockers",
@@ -119,14 +128,30 @@ describe("lease classification", () => {
     expect(leasesFor(IPC.storeEntryScan)).toEqual([]);
   });
 
-  it("only Milestone 1's two domains and carton stock are enforced", () => {
+  it("the domains that replicate are enforced, and the two that do not yet are not", () => {
     const domains = new Set(Object.values(LEASED_CHANNELS).flat());
-    expect([...domains].sort()).toEqual([LEASE_DOMAIN.CARTON_STOCK, LEASE_DOMAIN.MASTER_DATA, LEASE_DOMAIN.RAW_MATERIAL_STORE]);
+    expect([...domains].sort()).toEqual([LEASE_DOMAIN.ACCOUNTS, LEASE_DOMAIN.CARTON_STOCK, LEASE_DOMAIN.MASTER_DATA, LEASE_DOMAIN.RAW_MATERIAL_STORE, LEASE_DOMAIN.SALES_DISPATCH]);
+  });
+
+  it("the production-to-cash workflow writes only under the lease of what it writes (docs/43)", () => {
+    for (const channel of [IPC.createSaleVoucher, IPC.enterGatepassBill, IPC.updateSaleVoucher, IPC.addVoucherLineItem, IPC.updateVoucherLineItem, IPC.deleteVoucherLineItem, IPC.deleteSaleVoucher]) {
+      expect(leasesFor(channel)).toEqual([LEASE_DOMAIN.SALES_DISPATCH]);
+    }
+    for (const channel of [IPC.createCashVoucher, IPC.updateCashVoucher, IPC.deleteCashVoucher]) {
+      expect(leasesFor(channel)).toEqual([LEASE_DOMAIN.ACCOUNTS]);
+    }
+    for (const channel of [IPC.createProduct, IPC.updateProduct, IPC.disableProduct, IPC.enableProduct]) {
+      expect(leasesFor(channel)).toEqual([LEASE_DOMAIN.MASTER_DATA]);
+    }
   });
 
   it("every movement of the carton figure needs the carton lease, and nothing else does (docs/42)", () => {
-    for (const channel of [IPC.recordManualProduction, IPC.voidManualProduction, IPC.adjustCartonStock, IPC.createGatepass, IPC.cancelGatepass]) {
+    for (const channel of [IPC.recordManualProduction, IPC.voidManualProduction, IPC.adjustCartonStock]) {
       expect(leasesFor(channel)).toEqual([LEASE_DOMAIN.CARTON_STOCK]);
+    }
+    // A gatepass also needs the sales lease: it is a sales document, and it makes a bill (docs/43).
+    for (const channel of [IPC.createGatepass, IPC.cancelGatepass]) {
+      expect(leasesFor(channel)).toEqual([LEASE_DOMAIN.CARTON_STOCK, LEASE_DOMAIN.SALES_DISPATCH]);
     }
     expect(leasesFor(IPC.listManualProduction)).toEqual([]);
     expect(leasesFor(IPC.getCartonStockReconciliation)).toEqual([]);

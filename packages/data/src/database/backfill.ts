@@ -29,7 +29,7 @@
 
 import { stockEventBalanceDelta } from "@erp/domain";
 import { MASTER_RECORD_TYPES, MASTER_RECORDS, type BuildHandle, type MasterRecordType } from "./masterRecords.js";
-import { enqueueProductVariant, heldLeaseEpoch, LEASE_DOMAIN, SYNC_AGGREGATE } from "./syncEvents.js";
+import { enqueueProductVariant, heldLeaseEpoch, LEASE_DOMAIN, leaseDomainOf, SYNC_AGGREGATE } from "./syncEvents.js";
 
 /** Where the last completed backfill is recorded (app_settings: per computer, never replicated). */
 export const BACKFILL_SETTING_KEY = "sync.backfill.last";
@@ -158,7 +158,7 @@ export function runBackfill(db: BuildHandle, nowIso: string): BackfillOutcome {
 
   db.exec("BEGIN IMMEDIATE");
   try {
-    markEverything(db, plan.masterEpoch, plan.storeEpoch, nowIso);
+    markEverything(db, plan.storeEpoch, nowIso);
     markLabels(db, plan.storeEpoch, nowIso);
     queueVariants(db);
     db.prepare(
@@ -227,10 +227,15 @@ function queueVariants(db: BuildHandle): void {
   }
 }
 
-function markEverything(db: BuildHandle, masterEpoch: number, storeEpoch: number, nowIso: string): void {
+function markEverything(db: BuildHandle, storeEpoch: number, nowIso: string): void {
   for (const type of MASTER_RECORD_TYPES) {
+    // Under the lease that type is written under. Documents of a lease not held here wait: running this again on
+    // the computer that holds it sends them, and a record already sent simply travels as its next revision.
+    const domain = leaseDomainOf(type);
+    const epoch = domain === null ? null : heldLeaseEpoch(db, domain);
+    if (epoch === null) continue;
     // "WHERE true": SQLite reads ON CONFLICT after a bare FROM as a join constraint.
-    db.prepare(MARK.replace("{table}", MASTER_RECORDS[type].table).replace("{where}", "WHERE true")).run(type, masterEpoch, nowIso);
+    db.prepare(MARK.replace("{table}", MASTER_RECORDS[type].table).replace("{where}", "WHERE true")).run(type, epoch, nowIso);
   }
   // Only movements recorded here: one received from another computer is already in the cloud.
   db.prepare(MARK.replace("{table}", "inventory_stock_events").replace("{where}", "WHERE replicated_at IS NULL"))

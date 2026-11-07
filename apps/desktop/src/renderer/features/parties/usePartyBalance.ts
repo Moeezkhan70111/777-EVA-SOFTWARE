@@ -13,7 +13,8 @@ export type PartyBalanceState =
   | { status: "error" }
   | { status: "hidden" };
 
-export const usePartyBalance = (partyId: string): PartyBalanceState => {
+/** `freshness`: change it to read again, after something on this screen moved the balance. */
+export const usePartyBalance = (partyId: string, freshness = 0): PartyBalanceState => {
   const api = useDesktopApi();
   const shown = useLedgersShown();
   const [state, setState] = useState<PartyBalanceState>({ status: "idle" });
@@ -40,7 +41,7 @@ export const usePartyBalance = (partyId: string): PartyBalanceState => {
     return () => {
       cancelled = true;
     };
-  }, [api, partyId, shown]);
+  }, [api, partyId, shown, freshness]);
 
   return state;
 };

@@ -2568,6 +2568,11 @@ export interface DesktopApi {
   listSaleVouchers(query: Record<string, unknown>): Promise<PagedResult<SaleVoucherListRow>>;
   updateSaleVoucher(voucherId: string, input: Record<string, unknown>): Promise<{ accepted: boolean; reason?: string }>;
   addVoucherLineItem(voucherId: string, input: Record<string, unknown>): Promise<{ accepted: boolean; id?: string; reason?: string; errorCode?: string; requestedDiscount?: number; allowedMaximum?: number; exceededBy?: number }>;
+  /** Enters a gatepass's generated bill: every line together, or none. Entering it twice debits once. */
+  enterGatepassBill(voucherId: string, input: { bookNo: string; subPartyNameUrdu?: string; remarks?: string; lines: Array<Record<string, unknown>> }): Promise<{
+    accepted: boolean; id?: string; voucherNumber?: string; duplicate?: boolean; reason?: string; errorCode?: string;
+    currentBalance?: number; voucherAmount?: number; projectedBalance?: number; limit?: number; available?: number;
+  }>;
   updateVoucherLineItem(itemId: string, input: Record<string, unknown>): Promise<{ accepted: boolean; reason?: string; errorCode?: string; requestedDiscount?: number; allowedMaximum?: number; exceededBy?: number }>;
   deleteVoucherLineItem(itemId: string): Promise<{ accepted: boolean; reason?: string }>;
   deleteSaleVoucher(voucherId: string): Promise<{ accepted: boolean; reason?: string; cancelled?: boolean; reversedEventCount?: number; ambiguousDispatchEventIds?: string[] }>;

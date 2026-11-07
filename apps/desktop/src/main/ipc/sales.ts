@@ -3,7 +3,7 @@
 // IPC handlers are registered per feature; every write is authorised through ctx.authorizer
 // (see ../authorize.ts) and every channel name comes from shared/ipcChannels.ts.
 
-import { ipcMain } from "electron";
+import { ipcMain } from "../leaseGuard";
 import { businessToday } from "@erp/domain";
 import { IPC } from "../../shared/ipcChannels";
 import type { IpcContext } from "./context";
@@ -372,6 +372,39 @@ export function registerSalesHandlers(ctx: IpcContext): void {
         message: error instanceof Error ? error.message : "Failed to add line item",
       });
       return { accepted: false, reason: error instanceof Error ? error.message : "Failed to add line item" };
+    }
+  });
+
+  // Bill entry (docs/43): the whole bill in one transaction, read and checked here as addVoucherLineItem reads one line.
+  ipcMain.handle(IPC.enterGatepassBill, (event, voucherId?: string, input?: Record<string, unknown>) => {
+    try {
+      authorizer.requirePermission(event, PERMISSION.SALE_VOUCHER_FORM);
+      if (typeof voucherId !== "string" || !voucherId.trim()) return { accepted: false, reason: "Voucher ID is required" };
+      const rawLines = Array.isArray(input?.lines) ? (input.lines as Array<Record<string, unknown>>) : [];
+      const lines = rawLines.map((line) => {
+        const priceType: "NORMAL" | "B_TYPE" = line?.priceType === "B_TYPE" ? "B_TYPE" : "NORMAL";
+        return {
+          productVariantId: typeof line?.productVariantId === "string" ? line.productVariantId : "",
+          quantity: Number.isFinite(line?.quantity) ? Number(line.quantity) : 0,
+          unitPrice: Number.isFinite(line?.unitPrice) ? Number(line.unitPrice) : 0,
+          discount: priceType === "B_TYPE" ? 0 : (Number.isFinite(line?.discount) ? Number(line.discount) : 0),
+          priceType,
+        };
+      });
+      if (lines.length === 0 || lines.some((line) => !line.productVariantId || line.quantity <= 0)) return { accepted: false, reason: "Invalid product or quantity" };
+      const result = db.enterGatepassBill(voucherId, {
+        bookNo: typeof input?.bookNo === "string" ? input.bookNo.trim() : "",
+        subPartyNameUrdu: typeof input?.subPartyNameUrdu === "string" ? input.subPartyNameUrdu : undefined,
+        remarks: typeof input?.remarks === "string" ? input.remarks : undefined,
+        lines,
+      });
+      logger.log({ module: "billing", severity: "INFO", operation: "enter-bill", deviceId, message: `Bill ${result.voucherNumber} entered${result.duplicate ? " already" : ""}` });
+      return { accepted: true, ...result };
+    } catch (error) {
+      const known = isPartyBalanceLimitError(error) || isGatepassBillingError(error) || isBillGatepassMismatchError(error) || isDiscountExceedsAllowedError(error);
+      logger.log({ module: "billing", severity: known ? "INFO" : "ERROR", operation: "enter-bill", deviceId, message: error instanceof Error ? error.message : "Failed to enter the bill" });
+      if (isPartyBalanceLimitError(error)) return { accepted: false, errorCode: error.code, reason: error.message, ...error.figures };
+      return { accepted: false, reason: error instanceof Error ? error.message : "Failed to enter the bill" };
     }
   });
 

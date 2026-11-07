@@ -7,6 +7,10 @@ import { formatDate, formatMonth, toIsoDate } from "../utils/dates";
 import { formatWholeMoney } from "../app/format";
 import { copy } from "../config/copy";
 import { downloadCsv } from "../utils/exportFile";
+import { useDataChanged } from "../hooks/useDataChanged";
+import { DATA_KIND } from "../../shared/dataChange";
+
+const MONEY_CHANGES = [DATA_KIND.BILLING, DATA_KIND.CASH];
 
 interface CustomerLedgerPageProps { onNavigate: (route: AppRoute, id?: string) => void; }
 type LedgerType = "SALE" | "CASH_RECEIPT" | "CASH_PAYMENT";
@@ -243,8 +247,10 @@ export const CustomerLedgerPage: React.FC<CustomerLedgerPageProps> = ({ onNaviga
   const api = useDesktopApi();
   const [parties, setParties] = useState<Party[]>([]); const [selectedPartyId, setSelectedPartyId] = useState(""); const [fromDate, setFromDate] = useState("2026-01-01"); const [toDate, setToDate] = useState(toIsoDate());
   const [entries, setEntries] = useState<LedgerEntry[]>([]); const [openingBalance, setOpeningBalance] = useState(0); const [closingBalance, setClosingBalance] = useState(0); const [partyName, setPartyName] = useState(""); const [balanceLimit, setBalanceLimit] = useState<number | null>(null); const [loading, setLoading] = useState(false); const [search, setSearch] = useState(""); const [typeFilter, setTypeFilter] = useState("ALL"); const [page, setPage] = useState(1); const [pageSize, setPageSize] = useState(10); const [activeTab, setActiveTab] = useState("Ledger"); const [detailVoucher, setDetailVoucher] = useState<{ voucher: CashVoucher | SaleVoucher; type: LedgerType } | null>(null);
+  const [arrivals, setArrivals] = useState(0);
   useEffect(() => { void api.listParties({ pageSize: 1000 }).then((result) => setParties(result.rows.filter((party) => party.partyType === "CUSTOMER"))); }, [api]);
-  useEffect(() => { if (!selectedPartyId) { setEntries([]); setPartyName(""); setOpeningBalance(0); setClosingBalance(0); setBalanceLimit(null); return; } setLoading(true); void api.getCustomerLedgerWithCash(selectedPartyId, { fromDate, toDate }).then((result) => { setEntries(result.entries as LedgerEntry[]); setPartyName(result.partyName); setOpeningBalance(result.openingBalance); setClosingBalance(result.closingBalance); setBalanceLimit(result.balanceLimit ?? null); }).catch(() => { setEntries([]); setPartyName(""); setOpeningBalance(0); setClosingBalance(0); setBalanceLimit(null); }).finally(() => setLoading(false)); }, [api, selectedPartyId, fromDate, toDate]);
+  useEffect(() => { if (!selectedPartyId) { setEntries([]); setPartyName(""); setOpeningBalance(0); setClosingBalance(0); setBalanceLimit(null); return; } setLoading(true); void api.getCustomerLedgerWithCash(selectedPartyId, { fromDate, toDate }).then((result) => { setEntries(result.entries as LedgerEntry[]); setPartyName(result.partyName); setOpeningBalance(result.openingBalance); setClosingBalance(result.closingBalance); setBalanceLimit(result.balanceLimit ?? null); }).catch(() => { setEntries([]); setPartyName(""); setOpeningBalance(0); setClosingBalance(0); setBalanceLimit(null); }).finally(() => setLoading(false)); }, [api, selectedPartyId, fromDate, toDate, arrivals]);
+  useDataChanged(MONEY_CHANGES, () => setArrivals((seen) => seen + 1));
   useEffect(() => { setPage(1); }, [search, typeFilter, selectedPartyId, fromDate, toDate]);
   const party = parties.find((item) => item.id === selectedPartyId);
   const filteredEntries = useMemo(() => entries.filter((entry) => { const query = search.trim().toLowerCase(); return (!query || [entry.voucherNumber, entry.description, entry.modeOfTransfer || "", typeLabel(entry.voucherType)].some((value) => value.toLowerCase().includes(query))) && (typeFilter === "ALL" || entry.voucherType === typeFilter); }), [entries, search, typeFilter]);

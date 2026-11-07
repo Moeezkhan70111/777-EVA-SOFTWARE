@@ -56,8 +56,10 @@ const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 // assigned now (the next program will be made with them).
 const ROLE_SQL = {
   machine: `(EXISTS (SELECT 1 FROM machine_programs mp WHERE mp.contractor_party_id = p.id)
+             OR EXISTS (SELECT 1 FROM manual_production_entries me WHERE me.contractor_party_id = p.id)
              OR EXISTS (SELECT 1 FROM machines m WHERE m.contractor_party_id = p.id))`,
   packing: `(EXISTS (SELECT 1 FROM machine_programs mp WHERE mp.packing_contractor_party_id = p.id)
+             OR EXISTS (SELECT 1 FROM manual_production_entries me WHERE me.packing_contractor_party_id = p.id)
              OR EXISTS (SELECT 1 FROM machines m WHERE m.packing_contractor_party_id = p.id))`,
 };
 
@@ -68,7 +70,9 @@ const ACCOUNTS_SQL = `
   FROM parties p
   WHERE p.deleted_at IS NULL AND p.party_type = 'CONTRACTOR'
     AND (p.status = 'ACTIVE' OR EXISTS (SELECT 1 FROM machine_programs mp
-          WHERE mp.contractor_party_id = p.id OR mp.packing_contractor_party_id = p.id))`;
+          WHERE mp.contractor_party_id = p.id OR mp.packing_contractor_party_id = p.id)
+        OR EXISTS (SELECT 1 FROM manual_production_entries me
+          WHERE me.contractor_party_id = p.id OR me.packing_contractor_party_id = p.id))`;
 
 // Every carton printed for a machine program that Store In has received, with the program's
 // contractors and both rates its jobs could be paid at. "Received" is the same fact the program
@@ -81,6 +85,11 @@ const ACCOUNTS_SQL = `
 // MANUAL PRODUCTION (migration 080) is work too: an entry is cartons produced on a machine's program
 // and stocked the moment it is saved, so it is dated by when it was saved and paid at the same program
 // or product rate. It is one row standing for its `cartons` — a carton QR row stands for 1.
+//
+// AN ENTRY PAYS AT THE RATES COPIED ONTO IT WHEN IT WAS SAVED (docs/43), so a later price change does not
+// rewrite what a contractor earned. Its contractors and program come from the entry too, because the
+// program does not replicate. A job with no copied rate, which is any entry saved before migration 104 or a job
+// nobody had priced, is priced the old way: the program's rate, then the product's standard.
 //
 // WHICH PROGRAM A CARTON RUN BELONGS TO — three sources, and a run is only ever in ONE of them:
 //
@@ -116,6 +125,7 @@ const CARTONS_SQL = `
            (SELECT MIN(pe.event_ts_local) FROM production_events pe
              WHERE pe.qr_id = qc.id AND pe.event_type = 'MOVED'
                AND json_extract(pe.metadata_json, '$.eventType') = 'STORE_ENTRY') AS received_at,
+           NULL AS saved_source, NULL AS saved_machine, NULL AS saved_packing, NULL AS saved_printing,
            r.id AS program_rate_id,
            r.machine_rate_paisa AS program_machine, r.packing_rate_paisa AS program_packing, r.printing_rate_paisa AS program_printing,
            asz.machine_rate_paisa AS standard_machine, asz.packing_rate_paisa AS standard_packing, asz.printing_rate_paisa AS standard_printing,
@@ -131,19 +141,18 @@ const CARTONS_SQL = `
     WHERE qb.grade IS NULL
       AND (?1 = '${PRINTING_CONTRACTOR_ACCOUNT_ID}' OR mp.contractor_party_id = ?1 OR mp.packing_contractor_party_id = ?1)
     UNION ALL
-    SELECT mp.id, mp.program_number, COALESCE(m.name, ''), mp.contractor_party_id, mp.packing_contractor_party_id,
+    SELECT me.program_ref, me.program_number, me.machine_name, me.contractor_party_id, me.packing_contractor_party_id,
            me.article_size_id, me.article, me.size, me.entry_ts,
+           me.rate_source, me.machine_rate_paisa, me.packing_rate_paisa, me.printing_rate_paisa,
            r.id, r.machine_rate_paisa, r.packing_rate_paisa, r.printing_rate_paisa,
            asz.machine_rate_paisa, asz.packing_rate_paisa, asz.printing_rate_paisa,
            me.cartons
     FROM manual_production_entries me
-    JOIN machine_programs mp ON mp.id = me.machine_program_id
-    LEFT JOIN machines m ON m.id = mp.machine_id
-    LEFT JOIN machine_program_article_rates r ON r.program_id = mp.id AND r.article_size_id = me.article_size_id
+    LEFT JOIN machine_program_article_rates r ON r.program_id = me.machine_program_id AND r.article_size_id = me.article_size_id
     LEFT JOIN article_sizes asz ON asz.id = me.article_size_id
     -- A voided entry was never produced (owner, 2026-11-03): nobody is owed for it, paid or not.
     WHERE me.${LIVE_MANUAL_ENTRY_SQL}
-      AND (?1 = '${PRINTING_CONTRACTOR_ACCOUNT_ID}' OR mp.contractor_party_id = ?1 OR mp.packing_contractor_party_id = ?1)
+      AND (?1 = '${PRINTING_CONTRACTOR_ACCOUNT_ID}' OR me.contractor_party_id = ?1 OR me.packing_contractor_party_id = ?1)
   ) WHERE received_at IS NOT NULL`;
 
 // Every active cash voucher that names the contractor, on its header or on one of its lines.
@@ -172,11 +181,13 @@ const JOB_COLUMN: Record<ContractorRole, string> = {
 };
 
 /**
- * The rate one job on this carton is paid at: what the program agreed for the article, or the
- * product's standard when the program was never priced for it — or none at all.
+ * The rate one job on this carton is paid at: the rate saved on a Manual Production entry, else what the
+ * program agreed for the article, else the product's standard — or none at all.
  */
 const rateFor = (row: Record<string, unknown>, role: ContractorRole): { ratePaisa: number | null; rateSource: RateSource | null } => {
   const job = JOB_COLUMN[role];
+  const saved = row[`saved_${job}`];
+  if (row.saved_source && saved != null) return { ratePaisa: Number(saved), rateSource: text(row.saved_source) as RateSource };
   if (row.program_rate_id) return { ratePaisa: Number(row[`program_${job}`] ?? 0), rateSource: RATE_SOURCE.PROGRAM };
   const standard = row[`standard_${job}`];
   if (standard != null) return { ratePaisa: Number(standard), rateSource: RATE_SOURCE.PRODUCT };

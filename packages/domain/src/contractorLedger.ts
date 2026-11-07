@@ -209,9 +209,11 @@ export interface ContractorWorkDay {
 }
 
 const lineKey = (carton: ContractorWorkCarton): string =>
-  [carton.programId, carton.role, carton.articleSizeId].join("|");
+  // The rate too: a Manual Production entry keeps the rate it was saved at, so one day's work on one
+  // article can be at two rates, and each must be charged at its own (docs/43).
+  [carton.programId, carton.role, carton.articleSizeId, carton.ratePaisa ?? ""].join("|");
 
-/** One line per program × job × article, with its cartons counted. */
+/** One line per program × job × article × rate, with its cartons counted. */
 const linesOf = (cartons: readonly ContractorWorkCarton[]): ContractorWorkLine[] => {
   const counted = new Map<string, { carton: ContractorWorkCarton; count: number }>();
   for (const carton of cartons) {

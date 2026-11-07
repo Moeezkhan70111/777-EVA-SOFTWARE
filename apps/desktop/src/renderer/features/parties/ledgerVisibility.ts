@@ -2,19 +2,16 @@ import { LEASE_DOMAIN } from "@erp/domain";
 import type { AppRoute } from "../../app/routes";
 import { useHeldLease } from "../sync/useHeldLease";
 
-// Party ledgers and balances show only on the computer holding the Accounts lease, where the
-// vouchers are. Anywhere else the figure would be computed from vouchers that are not there, and a
-// wrong balance on screen is worse than none. The ledgers are out of use until they are restarted,
-// so this hides them rather than guarding them: the pages, their entries in the sidebar and on Home,
-// and the balance on a party card or a cash voucher line.
+// Customer and contractor ledgers show on every computer: their bills, payments and production entries now
+// travel (docs/43). Supplier ledgers show only on the computer holding the Accounts lease, because purchase vouchers
+// do not travel: anywhere else the figure would be computed from vouchers that are not there, and a wrong
+// balance on screen is worse than none. The balance on a party card or a cash voucher line can be any party's, so
+// it stays on the holder too.
 
-/** Every screen that shows a party's ledger or balance. */
+/** The screens whose figures are right only where the purchase vouchers are. */
 export const LEDGER_ROUTES: ReadonlySet<AppRoute> = new Set<AppRoute>([
-  "customer-ledger",
-  "customer-balance",
   "supplier-ledger",
   "supplier-balance",
-  "contractor-ledger",
 ]);
 
 const NO_ROUTES: ReadonlySet<AppRoute> = new Set<AppRoute>();

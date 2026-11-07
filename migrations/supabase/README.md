@@ -6,14 +6,14 @@
   `check_accounts.sql`, `check_permission_requests.sql`, `check_first_admin.sql`, `check_suggested_access.sql`
   and `check_number_blocks.sql` pass. `024` is applied (its email check is in `make_first_admin`).
   `025` applied 3 Nov: `check_role_codes.sql` stopped at its step 3 before it and passes after it;
-  `check_accounts.sql` passes after it too. `026` applied to test 3 Nov and `027` on 6 Nov; `check_carton_stock_events.sql` covers both.
+  `check_accounts.sql` passes after it too. `026` applied to test 3 Nov, `027` on 6 Nov, `028` on 7 Nov; `check_carton_stock_events.sql` covers 026 and 027.
 - **Production** (`ykhvbmhmeefdtrzqeoxm`): the baseline and `002`–`018` applied 31 Oct, `factory-777`
   seeded, `verify_applied_state.sql` 34/34. No devices enrolled and no business data yet. The
   `check_*.sql` scripts are never run here.
 
 Apply in this order, in the Supabase SQL editor, on an **empty** project, one file at a time:
 
-`schema.sql` → `002` → `003` → … → `019` → `020` → `021` → `022` → `023` → `024` → `025` → `026`
+`schema.sql` → `002` → `003` → … → `019` → `020` → `021` → `022` → `023` → `024` → `025` → `026` → `027` → `028`
 
 After each one, run `verify_applied_state.sql`. Its header lists exactly which checks a project
 one migration behind fails, so a half-applied project is diagnosed rather than guessed at. The
@@ -81,7 +81,9 @@ changes would have to discard data to succeed, and they are written to fail inst
 
 `027_carton_stock_adjustments.up.sql` follows `026`: an administrator's carton adjustment reaches every computer, with who and why (docs/42 section 11). Test only. Not on production.
 
-**Reverse in the opposite order: `027` → `026` → `025` → `024` → `023` → `022` → `021` → `020` → `019` → `018` → … → `003` → `002`.** Each down file's header
+`028_production_to_cash_records.up.sql` follows `027`: products, Manual Production entries, gatepasses, bills and cash vouchers become leased records under 013's push (docs/43). Rows only, no new function. Test only. Not on production.
+
+**Reverse in the opposite order: `028` → `027` → `026` → `025` → `024` → `023` → `022` → `021` → `020` → `019` → `018` → … → `003` → `002`.** Each down file's header
 says what reversing it costs: `018`'s re-opens the PC2/PC3 failure, for example. Reversing `005`
 re-opens the cross-factory read, and reversing `006` re-opens unbound access, re-enables any
 device revoked before the rollback and discards the claim audit. Both headers say so. `004_rls_policies.down.sql` revokes a

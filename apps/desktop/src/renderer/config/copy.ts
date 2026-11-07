@@ -845,6 +845,7 @@ export const copy = {
     alreadyBilledBody: (voucherNumber: string) => `Sale Voucher #${voucherNumber} was already made from this gatepass — opened it instead.`,
     gatepassNotFound: "This gatepass could not be found.",
     gatepassCancelledNoBill: (code: string) => `${code} was cancelled and no bill was made from it — nothing to do.`,
+    enterGeneratedBill: "This gatepass's bill is ready. Check the rates, then save: that is what puts it on the customer's ledger.",
     prefilledTitle: (code: string) => `Filled from Gatepass ${code}`,
     prefilledBody: (lines: number) => `${lines} ${lines === 1 ? "line" : "lines"} added with the party's rates and discounts. Check, save and print.`,
     missingRateTitle: "Rate missing",

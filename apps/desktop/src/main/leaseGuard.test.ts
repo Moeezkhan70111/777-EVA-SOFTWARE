@@ -134,7 +134,7 @@ describe("carton QR on hold (docs/42 section 9)", () => {
   it("leaves labels, lookups and raw material QR working", async () => {
     const { ipcMain, installLeaseGate } = await loadGuard();
     installLeaseGate({ db, deviceId: "desktop-store", dataRoot: "C:/erp" });
-    for (const channel of [IPC.generateQrBatch, IPC.searchQrCodes, IPC.getQrDetail, IPC.getQrJourney, IPC.voidQrCode, IPC.restoreQrCode, IPC.returnLookup, IPC.listProductionReceipts]) {
+    for (const channel of [IPC.searchQrCodes, IPC.getQrDetail, IPC.getQrJourney, IPC.voidQrCode, IPC.restoreQrCode, IPC.returnLookup, IPC.listProductionReceipts]) {
       const listener = vi.fn(() => "worked");
       ipcMain.handle(channel, listener);
       await expect(Promise.resolve(registered.get(channel)?.(event))).resolves.toBe("worked");

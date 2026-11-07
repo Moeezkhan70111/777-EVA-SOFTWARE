@@ -35,9 +35,9 @@ describe("HomePage", () => {
     ]);
   });
 
-  it("leaves out the pages this computer does not offer, whatever the role: the ledgers off the Accounts holder", () => {
+  it("leaves out the pages this computer does not offer, whatever the role: supplier ledgers off the Accounts holder", () => {
     render(<HomePage user={user(["sale-voucher-form", "customer-ledger", "supplier-balance"])} onNavigate={vi.fn()} hiddenRoutes={LEDGER_ROUTES} listAllPages />);
-    expect(screen.getAllByRole("button").map((tile) => tile.querySelector("strong")?.textContent)).toEqual(["Sale Voucher"]);
+    expect(screen.getAllByRole("button").map((tile) => tile.querySelector("strong")?.textContent)).toEqual(["Sale Voucher", "Customer Ledger"]);
   });
 
   it("opens the page behind a tile", () => {

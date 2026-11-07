@@ -21,7 +21,17 @@ export type MasterRecordType =
   | typeof SYNC_AGGREGATE.INVENTORY_CATEGORY
   | typeof SYNC_AGGREGATE.INVENTORY_ITEM
   | typeof SYNC_AGGREGATE.WORK_SECTION
-  | typeof SYNC_AGGREGATE.MACHINE;
+  | typeof SYNC_AGGREGATE.MACHINE
+  | typeof SYNC_AGGREGATE.MAIN_GROUP
+  | typeof SYNC_AGGREGATE.PRODUCT_GROUP
+  | typeof SYNC_AGGREGATE.ARTICLE_SERIES
+  | typeof SYNC_AGGREGATE.PRODUCT_TYPE
+  | typeof SYNC_AGGREGATE.PRODUCT_SUB_GROUP
+  | typeof SYNC_AGGREGATE.ARTICLE_SIZE
+  | typeof SYNC_AGGREGATE.MANUAL_PRODUCTION_ENTRY
+  | typeof SYNC_AGGREGATE.GATEPASS
+  | typeof SYNC_AGGREGATE.SALE_VOUCHER
+  | typeof SYNC_AGGREGATE.CASH_VOUCHER;
 
 /** A column naming another record that must be on this computer before this row can be written. */
 export interface RecordReference {
@@ -38,9 +48,24 @@ export interface RecordTableSpec {
   readonly parentColumn?: string;
   readonly references?: readonly RecordReference[];
   readonly children?: readonly RecordTableSpec[];
+  /**
+   * Columns that mean something only on this computer, and never travel: a Manual Production entry's link
+   * to a machine program, which does not replicate. A receiver leaves its own value alone.
+   */
+  readonly localColumns?: readonly string[];
 }
 
 const unitRef = (column: string): RecordReference => ({ column, table: "inventory_units", record: SYNC_AGGREGATE.INVENTORY_UNIT });
+const partyRef = (column: string): RecordReference => ({ column, table: "parties", record: SYNC_AGGREGATE.PARTY });
+const variantRef: RecordReference = { column: "product_variant_id", table: "product_variants", record: SYNC_AGGREGATE.ARTICLE_SIZE };
+/** What a product and its colours are classified by. */
+const PRODUCT_GROUPING: readonly RecordReference[] = [
+  { column: "main_group_id", table: "main_groups", record: SYNC_AGGREGATE.MAIN_GROUP },
+  { column: "product_group_id", table: "product_groups", record: SYNC_AGGREGATE.PRODUCT_GROUP },
+  { column: "article_series_id", table: "article_series", record: SYNC_AGGREGATE.ARTICLE_SERIES },
+  { column: "product_type_id", table: "product_types", record: SYNC_AGGREGATE.PRODUCT_TYPE },
+  { column: "product_sub_group_id", table: "product_sub_groups", record: SYNC_AGGREGATE.PRODUCT_SUB_GROUP },
+];
 
 /**
  * Every master record type, IN PREREQUISITE ORDER: a record only refers to types before it, except
@@ -56,6 +81,16 @@ export const MASTER_RECORD_TYPES: readonly MasterRecordType[] = [
   SYNC_AGGREGATE.PARTY,
   SYNC_AGGREGATE.INVENTORY_ITEM,
   SYNC_AGGREGATE.MACHINE,
+  SYNC_AGGREGATE.MAIN_GROUP,
+  SYNC_AGGREGATE.PRODUCT_GROUP,
+  SYNC_AGGREGATE.ARTICLE_SERIES,
+  SYNC_AGGREGATE.PRODUCT_TYPE,
+  SYNC_AGGREGATE.PRODUCT_SUB_GROUP,
+  SYNC_AGGREGATE.ARTICLE_SIZE,
+  SYNC_AGGREGATE.MANUAL_PRODUCTION_ENTRY,
+  SYNC_AGGREGATE.GATEPASS,
+  SYNC_AGGREGATE.SALE_VOUCHER,
+  SYNC_AGGREGATE.CASH_VOUCHER,
 ];
 
 export const MASTER_RECORDS: Readonly<Record<MasterRecordType, RecordTableSpec>> = {
@@ -110,6 +145,48 @@ export const MASTER_RECORDS: Readonly<Record<MasterRecordType, RecordTableSpec>>
       { column: "packing_contractor_party_id", table: "parties", record: SYNC_AGGREGATE.PARTY },
     ],
   },
+  [SYNC_AGGREGATE.MAIN_GROUP]: { table: "main_groups" },
+  [SYNC_AGGREGATE.PRODUCT_GROUP]: { table: "product_groups" },
+  [SYNC_AGGREGATE.ARTICLE_SERIES]: { table: "article_series" },
+  [SYNC_AGGREGATE.PRODUCT_TYPE]: { table: "product_types" },
+  [SYNC_AGGREGATE.PRODUCT_SUB_GROUP]: {
+    table: "product_sub_groups",
+    references: [{ column: "product_group_id", table: "product_groups", record: SYNC_AGGREGATE.PRODUCT_GROUP }],
+  },
+  [SYNC_AGGREGATE.ARTICLE_SIZE]: {
+    table: "article_sizes",
+    references: PRODUCT_GROUPING,
+    children: [{ table: "product_variants", parentColumn: "article_size_id", references: PRODUCT_GROUPING, localColumns: ["replicated_at"] }],
+  },
+  [SYNC_AGGREGATE.MANUAL_PRODUCTION_ENTRY]: {
+    table: "manual_production_entries",
+    localColumns: ["machine_program_id"],
+    references: [
+      { column: "machine_id", table: "machines", record: SYNC_AGGREGATE.MACHINE },
+      { column: "article_size_id", table: "article_sizes", record: SYNC_AGGREGATE.ARTICLE_SIZE },
+      variantRef,
+      partyRef("contractor_party_id"),
+      partyRef("packing_contractor_party_id"),
+    ],
+  },
+  [SYNC_AGGREGATE.GATEPASS]: {
+    table: "gatepasses",
+    references: [partyRef("party_id")],
+    children: [{ table: "gatepass_lines", parentColumn: "gatepass_id", references: [variantRef] }],
+  },
+  [SYNC_AGGREGATE.SALE_VOUCHER]: {
+    table: "sale_vouchers",
+    references: [partyRef("party_id"), { column: "gatepass_id", table: "gatepasses", record: SYNC_AGGREGATE.GATEPASS }],
+    children: [
+      { table: "sale_voucher_line_items", parentColumn: "voucher_id", references: [variantRef] },
+      { table: "dispatch_sessions", parentColumn: "voucher_id" },
+    ],
+  },
+  [SYNC_AGGREGATE.CASH_VOUCHER]: {
+    table: "cash_vouchers",
+    references: [partyRef("party_id")],
+    children: [{ table: "cash_voucher_lines", parentColumn: "voucher_id", references: [partyRef("party_id")] }],
+  },
 };
 
 export const isMasterRecordType = (value: string): value is MasterRecordType =>
@@ -148,9 +225,10 @@ export interface RecordReadHandle {
   prepare(sql: string): { all(...params: unknown[]): unknown[] };
 }
 
-const plainRow = (row: SqlRow): Record<string, string | number | null> => {
+const plainRow = (row: SqlRow, localColumns: readonly string[] = []): Record<string, string | number | null> => {
   const copy: Record<string, string | number | null> = {};
   for (const [column, value] of Object.entries(row)) {
+    if (localColumns.includes(column)) continue;
     copy[column] = typeof value === "string" || typeof value === "number" ? value : value === null || value === undefined ? null : String(value);
   }
   return copy;
@@ -170,7 +248,7 @@ function snapshotNode(db: RecordReadHandle, spec: RecordTableSpec, row: SqlRow):
     const rows = db.prepare(`SELECT * FROM ${child.table} WHERE ${child.parentColumn ?? "id"} = ? ORDER BY id`).all(String(row.id)) as SqlRow[];
     children[child.table] = rows.map((childRow) => snapshotNode(db, child, childRow));
   }
-  return { row: plainRow(row), children };
+  return { row: plainRow(row, spec.localColumns), children };
 }
 
 // ─── Reading a revision off the wire (R25) ──────────────────────────────────

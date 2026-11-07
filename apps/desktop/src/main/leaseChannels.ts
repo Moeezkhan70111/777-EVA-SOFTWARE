@@ -5,10 +5,9 @@
 // 011-013). leaseGuard.ts refuses it HERE first, at the moment of the write, so an operator is told
 // "read-only on this computer" instead of finding a dead letter days later.
 //
-// Milestone 1 enforces two domains, and carton stock a third (docs/42): its movements replicate. The
-// other four (sales and dispatch, accounts, machine programs, approvals) are enforced when they
-// replicate, in Milestone 2: leasing them before then would lock a computer out of work nothing else
-// can see.
+// Enforced: the raw material store, master data, carton stock (docs/42), and sales and accounts now that bills
+// and cash vouchers replicate (docs/43). The other two (machine programs, approvals) are enforced when
+// they replicate: leasing them before then would lock a computer out of work nothing else can see.
 //
 // A channel that writes BOTH -- an item import, a removal that deletes stock history -- needs both
 // leases. In phase 1 one computer holds both (docs/37 W.1), so this never splits a write.
@@ -24,6 +23,10 @@ const STORE: readonly LeaseDomain[] = [LEASE_DOMAIN.RAW_MATERIAL_STORE];
 const MASTER: readonly LeaseDomain[] = [LEASE_DOMAIN.MASTER_DATA];
 const BOTH: readonly LeaseDomain[] = [LEASE_DOMAIN.MASTER_DATA, LEASE_DOMAIN.RAW_MATERIAL_STORE];
 const CARTONS: readonly LeaseDomain[] = [LEASE_DOMAIN.CARTON_STOCK];
+const SALES: readonly LeaseDomain[] = [LEASE_DOMAIN.SALES_DISPATCH];
+const ACCOUNTS: readonly LeaseDomain[] = [LEASE_DOMAIN.ACCOUNTS];
+/** A gatepass moves the carton figure and is a sales document, with the bill it makes. */
+const CARTONS_AND_SALES: readonly LeaseDomain[] = [LEASE_DOMAIN.CARTON_STOCK, LEASE_DOMAIN.SALES_DISPATCH];
 
 export const LEASED_CHANNELS: Readonly<Record<string, readonly LeaseDomain[]>> = {
   // ── Raw material store: label runs, receiving, issuing, Dana, hand moves, stock ──
@@ -101,8 +104,37 @@ export const LEASED_CHANNELS: Readonly<Record<string, readonly LeaseDomain[]>> =
   [IPC.recordManualProduction]: CARTONS,
   [IPC.voidManualProduction]: CARTONS,
   [IPC.adjustCartonStock]: CARTONS,
-  [IPC.createGatepass]: CARTONS,
-  [IPC.cancelGatepass]: CARTONS,
+  [IPC.createGatepass]: CARTONS_AND_SALES,
+  [IPC.cancelGatepass]: CARTONS_AND_SALES,
+
+  // ── Product master: products, their colours and prices, and how they are grouped (docs/43) ──
+  [IPC.createProduct]: MASTER,
+  [IPC.updateProduct]: MASTER,
+  [IPC.deleteProductListEntry]: MASTER,
+  [IPC.renameProductListEntry]: MASTER,
+  [IPC.disableProduct]: MASTER,
+  [IPC.enableProduct]: MASTER,
+  [IPC.createProductGroup]: MASTER,
+  [IPC.createArticleSeries]: MASTER,
+  [IPC.createProductType]: MASTER,
+  [IPC.createProductSubGroup]: MASTER,
+  [IPC.setProductSubGroupHasNoUpper]: MASTER,
+  [IPC.createMainGroup]: MASTER,
+
+  // ── Bills: they replicate now, so one computer writes them (docs/43) ──
+  [IPC.createSaleVoucher]: SALES,
+  [IPC.enterGatepassBill]: SALES,
+  [IPC.updateSaleVoucher]: SALES,
+  [IPC.addVoucherLineItem]: SALES,
+  [IPC.updateVoucherLineItem]: SALES,
+  [IPC.deleteVoucherLineItem]: SALES,
+  [IPC.deleteSaleVoucher]: SALES,
+  [IPC.saveGatepassDeliveryProof]: SALES,
+
+  // ── Cash vouchers: they replicate now, so one computer writes them (docs/43) ──
+  [IPC.createCashVoucher]: ACCOUNTS,
+  [IPC.updateCashVoucher]: ACCOUNTS,
+  [IPC.deleteCashVoucher]: ACCOUNTS,
 };
 
 /**
@@ -119,6 +151,8 @@ export const CARTON_QR_HOLD_CHANNELS: ReadonlySet<string> = new Set([
   IPC.storeExitScan,
   IPC.machineProgramCartonIn,
   IPC.markQrCodeDamaged,
+  // A new carton label run opens a machine's program for the day, on any computer (docs/43).
+  IPC.generateQrBatch,
 ]);
 
 /**
@@ -136,11 +170,14 @@ export const UNLEASED_WRITE_CHANNELS: Readonly<Record<string, string>> = {
   [IPC.convertMachineProgramUpperCartonsToB]: "Carton labels: multi-writer.",
   [IPC.deleteMachineProgram]:
     "Machine programs are leased in Milestone 2, with their creation and edits. Deleting one only marks the program CANCELLED: no stock moves.",
+  [IPC.saveProductImage]: "A picture file in this computer's own folder. Pictures do not travel (docs/43), and nothing about the product changes.",
+  [IPC.createPartyProductGroupDiscount]: "A customer's discount rule: rules do not travel yet (docs/43), so a rule belongs to the computer it was made on.",
+  [IPC.createPartyArticleSeriesDiscount]: "A customer's discount rule: rules do not travel yet (docs/43).",
+  [IPC.createPartyArticleDiscount]: "A customer's discount rule: rules do not travel yet (docs/43).",
+  [IPC.createPartyPriceRangeDiscount]: "A customer's discount rule: rules do not travel yet (docs/43).",
   [IPC.createItemRemovalRequest]: "A request only: approvals are leased in Milestone 2. Approving it is leased.",
   [IPC.createCategoryRemovalRequest]: "A request only: approvals are leased in Milestone 2. Approving it is leased.",
   [IPC.createStockCorrectionRequest]: "A request only: approvals are leased in Milestone 2. Approving it is leased.",
-  [IPC.saveGatepassDeliveryProof]:
-    "A delivery photo on a gatepass: no carton moves (they left when it was made). Gatepass documents are leased with sales and dispatch in Milestone 2.",
 };
 
 /** The domains this version enforces: every domain some channel above needs. */

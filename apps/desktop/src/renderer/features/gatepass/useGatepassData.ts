@@ -1,9 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useDataChanged } from "../../hooks/useDataChanged";
+import { DATA_KIND } from "../../../shared/dataChange";
 import { useDesktopApi } from "../../hooks/useDesktopApi";
 import { useNotifications } from "../../state/NotificationsContext";
 import type { GatepassShortage, GatepassStockRow, Party } from "../../types/desktopApi";
 import { buildStockGrid } from "../../utils/gatepassGrid";
 import { copy } from "../../config/copy";
+
+/** Another computer's production or gatepass moves what can be cut here. */
+const STOCK_CHANGES = [DATA_KIND.CARTONS, DATA_KIND.PRODUCTS];
 
 // What the Gatepass screen reads: active parties and the whole store's stock figures
 // (Current Stock, Reserved, Reflected Stock per colour + size). Figures on screen are a
@@ -64,6 +69,7 @@ export const useGatepassData = (token: string) => {
   useEffect(() => {
     void reloadStock();
   }, [reloadStock]);
+  useDataChanged(STOCK_CHANGES, () => void reloadStock());
 
   /**
    * After a STOCK_CHANGED / INSUFFICIENT_STOCK rejection: put the live figures the backend

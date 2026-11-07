@@ -5,6 +5,10 @@ import type { SaleVoucherListRow } from "../types/desktopApi";
 import { useNotifications } from "../state/NotificationsContext";
 import { copy } from "../config/copy";
 import { formatDate } from "../utils/dates";
+import { useDataChanged } from "../hooks/useDataChanged";
+import { DATA_KIND } from "../../shared/dataChange";
+
+const BILL_CHANGES = [DATA_KIND.BILLING];
 
 interface SaleVoucherListPageProps {
   onNavigate: (route: AppRoute, voucherId?: string) => void;
@@ -25,6 +29,7 @@ export const SaleVoucherListPage: React.FC<SaleVoucherListPageProps> = ({ onNavi
   useEffect(() => {
     void fetchVouchers();
   }, [search, status, page]);
+  useDataChanged(BILL_CHANGES, () => void fetchVouchers());
 
   const fetchVouchers = async () => {
     setLoading(true);

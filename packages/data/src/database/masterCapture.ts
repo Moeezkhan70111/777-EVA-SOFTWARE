@@ -68,6 +68,23 @@ export const MASTER_CAPTURE: readonly MasterTableCapture[] = [
   { table: "inventory_item_unit_steps", record: SYNC_AGGREGATE.INVENTORY_ITEM, recordId: `${ROW}.item_id` },
   { table: "work_sections", record: SYNC_AGGREGATE.WORK_SECTION, recordId: `${ROW}.id` },
   { table: "machines", record: SYNC_AGGREGATE.MACHINE, recordId: `${ROW}.id` },
+  // ── The production-to-cash workflow (docs/43). Marked by the database, like the rest. ──
+  { table: "main_groups", record: SYNC_AGGREGATE.MAIN_GROUP, recordId: `${ROW}.id` },
+  { table: "product_groups", record: SYNC_AGGREGATE.PRODUCT_GROUP, recordId: `${ROW}.id` },
+  { table: "article_series", record: SYNC_AGGREGATE.ARTICLE_SERIES, recordId: `${ROW}.id` },
+  { table: "product_types", record: SYNC_AGGREGATE.PRODUCT_TYPE, recordId: `${ROW}.id` },
+  { table: "product_sub_groups", record: SYNC_AGGREGATE.PRODUCT_SUB_GROUP, recordId: `${ROW}.id` },
+  { table: "article_sizes", record: SYNC_AGGREGATE.ARTICLE_SIZE, recordId: `${ROW}.id` },
+  // A colour with no product yet (it arrived alone, as PRODUCT_VARIANT) marks nothing: its id is null.
+  { table: "product_variants", record: SYNC_AGGREGATE.ARTICLE_SIZE, recordId: `${ROW}.article_size_id` },
+  { table: "manual_production_entries", record: SYNC_AGGREGATE.MANUAL_PRODUCTION_ENTRY, recordId: `${ROW}.id` },
+  { table: "gatepasses", record: SYNC_AGGREGATE.GATEPASS, recordId: `${ROW}.id` },
+  { table: "gatepass_lines", record: SYNC_AGGREGATE.GATEPASS, recordId: `${ROW}.gatepass_id` },
+  { table: "sale_vouchers", record: SYNC_AGGREGATE.SALE_VOUCHER, recordId: `${ROW}.id` },
+  { table: "sale_voucher_line_items", record: SYNC_AGGREGATE.SALE_VOUCHER, recordId: `${ROW}.voucher_id` },
+  { table: "dispatch_sessions", record: SYNC_AGGREGATE.SALE_VOUCHER, recordId: `${ROW}.voucher_id` },
+  { table: "cash_vouchers", record: SYNC_AGGREGATE.CASH_VOUCHER, recordId: `${ROW}.id` },
+  { table: "cash_voucher_lines", record: SYNC_AGGREGATE.CASH_VOUCHER, recordId: `${ROW}.voucher_id` },
 ];
 
 /**

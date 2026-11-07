@@ -29,15 +29,14 @@ const NOW = "2026-10-25T10:00:00.000Z";
 const NOT_MASTER: Readonly<Record<string, readonly string[]>> = {
   "Carton and QR flows: multi-writer events and their projections (docs/37 W.1), not leased records": [
     "production_events", "qr_master", "qr_codes", "qr_batches", "store_receiving_sessions",
-    "store_move_out_sessions", "dispatch_sessions", "stock_projection_by_location",
+    "store_move_out_sessions", "stock_projection_by_location",
     "stock_projection_by_variant", "report_daily_summary",
   ],
   "Installation identity, provisioned per computer and mirrored by the owner, not replicated as master data": [
     "factories", "workstations", "devices", "operators",
   ],
-  "Products and their classification: master data, but not in Milestone 1 (variants travel as identities, 008)": [
-    "article_series", "article_size_migration_diagnostics", "article_size_packing_items", "article_sizes",
-    "main_groups", "product_groups", "product_sub_groups", "product_types", "product_variants", "sole_types",
+  "A product's other details: not needed by the production-to-cash workflow (docs/43)": [
+    "article_size_migration_diagnostics", "article_size_packing_items", "sole_types",
   ],
   "The raw material store: leased EVENTS and their derived balances, not records replaced whole": [
     "inventory_stock_balances", "inventory_stock_events", "raw_material_issue_sessions", "raw_material_qr_batches",
@@ -46,17 +45,17 @@ const NOT_MASTER: Readonly<Record<string, readonly string[]>> = {
   "Carton stock: leased EVENTS that move the carton figure (docs/42), captured as events, never replaced whole": [
     "carton_stock_events",
   ],
-  "Sales and dispatch documents and pricing: Milestone 2": [
-    "gatepasses", "gatepass_lines", "gatepass_delivery_proofs", "sale_vouchers", "sale_voucher_line_items",
+  "Delivery photos, QR returns and pricing rules: not yet travelling (docs/43)": [
+    "gatepass_delivery_proofs",
     "sale_returns", "party_article_discounts", "party_article_series_discounts", "party_price_range_discounts",
     "party_product_group_discounts",
   ],
-  "Accounts documents: Milestone 2": ["cash_vouchers", "cash_voucher_lines", "purchase_vouchers", "purchase_voucher_line_items"],
+  "Purchase documents: Milestone 2": ["purchase_vouchers", "purchase_voucher_line_items"],
   "Machine programs: Milestone 2": [
     "machine_programs", "machine_program_article_rates", "machine_program_b_conversions", "machine_program_carton_labels",
     "machine_program_closures", "machine_program_fix_carton_labels", "machine_program_issue_batches",
     "machine_program_lines", "machine_program_reconciliation_lines", "machine_program_runs",
-    "machine_program_upper_b_labels", "machine_program_upper_lines", "manual_production_entries",
+    "machine_program_upper_b_labels", "machine_program_upper_lines",
   ],
   "Approvals: transitions, Milestone 2": [
     "access_requests", "permission_requests", "party_claims", "removal_requests", "stock_correction_requests",

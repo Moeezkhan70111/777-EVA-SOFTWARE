@@ -19,6 +19,13 @@ describe("data kinds", () => {
     expect(dataKindsOf(["RAW_MATERIAL_QR_BATCH"])).toContain(DATA_KIND.LABELS);
   });
 
+  it("work arriving from another computer reloads the screens that show it (docs/43)", () => {
+    for (const type of ["CARTON_STOCK_EVENT", "MANUAL_PRODUCTION_ENTRY"]) expect(dataKindsOf([type])).toContain(DATA_KIND.CARTONS);
+    for (const type of ["GATEPASS", "SALE_VOUCHER"]) expect(dataKindsOf([type])).toContain(DATA_KIND.BILLING);
+    expect(dataKindsOf(["CASH_VOUCHER"])).toContain(DATA_KIND.CASH);
+    for (const type of ["MAIN_GROUP", "PRODUCT_GROUP", "ARTICLE_SERIES", "PRODUCT_TYPE", "PRODUCT_SUB_GROUP", "ARTICLE_SIZE"]) expect(dataKindsOf([type])).toContain(DATA_KIND.PRODUCTS);
+  });
+
   it("checks the message a screen receives, and drops what it does not know", () => {
     expect(readDataChange({ kinds: ["STOCK", "NOT_A_KIND", 7] })).toEqual({ kinds: ["STOCK"] });
     expect(readDataChange({ kinds: "STOCK" })).toBeNull();

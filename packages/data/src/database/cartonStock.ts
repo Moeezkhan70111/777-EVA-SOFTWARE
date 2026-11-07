@@ -15,7 +15,7 @@
 import crypto from "node:crypto";
 import { CARTON_STOCK_EVENT_TYPE, cartonStockDelta, isCartonAdjustment, isCartonStockEventType, type CartonStockEventType } from "@erp/domain";
 import { IN_STORE_LOCATION_TYPE } from "@erp/application";
-import { enqueueProductVariant, enqueueSyncEvent, heldLeaseEpoch, LEASE_DOMAIN, SYNC_AGGREGATE, type SyncWriteHandle } from "./syncEvents.js";
+import { enqueueProductVariant, enqueueSyncEvent, heldLeaseEpoch, leaseDomainOf, SYNC_AGGREGATE, type SyncWriteHandle } from "./syncEvents.js";
 import type { BuildHandle } from "./masterRecords.js";
 
 type Bindable = string | number | null;
@@ -318,18 +318,34 @@ function queueOne(db: BuildHandle, mark: { record_id: string; lease_epoch: numbe
  * and the id are unchanged, so nothing can count twice. Until then they stay visible (reconciliation).
  *
  * Only NOT_LEASE_HOLDER: any other refusal is about the event, and sending it again cannot help.
+ *
+ * The documents of the production-to-cash workflow get the same treatment, each under its own lease (docs/43): a
+ * bill or a payment made offline must not be lost for losing the lease. A record goes out as the same revision.
  */
 export function resendCartonMovementsRefusedForLease(db: BuildHandle, nowIso: string): number {
-  const epoch = heldLeaseEpoch(db, LEASE_DOMAIN.CARTON_STOCK);
-  if (epoch === null) return 0;
-  const result = db
-    .prepare(
-      `UPDATE sync_outbox
-          SET status = 'PENDING', lease_epoch = ?, lock_token = NULL, attempts = 0, transient_attempts = 0, available_at = ?, updated_at = ?
-        WHERE aggregate_type = ? AND status IN ('FAILED', 'DEAD_LETTER') AND last_error LIKE '%NOT_LEASE_HOLDER%' AND lease_epoch <> ?`
-    )
-    .run(epoch, nowIso, nowIso, SYNC_AGGREGATE.CARTON_STOCK_EVENT, epoch);
-  return Number(result.changes);
+  let resent = 0;
+  for (const type of RESENT_WHEN_LEASE_RETURNS) {
+    const domain = leaseDomainOf(type);
+    const epoch = domain === null ? null : heldLeaseEpoch(db, domain);
+    if (epoch === null) continue;
+    const result = db
+      .prepare(
+        `UPDATE sync_outbox
+            SET status = 'PENDING', lease_epoch = ?, lock_token = NULL, attempts = 0, transient_attempts = 0, available_at = ?, updated_at = ?
+          WHERE aggregate_type = ? AND status IN ('FAILED', 'DEAD_LETTER') AND last_error LIKE '%NOT_LEASE_HOLDER%' AND lease_epoch <> ?`
+      )
+      .run(epoch, nowIso, nowIso, type, epoch);
+    resent += Number(result.changes);
+  }
+  return resent;
 }
+
+const RESENT_WHEN_LEASE_RETURNS = [
+  SYNC_AGGREGATE.CARTON_STOCK_EVENT,
+  SYNC_AGGREGATE.MANUAL_PRODUCTION_ENTRY,
+  SYNC_AGGREGATE.GATEPASS,
+  SYNC_AGGREGATE.SALE_VOUCHER,
+  SYNC_AGGREGATE.CASH_VOUCHER,
+] as const;
 
 export { CARTON_STOCK_EVENT_TYPE };

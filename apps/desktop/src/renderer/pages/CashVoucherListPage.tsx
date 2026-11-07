@@ -6,6 +6,10 @@ import { useNotifications } from "../state/NotificationsContext";
 import { copy } from "../config/copy";
 import { formatBookDate } from "../utils/dates";
 import { formatWholeMoney } from "../app/format";
+import { useDataChanged } from "../hooks/useDataChanged";
+import { DATA_KIND } from "../../shared/dataChange";
+
+const CASH_CHANGES = [DATA_KIND.CASH];
 
 interface CashVoucherListPageProps {
   onNavigate: (route: AppRoute, id?: string) => void;
@@ -41,6 +45,7 @@ export const CashVoucherListPage: React.FC<CashVoucherListPageProps> = ({ onNavi
   }, [search]);
 
   useEffect(() => { void load(1, ""); }, []);
+  useDataChanged(CASH_CHANGES, () => void load(page, search));
 
   const handleSearch = (val: string) => {
     setSearch(val);

@@ -20,6 +20,12 @@ export const DATA_KIND = {
   LABELS: "LABELS",
   /** Carton identities and production scans. */
   CARTONS: "CARTONS",
+  /** Products, their colours and rates, and what groups them. */
+  PRODUCTS: "PRODUCTS",
+  /** Gatepasses and bills, so customer balances and gatepass queues too. */
+  BILLING: "BILLING",
+  /** Cash vouchers, so party balances too. */
+  CASH: "CASH",
   /** What this computer is waiting on: anything arriving can settle or start a wait. */
   SYNC: "SYNC",
 } as const;
@@ -46,6 +52,17 @@ const KIND_OF_TYPE: Readonly<Record<string, DataKind>> = {
   QR_MASTER: DATA_KIND.CARTONS,
   PRODUCTION_PRODUCED: DATA_KIND.CARTONS,
   PRODUCT_VARIANT: DATA_KIND.CARTONS,
+  CARTON_STOCK_EVENT: DATA_KIND.CARTONS,
+  MANUAL_PRODUCTION_ENTRY: DATA_KIND.CARTONS,
+  MAIN_GROUP: DATA_KIND.PRODUCTS,
+  PRODUCT_GROUP: DATA_KIND.PRODUCTS,
+  ARTICLE_SERIES: DATA_KIND.PRODUCTS,
+  PRODUCT_TYPE: DATA_KIND.PRODUCTS,
+  PRODUCT_SUB_GROUP: DATA_KIND.PRODUCTS,
+  ARTICLE_SIZE: DATA_KIND.PRODUCTS,
+  GATEPASS: DATA_KIND.BILLING,
+  SALE_VOUCHER: DATA_KIND.BILLING,
+  CASH_VOUCHER: DATA_KIND.CASH,
 };
 
 /**

@@ -569,12 +569,12 @@ test("a carton brought back from the gate makes the gatepass it was counted agai
 
 // ─── Nothing else is touched ──────────────────────────────────────────────────
 
-test("creating a gatepass writes only gatepasses, gatepass_lines, audit_log and notifications — no QR, event, projection, voucher or ledger row", async () => {
+test("creating a gatepass writes only gatepasses, gatepass_lines, audit_log, notifications and its one empty bill — no QR, event, projection or ledger row", async () => {
   const f = createFixture();
   try {
     const party = createParty(f.db, "ABC TRADERS");
     const red = await stockVariant(f.db, f.raw, "SK6", "7/10", "RED", 5);
-    const tables = ["qr_master", "production_events", "stock_projection_by_variant", "stock_projection_by_location", "sync_outbox", "sale_vouchers", "sale_voucher_line_items", "cash_vouchers", "dispatch_sessions", "qr_codes"];
+    const tables = ["qr_master", "production_events", "stock_projection_by_variant", "stock_projection_by_location", "sync_outbox", "sale_voucher_line_items", "cash_vouchers", "qr_codes"];
     const snapshot = () => ({
       counts: tables.map((table) => [table, (f.raw.prepare(`SELECT COUNT(1) AS c FROM ${table}`).get() as { c: number }).c]),
       qrs: f.raw.prepare("SELECT qr_id, current_status, current_location_type, updated_at FROM qr_master ORDER BY qr_id").all(),
@@ -584,6 +584,8 @@ test("creating a gatepass writes only gatepasses, gatepass_lines, audit_log and 
     const created = await createGatepass(f.db, party, [{ variantId: red.variantId, quantity: 5 }]);
     assert.equal(created.accepted, true, created.reason);
     assert.equal(JSON.stringify(snapshot()), before);
+    const bills = f.raw.prepare("SELECT total_amount_paisa FROM sale_vouchers").all() as Array<{ total_amount_paisa: number }>;
+    assert.deepEqual(bills.map((bill) => Number(bill.total_amount_paisa)), [0], "one bill, carrying no money until it is entered");
     assert.deepEqual(figures(f.db, "SK6", "RED", "7/10"), { current: 5, reserved: 5, reflected: 0 });
   } finally {
     f.cleanup();

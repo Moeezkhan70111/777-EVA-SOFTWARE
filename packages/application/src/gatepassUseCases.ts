@@ -98,6 +98,9 @@ export interface CreateGatepassResult {
   code?: string;
   totalQuantity?: number;
   createdAt?: string;
+  /** The bill made with the gatepass, when it was made. */
+  billId?: string;
+  billNumber?: string;
   /** Every failing line for INSUFFICIENT_STOCK / STOCK_CHANGED. */
   shortages?: GatepassShortage[];
   /** The offending variant for VARIANT_NOT_FOUND / DUPLICATE_LINE / INVALID_QUANTITY. */
@@ -214,6 +217,11 @@ export interface CreateGatepassDeps {
      */
     issueGatepassCartons(lines: GatepassLineToIssue[], issuedBy: string, tx: TransactionContext): Promise<void>;
     appendAuditLog(payload: AuditLogPayload, tx: TransactionContext): Promise<void>;
+    /**
+     * Makes the gatepass's one bill, in this transaction: its number and its link to the gatepass, and no lines
+     * yet, so no money. The bill desk enters the rates (docs/43).
+     */
+    generateGatepassBill(payload: { gatepassId: string; partyId: string; voucherDate: string }, tx: TransactionContext): Promise<{ id: string; voucherNumber: string }>;
     /** Tells every billing user; who they are is the repository's business. */
     notifyBilling(payload: BillingNoticePayload, tx: TransactionContext): Promise<void>;
   };
@@ -315,6 +323,8 @@ export class CreateGatepassUseCase {
           actor,
           tx
         );
+        // After the stock: a gatepass that could not issue its cartons leaves no bill behind.
+        const bill = await this.deps.repo.generateGatepassBill({ gatepassId, partyId: party.id, voucherDate: gatepassDate }, tx);
         await this.deps.repo.appendAuditLog(
           {
             id: this.deps.idGenerator.nextId(),
@@ -335,7 +345,7 @@ export class CreateGatepassUseCase {
           tx
         );
 
-        return { gatepassId, gatepassNumber, totalQuantity, createdAt: tx.nowIso };
+        return { gatepassId, gatepassNumber, totalQuantity, createdAt: tx.nowIso, billId: bill.id, billNumber: bill.voucherNumber };
       });
 
       return {
@@ -346,6 +356,8 @@ export class CreateGatepassUseCase {
         code: formatGatepassCode(committed.gatepassNumber),
         totalQuantity: committed.totalQuantity,
         createdAt: committed.createdAt,
+        billId: committed.billId,
+        billNumber: committed.billNumber,
       };
     } catch (error) {
       if (error instanceof GatepassRejectedError) {
@@ -504,6 +516,8 @@ export interface GatepassForCancel {
 export interface CancelGatepassDeps {
   txManager: TransactionManager;
   repo: {
+    /** Cancels the gatepass's bill if nobody has entered it. A bill with lines is never touched here. */
+    cancelUnenteredBill(payload: { gatepassId: string; reason: string; cancelledAt: string }, tx: TransactionContext): Promise<void>;
     getGatepassForCancel(gatepassId: string, tx: TransactionContext): Promise<GatepassForCancel | null>;
     /**
      * Guarded status move: only a CREATED document changes. Returns false when nothing
@@ -606,6 +620,8 @@ export class CancelGatepassUseCase {
         }
         // Only after the guarded status move: a second cancel never gets here, so nothing is put back twice.
         const returnedToStock = await this.deps.repo.returnGatepassCartons(gatepassId, actor, tx);
+        // The bill made with it was never entered (entering one moves the gatepass past CREATED), so no money goes.
+        await this.deps.repo.cancelUnenteredBill({ gatepassId, reason, cancelledAt: tx.nowIso }, tx);
 
         // Read under the same lock as the status change, so the audit row states exactly
         // what this cancellation released, what went back to stock, and what had already

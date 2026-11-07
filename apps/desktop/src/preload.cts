@@ -399,6 +399,7 @@ contextBridge.exposeInMainWorld("desktop", {
     listSaleVouchers: (query: Record<string, unknown>) => ipcRenderer.invoke(IPC.listSaleVouchers, query),
     updateSaleVoucher: (voucherId: string, input: Record<string, unknown>) => ipcRenderer.invoke(IPC.updateSaleVoucher, voucherId, input),
     addVoucherLineItem: (voucherId: string, input: Record<string, unknown>) => ipcRenderer.invoke(IPC.addVoucherLineItem, voucherId, input),
+    enterGatepassBill: (voucherId: string, input: Record<string, unknown>) => ipcRenderer.invoke(IPC.enterGatepassBill, voucherId, input),
     updateVoucherLineItem: (itemId: string, input: Record<string, unknown>) => ipcRenderer.invoke(IPC.updateVoucherLineItem, itemId, input),
     deleteVoucherLineItem: (itemId: string) => ipcRenderer.invoke(IPC.deleteVoucherLineItem, itemId),
     deleteSaleVoucher: (voucherId: string) => ipcRenderer.invoke(IPC.deleteSaleVoucher, voucherId),

@@ -1,7 +1,7 @@
 # 42 — Carton stock, replicated
 
 **Date:** 2026-11-03, revised 2026-11-06
-**Status:** Built on `feat/carton-stock`, not shipped. Sections 9 and 11-14 are the current rules: read them first.
+**Status:** Built on `feat/carton-stock`, not shipped. Sections 9 and 11-14 are the current rules: read them first. Gatepasses, bills, Manual Production entries and cash vouchers now travel too: see docs/43, which replaces what this file says about them.
 **Scope (owner, 2026-11-06): MANUAL PRODUCTION ONLY.** QR-based production and carton movements are out of scope and on hold. See section 9.
 **Owner decision (2026-11-03):** cartons enter stock through Manual Production and leave through
 a **gatepass**. Stock falls **when the gatepass is made** — dispatch cannot be tracked today, so
@@ -334,7 +334,9 @@ Build it on a branch now; ship it after step 2.
   dispatch, return, store in, store out, machine program carton in, and marking a carton damaged. A gatepass
   reserves nothing for scanners, so the whole line leaves as a movement. Printing labels, looking cartons up and
   raw material QR carry on. One path is not refused: cancelling a sale voucher reverses an already-dispatched QR
-  carton, which moves this computer's figure. Reconciliation shows it as a difference.
+  carton and adds 1 to this computer's figure, with no movement. Reconciliation does NOT show this as a difference:
+  the carton counts as a QR carton in store. Section 15's cleanup removes every such carton from a computer, and new
+  ones cannot be made while the hold stands. This path must be guarded before the hold is lifted.
 - Gatepasses themselves still do not replicate. Only the stock movement travels. The boss sees
   an accurate figure; he does not see the gatepass document.
 - Dispatch is still not tracked. Stock falls when the gatepass is made, which means cartons on the
@@ -483,6 +485,33 @@ back the cloud refuses those movements `NOT_LEASE_HOLDER`: its figure holds them
 **not lost and not dropped**. Reconciliation counts them as refused, and when this computer holds the lease again they go
 out under the new epoch, as the same events (`resendCartonMovementsRefusedForLease`): same id and dedupe key, so nothing
 can count twice. If the owner never hands the lease back, the difference stays visible until they decide.
+
+## 15. Clearing local carton QR test data (owner, 2026-11-07)
+
+Local carton QR activity was test activity. It goes, as though it never happened, from local SQLite only.
+Production's log holds no `QR_MASTER` or `PRODUCTION_PRODUCED` row (read 2026-11-07), so nothing replays it.
+
+Tool: `scripts/clear-carton-qr-test-data.mjs` (`packages/data/src/database/cartonQrCleanup.ts`). Dry run by default, on a
+copy, and it opens no connection. **`--apply` is refused for every database but the two rehearsal devices**, so PC2 and
+PC3 cannot be cleared by this tool. Clearing them needs the owner's separate authorisation and a change to that list.
+
+**What goes:** `qr_master`, `qr_codes`, `production_events`, `qr_batches` not named by a kept label, the fix, line and B
+label tables, `store_receiving_sessions`, `store_move_out_sessions`, both carton figure tables, carton QR rows in
+`sync_outbox` and `sync_inbox_parked`. The QR-derived earnings on the Contractor Ledger leave with them, because they are
+computed from those rows. And four named test documents, with their lines, dispatch sessions and notices: gatepasses 1
+and 2, sale vouchers 1 and 2. They are proved by status, customer and date, never by number alone.
+
+**What stays:** raw material stock and history, machine programs and their two closures with their stored totals, the
+labels tied to raw material exits, `qr_sequences` (reset, a new label could reuse a code), Manual Production, contractors,
+cash vouchers, claims, `audit_log`, and everything else. Every other table is hashed, input against output.
+
+**A kept label keeps its run.** `machine_program_carton_labels` has a foreign key to `qr_batches`, so the runs the labels name
+stay, with no codes under them. A run with no codes earns nobody anything. So after a cleanup `qr_batches` is not empty, and
+a closure's stored totals describe cartons that no longer exist: both by the owner's decision.
+
+**It stops, changing nothing,** at any cash voucher or claim on a contractor whose earnings would go (naming its number,
+amount and contractor), at a named record that does not match, at any other gatepass, voucher, dispatch session or sale
+return, at delivery proofs, and at carton movements. It is safe to run again: the second run clears nothing.
 
 ## Migrations and dependencies
 

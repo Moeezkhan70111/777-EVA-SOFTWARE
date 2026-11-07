@@ -1501,9 +1501,10 @@ test("009: every event type this computer can apply is a type the cloud log acce
   // fails here rather than as a refused log insert on a real computer.
   const { APPLY_CONTRACTS } = await import("./applyEnvelope.js");
   // Every cloud migration that seeds the log's types: 009 the first five, 013 the eight master
-  // records, 015 stock movements, 020 and 021 the account types, 026 carton stock movements.
+  // records, 015 stock movements, 020 and 021 the account types, 026 carton stock movements, 028 the
+  // production-to-cash records.
   const seeds = new Set(seededTypes().keys());
-  for (const migration of [LEASED_RECORDS, STOCK_EVENTS, CLOUD_ACCOUNTS, PERMISSION_REQUESTS, CARTON_STOCK_EVENTS]) {
+  for (const migration of [LEASED_RECORDS, STOCK_EVENTS, CLOUD_ACCOUNTS, PERMISSION_REQUESTS, CARTON_STOCK_EVENTS, PRODUCTION_TO_CASH]) {
     const insert = migration.slice(migration.indexOf("insert into public.sync_aggregate_types"));
     for (const match of insert.slice(0, insert.indexOf(";")).matchAll(/\('([A-Z_]+)', (true|false), '/g)) {
       seeds.add(match[1] ?? "");
@@ -1747,32 +1748,33 @@ test("012: one transaction each way, and the rollback leaves the log alone", () 
 // ─── 013: leased records -- master data, whole, by revision ─────────────────
 
 const LEASED_RECORDS = read("migrations/supabase/013_leased_records.up.sql");
+const PRODUCTION_TO_CASH = read("migrations/supabase/028_production_to_cash_records.up.sql");
 const LEASED_RECORDS_DOWN = read("migrations/supabase/013_leased_records.down.sql");
 
 /** The (type, lease domain) rows 013 seeds into leased_record_types. */
 const leasedRecordTypes = (): Map<string, string> => {
   const types = new Map<string, string>();
-  const insert = LEASED_RECORDS.slice(LEASED_RECORDS.indexOf("insert into public.leased_record_types"));
-  for (const match of insert.slice(0, insert.indexOf(";")).matchAll(/\('([A-Z_]+)', '([A-Z_]+)'\)/g)) {
-    types.set(match[1] ?? "", match[2] ?? "");
+  for (const migration of [LEASED_RECORDS, PRODUCTION_TO_CASH]) {
+    const insert = migration.slice(migration.indexOf("insert into public.leased_record_types"));
+    for (const match of insert.slice(0, insert.indexOf(";")).matchAll(/\('([A-Z_]+)', '([A-Z_]+)'\)/g)) {
+      types.set(match[1] ?? "", match[2] ?? "");
+    }
   }
   return types;
 };
 
 test("013: every record type is a log type, unscoped, under a lease this computer knows", () => {
   const types = leasedRecordTypes();
-  assert.equal(types.size, 8, "the eight master-data record types of docs/37 W.1");
-  const logTypes = LEASED_RECORDS.slice(LEASED_RECORDS.indexOf("insert into public.sync_aggregate_types"));
+  assert.equal(types.size, 18, "013's eight master-data record types of docs/37 W.1, and 028's ten");
+  const logTypes = [LEASED_RECORDS, PRODUCTION_TO_CASH].map((migration) => migration.slice(migration.indexOf("insert into public.sync_aggregate_types"))).join("\n");
   for (const [type, domain] of types) {
     assert.match(logTypes, new RegExp(String.raw`\('${type}', false, '`), `${type} is seeded into the log's types, unscoped`);
     assert.ok((Object.values(LEASE_DOMAIN) as string[]).includes(domain), `${type}'s domain ${domain} is a lease domain`);
   }
-  assert.ok([...types.values()].every((domain) => domain === LEASE_DOMAIN.MASTER_DATA), "Milestone 1 records are all master data");
   // This computer captures exactly these records, each under the same lease the cloud checks.
-  const local = Object.fromEntries(
-    Object.entries(LEASED_AGGREGATE_DOMAIN).filter(([, domain]) => domain === LEASE_DOMAIN.MASTER_DATA)
-  );
+  const local = Object.fromEntries(Object.entries(LEASED_AGGREGATE_DOMAIN).filter(([type]) => types.has(type)));
   assert.deepEqual(local, Object.fromEntries(types));
+  assert.equal(types.get("GATEPASS"), types.get("SALE_VOUCHER"), "a bill is locked to its gatepass: one lease");
   const captured = new Set(MASTER_CAPTURE.map((capture) => capture.record as string));
   assert.deepEqual([...captured].sort(), [...types.keys()].sort(), "every cloud record type is captured here, and nothing else");
 });

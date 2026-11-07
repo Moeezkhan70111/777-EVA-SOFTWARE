@@ -3,7 +3,7 @@
 // IPC handlers are registered per feature; every write is authorised through ctx.authorizer
 // (see ../authorize.ts) and every channel name comes from shared/ipcChannels.ts.
 
-import { ipcMain } from "electron";
+import { ipcMain } from "../leaseGuard";
 import { IPC } from "../../shared/ipcChannels";
 import type { IpcContext } from "./context";
 import { PERMISSION } from "@erp/domain";
@@ -58,6 +58,7 @@ export function registerCashHandlers(ctx: IpcContext): void {
       const firstLine = normalizedLines[0];
 
       const voucherId = db.createCashVoucher({
+        requestId: typeof input.requestId === "string" ? input.requestId : undefined,
         partyId: firstLine.partyId,
         voucherDate: String(input.voucherDate),
         modeOfTransfer: firstLine.modeOfTransfer,

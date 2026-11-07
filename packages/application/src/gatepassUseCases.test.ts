@@ -69,6 +69,7 @@ function createWorld(initial: Partial<World> = {}) {
   const createDeps: CreateGatepassDeps = {
     txManager,
     repo: {
+      async generateGatepassBill(payload: { gatepassId: string }) { return { id: `bill-of-${payload.gatepassId}`, voucherNumber: "1" }; },
       async getPartyForGatepass(partyId) {
         const party = world.parties[partyId];
         return party ? { ...party } : null;
@@ -105,6 +106,7 @@ function createWorld(initial: Partial<World> = {}) {
   const cancelDeps: CancelGatepassDeps = {
     txManager,
     repo: {
+      async cancelUnenteredBill() {},
       async getGatepassForCancel(gatepassId) {
         const header = headers.find((h) => h.id === gatepassId);
         if (!header) return null;

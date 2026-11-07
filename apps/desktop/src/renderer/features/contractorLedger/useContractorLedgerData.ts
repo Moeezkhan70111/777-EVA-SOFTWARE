@@ -1,5 +1,7 @@
 import { PRINTING_CONTRACTOR_ACCOUNT_ID, CONTRACTOR_ROLE } from "@erp/domain";
 import { useDesktopApi } from "../../hooks/useDesktopApi";
+import { useDataChanged } from "../../hooks/useDataChanged";
+import { DATA_KIND } from "../../../shared/dataChange";
 import { useLoaded, type Loaded } from "../../hooks/useLoaded";
 import { copy } from "../../config/copy";
 import type { ContractorLedgerAccount, ContractorLedgerReport } from "../../types/desktopApi";
@@ -19,6 +21,9 @@ const PRINTING_ACCOUNT: ContractorLedgerAccount = {
   roles: [CONTRACTOR_ROLE.PRINTING],
 };
 
+/** Another computer's production or payment moves this ledger. */
+const WORK_AND_PAY_CHANGES = [DATA_KIND.CARTONS, DATA_KIND.CASH];
+
 /** Every contractor a ledger can be opened for, then the printing ledger. */
 export const useContractorAccounts = (): Loaded<ContractorLedgerAccount[]> => {
   const api = useDesktopApi();
@@ -37,10 +42,12 @@ export const useContractorLedger = (
   toDate: string
 ): Loaded<ContractorLedgerReport | null> => {
   const api = useDesktopApi();
-  return useLoaded(
+  const ledger = useLoaded(
     `contractor-ledger:${accountId}:${fromDate}:${toDate}`,
     accountId ? () => api.getContractorLedger(accountId, { fromDate, toDate }) : null,
     (answer) => answer.ledger ?? null,
     null
   );
+  useDataChanged(WORK_AND_PAY_CHANGES, () => void ledger.reload());
+  return ledger;
 };

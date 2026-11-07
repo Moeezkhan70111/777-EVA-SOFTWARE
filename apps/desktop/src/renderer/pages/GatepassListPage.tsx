@@ -13,6 +13,10 @@ import { GatepassStatusBadge as StatusBadge } from "../features/gatepass/Gatepas
 import { describeMoveOutProgress } from "../features/gatepass/GatepassDocumentHead";
 import { gateHasQrPart, storeOwesScan } from "../features/gatepass/gatepassProgress";
 import { StateView } from "../components/shared/StateView";
+import { useDataChanged } from "../hooks/useDataChanged";
+import { DATA_KIND } from "../../shared/dataChange";
+
+const BILL_CHANGES = [DATA_KIND.BILLING];
 
 // Gatepass List — every gatepass, newest first, with the document opened in place.
 //
@@ -175,6 +179,7 @@ export const GatepassListPage: React.FC<GatepassListPageProps> = ({ token, usern
   useEffect(() => {
     void load();
   }, [load]);
+  useDataChanged(BILL_CHANGES, () => void load());
 
   // Counts follow the list: after billing a document or scanning one out, the queue it left
   // and the queue it joined are both refreshed by the same reload the list already does.

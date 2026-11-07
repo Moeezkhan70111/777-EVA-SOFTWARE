@@ -14,6 +14,8 @@ export const cashMethods = {
   },
 
   createCashVoucher(this: SqliteDatabase, input: {
+    /** The screen's key for one press of Save: pressed twice or retried, it is still one voucher, so one payment. */
+    requestId?: string;
     partyId: string;
     voucherDate: string;
     modeOfTransfer?: string;
@@ -23,7 +25,7 @@ export const cashMethods = {
     lines?: Array<{ partyId: string; description: string; modeOfTransfer: string; bankAccountTitle?: string; chequeNumber?: string; chequeDate?: string; onlineFrom?: string; onlineTo?: string; referenceNo?: string; receiptAmount: number; paymentAmount: number }>;
   }): string {
     const now = new Date().toISOString();
-    const id = crypto.randomUUID();
+    const id = input.requestId?.trim() || crypto.randomUUID();
 
     // The header and its lines are one transaction. The customer ledger sums
     // cash_voucher_lines, so a voucher that kept its header but lost its lines would quietly
@@ -31,6 +33,10 @@ export const cashMethods = {
     // so it is read under the same write lock that inserts it.
     this.db.exec("BEGIN IMMEDIATE TRANSACTION");
     try {
+      if (this.db.prepare("SELECT 1 AS found FROM cash_vouchers WHERE id = ?").get(id)) {
+        this.db.exec("COMMIT");
+        return id;
+      }
       const voucherNumber = this.getNextCashVoucherNumber();
 
       this.db
@@ -315,8 +321,8 @@ export const cashMethods = {
   deleteCashVoucher(this: SqliteDatabase, id: string): void {
     const now = new Date().toISOString();
     this.db
-      .prepare("UPDATE cash_vouchers SET deleted_at = ?, status = 'CANCELLED' WHERE id = ?")
-      .run(now, id);
+      .prepare("UPDATE cash_vouchers SET deleted_at = ?, status = 'CANCELLED', updated_at = ? WHERE id = ? AND deleted_at IS NULL")
+      .run(now, now, id);
   },
 
   // Enhanced customer ledger to include cash voucher transactions
@@ -406,7 +412,7 @@ export const cashMethods = {
         SELECT id, voucher_number, voucher_date, total_amount_paisa, COALESCE(remarks, '') as remarks,
                COALESCE(sub_party_name_urdu, '') as sub_party_urdu
         FROM sale_vouchers 
-        WHERE party_id = ? AND voucher_date BETWEEN ? AND ? AND status != 'CANCELLED' AND deleted_at IS NULL
+        WHERE party_id = ? AND voucher_date BETWEEN ? AND ? AND status != 'CANCELLED' AND deleted_at IS NULL AND total_amount_paisa <> 0
         ORDER BY voucher_date ASC, created_at ASC
       `)
       .all(partyId, fromDate, toDate) as Array<Record<string, unknown>>;
@@ -428,10 +434,11 @@ export const cashMethods = {
       .prepare(`
         SELECT id, voucher_number, voucher_date, receipt_amount_paisa, payment_amount_paisa, description, mode_of_transfer
         FROM cash_vouchers 
-        WHERE party_id = ? AND voucher_date BETWEEN ? AND ? AND status = 'ACTIVE' AND deleted_at IS NULL
+        WHERE (party_id = ? OR EXISTS (SELECT 1 FROM cash_voucher_lines l WHERE l.voucher_id = cash_vouchers.id AND l.party_id = ?))
+          AND voucher_date BETWEEN ? AND ? AND status = 'ACTIVE' AND deleted_at IS NULL
         ORDER BY voucher_date ASC, created_at ASC
       `)
-      .all(partyId, fromDate, toDate) as Array<Record<string, unknown>>;
+      .all(partyId, partyId, fromDate, toDate) as Array<Record<string, unknown>>;
 
     for (const cv of cashVouchers) {
       // When the voucher has lines, this party's amount is the sum of ITS lines; otherwise the

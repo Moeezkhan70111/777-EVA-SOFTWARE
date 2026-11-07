@@ -346,6 +346,17 @@ export const gatepassMethods = {
       );
   },
 
+  /** The gatepass's one bill, in the create transaction (docs/43). */
+  async generateGatepassBill(this: SqliteDatabase, payload: { gatepassId: string; partyId: string; voucherDate: string }, tx: TransactionContext): Promise<{ id: string; voucherNumber: string }> {
+    return this.createBillForGatepassInTransaction({ ...payload, nowIso: (tx as MutableTransactionContext).nowIso });
+  },
+
+  /** The bill goes with its cancelled gatepass when nobody has entered it, in the cancel transaction. */
+  async cancelUnenteredBill(this: SqliteDatabase, payload: { gatepassId: string; reason: string; cancelledAt: string }, tx: TransactionContext): Promise<void> {
+    void tx;
+    this.cancelUnenteredBillInTransaction(payload);
+  },
+
   /** Every user who bills (sale voucher form permission, or administrator) gets the notice, in the same transaction. */
   async notifyBilling(this: SqliteDatabase, payload: BillingNoticePayload, tx: TransactionContext): Promise<void> {
     this.notifyUsersWithPermission(PERMISSION.SALE_VOUCHER_FORM, payload, tx);

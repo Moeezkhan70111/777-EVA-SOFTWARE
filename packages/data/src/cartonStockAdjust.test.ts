@@ -343,7 +343,7 @@ test("the reset clears the store figures and proves nothing else moved, entries 
 
       db.db.prepare("UPDATE manual_production_entries SET cartons = cartons + 1").run();
       const noticed = verifyCartonStockReset(before.db, db.db, plan).filter((check) => !check.ok).map((check) => check.detail);
-      assert.deepEqual(noticed, ["manual_production_entries"], "a change anywhere else is noticed");
+      assert.deepEqual(noticed, ["manual_production_entries, sync_dirty_records"], "a change anywhere else is noticed, and the capture that marks it");
 
       db.db.prepare("UPDATE stock_projection_by_variant SET quantity_on_hand = 5 WHERE product_variant_id = ?").run(variantId);
       assert.equal(verifyCartonStockReset(before.db, db.db, plan).find((check) => check.name === "Product totals")?.ok, false, "and a wrong total");

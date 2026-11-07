@@ -106,7 +106,9 @@ export type BillGatepassMismatch =
   /** The same article + size billed twice; the gatepass folds colours into one line. */
   | "LINE_ALREADY_ON_BILL"
   /** Removing a line the gatepass carries would leave the dispatch part-billed. */
-  | "LINE_MAY_NOT_BE_REMOVED";
+  | "LINE_MAY_NOT_BE_REMOVED"
+  /** Entering a bill without a line the gatepass carries would leave the dispatch part-billed. */
+  | "LINE_MISSING";
 
 export class BillDoesNotMatchGatepassError extends Error {
   readonly code = "BILL_DOES_NOT_MATCH_GATEPASS" as const;

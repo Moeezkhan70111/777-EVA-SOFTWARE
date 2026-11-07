@@ -376,6 +376,7 @@ export const IPC = {
   listSaleVouchers: "erp:list-sale-vouchers",
   updateSaleVoucher: "erp:update-sale-voucher",
   addVoucherLineItem: "erp:add-voucher-line-item",
+  enterGatepassBill: "erp:enter-gatepass-bill",
   updateVoucherLineItem: "erp:update-voucher-line-item",
   deleteVoucherLineItem: "erp:delete-voucher-line-item",
   deleteSaleVoucher: "erp:delete-sale-voucher",

@@ -46,8 +46,8 @@ describe("party ledgers and balances", () => {
     expect(api.getCurrentPartyBalance).not.toHaveBeenCalled();
   });
 
-  it("hides the five ledger and balance pages unless the ledgers are shown", () => {
-    expect([...hiddenLedgerRoutes(false)].sort()).toEqual(["contractor-ledger", "customer-balance", "customer-ledger", "supplier-balance", "supplier-ledger"]);
+  it("hides only the supplier pages off the Accounts holder: customer and contractor figures travel (docs/43)", () => {
+    expect([...hiddenLedgerRoutes(false)].sort()).toEqual(["supplier-balance", "supplier-ledger"]);
     expect(hiddenLedgerRoutes(false)).toBe(LEDGER_ROUTES);
     expect(hiddenLedgerRoutes(true).size).toBe(0);
   });

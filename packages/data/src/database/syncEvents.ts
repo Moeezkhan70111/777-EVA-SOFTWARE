@@ -72,6 +72,22 @@ export const SYNC_AGGREGATE = {
   INVENTORY_ITEM: "INVENTORY_ITEM",
   WORK_SECTION: "WORK_SECTION",
   MACHINE: "MACHINE",
+  // ── The production-to-cash workflow: leased records too, by the same rules (cloud migration 028, docs/43) ──
+  MAIN_GROUP: "MAIN_GROUP",
+  PRODUCT_GROUP: "PRODUCT_GROUP",
+  ARTICLE_SERIES: "ARTICLE_SERIES",
+  PRODUCT_TYPE: "PRODUCT_TYPE",
+  PRODUCT_SUB_GROUP: "PRODUCT_SUB_GROUP",
+  /** A product (article + size) with its colours, prices and contractor rates. */
+  ARTICLE_SIZE: "ARTICLE_SIZE",
+  /** One Manual Production entry, standing on its own: it carries its contractors and rates. */
+  MANUAL_PRODUCTION_ENTRY: "MANUAL_PRODUCTION_ENTRY",
+  /** A gatepass with its lines. */
+  GATEPASS: "GATEPASS",
+  /** A bill with its lines. A customer's debit is computed from it, never stored apart. */
+  SALE_VOUCHER: "SALE_VOUCHER",
+  /** A cash voucher with its lines. A payment's credit is computed from it, never stored apart. */
+  CASH_VOUCHER: "CASH_VOUCHER",
   /**
    * One raw-material stock movement, as stored, with the change it made to its material's balance
    * (balanceDelta). Append-only: captured when inserted (masterCapture.ts, EVENT_CAPTURE), applied
@@ -117,6 +133,16 @@ export const LEASED_AGGREGATE_DOMAIN: Readonly<Partial<Record<SyncAggregateType,
   [SYNC_AGGREGATE.MACHINE]: LEASE_DOMAIN.MASTER_DATA,
   [SYNC_AGGREGATE.STOCK_EVENT]: LEASE_DOMAIN.RAW_MATERIAL_STORE,
   [SYNC_AGGREGATE.CARTON_STOCK_EVENT]: LEASE_DOMAIN.CARTON_STOCK,
+  [SYNC_AGGREGATE.MAIN_GROUP]: LEASE_DOMAIN.MASTER_DATA,
+  [SYNC_AGGREGATE.PRODUCT_GROUP]: LEASE_DOMAIN.MASTER_DATA,
+  [SYNC_AGGREGATE.ARTICLE_SERIES]: LEASE_DOMAIN.MASTER_DATA,
+  [SYNC_AGGREGATE.PRODUCT_TYPE]: LEASE_DOMAIN.MASTER_DATA,
+  [SYNC_AGGREGATE.PRODUCT_SUB_GROUP]: LEASE_DOMAIN.MASTER_DATA,
+  [SYNC_AGGREGATE.ARTICLE_SIZE]: LEASE_DOMAIN.MASTER_DATA,
+  [SYNC_AGGREGATE.MANUAL_PRODUCTION_ENTRY]: LEASE_DOMAIN.CARTON_STOCK,
+  [SYNC_AGGREGATE.GATEPASS]: LEASE_DOMAIN.SALES_DISPATCH,
+  [SYNC_AGGREGATE.SALE_VOUCHER]: LEASE_DOMAIN.SALES_DISPATCH,
+  [SYNC_AGGREGATE.CASH_VOUCHER]: LEASE_DOMAIN.ACCOUNTS,
 };
 
 /** The lease an event type is written under, or null when it is not leased. */
