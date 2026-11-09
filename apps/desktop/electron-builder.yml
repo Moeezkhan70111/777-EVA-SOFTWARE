@@ -63,6 +63,8 @@ files:
   - "!**/*.map"
   - "!**/node_modules/@erp/*/dist/**/*.test.js"
   - "!**/node_modules/@erp/*/dist/**/*.test.d.ts"
+  # Test-only helpers (packages/data/src/testing): never imported by the application, never shipped.
+  - "!**/node_modules/@erp/*/dist/testing/**"
   # The packages' TypeScript sources, including a second copy of local-schema.sql. The packaged
   # app reads the schema from extraResources below, never from here.
   - "!**/node_modules/@erp/*/src/**"
