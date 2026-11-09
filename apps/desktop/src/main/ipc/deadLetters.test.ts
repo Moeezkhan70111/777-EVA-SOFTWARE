@@ -39,6 +39,10 @@ const PARKED = {
 let requeueOutcome: unknown;
 let requeuedIds: string[];
 
+// Local test stock data is refused before the queue is touched (@erp/data stockProtection.ts), on cue here.
+let stockRefusal: string | null;
+vi.mock("@erp/data", () => ({ stockRefusalForOutboxRow: () => stockRefusal }));
+
 vi.mock("@erp/sync", () => ({
   deadLetters: () => [PARKED],
   requeueDeadLetter: (_sql: unknown, outboxId: string) => {
@@ -98,6 +102,7 @@ beforeEach(() => {
   logged = [];
   requeuedIds = [];
   requeueOutcome = { requeued: true, entry: PARKED };
+  stockRefusal = null;
   registerDeadLetterHandlers(build());
 });
 
@@ -165,6 +170,16 @@ describe("parked sync events at the process boundary", () => {
     }
     expect(requeuedIds).toEqual([]);
     expect(logged).toEqual([]);
+  });
+
+  it("never puts local test stock data back in the queue, says why, and records the attempt", async () => {
+    stockRefusal = "This is local test stock data from before this computer's cloud start. It is never sent to the cloud.";
+    const answer = await requeue("outbox-1");
+    expect(answer).toEqual({ accepted: false, reason: stockRefusal });
+    expect(requeuedIds).toEqual([]);
+    expect(logged).toHaveLength(1);
+    expect(logged[0]).toMatchObject({ operation: "requeue-dead-letter", severity: "WARNING", userId: "u-admin" });
+    expect(logged[0]?.message).toContain("local test stock data");
   });
 
   it("passes the queue's refusal back as it is, and records the attempt", async () => {

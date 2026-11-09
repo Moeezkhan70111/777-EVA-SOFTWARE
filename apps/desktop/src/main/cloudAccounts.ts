@@ -31,8 +31,13 @@ export const OFFLINE_DAYS = 7;
  * process, not only on the screen. True since the admin screen works under cloud accounts
  * (cloudAdmin.ts: approving, roles, screens, revoking, resets, permission requests). Set it back to
  * false in any build where that stops being so.
+ *
+ * FALSE IN THIS BUILD (Carton Stock Cloud, Phase 1; owner, 9 Nov 2026). Production's cloud has no Cloud
+ * Accounts migrations (020-025 are on TEST only), so every computer stays on LOCAL accounts. The switch
+ * is refused in the main process before anything reaches the cloud (ipc/session.ts), and the screen
+ * shows that it is not available. Local sign-in is untouched.
  */
-export const CLOUD_ACCOUNTS_SWITCH_READY = true;
+export const CLOUD_ACCOUNTS_SWITCH_READY: boolean = false;
 
 /** What a person is told. One place, for translation later (R21). */
 export const ACCOUNT_MESSAGES = {

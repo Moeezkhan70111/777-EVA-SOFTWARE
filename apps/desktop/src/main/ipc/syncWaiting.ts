@@ -23,6 +23,8 @@ const SEND_AGAIN_REFUSED: Readonly<Record<string, string>> = {
   UNKNOWN_TYPE: "Only master data (materials, categories, units, parties, machines) can be sent again.",
   NOT_HERE: "This computer does not have that record, so it has nothing to send.",
   NO_LEASE: "This computer does not know the master-data lease yet. Sync once, then try again.",
+  LOCAL_STOCK_DATA: "This is local test stock data from before Carton Cloud was activated on this computer. It is never sent to the cloud.",
+  CARTON_CLOUD_NOT_ACTIVE: "Carton Cloud is not active on this computer, so no gatepass, bill, cash voucher or Manual Production entry is sent.",
 };
 
 /** Exactly what these handlers need, like DeadLetterContext. */

@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from "react";
 import type { AppRoute } from "../app/routes";
 import { useDesktopApi } from "../hooks/useDesktopApi";
+import { REQUEST_STORAGE_KEY, useLeftoverRequest, useRequestId } from "../hooks/useRequestId";
 import { useNotifications } from "../state/NotificationsContext";
 import { StateView } from "../components/shared/StateView";
 import type { GatepassShortage } from "../types/desktopApi";
@@ -21,6 +22,7 @@ import { useGatepassData } from "../features/gatepass/useGatepassData";
 import { useGatepassDraft } from "../features/gatepass/useGatepassDraft";
 import { useGatepassNavigation } from "../features/gatepass/useGatepassNavigation";
 import { usePartyBalance } from "../features/parties/usePartyBalance";
+import { CartonCloudOffNotice } from "../features/sync/CartonCloudOffNotice";
 
 // Gatepass — one screen, two columns.
 //
@@ -64,6 +66,12 @@ export const GatepassPage: React.FC<GatepassPageProps> = ({ token, onNavigate })
   const [partyId, setPartyId] = useState("");
   const [transport, setTransport] = useState<TransportFields>(EMPTY_TRANSPORT);
   const [submitting, setSubmitting] = useState(false);
+  // One press of Create, one request id (hooks/useRequestId.ts): held at once, not on the next render, so a second
+  // press in the same instant sends nothing; kept after a lost answer, so a retry is answered with the same gatepass.
+  const request = useRequestId(REQUEST_STORAGE_KEY.GATEPASS);
+  useLeftoverRequest(REQUEST_STORAGE_KEY.GATEPASS, (id) => api.findGatepassByRequest(id, { token }), (label) =>
+    push("warning", copy.requests.lastSaveTitle, copy.requests.lastSaveBody(label))
+  );
   const [submitError, setSubmitError] = useState<SubmitError | null>(null);
 
   const party = useMemo(() => parties.find((p) => p.id === partyId) ?? null, [parties, partyId]);
@@ -78,6 +86,7 @@ export const GatepassPage: React.FC<GatepassPageProps> = ({ token, onNavigate })
 
   // ── Handlers ──────────────────────────────────────────────────────────────
   const resetDraft = () => {
+    request.renew();
     clear();
     setPartyId("");
     setTransport(EMPTY_TRANSPORT);
@@ -99,11 +108,14 @@ export const GatepassPage: React.FC<GatepassPageProps> = ({ token, onNavigate })
 
   const create = async () => {
     if (blocker || submitting) return;
+    const requestId = request.start();
+    if (requestId === null) return;
     setSubmitting(true);
     setSubmitError(null);
     try {
       const result = await api.createGatepass(
         {
+          requestId,
           partyId,
           lines: draft.lines,
           biltyNumber: transport.biltyNumber.trim() || null,
@@ -113,9 +125,13 @@ export const GatepassPage: React.FC<GatepassPageProps> = ({ token, onNavigate })
         { token }
       );
 
+      // A definite answer. A conflict keeps the id: pressing Create again must not make a second, different
+      // gatepass from an edited draft -- "New" starts one. Any other answer gives the next press a new id.
+      request.settle({ renew: result.outcome !== "REQUEST_CONFLICT" });
       if (result.accepted) {
         const code = result.code ?? "";
-        push("success", copy.gatepass.createdToast(code), copy.gatepass.createdToastBody(result.totalQuantity ?? 0, party?.partyName ?? ""));
+        if (result.outcome === "ALREADY_SAVED") push("success", copy.requests.alreadySavedTitle, copy.requests.gatepassAlreadySaved(code));
+        else push("success", copy.gatepass.createdToast(code), copy.gatepass.createdToastBody(result.totalQuantity ?? 0, party?.partyName ?? ""));
         // The stored document replaces the draft on screen; the print-out is built from it.
         const document = result.gatepassId ? await api.getGatepass(result.gatepassId, { token }) : null;
         resetDraft();
@@ -133,6 +149,8 @@ export const GatepassPage: React.FC<GatepassPageProps> = ({ token, onNavigate })
       setSubmitError({ message, shortages: shortages.length ? shortages : undefined });
       push("error", copy.toast.failed, message);
     } catch {
+      // No answer: the same id goes again, so the gatepass cannot be made twice.
+      request.unanswered();
       setSubmitError({ message: copy.gatepass.saveFailed });
       push("error", copy.toast.failed, copy.gatepass.saveFailed);
     } finally {
@@ -219,6 +237,7 @@ export const GatepassPage: React.FC<GatepassPageProps> = ({ token, onNavigate })
 
   return (
     <div className="page gatepass-page gp-compose">
+      <CartonCloudOffNotice />
       <header className="gp-topbar">
         <div className="gp-topbar-main">
           <h1 className={`page-title${viewing ? " page-detail-title" : ""}`} data-testid="gatepass-title">

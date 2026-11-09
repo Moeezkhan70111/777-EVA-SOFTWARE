@@ -9,6 +9,7 @@ import { buildStockEvents, type StockEventBuildResult } from "./database/stockEv
 import { buildCartonStockEvents, resendCartonMovementsRefusedForLease, type CartonStockBuildResult } from "./database/cartonStock.js";
 import { buildLabelRuns, type LabelBuildResult } from "./database/labelRunSync.js";
 import { lastBackfillAt, planBackfill, runBackfill, type BackfillOutcome, type BackfillPlan } from "./database/backfill.js";
+import { activateCartonCloud, cartonCloudStatus, dropLiveDocumentViews, installLiveDocumentViews, type ActivationOutcome, type CartonCloudStatus } from "./database/stockProtection.js";
 import type {
   DuplicateChecker,
   OutboxRepository,
@@ -65,6 +66,8 @@ import { manualProductionVoidMethods, type ManualProductionVoidMethods } from ".
 import { gatepassCartonsMethods, type GatepassCartonsMethods } from "./database/gatepassCartons.js";
 import { cartonStockAdjustMethods, type CartonStockAdjustMethods } from "./database/cartonStockAdjust.js";
 import { cartonStockReconciliationMethods, type CartonStockReconciliationMethods } from "./database/cartonStockReconciliation.js";
+import { savedRequestMethods, type SavedRequestMethods } from "./database/savedRequests.js";
+
 import type { BackupRecord, HealthSnapshot, MoneyDriftSummary, MoneyDriftViolation, SqliteDatabaseOptions } from "./database/types.js";
 
 // The data layer's public record shapes and constants live in ./database/types.ts and are
@@ -167,6 +170,38 @@ export {
 export type { CartonSql, CartonStockBuildResult, CartonStockEventPayload } from "./database/cartonStock.js";
 export { CARTON_ADJUST_DIRECTION, type CartonAdjustDirection, type CartonAdjustInput, type CartonAdjustResult } from "./database/cartonStockAdjust.js";
 export type { CartonReconciliation, CartonReconciliationRow } from "./database/cartonStockReconciliation.js";
+export { RequestConflictError, isRequestId, requestFingerprint } from "./database/requestFingerprint.js";
+export type { CashVoucherInput, CashVoucherSaved } from "./database/cash.js";
+export type { ManualSaleVoucherInput, ManualSaleVoucherSaved, SaleLineInput } from "./database/sales.js";
+export { SAVED_REQUEST_KIND, type SavedRequest, type SavedRequestKind } from "./database/savedRequests.js";
+export {
+  ACTIVATION_LEASE_MAX_AGE_MS,
+  CARTON_CLOUD_ACTIVATION_KEY,
+  CARTON_CLOUD_REQUIRED_DOMAINS,
+  LOCAL_STOCK_MESSAGE,
+  LOCAL_STOCK_PARKED_ERROR,
+  NEVER_BACKFILLED_TYPES,
+  NEVER_SENT_TYPES,
+  STOCK_RECORD_TYPES,
+  activateCartonCloud,
+  cartonCloudIsActive,
+  cartonCloudStatus,
+  isLocalCartonMovement,
+  isLocalStockRecord,
+  parkLocalStockOutboxRows,
+  readCartonCloudState,
+  stockRefusalForOutboxRow,
+  testCartonsInStoreFigure,
+  dropLiveDocumentViews,
+  installLiveDocumentViews,
+  refuseTestFinancialDocument,
+  type TestFinancialTable,
+  type ActivationOutcome,
+  type CartonCloudActivation,
+  type CartonCloudLeaseView,
+  type CartonCloudState,
+  type CartonCloudStatus,
+} from "./database/stockProtection.js";
 export { applyCartonStockReset, planCartonStockReset, verifyCartonStockReset, type CartonResetPlan } from "./database/cartonStockReset.js";
 export { buildLabelRuns } from "./database/labelRunSync.js";
 export type { LabelBuildResult } from "./database/labelRunSync.js";
@@ -451,6 +486,8 @@ export class SqliteDatabase
     // After the migrations, because this is the run that teaches backup_history the
     // 'PRE_MIGRATION' type (migration 084). Recorded here, the row is always allowed.
     if (safetyCopy !== null) this.recordSafetyCopy(safetyCopy);
+    // Nothing about Carton Cloud happens on opening: it stays off until an administrator activates it
+    // (database/stockProtection.ts, ipc/cartonCloud.ts).
 
     this.ensureSchemaCompatibility();
     this.ensureDefaultRoles();
@@ -463,6 +500,9 @@ export class SqliteDatabase
     // master data. Replaces the capture triggers with the current definitions -- and restores any a
     // table-rebuild migration dropped along with its table (database/masterCapture.ts).
     installCaptureTriggers(this.db);
+    // Balances read documents through these: after Carton Cloud is activated, test documents count in no balance
+    // (database/stockProtection.ts). Before activation they hold everything.
+    installLiveDocumentViews(this.db);
   }
 
   /** Where the backups for this database live. One derivation, shared with seedDefaultSettings. */
@@ -481,6 +521,8 @@ export class SqliteDatabase
    * recoverable in a way a bad migration is not (CLAUDE.md §23: data integrity first).
    */
   private copyDatabaseBeforeMigrating(): { backupPath: string; fromVersion: number; toVersion: number; pending: number } | null {
+    // A migration may rebuild a table a live view reads; the views come back at the end of opening.
+    dropLiveDocumentViews(this.db);
     const pending = this.pendingMigrationFiles();
     if (pending.length === 0) return null;
 
@@ -1328,6 +1370,16 @@ export class SqliteDatabase
     return markRecordToSendAgain(this.db, type, recordId, nowIso);
   }
 
+  /** Whether Carton Cloud is active here, and what stops it being activated (database/stockProtection.ts). Reads only. */
+  cartonCloudStatus(nowIso: string): CartonCloudStatus {
+    return cartonCloudStatus(this.db, nowIso);
+  }
+
+  /** Activates Carton Cloud on this database, once, with a fresh cutoff (database/stockProtection.ts). */
+  activateCartonCloud(input: { nowIso: string; activatedBy: string }): ActivationOutcome {
+    return activateCartonCloud(this.db, input);
+  }
+
   /**
    * Keeps sync_runs bounded. A pass runs every minute, so the table would otherwise grow by about
    * 1,440 rows a day on every computer, for ever.
@@ -1609,7 +1661,8 @@ export interface SqliteDatabase
     ManualProductionVoidMethods,
     GatepassCartonsMethods,
     CartonStockAdjustMethods,
-    CartonStockReconciliationMethods {}
+    CartonStockReconciliationMethods,
+    SavedRequestMethods {}
 
 Object.assign(
   SqliteDatabase.prototype,
@@ -1656,5 +1709,6 @@ Object.assign(
   manualProductionVoidMethods,
   gatepassCartonsMethods,
   cartonStockAdjustMethods,
-  cartonStockReconciliationMethods
+  cartonStockReconciliationMethods,
+  savedRequestMethods
 );

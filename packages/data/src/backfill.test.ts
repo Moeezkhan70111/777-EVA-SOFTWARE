@@ -272,3 +272,20 @@ test("a variant production already queued is not queued again, and a refused bac
     assert.equal(variantRows(db).length, 0);
   });
 });
+
+test("carton and money documents already here are counted as never sent and are never marked by the backfill", () => {
+  withStore((db, run) => {
+    seedHistory(run);
+    run(`INSERT INTO cash_vouchers (id, voucher_number, party_id, voucher_date, description, receipt_amount_paisa, payment_amount_paisa, created_at, updated_at)
+         VALUES ('cv-1', 1, 'p-1', '2026-10-01', 'Test receipt', 100, 0, ?, ?)`, NOW, NOW);
+    grantBoth(run);
+    run(`INSERT OR REPLACE INTO sync_domain_leases (domain, holder_device_id, holder_label, epoch, barrier_seq, granted_at, project_key, fetched_at)
+         VALUES ('ACCOUNTS', 'dev-store', 'Store PC', 4, 0, ?, 'https://test.supabase.co', ?)`, NOW, NOW);
+    const outcome = db.runBackfill(NOW);
+    assert.equal(outcome.done, true);
+    assert.equal(outcome.plan.neverSent.documents.CASH_VOUCHER, 1, "listed as never sent");
+    assert.equal(outcome.plan.masterRecords.CASH_VOUCHER, undefined, "not listed as something that goes");
+    assert.equal(n(db, "SELECT COUNT(*) AS n FROM sync_dirty_records WHERE aggregate_type = 'CASH_VOUCHER' AND lease_epoch IS NOT NULL"), 0, "never marked to send, even under the ACCOUNTS lease");
+    assert.equal(n(db, "SELECT COUNT(*) AS n FROM sync_dirty_records WHERE aggregate_type = 'STOCK_EVENT' AND lease_epoch = 3"), 3, "raw-material movements are marked exactly as before");
+  });
+});

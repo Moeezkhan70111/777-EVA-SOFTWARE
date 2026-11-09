@@ -7,7 +7,8 @@ import { ipcMain } from "../leaseGuard";
 import { IPC } from "../../shared/ipcChannels";
 import type { IpcContext } from "./context";
 import { PERMISSION } from "@erp/domain";
-import type { SqliteDatabase } from "@erp/data";
+import { SAVED_REQUEST_KIND, isRequestId, type SqliteDatabase } from "@erp/data";
+import { requestConflictAnswer } from "./requestConflict";
 
 export function registerCashHandlers(ctx: IpcContext): void {
   const { db, logger, authorizer, deviceId, useCases } = ctx;
@@ -25,6 +26,16 @@ export function registerCashHandlers(ctx: IpcContext): void {
         message: error instanceof Error ? error.message : "Failed to get next cash voucher number",
       });
       return 1;
+    }
+  });
+
+  // Read-only: was the press of Save the screen never heard back from recorded? (migration 105)
+  ipcMain.handle(IPC.findCashVoucherByRequest, (event, requestId?: unknown) => {
+    try {
+      authorizer.requirePermission(event, PERMISSION.CASH_VOUCHER_FORM);
+      return { accepted: true, saved: db.findSavedRequest(SAVED_REQUEST_KIND.CASH_VOUCHER, typeof requestId === "string" ? requestId : "") };
+    } catch (error) {
+      return { accepted: false, reason: error instanceof Error ? error.message : "This could not be checked.", saved: null };
     }
   });
 
@@ -56,9 +67,12 @@ export function registerCashHandlers(ctx: IpcContext): void {
       }
 
       const firstLine = normalizedLines[0];
+      // One press of Save is one voucher, so one payment (migration 105): the screen's id for it is required.
+      const requestId = typeof input.requestId === "string" ? input.requestId.trim() : "";
+      if (!isRequestId(requestId)) return { accepted: false, reason: "This voucher could not be identified. Nothing was saved. Press Save again." };
 
-      const voucherId = db.createCashVoucher({
-        requestId: typeof input.requestId === "string" ? input.requestId : undefined,
+      const saved = db.createCashVoucher({
+        requestId,
         partyId: firstLine.partyId,
         voucherDate: String(input.voucherDate),
         modeOfTransfer: firstLine.modeOfTransfer,
@@ -73,11 +87,16 @@ export function registerCashHandlers(ctx: IpcContext): void {
         severity: "INFO",
         operation: "create-cash-voucher",
         deviceId,
-        message: `Cash voucher created: ${voucherId}`,
+        message: saved.outcome === "ALREADY_SAVED" ? `Cash voucher #${saved.voucherNumber} asked for again: already saved, nothing written` : `Cash voucher created: #${saved.voucherNumber} (${saved.id})`,
       });
 
-      return { accepted: true, voucherId };
+      return { accepted: true, voucherId: saved.id, voucherNumber: saved.voucherNumber, outcome: saved.outcome };
     } catch (error) {
+      const conflict = requestConflictAnswer(error);
+      if (conflict) {
+        logger.log({ module: "cash-voucher", severity: "WARNING", operation: "create-cash-voucher", deviceId, message: conflict.reason });
+        return conflict;
+      }
       logger.log({
         module: "cash-voucher",
         severity: "ERROR",

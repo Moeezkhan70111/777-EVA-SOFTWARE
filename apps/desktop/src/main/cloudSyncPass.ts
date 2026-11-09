@@ -166,6 +166,18 @@ function numberRangeAdvice(claim: { reason: string; block?: number }): string {
   }
 }
 
+/**
+ * Local test stock data a builder left out (stockProtection.ts in @erp/data). Never silent: the records keep their
+ * marks, are never sent, and every pass that meets them says how many.
+ */
+function logHeldBack(logger: StructuredLogger, deviceId: string, operation: string, heldBack: number): void {
+  if (heldBack === 0) return;
+  logger.log({
+    module: "sync", severity: "WARNING", operation, deviceId,
+    message: `${String(heldBack)} stock record(s) were made before Carton Cloud was activated here: excluded for ever, never sent.`,
+  });
+}
+
 function buildMasterRecords(db: SqliteDatabase, logger: StructuredLogger, deviceId: string): void {
   try {
     const built = db.buildLeasedRecordRevisions(new Date().toISOString());
@@ -175,6 +187,7 @@ function buildMasterRecords(db: SqliteDatabase, logger: StructuredLogger, device
         message: `${String(built.unqueued)} changed master record(s) could not be queued and stay marked for the next pass.`,
       });
     }
+    logHeldBack(logger, deviceId, "master-records", built.heldBack ?? 0);
   } catch (error) {
     logger.log({
       module: "sync", severity: "ERROR", operation: "master-records", deviceId,
@@ -244,6 +257,7 @@ function buildCartonStockEvents(db: SqliteDatabase, logger: StructuredLogger, de
         message: `${String(built.unqueued)} carton movement(s) could not be queued and stay marked.`,
       });
     }
+    logHeldBack(logger, deviceId, "carton-stock-events", built.heldBack ?? 0);
   } catch (error) {
     logger.log({
       module: "sync", severity: "ERROR", operation: "carton-stock-events", deviceId,
@@ -511,6 +525,12 @@ export async function runCloudSyncPass(
       buildStockEvents(db, logger, deviceId);
       buildCartonStockEvents(db, logger, deviceId);
     });
+    if (pushed.parkedLocalStock > 0) {
+      logger.log({
+        module: "sync", severity: "WARNING", operation: "local-stock-protection", deviceId,
+        message: `${String(pushed.parkedLocalStock)} queued stock event(s) are local test data (Carton Cloud not active, or made before activation): parked, never sent.`,
+      });
+    }
 
     // The project goes with the cursor: a computer moved to another project (test -> production)
     // starts reading that project's log from the beginning instead of from a position that only
@@ -521,7 +541,18 @@ export async function runCloudSyncPass(
     // Open screens showing what just arrived reload in place: a figure that is current in the
     // database but stale on the screen is no better than a slow sync. Anything read can also settle
     // or start a wait, so a read that applied nothing still tells the waiting lists.
-    if (pulled.applied > 0 || pulled.fetched > 0) announceDataChanged(dataKindsOf(pulled.appliedTypes ?? []));
+    if (pulled.applied > 0 || pulled.fetched > 0) {
+      const kinds = dataKindsOf(pulled.appliedTypes ?? []);
+      const announced = announceDataChanged(kinds);
+      // The first line of a change's trace: which log positions it came from and where it was sent.
+      logger.log({
+        module: "sync",
+        severity: "INFO",
+        operation: "data-changed",
+        deviceId,
+        message: `Change ${announced?.id ?? "-"}: applied ${pulled.applied} of ${pulled.fetched} read (log ${pulled.from + 1}..${pulled.cursor}: ${(pulled.appliedTypes ?? []).join(", ") || "nothing new"}); told ${announced?.windows ?? 0} window(s): ${kinds.join(", ")}.`,
+      });
+    }
     if (pulled.restartedForProject) {
       logger.log({
         module: "sync",

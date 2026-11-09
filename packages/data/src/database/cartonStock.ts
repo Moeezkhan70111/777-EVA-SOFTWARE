@@ -17,6 +17,7 @@ import { CARTON_STOCK_EVENT_TYPE, cartonStockDelta, isCartonAdjustment, isCarton
 import { IN_STORE_LOCATION_TYPE } from "@erp/application";
 import { enqueueProductVariant, enqueueSyncEvent, heldLeaseEpoch, leaseDomainOf, SYNC_AGGREGATE, type SyncWriteHandle } from "./syncEvents.js";
 import type { BuildHandle } from "./masterRecords.js";
+import { cartonCloudIsActive, isLocalCartonMovement, stockRefusalForOutboxRow } from "./stockProtection.js";
 
 type Bindable = string | number | null;
 
@@ -253,6 +254,10 @@ export function cartonStockEventPayloadOf(row: Record<string, unknown>): CartonS
 export interface CartonStockBuildResult {
   readonly queued: number;
   readonly unqueued: number;
+  /** Movements of stock made before Carton Cloud was activated here: retired, never queued (stockProtection.ts). */
+  readonly heldBack?: number;
+  /** True when nothing was built because Carton Cloud is not active on this computer: every mark waits, untouched. */
+  readonly notActivated?: boolean;
 }
 
 /**
@@ -264,6 +269,8 @@ export interface CartonStockBuildResult {
  */
 export function buildCartonStockEvents(db: BuildHandle, nowIso: string, limit = 500): CartonStockBuildResult {
   const type = SYNC_AGGREGATE.CARTON_STOCK_EVENT;
+  // Off until activated: no carton movement is built at all, and none of these marks is touched.
+  if (!cartonCloudIsActive(db)) return { queued: 0, unqueued: 0, heldBack: 0, notActivated: true };
   const marks = db
     .prepare(
       `SELECT d.record_id, d.lease_epoch FROM sync_dirty_records d
@@ -271,13 +278,21 @@ export function buildCartonStockEvents(db: BuildHandle, nowIso: string, limit = 
         WHERE d.aggregate_type = ? AND d.lease_epoch IS NOT NULL ORDER BY e.rowid, d.record_id LIMIT ?`
     )
     .all(type, limit) as Array<{ record_id: string; lease_epoch: number }>;
-  if (marks.length === 0) return { queued: 0, unqueued: 0 };
+  if (marks.length === 0) return { queued: 0, unqueued: 0, heldBack: 0 };
 
   let queued = 0;
   let unqueued = 0;
+  let heldBack = 0;
   db.exec("BEGIN IMMEDIATE");
   try {
     for (const mark of marks) {
+      // A movement of test stock -- made before activation, or of a test gatepass or Manual Production entry (a cancel
+      // or void made since): excluded for ever, so its mark is retired. Counted; the pass logs it (stockProtection.ts).
+      if (isLocalCartonMovement(db, mark.record_id)) {
+        db.prepare("DELETE FROM sync_dirty_records WHERE aggregate_type = ? AND record_id = ?").run(type, mark.record_id);
+        heldBack += 1;
+        continue;
+      }
       if (queueOne(db, mark, nowIso)) {
         db.prepare("DELETE FROM sync_dirty_records WHERE aggregate_type = ? AND record_id = ?").run(type, mark.record_id);
         queued += 1;
@@ -290,7 +305,7 @@ export function buildCartonStockEvents(db: BuildHandle, nowIso: string, limit = 
     db.exec("ROLLBACK");
     throw error;
   }
-  return { queued, unqueued };
+  return { queued, unqueued, heldBack };
 }
 
 /** True when the movement is in the outbox: queued now, or by an earlier pass. */
@@ -323,19 +338,29 @@ function queueOne(db: BuildHandle, mark: { record_id: string; lease_epoch: numbe
  * bill or a payment made offline must not be lost for losing the lease. A record goes out as the same revision.
  */
 export function resendCartonMovementsRefusedForLease(db: BuildHandle, nowIso: string): number {
+  // Every one of these is stock: none goes again unless Carton Cloud is active, and then only what was made after
+  // activation (stockProtection.ts). A refusal for local stock is left exactly where it is.
+  if (!cartonCloudIsActive(db)) return 0;
   let resent = 0;
   for (const type of RESENT_WHEN_LEASE_RETURNS) {
     const domain = leaseDomainOf(type);
     const epoch = domain === null ? null : heldLeaseEpoch(db, domain);
     if (epoch === null) continue;
-    const result = db
+    const refused = db
       .prepare(
-        `UPDATE sync_outbox
-            SET status = 'PENDING', lease_epoch = ?, lock_token = NULL, attempts = 0, transient_attempts = 0, available_at = ?, updated_at = ?
+        `SELECT id FROM sync_outbox
           WHERE aggregate_type = ? AND status IN ('FAILED', 'DEAD_LETTER') AND last_error LIKE '%NOT_LEASE_HOLDER%' AND lease_epoch <> ?`
       )
-      .run(epoch, nowIso, nowIso, type, epoch);
-    resent += Number(result.changes);
+      .all(type, epoch) as Array<{ id: string }>;
+    const resend = db.prepare(
+      `UPDATE sync_outbox
+          SET status = 'PENDING', lease_epoch = ?, lock_token = NULL, attempts = 0, transient_attempts = 0, available_at = ?, updated_at = ?
+        WHERE id = ?`
+    );
+    for (const { id } of refused) {
+      if (stockRefusalForOutboxRow(db, String(id)) !== null) continue;
+      resent += Number(resend.run(epoch, nowIso, nowIso, String(id)).changes);
+    }
   }
   return resent;
 }

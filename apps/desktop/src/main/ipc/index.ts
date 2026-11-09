@@ -28,6 +28,8 @@ import { installLeaseGate } from "../leaseGuard";
 import { registerLeaseHandlers } from "./leases";
 import { registerSyncWaitingHandlers } from "./syncWaiting";
 import { registerBackfillHandlers } from "./backfill";
+import { registerCartonCloudHandlers } from "./cartonCloud";
+import { registerDataChangeTraceHandler } from "./dataChangeTrace";
 
 export type { IpcContext } from "./context";
 export { createIpcContext } from "./context";
@@ -64,4 +66,6 @@ export function registerIpcHandlers(ctx: IpcContext): void {
   registerLeaseHandlers(ctx);
   registerSyncWaitingHandlers(ctx);
   registerBackfillHandlers(ctx);
+  registerCartonCloudHandlers(ctx);
+  registerDataChangeTraceHandler(ctx);
 }

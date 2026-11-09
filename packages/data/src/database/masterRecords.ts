@@ -12,6 +12,9 @@
 
 import crypto from "node:crypto";
 import { enqueueSyncEvent, heldLeaseEpoch, leaseDomainOf, SYNC_AGGREGATE, type SyncAggregateType, type SyncWriteHandle } from "./syncEvents.js";
+import { STOCK_RECORD_TYPES, cartonCloudIsActive, isLocalStockRecord } from "./stockProtection.js";
+
+/** How many pages of marks a builder reads, so held-back marks cannot fill a page by themselves. */
 
 export type MasterRecordType =
   | typeof SYNC_AGGREGATE.PARTY_GROUP
@@ -169,13 +172,17 @@ export const MASTER_RECORDS: Readonly<Record<MasterRecordType, RecordTableSpec>>
       partyRef("packing_contractor_party_id"),
     ],
   },
+  // Request ids and fingerprints (migration 105) answer a retry on the computer that made the document, and
+  // nowhere else: they stay here.
   [SYNC_AGGREGATE.GATEPASS]: {
     table: "gatepasses",
+    localColumns: ["request_id", "request_fingerprint"],
     references: [partyRef("party_id")],
     children: [{ table: "gatepass_lines", parentColumn: "gatepass_id", references: [variantRef] }],
   },
   [SYNC_AGGREGATE.SALE_VOUCHER]: {
     table: "sale_vouchers",
+    localColumns: ["request_id", "request_fingerprint"],
     references: [partyRef("party_id"), { column: "gatepass_id", table: "gatepasses", record: SYNC_AGGREGATE.GATEPASS }],
     children: [
       { table: "sale_voucher_line_items", parentColumn: "voucher_id", references: [variantRef] },
@@ -184,6 +191,7 @@ export const MASTER_RECORDS: Readonly<Record<MasterRecordType, RecordTableSpec>>
   },
   [SYNC_AGGREGATE.CASH_VOUCHER]: {
     table: "cash_vouchers",
+    localColumns: ["request_fingerprint"],
     references: [partyRef("party_id")],
     children: [{ table: "cash_voucher_lines", parentColumn: "voucher_id", references: [partyRef("party_id")] }],
   },
@@ -314,11 +322,18 @@ export interface BuildResult {
   readonly queued: number;
   /** Marks that could not be queued and were left marked (the outbox refused the row). */
   readonly unqueued: number;
+  /**
+   * Marks of stock records made before Carton Cloud was activated here, found after activation: retired, never queued
+   * (stockProtection.ts). Counted, so a pass says so rather than look complete.
+   */
+  readonly heldBack?: number;
 }
 
 const ORDER = MASTER_RECORD_TYPES.map((type, index) => `WHEN '${type}' THEN ${String(index)}`).join(" ");
 /** Only master records: other captured types (stock events) have builders of their own. */
 const MASTER_TYPES_SQL = MASTER_RECORD_TYPES.map((type) => `'${type}'`).join(", ");
+/** Before Carton Cloud is activated, stock documents are not built at all: their marks wait, untouched (stockProtection.ts). */
+const MASTER_TYPES_WITHOUT_STOCK_SQL = MASTER_RECORD_TYPES.filter((type) => !STOCK_RECORD_TYPES.has(type)).map((type) => `'${type}'`).join(", ");
 
 /**
  * Turns marked records into queued revisions, prerequisites first, in one transaction.
@@ -333,18 +348,20 @@ const MASTER_TYPES_SQL = MASTER_RECORD_TYPES.map((type) => `'${type}'`).join(", 
  * marked and counted, never cleared: clearing it would lose the change.
  */
 export function buildLeasedRecordRevisions(db: BuildHandle, nowIso: string, limit = 200): BuildResult {
+  const stockMayGo = cartonCloudIsActive(db);
   const marks = db
     .prepare(
       `SELECT aggregate_type, record_id, lease_epoch FROM sync_dirty_records
-        WHERE lease_epoch IS NOT NULL AND aggregate_type IN (${MASTER_TYPES_SQL})
+        WHERE lease_epoch IS NOT NULL AND aggregate_type IN (${stockMayGo ? MASTER_TYPES_SQL : MASTER_TYPES_WITHOUT_STOCK_SQL})
         ORDER BY CASE aggregate_type ${ORDER} ELSE 99 END, marked_at, record_id
         LIMIT ?`
     )
     .all(limit) as Array<{ aggregate_type: string; record_id: string; lease_epoch: number }>;
-  if (marks.length === 0) return { queued: 0, unqueued: 0 };
+  if (marks.length === 0) return { queued: 0, unqueued: 0, heldBack: 0 };
 
   let queued = 0;
   let unqueued = 0;
+  let heldBack = 0;
   db.exec("BEGIN IMMEDIATE");
   try {
     for (const mark of marks) {
@@ -353,6 +370,13 @@ export function buildLeasedRecordRevisions(db: BuildHandle, nowIso: string, limi
         continue;
       }
       const type = mark.aggregate_type;
+      // A stock document made before activation (an edit of an old test gatepass, bill, voucher or entry): excluded
+      // for ever, so its mark is retired rather than left to wait. Counted; the pass logs it.
+      if (isLocalStockRecord(db, type, mark.record_id)) {
+        db.prepare("DELETE FROM sync_dirty_records WHERE aggregate_type = ? AND record_id = ?").run(type, mark.record_id);
+        heldBack += 1;
+        continue;
+      }
       const current = db.prepare("SELECT revision FROM sync_record_revisions WHERE aggregate_type = ? AND record_id = ?").all(type, mark.record_id)[0] as
         | { revision: number }
         | undefined;
@@ -384,7 +408,7 @@ export function buildLeasedRecordRevisions(db: BuildHandle, nowIso: string, limi
     db.exec("ROLLBACK");
     throw error;
   }
-  return { queued, unqueued };
+  return { queued, unqueued, heldBack };
 }
 
 // ─── Sending a record again ─────────────────────────────────────────────────
@@ -396,7 +420,11 @@ export type SendAgainOutcome =
   /** This computer does not have the record, so it has nothing to send. */
   | "NOT_HERE"
   /** This computer does not hold the record's lease, so a revision from here would be refused. */
-  | "NO_LEASE";
+  | "NO_LEASE"
+  /** Local test stock data, made before Carton Cloud was activated here: never sent (stockProtection.ts). */
+  | "LOCAL_STOCK_DATA"
+  /** A stock document, and Carton Cloud is not active on this computer: no stock document is sent. */
+  | "CARTON_CLOUD_NOT_ACTIVE";
 
 /**
  * Marks one record to be sent again, as a new revision -- for a record another computer is waiting
@@ -410,6 +438,9 @@ export function markRecordToSendAgain(db: BuildHandle, type: string, recordId: s
   if (!isMasterRecordType(type)) return "UNKNOWN_TYPE";
   const present = db.prepare(`SELECT 1 AS here FROM ${MASTER_RECORDS[type].table} WHERE id = ?`).all(recordId);
   if (present.length === 0) return "NOT_HERE";
+  // A stock record is refused, not marked, unless Carton Cloud is active and the record was made after activation.
+  if (STOCK_RECORD_TYPES.has(type) && !cartonCloudIsActive(db)) return "CARTON_CLOUD_NOT_ACTIVE";
+  if (isLocalStockRecord(db, type, recordId)) return "LOCAL_STOCK_DATA";
   const domain = leaseDomainOf(type);
   const epoch = domain === null ? null : heldLeaseEpoch(db, domain);
   if (epoch === null) return "NO_LEASE";

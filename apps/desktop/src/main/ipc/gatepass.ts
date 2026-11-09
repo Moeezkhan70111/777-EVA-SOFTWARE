@@ -10,8 +10,16 @@ import { ipcMain } from "../leaseGuard";
 import { IPC } from "../../shared/ipcChannels";
 import type { IpcContext } from "./context";
 import { ACCESS_STATUS, GATEPASS_STATUS, USER_ROLE } from "@erp/domain";
+import { SAVED_REQUEST_KIND, isRequestId } from "@erp/data";
 import fs from "node:fs";
 import path from "node:path";
+
+/** The log line for one press of Create. */
+function describeCreate(result: { outcome: string; code?: string; totalQuantity?: number; reason?: string }, username: string): string {
+  if (result.outcome === "CREATED") return `Gatepass created: ${result.code} by ${username} (${result.totalQuantity} cartons)`;
+  if (result.outcome === "ALREADY_SAVED") return `Gatepass ${result.code} asked for again by ${username}: already made, nothing written`;
+  return JSON.stringify({ outcome: result.outcome, reason: result.reason ?? null });
+}
 
 export function registerGatepassHandlers(ctx: IpcContext): void {
   const { db, logger, deviceId, paths, useCases } = ctx;
@@ -67,11 +75,24 @@ export function registerGatepassHandlers(ctx: IpcContext): void {
     }
   });
 
+  // Read-only: was the press of Create the screen never heard back from recorded? (migration 105)
+  ipcMain.handle(IPC.findGatepassByRequest, (_event, requestId?: unknown, opts?: { token?: string }) => {
+    const auth = resolveGatepassUser(opts?.token);
+    if (!auth.ok) return { accepted: false, reason: auth.reason, saved: null };
+    return { accepted: true, saved: db.findSavedRequest(SAVED_REQUEST_KIND.GATEPASS, typeof requestId === "string" ? requestId : "") };
+  });
+
   ipcMain.handle(IPC.createGatepass, async (_event, input?: Record<string, unknown>, opts?: { token?: string }) => {
     const auth = resolveGatepassUser(opts?.token);
     if (!auth.ok) {
       logger.log({ module: "gatepass", severity: "WARNING", operation: "create-gatepass-denied", deviceId, message: auth.reason });
       return { accepted: false, outcome: "NOT_AUTHORIZED", reason: auth.reason };
+    }
+
+    // One press of Create is one gatepass (migration 105): the screen's id for it is required.
+    const requestId = typeof input?.requestId === "string" ? input.requestId.trim() : "";
+    if (!isRequestId(requestId)) {
+      return { accepted: false, outcome: "NO_REQUEST_ID", reason: "This Create could not be identified. Nothing was made. Press Create again." };
     }
 
     const rawLines = Array.isArray(input?.lines) ? (input!.lines as Array<Record<string, unknown>>) : [];
@@ -92,18 +113,10 @@ export function registerGatepassHandlers(ctx: IpcContext): void {
         actor: auth.username,
         actorUserId: auth.userId,
         deviceId,
+        requestId,
       });
 
-      logger.log({
-        module: "gatepass",
-        severity: result.accepted ? "INFO" : "WARNING",
-        operation: "create-gatepass",
-        deviceId,
-        userId: auth.userId,
-        message: result.accepted
-          ? `Gatepass created: ${result.code} by ${auth.username} (${result.totalQuantity} cartons)`
-          : JSON.stringify({ outcome: result.outcome, reason: result.reason ?? null }),
-      });
+      logger.log({ module: "gatepass", severity: result.accepted ? "INFO" : "WARNING", operation: "create-gatepass", deviceId, userId: auth.userId, message: describeCreate(result, auth.username) });
 
       return result;
     } catch (error) {

@@ -2205,14 +2205,14 @@ test("cash vouchers update customer ledger and balance immediately", async () =>
       discount: 0,
     });
 
-    fixture.db.createCashVoucher({
+    fixture.db.createCashVoucher({ requestId: crypto.randomUUID(),
       partyId,
       voucherDate: "2026-08-05",
       description: "Customer payment received",
       receiptAmount: 1500,
     });
 
-    fixture.db.createCashVoucher({
+    fixture.db.createCashVoucher({ requestId: crypto.randomUUID(),
       partyId,
       voucherDate: "2026-08-10",
       description: "Advance returned to customer",
@@ -3085,7 +3085,7 @@ test("money: cash voucher header and lines dual-write receipt/payment amounts in
   const fixture = createDbFixture();
   try {
     const partyId = fixture.db.createParty({ partyName: "Cash Party", partyType: "CUSTOMER", status: "ACTIVE" });
-    const voucherId = fixture.db.createCashVoucher({ partyId, voucherDate: "2026-01-01", description: "Advance", receiptAmount: 250.75 });
+    const { id: voucherId } = fixture.db.createCashVoucher({ requestId: crypto.randomUUID(), partyId, voucherDate: "2026-01-01", description: "Advance", receiptAmount: 250.75 });
 
     const header = rawGet(fixture.db, "SELECT receipt_amount_paisa, payment_amount_paisa FROM cash_vouchers WHERE id = ?", voucherId);
     assert.equal(header.receipt_amount_paisa, 25075);
@@ -3186,7 +3186,7 @@ test("money: getCurrentPartyBalance is exact for amounts where naive floating-po
     }
     // Also exercise the subtraction side (a cash receipt reduces the balance) with another
     // decimal amount that is not exactly representable in binary floating point.
-    fixture.db.createCashVoucher({ partyId, voucherDate: "2026-01-01", description: "Partial receipt", receiptAmount: 3.33 });
+    fixture.db.createCashVoucher({ requestId: crypto.randomUUID(), partyId, voucherDate: "2026-01-01", description: "Partial receipt", receiptAmount: 3.33 });
 
     // Exact expectation, computed in integer paisa: (10 x 1001) - 333 = 9677 paisa = Rs 96.77
     const balance = fixture.db.getCurrentPartyBalance(partyId);

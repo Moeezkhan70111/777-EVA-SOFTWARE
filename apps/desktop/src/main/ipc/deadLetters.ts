@@ -22,6 +22,7 @@
 // administrator asks for is what actually sends it.
 
 import { ipcMain } from "electron";
+import { stockRefusalForOutboxRow } from "@erp/data";
 import { IPC } from "../../shared/ipcChannels";
 import type { IpcContext } from "./context";
 import { rejection } from "../authorize";
@@ -78,6 +79,13 @@ export function registerDeadLetterHandlers(ctx: DeadLetterContext): void {
     // recovery this deliberately does not offer.
     const id = typeof outboxId === "string" ? outboxId.trim() : "";
     if (id === "") return { accepted: false as const, reason: "Choose the parked event to put back." };
+
+    // Local test stock data is never sent, so it is never put back in the queue either (stockProtection.ts).
+    const stockRefusal = stockRefusalForOutboxRow(db.db, id);
+    if (stockRefusal !== null) {
+      logger.log({ module: "sync", severity: "WARNING", operation: "requeue-dead-letter", deviceId, userId: admin.id, message: `Refused to put back ${id}: ${stockRefusal}` });
+      return { accepted: false as const, reason: stockRefusal };
+    }
 
     const sync = await import("@erp/sync");
     const outcome = sync.requeueDeadLetter(db.db, id, new Date().toISOString());

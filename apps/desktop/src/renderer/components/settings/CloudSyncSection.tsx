@@ -6,6 +6,7 @@ import { useNotifications } from "../../state/NotificationsContext";
 import { copy } from "../../config/copy";
 import type { CloudSyncStatus, DeadLetterEvent, DesktopApi } from "../../types/desktopApi";
 import { BackfillPanel } from "../../features/sync/BackfillPanel";
+import { CartonCloudPanel } from "../../features/sync/CartonCloudPanel";
 
 // WHAT THIS COMPUTER HAS SENT, AND THE TWO THINGS AN ADMINISTRATOR CAN DO ABOUT IT.
 //
@@ -215,6 +216,9 @@ export const CloudSyncSection: React.FC<CloudSyncSectionProps> = ({ isAdmin }) =
 
       {/* The one-time backfill: an administrator, on the store computer. */}
       {isAdmin && status?.configured === true && <BackfillPanel />}
+
+      {/* Carton Cloud: off until an administrator activates it, once, on go-live day. */}
+      {isAdmin && status?.configured === true && <CartonCloudPanel />}
 
       {confirming !== null && (
         <ConfirmDialog

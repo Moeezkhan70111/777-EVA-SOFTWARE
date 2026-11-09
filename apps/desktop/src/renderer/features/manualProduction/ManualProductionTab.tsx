@@ -5,6 +5,7 @@ import type { MachineRecord } from "../../types/desktopApi";
 import { ManualProductionForm } from "./ManualProductionForm";
 import { ManualProductionList } from "./ManualProductionList";
 import { useManualProductionDay, useProductChoices, useSaveManualProduction, useVoidManualProduction } from "./useManualProduction";
+import { CartonCloudOffNotice } from "../sync/CartonCloudOffNotice";
 
 // MANUAL PRODUCTION — a QR Generator tab, beside Receive Production (owner, 2026-10-14):
 //
@@ -33,6 +34,7 @@ export const ManualProductionTab: React.FC<{ machine: MachineRecord | null }> = 
 
   return (
     <div className="rp-tab">
+      <CartonCloudOffNotice />
       <header className="rp-head">
         <div>
           <h2 className="rp-title">{text.title}</h2>

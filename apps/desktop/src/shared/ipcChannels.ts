@@ -297,6 +297,8 @@ export const IPC = {
   listGatepassStock: "erp:list-gatepass-stock",
   listGatepassStoreStock: "erp:list-gatepass-store-stock",
   createGatepass: "erp:create-gatepass",
+  // Read-only: the gatepass a press of Create made, for a screen reopened after a restart (migration 105).
+  findGatepassByRequest: "erp:find-gatepass-by-request",
   getGatepass: "erp:get-gatepass",
   getGatepassByNumber: "erp:get-gatepass-by-number",
   listGatepasses: "erp:list-gatepasses",
@@ -324,10 +326,15 @@ export const IPC = {
 
   // Main to renderer, not a request: what kind of data a sync just changed (shared/dataChange.ts).
   dataChanged: "erp:data-changed",
+  // Renderer to main: one step of how a screen handled an announced change, written to app.log.
+  traceDataChange: "erp:trace-data-change",
 
   // The one-time backfill: what the store PC held before it synced -- see main/ipc/backfill.ts.
   getBackfillPlan: "erp:get-backfill-plan",
   runBackfill: "erp:run-backfill",
+  getCartonCloudStatus: "erp:get-carton-cloud-status",
+  getCartonCloudState: "erp:get-carton-cloud-state",
+  activateCartonCloud: "erp:activate-carton-cloud",
 
   // This computer's document-number range: read-only status, the one-time adoption for the
   // existing-data machine, and the one-time assignment for a second computer.
@@ -371,6 +378,9 @@ export const IPC = {
 
   // Sale vouchers
   createSaleVoucher: "erp:create-sale-voucher",
+  // A bill typed by hand: header and lines in one transaction, under the screen's request id (migration 105).
+  createManualSaleVoucher: "erp:create-manual-sale-voucher",
+  findSaleVoucherByRequest: "erp:find-sale-voucher-by-request",
   getSaleVoucher: "erp:get-sale-voucher",
   findSaleVoucherByGatepass: "erp:find-sale-voucher-by-gatepass",
   listSaleVouchers: "erp:list-sale-vouchers",
@@ -384,6 +394,7 @@ export const IPC = {
   // Cash vouchers
   getNextCashVoucherNumber: "erp:get-next-cash-voucher-number",
   createCashVoucher: "erp:create-cash-voucher",
+  findCashVoucherByRequest: "erp:find-cash-voucher-by-request",
   updateCashVoucher: "erp:update-cash-voucher",
   getCashVoucher: "erp:get-cash-voucher",
   getCashVoucherByNumber: "erp:get-cash-voucher-by-number",

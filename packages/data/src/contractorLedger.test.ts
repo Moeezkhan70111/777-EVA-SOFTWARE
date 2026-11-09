@@ -229,7 +229,7 @@ test("a cash payment to the contractor comes off the balance; earlier work is th
       .prepare(`UPDATE production_events SET event_ts_local = '2026-10-01T06:00:00.000Z'
                  WHERE qr_id IN (?, ?) AND json_extract(metadata_json, '$.eventType') = 'STORE_ENTRY'`)
       .run(cartons[0], cartons[1]);
-    f.db.createCashVoucher({ partyId: f.machineContractor, voucherDate: f.today, description: "Weekly payment", modeOfTransfer: "Cash", paymentAmount: 100 });
+    f.db.createCashVoucher({ requestId: crypto.randomUUID(), partyId: f.machineContractor, voucherDate: f.today, description: "Weekly payment", modeOfTransfer: "Cash", paymentAmount: 100 });
 
     const ledger = f.ledger(f.machineContractor, "2026-10-02", f.today);
     assert.equal(ledger.openingBalancePaisa, toPaisa(70), "1 DOZEN on 1 Oct × Rs 70");

@@ -124,8 +124,10 @@ const CLAIM_REFUSALS = new Set([
  */
 export const SUPABASE_PUSHABLE_AGGREGATES: readonly string[] = [
   SYNC_AGGREGATE.PRODUCT_VARIANT,
-  SYNC_AGGREGATE.QR_MASTER,
-  SYNC_AGGREGATE.PRODUCTION_PRODUCED,
+  // QR_MASTER and PRODUCTION_PRODUCED are OFF this list (Phase 1, local stock protection). Every
+  // carton label and production scan in a local database is test data, and carton QR is on hold,
+  // so neither is ever claimed. They wait as PENDING and are counted, never sent and never parked
+  // (stockProtection.ts in @erp/data). The contracts above stay, ready for when QR is approved.
   // Leased (cloud migration 012): sent only with the lease epoch they were written under, and a
   // row queued without one is never claimed (outboxQueue.ts). A run travels before its packets.
   SYNC_AGGREGATE.RAW_MATERIAL_QR_BATCH,
@@ -736,13 +738,19 @@ export class SupabaseSyncTransport implements SyncTransport, SyncPullTransport {
         acks.push({ dedupeKey: envelope.dedupeKey, accepted: true });
         continue;
       }
-      // Every refusal 013 gives is a verdict on the revision: NOT_LEASE_HOLDER (a lease lost, W.3),
-      // REVISION_CONFLICT, UNKNOWN_RECORD_TYPE, RECORD_TOO_LARGE. Bounded, and visible as a dead letter.
+      // Every other refusal 013 gives is a verdict on the revision: NOT_LEASE_HOLDER (a lease lost, W.3),
+      // REVISION_CONFLICT, RECORD_TOO_LARGE. Bounded, and visible as a dead letter.
+      //
+      // UNKNOWN_RECORD_TYPE is not: it means the cloud has not been given the migration that adds the type yet (028 for
+      // the product master records and the stock documents). That is a deployment-order condition, like
+      // QR_NOT_REGISTERED_YET, so the revision WAITS (transient) and goes once the migration is applied, instead of
+      // spending its refusal budget and being parked.
+      const reason = typeof result.reason === "string" ? result.reason : outcome || "REFUSED";
       acks.push({
         dedupeKey: envelope.dedupeKey,
         accepted: false,
-        reason: typeof result.reason === "string" ? result.reason : outcome || "REFUSED",
-        failure: "REFUSED",
+        reason,
+        failure: reason === "UNKNOWN_RECORD_TYPE" ? "TRANSIENT" : "REFUSED",
       });
     }
     return acks;

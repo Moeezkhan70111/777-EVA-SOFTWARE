@@ -1,6 +1,12 @@
 // THE ONE-TIME BACKFILL: the store PC sends what it held before it synced (docs/37, the stock-screen
 // slice, item 3).
 //
+// NEVER CARTON OR MONEY DOCUMENTS (Carton Stock Cloud release; owner, 9 Nov 2026). Local carton stock and the
+// documents that move or follow from it -- Manual Production entries, gatepasses, bills, cash vouchers -- are test
+// data and never go to the cloud (stockProtection.ts): the backfill never marks them, and the plan lists them as
+// "never sent". RAW MATERIAL IS UNCHANGED (owner: Raw Material Stock is complete): its stock movements and label runs
+// are marked exactly as in v0.4.6, below.
+//
 // Everything written since this computer started syncing travels on its own: capture marks master
 // records and stock movements, and label runs queue as they are printed. What was written BEFORE --
 // years of materials, parties and stock history -- was never marked, or was queued without a lease
@@ -30,6 +36,7 @@
 import { stockEventBalanceDelta } from "@erp/domain";
 import { MASTER_RECORD_TYPES, MASTER_RECORDS, type BuildHandle, type MasterRecordType } from "./masterRecords.js";
 import { enqueueProductVariant, heldLeaseEpoch, LEASE_DOMAIN, leaseDomainOf, SYNC_AGGREGATE } from "./syncEvents.js";
+import { NEVER_BACKFILLED_TYPES } from "./stockProtection.js";
 
 /** Where the last completed backfill is recorded (app_settings: per computer, never replicated). */
 export const BACKFILL_SETTING_KEY = "sync.backfill.last";
@@ -52,7 +59,8 @@ export interface BackfillPlan {
   /** The epochs the marks would carry, or null when this computer does not hold that lease. */
   readonly masterEpoch: number | null;
   readonly storeEpoch: number | null;
-  readonly masterRecords: Readonly<Record<MasterRecordType, number>>;
+  /** Master records it marks, by type: master data only, never a stock document. */
+  readonly masterRecords: Readonly<Partial<Record<MasterRecordType, number>>>;
   readonly stockMovements: number;
   readonly labelRunsToQueue: number;
   readonly packetsToQueue: number;
@@ -61,6 +69,11 @@ export interface BackfillPlan {
   /** Runs and packets already queued without an epoch, which the backfill stamps. */
   readonly unstampedQueued: number;
   readonly mismatches: readonly StockMismatch[];
+  /** What the backfill leaves out as local test data (stockProtection.ts), shown as "never sent". */
+  readonly neverSent: {
+    /** Carton and money documents here, by type: Manual Production entries, gatepasses, bills, cash vouchers. */
+    readonly documents: Readonly<Record<string, number>>;
+  };
 }
 
 export type BackfillOutcome =
@@ -127,21 +140,30 @@ export function stockMismatches(db: BuildHandle): StockMismatch[] {
   return mismatches.sort((a, b) => a.displayName.localeCompare(b.displayName));
 }
 
-/** What a backfill would send from here, and whether it can. Reads only. */
+/** The master-record types the backfill may mark: every one that is not stock. */
+const BACKFILLED_TYPES: readonly MasterRecordType[] = MASTER_RECORD_TYPES.filter((type) => !NEVER_BACKFILLED_TYPES.has(type));
+
+const tableCount = (db: BuildHandle, type: MasterRecordType): number => count(db, `SELECT COUNT(*) AS n FROM ${MASTER_RECORDS[type].table}`);
+
+/** What a backfill would send from here, what it never sends, and whether it can. Reads only. */
 export function planBackfill(db: BuildHandle): BackfillPlan {
-  const masterRecords = Object.fromEntries(
-    MASTER_RECORD_TYPES.map((type) => [type, count(db, `SELECT COUNT(*) AS n FROM ${MASTER_RECORDS[type].table}`)])
-  ) as Record<MasterRecordType, number>;
+  const masterRecords = Object.fromEntries(BACKFILLED_TYPES.map((type) => [type, tableCount(db, type)]));
+  const documents = Object.fromEntries(MASTER_RECORD_TYPES.filter((type) => NEVER_BACKFILLED_TYPES.has(type)).map((type) => [type, tableCount(db, type)]));
+  const stockMovements = count(db, "SELECT COUNT(*) AS n FROM inventory_stock_events WHERE replicated_at IS NULL");
+  const labelRunsToQueue = count(db, `SELECT COUNT(*) AS n FROM (${UNQUEUED_RUNS})`);
+  const packetsToQueue = count(db, `SELECT COUNT(*) AS n FROM (${UNQUEUED_PACKETS})`);
+  const unstampedQueued = count(db, `SELECT COUNT(*) AS n ${UNSTAMPED_QUEUED}`);
   return {
     masterEpoch: heldLeaseEpoch(db, LEASE_DOMAIN.MASTER_DATA),
     storeEpoch: heldLeaseEpoch(db, LEASE_DOMAIN.RAW_MATERIAL_STORE),
     masterRecords,
-    stockMovements: count(db, "SELECT COUNT(*) AS n FROM inventory_stock_events WHERE replicated_at IS NULL"),
-    labelRunsToQueue: count(db, `SELECT COUNT(*) AS n FROM (${UNQUEUED_RUNS})`),
-    packetsToQueue: count(db, `SELECT COUNT(*) AS n FROM (${UNQUEUED_PACKETS})`),
+    stockMovements,
+    labelRunsToQueue,
+    packetsToQueue,
     variantsToQueue: count(db, `SELECT COUNT(*) AS n FROM (${UNQUEUED_VARIANTS})`),
-    unstampedQueued: count(db, `SELECT COUNT(*) AS n ${UNSTAMPED_QUEUED}`),
+    unstampedQueued,
     mismatches: stockMismatches(db),
+    neverSent: { documents },
   };
 }
 
@@ -158,7 +180,9 @@ export function runBackfill(db: BuildHandle, nowIso: string): BackfillOutcome {
 
   db.exec("BEGIN IMMEDIATE");
   try {
-    markEverything(db, plan.storeEpoch, nowIso);
+    // Master data and raw material exactly as in v0.4.6; no carton or money document (local test data).
+    markMasterData(db, nowIso);
+    markRawMaterialMovements(db, plan.storeEpoch, nowIso);
     markLabels(db, plan.storeEpoch, nowIso);
     queueVariants(db);
     db.prepare(
@@ -178,6 +202,33 @@ const MARK = `INSERT INTO sync_dirty_records (aggregate_type, record_id, lease_e
   SELECT ?, id, ?, ? FROM {table} {where}
   ON CONFLICT (aggregate_type, record_id) DO UPDATE SET lease_epoch = excluded.lease_epoch, marked_at = excluded.marked_at`;
 
+
+/**
+ * Queues the products of cartons made before variants travelled, as production would have queued
+ * them (production.ts insertProduced): the row as it stands, dated when the variant was created.
+ */
+function queueVariants(db: BuildHandle): void {
+  for (const row of db.prepare(UNQUEUED_VARIANTS).all() as Row[]) {
+    enqueueProductVariant(
+      db,
+      {
+        variantId: String(row.id),
+        article: String(row.article),
+        color: String(row.color),
+        size: String(row.size),
+        description: row.description === null ? null : String(row.description),
+        createdAt: String(row.created_at),
+      },
+      crypto.randomUUID()
+    );
+  }
+}
+
+/**
+ * Marks every master record that is not stock, under the lease its type is written under. A type whose lease is not
+ * held here is left: running this again on the computer that holds it sends it, and a record already sent simply
+ * travels as its next revision. Stock documents and stock movements are never marked (stockProtection.ts).
+ */
 /**
  * Marks the label runs and packets to send, for labelRunSync.ts to queue behind their materials and
  * parties: those never queued, and those queued without an epoch.
@@ -206,39 +257,19 @@ function markLabels(db: BuildHandle, storeEpoch: number, nowIso: string): void {
   }
 }
 
-/**
- * Queues the products of cartons made before variants travelled, as production would have queued
- * them (production.ts insertProduced): the row as it stands, dated when the variant was created.
- */
-function queueVariants(db: BuildHandle): void {
-  for (const row of db.prepare(UNQUEUED_VARIANTS).all() as Row[]) {
-    enqueueProductVariant(
-      db,
-      {
-        variantId: String(row.id),
-        article: String(row.article),
-        color: String(row.color),
-        size: String(row.size),
-        description: row.description === null ? null : String(row.description),
-        createdAt: String(row.created_at),
-      },
-      crypto.randomUUID()
-    );
-  }
+/** Raw-material stock movements, exactly as v0.4.6 marked them. Only movements recorded here: one received is in the cloud. */
+function markRawMaterialMovements(db: BuildHandle, storeEpoch: number, nowIso: string): void {
+  db.prepare(MARK.replace("{table}", "inventory_stock_events").replace("{where}", "WHERE replicated_at IS NULL"))
+    .run(SYNC_AGGREGATE.STOCK_EVENT, storeEpoch, nowIso);
 }
 
-function markEverything(db: BuildHandle, storeEpoch: number, nowIso: string): void {
-  for (const type of MASTER_RECORD_TYPES) {
-    // Under the lease that type is written under. Documents of a lease not held here wait: running this again on
-    // the computer that holds it sends them, and a record already sent simply travels as its next revision.
+function markMasterData(db: BuildHandle, nowIso: string): void {
+  for (const type of BACKFILLED_TYPES) {
     const domain = leaseDomainOf(type);
     const epoch = domain === null ? null : heldLeaseEpoch(db, domain);
     if (epoch === null) continue;
     // "WHERE true": SQLite reads ON CONFLICT after a bare FROM as a join constraint.
     db.prepare(MARK.replace("{table}", MASTER_RECORDS[type].table).replace("{where}", "WHERE true")).run(type, epoch, nowIso);
   }
-  // Only movements recorded here: one received from another computer is already in the cloud.
-  db.prepare(MARK.replace("{table}", "inventory_stock_events").replace("{where}", "WHERE replicated_at IS NULL"))
-    .run(SYNC_AGGREGATE.STOCK_EVENT, storeEpoch, nowIso);
 }
 

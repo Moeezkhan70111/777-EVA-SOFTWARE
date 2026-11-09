@@ -1,11 +1,12 @@
 import React from "react";
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { copy } from "../../config/copy";
 import { NotificationsProvider } from "../../state/NotificationsContext";
 import type { CartonReconciliation } from "../../types/desktopApi";
 import { CartonStockPage } from "./CartonStockPage";
+import { CARTON_STOCK_FALLBACK_POLL_MS, CARTON_STOCK_TRACE_SCREEN } from "./useCartonStock";
 
 // CARTON STOCK: an administrator adjusts, with a reason, and reads whether the figure matches its
 // movements. The main process decides and writes everything; the screen says what it answered.
@@ -142,5 +143,148 @@ describe("the reconciliation", () => {
     show();
     expect(await screen.findByText("Only an administrator can do this.")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /retry/i })).toBeInTheDocument();
+  });
+});
+
+// LIVE UPDATES FROM OTHER COMPUTERS. A sync pass that applies another computer's carton movement
+// announces CARTONS (main/cloudSyncPass.ts -> shared/dataChange.ts); the doorbell starts that pass
+// within seconds, and on every reconnect (packages/sync doorbell.test.ts, "catches up again after the
+// gap"). These prove the open page answers the announcement by re-reading the main process's ledger.
+describe("live updates from other computers, with the page open", () => {
+  /** The movement ledger as the main process would read it, changed by "another computer". */
+  let ledger: CartonReconciliation;
+  const row = (over: Partial<CartonReconciliation["rows"][number]>) => ({ ...reconciliation().rows[0]!, ...over });
+
+  const installLiveBridge = () => {
+    const listeners = new Set<(change: unknown) => void>();
+    const onDataChanged = vi.fn((listener: (change: unknown) => void) => {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    });
+    const traceDataChange = vi.fn(async (_trace: unknown) => undefined);
+    Object.defineProperty(window, "desktop", {
+      value: { versions: { node: "22", chrome: "128", electron: "43" }, api: { ...api, onDataChanged, traceDataChange } },
+      configurable: true,
+    });
+    const announce = (kinds: string[], id?: string) => act(() => listeners.forEach((listener) => listener(id ? { kinds, id } : { kinds })));
+    return { announce, listeners, traceDataChange };
+  };
+
+  const cell = (name: string) => screen.findByRole("row", { name: new RegExp(name) });
+
+  beforeEach(() => {
+    ledger = reconciliation();
+    api.getCartonStockReconciliation.mockReset().mockImplementation(async () => ({ accepted: true, reconciliation: ledger }));
+  });
+
+  it("a production saved on another computer shows here without a reload", async () => {
+    const { announce } = installLiveBridge();
+    show();
+    expect(await cell("SK6 7/10 RED 20 -3 5 12")).toBeInTheDocument();
+
+    ledger = reconciliation({ movements: 5, fingerprint: "after-production", rows: [row({ produced: 30, movementStock: 22, storeFigure: 22 })] });
+    announce(["CARTONS", "SYNC"]);
+
+    expect(await screen.findByText("after-production")).toBeInTheDocument();
+    expect(await cell("SK6 7/10 RED 30 -3 5 22")).toBeInTheDocument();
+  });
+
+  it("a gatepass on another computer takes its cartons off here without a reload", async () => {
+    const { announce } = installLiveBridge();
+    show();
+    await cell("SK6 7/10 RED 20 -3 5 12");
+
+    ledger = reconciliation({ movements: 5, fingerprint: "after-gatepass", rows: [row({ issued: 9, movementStock: 8, storeFigure: 8 })] });
+    announce(["BILLING", "CARTONS", "SYNC"]);
+
+    expect(await cell("SK6 7/10 RED 20 -3 9 8")).toBeInTheDocument();
+  });
+
+  it("a burst of announcements reads once, and a repeated one cannot count a movement twice", async () => {
+    const { announce } = installLiveBridge();
+    show();
+    await cell("SK6 7/10 RED 20 -3 5 12");
+    const readsBefore = api.getCartonStockReconciliation.mock.calls.length;
+
+    ledger = reconciliation({ movements: 5, fingerprint: "one-movement", rows: [row({ produced: 21, movementStock: 13, storeFigure: 13 })] });
+    announce(["CARTONS"]);
+    announce(["CARTONS"]);
+    announce(["CARTONS", "PRODUCTS"]);
+    expect(await screen.findByText("one-movement")).toBeInTheDocument();
+    expect(api.getCartonStockReconciliation.mock.calls.length).toBe(readsBefore + 1);
+
+    // The same movement announced again later: the page shows the ledger, not ledger + movement.
+    announce(["CARTONS"]);
+    await waitFor(() => expect(api.getCartonStockReconciliation.mock.calls.length).toBe(readsBefore + 2));
+    expect(await cell("SK6 7/10 RED 21 -3 5 13")).toBeInTheDocument();
+    expect(screen.queryByText(/SK6 7\/10 RED 22/)).not.toBeInTheDocument();
+  });
+
+  it("after a connection gap, the catch-up announcement brings every missed movement", async () => {
+    const { announce } = installLiveBridge();
+    show();
+    await cell("SK6 7/10 RED 20 -3 5 12");
+
+    // Offline: three movements land on the other computer and nothing is announced here.
+    ledger = reconciliation({ movements: 7, fingerprint: "caught-up", rows: [row({ produced: 26, adjusted: -4, issued: 7, movementStock: 15, storeFigure: 15 })] });
+    expect(screen.queryByText("caught-up")).not.toBeInTheDocument();
+
+    // Reconnected: the doorbell rings once, the pass pulls the gap, and announces.
+    announce(["CARTONS", "SYNC"]);
+    expect(await cell("SK6 7/10 RED 26 -4 7 15")).toBeInTheDocument();
+  });
+
+  it("other kinds of data do not re-read carton stock", async () => {
+    const { announce } = installLiveBridge();
+    show();
+    await cell("SK6 7/10 RED 20 -3 5 12");
+    const readsBefore = api.getCartonStockReconciliation.mock.calls.length;
+    announce(["STOCK", "MATERIALS", "CASH", "SYNC"]);
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    expect(api.getCartonStockReconciliation.mock.calls.length).toBe(readsBefore);
+  });
+
+  it("leaving the page lets go of its subscription", async () => {
+    const { listeners } = installLiveBridge();
+    const page = show();
+    await cell("SK6 7/10 RED 20 -3 5 12");
+    expect(listeners.size).toBe(1);
+    page.unmount();
+    expect(listeners.size).toBe(0);
+  });
+
+  it("traces one change from the moment it is heard to the moment it is on screen, under the change's id", async () => {
+    const { announce, traceDataChange } = installLiveBridge();
+    show();
+    await cell("SK6 7/10 RED 20 -3 5 12");
+    ledger = reconciliation({ movements: 5, fingerprint: "traced", rows: [row({ produced: 30, movementStock: 22, storeFigure: 22 })] });
+
+    announce(["CARTONS", "SYNC"], "change-27608");
+    expect(await cell("SK6 7/10 RED 30 -3 5 22")).toBeInTheDocument();
+
+    await waitFor(() => expect(traceDataChange.mock.calls.map((call) => (call[0] as { stage: string }).stage)).toEqual(["received", "reread-started", "reread-done", "shown"]));
+    for (const [trace] of traceDataChange.mock.calls) expect(trace).toMatchObject({ id: "change-27608", screen: CARTON_STOCK_TRACE_SCREEN });
+    const steps = traceDataChange.mock.calls.map((call) => call[0] as { stage: string; detail?: string });
+    expect(steps[0]?.detail).toBe("CARTONS,SYNC");
+    expect(steps[2]?.detail).toBe("movements=5 fingerprint=traced");
+    expect(steps[3]?.detail).toBe("movements=5 fingerprint=traced");
+  });
+
+  it("a re-read the main process refuses is traced as refused, and the figures on screen are not replaced", async () => {
+    const { announce, traceDataChange } = installLiveBridge();
+    show();
+    await cell("SK6 7/10 RED 20 -3 5 12");
+    api.getCartonStockReconciliation.mockResolvedValueOnce({ accepted: false, reason: "Only an administrator can do this.", reconciliation: null });
+
+    announce(["CARTONS"], "change-refused");
+    await waitFor(() => expect(traceDataChange.mock.calls.map((call) => (call[0] as { stage: string }).stage)).toContain("reread-done"));
+    const done = traceDataChange.mock.calls.map((call) => call[0] as { stage: string; detail?: string }).find((step) => step.stage === "reread-done");
+    expect(done?.detail).toBe("refused: Only an administrator can do this.");
+    expect(traceDataChange.mock.calls.map((call) => (call[0] as { stage: string }).stage)).not.toContain("shown");
+    expect(await cell("SK6 7/10 RED 20 -3 5 12")).toBeInTheDocument();
+  });
+
+  it("polls only as a fallback, once a minute", () => {
+    expect(CARTON_STOCK_FALLBACK_POLL_MS).toBe(60000);
   });
 });

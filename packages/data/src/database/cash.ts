@@ -4,71 +4,153 @@
 // `this` is the database instance; bodies are unchanged from the original class.
 
 import type { SqliteDatabase } from "../sqliteDatabase.js";
+import { refuseTestFinancialDocument } from "./stockProtection.js";
 import type { PagedResult, SaleVoucherLineRecord } from "./types.js";
 import { addMoney, fromPaisa, subtractMoney, toPaisa } from "@erp/domain";
 import { allocateNumberInRange } from "./numberRange.js";
+import { RequestConflictError, fingerprintText, isRequestId, requestFingerprint } from "./requestFingerprint.js";
+
+type CashVoucherLineInput = { partyId: string; description: string; modeOfTransfer: string; bankAccountTitle?: string; chequeNumber?: string; chequeDate?: string; onlineFrom?: string; onlineTo?: string; referenceNo?: string; receiptAmount: number; paymentAmount: number };
+
+export interface CashVoucherInput {
+  /** The screen's key for one press of Save, REQUIRED: pressed twice or retried, it is still one voucher, so one payment. */
+  requestId: string;
+  partyId: string;
+  voucherDate: string;
+  modeOfTransfer?: string;
+  description: string;
+  receiptAmount?: number;
+  paymentAmount?: number;
+  lines?: CashVoucherLineInput[];
+}
+
+/** What a press of Save got: the voucher, and whether this press made it or an earlier one already had. */
+export interface CashVoucherSaved {
+  id: string;
+  voucherNumber: string;
+  outcome: "CREATED" | "ALREADY_SAVED";
+}
+
+type StoredLine = { party_id: string; description: string; mode_of_transfer: string; bank_account_title: string; cheque_number: string; cheque_date: string; online_from: string; online_to: string; reference_no: string; receipt_amount_paisa: number; payment_amount_paisa: number };
+
+/** One line as a fingerprint sees it: text trimmed (empty is nothing), money in paisa. */
+const fingerprintLine = (line: StoredLine) => ({
+  partyId: line.party_id,
+  description: fingerprintText(line.description),
+  mode: fingerprintText(line.mode_of_transfer),
+  bank: fingerprintText(line.bank_account_title),
+  cheque: fingerprintText(line.cheque_number),
+  chequeDate: fingerprintText(line.cheque_date),
+  onlineFrom: fingerprintText(line.online_from),
+  onlineTo: fingerprintText(line.online_to),
+  reference: fingerprintText(line.reference_no),
+  receiptPaisa: Number(line.receipt_amount_paisa),
+  paymentPaisa: Number(line.payment_amount_paisa),
+});
+
+/** The lines a voucher is saved with: the ones given, or one line made from the header. */
+const cashLinesOf = (input: CashVoucherInput): StoredLine[] =>
+  (input.lines?.length ? input.lines : [{ partyId: input.partyId, description: input.description, modeOfTransfer: input.modeOfTransfer ?? "Cash", receiptAmount: input.receiptAmount ?? 0, paymentAmount: input.paymentAmount ?? 0 }]).map((line) => ({
+    party_id: line.partyId,
+    description: line.description,
+    mode_of_transfer: line.modeOfTransfer,
+    bank_account_title: line.bankAccountTitle ?? "",
+    cheque_number: line.chequeNumber ?? "",
+    cheque_date: line.chequeDate ?? "",
+    online_from: line.onlineFrom ?? "",
+    online_to: line.onlineTo ?? "",
+    reference_no: line.referenceNo ?? "",
+    receipt_amount_paisa: toPaisa(line.receiptAmount),
+    payment_amount_paisa: toPaisa(line.paymentAmount),
+  }));
+
+/** What a voucher asks for, as a hash: its header and its lines, in their order. */
+const cashFingerprint = (header: { party_id: string; voucher_date: string; mode_of_transfer: string; description: string; receipt_amount_paisa: number; payment_amount_paisa: number }, lines: StoredLine[]): string =>
+  requestFingerprint({
+    partyId: header.party_id,
+    voucherDate: header.voucher_date,
+    mode: fingerprintText(header.mode_of_transfer),
+    description: fingerprintText(header.description),
+    receiptPaisa: Number(header.receipt_amount_paisa),
+    paymentPaisa: Number(header.payment_amount_paisa),
+    lines: lines.map(fingerprintLine),
+  });
 
 export const cashMethods = {
   getNextCashVoucherNumber(this: SqliteDatabase): number {
     return allocateNumberInRange(this, "cashVoucher");
   },
 
-  createCashVoucher(this: SqliteDatabase, input: {
-    /** The screen's key for one press of Save: pressed twice or retried, it is still one voucher, so one payment. */
-    requestId?: string;
-    partyId: string;
-    voucherDate: string;
-    modeOfTransfer?: string;
-    description: string;
-    receiptAmount?: number;
-    paymentAmount?: number;
-    lines?: Array<{ partyId: string; description: string; modeOfTransfer: string; bankAccountTitle?: string; chequeNumber?: string; chequeDate?: string; onlineFrom?: string; onlineTo?: string; referenceNo?: string; receiptAmount: number; paymentAmount: number }>;
-  }): string {
-    const now = new Date().toISOString();
-    const id = input.requestId?.trim() || crypto.randomUUID();
+  /**
+   * One press of Save is one voucher, so one payment. The request id IS the voucher's id. A press that
+   * reaches here again (a double click, a retry after a lost answer, a restart) gets the voucher it already
+   * made, as ALREADY_SAVED, when it asks for the same thing; asking for something else under the same id is a
+   * RequestConflictError, and nothing is written. Never a silent "saved" for an edit that was not.
+   */
+  createCashVoucher(this: SqliteDatabase, input: CashVoucherInput): CashVoucherSaved {
+    if (!isRequestId(input.requestId)) throw new Error("This voucher could not be identified. Nothing was saved. Press Save again.");
+    const id = input.requestId.trim();
+    const header = {
+      party_id: input.partyId,
+      voucher_date: input.voucherDate,
+      mode_of_transfer: input.modeOfTransfer ?? "Cash",
+      description: input.description,
+      receipt_amount_paisa: toPaisa(input.receiptAmount ?? 0),
+      payment_amount_paisa: toPaisa(input.paymentAmount ?? 0),
+    };
+    const lines = cashLinesOf(input);
+    const fingerprint = cashFingerprint(header, lines);
 
     // The header and its lines are one transaction. The customer ledger sums
     // cash_voucher_lines, so a voucher that kept its header but lost its lines would quietly
     // produce a wrong party balance. The voucher number is taken inside the transaction too,
-    // so it is read under the same write lock that inserts it.
+    // so it is read under the same write lock that inserts it -- and so is the check for a repeat.
     this.db.exec("BEGIN IMMEDIATE TRANSACTION");
     try {
-      if (this.db.prepare("SELECT 1 AS found FROM cash_vouchers WHERE id = ?").get(id)) {
+      const existing = this.db.prepare("SELECT voucher_number, request_fingerprint FROM cash_vouchers WHERE id = ?").get(id) as { voucher_number: number | string; request_fingerprint: string | null } | undefined;
+      if (existing) {
+        const saved = existing.request_fingerprint ?? this.storedCashVoucherFingerprint(id);
         this.db.exec("COMMIT");
-        return id;
+        const voucherNumber = String(existing.voucher_number);
+        if (saved !== fingerprint) {
+          throw new RequestConflictError(`This Save was already recorded as cash voucher #${voucherNumber}, with different details. Nothing new was saved. Open #${voucherNumber} to check it, or start a new voucher.`, { id, number: voucherNumber });
+        }
+        return { id, voucherNumber, outcome: "ALREADY_SAVED" };
       }
       const voucherNumber = this.getNextCashVoucherNumber();
-
-      this.db
-        .prepare(
-          `INSERT INTO cash_vouchers (
-            id, voucher_number, party_id, voucher_date, mode_of_transfer, description,
-            receipt_amount_paisa, payment_amount_paisa, status, created_at, updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'ACTIVE', ?, ?)`
-        )
-        .run(
-          id,
-          voucherNumber,
-          input.partyId,
-          input.voucherDate,
-          input.modeOfTransfer ?? "Cash",
-          input.description,
-          toPaisa(input.receiptAmount ?? 0),
-          toPaisa(input.paymentAmount ?? 0),
-          now,
-          now
-        );
-
-      const lines = input.lines?.length ? input.lines : [{ partyId: input.partyId, description: input.description, modeOfTransfer: input.modeOfTransfer ?? "Cash", receiptAmount: input.receiptAmount ?? 0, paymentAmount: input.paymentAmount ?? 0 }];
-      const insertLine = this.db.prepare("INSERT INTO cash_voucher_lines (id, voucher_id, party_id, description, mode_of_transfer, bank_account_title, cheque_number, cheque_date, online_from, online_to, reference_no, receipt_amount_paisa, payment_amount_paisa, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
-      for (const line of lines) insertLine.run(crypto.randomUUID(), id, line.partyId, line.description, line.modeOfTransfer, line.bankAccountTitle ?? "", line.chequeNumber ?? "", line.chequeDate ?? "", line.onlineFrom ?? "", line.onlineTo ?? "", line.referenceNo ?? "", toPaisa(line.receiptAmount), toPaisa(line.paymentAmount), now);
-
+      this.insertCashVoucherRows(id, voucherNumber, header, lines, fingerprint);
       this.db.exec("COMMIT");
-      return id;
+      return { id, voucherNumber: String(voucherNumber), outcome: "CREATED" };
     } catch (error) {
       try { this.db.exec("ROLLBACK"); } catch { /* ignore missing transaction state */ }
       throw error;
     }
+  },
+
+  /** @internal The header and lines of a new voucher, inside the caller's transaction. */
+  insertCashVoucherRows(this: SqliteDatabase, id: string, voucherNumber: number, header: Parameters<typeof cashFingerprint>[0], lines: StoredLine[], fingerprint: string): void {
+    const now = new Date().toISOString();
+    this.db
+      .prepare(
+        `INSERT INTO cash_vouchers (
+          id, voucher_number, party_id, voucher_date, mode_of_transfer, description,
+          receipt_amount_paisa, payment_amount_paisa, status, created_at, updated_at, request_fingerprint
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'ACTIVE', ?, ?, ?)`
+      )
+      .run(id, voucherNumber, header.party_id, header.voucher_date, header.mode_of_transfer, header.description, header.receipt_amount_paisa, header.payment_amount_paisa, now, now, fingerprint);
+    const insertLine = this.db.prepare("INSERT INTO cash_voucher_lines (id, voucher_id, party_id, description, mode_of_transfer, bank_account_title, cheque_number, cheque_date, online_from, online_to, reference_no, receipt_amount_paisa, payment_amount_paisa, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+    for (const line of lines) {
+      insertLine.run(crypto.randomUUID(), id, line.party_id, line.description, line.mode_of_transfer, line.bank_account_title, line.cheque_number, line.cheque_date, line.online_from, line.online_to, line.reference_no, line.receipt_amount_paisa, line.payment_amount_paisa, now);
+    }
+  },
+
+  /** @internal What a voucher saved before migration 105 asked for, read back from what it holds. */
+  storedCashVoucherFingerprint(this: SqliteDatabase, id: string): string {
+    const header = this.db.prepare("SELECT party_id, voucher_date, mode_of_transfer, description, receipt_amount_paisa, payment_amount_paisa FROM cash_vouchers WHERE id = ?").get(id) as Parameters<typeof cashFingerprint>[0];
+    const lines = this.db
+      .prepare("SELECT party_id, description, mode_of_transfer, bank_account_title, cheque_number, cheque_date, online_from, online_to, reference_no, receipt_amount_paisa, payment_amount_paisa FROM cash_voucher_lines WHERE voucher_id = ? ORDER BY rowid")
+      .all(id) as StoredLine[];
+    return cashFingerprint(header, lines);
   },
 
   updateCashVoucher(this: SqliteDatabase, 
@@ -83,6 +165,7 @@ export const cashMethods = {
       lines?: Array<{ partyId: string; description: string; modeOfTransfer: string; bankAccountTitle?: string; chequeNumber?: string; chequeDate?: string; onlineFrom?: string; onlineTo?: string; referenceNo?: string; receiptAmount: number; paymentAmount: number }>;
     }
   ): void {
+    refuseTestFinancialDocument(this.db, "cash_vouchers", voucherId, "This cash voucher");
     const now = new Date().toISOString();
     const updates: string[] = ["updated_at = ?"];
     const values: Array<string | number> = [now];
@@ -319,6 +402,7 @@ export const cashMethods = {
   },
 
   deleteCashVoucher(this: SqliteDatabase, id: string): void {
+    refuseTestFinancialDocument(this.db, "cash_vouchers", id, "This cash voucher");
     const now = new Date().toISOString();
     this.db
       .prepare("UPDATE cash_vouchers SET deleted_at = ?, status = 'CANCELLED', updated_at = ? WHERE id = ? AND deleted_at IS NULL")
@@ -370,26 +454,26 @@ export const cashMethods = {
     // Calculate opening balance (before fromDate) — every SUM below is over a *_paisa column
     // so SQLite does exact integer arithmetic; converted back to rupees once, at the end.
     const openingSales = this.db
-      .prepare("SELECT COALESCE(SUM(total_amount_paisa), 0) as total FROM sale_vouchers WHERE party_id = ? AND voucher_date < ? AND status != 'CANCELLED' AND deleted_at IS NULL")
+      .prepare("SELECT COALESCE(SUM(total_amount_paisa), 0) as total FROM live_sale_vouchers WHERE party_id = ? AND voucher_date < ? AND status != 'CANCELLED' AND deleted_at IS NULL")
       .get(partyId, fromDate) as { total: number };
 
     // Opening receipts/payments: use line amounts when the voucher has lines, else header amount.
     // Only lines belonging to THIS party affect this party's balance.
     const openingReceipts = this.db
       .prepare(`SELECT
-          COALESCE((SELECT SUM(cv.receipt_amount_paisa) FROM cash_vouchers cv WHERE cv.party_id = ? AND cv.voucher_date < ? AND cv.status = 'ACTIVE' AND cv.deleted_at IS NULL AND NOT EXISTS (SELECT 1 FROM cash_voucher_lines cvl WHERE cvl.voucher_id = cv.id)), 0)
-        + COALESCE((SELECT SUM(cvl.receipt_amount_paisa) FROM cash_voucher_lines cvl JOIN cash_vouchers cv ON cv.id = cvl.voucher_id WHERE cvl.party_id = ? AND cv.voucher_date < ? AND cv.status = 'ACTIVE' AND cv.deleted_at IS NULL), 0) as total`)
+          COALESCE((SELECT SUM(cv.receipt_amount_paisa) FROM live_cash_vouchers cv WHERE cv.party_id = ? AND cv.voucher_date < ? AND cv.status = 'ACTIVE' AND cv.deleted_at IS NULL AND NOT EXISTS (SELECT 1 FROM cash_voucher_lines cvl WHERE cvl.voucher_id = cv.id)), 0)
+        + COALESCE((SELECT SUM(cvl.receipt_amount_paisa) FROM cash_voucher_lines cvl JOIN live_cash_vouchers cv ON cv.id = cvl.voucher_id WHERE cvl.party_id = ? AND cv.voucher_date < ? AND cv.status = 'ACTIVE' AND cv.deleted_at IS NULL), 0) as total`)
       .get(partyId, fromDate, partyId, fromDate) as { total: number };
 
     const openingPayments = this.db
       .prepare(`SELECT
-          COALESCE((SELECT SUM(cv.payment_amount_paisa) FROM cash_vouchers cv WHERE cv.party_id = ? AND cv.voucher_date < ? AND cv.status = 'ACTIVE' AND cv.deleted_at IS NULL AND NOT EXISTS (SELECT 1 FROM cash_voucher_lines cvl WHERE cvl.voucher_id = cv.id)), 0)
-        + COALESCE((SELECT SUM(cvl.payment_amount_paisa) FROM cash_voucher_lines cvl JOIN cash_vouchers cv ON cv.id = cvl.voucher_id WHERE cvl.party_id = ? AND cv.voucher_date < ? AND cv.status = 'ACTIVE' AND cv.deleted_at IS NULL), 0) as total`)
+          COALESCE((SELECT SUM(cv.payment_amount_paisa) FROM live_cash_vouchers cv WHERE cv.party_id = ? AND cv.voucher_date < ? AND cv.status = 'ACTIVE' AND cv.deleted_at IS NULL AND NOT EXISTS (SELECT 1 FROM cash_voucher_lines cvl WHERE cvl.voucher_id = cv.id)), 0)
+        + COALESCE((SELECT SUM(cvl.payment_amount_paisa) FROM cash_voucher_lines cvl JOIN live_cash_vouchers cv ON cv.id = cvl.voucher_id WHERE cvl.party_id = ? AND cv.voucher_date < ? AND cv.status = 'ACTIVE' AND cv.deleted_at IS NULL), 0) as total`)
       .get(partyId, fromDate, partyId, fromDate) as { total: number };
 
     // Credits for cartons sent back, on the same exact-integer footing as everything above.
     const openingReturns = this.db
-      .prepare("SELECT COALESCE(SUM(total_amount_paisa), 0) as total FROM sale_returns WHERE party_id = ? AND return_date < ? AND status = 'ACTIVE' AND deleted_at IS NULL")
+      .prepare("SELECT COALESCE(SUM(total_amount_paisa), 0) as total FROM live_sale_returns WHERE party_id = ? AND return_date < ? AND status = 'ACTIVE' AND deleted_at IS NULL")
       .get(partyId, fromDate) as { total: number };
 
     const openingBalance = fromPaisa(openingSales.total - openingReceipts.total + openingPayments.total - openingReturns.total);
@@ -411,7 +495,7 @@ export const cashMethods = {
       .prepare(`
         SELECT id, voucher_number, voucher_date, total_amount_paisa, COALESCE(remarks, '') as remarks,
                COALESCE(sub_party_name_urdu, '') as sub_party_urdu
-        FROM sale_vouchers 
+        FROM live_sale_vouchers 
         WHERE party_id = ? AND voucher_date BETWEEN ? AND ? AND status != 'CANCELLED' AND deleted_at IS NULL AND total_amount_paisa <> 0
         ORDER BY voucher_date ASC, created_at ASC
       `)
@@ -433,8 +517,8 @@ export const cashMethods = {
     const cashVouchers = this.db
       .prepare(`
         SELECT id, voucher_number, voucher_date, receipt_amount_paisa, payment_amount_paisa, description, mode_of_transfer
-        FROM cash_vouchers 
-        WHERE (party_id = ? OR EXISTS (SELECT 1 FROM cash_voucher_lines l WHERE l.voucher_id = cash_vouchers.id AND l.party_id = ?))
+        FROM live_cash_vouchers 
+        WHERE (party_id = ? OR EXISTS (SELECT 1 FROM cash_voucher_lines l WHERE l.voucher_id = live_cash_vouchers.id AND l.party_id = ?))
           AND voucher_date BETWEEN ? AND ? AND status = 'ACTIVE' AND deleted_at IS NULL
         ORDER BY voucher_date ASC, created_at ASC
       `)
@@ -510,9 +594,9 @@ export const cashMethods = {
       .prepare(`
         SELECT sr.id, sr.return_number, sr.return_date, sr.total_amount_paisa, sr.qr_id,
                pv.article, pv.size, sv.voucher_number
-        FROM sale_returns sr
+        FROM live_sale_returns sr
         JOIN product_variants pv ON pv.id = sr.product_variant_id
-        LEFT JOIN sale_vouchers sv ON sv.id = sr.sale_voucher_id
+        LEFT JOIN live_sale_vouchers sv ON sv.id = sr.sale_voucher_id
         WHERE sr.party_id = ? AND sr.return_date BETWEEN ? AND ? AND sr.status = 'ACTIVE' AND sr.deleted_at IS NULL
         ORDER BY sr.return_date ASC, sr.created_at ASC
       `)

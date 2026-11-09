@@ -1012,7 +1012,7 @@ test("an event type with no contract at all is refused without being parked", as
     assert.deepEqual(
       [...SUPABASE_PUSHABLE_AGGREGATES],
       [
-        "PRODUCT_VARIANT", "QR_MASTER", "PRODUCTION_PRODUCED", "RAW_MATERIAL_QR_BATCH", "RAW_MATERIAL_QR",
+        "PRODUCT_VARIANT", "RAW_MATERIAL_QR_BATCH", "RAW_MATERIAL_QR",
         "PARTY_GROUP", "INVENTORY_UNIT", "WORK_SECTION", "UNIT_LADDER_PRESET", "INVENTORY_CATEGORY", "PARTY", "INVENTORY_ITEM", "MACHINE",
         "MAIN_GROUP", "PRODUCT_GROUP", "ARTICLE_SERIES", "PRODUCT_TYPE", "PRODUCT_SUB_GROUP", "ARTICLE_SIZE",
         "MANUAL_PRODUCTION_ENTRY", "GATEPASS", "SALE_VOUCHER", "CASH_VOUCHER",
@@ -1021,6 +1021,10 @@ test("an event type with no contract at all is refused without being parked", as
     );
     for (const absent of ["PRODUCTION_EVENT", "DISPATCH_EVENT", "RETURN_EVENT", "PROJECTION"]) {
       assert.ok(!SUPABASE_PUSHABLE_AGGREGATES.includes(absent), `${absent} has no contract and must not be claimed`);
+    }
+    // Phase 1: carton labels and production scans are local test data, never claimed.
+    for (const neverSent of ["QR_MASTER", "PRODUCTION_PRODUCED"]) {
+      assert.ok(!SUPABASE_PUSHABLE_AGGREGATES.includes(neverSent), `${neverSent} is local test data and must never be claimed`);
     }
   } finally {
     await fake.close();
@@ -1378,6 +1382,30 @@ test("master-data revisions go with their epoch, and each answer finds its own r
       ["INVENTORY_UNIT", "u-kg", 2, 5], ["INVENTORY_UNIT", "u-kg", 1, 5], ["PARTY", "p-1", 1, 4],
     ]);
     assert.deepEqual(sentRows[0]?.body, unit);
+  } finally {
+    await fake.close();
+  }
+});
+
+test("a record type the cloud does not know yet waits for its migration instead of being parked", async () => {
+  const fake = await startFakeSupabase();
+  try {
+    const transport = await claimed(fake);
+    fake.reply("/rpc/push_leased_record", 200, {
+      ok: true,
+      results: [
+        { aggregate_type: "ARTICLE_SIZE", record_id: "a-1", outcome: "REFUSED", reason: "UNKNOWN_RECORD_TYPE" },
+        { aggregate_type: "PARTY", record_id: "p-1", outcome: "REFUSED", reason: "REVISION_CONFLICT" },
+      ],
+    });
+    const acks = await transport.send([
+      revisionOf("ARTICLE_SIZE", "a-1", 1, 5, { row: { id: "a-1" }, children: {} }),
+      revisionOf("PARTY", "p-1", 1, 5, { row: { id: "p-1" }, children: {} }),
+    ]);
+    const byKey = new Map(acks.map((ack) => [ack.dedupeKey, ack]));
+    assert.equal(byKey.get("ARTICLE_SIZE:a-1:1")?.failure, "TRANSIENT", "028 not applied yet: it waits");
+    assert.equal(byKey.get("ARTICLE_SIZE:a-1:1")?.reason, "UNKNOWN_RECORD_TYPE");
+    assert.equal(byKey.get("PARTY:p-1:1")?.failure, "REFUSED", "a verdict on the revision is still bounded");
   } finally {
     await fake.close();
   }

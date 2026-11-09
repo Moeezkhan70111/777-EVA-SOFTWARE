@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { LEASE_DOMAIN } from "@erp/domain";
-import { LEASED_CHANNELS, UNLEASED_WRITE_CHANNELS, leasesFor } from "./leaseChannels";
+import { CARTON_QR_HOLD_CHANNELS, LEASED_CHANNELS, UNLEASED_WRITE_CHANNELS, leasesFor } from "./leaseChannels";
 import { IPC } from "../shared/ipcChannels";
 
 // EVERY CHANNEL IN A MODULE THAT WRITES A LEASED DOMAIN IS CLASSIFIED.
@@ -20,17 +20,25 @@ const GUARDED_MODULES = [
   "manualProduction", "gatepass",
   // The production-to-cash workflow (docs/43): products, bills and cash vouchers replicate.
   "products", "sales", "cash",
+  // Carton QR scanning: on hold in this release; sale returns are leased to the sales holder (docs/44 §6).
+  "scanning",
 ];
 
 /** Channels these modules register that only read. Checked by hand, one by one. */
 const READS = new Set([
+  // scanning
+  "findProductionReceipt", "getDispatchSession", "getItemStatus", "listDispatchHistory", "listDispatchSessions", "listProductionReceipts", "returnLookup",
   // products
   "listProducts", "getProduct", "getSaleableVariant", "listProductListEntries", "getProductImage", "saveRateList", "listProductGroups",
   "listArticleSeries", "listProductTypes", "listProductSubGroups", "listMainGroups", "listUniqueArticles", "listUniqueSizesByArticle", "listUniqueColorsByArticle",
   // sales
   "listSaleReturns", "getPartyDiscountReport", "resolveProductDiscount", "resolveProductDiscountWithPrice", "findSaleVoucherByGatepass", "getSaleVoucher", "listSaleVouchers",
+  "findSaleVoucherByRequest",
   // cash
   "getNextCashVoucherNumber", "getCashVoucher", "getCashVoucherByNumber", "listCashVouchers", "getCustomerLedgerWithCash",
+  "findCashVoucherByRequest",
+  // gatepass
+  "findGatepassByRequest",
   // rawMaterials
   "listInventoryUnits", "listWorkSections", "listRawMaterialMovementConfig", "getRawMaterialSetupTemplate",
   "listInventoryUnitConversions", "listInventoryCategories", "inventoryFieldOptionUsage", "inventoryItemDeleteBlockers",
@@ -81,6 +89,11 @@ function registeredIn(module: string): string[] {
 }
 
 describe("lease classification", () => {
+  it("records sale returns only on the computer holding the sales lease, and holds them while carton QR is on hold", () => {
+    expect(leasesFor(IPC.returnScan)).toEqual(["SALES_DISPATCH"]);
+    expect(CARTON_QR_HOLD_CHANNELS.has(IPC.returnScan)).toBe(true);
+  });
+
   it("classifies every channel the guarded modules register", () => {
     const unclassified: string[] = [];
     for (const module of GUARDED_MODULES) {

@@ -6,6 +6,7 @@ import path from "node:path";
 import { AddMachineUseCase, CancelGatepassUseCase, CreateGatepassUseCase, InMemoryEventBus } from "@erp/application";
 import { businessDateOf } from "@erp/domain";
 import { SqliteDatabase, buildCartonStockEvents } from "@erp/data";
+import { activateCartonCloudForTest } from "@erp/data/dist/testing/cartonCloud.js";
 import { applyEnvelope } from "./applyEnvelope.js";
 import type { SyncEnvelope } from "./contract.js";
 
@@ -34,6 +35,8 @@ function openPc(name: string): Pc {
     workstationId: `ws-${name}`, workstationCode: `WS-${name}`, workstationName: name,
     deviceId: `dev-${name}`, deviceName: name, appVersion: "1.0.0",
   });
+  // After go-live: Carton Cloud active from the start, through the real activation (stockProtection.ts).
+  activateCartonCloudForTest(db.db);
   return { db, close: () => { db.close(); fs.rmSync(dir, { recursive: true, force: true }); } };
 }
 

@@ -11,7 +11,7 @@ import {
   StoreEntryScanUseCase,
   StoreExitScanUseCase,
 } from "@erp/application";
-import { SqliteDatabase } from "./sqliteDatabase.js";
+import { SqliteDatabase, dropLiveDocumentViews } from "./sqliteDatabase.js";
 import { UuidGenerator } from "./idGenerator.js";
 
 // Carton returns against the real database, driven by real scans through the real use cases.
@@ -677,6 +677,8 @@ test("migration 035 upgrades a database that predates ON_GATE without losing a s
     // production_events references qr_master, so the rewind needs foreign keys off — the
     // same thing the migration runner does around a table rebuild.
     f.raw.exec("PRAGMA foreign_keys = OFF;");
+    // Schema surgery on an open connection: the live views go first, as the migration runner does (stockProtection.ts).
+    dropLiveDocumentViews(f.raw);
     f.raw.exec(`
       DROP INDEX IF EXISTS idx_sale_returns_dispatch_event_live;
       DROP TABLE IF EXISTS sale_returns;

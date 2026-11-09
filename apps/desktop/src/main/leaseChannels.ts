@@ -123,6 +123,7 @@ export const LEASED_CHANNELS: Readonly<Record<string, readonly LeaseDomain[]>> =
 
   // ── Bills: they replicate now, so one computer writes them (docs/43) ──
   [IPC.createSaleVoucher]: SALES,
+  [IPC.createManualSaleVoucher]: SALES,
   [IPC.enterGatepassBill]: SALES,
   [IPC.updateSaleVoucher]: SALES,
   [IPC.addVoucherLineItem]: SALES,
@@ -130,6 +131,10 @@ export const LEASED_CHANNELS: Readonly<Record<string, readonly LeaseDomain[]>> =
   [IPC.deleteVoucherLineItem]: SALES,
   [IPC.deleteSaleVoucher]: SALES,
   [IPC.saveGatepassDeliveryProof]: SALES,
+  // A sale return credits the customer and is not sent to the cloud in this release: one computer records them, the
+  // one holding the sales lease (owner, 9 Nov 2026; docs/44 §6). Also on the carton QR hold below: refused everywhere
+  // while the hold lasts, and only on the sales holder once it is lifted.
+  [IPC.returnScan]: SALES,
 
   // ── Cash vouchers: they replicate now, so one computer writes them (docs/43) ──
   [IPC.createCashVoucher]: ACCOUNTS,
@@ -161,6 +166,9 @@ export const CARTON_QR_HOLD_CHANNELS: ReadonlySet<string> = new Set([
  */
 export const UNLEASED_WRITE_CHANNELS: Readonly<Record<string, string>> = {
   [IPC.storeEntryScan]: "Carton QR flow: multi-writer by the owner's decision (docs/37 W.1).",
+  [IPC.processScan]: "Carton QR production scan: on the carton QR hold in this release (CARTON_QR_HOLD_CHANNELS); its lease is decided when QR resumes.",
+  [IPC.receiveProduction]: "Carton QR receiving: on the carton QR hold in this release; its lease is decided when QR resumes.",
+  [IPC.dispatchScan]: "Carton QR dispatch scan: on the carton QR hold in this release; its lease is decided when QR resumes.",
   [IPC.storeExitScan]: "Carton QR flow: multi-writer.",
   [IPC.storeReceivingSession]: "Starts a carton store-in session: a carton flow, multi-writer.",
   [IPC.storeMoveOutSession]: "Starts a carton move-out session: a carton flow, multi-writer.",

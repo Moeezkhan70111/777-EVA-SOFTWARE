@@ -19,6 +19,11 @@ export type DiscountSourceLabel = "ARTICLE" | "ARTICLE_SERIES" | "PRICE_RANGE" |
 export interface BillLineInput {
   /** Database id once saved. */
   id?: string;
+  /**
+   * The screen's id for a line not saved yet, made once and kept through every edit (the line is rebuilt by
+   * spreading it). Sent as the line's id, so adding it twice -- a double click, a retry -- is one line (migration 105).
+   */
+  clientId?: string;
   /** The variant the line is priced and stored under (any colour of the article + size). */
   productVariantId: string;
   article: string;
@@ -78,6 +83,7 @@ export const billTotals = (lines: readonly BillLine[]): BillTotals =>
 /** A gatepass line with the party's rate and discount resolved for it. */
 export const lineFromGatepass = (line: VoucherLineFromGatepass, pricing: { normalRate: number | null; pairDisc: number; discSource: DiscountSourceLabel }): BillLine =>
   withFigures({
+    clientId: crypto.randomUUID(),
     productVariantId: line.productVariantId,
     article: line.article,
     size: line.size,

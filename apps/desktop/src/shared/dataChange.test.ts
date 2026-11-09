@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DATA_KIND, dataKindsOf, readDataChange } from "./dataChange";
+import { DATA_KIND, dataKindsOf, readDataChange, readDataChangeTrace } from "./dataChange";
 
 // What kind of data a sync changed, as every open screen hears it.
 
@@ -30,5 +30,25 @@ describe("data kinds", () => {
     expect(readDataChange({ kinds: ["STOCK", "NOT_A_KIND", 7] })).toEqual({ kinds: ["STOCK"] });
     expect(readDataChange({ kinds: "STOCK" })).toBeNull();
     expect(readDataChange(null)).toBeNull();
+  });
+});
+
+describe("following one change through app.log", () => {
+  it("keeps a well-formed change id, and drops one that is not", () => {
+    expect(readDataChange({ kinds: ["CARTONS"], id: "6f1c2a9e-1b2c-4d5e-8f90-123456789abc" })).toEqual({ kinds: ["CARTONS"], id: "6f1c2a9e-1b2c-4d5e-8f90-123456789abc" });
+    expect(readDataChange({ kinds: ["CARTONS"], id: "<script>" })).toEqual({ kinds: ["CARTONS"] });
+    expect(readDataChange({ kinds: ["CARTONS"], id: 7 })).toEqual({ kinds: ["CARTONS"] });
+  });
+
+  it("logs only a trace it can read: a known step, a plain id and screen, a short printable note", () => {
+    expect(readDataChangeTrace({ id: "abc-1", screen: "carton-stock", stage: "shown", detail: "movements=24" })).toEqual({ id: "abc-1", screen: "carton-stock", stage: "shown", detail: "movements=24" });
+    expect(readDataChangeTrace({ id: "abc-1", screen: "carton-stock", stage: "received" })).toEqual({ id: "abc-1", screen: "carton-stock", stage: "received" });
+    expect(readDataChangeTrace({ id: "abc-1", screen: "carton-stock", stage: "deleted-everything" })).toBeNull();
+    expect(readDataChangeTrace({ id: "abc 1", screen: "carton-stock", stage: "shown" })).toBeNull();
+    expect(readDataChangeTrace({ id: "abc-1", screen: "Carton Stock!", stage: "shown" })).toBeNull();
+    expect(readDataChangeTrace(null)).toBeNull();
+    const long = readDataChangeTrace({ id: "abc-1", screen: "carton-stock", stage: "shown", detail: `line one\nline two ${"x".repeat(400)}` });
+    expect(long?.detail).not.toContain("\n");
+    expect(long?.detail?.length).toBe(160);
   });
 });

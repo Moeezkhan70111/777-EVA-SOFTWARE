@@ -1,4 +1,5 @@
 import test from "node:test";
+import { activateCartonCloudForTest } from "./testing/cartonCloud.js";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
@@ -162,6 +163,7 @@ test("movements leave in the order they were recorded, even all marked in one mi
     const { db } = fixture;
     db.db.prepare(`INSERT INTO sync_domain_leases (domain, holder_device_id, holder_label, epoch, barrier_seq, granted_at, project_key, fetched_at)
        VALUES ('CARTON_STOCK', 'dev-1', 'x', 1, 0, 'x', 'p', 'x')`).run();
+    activateCartonCloudForTest(db.db, "p"); // after go-live (stockProtection.ts)
     const recorded: string[] = [];
     for (let i = 0; i < 20; i += 1) recorded.push(db.adjustCartonStock(adjustment(fixture, { direction: i % 2 === 0 ? "IN" : "OUT" })).eventId);
     db.db.prepare("UPDATE sync_dirty_records SET marked_at = '2026-11-07T00:00:00.000Z'").run();
@@ -355,7 +357,10 @@ test("the reset clears the store figures and proves nothing else moved, entries 
 });
 
 for (const [name, setUp, refusal] of [
-  ["a movement already recorded", (f: Fixture) => void f.db.adjustCartonStock(adjustment(f)), /already recorded/],
+  ["a movement that came from the cloud", (f: Fixture) => {
+    f.db.adjustCartonStock(adjustment(f));
+    f.db.db.prepare("UPDATE carton_stock_events SET replicated_at = '2026-11-09T00:00:01.000Z', origin_device_id = 'dev-other'").run();
+  }, /came from the cloud/],
   ["QR cartons in the store", (f: Fixture) => void qrCarton(f, "qr-1"), /QR carton\(s\) are in the store/],
   ["a product total below its store rows", (f: Fixture) => {
     oldStock(f.db, f.variantId, 9);
@@ -383,5 +388,28 @@ test("the reset stops at a live gatepass still owed cartons", async () => {
     fixture.db.db.prepare("DELETE FROM carton_stock_events").run();
     fixture.db.db.prepare("DELETE FROM sync_outbox WHERE aggregate_type = 'CARTON_STOCK_EVENT'").run();
     assert.ok(planCartonStockReset(fixture.db.db).refusals.some((reason) => /owe 1 carton/.test(reason)));
+  });
+});
+
+// ─── the fresh start and Carton Cloud activation (stockProtection.ts) ───
+
+test("before activation, carton movements made here are test data: they do not stop the fresh start, and stay as history", async () => {
+  await withFixture((fixture) => {
+    const { db } = fixture;
+    produce(fixture);
+    const plan = planCartonStockReset(db.db);
+    assert.deepEqual(plan.refusals, []);
+    assert.ok(plan.kept.localTestMovements >= 1, "counted as kept, never sent");
+    applyCartonStockReset(db.db, "2026-11-09T00:00:00.000Z");
+    assert.ok(Number((db.db.prepare("SELECT COUNT(*) AS n FROM carton_stock_events").get() as { n: number }).n) >= 1, "the rows are not deleted");
+  });
+});
+
+test("after Carton Cloud is activated, the fresh start is refused outright", async () => {
+  await withFixture((fixture) => {
+    const { db } = fixture;
+    activateCartonCloudForTest(db.db, "p");
+    assert.deepEqual(planCartonStockReset(db.db).refusals, ["Carton Cloud has been activated on this computer: its carton figure is shared with the cloud and is never reset."]);
+    assert.throws(() => applyCartonStockReset(db.db, "2026-11-09T00:00:00.000Z"), /REFUSED, nothing changed/);
   });
 });

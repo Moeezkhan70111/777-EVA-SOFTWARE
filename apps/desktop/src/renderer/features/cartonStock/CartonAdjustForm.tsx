@@ -5,6 +5,7 @@ import { FormField, ProductFields, useProductPick } from "../manualProduction/Pr
 import { useProductChoices } from "../manualProduction/useManualProduction";
 import type { CartonAdjustDraft } from "../../types/desktopApi";
 import type { AdjustOutcome } from "./useCartonStock";
+import { CartonCloudOffNotice } from "../sync/CartonCloudOffNotice";
 
 // ADJUST CARTON STOCK. One movement, with a reason, that every computer applies and shows. The main
 // process checks everything again: that the person is an administrator, the quantity and the reason.
@@ -49,6 +50,7 @@ export const CartonAdjustForm: React.FC<{
 
   return (
     <form className="card mpr-form" onSubmit={(event) => void submit(event)} aria-labelledby="carton-adjust-title">
+      <CartonCloudOffNotice />
       <div className="mpr-form-head">
         <h3 id="carton-adjust-title" className="card-title">{text.formTitle}</h3>
       </div>

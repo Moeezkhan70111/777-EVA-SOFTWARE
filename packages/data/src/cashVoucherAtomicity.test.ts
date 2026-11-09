@@ -63,7 +63,7 @@ test("create: a failing line rolls the whole voucher back, header included", () 
     assert.equal(f.countVouchers(), 0);
 
     assert.throws(() =>
-      f.db.createCashVoucher({
+      f.db.createCashVoucher({ requestId: crypto.randomUUID(),
         partyId: f.partyId,
         voucherDate: "2026-01-01",
         description: "Receipt with a bad second line",
@@ -84,7 +84,7 @@ test("create: a rolled-back voucher does not consume its voucher number", () => 
   const f = createFixture();
   try {
     assert.throws(() =>
-      f.db.createCashVoucher({
+      f.db.createCashVoucher({ requestId: crypto.randomUUID(),
         partyId: f.partyId,
         voucherDate: "2026-01-01",
         description: "Doomed",
@@ -93,7 +93,7 @@ test("create: a rolled-back voucher does not consume its voucher number", () => 
       })
     );
 
-    const id = f.db.createCashVoucher({
+    const { id } = f.db.createCashVoucher({ requestId: crypto.randomUUID(),
       partyId: f.partyId,
       voucherDate: "2026-01-02",
       description: "Good one",
@@ -112,7 +112,7 @@ test("create: a rolled-back voucher does not consume its voucher number", () => 
 test("update: a failing replacement leaves the original lines untouched", () => {
   const f = createFixture();
   try {
-    const id = f.db.createCashVoucher({
+    const { id } = f.db.createCashVoucher({ requestId: crypto.randomUUID(),
       partyId: f.partyId,
       voucherDate: "2026-01-01",
       description: "Original",
@@ -145,7 +145,7 @@ test("update: a failing replacement leaves the original lines untouched", () => 
 test("create and update still behave normally when nothing fails", () => {
   const f = createFixture();
   try {
-    const id = f.db.createCashVoucher({
+    const { id } = f.db.createCashVoucher({ requestId: crypto.randomUUID(),
       partyId: f.partyId,
       voucherDate: "2026-01-01",
       description: "Receipt",
@@ -179,7 +179,7 @@ test("create and update still behave normally when nothing fails", () => {
 test("a voucher created with no explicit lines still gets its single derived line", () => {
   const f = createFixture();
   try {
-    const id = f.db.createCashVoucher({
+    const { id } = f.db.createCashVoucher({ requestId: crypto.randomUUID(),
       partyId: f.partyId,
       voucherDate: "2026-01-01",
       description: "Simple receipt",

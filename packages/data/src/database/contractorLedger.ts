@@ -147,7 +147,7 @@ const CARTONS_SQL = `
            r.id, r.machine_rate_paisa, r.packing_rate_paisa, r.printing_rate_paisa,
            asz.machine_rate_paisa, asz.packing_rate_paisa, asz.printing_rate_paisa,
            me.cartons
-    FROM manual_production_entries me
+    FROM live_manual_production_entries me
     LEFT JOIN machine_program_article_rates r ON r.program_id = me.machine_program_id AND r.article_size_id = me.article_size_id
     LEFT JOIN article_sizes asz ON asz.id = me.article_size_id
     -- A voided entry was never produced (owner, 2026-11-03): nobody is owed for it, paid or not.
@@ -162,7 +162,7 @@ const VOUCHERS_SQL = `
          (SELECT COUNT(*) FROM cash_voucher_lines l WHERE l.voucher_id = cv.id) AS line_count,
          (SELECT COALESCE(SUM(l.receipt_amount_paisa), 0) FROM cash_voucher_lines l WHERE l.voucher_id = cv.id AND l.party_id = ?1) AS line_receipts,
          (SELECT COALESCE(SUM(l.payment_amount_paisa), 0) FROM cash_voucher_lines l WHERE l.voucher_id = cv.id AND l.party_id = ?1) AS line_payments
-  FROM cash_vouchers cv
+  FROM live_cash_vouchers cv
   WHERE cv.status = 'ACTIVE' AND cv.deleted_at IS NULL
     AND (cv.party_id = ?1 OR EXISTS (SELECT 1 FROM cash_voucher_lines l WHERE l.voucher_id = cv.id AND l.party_id = ?1))
   ORDER BY cv.voucher_date, cv.created_at`;

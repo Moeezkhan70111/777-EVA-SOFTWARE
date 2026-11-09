@@ -32,7 +32,10 @@ const handlers = new Map<string, (event: IpcMainInvokeEvent, ...args: unknown[])
 /** What the pass told the open windows had changed (main/dataChanged.ts), one entry per announcement. */
 const announced: string[][] = [];
 vi.mock("../dataChanged", () => ({
-  announceDataChanged: (kinds: readonly string[]) => announced.push([...kinds]),
+  announceDataChanged: (kinds: readonly string[]) => {
+    announced.push([...kinds]);
+    return { id: `change-${announced.length}`, windows: 1 };
+  },
 }));
 
 vi.mock("electron", () => ({
@@ -66,6 +69,9 @@ interface DrainResultStub {
   refusals?: Array<{ aggregateType: string; aggregateId: string; reason: string; parked: boolean }>;
 }
 interface PullResultStub {
+  /** Where the cursor stood before, and after: the log positions the pass read. */
+  from?: number;
+  cursor?: number;
   fetched: number;
   applied: number;
   appliedTypes?: string[];
@@ -716,6 +722,24 @@ describe("cloud sync at the process boundary", () => {
     expect(announced).toEqual([]);
   });
 
+  it("logs each announcement under its id, with the log positions it applied, so a screen's trace can be matched to it", async () => {
+    announced.length = 0;
+    logged = [];
+    pullResult = { from: 27606, cursor: 27608, fetched: 2, applied: 2, appliedTypes: ["CARTON_STOCK_EVENT", "MANUAL_PRODUCTION_ENTRY"], duplicates: 0, refused: [] };
+    await run();
+    expect(announced).toEqual([["CARTONS", "SYNC"]]);
+    const line = logged.find((entry) => entry.operation === "data-changed");
+    expect(line?.message).toBe(
+      "Change change-1: applied 2 of 2 read (log 27607..27608: CARTON_STOCK_EVENT, MANUAL_PRODUCTION_ENTRY); told 1 window(s): CARTONS, SYNC."
+    );
+
+    logged = [];
+    pullResult = { fetched: 0, applied: 0, duplicates: 0, refused: [] };
+    await run();
+    // An idle pass announces nothing, so it logs no change either.
+    expect(logged.find((entry) => entry.operation === "data-changed")).toBeUndefined();
+  });
+
   it("builds changed master records, then stock movements, before the drain, so the same pass carries them", async () => {
     await run();
     const order = built.map((entry) => entry.what).filter((what) => ["master-records", "label-runs", "stock-events", "carton-resend", "carton-stock-events", "drain"].includes(what));
@@ -764,9 +788,12 @@ describe("cloud sync at the process boundary", () => {
       waitingFor: undefined,
       outbox: { PENDING: 0, SYNCED: 2 },
     });
-    expect(logged).toHaveLength(1);
-    expect(logged[0]).toMatchObject({ severity: "INFO", operation: "cloud-sync", userId: "u-admin" });
-    expect(logged[0]?.message).toContain("owner");
+    // One summary of the pass, attributed to who ran it; and, since it read something, the change it announced.
+    const summaries = logged.filter((entry) => entry.operation === "cloud-sync");
+    expect(summaries).toHaveLength(1);
+    expect(summaries[0]).toMatchObject({ severity: "INFO", operation: "cloud-sync", userId: "u-admin" });
+    expect(summaries[0]?.message).toContain("owner");
+    expect(logged.map((entry) => entry.operation).sort()).toEqual(["cloud-sync", "data-changed"]);
   });
 
   it("keeps the cloud's answer about who holds each write lease, for this project", async () => {

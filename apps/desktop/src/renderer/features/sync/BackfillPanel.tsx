@@ -93,6 +93,7 @@ const PlanView: React.FC<{ plan: BackfillPlan; lastAt: string | null; sent: bool
         {plan.variantsToQueue > 0 ? <li>{copy.backfill.variants(plan.variantsToQueue)}</li> : null}
         {plan.unstampedQueued > 0 ? <li>{copy.backfill.unstamped(plan.unstampedQueued)}</li> : null}
       </ul>
+      <NeverSent plan={plan} />
       {!hasLeases ? <p className="text-small" role="status">🔒 {copy.backfill.noLease}</p> : null}
       {plan.mismatches.length > 0 ? <Mismatches plan={plan} /> : null}
       {lastAt !== null ? <p className="text-small">{copy.backfill.lastSent(formatDateTime(lastAt))}</p> : null}
@@ -103,6 +104,23 @@ const PlanView: React.FC<{ plan: BackfillPlan; lastAt: string | null; sent: bool
         </button>
       </div>
     </>
+  );
+};
+
+/** The carton and money documents the backfill leaves out as local test data. Listed, so nothing is left out silently. */
+const NeverSent: React.FC<{ plan: BackfillPlan }> = ({ plan }) => {
+  const documents = Object.values(plan.neverSent.documents).reduce((sum, value) => sum + value, 0);
+  return (
+    <div className="sync-notice" role="status" aria-label={copy.backfill.neverSentTitle}>
+      <span className="sync-notice-icon" aria-hidden="true">🔒</span>
+      <div className="sync-notice-body">
+        <p className="sync-notice-title">{copy.backfill.neverSentTitle}</p>
+        <p>{copy.backfill.neverSentHint}</p>
+        <ul className="sync-wait-list">
+          <li>{copy.backfill.stockDocuments(documents)}</li>
+        </ul>
+      </div>
+    </div>
   );
 };
 

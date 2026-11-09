@@ -1,4 +1,5 @@
 import type { PrinterRole } from "../../shared/printerRole";
+import type { DataChangeTrace } from "../../shared/dataChange";
 import type { ClaimPartyRole, ContractorLedger, ContractorRole, LeaseDomain, ReceiveProductionOutcome, StoreDailyReport, StoreDirection, UpperIssueOutcome, UpperProductionComparison, UpperReconciliation } from "@erp/domain";
 
 export type SortOrder = "ASC" | "DESC";
@@ -130,6 +131,18 @@ export interface BackfillMismatch {
   unitDiffers: boolean;
 }
 
+/** Carton Cloud on this computer (packages/data/src/database/stockProtection.ts). Mirrors CartonCloudStatus in @erp/data. */
+export interface CartonCloudStatus {
+  state: "NOT_ACTIVATED" | "ACTIVE" | "INVALID";
+  invalidReason: string | null;
+  activation: { version: 1; activatedAt: string; activatedBy: string; deviceId: string; projectKey: string; cutoff: Record<string, number> } | null;
+  problems: string[];
+  projectKey: string | null;
+  leases: Array<{ domain: string; holderLabel: string | null; heldHere: boolean }>;
+  localOnlyMarks: number;
+  parkedLocalStock: number;
+}
+
 /** What the one-time backfill would send from this computer. Mirrors BackfillPlan in @erp/data. */
 export interface BackfillPlan {
   masterEpoch: number | null;
@@ -141,6 +154,10 @@ export interface BackfillPlan {
   variantsToQueue: number;
   unstampedQueued: number;
   mismatches: BackfillMismatch[];
+  /** Carton and money documents the backfill leaves out as local test data. Never sent (stockProtection.ts in @erp/data). */
+  neverSent: {
+    documents: Record<string, number>;
+  };
 }
 
 export type SyncReply<T> = { accepted: true; value: T } | { accepted: false; reason?: string };
@@ -1168,10 +1185,32 @@ export type CreateGatepassOutcome =
   | "VARIANT_NOT_FOUND"
   | "INSUFFICIENT_STOCK"
   | "STOCK_CHANGED"
+  /** This press of Create already made this gatepass: it is the answer, and nothing was written again. */
+  | "ALREADY_SAVED"
+  /** This press of Create already made a DIFFERENT gatepass (named by code): nothing was written. */
+  | "REQUEST_CONFLICT"
+  /** Main-process only: the press of Create carried no request id. */
+  | "NO_REQUEST_ID"
   /** Main-process only: session missing or lacks the gatepass permission. */
   | "NOT_AUTHORIZED"
   /** Main-process only: infrastructure failure; nothing was written. */
   | "ERROR";
+
+/** The document a press of Save made, for a screen reopened after a restart (migration 105). */
+export interface SavedRequestAnswer {
+  accepted: boolean;
+  reason?: string;
+  saved: { id: string; label: string } | null;
+}
+
+/** A press of Save whose request id already made a different document. */
+export interface RequestConflictReply {
+  accepted: false;
+  errorCode: "REQUEST_CONFLICT";
+  reason: string;
+  existingId: string;
+  existingNumber: string;
+}
 
 export interface GatepassShortage {
   productVariantId: string;
@@ -2352,9 +2391,10 @@ export interface DesktopApi {
   /** Every colour + size In Store, across all articles — the whole grid in one read. */
   listGatepassStoreStock(opts?: { token?: string }): Promise<{ accepted: boolean; rows: GatepassStockRow[]; reason?: string }>;
   createGatepass(
-    input: { partyId: string; lines: GatepassLineInput[]; biltyNumber?: string | null; transportVia?: string | null; remarks?: string | null },
+    input: { requestId: string; partyId: string; lines: GatepassLineInput[]; biltyNumber?: string | null; transportVia?: string | null; remarks?: string | null },
     opts?: { token?: string }
   ): Promise<CreateGatepassResult>;
+  findGatepassByRequest(requestId: string, opts?: { token?: string }): Promise<SavedRequestAnswer>;
   getGatepass(gatepassId: string, opts?: { token?: string }): Promise<Gatepass | null>;
   /** By display number (GP-000123 → 123); null when no such document. */
   getGatepassByNumber(gatepassNumber: number, opts?: { token?: string }): Promise<Gatepass | null>;
@@ -2415,10 +2455,18 @@ export interface DesktopApi {
    * listening. Read through hooks/useDataChanged, which checks each message.
    */
   onDataChanged?(listener: (change: unknown) => void): () => void;
+  /** Writes one step of a screen's handling of an announced change to app.log. Never refused, never answered. */
+  traceDataChange?(trace: DataChangeTrace): Promise<void>;
   /** What the one-time backfill would send, and when it last ran here. Administrators. */
   getBackfillPlan(): Promise<SyncReply<{ plan: BackfillPlan; lastAt: string | null }>>;
   /** Marks this computer's history for the passes to send. Administrators, holder of both leases. */
   runBackfill(): Promise<{ accepted: boolean; reason?: string; plan?: BackfillPlan }>;
+  /** Whether Carton Cloud is active here, and what stops activation. Administrators. Mirrors CartonCloudStatus in @erp/data. */
+  getCartonCloudStatus(): Promise<SyncReply<CartonCloudStatus>>;
+  /** For every signed-in user: is cloud sync set up here, and is Carton Cloud active (the working screens warn). */
+  getCartonCloudState(): Promise<SyncReply<{ configured: boolean; state: CartonCloudStatus["state"] }>>;
+  /** Activates Carton Cloud on this computer, once, for the project named. Administrators. */
+  activateCartonCloud(confirmedProject: string): Promise<SyncReply<CartonCloudStatus> & { problems?: string[] }>;
   /** Read-only: which document-number range this computer holds, or why it holds none. */
   getNumberBlockStatus(): Promise<NumberBlockStatus>;
   /**
@@ -2494,7 +2542,11 @@ export interface DesktopApi {
 
   // Cash voucher methods
   getNextCashVoucherNumber(): Promise<number>;
-  createCashVoucher(input: Record<string, unknown>): Promise<{ accepted: boolean; voucherId?: string; reason?: string }>;
+  /** One press of Save under `requestId`: CREATED, or ALREADY_SAVED for a press already answered. */
+  createCashVoucher(input: Record<string, unknown>): Promise<
+    { accepted: true; voucherId: string; voucherNumber: string; outcome: "CREATED" | "ALREADY_SAVED" } | RequestConflictReply | { accepted: false; reason?: string; errorCode?: undefined }
+  >;
+  findCashVoucherByRequest(requestId: string): Promise<SavedRequestAnswer>;
   updateCashVoucher(voucherId: string, input: Record<string, unknown>): Promise<{ accepted: boolean; reason?: string }>;
   getCashVoucher(id: string): Promise<CashVoucher | null>;
   getCashVoucherByNumber(voucherNumber: number): Promise<CashVoucher | null>;
@@ -2567,7 +2619,25 @@ export interface DesktopApi {
   findSaleVoucherByGatepass(gatepassId: string): Promise<{ id: string; voucherNumber: string } | null>;
   listSaleVouchers(query: Record<string, unknown>): Promise<PagedResult<SaleVoucherListRow>>;
   updateSaleVoucher(voucherId: string, input: Record<string, unknown>): Promise<{ accepted: boolean; reason?: string }>;
-  addVoucherLineItem(voucherId: string, input: Record<string, unknown>): Promise<{ accepted: boolean; id?: string; reason?: string; errorCode?: string; requestedDiscount?: number; allowedMaximum?: number; exceededBy?: number }>;
+  /** `input.lineId` is the screen's id for the line: added again, it is the same line (`duplicate`). */
+  addVoucherLineItem(voucherId: string, input: Record<string, unknown>): Promise<{ accepted: boolean; id?: string; duplicate?: boolean; reason?: string; errorCode?: string; requestedDiscount?: number; allowedMaximum?: number; exceededBy?: number }>;
+  /** A bill typed by hand, header and lines in one go, under the screen's request id (migration 105). */
+  createManualSaleVoucher(input: Record<string, unknown>): Promise<{
+    accepted: boolean;
+    id?: string;
+    voucherNumber?: string;
+    outcome?: "CREATED" | "ALREADY_SAVED";
+    reason?: string;
+    errorCode?: string;
+    existingId?: string;
+    existingNumber?: string;
+    currentBalance?: number;
+    voucherAmount?: number;
+    projectedBalance?: number;
+    limit?: number;
+    available?: number;
+  }>;
+  findSaleVoucherByRequest(requestId: string): Promise<SavedRequestAnswer>;
   /** Enters a gatepass's generated bill: every line together, or none. Entering it twice debits once. */
   enterGatepassBill(voucherId: string, input: { bookNo: string; subPartyNameUrdu?: string; remarks?: string; lines: Array<Record<string, unknown>> }): Promise<{
     accepted: boolean; id?: string; voucherNumber?: string; duplicate?: boolean; reason?: string; errorCode?: string;

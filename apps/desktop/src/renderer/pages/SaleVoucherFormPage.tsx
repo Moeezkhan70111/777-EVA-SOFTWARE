@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { AppRoute } from "../app/routes";
 import { useDesktopApi } from "../hooks/useDesktopApi";
+import { REQUEST_STORAGE_KEY, useLeftoverRequest, useRequestId } from "../hooks/useRequestId";
 import type { Gatepass, Party, SaleVoucher } from "../types/desktopApi";
 import { useNotifications } from "../state/NotificationsContext";
 import { copy } from "../config/copy";
@@ -19,6 +20,7 @@ import { GatepassBillPicker } from "../features/billing/GatepassBillPicker";
 import { StateView } from "../components/shared/StateView";
 import { usePartyBalance } from "../features/parties/usePartyBalance";
 import type { PartyFacts } from "../features/parties/PartyCard";
+import { CartonCloudOffNotice } from "../features/sync/CartonCloudOffNotice";
 
 // The bill (sale voucher). Every bill is made from a gatepass: the desk opens the gatepass
 // notice (or types its number), the party, date and lines fill in — one line per article +
@@ -63,6 +65,13 @@ export const SaleVoucherFormPage: React.FC<SaleVoucherFormPageProps> = ({ vouche
   const [billNotEntered, setBillNotEntered] = useState(false);
   /** The gatepass already opened on this mount, so StrictMode's double effect fills the form once. */
   const openedGatepassRef = useRef<string | null>(null);
+  /** One press of Save, one request id, for a bill typed by hand (hooks/useRequestId.ts). */
+  const request = useRequestId(REQUEST_STORAGE_KEY.SALE_VOUCHER);
+  useLeftoverRequest(REQUEST_STORAGE_KEY.SALE_VOUCHER, (id) => api.findSaleVoucherByRequest(id), (label) =>
+    push("warning", copy.requests.lastSaveTitle, copy.requests.lastSaveBody(label))
+  );
+  /** Held at once, not on the next render: a second click in the same instant does nothing (state is too late). */
+  const savingNow = useRef(false);
   const hasBill = Boolean(activeId) || gatepassLink !== null;
 
   // ── the party's master record: code, city and credit limit ───────────────
@@ -122,6 +131,7 @@ export const SaleVoucherFormPage: React.FC<SaleVoucherFormPageProps> = ({ vouche
 
   /** Nothing on screen: the next bill starts from a gatepass number. */
   const showNew = (nextNumber: string | null, index: number) => {
+    request.renew();
     if (nextNumber !== null) setVoucherNumber(nextNumber);
     setPartyId("");
     setPartySnapshot(null);
@@ -305,12 +315,14 @@ export const SaleVoucherFormPage: React.FC<SaleVoucherFormPageProps> = ({ vouche
 
   // ── save ──────────────────────────────────────────────────────────────────
   const lineInput = (line: BillLine) => ({ productVariantId: line.productVariantId, quantity: line.dznQty, unitPrice: line.pairRate, discount: line.totalDisc, priceType: line.priceType });
+  /** A line not saved yet carries the screen's id for it, so adding it twice is one line. */
+  const newLineInput = (line: BillLine) => ({ ...lineInput(line), ...(line.clientId ? { lineId: line.clientId } : {}) });
 
   const saveExisting = async (id: string): Promise<boolean> => {
     const header = await api.updateSaleVoucher(id, { bookNo: fields.bookNo, subPartyNameUrdu: fields.subPartyNameUrdu, remarks: fields.remarks });
     if (!header.accepted) { push("error", copy.toast.failed, header.reason ?? "Update failed"); return false; }
     for (const line of bill.lines) {
-      const result = line.id ? await api.updateVoucherLineItem(line.id, lineInput(line)) : await api.addVoucherLineItem(id, lineInput(line));
+      const result = line.id ? await api.updateVoucherLineItem(line.id, lineInput(line)) : await api.addVoucherLineItem(id, newLineInput(line));
       if (!result.accepted) { push("error", copy.toast.failed, result.reason ?? "Update item failed"); return false; }
     }
     push("success", copy.toast.updated, copy.billing.saved(voucherNumber));
@@ -326,8 +338,36 @@ export const SaleVoucherFormPage: React.FC<SaleVoucherFormPageProps> = ({ vouche
     push("error", copy.toast.failed, refusal.reason ?? "Create failed");
   };
 
+  /**
+   * A bill typed by hand -- no gatepass -- saved whole in one go under this press's request id: a double click or a
+   * retry is one bill and one debit. Already saved by an earlier press: said so. Saved with other details under the
+   * same id: refused, keeping the form and the id -- "New" starts another bill. No answer: the same id goes again.
+   */
+  const createManual = async (): Promise<string | null> => {
+    const requestId = request.start();
+    if (requestId === null) return null;
+    let saved: Awaited<ReturnType<typeof api.createManualSaleVoucher>>;
+    try {
+      saved = await api.createManualSaleVoucher({ requestId, partyId, ...fields, lines: bill.lines.map(lineInput) });
+    } catch (error) {
+      request.unanswered();
+      throw error;
+    }
+    request.settle({ renew: saved.errorCode !== "REQUEST_CONFLICT" });
+    if (!saved.accepted || !saved.id) {
+      if (saved.errorCode === "REQUEST_CONFLICT") push("error", copy.requests.conflictTitle, saved.reason ?? "");
+      else explainRefusal(saved);
+      return null;
+    }
+    if (saved.outcome === "ALREADY_SAVED") push("success", copy.requests.alreadySavedTitle, copy.requests.billAlreadySaved(saved.voucherNumber ?? ""));
+    else push("success", copy.toast.created, copy.billing.created(saved.voucherNumber ?? ""));
+    return saved.id;
+  };
+
   const createNew = async (): Promise<string | null> => {
-    const created = await api.createSaleVoucher({ partyId, ...fields, projectedTotal: bill.totals.net, gatepassId: gatepassLink?.id ?? null });
+    if (!gatepassLink) return createManual();
+    // A bill from a gatepass: unchanged. One live bill per gatepass is the database's own rule (migration 031).
+    const created = await api.createSaleVoucher({ partyId, ...fields, projectedTotal: bill.totals.net, gatepassId: gatepassLink.id });
     if (!created.accepted) {
       if (created.errorCode === "GATEPASS_ALREADY_BILLED" && created.existingVoucherId) {
         // Someone billed it meanwhile: open that bill rather than make a second one.
@@ -362,6 +402,8 @@ export const SaleVoucherFormPage: React.FC<SaleVoucherFormPageProps> = ({ vouche
   const save = async () => {
     if (!partyId) { push("error", copy.toast.required, copy.billing.partyRequired); return; }
     if (bill.lines.length === 0) { push("error", copy.billing.noLines, copy.billing.noLinesBody); return; }
+    if (savingNow.current) return;
+    savingNow.current = true;
     setLoading(true);
     try {
       const saveActive = billNotEntered ? enterBill : saveExisting;
@@ -374,6 +416,7 @@ export const SaleVoucherFormPage: React.FC<SaleVoucherFormPageProps> = ({ vouche
     } catch (err) {
       push("error", copy.toast.error, err instanceof Error ? err.message : "Save failed");
     } finally {
+      savingNow.current = false;
       setLoading(false);
     }
   };
@@ -383,6 +426,7 @@ export const SaleVoucherFormPage: React.FC<SaleVoucherFormPageProps> = ({ vouche
   // ─── render ───────────────────────────────────────────────────────────────
   return (
     <div className="page gatepass-page gp-compose bill-page">
+      <CartonCloudOffNotice />
       <header className="gp-topbar">
         <div className="gp-topbar-main">
           <h1 className="page-title">{copy.billing.title}</h1>

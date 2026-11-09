@@ -1,4 +1,5 @@
 import test from "node:test";
+import { activateCartonCloudForTest } from "@erp/data/dist/testing/cartonCloud.js";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
@@ -99,6 +100,8 @@ function openPc(name: string, block: number): Pc {
     deviceId: device, deviceName: name, appVersion: "1.0.0",
   });
   db.db.prepare("INSERT OR REPLACE INTO app_settings (setting_key, setting_value, updated_at) VALUES ('device.id', ?, ?)").run(device, nowIso());
+  // After go-live: Carton Cloud active from the start, through the real activation (stockProtection.ts).
+  activateCartonCloudForTest(db.db, PROJECT);
   return { name, device, dbPath, db };
 }
 

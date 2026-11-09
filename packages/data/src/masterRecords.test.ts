@@ -74,7 +74,7 @@ test("marked records are queued whole, prerequisites first, under the epoch held
     seedMaterial(db);
     holdMasterData(db, 4); // the lease moved on after the writes: the marks keep epoch 3
     const result = buildLeasedRecordRevisions(db.db, NOW);
-    assert.deepEqual(result, { queued: 3, unqueued: 0 });
+    assert.deepEqual(result, { queued: 3, unqueued: 0, heldBack: 0 });
 
     const rows = queued(db);
     assert.deepEqual(rows.map((row) => row.type), ["INVENTORY_UNIT", "INVENTORY_CATEGORY", "INVENTORY_ITEM"]);
@@ -110,7 +110,7 @@ test("a later change is the next revision, and a removed record is queued as a d
 test("a change made without a lease epoch is not built: it waits, marked, for the backfill", () => {
   withDatabase((db) => {
     seedMaterial(db); // no lease cached: standalone
-    assert.deepEqual(buildLeasedRecordRevisions(db.db, NOW), { queued: 0, unqueued: 0 });
+    assert.deepEqual(buildLeasedRecordRevisions(db.db, NOW), { queued: 0, unqueued: 0, heldBack: 0 });
     assert.equal(queued(db).length, 0);
     assert.equal((db.db.prepare("SELECT COUNT(*) AS n FROM sync_dirty_records").get() as { n: number }).n, 3);
   });

@@ -1,12 +1,14 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import type { AppRoute } from "../app/routes";
 import { useDesktopApi } from "../hooks/useDesktopApi";
+import { REQUEST_STORAGE_KEY, useLeftoverRequest, useRequestId } from "../hooks/useRequestId";
 import type { CashVoucher, Party } from "../types/desktopApi";
 import { useNotifications } from "../state/NotificationsContext";
 import { CashVoucherPartyTable } from "../components/CashVoucherPartyTable";
 import { copy } from "../config/copy";
 import { toIsoDate } from "../utils/dates";
 import { formatWholeMoney } from "../app/format";
+import { CartonCloudOffNotice } from "../features/sync/CartonCloudOffNotice";
 
 interface CashVoucherFormPageProps {
   voucherId?: string;
@@ -134,8 +136,13 @@ export const CashVoucherFormPage: React.FC<CashVoucherFormPageProps> = ({ vouche
   const [maxVoucherNumber, setMaxVoucherNumber] = useState<number>(1);
 
   const voucherNumInputRef = useRef<HTMLInputElement>(null);
-  /** One press of Save: kept until an answer arrives, so a retry cannot make a second payment. */
-  const saveRequestRef = useRef(crypto.randomUUID());
+  /** One press of Save, one request id (hooks/useRequestId.ts): a retry or a double click cannot make a second payment. */
+  const request = useRequestId(REQUEST_STORAGE_KEY.CASH_VOUCHER);
+  useLeftoverRequest(REQUEST_STORAGE_KEY.CASH_VOUCHER, (id) => api.findCashVoucherByRequest(id), (label) =>
+    push("warning", copy.requests.lastSaveTitle, copy.requests.lastSaveBody(label))
+  );
+  /** Held at once, not on the next render: a second click in the same instant does nothing, and says nothing. */
+  const savingNow = useRef(false);
   const partyFieldRefs = useRef<Record<string, HTMLSelectElement | null>>({});
 
   const updateLine = (lineId: string, changes: Partial<VoucherLine>) => {
@@ -337,6 +344,8 @@ export const CashVoucherFormPage: React.FC<CashVoucherFormPageProps> = ({ vouche
     }));
     const firstLine = normalizedLines[0];
 
+    if (savingNow.current) return;
+    savingNow.current = true;
     setSaving(true);
     try {
       if (currentId) {
@@ -356,37 +365,51 @@ export const CashVoucherFormPage: React.FC<CashVoucherFormPageProps> = ({ vouche
           push("error", copy.toast.failed, result.reason ?? "Update failed");
         }
       } else {
-        // Create new
-        const result = await api.createCashVoucher({
-          requestId: saveRequestRef.current,
-          partyId: firstLine.partyId,
-          voucherDate,
-          modeOfTransfer: firstLine.modeOfTransfer,
-          description: description.trim(),
-          receiptAmount: firstLine.receiptAmount,
-          paymentAmount: firstLine.paymentAmount,
-          lines: normalizedLines,
-        });
-        if (result.accepted && result.voucherId) {
-          saveRequestRef.current = crypto.randomUUID();
-          push("success", copy.toast.saved, `Cash voucher #${voucherNumber} created`);
-          setCurrentId(result.voucherId);
-          // Prepare next blank voucher
-          const nextNum = await api.getNextCashVoucherNumber();
-          setMaxVoucherNumber(nextNum);
-        } else {
-          push("error", copy.toast.failed, result.reason ?? "Create failed");
-        }
+        await createVoucher({ partyId: firstLine.partyId, voucherDate, modeOfTransfer: firstLine.modeOfTransfer, description: description.trim(), receiptAmount: firstLine.receiptAmount, paymentAmount: firstLine.paymentAmount, lines: normalizedLines });
       }
     } catch {
       push("error", copy.toast.error, "Failed to save voucher");
     } finally {
+      savingNow.current = false;
       setSaving(false);
     }
   };
 
+  /**
+   * A new voucher, under this press's request id. Already saved by an earlier press: said so, once. Saved with
+   * other details under the same id: refused and said so, keeping the form and the id, so pressing Save again
+   * cannot make a second payment -- "New" starts one. No answer: the same id goes again.
+   */
+  const createVoucher = async (input: Record<string, unknown>) => {
+    const requestId = request.start();
+    if (requestId === null) return;
+    let result: Awaited<ReturnType<typeof api.createCashVoucher>>;
+    try {
+      result = await api.createCashVoucher({ requestId, ...input });
+    } catch (error) {
+      request.unanswered();
+      throw error;
+    }
+    if (result.accepted) {
+      request.settle({ renew: true });
+      if (result.outcome === "ALREADY_SAVED") push("success", copy.requests.alreadySavedTitle, copy.requests.cashAlreadySaved(result.voucherNumber));
+      else push("success", copy.toast.saved, `Cash voucher #${result.voucherNumber} created`);
+      setCurrentId(result.voucherId);
+      setMaxVoucherNumber(await api.getNextCashVoucherNumber());
+      return;
+    }
+    if (result.errorCode === "REQUEST_CONFLICT") {
+      request.settle({ renew: false });
+      push("error", copy.requests.conflictTitle, result.reason);
+      return;
+    }
+    request.settle({ renew: true });
+    push("error", copy.toast.failed, result.reason ?? "Create failed");
+  };
+
   // ─── New blank voucher ─────────────────────────────────────────────────────
   const handleNew = async () => {
+    request.renew();
     const nextNum = await api.getNextCashVoucherNumber();
     setCurrentId(undefined);
     setVoucherNumber(nextNum);
@@ -431,6 +454,7 @@ export const CashVoucherFormPage: React.FC<CashVoucherFormPageProps> = ({ vouche
   // ─── Render ───────────────────────────────────────────────────────────────
   return (
     <div className="cash-voucher-page" style={{ display: "flex", flexDirection: "column", height: "100vh", background: "var(--surface-2)", overflow: "hidden" }}>
+      <CartonCloudOffNotice />
 
       {/* ── Top Bar ── */}
       <div className="cash-voucher-topbar" style={{

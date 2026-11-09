@@ -151,8 +151,25 @@ describe("the switch to cloud accounts: by hand, by an admin, at this computer",
     expect(db.getUserBySessionToken(session)?.id).toBe(owner.id);
   });
 
-  it("this build may switch: it can approve people under cloud accounts (cloudAdmin.test.ts)", () => {
-    expect(CLOUD_ACCOUNTS_SWITCH_READY).toBe(true);
+  it("this build may NOT switch: production's cloud has no cloud accounts (Carton Stock Cloud, Phase 1)", () => {
+    expect(CLOUD_ACCOUNTS_SWITCH_READY).toBe(false);
+  });
+
+  it("LOCAL accounts keep working in this build: the computer stays LOCAL and its own sign-in works", async () => {
+    const owner = db.createUserAccount("Owner", "owner1234");
+    expect(await mode()).toBe("LOCAL");
+    const { usesCloudAccounts } = await import("./cloudAccounts");
+    expect(await usesCloudAccounts(db)).toBe(false);
+    const user = db.authenticateUser("Owner", "owner1234");
+    expect(user?.id).toBe(owner.id);
+    expect(db.authenticateUser("Owner", "wrong-password")).toBeNull();
+    const session = db.createUserSession(owner.id);
+    expect(db.getUserBySessionToken(session)?.id).toBe(owner.id);
+    // The refused switch leaves it exactly so.
+    const outcome = await switchThisComputerToCloud(deps(null, CLOUD_ACCOUNTS_SWITCH_READY), request(session, owner.id));
+    expect(outcome).toEqual({ kind: "REFUSED", message: ACCOUNT_MESSAGES.SWITCH_NOT_READY });
+    expect(await mode()).toBe("LOCAL");
+    expect(db.getUserBySessionToken(session)?.id).toBe(owner.id);
   });
 
   it("a build that cannot approve anyone refuses outright, before it asks the cloud anything", async () => {

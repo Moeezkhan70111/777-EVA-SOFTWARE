@@ -125,6 +125,10 @@ export const LiveReturnPage = () => {
       )}
 
       <h1 className="page-title">{copy.returns.title}</h1>
+      {/* Initial Carton Cloud release (docs/44 §11): returns are not sent to the cloud, so one computer records them. */}
+      <p className="text-small" role="note">
+        ⓘ {copy.returns.oneComputerOnly}
+      </p>
 
       <div className="kpi-grid">
         <div className="kpi-card accent">

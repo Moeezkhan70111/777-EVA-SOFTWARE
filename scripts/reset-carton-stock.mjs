@@ -63,7 +63,8 @@ function printPlan(plan) {
   line(`   Manual Production entries: ${plan.kept.manualEntries}`);
   line(`   QR cartons: ${plan.kept.qrCartons}`);
   line(`   Production events: ${plan.kept.productionEvents}`);
-  line(`   Gatepasses: ${plan.kept.gatepasses}\n`);
+  line(`   Gatepasses: ${plan.kept.gatepasses}`);
+  line(`   Local test carton movements (never sent, kept as history): ${plan.kept.localTestMovements}\n`);
 }
 
 async function main() {

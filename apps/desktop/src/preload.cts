@@ -308,6 +308,7 @@ contextBridge.exposeInMainWorld("desktop", {
     listGatepassStock: (article: string, opts?: { token?: string }) => ipcRenderer.invoke(IPC.listGatepassStock, article, opts),
     listGatepassStoreStock: (opts?: { token?: string }) => ipcRenderer.invoke(IPC.listGatepassStoreStock, opts),
     createGatepass: (input: Record<string, unknown>, opts?: { token?: string }) => ipcRenderer.invoke(IPC.createGatepass, input, opts),
+    findGatepassByRequest: (requestId: string, opts?: { token?: string }) => ipcRenderer.invoke(IPC.findGatepassByRequest, requestId, opts),
     getGatepass: (gatepassId: string, opts?: { token?: string }) => ipcRenderer.invoke(IPC.getGatepass, gatepassId, opts),
     getGatepassByNumber: (gatepassNumber: number, opts?: { token?: string }) => ipcRenderer.invoke(IPC.getGatepassByNumber, gatepassNumber, opts),
     countGatepassesByStage: (opts?: { token?: string }) => ipcRenderer.invoke(IPC.countGatepassesByStage, opts),
@@ -335,6 +336,9 @@ contextBridge.exposeInMainWorld("desktop", {
     sendMasterRecordAgain: (recordKey: string) => ipcRenderer.invoke(IPC.sendMasterRecordAgain, recordKey),
     getBackfillPlan: () => ipcRenderer.invoke(IPC.getBackfillPlan),
     runBackfill: () => ipcRenderer.invoke(IPC.runBackfill),
+    getCartonCloudStatus: () => ipcRenderer.invoke(IPC.getCartonCloudStatus),
+    getCartonCloudState: () => ipcRenderer.invoke(IPC.getCartonCloudState),
+    activateCartonCloud: (confirmedProject: string) => ipcRenderer.invoke(IPC.activateCartonCloud, confirmedProject),
     // A subscription, not a call: the listener hears every change the main process announces, and
     // the returned function stops it. The event object never reaches the renderer.
     onDataChanged: (listener: (change: unknown) => void) => {
@@ -344,6 +348,8 @@ contextBridge.exposeInMainWorld("desktop", {
         ipcRenderer.removeListener(IPC.dataChanged, handler);
       };
     },
+    // One step of how a screen handled an announced change, for app.log (shared/dataChange.ts).
+    traceDataChange: (trace: unknown) => ipcRenderer.invoke(IPC.traceDataChange, trace),
     getNumberBlockStatus: () => ipcRenderer.invoke(IPC.getNumberBlockStatus),
     adoptNumberBlock: () => ipcRenderer.invoke(IPC.adoptNumberBlock),
     assignNumberBlock: (block: number) => ipcRenderer.invoke(IPC.assignNumberBlock, block),
@@ -394,6 +400,8 @@ contextBridge.exposeInMainWorld("desktop", {
     listUniqueColorsByArticle: (article: string) => ipcRenderer.invoke(IPC.listUniqueColorsByArticle, article),
     // Sale Voucher Management
     createSaleVoucher: (input: Record<string, unknown>) => ipcRenderer.invoke(IPC.createSaleVoucher, input),
+    createManualSaleVoucher: (input: Record<string, unknown>) => ipcRenderer.invoke(IPC.createManualSaleVoucher, input),
+    findSaleVoucherByRequest: (requestId: string) => ipcRenderer.invoke(IPC.findSaleVoucherByRequest, requestId),
     getSaleVoucher: (voucherId: string) => ipcRenderer.invoke(IPC.getSaleVoucher, voucherId),
     findSaleVoucherByGatepass: (gatepassId: string) => ipcRenderer.invoke(IPC.findSaleVoucherByGatepass, gatepassId),
     listSaleVouchers: (query: Record<string, unknown>) => ipcRenderer.invoke(IPC.listSaleVouchers, query),
@@ -406,6 +414,7 @@ contextBridge.exposeInMainWorld("desktop", {
     // Cash Voucher Management
     getNextCashVoucherNumber: () => ipcRenderer.invoke(IPC.getNextCashVoucherNumber),
     createCashVoucher: (input: Record<string, unknown>) => ipcRenderer.invoke(IPC.createCashVoucher, input),
+    findCashVoucherByRequest: (requestId: string) => ipcRenderer.invoke(IPC.findCashVoucherByRequest, requestId),
     updateCashVoucher: (voucherId: string, input: Record<string, unknown>) => ipcRenderer.invoke(IPC.updateCashVoucher, voucherId, input),
     getCashVoucher: (id: string) => ipcRenderer.invoke(IPC.getCashVoucher, id),
     getCashVoucherByNumber: (voucherNumber: number) => ipcRenderer.invoke(IPC.getCashVoucherByNumber, voucherNumber),

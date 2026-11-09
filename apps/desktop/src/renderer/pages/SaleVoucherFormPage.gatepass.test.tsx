@@ -271,3 +271,25 @@ describe("SaleVoucherFormPage from a gatepass", () => {
     expect(api.createSaleVoucher).not.toHaveBeenCalled();
   });
 });
+
+// One click of Save, one save: held at once, not on the next render (migration 105 work). A second click in the same
+// instant must not send a second bill or a second set of lines.
+describe("Save clicked again while the first is still saving", () => {
+  it("sends one bill, not two", async () => {
+    let answer: () => void = () => undefined;
+    const api = setupDesktop({
+      createSaleVoucher: vi.fn(() => new Promise((resolve) => { answer = () => resolve({ accepted: true, id: "sv-1", voucherNumber: "45" }); })),
+    });
+    renderPage({ fromGatepassId: "gp-7" });
+    await screen.findByText("Filled from Gatepass GP-000007");
+    const button = screen.getByRole("button", { name: /Create Voucher/ });
+    await act(async () => {
+      fireEvent.click(button);
+      fireEvent.click(button);
+      fireEvent.click(button);
+    });
+    await act(async () => answer());
+    await waitFor(() => expect(api.createSaleVoucher).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(api.addVoucherLineItem).toHaveBeenCalledTimes(1));
+  });
+});

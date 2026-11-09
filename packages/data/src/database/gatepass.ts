@@ -5,6 +5,8 @@
 // `this` is the database instance.
 
 import type { SqliteDatabase } from "../sqliteDatabase.js";
+import { cartonCloudIsActive, isLocalStockRecord } from "./stockProtection.js";
+import { SYNC_AGGREGATE } from "./syncEvents.js";
 import { IN_STORE_LOCATION_TYPE, formatGatepassCode } from "@erp/application";
 import type {
   AuditLogPayload,
@@ -12,7 +14,9 @@ import type {
   GatepassForCancel,
   GatepassHeaderPayload,
   GatepassLinePayload,
+  GatepassMadeByRequest,
   GatepassPartyRecord,
+  GatepassRequestSummary,
   GatepassStatus,
   GatepassVariantStock,
   OutstandingGatepassLine,
@@ -36,6 +40,7 @@ import type { DispatchAllowance, GatepassDeliveryProof, GatepassJourneyStep, Gat
 import { IN_STORE_STOCK_SQL, type MutableTransactionContext } from "./shared.js";
 import { createHash } from "node:crypto";
 import { allocateNumberInRange } from "./numberRange.js";
+import { fingerprintText, requestFingerprint } from "./requestFingerprint.js";
 import {
   DESK_OWES_SQL,
   GATE_OWES_SQL,
@@ -279,8 +284,8 @@ export const gatepassMethods = {
       .prepare(
         `INSERT INTO gatepasses (
           id, gatepass_number, party_id, gatepass_date, status, bilty_number, transport_via, remarks, total_quantity,
-          created_by, created_at, updated_at, cancelled_at, cancelled_by, cancel_reason
-        ) VALUES (?, ?, ?, ?, 'CREATED', ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL)`
+          created_by, created_at, updated_at, cancelled_at, cancelled_by, cancel_reason, request_id, request_fingerprint
+        ) VALUES (?, ?, ?, ?, 'CREATED', ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, ?, ?)`
       )
       .run(
         payload.id,
@@ -293,8 +298,44 @@ export const gatepassMethods = {
         payload.totalQuantity,
         payload.createdBy,
         payload.createdAt,
-        payload.createdAt
+        payload.createdAt,
+        payload.requestId ?? null,
+        payload.requestFingerprint ?? null
       );
+  },
+
+  /** The gatepass a press of Create already made (migration 105), with its bill, read under the write lock. */
+  async findGatepassByRequest(this: SqliteDatabase, requestId: string, tx: TransactionContext): Promise<GatepassMadeByRequest | null> {
+    const row = (tx as MutableTransactionContext).db
+      .prepare(
+        `SELECT g.id, g.gatepass_number, g.total_quantity, g.created_at, g.request_fingerprint, sv.id AS bill_id, sv.voucher_number AS bill_number
+         FROM gatepasses g LEFT JOIN sale_vouchers sv ON sv.gatepass_id = g.id AND sv.deleted_at IS NULL
+         WHERE g.request_id = ? LIMIT 1`
+      )
+      .get(requestId) as
+      | { id: string; gatepass_number: number; total_quantity: number; created_at: string; request_fingerprint: string | null; bill_id: string | null; bill_number: string | number | null }
+      | undefined;
+    if (!row) return null;
+    return {
+      gatepassId: row.id,
+      gatepassNumber: Number(row.gatepass_number),
+      totalQuantity: Number(row.total_quantity),
+      createdAt: row.created_at,
+      requestFingerprint: row.request_fingerprint,
+      billId: row.bill_id,
+      billNumber: row.bill_number === null ? null : String(row.bill_number),
+    };
+  },
+
+  /** What a press of Create asked for, as a stable hash (requestFingerprint.ts). */
+  fingerprintRequest(this: SqliteDatabase, summary: GatepassRequestSummary): string {
+    return requestFingerprint({
+      partyId: summary.partyId,
+      biltyNumber: fingerprintText(summary.biltyNumber),
+      transportVia: fingerprintText(summary.transportVia),
+      remarks: fingerprintText(summary.remarks),
+      lines: summary.lines.map((line) => ({ productVariantId: line.productVariantId, quantity: line.quantity })),
+    });
   },
 
   async insertGatepassLines(this: SqliteDatabase, lines: GatepassLinePayload[], tx: TransactionContext): Promise<void> {
@@ -383,6 +424,8 @@ export const gatepassMethods = {
       gatepassNumber: Number(row.gatepass_number),
       status: String(row.status),
       lines: this.readGatepassLineProgress(String(row.id), context.db),
+      // After go-live, a gatepass from before it is test data (stockProtection.ts): the use case refuses to cancel it.
+      madeBeforeGoLive: cartonCloudIsActive(context.db) && isLocalStockRecord(context.db, SYNC_AGGREGATE.GATEPASS, String(row.id)),
     };
   },
 

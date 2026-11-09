@@ -11,12 +11,16 @@
 //
 // IT STOPS, CHANGING NOTHING, when clearing could disagree with a record: QR cartons in the store (their
 // figure is real and on hold), a gatepass still owed QR cartons, a figure below what its rows hold, or
-// movements already recorded. A figure with movements behind it is no longer disposable: it is on other
-// computers too.
+// movements that came from the cloud. A figure the cloud has contributed to is no longer disposable.
+//
+// CARTON CLOUD (stockProtection.ts). Once Carton Cloud has been activated here the figure is shared, and a reset is
+// refused outright. Before activation, movements made on this computer were never sent and never can be: they are
+// test data, so they do not stop the fresh start. They stay as history rows, excluded for ever.
 
 import { createHash } from "node:crypto";
 import { IN_STORE_LOCATION_TYPE, IN_STORE_STATUS } from "@erp/application";
 import { LINE_SETTLED_SQL } from "./gatepassLineSql.js";
+import { CARTON_CLOUD_ACTIVATION_KEY } from "./stockProtection.js";
 
 export const CARTON_RESET_MIN_SCHEMA = 103;
 
@@ -46,7 +50,14 @@ export interface CartonResetPlan {
   readonly variants: readonly CartonResetVariant[];
   readonly cartonsCleared: number;
   /** Counted so the report can say what stayed: none of these change. */
-  readonly kept: { readonly manualEntries: number; readonly qrCartons: number; readonly productionEvents: number; readonly gatepasses: number };
+  readonly kept: {
+    readonly manualEntries: number;
+    readonly qrCartons: number;
+    readonly productionEvents: number;
+    readonly gatepasses: number;
+    /** Carton movements made here before Carton Cloud was activated: test history, kept, never sent. */
+    readonly localTestMovements: number;
+  };
 }
 
 export interface CartonResetCheck {
@@ -92,10 +103,11 @@ function refusalsFor(db: ResetHandle, variants: readonly CartonResetVariant[]): 
   const reasons: string[] = [];
   const schema = schemaNumber(db);
   if (schema < CARTON_RESET_MIN_SCHEMA) return [`The database is at migration ${schema}, and this needs ${CARTON_RESET_MIN_SCHEMA}. Start the release once first.`];
-  const movements = count(db, "SELECT COUNT(1) AS n FROM carton_stock_events");
-  if (movements > 0) reasons.push(`${movements} carton movement(s) are already recorded here. Those figures are shared with other computers and are not disposable.`);
-  const unsent = count(db, "SELECT COUNT(1) AS n FROM sync_outbox WHERE aggregate_type = 'CARTON_STOCK_EVENT'");
-  if (unsent > 0) reasons.push(`${unsent} carton movement(s) are in the sending queue.`);
+  if (count(db, "SELECT COUNT(1) AS n FROM app_settings WHERE setting_key = ?", CARTON_CLOUD_ACTIVATION_KEY) > 0) {
+    return ["Carton Cloud has been activated on this computer: its carton figure is shared with the cloud and is never reset."];
+  }
+  const received = count(db, "SELECT COUNT(1) AS n FROM carton_stock_events WHERE replicated_at IS NOT NULL");
+  if (received > 0) reasons.push(`${received} carton movement(s) came from the cloud. That figure is shared with other computers and is not disposable.`);
   const qrInStore = count(db, "SELECT COUNT(1) AS n FROM qr_master WHERE current_status = ?", IN_STORE_STATUS);
   if (qrInStore > 0) reasons.push(`${qrInStore} QR carton(s) are in the store. Clearing would make the figure disagree with their scan history. Decide what they are first.`);
   const owed = count(
@@ -113,7 +125,7 @@ function refusalsFor(db: ResetHandle, variants: readonly CartonResetVariant[]): 
 /** What a reset would do, and everything that stops it. Reads only. */
 export function planCartonStockReset(db: ResetHandle): CartonResetPlan {
   if (schemaNumber(db) < CARTON_RESET_MIN_SCHEMA) {
-    return { refusals: refusalsFor(db, []), variants: [], cartonsCleared: 0, kept: { manualEntries: 0, qrCartons: 0, productionEvents: 0, gatepasses: 0 } };
+    return { refusals: refusalsFor(db, []), variants: [], cartonsCleared: 0, kept: { manualEntries: 0, qrCartons: 0, productionEvents: 0, gatepasses: 0, localTestMovements: 0 } };
   }
   const variants = planVariants(db);
   return {
@@ -125,6 +137,7 @@ export function planCartonStockReset(db: ResetHandle): CartonResetPlan {
       qrCartons: count(db, "SELECT COUNT(1) AS n FROM qr_master"),
       productionEvents: count(db, "SELECT COUNT(1) AS n FROM production_events"),
       gatepasses: count(db, "SELECT COUNT(1) AS n FROM gatepasses"),
+      localTestMovements: count(db, "SELECT COUNT(1) AS n FROM carton_stock_events WHERE replicated_at IS NULL"),
     },
   };
 }

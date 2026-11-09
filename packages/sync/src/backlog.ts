@@ -79,6 +79,7 @@ function mergeDrain(total: DrainResult, next: DrainResult): DrainResult {
     synced: total.synced + next.synced,
     failed: total.failed + next.failed,
     deadLettered: total.deadLettered + next.deadLettered,
+    parkedLocalStock: total.parkedLocalStock + next.parkedLocalStock,
     refusals: [...total.refusals, ...next.refusals],
     counts: next.counts,
     ...(next.transportError !== undefined ? { transportError: next.transportError } : {}),

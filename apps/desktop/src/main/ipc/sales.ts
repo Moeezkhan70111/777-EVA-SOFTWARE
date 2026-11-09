@@ -8,7 +8,27 @@ import { businessToday } from "@erp/domain";
 import { IPC } from "../../shared/ipcChannels";
 import type { IpcContext } from "./context";
 import { PERMISSION } from "@erp/domain";
+import { SAVED_REQUEST_KIND, isRequestId, type SaleLineInput } from "@erp/data";
 import { isBillGatepassMismatchError, isDiscountExceedsAllowedError, isGatepassBillingError, isPartyBalanceLimitError } from "./context";
+import { requestConflictAnswer } from "./requestConflict";
+
+const optionalText = (value: unknown): string | undefined => (typeof value === "string" ? value : undefined);
+
+/** A bill's lines as the screen sent them, checked. B-TYPE always has zero discount: never trust a caller's. */
+function readSaleLines(raw: unknown): SaleLineInput[] {
+  const rows = Array.isArray(raw) ? (raw as Array<Record<string, unknown>>) : [];
+  return rows.map((line) => {
+    const priceType: "NORMAL" | "B_TYPE" = line?.priceType === "B_TYPE" ? "B_TYPE" : "NORMAL";
+    return {
+      productVariantId: typeof line?.productVariantId === "string" ? line.productVariantId : "",
+      quantity: Number.isFinite(line?.quantity) ? Number(line.quantity) : 0,
+      unitPrice: Number.isFinite(line?.unitPrice) ? Number(line.unitPrice) : 0,
+      discount: priceType === "B_TYPE" ? 0 : Number.isFinite(line?.discount) ? Number(line.discount) : 0,
+      priceType,
+      ...(typeof line?.lineId === "string" ? { lineId: line.lineId } : {}),
+    };
+  });
+}
 
 export function registerSalesHandlers(ctx: IpcContext): void {
   const { db, logger, authorizer, deviceId, useCases } = ctx;
@@ -158,6 +178,54 @@ export function registerSalesHandlers(ctx: IpcContext): void {
         message: error instanceof Error ? error.message : "Failed to resolve product discount with price",
       });
       return { discountPerPair: 0, source: "NONE" };
+    }
+  });
+
+  // A bill typed by hand: the header and every line in one transaction, under the screen's request id, so a
+  // double click or a retry after a lost answer is one bill and one debit (migration 105). Bills made from a
+  // gatepass do not come here: they are entered through enterGatepassBill.
+  ipcMain.handle(IPC.createManualSaleVoucher, (event, input?: Record<string, unknown>) => {
+    try {
+      authorizer.requirePermission(event, PERMISSION.SALE_VOUCHER_FORM);
+      const partyId = typeof input?.partyId === "string" ? input.partyId : "";
+      const requestId = typeof input?.requestId === "string" ? input.requestId.trim() : "";
+      const lines = readSaleLines(input?.lines);
+      if (!partyId) return { accepted: false, reason: "Party is required" };
+      if (!isRequestId(requestId)) return { accepted: false, reason: "This bill could not be identified. Nothing was saved. Press Save again." };
+      if (lines.length === 0 || lines.some((line) => !line.productVariantId || line.quantity <= 0)) return { accepted: false, reason: "Invalid product or quantity" };
+      const saved = db.createManualSaleVoucher({
+        requestId,
+        partyId,
+        voucherDate: typeof input?.voucherDate === "string" ? input.voucherDate : businessToday(),
+        bookNo: typeof input?.bookNo === "string" ? input.bookNo.trim() : "",
+        voucherNumber: optionalText(input?.voucherNumber),
+        subPartyName: optionalText(input?.subPartyName),
+        subPartyNameUrdu: optionalText(input?.subPartyNameUrdu),
+        subPartyNumber: optionalText(input?.subPartyNumber),
+        remarks: optionalText(input?.remarks),
+        lines,
+      });
+      const message = saved.outcome === "ALREADY_SAVED" ? `Sale voucher ${saved.voucherNumber} asked for again: already saved, nothing written` : `Sale voucher created: ${saved.voucherNumber}`;
+      logger.log({ module: "billing", severity: "INFO", operation: "create-manual-voucher", deviceId, message });
+      return { accepted: true, ...saved };
+    } catch (error) {
+      const conflict = requestConflictAnswer(error);
+      const known = conflict !== null || isPartyBalanceLimitError(error) || isBillGatepassMismatchError(error) || isDiscountExceedsAllowedError(error);
+      logger.log({ module: "billing", severity: known ? "INFO" : "ERROR", operation: "create-manual-voucher", deviceId, message: error instanceof Error ? error.message : "Failed to create the bill" });
+      if (conflict) return conflict;
+      if (isPartyBalanceLimitError(error)) return { accepted: false, errorCode: error.code, reason: error.message, ...error.figures };
+      if (isDiscountExceedsAllowedError(error)) return { accepted: false, errorCode: error.code, reason: error.message, ...error.figures };
+      return { accepted: false, reason: error instanceof Error ? error.message : "Failed to create the bill" };
+    }
+  });
+
+  // Read-only: was the press of Save the screen never heard back from recorded? (migration 105)
+  ipcMain.handle(IPC.findSaleVoucherByRequest, (event, requestId?: unknown) => {
+    try {
+      authorizer.requirePermission(event, PERMISSION.SALE_VOUCHER_FORM);
+      return { accepted: true, saved: db.findSavedRequest(SAVED_REQUEST_KIND.SALE_VOUCHER, typeof requestId === "string" ? requestId : "") };
+    } catch (error) {
+      return { accepted: false, reason: error instanceof Error ? error.message : "This could not be checked.", saved: null };
     }
   });
 
@@ -335,6 +403,8 @@ export function registerSalesHandlers(ctx: IpcContext): void {
         // B-TYPE always has zero discount — never trust a caller-supplied discount for it.
         discount: priceType === "B_TYPE" ? 0 : (Number.isFinite(input?.discount) ? Number(input?.discount) : 0),
         priceType,
+        // The screen's id for this line: a repeated add is the same line, never a second debit (migration 105).
+        ...(typeof input?.lineId === "string" ? { lineId: input.lineId } : {}),
       });
 
       logger.log({
@@ -347,6 +417,11 @@ export function registerSalesHandlers(ctx: IpcContext): void {
 
       return { accepted: true, ...result };
     } catch (error) {
+      const conflict = requestConflictAnswer(error);
+      if (conflict) {
+        logger.log({ module: "billing", severity: "WARNING", operation: "add-line-item", deviceId, message: conflict.reason });
+        return conflict;
+      }
       if (isBillGatepassMismatchError(error)) {
         logger.log({ module: "billing", severity: "INFO", operation: "add-line-item", deviceId, message: error.message });
         return {

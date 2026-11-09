@@ -62,6 +62,18 @@ export const copy = {
     deleted: "Deleted",
   },
 
+  // One press of Save is one document (migration 105): what a repeated or interrupted press is told.
+  requests: {
+    alreadySavedTitle: "Already saved",
+    conflictTitle: "Already saved with other details",
+    lastSaveTitle: "Your last Save was recorded",
+    lastSaveBody: (label: string) => `Your last Save was recorded as ${label}. Open it to check it before you save again.`,
+    gatepassAlreadySaved: (code: string) => `${code} was already made by this Create. Nothing new was made.`,
+    billAlreadySaved: (voucherNumber: string) => `Sale Voucher #${voucherNumber} was already saved by this Save. Nothing new was saved.`,
+    cashAlreadySaved: (voucherNumber: string) => `Cash voucher #${voucherNumber} was already saved by this Save. Nothing new was saved.`,
+    dismiss: "Dismiss",
+  },
+
   // Common actions rendered on buttons and icon-button titles.
   actions: {
     add: "Add",
@@ -535,7 +547,7 @@ export const copy = {
     statusFailed: "Could not tell whether this computer uses cloud accounts.",
     retry: "Retry",
     notReady:
-      "Not available in this version: approving people under cloud accounts is not finished yet, and switching would sign everyone out with no way back in.",
+      "Not available in this version: the factory's cloud does not use cloud accounts yet. This computer keeps its own sign-in, exactly as it is.",
     // The switch copies the roles itself (cloudAdmin copyRolesBeforeSwitch). This card is only for a
     // computer switched by an earlier build that left the cloud without them.
     roleCopyTitle: "Copy this computer's roles to the cloud",
@@ -737,7 +749,7 @@ export const copy = {
   backfill: {
     title: "Send This Computer's History",
     intro:
-      "Everything written on this computer before it started syncing — materials, parties, units, stock movements and label runs — has never been sent. The other computers fill their stock from it. Send it once, from the store computer.",
+      "Everything written on this computer before it started syncing — materials, parties, units, stock movements and label runs — has never been sent. The other computers fill their stock from it. Send it once, from the store computer. Carton stock and its documents are local test data and are never sent.",
     loading: "Working out what would be sent…",
     failed: "What would be sent could not be worked out.",
     willSend: "What will be sent",
@@ -746,6 +758,10 @@ export const copy = {
     labels: (runs: number, packets: number) => `${runs} label ${runs === 1 ? "run" : "runs"} and ${packets} ${packets === 1 ? "packet" : "packets"} never queued`,
     variants: (count: number) => `${count} ${count === 1 ? "product" : "products"} of cartons made before products were sent`,
     unstamped: (count: number) => `${count} queued ${count === 1 ? "label" : "labels"} waiting for a lease`,
+    stockDocuments: (count: number) =>
+      `${count} stock ${count === 1 ? "document" : "documents"} (Manual Production entries, gatepasses, bills, cash vouchers)`,
+    neverSentTitle: "Never sent: local test carton and money documents",
+    neverSentHint: "Manual Production entries, gatepasses, bills and cash vouchers recorded here are test data. The backfill leaves them out, and no sync ever sends them.",
     noLease: "This computer does not hold both the master-data and the store leases, so it cannot send its history. Only the store computer can.",
     mismatchTitle: "Stock that does not add up — nothing will be sent until it is decided",
     mismatchHint:
@@ -761,6 +777,35 @@ export const copy = {
       "Everything listed is marked and goes over the next syncs, a few hundred records a minute. The store keeps working meanwhile.",
     confirmWarning: "Do this on the store computer only. Another computer is refused.",
     sent: "Marked. It goes over the next syncs — the other computers' screens fill as it arrives.",
+  },
+
+  cartonCloud: {
+    title: "Carton Cloud",
+    offNoticeTitle: "Carton Cloud is not active on this computer",
+    offNotice:
+      "Anything saved here now stays on this computer as test data and never reaches the cloud or the other computers, even after Carton Cloud is activated. Do not record real work until an administrator activates it (Settings → Cloud Sync → Carton Cloud).",
+    offNoticeInvalid:
+      "Carton Cloud's activation on this computer is not valid, so nothing saved here reaches the cloud. Do not record real work: ask an administrator to check Settings → Cloud Sync → Carton Cloud.",
+    offNoticeUnknown:
+      "Whether Carton Cloud is active on this computer could not be read. Until an administrator confirms it is active (Settings → Cloud Sync → Carton Cloud), treat anything saved here as test data.",
+    loading: "Reading whether Carton Cloud is on…",
+    failed: "Whether Carton Cloud is on could not be read.",
+    off: (waiting: number) =>
+      `Off. Carton stock, gatepasses, bills and cash vouchers made on this computer stay here as test data and are never sent${waiting > 0 ? ` (${waiting} waiting here)` : ""}. Activate it on go-live day.`,
+    active: (when: string, who: string) => `On since ${when} (activated by ${who}). Nothing made on this computer before then is ever sent.`,
+    invalid: (reason: string) => `Carton Cloud is NOT on: ${reason}. Nothing of carton stock is sent until this is resolved (see the release guide).`,
+    leasesTitle: "Who holds the carton leases",
+    lease: (domain: string, holder: string | null, here: boolean) =>
+      `${domain}: ${holder === null ? "nobody yet" : holder}${here ? " (this computer)" : ""}`,
+    parked: (count: number) => `${count} queued ${count === 1 ? "record was" : "records were"} parked as local test data, never to be sent.`,
+    notReadyTitle: "Not ready to activate",
+    activate: "Activate Carton Cloud",
+    activating: "Activating…",
+    project: "Cloud project",
+    confirmTitle: "Activate Carton Cloud on this computer?",
+    confirmExplain:
+      "From this moment, new carton stock, gatepasses, bills and cash vouchers made here go to the cloud. Everything made here before this moment stays here for ever, as test data.",
+    confirmWarning: "This is done once and cannot be undone. Check that the project above is the factory's production cloud.",
   },
 
   sync: {
@@ -947,6 +992,8 @@ export const copy = {
   // steps separate everywhere the operator can see them.
   returns: {
     title: "Return Carton",
+    oneComputerOnly:
+      "Returns are paused in this release while carton QR scanning is on hold. When they resume, only the computer that holds the sales lease (SALES_DISPATCH) records them: returns are not sent to other computers, so every other computer refuses them.",
     readyToScan: "READY TO SCAN",
     confirmTitle: "CONFIRM RETURN",
     recorded: "RETURN RECORDED",

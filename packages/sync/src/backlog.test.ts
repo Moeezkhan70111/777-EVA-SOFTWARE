@@ -10,7 +10,7 @@ import type { PullResult } from "./pull.js";
 const COUNTS = { PENDING: 0, IN_FLIGHT: 0, FAILED: 0, DEAD_LETTER: 0, SYNCED: 0 } as DrainResult["counts"];
 
 const batch = (leased: number, synced = leased, extra: Partial<DrainResult> = {}): DrainResult => ({
-  reclaimed: 0, leased, synced, failed: leased - synced, deadLettered: 0, refusals: [], counts: COUNTS, ...extra,
+  reclaimed: 0, leased, synced, failed: leased - synced, deadLettered: 0, parkedLocalStock: 0, refusals: [], counts: COUNTS, ...extra,
 });
 
 const drainOf = (batches: DrainResult[]) => {

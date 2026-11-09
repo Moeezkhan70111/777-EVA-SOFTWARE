@@ -1,4 +1,5 @@
 import test from "node:test";
+import { activateCartonCloudForTest } from "@erp/data/dist/testing/cartonCloud.js";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
@@ -97,6 +98,8 @@ function openPc(name: string, block: number): Pc {
   });
   db.db.prepare("INSERT OR REPLACE INTO app_settings (setting_key, setting_value, updated_at) VALUES ('device.id', ?, ?)").run(device, nowIso());
   db.cartonQrOnHold = CARTON_QR_ON_HOLD;
+  // After go-live: Carton Cloud active from the start, through the real activation (stockProtection.ts).
+  activateCartonCloudForTest(db.db, PROJECT);
   return { name, device, dbPath, db };
 }
 
@@ -154,11 +157,12 @@ const earned = (pc: Pc, office: Office, account: string = office.contractor) =>
   pc.db.getContractorLedger(account, { fromDate: "2020-01-01", toDate: "2999-12-31" });
 const count = (pc: Pc, table: string, where = "1 = 1"): number =>
   Number((pc.db.db.prepare(`SELECT COUNT(*) AS n FROM ${table} WHERE ${where}`).get() as { n: number }).n);
-const entryPayment = (pc: Pc, office: Office, amount: number, requestId?: string) =>
+const entryPayment = (pc: Pc, office: Office, amount: number, requestId: string = crypto.randomUUID()) =>
   pc.db.createCashVoucher({
     requestId, partyId: office.customer, voucherDate: "2026-11-07", modeOfTransfer: "Cash", description: "against the bill", receiptAmount: amount,
     lines: [{ partyId: office.customer, description: "against the bill", modeOfTransfer: "Cash", receiptAmount: amount, paymentAmount: 0 }],
   });
+const pick = (saved: { id: string; outcome: string }) => ({ id: saved.id, outcome: saved.outcome });
 const enterBill = (pc: Pc, office: Office, billId: string, dozens: number, rate = 100) =>
   pc.db.enterGatepassBill(billId, { bookNo: "B1", lines: [{ productVariantId: office.red, quantity: dozens, unitPrice: rate, discount: 0 }] });
 
@@ -338,8 +342,8 @@ test("8, 9: cash vouchers credit once, part payments leave the right balance, an
     const made = await issueGatepass(a, office, 6);
     enterBill(a, office, made.billId ?? "", 3);
     const requestId = crypto.randomUUID();
-    assert.equal(entryPayment(a, office, 1000, requestId), requestId);
-    assert.equal(entryPayment(a, office, 1000, requestId), requestId, "the same press of Save");
+    assert.deepEqual(pick(entryPayment(a, office, 1000, requestId)), { id: requestId, outcome: "CREATED" });
+    assert.deepEqual(pick(entryPayment(a, office, 1000, requestId)), { id: requestId, outcome: "ALREADY_SAVED" }, "the same press of Save");
     assert.equal(count(a, "cash_vouchers"), 1, "one voucher");
     assert.equal(balanceOf(a, office), 2600);
     entryPayment(a, office, 600);
@@ -356,7 +360,7 @@ test("a voucher paying two customers credits each on the balance list, as it doe
     const { a } = office;
     const other = a.db.createParty({ partyName: "SECOND CUSTOMER", partyType: "CUSTOMER", city: "Lahore", mobileNumber: "0300-4444444", status: "ACTIVE" });
     a.db.createCashVoucher({
-      partyId: office.customer, voucherDate: "2026-11-07", modeOfTransfer: "Cash", description: "two", receiptAmount: 100,
+      requestId: crypto.randomUUID(), partyId: office.customer, voucherDate: "2026-11-07", modeOfTransfer: "Cash", description: "two", receiptAmount: 100,
       lines: [
         { partyId: office.customer, description: "one", modeOfTransfer: "Cash", receiptAmount: 100, paymentAmount: 0 },
         { partyId: other, description: "two", modeOfTransfer: "Cash", receiptAmount: 40, paymentAmount: 0 },
@@ -526,7 +530,7 @@ test("14: cancelling puts the stock back once and leaves no money or phantom bil
     assert.equal((await cancelGatepass(a, billed.gatepassId ?? "")).accepted, true, "now the gatepass can be cancelled");
     assert.equal(inStore(a, office), 20);
 
-    const voucher = entryPayment(a, office, 1000);
+    const voucher = entryPayment(a, office, 1000).id;
     a.db.deleteCashVoucher(voucher);
     a.db.deleteCashVoucher(voucher);
     assert.equal(balanceOf(a, office), 0, "a cancelled voucher credits nothing");
@@ -547,7 +551,7 @@ test("14: cancelling puts the stock back once and leaves no money or phantom bil
   });
 });
 
-test("the backfill sends a domain's documents only from the computer holding that domain's lease", async () => {
+test("the backfill sends master data under its lease, and never a stock document, even under a lease this computer holds", async () => {
   await withOffice(async (office) => {
     const { a, b, cloud } = office;
     produce(a, office, "10");
@@ -562,11 +566,13 @@ test("the backfill sends a domain's documents only from the computer holding tha
     const outcome = runBackfill(a.db.db, nowIso());
     assert.equal(outcome.done, true);
     const marked = (type: string) => count(a, "sync_dirty_records", `aggregate_type = '${type}'`);
-    assert.equal(marked("CASH_VOUCHER"), 1, "accounts are held: its vouchers go");
+    // Phase 1 (local stock protection): a stock document is never backfilled, whichever lease is held.
+    assert.equal(marked("CASH_VOUCHER"), 0, "accounts are held, and still no voucher is backfilled");
     assert.equal(marked("ARTICLE_SIZE"), 1, "master data is held: its products go");
-    assert.equal(marked("GATEPASS"), 0, "sales is held elsewhere now: its gatepasses are that computer's to send");
-    assert.equal(marked("SALE_VOUCHER"), 0, "and its bills");
-    assert.equal(Number((a.db.db.prepare("SELECT lease_epoch FROM sync_dirty_records WHERE aggregate_type = 'CASH_VOUCHER'").get() as { lease_epoch: number }).lease_epoch), 1, "under that lease's own epoch");
+    assert.equal(marked("GATEPASS"), 0, "no gatepass is backfilled");
+    assert.equal(marked("SALE_VOUCHER"), 0, "nor any bill");
+    assert.equal(marked("MANUAL_PRODUCTION_ENTRY"), 0, "nor any Manual Production entry");
+    assert.equal(outcome.plan.neverSent.documents.CASH_VOUCHER, 1, "the voucher it left out is counted, not hidden");
   });
 });
 
@@ -576,7 +582,7 @@ test("14: a bill deleted, or a payment cancelled, after the other computer has t
     produce(a, office, "10");
     const made = await issueGatepass(a, office, 6);
     enterBill(a, office, made.billId ?? "", 3);
-    const voucher = entryPayment(a, office, 1000);
+    const voucher = entryPayment(a, office, 1000).id;
     await passAll(cloud, a, b);
     assert.equal(balanceOf(b, office), 2600);
     a.db.updateSaleVoucher(made.billId ?? "", { bookNo: "B9", remarks: "corrected book" });
@@ -625,5 +631,240 @@ test("carton QR is out of the way: a bill with QR cartons out on it cannot rever
       a.db.listDispatchedEventsForSession = original;
     }
     assert.ok(session);
+  });
+});
+
+// ── ONE PRESS OF SAVE IS ONE DOCUMENT (migration 105) ───────────────────────────────────────────────────────────────
+//
+// Gatepass, hand-typed sale voucher and cash voucher each carry the screen's request id. The same id asking for the
+// same thing returns the document already made (ALREADY_SAVED); asking for something else is REQUEST_CONFLICT. Neither
+// writes anything or takes a number. The ids stay on the computer that made the document: never sent, never needed
+// elsewhere, because a retry only ever happens where the Save was pressed.
+
+const issueGatepassFor = (pc: Pc, office: Office, quantity: number, requestId: string) =>
+  new CreateGatepassUseCase(gatepassDeps(pc)).execute({ partyId: office.customer, lines: [{ productVariantId: office.red, quantity }], actor: "clerk", requestId });
+const manualBill = (pc: Pc, office: Office, requestId: string, dozens = 2, rate = 100) =>
+  pc.db.createManualSaleVoucher({ requestId, partyId: office.customer, voucherDate: "2026-11-07", bookNo: "M1", lines: [{ productVariantId: office.red, quantity: dozens, unitPrice: rate, discount: 0 }] });
+/**
+ * No gatepass, bill or cash voucher the cloud holds names a request: those columns are this computer's own. (Manual
+ * Production's request_id is a different, older column that does travel: it is part of that record.)
+ */
+const cloudCarriesNoRequestIds = (cloud: Cloud): boolean => {
+  const documents = cloud.log.filter((change) => ["GATEPASS", "SALE_VOUCHER", "CASH_VOUCHER"].includes(change.envelope.aggregateType));
+  const kinds = new Set(documents.map((change) => change.envelope.aggregateType));
+  return kinds.size === 3 && documents.every((change) => !/request_id|request_fingerprint/.test(JSON.stringify(change.envelope.payload)));
+};
+type Coded = Error & { code?: string; existing?: { number: string } };
+
+test("gatepass: the same Create again is the same gatepass -- one stock movement, one bill, no number used", async () => {
+  await withOffice(async (office) => {
+    const { a } = office;
+    produce(a, office, "10");
+    const requestId = crypto.randomUUID();
+    const made = await issueGatepassFor(a, office, 6, requestId);
+    assert.equal(made.outcome, "CREATED", made.reason);
+
+    const again = await issueGatepassFor(a, office, 6, requestId);
+    assert.equal(again.accepted, true);
+    assert.equal(again.outcome, "ALREADY_SAVED");
+    assert.deepEqual([again.gatepassId, again.code, again.billId, again.billNumber], [made.gatepassId, made.code, made.billId, made.billNumber]);
+    assert.equal(count(a, "gatepasses"), 1);
+    assert.equal(count(a, "carton_stock_events", "event_type = 'GATEPASS_ISSUE'"), 1, "one stock movement");
+    assert.equal(count(a, "sale_vouchers"), 1, "one bill");
+    assert.equal(inStore(a, office), 14, "the stock fell once");
+
+    const next = await issueGatepassFor(a, office, 1, crypto.randomUUID());
+    assert.equal(next.gatepassNumber, (made.gatepassNumber ?? 0) + 1, "the retry took no number");
+  });
+});
+
+test("gatepass: a retry that asks for something else is a conflict, and nothing is written", async () => {
+  await withOffice(async (office) => {
+    const { a } = office;
+    produce(a, office, "10");
+    const requestId = crypto.randomUUID();
+    const made = await issueGatepassFor(a, office, 6, requestId);
+    const edited = await issueGatepassFor(a, office, 5, requestId);
+    assert.equal(edited.accepted, false);
+    assert.equal(edited.outcome, "REQUEST_CONFLICT");
+    assert.equal(edited.code, made.code, "it names the gatepass already made");
+    assert.match(edited.reason ?? "", /already recorded as GP-\d+, with different details/);
+    assert.equal(count(a, "gatepasses"), 1);
+    assert.equal(count(a, "carton_stock_events", "event_type = 'GATEPASS_ISSUE'"), 1);
+    assert.equal(inStore(a, office), 14);
+  });
+});
+
+test("gatepass: different presses are different gatepasses, and a restart keeps the answer", async () => {
+  await withOffice(async (office) => {
+    const { a } = office;
+    produce(a, office, "10");
+    const first = crypto.randomUUID();
+    const one = await issueGatepassFor(a, office, 6, first);
+    const two = await issueGatepassFor(a, office, 6, crypto.randomUUID());
+    assert.equal(two.outcome, "CREATED");
+    assert.notEqual(one.gatepassId, two.gatepassId);
+    assert.equal(inStore(a, office), 8);
+
+    a.db.close();
+    a.db = openDb(a.dbPath);
+    const afterRestart = await issueGatepassFor(a, office, 6, first);
+    assert.equal(afterRestart.outcome, "ALREADY_SAVED");
+    assert.equal(afterRestart.gatepassId, one.gatepassId);
+    assert.equal(count(a, "gatepasses"), 2);
+    assert.deepEqual(a.db.findSavedRequest("GATEPASS", first), { id: one.gatepassId, label: one.code });
+    assert.equal(a.db.findSavedRequest("GATEPASS", crypto.randomUUID()), null, "a press that made nothing says so");
+  });
+});
+
+test("gatepass: two connections racing with one request id make one gatepass", async () => {
+  await withOffice(async (office) => {
+    const { a } = office;
+    produce(a, office, "10");
+    const twin = openDb(a.dbPath);
+    try {
+      const requestId = crypto.randomUUID();
+      const results = await Promise.all([
+        issueGatepassFor(a, office, 6, requestId),
+        issueGatepassFor({ ...a, db: twin }, office, 6, requestId),
+      ]);
+      assert.deepEqual(results.map((r) => r.outcome).sort(), ["ALREADY_SAVED", "CREATED"]);
+      assert.equal(results[0]?.gatepassId, results[1]?.gatepassId);
+      assert.equal(count(a, "gatepasses"), 1);
+      assert.equal(count(a, "carton_stock_events", "event_type = 'GATEPASS_ISSUE'"), 1);
+      assert.equal(count(a, "sale_vouchers"), 1);
+    } finally {
+      twin.close();
+    }
+  });
+});
+
+test("offline: a gatepass, a hand-typed bill and a payment retried offline and after a restart are one each, and sync once", async () => {
+  await withOffice(async (office) => {
+    const { a, b, cloud } = office;
+    produce(a, office, "10");
+    await passAll(cloud, a, b);
+    cloud.offline(a.device);
+    const ids = { gatepass: crypto.randomUUID(), bill: crypto.randomUUID(), cash: crypto.randomUUID() };
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      await issueGatepassFor(a, office, 6, ids.gatepass);
+      manualBill(a, office, ids.bill);
+      entryPayment(a, office, 1000, ids.cash);
+      await pass(a, cloud);
+    }
+    a.db.close();
+    a.db = openDb(a.dbPath);
+    assert.equal((await issueGatepassFor(a, office, 6, ids.gatepass)).outcome, "ALREADY_SAVED", "after a restart too");
+    assert.equal(manualBill(a, office, ids.bill).outcome, "ALREADY_SAVED");
+    assert.equal(entryPayment(a, office, 1000, ids.cash).outcome, "ALREADY_SAVED");
+
+    cloud.online(a.device);
+    await passAll(cloud, a, b);
+    for (const pc of [a, b]) {
+      assert.equal(count(pc, "gatepasses"), 1, `${pc.name}: one gatepass`);
+      assert.equal(count(pc, "sale_vouchers", "gatepass_id IS NULL"), 1, `${pc.name}: one hand-typed bill`);
+      assert.equal(count(pc, "cash_vouchers"), 1, `${pc.name}: one payment`);
+    }
+    // 2 dozen is 24 pairs at Rs 100: 2400, less the 1000 paid.
+    assert.equal(balanceOf(b, office), 1400, "one debit and one credit on the other computer");
+    assert.equal(
+      count(b, "gatepasses", "request_id IS NOT NULL") + count(b, "sale_vouchers", "request_id IS NOT NULL") + count(b, "cash_vouchers", "request_fingerprint IS NOT NULL"),
+      0,
+      "the request columns stayed on a"
+    );
+    assert.ok(cloudCarriesNoRequestIds(cloud), "and were never sent");
+    assertSameEverywhere(office);
+  });
+});
+
+test("hand-typed bill: saved whole in one go, the same Save again is one bill and one debit, an edited retry is refused", async () => {
+  await withOffice(async (office) => {
+    const { a } = office;
+    const requestId = crypto.randomUUID();
+    const saved = manualBill(a, office, requestId);
+    assert.equal(saved.outcome, "CREATED");
+    assert.equal(count(a, "sale_voucher_line_items", `voucher_id = '${saved.id}'`), 1, "header and line together");
+    assert.equal(balanceOf(a, office), 2400);
+
+    const again = manualBill(a, office, requestId);
+    assert.deepEqual({ id: again.id, voucherNumber: again.voucherNumber, outcome: again.outcome }, { id: saved.id, voucherNumber: saved.voucherNumber, outcome: "ALREADY_SAVED" });
+    assert.throws(() => manualBill(a, office, requestId, 3), (error: Coded) => error.code === "REQUEST_CONFLICT" && /already recorded as Sale Voucher #/.test(error.message));
+    assert.equal(count(a, "sale_vouchers"), 1);
+    assert.equal(count(a, "sale_voucher_line_items"), 1);
+    assert.equal(balanceOf(a, office), 2400, "one debit");
+    assert.deepEqual(a.db.findSavedRequest("SALE_VOUCHER", requestId), { id: saved.id, label: `Sale Voucher #${saved.voucherNumber}` });
+
+    assert.throws(() => a.db.createManualSaleVoucher({ requestId: "", partyId: office.customer, voucherDate: "2026-11-07", bookNo: "M1", lines: [] }), /could not be identified/);
+  });
+});
+
+test("hand-typed bill: over the customer's limit nothing is saved, not even the header, and no number is used", async () => {
+  await withOffice(async (office) => {
+    const { a } = office;
+    a.db.db.prepare("UPDATE parties SET balance_limit_paisa = 300000 WHERE id = ?").run(office.customer);
+    const before = manualBill(a, office, crypto.randomUUID(), 1);
+    assert.throws(() => manualBill(a, office, crypto.randomUUID(), 5), /limit/i);
+    assert.equal(count(a, "sale_vouchers"), 1, "the refused bill left nothing");
+    assert.equal(count(a, "sale_voucher_line_items"), 1);
+    a.db.db.prepare("UPDATE parties SET balance_limit_paisa = NULL WHERE id = ?").run(office.customer);
+    const after = manualBill(a, office, crypto.randomUUID(), 1);
+    assert.equal(Number(after.voucherNumber), Number(before.voucherNumber) + 1);
+  });
+});
+
+test("hand-typed bill: a line added twice under the screen's line id is one line; other content under that id is refused", async () => {
+  await withOffice(async (office) => {
+    const { a } = office;
+    const bill = manualBill(a, office, crypto.randomUUID());
+    const lineId = crypto.randomUUID();
+    const line = { productVariantId: office.red, quantity: 1, unitPrice: 100, discount: 0, lineId };
+    assert.equal(a.db.addVoucherLineItem(bill.id, line).duplicate, undefined);
+    assert.deepEqual(a.db.addVoucherLineItem(bill.id, line), { id: lineId, duplicate: true });
+    assert.equal(count(a, "sale_voucher_line_items", `voucher_id = '${bill.id}' AND deleted_at IS NULL`), 2);
+    assert.equal(balanceOf(a, office), 3600, "2 dozen and 1 dozen, once each");
+    assert.throws(() => a.db.addVoucherLineItem(bill.id, { ...line, unitPrice: 120 }), (error: Coded) => error.code === "REQUEST_CONFLICT");
+    assert.throws(() => a.db.addVoucherLineItem(bill.id, { ...line, lineId: "not-an-id" }), /could not be identified/);
+  });
+});
+
+test("cash voucher: a request id is required; an edited retry is a conflict; a voucher from before migration 105 is still recognised", async () => {
+  await withOffice(async (office) => {
+    const { a } = office;
+    assert.throws(() => a.db.createCashVoucher({ requestId: "", partyId: office.customer, voucherDate: "2026-11-07", description: "x", receiptAmount: 10 }), /could not be identified/);
+    const requestId = crypto.randomUUID();
+    const paid = entryPayment(a, office, 1000, requestId);
+    assert.throws(() => entryPayment(a, office, 900, requestId), (error: Coded) =>
+      error.code === "REQUEST_CONFLICT" && error.existing?.number === paid.voucherNumber && /with different details/.test(error.message));
+    assert.equal(count(a, "cash_vouchers"), 1);
+    assert.equal(balanceOf(a, office), -1000, "one credit, of the first amount");
+
+    // As a voucher saved before 105 holds it: no fingerprint. The same request is still known by its content.
+    a.db.db.prepare("UPDATE cash_vouchers SET request_fingerprint = NULL WHERE id = ?").run(requestId);
+    assert.equal(entryPayment(a, office, 1000, requestId).outcome, "ALREADY_SAVED");
+    assert.throws(() => entryPayment(a, office, 900, requestId), (error: Coded) => error.code === "REQUEST_CONFLICT");
+    assert.deepEqual(a.db.findSavedRequest("CASH_VOUCHER", requestId), { id: requestId, label: `Cash Voucher #${paid.voucherNumber}` });
+  });
+});
+
+test("cash voucher and hand-typed bill: two connections each saving under one request id make one each", async () => {
+  await withOffice(async (office) => {
+    const { a } = office;
+    const twin = openDb(a.dbPath);
+    try {
+      const bill = crypto.randomUUID();
+      const cash = crypto.randomUUID();
+      const outcomes = [
+        manualBill(a, office, bill),
+        manualBill({ ...a, db: twin }, office, bill),
+        entryPayment(a, office, 500, cash),
+        entryPayment({ ...a, db: twin }, office, 500, cash),
+      ];
+      assert.deepEqual(outcomes.map((o) => o.outcome).sort(), ["ALREADY_SAVED", "ALREADY_SAVED", "CREATED", "CREATED"]);
+      assert.equal(count(a, "sale_vouchers"), 1);
+      assert.equal(count(a, "cash_vouchers"), 1);
+      assert.equal(balanceOf(a, office), 1900);
+    } finally {
+      twin.close();
+    }
   });
 });

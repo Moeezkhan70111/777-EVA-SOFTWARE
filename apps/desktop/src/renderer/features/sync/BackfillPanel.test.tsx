@@ -3,7 +3,7 @@
 
 import React from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { BackfillPanel } from "./BackfillPanel";
 import type { BackfillPlan } from "../../types/desktopApi";
@@ -11,6 +11,7 @@ import type { BackfillPlan } from "../../types/desktopApi";
 const PLAN: BackfillPlan = {
   masterEpoch: 2, storeEpoch: 3, masterRecords: { INVENTORY_ITEM: 900, PARTY: 3 }, stockMovements: 4100,
   labelRunsToQueue: 12, packetsToQueue: 300, variantsToQueue: 0, unstampedQueued: 0, mismatches: [],
+  neverSent: { documents: { GATEPASS: 40, CASH_VOUCHER: 5 } },
 };
 
 const withApi = (plan: BackfillPlan, runBackfill = vi.fn().mockResolvedValue({ accepted: true, plan })) => {
@@ -29,7 +30,12 @@ describe("sending the store's history", () => {
   it("says what will go, asks first, then sends", async () => {
     const { runBackfill } = withApi(PLAN);
     expect(await screen.findByText(/903 master records/)).toBeTruthy();
+    // Raw material goes as in v0.4.6; carton and money documents are listed as never sent (local test data).
     expect(screen.getByText("4100 stock movements")).toBeTruthy();
+    expect(screen.getByText(/12 label runs and 300 packets/)).toBeTruthy();
+    const neverSent = screen.getByRole("status", { name: "Never sent: local test carton and money documents" });
+    expect(within(neverSent).getByText(/45 stock documents/)).toBeTruthy();
+    expect(within(neverSent).queryByText(/stock movements/)).toBeNull();
     expect(screen.queryByText(/products of cartons/)).toBeNull();
     await userEvent.click(screen.getByRole("button", { name: "Send History" }));
     expect(runBackfill).not.toHaveBeenCalled();

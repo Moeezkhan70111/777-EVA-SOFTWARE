@@ -1,7 +1,9 @@
 import React from "react";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { GatepassPage } from "./GatepassPage";
+import { copy } from "../config/copy";
+import { REQUEST_STORAGE_KEY } from "../hooks/useRequestId";
 import { NotificationsProvider } from "../state/NotificationsContext";
 import { NotificationCenter } from "../components/layout/NotificationCenter";
 import type { CreateGatepassResult, Gatepass, GatepassStockRow, Party } from "../types/desktopApi";
@@ -79,6 +81,8 @@ function createFakeBackend(opts: { stock?: GatepassStockRow[]; createResult?: (i
     getHeldLeases: vi.fn(async () => ["ACCOUNTS"]),
     getProductImage: vi.fn(async (article: string) => (article === "SK6" ? SK6_IMAGE : null)),
     createGatepass,
+    // Was the press of Create a previous session never heard back from recorded? Nothing left over by default.
+    findGatepassByRequest: vi.fn(async (_requestId: string) => ({ accepted: true, saved: null as { id: string; label: string } | null })),
     getGatepass: vi.fn(async (id: string): Promise<Gatepass | null> => [...documents.values()].find((d) => d.id === id) ?? null),
     getGatepassByNumber: vi.fn(async (gatepassNumber: number): Promise<Gatepass | null> => documents.get(gatepassNumber) ?? null),
     // Newest first, like the real list — the first row carries the highest number.
@@ -455,6 +459,8 @@ describe("GatepassPage", () => {
 
     await waitFor(() => expect(api.createGatepass).toHaveBeenCalledTimes(1));
     expect(created[0]).toEqual({
+      // One press of Create, one request id (migration 105).
+      requestId: expect.stringMatching(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/),
       partyId: "p-abc",
       lines: [
         { productVariantId: "v-sk6-blue-710", quantity: 20, reflectedStockSeen: 80 },
@@ -693,5 +699,116 @@ describe("GatepassPage", () => {
     });
     expect(await screen.findByTestId("gatepass-submit-error")).toHaveTextContent("Your account does not have Gatepass access.");
     expect(screen.queryByTestId("gatepass-document")).not.toBeInTheDocument();
+  });
+});
+
+describe("Create pressed again while the first is still saving (Monday demo, docs/46 §6 step 8)", () => {
+  it("sends one gatepass, not two: the button is held while it saves, and the saved draft is cleared", async () => {
+    const { api } = createFakeBackend({ stock: [stockRow("v-sk6-red-710", "SK6", "RED", "7/10", 5)] });
+    // The first save does not answer until the test lets it.
+    let finish: () => void = () => undefined;
+    const original = api.createGatepass.getMockImplementation();
+    api.createGatepass.mockImplementationOnce((input: Parameters<NonNullable<typeof original>>[0], opts?: { token?: string }) =>
+      new Promise((resolve) => { finish = () => resolve(original ? original(input, opts) : ({ accepted: false } as never)); }));
+    renderPage();
+    await screen.findByTestId("gatepass-articles-section");
+    await chooseParty("abc");
+    await addArticle("sk6 7/10");
+    await typeQty("SK6", "RED", "7/10", "2");
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("gatepass-create"));
+      fireEvent.click(screen.getByTestId("gatepass-create"));
+      fireEvent.click(screen.getByTestId("gatepass-create"));
+    });
+    expect(screen.getByTestId("gatepass-create")).toBeDisabled();
+    await act(async () => finish());
+    await waitFor(() => expect(api.createGatepass).toHaveBeenCalledTimes(1));
+  });
+});
+
+// ONE PRESS OF CREATE, ONE REQUEST ID (migration 105). The main process returns the gatepass a request already made,
+// or refuses a different one under the same id; these prove the screen sends the id that makes that work.
+describe("one press of Create is one gatepass, however the answer is lost (migration 105)", () => {
+  const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+  const requestIdOf = (api: ReturnType<typeof createFakeBackend>["api"], call: number) => (api.createGatepass.mock.calls[call]?.[0] as { requestId: string }).requestId;
+  const draftOne = async () => {
+    await chooseParty("abc");
+    await addArticle("sk6 7/10");
+    await typeQty("SK6", "RED", "7/10", "2");
+  };
+  const pressCreate = () => act(async () => { fireEvent.click(screen.getByTestId("gatepass-create")); });
+
+  beforeEach(() => window.localStorage.clear());
+
+  it("a lost answer keeps the request id for the retry; a definite answer gives the next Create a new one", async () => {
+    const { api } = createFakeBackend({ stock: [stockRow("v-sk6-red-710", "SK6", "RED", "7/10", 5)] });
+    api.createGatepass.mockRejectedValueOnce(new Error("no answer"));
+    renderPage();
+    await screen.findByTestId("gatepass-articles-section");
+    await draftOne();
+
+    await pressCreate();
+    expect(await screen.findAllByText(copy.gatepass.saveFailed)).not.toHaveLength(0);
+    await pressCreate();
+    await waitFor(() => expect(api.createGatepass).toHaveBeenCalledTimes(2));
+    expect(requestIdOf(api, 0)).toMatch(UUID);
+    expect(requestIdOf(api, 1)).toBe(requestIdOf(api, 0));
+
+    // That one was answered, so the next gatepass is a new request.
+    await screen.findByTestId("gatepass-new");
+    await act(async () => { fireEvent.click(screen.getByTestId("gatepass-new")); });
+    await draftOne();
+    await pressCreate();
+    await waitFor(() => expect(api.createGatepass).toHaveBeenCalledTimes(3));
+    expect(requestIdOf(api, 2)).not.toBe(requestIdOf(api, 0));
+  });
+
+  it("an answer that this Create already made the gatepass says so, and shows that gatepass", async () => {
+    const { api } = createFakeBackend({ stock: [stockRow("v-sk6-red-710", "SK6", "RED", "7/10", 5)] });
+    const original = api.createGatepass.getMockImplementation()!;
+    api.createGatepass.mockImplementationOnce(async (input, opts) => ({ ...(await original(input, opts)), outcome: "ALREADY_SAVED" }));
+    renderPage();
+    await screen.findByTestId("gatepass-articles-section");
+    await draftOne();
+    await pressCreate();
+    expect(await screen.findByText(copy.requests.gatepassAlreadySaved("GP-000001"))).toBeInTheDocument();
+    expect(screen.queryByText(copy.gatepass.createdToast("GP-000001"))).not.toBeInTheDocument();
+  });
+
+  it("a conflict is shown in the main process's words, nothing is reported as made, and Create again asks with the same id", async () => {
+    const { api } = createFakeBackend({ stock: [stockRow("v-sk6-red-710", "SK6", "RED", "7/10", 5)] });
+    const conflict = "This Create was already recorded as GP-000007, with different details. Nothing new was made.";
+    api.createGatepass.mockResolvedValue({ accepted: false, outcome: "REQUEST_CONFLICT", reason: conflict, code: "GP-000007" });
+    renderPage();
+    await screen.findByTestId("gatepass-articles-section");
+    await draftOne();
+    await pressCreate();
+    expect((await screen.findAllByText(conflict)).length).toBeGreaterThan(0);
+    await pressCreate();
+    await waitFor(() => expect(api.createGatepass).toHaveBeenCalledTimes(2));
+    expect(requestIdOf(api, 1)).toBe(requestIdOf(api, 0));
+  });
+
+  it("reopened after a restart, it says the Create it never heard back from was recorded, and forgets it", async () => {
+    const { api } = createFakeBackend();
+    const leftover = crypto.randomUUID();
+    window.localStorage.setItem(REQUEST_STORAGE_KEY.GATEPASS, leftover);
+    api.findGatepassByRequest.mockResolvedValue({ accepted: true, saved: { id: "g-7", label: "GP-000007" } });
+    renderPage();
+    expect(await screen.findByText(copy.requests.lastSaveBody("GP-000007"))).toBeInTheDocument();
+    expect(api.findGatepassByRequest).toHaveBeenCalledWith(leftover, { token: "token-1" });
+    expect(window.localStorage.getItem(REQUEST_STORAGE_KEY.GATEPASS)).toBeNull();
+  });
+
+  it("a press still waiting for its answer is remembered, so a restart can ask about it", async () => {
+    const { api } = createFakeBackend({ stock: [stockRow("v-sk6-red-710", "SK6", "RED", "7/10", 5)] });
+    api.createGatepass.mockImplementationOnce(() => new Promise(() => undefined));
+    renderPage();
+    await screen.findByTestId("gatepass-articles-section");
+    await draftOne();
+    await pressCreate();
+    await waitFor(() => expect(api.createGatepass).toHaveBeenCalledTimes(1));
+    expect(window.localStorage.getItem(REQUEST_STORAGE_KEY.GATEPASS)).toBe(requestIdOf(api, 0));
   });
 });

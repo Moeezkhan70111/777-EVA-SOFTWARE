@@ -35,7 +35,46 @@ export type DataKind = (typeof DATA_KIND)[keyof typeof DATA_KIND];
 /** What the main process sends with IPC.dataChanged. */
 export interface DataChange {
   readonly kinds: readonly DataKind[];
+  /**
+   * One id per announcement, so one change can be followed through app.log: the pass that applied
+   * it, the screen that heard it, its re-read and what it then showed (IPC.traceDataChange).
+   */
+  readonly id?: string;
 }
+
+/** The steps a screen reports for one announced change, in the order they happen. */
+export const DATA_CHANGE_TRACE_STAGE = {
+  RECEIVED: "received",
+  REREAD_STARTED: "reread-started",
+  REREAD_DONE: "reread-done",
+  SHOWN: "shown",
+} as const;
+
+export type DataChangeTraceStage = (typeof DATA_CHANGE_TRACE_STAGE)[keyof typeof DATA_CHANGE_TRACE_STAGE];
+
+/** What a screen sends with IPC.traceDataChange. */
+export interface DataChangeTrace {
+  readonly id: string;
+  readonly screen: string;
+  readonly stage: DataChangeTraceStage;
+  readonly detail?: string;
+}
+
+const CHANGE_ID = /^[A-Za-z0-9-]{1,64}$/;
+const SCREEN = /^[a-z][a-z-]{0,39}$/;
+const STAGES: ReadonlySet<string> = new Set(Object.values(DATA_CHANGE_TRACE_STAGE));
+const MAX_TRACE_DETAIL = 160;
+
+/** A trace as the main process receives it, checked (R25): anything malformed is dropped, never logged. */
+export const readDataChangeTrace = (value: unknown): DataChangeTrace | null => {
+  if (typeof value !== "object" || value === null) return null;
+  const { id, screen, stage, detail } = value as Record<string, unknown>;
+  if (typeof id !== "string" || !CHANGE_ID.test(id)) return null;
+  if (typeof screen !== "string" || !SCREEN.test(screen)) return null;
+  if (typeof stage !== "string" || !STAGES.has(stage)) return null;
+  const note = typeof detail === "string" ? detail.replace(/[^\x20-\x7E]/g, " ").slice(0, MAX_TRACE_DETAIL) : undefined;
+  return { id, screen, stage: stage as DataChangeTraceStage, ...(note ? { detail: note } : {}) };
+};
 
 const KIND_OF_TYPE: Readonly<Record<string, DataKind>> = {
   STOCK_EVENT: DATA_KIND.STOCK,
@@ -84,7 +123,8 @@ const KINDS: ReadonlySet<string> = new Set(Object.values(DATA_KIND));
 /** The message as it arrives in a screen, checked (R25): unknown kinds are dropped. */
 export const readDataChange = (value: unknown): DataChange | null => {
   if (typeof value !== "object" || value === null) return null;
-  const kinds = (value as { kinds?: unknown }).kinds;
+  const { kinds, id } = value as { kinds?: unknown; id?: unknown };
   if (!Array.isArray(kinds)) return null;
-  return { kinds: kinds.filter((kind): kind is DataKind => typeof kind === "string" && KINDS.has(kind)) };
+  const known = kinds.filter((kind): kind is DataKind => typeof kind === "string" && KINDS.has(kind));
+  return typeof id === "string" && CHANGE_ID.test(id) ? { kinds: known, id } : { kinds: known };
 };

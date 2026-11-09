@@ -6,6 +6,7 @@
 import { ipcMain, type IpcMainInvokeEvent } from "electron";
 import { IPC } from "../../shared/ipcChannels";
 import {
+  ACCOUNT_MESSAGES,
   CLOUD_ACCOUNTS_SWITCH_READY,
   cloudClaim,
   cloudSignIn,
@@ -103,6 +104,12 @@ export function registerSessionHandlers(ctx: IpcContext): void {
       admin = authorizer.requireAdmin(event, token);
     } catch (error) {
       return { accepted: false, reason: error instanceof Error ? error.message : "Administrator access required" };
+    }
+    // Refused here, before accountDeps() signs in to the cloud: a build that may not switch never
+    // contacts the cloud for it (cloudAccounts.ts, CLOUD_ACCOUNTS_SWITCH_READY).
+    if (!CLOUD_ACCOUNTS_SWITCH_READY) {
+      logger.log({ module: "auth", severity: "WARNING", operation: "switch-to-cloud-accounts", deviceId, userId: admin.id, message: `${admin.username} tried to switch to cloud accounts; this build does not allow it.` });
+      return { accepted: false, reason: ACCOUNT_MESSAGES.SWITCH_NOT_READY };
     }
     const givenEmail = typeof email === "string" ? email.trim() : "";
     const givenPassword = typeof password === "string" ? password : "";

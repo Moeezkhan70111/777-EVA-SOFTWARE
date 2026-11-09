@@ -22,6 +22,7 @@ import {
   type OutboxCounts,
   type OutboxRetryPolicy,
 } from "./outboxQueue.js";
+import { parkLocalStockOutboxRows } from "@erp/data";
 import { SyncTransportError, type SyncTransport } from "./transport.js";
 import type { SyncSqlHandle } from "./sqlPort.js";
 
@@ -48,6 +49,8 @@ export interface DrainResult {
   readonly synced: number;
   readonly failed: number;
   readonly deadLettered: number;
+  /** Local test stock events parked before the claim this pass (stockProtection.ts). Never sent. */
+  readonly parkedLocalStock: number;
   /** Set when the batch did not reach the service at all. */
   readonly transportError?: string;
   /**
@@ -96,6 +99,9 @@ export class OutboxDrain {
   async runOnce(): Promise<DrainResult> {
     const nowIso = this.now();
     const reclaimed = reclaimStale(this.sql, { nowIso, staleInFlightMs: this.policy.staleInFlightMs });
+    // The last gate before anything is claimed: local test stock data waiting in the queue is parked, never sent
+    // (@erp/data stockProtection.ts). Counted in the result, so the pass reports it.
+    const parkedLocalStock = parkLocalStockOutboxRows(this.sql, nowIso);
 
     const lockToken = this.newLockToken();
     const leased = leaseBatch(this.sql, {
@@ -107,7 +113,7 @@ export class OutboxDrain {
     });
 
     if (leased.length === 0) {
-      return { reclaimed, leased: 0, synced: 0, failed: 0, deadLettered: 0, refusals: [], counts: outboxCounts(this.sql) };
+      return { reclaimed, leased: 0, synced: 0, failed: 0, deadLettered: 0, parkedLocalStock, refusals: [], counts: outboxCounts(this.sql) };
     }
 
     let acks;
@@ -153,6 +159,7 @@ export class OutboxDrain {
         synced: 0,
         failed,
         deadLettered,
+        parkedLocalStock,
         transportError: message,
         // Not a verdict on any event: the batch may never have arrived.
         refusals: [],
@@ -220,6 +227,6 @@ export class OutboxDrain {
       });
     }
 
-    return { reclaimed, leased: leased.length, synced, failed, deadLettered, refusals, counts: outboxCounts(this.sql) };
+    return { reclaimed, leased: leased.length, synced, failed, deadLettered, parkedLocalStock, refusals, counts: outboxCounts(this.sql) };
   }
 }

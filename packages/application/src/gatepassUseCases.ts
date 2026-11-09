@@ -56,10 +56,20 @@ export interface CreateGatepassInput {
   actor: string;
   actorUserId?: string | null;
   deviceId?: string | null;
+  /**
+   * The screen's id for one press of Create, kept across a retry whose answer was lost (migration 105).
+   * The same id asking for the same gatepass returns the one already made (ALREADY_SAVED); asking for a
+   * different one is REQUEST_CONFLICT. The desktop always sends one; without it nothing is deduplicated.
+   */
+  requestId?: string | null;
 }
 
 export type CreateGatepassOutcome =
   | "CREATED"
+  /** This request id already made this gatepass: it is returned, and nothing is written again. */
+  | "ALREADY_SAVED"
+  /** This request id already made a DIFFERENT gatepass: nothing is written. */
+  | "REQUEST_CONFLICT"
   | "NO_PARTY"
   | "PARTY_NOT_FOUND"
   | "PARTY_INACTIVE"
@@ -151,6 +161,29 @@ export interface GatepassHeaderPayload {
   totalQuantity: number;
   createdBy: string;
   createdAt: string;
+  /** The press of Create that made it, and a hash of what it asked for (migration 105). */
+  requestId?: string | null;
+  requestFingerprint?: string | null;
+}
+
+/** A gatepass already made under a request id, with what a retry needs to answer it. */
+export interface GatepassMadeByRequest {
+  gatepassId: string;
+  gatepassNumber: number;
+  totalQuantity: number;
+  createdAt: string;
+  requestFingerprint: string | null;
+  billId: string | null;
+  billNumber: string | null;
+}
+
+/** What a press of Create asked for: the part a retry must repeat to be the same request. */
+export interface GatepassRequestSummary {
+  partyId: string;
+  biltyNumber: string | null;
+  transportVia: string | null;
+  remarks: string | null;
+  lines: Array<{ productVariantId: string; quantity: number }>;
 }
 
 export interface GatepassLinePayload {
@@ -224,6 +257,10 @@ export interface CreateGatepassDeps {
     generateGatepassBill(payload: { gatepassId: string; partyId: string; voucherDate: string }, tx: TransactionContext): Promise<{ id: string; voucherNumber: string }>;
     /** Tells every billing user; who they are is the repository's business. */
     notifyBilling(payload: BillingNoticePayload, tx: TransactionContext): Promise<void>;
+    /** The gatepass a request id already made, read under the write lock, or null. Needed only with a request id. */
+    findGatepassByRequest?(requestId: string, tx: TransactionContext): Promise<GatepassMadeByRequest | null>;
+    /** A stable hash of what a request asked for. Needed only with a request id. */
+    fingerprintRequest?(summary: GatepassRequestSummary): string;
   };
   idGenerator: { nextId(): string };
   /** Local calendar day for the document date; defaults to the machine's local date. */
@@ -300,9 +337,14 @@ export class CreateGatepassUseCase {
     const remarks = optionalText(input.remarks);
     const biltyNumber = optionalText(input.biltyNumber);
     const transportVia = optionalText(input.transportVia);
+    const request = this.requestOf(input, { partyId, biltyNumber, transportVia, remarks, lines });
 
     try {
       const committed = await this.deps.txManager.runInTransaction(async (tx) => {
+        // A retry of a press already answered: the gatepass it made, before anything is checked or written.
+        const made = request ? await this.madeByRequest(request, tx) : null;
+        if (made) return { ...made, alreadySaved: true };
+
         const party = await this.requireActiveParty(partyId, tx);
         const { linePayloads, auditLines } = await this.reserveLines(lines, tx);
 
@@ -314,7 +356,10 @@ export class CreateGatepassUseCase {
         const code = formatGatepassCode(gatepassNumber);
 
         await this.deps.repo.insertGatepass(
-          { id: gatepassId, gatepassNumber, partyId: party.id, gatepassDate, biltyNumber, transportVia, remarks, totalQuantity, createdBy: actor, createdAt: tx.nowIso },
+          {
+            id: gatepassId, gatepassNumber, partyId: party.id, gatepassDate, biltyNumber, transportVia, remarks, totalQuantity, createdBy: actor, createdAt: tx.nowIso,
+            requestId: request?.id ?? null, requestFingerprint: request?.fingerprint ?? null,
+          },
           tx
         );
         await this.deps.repo.insertGatepassLines(linePayloads.map((line) => ({ ...line, gatepassId })), tx);
@@ -345,26 +390,59 @@ export class CreateGatepassUseCase {
           tx
         );
 
-        return { gatepassId, gatepassNumber, totalQuantity, createdAt: tx.nowIso, billId: bill.id, billNumber: bill.voucherNumber };
+        return { gatepassId, gatepassNumber, totalQuantity, createdAt: tx.nowIso, billId: bill.id, billNumber: bill.voucherNumber, alreadySaved: false };
       });
 
       return {
         accepted: true,
-        outcome: "CREATED",
+        outcome: committed.alreadySaved ? "ALREADY_SAVED" : "CREATED",
         gatepassId: committed.gatepassId,
         gatepassNumber: committed.gatepassNumber,
         code: formatGatepassCode(committed.gatepassNumber),
         totalQuantity: committed.totalQuantity,
         createdAt: committed.createdAt,
-        billId: committed.billId,
-        billNumber: committed.billNumber,
+        billId: committed.billId ?? undefined,
+        billNumber: committed.billNumber ?? undefined,
       };
     } catch (error) {
       if (error instanceof GatepassRejectedError) {
-        return { accepted: false, outcome: error.outcome, reason: error.message, shortages: error.details.shortages, productVariantId: error.details.productVariantId };
+        return {
+          accepted: false, outcome: error.outcome, reason: error.message, shortages: error.details.shortages, productVariantId: error.details.productVariantId,
+          gatepassId: error.details.gatepassId, code: error.details.code,
+        };
       }
       throw error;
     }
+  }
+
+  /** The request id and the hash of what it asks for, or null when no id came (nothing is then deduplicated). */
+  private requestOf(input: CreateGatepassInput, asked: Omit<GatepassRequestSummary, "lines"> & { lines: GatepassLineInput[] }) {
+    const id = typeof input.requestId === "string" ? input.requestId.trim() : "";
+    if (!id) return null;
+    const { findGatepassByRequest, fingerprintRequest } = this.deps.repo;
+    if (!findGatepassByRequest || !fingerprintRequest) throw new Error("This repository cannot answer a repeated request.");
+    const lines = asked.lines
+      .map((line) => ({ productVariantId: String(line.productVariantId).trim(), quantity: Number(line.quantity) }))
+      .sort((a, b) => (a.productVariantId < b.productVariantId ? -1 : a.productVariantId > b.productVariantId ? 1 : 0));
+    return { id, fingerprint: fingerprintRequest.call(this.deps.repo, { ...asked, lines }) };
+  }
+
+  /**
+   * The gatepass this request already made, or null. The same request gets it back; a different one under
+   * the same id is refused, and nothing is written either way.
+   */
+  private async madeByRequest(request: { id: string; fingerprint: string }, tx: TransactionContext) {
+    const made = await this.deps.repo.findGatepassByRequest!.call(this.deps.repo, request.id, tx);
+    if (!made) return null;
+    const code = formatGatepassCode(made.gatepassNumber);
+    if (made.requestFingerprint !== request.fingerprint) {
+      throw new GatepassRejectedError(
+        "REQUEST_CONFLICT",
+        `This Create was already recorded as ${code}, with different details. Nothing new was made. Open ${code} to check it, or start a new Gatepass.`,
+        { gatepassId: made.gatepassId, code }
+      );
+    }
+    return made;
   }
 
   /** Party must exist in Party Master and be active. */
@@ -470,7 +548,9 @@ export type CancelGatepassOutcome =
   /** Its bill must be deleted first — cancelling here would leave a live bill for nothing. */
   | "BILLED"
   /** Cartons have physically left the store. Undoing that needs a controlled reversal. */
-  | "ALREADY_MOVED";
+  | "ALREADY_MOVED"
+  /** Made before Carton Cloud went live on this computer: test data, which must never move the live figure. */
+  | "BEFORE_GO_LIVE";
 
 export interface CancelGatepassResult {
   accepted: boolean;
@@ -511,6 +591,11 @@ export interface GatepassForCancel {
   gatepassNumber: number;
   status: string;
   lines: GatepassLineProgress[];
+  /**
+   * True when Carton Cloud is live on this computer and this gatepass was made before it went live: test data. Cancelling
+   * it would put test cartons back into the live figure, which the cloud and every other computer would never see.
+   */
+  madeBeforeGoLive?: boolean;
 }
 
 export interface CancelGatepassDeps {
@@ -587,6 +672,12 @@ export class CancelGatepassUseCase {
         const code = formatGatepassCode(existing.gatepassNumber);
         if (existing.status === "CANCELLED") {
           throw new GatepassCancelRejectedError("ALREADY_CANCELLED", `${code} has already been cancelled.`);
+        }
+        if (existing.madeBeforeGoLive === true) {
+          throw new GatepassCancelRejectedError(
+            "BEFORE_GO_LIVE",
+            `${code} was made before Carton Cloud went live on this computer. It is test data, and cancelling it would put test cartons into the live stock. Nothing was changed.`
+          );
         }
 
         // Cancelling is for a document nothing has happened to yet.
