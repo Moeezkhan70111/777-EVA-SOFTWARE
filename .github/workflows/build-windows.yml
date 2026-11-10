@@ -77,25 +77,23 @@ jobs:
       - name: Install dependencies from the lockfile
         run: npm ci
 
-      # INFORMATIONAL, NOT A GATE, and deliberately so.
-      #
-      # The root `test` script chains the six workspaces with `&&`, and three of them carry
-      # documented pre-existing failures (@erp/application 1, @erp/data 7, @erp/desktop 27 as of
-      # 2026-10-23). A hard gate here would therefore fail every run and the packaging step --
-      # the entire point of this phase -- would never execute. The `&&` chain also means the run
-      # stops at the first failing workspace, so treat this output as indicative only.
-      #
-      # Making the suite gate-able is a separate piece of work; it is not a Phase A change.
-      - name: Run the test suite (INFORMATIONAL -- not a gate)
-        id: tests
-        continue-on-error: true
-        run: npm test
-
-      # Required before packaging: the desktop build reads the other workspaces from their dist
-      # folders (@erp/domain, @erp/application, @erp/scanner, @erp/data, @erp/sync), and the
-      # desktop package script only builds @erp/desktop itself.
+      # BUILD FIRST. Required before packaging -- the desktop build reads the other workspaces from
+      # their dist folders (@erp/domain, @erp/application, @erp/scanner, @erp/data, @erp/sync), and
+      # the desktop package script only builds @erp/desktop itself -- and before the tests, which
+      # run against the same dist folders. The v0.5.2 run (42895833651) tested before building:
+      # the five node:test suites ran ZERO tests and passed, and the desktop suite could not load
+      # 105 of its 137 files. A build failure stops the job here: nothing could be packaged anyway.
       - name: Build every workspace
         run: npm run build
+
+      # INFORMATIONAL, NOT A GATE: a failing suite is reported (below and in the job summary) but
+      # does not stop packaging, as before. Run through scripts/test-workspaces.mjs rather than the
+      # root `npm test`, whose `&&` chain stops at the first failing workspace: this runs all six,
+      # counts the tests each ran, and fails a suite that ran none. Same command locally.
+      - name: Run every workspace's test suite (INFORMATIONAL -- not a gate)
+        id: tests
+        continue-on-error: true
+        run: node ./scripts/test-workspaces.mjs
 
       # `--publish never` is appended to the end of the package script, which ends with
       # electron-builder, so it reaches electron-builder and not the earlier chained commands.
@@ -163,11 +161,9 @@ jobs:
           $lines += '### Read this before trusting a green tick'
           $lines += ''
           $lines += 'A passing job means **packaging and the completeness gate** passed. It does'
-          $lines += 'NOT mean the test suite passed. The suite is not a gate here because the root'
-          $lines += '`test` script chains six workspaces with `&&` and three carry documented'
-          $lines += 'pre-existing failures (@erp/application 1, @erp/data 7, @erp/desktop 27 as of'
-          $lines += '2026-10-23). The `&&` chain also stops at the first failing workspace, so the'
-          $lines += 'later suites never run. Treat the test result above as indicative only.'
+          $lines += 'NOT mean the test suites passed: they are informational here. Read the test'
+          $lines += 'result above and the per-workspace table in this summary. Every workspace'
+          $lines += 'runs after the build, each counts its tests, and a suite that ran none fails.'
           $lines += ''
           $lines += '### What this run does and does not prove'
           $lines += ''
