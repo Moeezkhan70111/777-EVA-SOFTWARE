@@ -42,6 +42,49 @@ lists had are spelled identically, code point for code point. "Army Green" equal
 **Until cloud 029 is applied**, a colour revision is answered `UNKNOWN_RECORD_TYPE` and waits (transient) without
 holding up anything else. Apply 029 to TEST first, then production in its own window.
 
+## Verified before release (10 Nov 2026)
+
+- **Local 106** on isolated copies: v0.4.6 snapshot (102 → 106 in one start), v0.5.0 snapshot (105 → 106), a cloud
+  workstation (104 → 106). Every existing table identical except the expected backup and migration rows; every outbox
+  row and its delivery state identical; integrity and foreign keys clean; an existing local user signs in; restart
+  clean; v0.5.0 refuses the 106 database untouched; the down script returns it to 105 and v0.5.0 opens it.
+- **Cloud 029** on TEST, inside a rolled-back block (`check_color_translations.sql`, 9 steps): before 029 a colour is
+  `UNKNOWN_RECORD_TYPE` while a party in the same call lands; after it, lease enforcement, revision rules
+  (DUPLICATE / REVISION_CONFLICT / UPDATED / SUPERSEDED), deletion, other types unchanged, takeover refusal, unscoped
+  log rows readable by an enrolled device under RLS, no client write on the type tables. Nothing kept on TEST.
+- **Two computers** (`packages/sync/src/colorTranslationSync.test.ts`): add, edit, delete propagate; offline and
+  restart; before-029 wait without holding anything up; lease and duplicate rules.
+- **A real v0.5.0 build** receiving colour events: refused permanently, nothing parked, everything else applied, cursor
+  moves on, next pull clean. **Not re-delivered after it upgrades**: an edit made while a computer was still on 0.5.0
+  is missed there until the colour is saved again on the master-data computer. The sequence below prevents this.
+
+## Release sequence
+
+1. Publish v0.5.1: Actions → *Release Windows installer* → tag `v0.5.1`. Check the release shows 0.5.1 with its
+   installer and `latest.yml` reading `version: 0.5.1`.
+2. Wait until **every** enrolled computer runs 0.5.1 (production, read only):
+   `select device_id, label, last_seen_version, last_seen_at from device_accounts where is_active order by label;`
+   Until 029, colour changes stay on the computer that made them, queued; the 23 seeded colours are already the same
+   everywhere. Avoid editing colours until step 5 is done.
+3. Apply 029 to **TEST** (SQL editor, whole file). Run `check_color_translations.sql` there: expect
+   `COLOR_TRANSLATIONS_CHECK_PASSED`.
+4. Production pre-check (read only), all must hold:
+   `select count(*) from leased_record_types;` → 18 ·
+   `select count(*) from leased_record_types where aggregate_type = 'COLOR_TRANSLATION';` → 0 ·
+   `select domain from domain_leases where domain = 'MASTER_DATA';` → one row.
+5. Apply `029_color_translation_records.up.sql` to **production** in the SQL editor, whole file (one transaction).
+   Post-check: both counts above now 19 and 1; `has_table_privilege('authenticated','public.leased_record_types','INSERT')`
+   and the same for `sync_aggregate_types` → false. Never run `check_*.sql` on production.
+6. Watch the master-data computer's outbox: any queued `COLOR_TRANSLATION` rows go to SYNCED; the other computers show
+   the same list.
+7. If a computer was still on 0.5.0 when a colour change reached the cloud: open that colour on the master-data computer
+   and save it again (a new revision).
+
+**Rollback.** Cloud 029 adds two rows and nothing else; its down script is refused once a colour revision exists, and
+leaving it in place is harmless. Locally the application has no downgrade: each computer keeps
+`erp-premigration-105-to-106-*.sqlite` in its backups folder (or 102-to-106 from 0.4.6); restoring it loses work done
+since. The 106 down script exists for a hand rollback and was rehearsed.
+
 ## Corrections learned on one computer
 
 Before this list, correcting a material's Urdu colour also remembered it in that computer's browser storage
