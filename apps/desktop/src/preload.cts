@@ -102,6 +102,10 @@ contextBridge.exposeInMainWorld("desktop", {
     rawMaterialIssueScan: (rawScan: string, opts?: Record<string, unknown>) =>
       ipcRenderer.invoke(IPC.rawMaterialIssueScan, rawScan, opts),
     createWorkSection: (name: string) => ipcRenderer.invoke(IPC.createWorkSection, name),
+    listColorTranslations: () => ipcRenderer.invoke(IPC.listColorTranslations),
+    createColorTranslation: (input: Record<string, unknown>) => ipcRenderer.invoke(IPC.createColorTranslation, input),
+    updateColorTranslation: (id: string, input: Record<string, unknown>) => ipcRenderer.invoke(IPC.updateColorTranslation, id, input),
+    deleteColorTranslation: (id: string) => ipcRenderer.invoke(IPC.deleteColorTranslation, id),
     listMachines: (includeInactive?: boolean) => ipcRenderer.invoke(IPC.listMachines, includeInactive),
     createMachine: (input: Record<string, unknown>) => ipcRenderer.invoke(IPC.createMachine, input),
     setMachineStatus: (machineId: string, status: "ACTIVE" | "INACTIVE") =>
@@ -279,6 +283,7 @@ contextBridge.exposeInMainWorld("desktop", {
     recordManualProduction: (input: Record<string, unknown>) => ipcRenderer.invoke(IPC.recordManualProduction, input),
     adjustCartonStock: (input: Record<string, unknown>) => ipcRenderer.invoke(IPC.adjustCartonStock, input),
     getCartonStockReconciliation: (query: Record<string, unknown>) => ipcRenderer.invoke(IPC.getCartonStockReconciliation, query),
+    getCartonStockMatrix: (query: Record<string, unknown>) => ipcRenderer.invoke(IPC.getCartonStockMatrix, query),
     listManualProduction: (query: Record<string, unknown>) => ipcRenderer.invoke(IPC.listManualProduction, query),
     voidManualProduction: (input: Record<string, unknown>) => ipcRenderer.invoke(IPC.voidManualProduction, input),
     issueUpperToMachine: (rawScan: string, machineId: string) => ipcRenderer.invoke(IPC.issueUpperToMachine, rawScan, machineId),

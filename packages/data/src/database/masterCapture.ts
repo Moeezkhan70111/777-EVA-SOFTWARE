@@ -68,6 +68,8 @@ export const MASTER_CAPTURE: readonly MasterTableCapture[] = [
   { table: "inventory_item_unit_steps", record: SYNC_AGGREGATE.INVENTORY_ITEM, recordId: `${ROW}.item_id` },
   { table: "work_sections", record: SYNC_AGGREGATE.WORK_SECTION, recordId: `${ROW}.id` },
   { table: "machines", record: SYNC_AGGREGATE.MACHINE, recordId: `${ROW}.id` },
+  // The colour list (docs/45): one row is one record.
+  { table: "color_translations", record: SYNC_AGGREGATE.COLOR_TRANSLATION, recordId: `${ROW}.id` },
   // ── The production-to-cash workflow (docs/43). Marked by the database, like the rest. ──
   { table: "main_groups", record: SYNC_AGGREGATE.MAIN_GROUP, recordId: `${ROW}.id` },
   { table: "product_groups", record: SYNC_AGGREGATE.PRODUCT_GROUP, recordId: `${ROW}.id` },

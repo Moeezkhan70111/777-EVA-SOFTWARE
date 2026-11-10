@@ -31,6 +31,7 @@ export type MasterRecordType =
   | typeof SYNC_AGGREGATE.PRODUCT_TYPE
   | typeof SYNC_AGGREGATE.PRODUCT_SUB_GROUP
   | typeof SYNC_AGGREGATE.ARTICLE_SIZE
+  | typeof SYNC_AGGREGATE.COLOR_TRANSLATION
   | typeof SYNC_AGGREGATE.MANUAL_PRODUCTION_ENTRY
   | typeof SYNC_AGGREGATE.GATEPASS
   | typeof SYNC_AGGREGATE.SALE_VOUCHER
@@ -90,6 +91,7 @@ export const MASTER_RECORD_TYPES: readonly MasterRecordType[] = [
   SYNC_AGGREGATE.PRODUCT_TYPE,
   SYNC_AGGREGATE.PRODUCT_SUB_GROUP,
   SYNC_AGGREGATE.ARTICLE_SIZE,
+  SYNC_AGGREGATE.COLOR_TRANSLATION,
   SYNC_AGGREGATE.MANUAL_PRODUCTION_ENTRY,
   SYNC_AGGREGATE.GATEPASS,
   SYNC_AGGREGATE.SALE_VOUCHER,
@@ -161,6 +163,8 @@ export const MASTER_RECORDS: Readonly<Record<MasterRecordType, RecordTableSpec>>
     references: PRODUCT_GROUPING,
     children: [{ table: "product_variants", parentColumn: "article_size_id", references: PRODUCT_GROUPING, localColumns: ["replicated_at"] }],
   },
+  // A colour refers to nothing, and nothing refers to it by id: colours are stored in English and only shown in Urdu (docs/45).
+  [SYNC_AGGREGATE.COLOR_TRANSLATION]: { table: "color_translations" },
   [SYNC_AGGREGATE.MANUAL_PRODUCTION_ENTRY]: {
     table: "manual_production_entries",
     localColumns: ["machine_program_id"],

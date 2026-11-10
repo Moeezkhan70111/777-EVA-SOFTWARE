@@ -18,6 +18,7 @@ vi.mock("../leaseGuard", () => ({
 const db = {
   adjustCartonStock: vi.fn(),
   cartonStockReconciliation: vi.fn(),
+  cartonStockMatrix: vi.fn(() => ({ articles: [], articleCount: 0, page: 1, pages: 1, seriesOptions: [] })),
 };
 let admin: { id: string; username: string } | null;
 const authorizer = {
@@ -48,6 +49,7 @@ beforeEach(() => {
   admin = { id: "u-1", username: "owner" };
   db.adjustCartonStock.mockReset().mockReturnValue({ eventId: "r-1", eventType: "CARTON_ADJUST_OUT", cartons: 3, balanceDelta: -3, duplicate: false });
   db.cartonStockReconciliation.mockReset().mockReturnValue({ rows: [] });
+  db.cartonStockMatrix.mockClear();
   registerManualProductionHandlers(context);
 });
 
@@ -66,6 +68,19 @@ describe("adjusting carton stock", () => {
   it("says a refusal in the data layer's own words", () => {
     db.adjustCartonStock.mockImplementation(() => { throw new Error("Give a reason for this adjustment."); });
     expect(call(IPC.adjustCartonStock, asked)).toMatchObject({ accepted: false, reason: "Give a reason for this adjustment." });
+  });
+});
+
+describe("reading the carton matrix", () => {
+  it("is for an administrator only", () => {
+    admin = null;
+    expect(call(IPC.getCartonStockMatrix, { page: 1 })).toMatchObject({ accepted: false });
+    expect(db.cartonStockMatrix).not.toHaveBeenCalled();
+  });
+
+  it("passes on only the search, the series and the page", () => {
+    expect(call(IPC.getCartonStockMatrix, { search: "sk", series: "SKECHERS", article: "SK6", page: 2, pageSize: 999 })).toMatchObject({ accepted: true, articleCount: 0 });
+    expect(db.cartonStockMatrix).toHaveBeenLastCalledWith({ search: "sk", series: "SKECHERS", page: 2 });
   });
 });
 

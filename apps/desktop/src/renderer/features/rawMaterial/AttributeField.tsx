@@ -1,5 +1,8 @@
 import React from "react";
+import { colorToUrdu } from "@erp/domain";
 import { copy } from "../../config/copy";
+import { useColorDictionary } from "../colorTranslation/colorDictionaryStore";
+import { isColorFieldLabel } from "./rawMaterial";
 
 // One renderer for a category attribute, used both to CREATE a material and to FILTER the
 // list by it. The two screens this replaced wrote the same switch twice (renderCreateField /
@@ -24,6 +27,8 @@ export const AttributeField: React.FC<AttributeFieldProps> = ({ field, value, mo
   const required = mode === "create" && Boolean(field.is_required);
   const controlId = `attr-${mode}-${String(field.id)}`;
   const options = Array.isArray(field.options) ? (field.options as Array<Record<string, unknown>>) : [];
+  const isColor = isColorFieldLabel(String(field.label ?? ""));
+  const colors = useColorDictionary();
 
   const label = (
     <label className="input-label" htmlFor={controlId}>
@@ -41,11 +46,17 @@ export const AttributeField: React.FC<AttributeFieldProps> = ({ field, value, mo
         onChange={(event) => onChange(fieldKey, event.target.value)}
       >
         <option value="">{mode === "create" ? "Select…" : copy.filters.all}</option>
-        {options.map((option) => (
-          <option key={String(option.option_value)} value={String(option.option_value)}>
-            {String(option.display_label ?? option.option_value)}
-          </option>
-        ))}
+        {options.map((option) => {
+          const shown = String(option.display_label ?? option.option_value);
+          // A colour option also shows what the floor calls it, from the shared colour list (docs/45). The value
+          // chosen is still the English one.
+          const urdu = isColor ? colorToUrdu(String(option.option_value), colors) : undefined;
+          return (
+            <option key={String(option.option_value)} value={String(option.option_value)}>
+              {urdu ? `${shown} · ${urdu}` : shown}
+            </option>
+          );
+        })}
       </select>
     );
 

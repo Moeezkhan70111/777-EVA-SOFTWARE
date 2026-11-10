@@ -22,6 +22,8 @@ const GUARDED_MODULES = [
   "products", "sales", "cash",
   // Carton QR scanning: on hold in this release; sale returns are leased to the sales holder (docs/44 §6).
   "scanning",
+  // The colour list (docs/45): master data.
+  "colorTranslations",
 ];
 
 /** Channels these modules register that only read. Checked by hand, one by one. */
@@ -63,8 +65,10 @@ const READS = new Set([
   "listOpenMachinePrograms",
   // upperMoveOut
   "listUpperStock",
+  // colorTranslations
+  "listColorTranslations",
   // manualProduction
-  "getCartonStockReconciliation",
+  "getCartonStockReconciliation", "getCartonStockMatrix",
   // syncWaiting
   "getSyncWaiting", "getFactorySyncHealth",
   // backfill
@@ -168,6 +172,7 @@ describe("lease classification", () => {
     }
     expect(leasesFor(IPC.listManualProduction)).toEqual([]);
     expect(leasesFor(IPC.getCartonStockReconciliation)).toEqual([]);
+    expect(leasesFor(IPC.getCartonStockMatrix)).toEqual([]);
     expect(leasesFor(IPC.listGatepassStoreStock)).toEqual([]);
   });
 });

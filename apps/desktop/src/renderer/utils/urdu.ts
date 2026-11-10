@@ -1,3 +1,6 @@
+import { colorToUrdu, urduToEnglish } from "@erp/domain";
+import { currentColorDictionary, currentColorTranslations } from "../features/colorTranslation/colorDictionaryStore";
+
 // Roman → Urdu typing.
 //
 // The desk types a name the way it sounds on an ordinary English keyboard and the Urdu
@@ -147,125 +150,30 @@ export const urduWhileTyping = (typed: string): string => {
   return `${urduFieldValue(finished)}${inProgress}`;
 };
 
-// ─── Colour attribute -> Urdu ───────────────────────────────────────────────────
-// A material's Colour attribute is typed in English when the material is set up, but the raw
-// material QR label prints it in Urdu for the factory floor. The floor's own word for a colour
-// is often the English trade name written in Urdu script phonetically ("blue" -> "بلو"), not
-// the literary Urdu word ("نیلا") — this dictionary is the owner's own list of what the floor
-// actually calls each colour, not a dictionary translation.
-const COLOR_NAME_URDU: Record<string, string> = {
-  black: "سیاہ",
-  blue: "بلو",
-  brown: "براؤن",
-  cream: "کریم",
-  skin: "سکن",
-  navy: "نیوی",
-  red: "لال",
-  orange: "اورنج",
-  pink: "پنک",
-  commando: "کمانڈو",
-  army: "آرمی",
-  green: "گرین",
-  sky: "سکائ",
-  white: "سفید",
-  neon: "نیون",
-  grey: "گرے",
-  gray: "گرے",
-  mustard: "مسٹرڈ",
-};
-
-const LEARNED_COLOR_URDU_KEY = "erp_learned_color_urdu_words";
-
-const loadLearnedColorUrduWords = (): Record<string, string> => {
-  try {
-    const saved = window.localStorage.getItem(LEARNED_COLOR_URDU_KEY);
-    const parsed = saved ? JSON.parse(saved) : {};
-    return parsed && typeof parsed === "object" ? parsed as Record<string, string> : {};
-  } catch {
-    return {};
-  }
-};
+// ─── Colour -> Urdu ───────────────────────────────────────────────────────────────
+// A colour is stored in English everywhere; the carton sticker and the raw material label print it in Urdu for the
+// factory floor. What the floor calls each colour is the shared colour list (master data, the Color Translation
+// page, docs/45), resolved by @erp/domain's colorToUrdu -- whole names, compounds word by word, and run-together
+// carton colours ("BLACKRED") piece by piece. This used to be a dictionary written here; its entries are seeded
+// into that list on every computer, so no label changes.
 
 /**
- * Remembers a colour the dictionary above didn't name (or named wrongly) once an operator
- * corrects it by hand on a material — so the NEXT material in that colour, on this machine,
- * gets the correction as its own default instead of the same wrong guess again. Called from
- * NewMaterialModal whenever the Colour (Urdu) field was actually edited.
- */
-export const learnColorUrdu = (englishColor: string, urduValue: string): void => {
-  const key = englishColor.trim().toLowerCase();
-  const urdu = urduValue.trim();
-  if (!key || !urdu) return;
-  const learned = loadLearnedColorUrduWords();
-  learned[key] = urdu;
-  try {
-    window.localStorage.setItem(LEARNED_COLOR_URDU_KEY, JSON.stringify(learned));
-  } catch {
-    // Local storage may be unavailable in restricted test/browser contexts.
-  }
-};
-
-/** One word's Urdu name, a learned correction winning over the dictionary — undefined if neither names it. */
-const namedColorWord = (word: string, learned: Record<string, string>): string | undefined => learned[word] ?? COLOR_NAME_URDU[word];
-
-/**
- * A run-together compound colour named piece by piece: "blackred" -> "سیاہ لال".
- *
- * A carton's QR identity cannot hold a space — normalizeQrColor folds "BLACK RED" onto
- * "BLACKRED" so both spellings are one logical colour — so the colour names have to be found
- * INSIDE the single token before the sticker can print them. Without this the floor gets the
- * whole token spelled out sound by sound ("بلاککریڈ") instead of the two colours it names.
- *
- * Only a token that splits ENTIRELY into known colour names is accepted, the longest name
- * tried first. A colour this list genuinely does not name ("blueberry") is left to the
- * phonetic fallback rather than being carved up by whatever fragment of it is a colour.
- */
-const namedColorRun = (run: string, learned: Record<string, string>): string | undefined => {
-  const names = [...Object.keys(learned), ...Object.keys(COLOR_NAME_URDU)]
-    .filter((name) => name && !name.includes(" "))
-    .sort((left, right) => right.length - left.length);
-  const split = (rest: string): string[] | undefined => {
-    if (!rest) return [];
-    for (const name of names) {
-      if (!rest.startsWith(name)) continue;
-      const tail = split(rest.slice(name.length));
-      if (tail) return [namedColorWord(name, learned) as string, ...tail];
-    }
-    return undefined;
-  };
-  const parts = split(run);
-  return parts && parts.length > 1 ? parts.join(" ") : undefined;
-};
-
-/**
- * "BLACK" -> "سیاہ". A learned correction (see learnColorUrdu) wins over the dictionary above,
- * because it is a human's explicit "this one is wrong, it's actually this" — the whole point
- * of learning it.
- *
- * A compound colour ("CREAM MUSTARD") is named word by word when every word on its own is
- * known — "cream" + "mustard" -> "کریم مسٹرڈ" — rather than falling straight to phonetic
- * transliteration, which would spell the whole phrase out sound by sound ("کریام موسٹارڈ")
- * and miss the two colour names it is actually built from. A compound written WITHOUT the
- * space, as a carton's QR identity always is ("BLACKRED"), is named the same way through
- * namedColorRun above.
- *
- * A colour no part of this names still comes back in Urdu script — it falls back to the
- * phonetic transliteration above — rather than silently staying in English, since the point of
- * calling this is that the label must print Urdu.
+ * "BLACK" -> "سیاہ", for a label. A colour the list does not name still comes back in Urdu script -- spelled out
+ * sound by sound -- because a label must print Urdu. A screen that should show the English instead uses
+ * colorForDisplay (@erp/domain) with useColorDictionary.
  */
 export const colorValueInUrdu = (value: string): string => {
   const trimmed = value.trim();
-  if (!trimmed || /[؀-ۿ]/.test(trimmed)) return trimmed; // empty, or already Urdu
-  const normalized = trimmed.toLowerCase();
-  const learned = loadLearnedColorUrduWords();
+  if (!trimmed) return trimmed;
+  return colorToUrdu(trimmed, currentColorDictionary()) ?? transliterateToUrdu(trimmed);
+};
 
-  const whole = namedColorWord(normalized, learned);
-  if (whole) return whole;
-
-  const named = normalized
-    .split(/\s+/)
-    .map((word) => namedColorWord(word, learned) ?? namedColorRun(word, learned));
-  if (named.every((word): word is string => Boolean(word))) return named.join(" ");
-
-  return transliterateToUrdu(trimmed);
+/**
+ * "سیاہ" -> "BLACK": an Urdu colour typed where an English one is expected, read back to the list's English, in
+ * capitals as colour attributes are stored. Undefined when the list does not name it, or names it twice
+ * ("گرے" is Grey and Gray) and `allowed` -- the English values a field offers -- does not settle which.
+ */
+export const colorValueInEnglish = (value: string, allowed?: readonly string[]): string | undefined => {
+  const match = urduToEnglish(value, currentColorTranslations(), allowed);
+  return match.status === "FOUND" ? match.english.toUpperCase() : undefined;
 };

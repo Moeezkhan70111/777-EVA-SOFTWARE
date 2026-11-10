@@ -9,6 +9,10 @@
 @import "@fontsource/ibm-plex-mono/600.css";
 /* The Store header's STORE (0.4.1): Jomhuria, Latin letters only (its Arabic subset is not loaded). */
 @import "@fontsource/jomhuria/latin-400.css";
+/* Urdu on screen: Noto Nastaliq Urdu, bundled so every computer shows the same letters offline (--font-urdu).
+   Arabic-script subset only: Latin text keeps the app's own font. */
+@import "@fontsource/noto-nastaliq-urdu/arabic-400.css";
+@import "@fontsource/noto-nastaliq-urdu/arabic-700.css";
 
 /* ─── Tokens ─────────────────────────────────────────── */
 /* Visually hidden but announced — text alternative for colour-only cues (R18). */
@@ -3490,7 +3494,8 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .party-name-field { margin-bottom: 14px !important; }
 .party-name-field .form-input { min-height: 42px; font-size: 0.9rem; font-weight: 600; }
 .party-name-urdu-field { max-width: 520px; }
-.urdu-input { direction: rtl; text-align: right; font-family: var(--font-urdu); font-size: 1rem !important; }
+/* Nastaliq is tall and slants down to the left: the line height keeps its descenders inside the box. */
+.urdu-input { direction: rtl; text-align: right; font-family: var(--font-urdu); font-size: 1rem !important; line-height: 2; min-height: 44px; }
 .required-mark { color: var(--err); }
 .party-two-column { grid-template-columns: repeat(2, 1fr);
     grid-template-rows: repeat(1, 1fr); }
@@ -7770,7 +7775,7 @@ tr.has-error .gp-qty-stepper input { color: var(--err); }
    card, the name and a round arrow under it, a soft wave along the foot. Same FeatureCard, its own
    theme. Sized by the grid, so the two are always identical; they stack when there is no room for
    two side by side, and a single card keeps the same size. */
-.nav-page-grid--dashboard { grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 420px)); justify-content: center; gap: 28px; }
+.nav-page-grid--dashboard { grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 380px)); justify-content: center; gap: 28px; }
 .feature-card--sky {
   --fc-accent: var(--sp-mode-on-start);
   --fc-ink: var(--sp-navy-2);
@@ -7846,10 +7851,12 @@ tr.has-error .gp-qty-stepper input { color: var(--err); }
 .us-search:focus-within { border-color: var(--sp-mode-on-start); box-shadow: 0 0 0 3px rgba(8, 119, 232, 0.14); }
 .us-search-icon { display: inline-flex; flex: 0 0 auto; width: 22px; height: 22px; color: var(--sp-muted); }
 .us-search-icon svg { width: 100%; height: 100%; }
-.upper-stock-page .us-search input {
+.upper-stock-page .us-search input,
+.carton-stock-page .us-search input {
   flex: 1; width: 100%; min-width: 0; height: auto; padding: 0; border: 0; border-radius: 0; outline: none;
   background: transparent; box-shadow: none; color: var(--sp-navy); font: inherit; font-size: 15px;
 }
+.carton-stock-page .us-search input { font-size: 16px; }
 .us-search input::placeholder { color: var(--sp-muted); }
 .us-sort {
   position: relative; display: inline-flex; flex: 0 0 auto; align-items: center; gap: 10px; min-width: 300px; min-height: 44px; padding: 0 16px;
@@ -9703,3 +9710,85 @@ tr.has-error .gp-qty-stepper input { color: var(--err); }
 .mp-open-list { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 8px; }
 .mp-open-row { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--radius-xl); }
 .mp-open-row .btn { margin-left: auto; }
+
+/* ── Carton Stock: the cartons in store, one card per article (the owner's design) ─────────────
+   A white panel holds the filters and the cards. Each card: the article's name in a pale block on
+   the left, the matrix on the right, its Size and Total columns as soft blue pills. */
+.carton-stock-page { font-family: var(--sp-font); color: var(--sp-navy); }
+.cs-panel {
+  display: flex; flex-direction: column; gap: 18px; padding: 22px;
+  border: 1px solid var(--sp-line); border-radius: var(--dash-card-radius); background: rgba(255, 255, 255, 0.7); box-shadow: var(--sp-card-shadow);
+}
+.cs-toolbar { display: flex; flex-wrap: wrap; align-items: stretch; gap: 14px; }
+.cs-search { flex: 1 1 360px; min-height: 52px; }
+.cs-picker {
+  position: relative; display: inline-flex; flex: 0 0 auto; align-items: center; gap: 12px; min-width: 220px; min-height: 52px; padding: 0 16px;
+  border: 1px solid var(--sp-line); border-radius: 12px; background: var(--white); box-shadow: var(--us-field-shadow); color: var(--sp-navy);
+}
+.cs-picker:focus-within { border-color: var(--sp-mode-on-start); }
+.cs-picker-icon { display: inline-flex; flex: 0 0 auto; width: 24px; height: 24px; color: var(--sp-navy-2); }
+.cs-picker-icon svg, .cs-picker-arrow svg { width: 100%; height: 100%; }
+.carton-stock-page .cs-picker select {
+  flex: 1; min-width: 0; min-height: 0; padding: 0 26px 0 0; border: 0; outline: none; appearance: none; background: transparent; box-shadow: none;
+  color: var(--sp-navy); font: inherit; font-size: 15px; font-weight: 700; cursor: pointer;
+}
+.cs-picker-arrow { position: absolute; right: 16px; display: inline-flex; width: 18px; height: 18px; pointer-events: none; transform: rotate(180deg); }
+
+.cs-articles { display: flex; flex-direction: column; gap: 22px; }
+.cs-article {
+  display: grid; grid-template-columns: minmax(150px, 220px) minmax(0, 1fr);
+  border: 1px solid var(--sp-line); border-radius: 16px; background: var(--white); box-shadow: var(--sp-card-shadow); overflow: hidden;
+}
+.carton-stock-page .cs-article-name {
+  display: flex; align-items: center; justify-content: center; margin: 0; padding: 16px; border-right: 1px solid var(--sp-line);
+  background: var(--sp-ground); color: var(--sp-navy); font-size: 30px; font-weight: 800; letter-spacing: -0.01em; text-align: center; word-break: break-word;
+}
+.cs-table-scroll { min-width: 0; overflow-x: auto; }
+.cs-table-scroll:focus-visible { outline: 2px solid var(--sp-mode-on-start); outline-offset: -2px; }
+.cs-table { width: 100%; border-collapse: separate; border-spacing: 0; font-variant-numeric: tabular-nums; }
+.cs-table th, .cs-table td {
+  height: 46px; padding: 0 14px; border-right: 1px solid var(--sp-line); border-bottom: 1px solid var(--sp-line);
+  color: var(--sp-navy); font-size: 19px; font-weight: 500; text-align: center; vertical-align: middle; white-space: nowrap;
+}
+.cs-table tbody tr:last-child th, .cs-table tbody tr:last-child td { border-bottom: 0; }
+.cs-table th:last-child, .cs-table td:last-child { border-right: 0; }
+.cs-table thead th { height: 48px; background: var(--us-head); font-size: 15px; font-weight: 700; }
+.cs-table tbody tr:hover td, .cs-table tbody tr:hover th { background: var(--sp-ground); }
+.cs-colour { display: inline-flex; align-items: center; justify-content: center; gap: 9px; text-transform: uppercase; }
+.cs-dot.color-swatch { width: 16px; height: 16px; }
+
+/* Size and Total stay in place while the colours scroll under them. */
+.cs-table .cs-size { position: sticky; left: 0; z-index: 1; width: 160px; min-width: 120px; background: var(--white); border-right-color: transparent; }
+.cs-table thead .cs-size { background: var(--us-head); }
+.cs-size-pill { display: inline-block; min-width: 96px; padding: 3px 14px; border-radius: 10px; background: var(--us-chip); color: var(--sp-navy-2); font-weight: 700; }
+.cs-table .cs-total { position: sticky; right: 0; z-index: 1; width: 170px; min-width: 110px; padding: 0 8px; background: var(--white); }
+.cs-table thead .cs-total { background: var(--us-chip); font-size: 17px; letter-spacing: 0.02em; text-transform: uppercase; }
+.cs-total-pill { display: block; padding: 5px 10px; border-radius: 10px; background: var(--us-total); font-weight: 800; }
+
+
+@media (max-width: 900px) {
+  .cs-article { grid-template-columns: 1fr; }
+  .carton-stock-page .cs-article-name { justify-content: flex-start; padding: 10px 16px; border-right: 0; border-bottom: 1px solid var(--sp-line); font-size: 22px; }
+  .cs-picker { flex: 1 1 200px; }
+}
+
+/* ─── Urdu text and the Color Translation page (docs/45) ─────────────────────── */
+/* Urdu shown inside an English layout: its own font and direction, so it reads right to left in place. */
+.urdu-text { font-family: var(--font-urdu); direction: rtl; unicode-bidi: isolate; line-height: 1.9; }
+.color-translation-page .cs-search { flex: 1 1 260px; }
+.ct-table th, .ct-table td { vertical-align: middle; }
+.ct-table .urdu-text { font-size: 1.1rem; }
+.ct-english { font-weight: 600; }
+.ct-actions-col { width: 1%; white-space: nowrap; }
+.ct-actions { display: flex; gap: var(--space-2); justify-content: flex-end; }
+.ct-actions .btn { min-height: 44px; }
+.ct-form { display: grid; gap: var(--space-3); }
+.ct-learned { margin-top: var(--space-5); padding-top: var(--space-4); border-top: 1px solid var(--border); }
+.ct-learned-title { margin: 0 0 var(--space-1); font-size: 1rem; }
+.ct-learned-list { list-style: none; margin: var(--space-3) 0 0; padding: 0; display: grid; gap: var(--space-2); }
+.ct-learned-row { display: grid; grid-template-columns: minmax(120px, 1fr) minmax(100px, 1fr) minmax(140px, 2fr) auto; align-items: center; gap: var(--space-3); }
+
+@media (max-width: 640px) {
+  .ct-learned-row { grid-template-columns: 1fr 1fr; }
+  .ct-actions { flex-wrap: wrap; }
+}

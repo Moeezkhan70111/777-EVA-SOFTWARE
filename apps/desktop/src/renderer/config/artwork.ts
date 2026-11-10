@@ -28,3 +28,6 @@ export const STORE_AVATAR_URL = "./assets/store/avatar.png";
  */
 export const UPPER_STOCK_ARTWORK_URL = "./assets/stock/upper-stock.png";
 export const DANA_STOCK_ARTWORK_URL = "./assets/stock/dana-stock.png";
+
+/** The Carton Stock card: three 777 SEVEN cartons with slippers, from the owner's card design, cut the same way. */
+export const CARTON_STOCK_ARTWORK_URL = "./assets/stock/carton-stock.png";

@@ -17,7 +17,8 @@
 import { createHash } from "node:crypto";
 import type { SqliteDatabase } from "../sqliteDatabase.js";
 import { IN_STORE_LOCATION_TYPE, IN_STORE_STATUS } from "@erp/application";
-import { CARTON_STOCK_EVENT_TYPE as TYPE } from "@erp/domain";
+import { CARTON_STOCK_EVENT_TYPE as TYPE, buildCartonStockMatrix } from "@erp/domain";
+import type { CartonStockMatrix, CartonStockQuery } from "@erp/domain";
 import { SYNC_AGGREGATE } from "./syncEvents.js";
 
 const MAX_PAGE_SIZE = 100;
@@ -114,6 +115,34 @@ const toRow = (row: Row): CartonReconciliationRow => {
 };
 
 export const cartonStockReconciliationMethods = {
+  /**
+   * The Carton Stock page's matrix: the same store figure as the reconciliation's (one query, ROWS_SQL),
+   * per article, size and colour, each with its article series. Reads only. No figure of its own.
+   */
+  cartonStockMatrix(this: SqliteDatabase, query: CartonStockQuery = {}): CartonStockMatrix {
+    // The series is Product Master's, on the article-size; the variant's own copy only when it has none.
+    const figures = (
+      this.db
+        .prepare(
+          `${ROWS_SQL}
+           SELECT j.article, j.size, j.color, j.store_figure, COALESCE(series.name, '') AS series
+             FROM joined j
+             JOIN product_variants pv ON pv.id = j.variant_id
+             LEFT JOIN article_sizes asz ON asz.id = pv.article_size_id
+             LEFT JOIN article_series series ON series.id = COALESCE(asz.article_series_id, pv.article_series_id)
+            WHERE j.store_figure <> 0`
+        )
+        .all() as Row[]
+    ).map((row) => ({
+      article: String(row.article),
+      size: String(row.size),
+      color: String(row.color),
+      series: String(row.series ?? ""),
+      quantity: Number(row.store_figure),
+    }));
+    return buildCartonStockMatrix(figures, query);
+  },
+
   /** Reads only. One page of products, and the totals across all of them. */
   cartonStockReconciliation(this: SqliteDatabase, input: { page?: number; pageSize?: number } = {}): CartonReconciliation {
     const pageSize = Math.max(1, Math.min(MAX_PAGE_SIZE, Math.trunc(Number(input.pageSize) || 25)));

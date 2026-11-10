@@ -83,6 +83,8 @@ import { hiddenLedgerRoutes, useLedgersShown } from "../features/parties/ledgerV
 import type { AuthUser } from "../types/desktopApi";
 import { MunshiHomePage } from "../features/munshi/MunshiHomePage";
 import { HomePage } from "../features/navigation/HomePage";
+import { ColorTranslationPage } from "../features/colorTranslation/ColorTranslationPage";
+import { ColorListLoader } from "../features/colorTranslation/ColorListLoader";
 import { useAdminData } from "../features/users/useAdminData";
 import { notificationTarget } from "../features/users/notificationTarget";
 import type { UserNotification } from "../features/users/types";
@@ -615,6 +617,8 @@ export const App = () => {
         return <QrJourneyPage username={session.username} />;
       case "discount-policy":
         return <DiscountPolicyPage />;
+      case "color-translation":
+        return <ColorTranslationPage />;
       case "sale-voucher-form":
         return (
           <SaleVoucherFormPage
@@ -743,6 +747,7 @@ export const App = () => {
             ) : null}
             <main className={`page-content${!showNavbar || FULLSCREEN_ROUTES.has(route) ? " page-content--fullscreen" : ""}`}>
               {session && !isAddingAccount ? <SyncWaitingNotice onOpenHealth={() => setRoute("health")} /> : null}
+              {session && !isAddingAccount ? <ColorListLoader key={session.id} /> : null}
               {content}
             </main>
           </div>

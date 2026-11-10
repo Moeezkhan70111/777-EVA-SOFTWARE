@@ -151,8 +151,19 @@ describe("HomePage — the Dashboard's own cards", () => {
     expect(screen.getByRole("status")).toHaveTextContent("Your pages are in the sidebar");
   });
 
-  it("shows an administrator both", () => {
-    render(<HomePage user={user([], "ADMIN")} onNavigate={vi.fn()} />);
+  it("shows an administrator Carton Stock first, then both stock cards, and Carton Stock opens its page", () => {
+    const onNavigate = vi.fn();
+    render(<HomePage user={user([], "ADMIN")} onNavigate={onNavigate} />);
+    expect(cardNames()).toEqual(["nav-tile-carton-stock", "nav-tile-upper-stock", "nav-tile-dana-stock"]);
+    const card = screen.getByRole("button", { name: "Carton Stock" });
+    expect(card.querySelector("img")).toHaveAttribute("src", "./assets/stock/carton-stock.png");
+    fireEvent.click(card);
+    expect(onNavigate).toHaveBeenLastCalledWith("carton-stock");
+  });
+
+  // No role can be given carton-stock: the role editor never offers it (navCatalogue.test, ADMIN_ONLY_ROUTES).
+  it("never shows the Carton Stock card to anyone but an administrator", () => {
+    render(<HomePage user={user(["stock.upper.view", "stock.dana.view", "stock", "store-scanning"])} onNavigate={vi.fn()} />);
     expect(cardNames()).toEqual(["nav-tile-upper-stock", "nav-tile-dana-stock"]);
   });
 

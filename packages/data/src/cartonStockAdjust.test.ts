@@ -413,3 +413,26 @@ test("after Carton Cloud is activated, the fresh start is refused outright", asy
     assert.throws(() => applyCartonStockReset(db.db, "2026-11-09T00:00:00.000Z"), /REFUSED, nothing changed/);
   });
 });
+
+// ─── The Carton Stock page's matrix ───
+
+test("the matrix shows the reconciliation's store figure, by article, size and colour, and reads only", async () => {
+  await withFixture((fixture) => {
+    const { db } = fixture;
+    produce(fixture);
+    db.adjustCartonStock(adjustment(fixture, { direction: "OUT", cartons: 3 }));
+    const changes = (db.db.prepare("SELECT total_changes() AS n").get() as { n: number }).n;
+
+    const matrix = db.cartonStockMatrix();
+    const [row] = db.cartonStockReconciliation().rows;
+
+    assert.equal((db.db.prepare("SELECT total_changes() AS n").get() as { n: number }).n, changes, "reads only");
+    assert.equal(matrix.articleCount, 1);
+    const [article] = matrix.articles;
+    assert.equal(article?.article, row?.article.toUpperCase());
+    assert.deepEqual(article?.rows.map((line) => [line.size, line.total]), [[row?.size.toUpperCase(), row?.storeFigure]]);
+    assert.deepEqual(article?.colours, [row?.color.toUpperCase()]);
+    // The fixture's product has no series: it shows under All, and offers no series to pick.
+    assert.deepEqual(matrix.seriesOptions, []);
+  });
+});

@@ -80,6 +80,8 @@ export const SYNC_AGGREGATE = {
   PRODUCT_SUB_GROUP: "PRODUCT_SUB_GROUP",
   /** A product (article + size) with its colours, prices and contractor rates. */
   ARTICLE_SIZE: "ARTICLE_SIZE",
+  /** One English colour and what the floor calls it in Urdu (local 106, cloud 029, docs/45). */
+  COLOR_TRANSLATION: "COLOR_TRANSLATION",
   /** One Manual Production entry, standing on its own: it carries its contractors and rates. */
   MANUAL_PRODUCTION_ENTRY: "MANUAL_PRODUCTION_ENTRY",
   /** A gatepass with its lines. */
@@ -139,6 +141,7 @@ export const LEASED_AGGREGATE_DOMAIN: Readonly<Partial<Record<SyncAggregateType,
   [SYNC_AGGREGATE.PRODUCT_TYPE]: LEASE_DOMAIN.MASTER_DATA,
   [SYNC_AGGREGATE.PRODUCT_SUB_GROUP]: LEASE_DOMAIN.MASTER_DATA,
   [SYNC_AGGREGATE.ARTICLE_SIZE]: LEASE_DOMAIN.MASTER_DATA,
+  [SYNC_AGGREGATE.COLOR_TRANSLATION]: LEASE_DOMAIN.MASTER_DATA,
   [SYNC_AGGREGATE.MANUAL_PRODUCTION_ENTRY]: LEASE_DOMAIN.CARTON_STOCK,
   [SYNC_AGGREGATE.GATEPASS]: LEASE_DOMAIN.SALES_DISPATCH,
   [SYNC_AGGREGATE.SALE_VOUCHER]: LEASE_DOMAIN.SALES_DISPATCH,

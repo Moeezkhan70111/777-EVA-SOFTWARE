@@ -193,6 +193,8 @@ export const routeAnyPermission: Partial<Record<AppRoute, PermissionCode[]>> = {
   "raw-material": [PERMISSION.STOCK, PERMISSION.RAW_MATERIAL_QR_GENERATOR, PERMISSION.SETTINGS, PERMISSION.RAW_MATERIAL_SETUP],
   // Raw material setup: the whole of Settings, or just this part of it.
   "raw-material-setup": [PERMISSION.SETTINGS, PERMISSION.RAW_MATERIAL_SETUP],
+  // The colour list is setup too, by the same people; the main process checks the same pair on every write.
+  "color-translation": [PERMISSION.SETTINGS, PERMISSION.RAW_MATERIAL_SETUP],
   // The raw material scanners belong to the store station, so a store operator always has
   // them; the page's own permission offers them to someone who is not a store operator.
   "raw-material-input": [PERMISSION.STORE_SCANNING, PERMISSION.RAW_MATERIAL_INPUT],

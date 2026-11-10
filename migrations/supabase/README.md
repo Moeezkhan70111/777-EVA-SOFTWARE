@@ -13,7 +13,7 @@
 
 Apply in this order, in the Supabase SQL editor, on an **empty** project, one file at a time:
 
-`schema.sql` → `002` → `003` → … → `019` → `020` → `021` → `022` → `023` → `024` → `025` → `026` → `027` → `028`
+`schema.sql` → `002` → `003` → … → `019` → `020` → `021` → `022` → `023` → `024` → `025` → `026` → `027` → `028` → `029`
 
 After each one, run `verify_applied_state.sql`. Its header lists exactly which checks a project
 one migration behind fails, so a half-applied project is diagnosed rather than guessed at. The
@@ -83,7 +83,9 @@ changes would have to discard data to succeed, and they are written to fail inst
 
 `028_production_to_cash_records.up.sql` follows `027`: products, Manual Production entries, gatepasses, bills and cash vouchers become leased records under 013's push (docs/43). Rows only, no new function. Test only. Not on production.
 
-**Reverse in the opposite order: `028` → `027` → `026` → `025` → `024` → `023` → `022` → `021` → `020` → `019` → `018` → … → `003` → `002`.** Each down file's header
+`029_color_translation_records.up.sql` follows `028`: the English-to-Urdu colour list becomes a leased master-data record (docs/45, local migration 106). Rows only, no new function. **Prepared, not applied to test or production.** Until it is, a colour revision waits as `UNKNOWN_RECORD_TYPE` without holding up anything else.
+
+**Reverse in the opposite order: `029` → `028` → `027` → `026` → `025` → `024` → `023` → `022` → `021` → `020` → `019` → `018` → … → `003` → `002`.** Each down file's header
 says what reversing it costs: `018`'s re-opens the PC2/PC3 failure, for example. Reversing `005`
 re-opens the cross-factory read, and reversing `006` re-opens unbound access, re-enables any
 device revoked before the rollback and discards the claim audit. Both headers say so. `004_rls_policies.down.sql` revokes a

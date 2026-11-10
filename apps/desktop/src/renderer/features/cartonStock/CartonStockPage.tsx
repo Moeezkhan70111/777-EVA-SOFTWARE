@@ -1,95 +1,92 @@
-import React from "react";
+import React, { useCallback, useState } from "react";
+import type { CartonStockMatrix } from "@erp/domain";
 import { Pager } from "../../components/shared/Pager";
 import { StateView } from "../../components/shared/StateView";
 import { copy } from "../../config/copy";
-import type { CartonReconciliation } from "../../types/desktopApi";
-import { CartonAdjustForm } from "./CartonAdjustForm";
-import { useCartonAdjust, useCartonReconciliation } from "./useCartonStock";
+import { useDesktopApi } from "../../hooks/useDesktopApi";
+import { DATA_KIND } from "../../../shared/dataChange";
+import { useStockList, type StockRead } from "../kindStock/useStockList";
+import { NAV_ICONS, RAIL_ICONS } from "../navigation/NavIcons";
+import { CartonMatrix } from "./CartonMatrix";
+import { parseCartonMatrixReply } from "./cartonMatrixReply";
 
-// CARTON STOCK, FOR AN ADMINISTRATOR (docs/42 sections 11 and 12): adjust the figure with a reason, and
-// see whether this computer's figure matches its movements. The fingerprint is what to compare across
-// computers: the same movements give the same one. QR cartons are shown apart: local, and on hold.
+// CARTON STOCK, FOR AN ADMINISTRATOR: the cartons in store, one matrix per article (the owner's
+// design), with a search and an article series picker. It only shows stock. Another computer's movement reaches
+// this page through sync's CARTONS announcement, and the page re-reads the main process's figures.
 
 const text = copy.cartonStock;
+const CARTON_CHANGES = [DATA_KIND.CARTONS, DATA_KIND.PRODUCTS] as const;
 
-const Summary: React.FC<{ data: CartonReconciliation }> = ({ data }) => (
-  <div className="kpi-grid">
-    <div className="kpi-card"><div className="kpi-label">{text.movements}</div><div className="kpi-value">{data.movements.toLocaleString()}</div></div>
-    <div className="kpi-card"><div className="kpi-label">{text.fingerprint}</div><div className="kpi-value">{data.fingerprint}</div></div>
-    <div className="kpi-card"><div className="kpi-label">{text.differences}</div><div className="kpi-value">{data.differences.toLocaleString()}</div></div>
-    <div className="kpi-card"><div className="kpi-label">{text.unsent}</div><div className="kpi-value">{data.unsent.toLocaleString()}</div></div>
-  </div>
+interface PickerProps {
+  icon: React.ReactNode;
+  label: string;
+  all: string;
+  value: string;
+  options: readonly string[];
+  onChange: (value: string) => void;
+}
+
+/** All, or one value. Its options are every series with stock, whatever the search says. */
+const Picker: React.FC<PickerProps> = ({ icon, label, all, value, options, onChange }) => (
+  <label className="cs-picker">
+    <span className="cs-picker-icon" aria-hidden="true">{icon}</span>
+    <select aria-label={label} value={value} onChange={(event) => onChange(event.target.value)}>
+      <option value="">{all}</option>
+      {options.map((option) => (
+        <option key={option} value={option}>{option}</option>
+      ))}
+    </select>
+    <span className="cs-picker-arrow" aria-hidden="true">{RAIL_ICONS.chevronUp}</span>
+  </label>
 );
 
-const Warnings: React.FC<{ data: CartonReconciliation }> = ({ data }) => {
-  const lines = [
-    data.differences > 0 ? text.differencesWarning(data.differences) : null,
-    data.refused > 0 ? text.refusedWarning(data.refused) : null,
-    data.waiting > 0 ? text.waitingWarning(data.waiting) : null,
-    data.entriesBeforeFreshStart > 0 ? text.beforeFreshStart(data.entriesBeforeFreshStart) : null,
-  ].filter((line): line is string => line !== null);
-  if (lines.length === 0) return <p className="text-muted text-small" role="status">✓ {text.allAgree}</p>;
-  return <ul role="status">{lines.map((line) => <li key={line}>⚠ {line}</li>)}</ul>;
-};
-
-const Table: React.FC<{ data: CartonReconciliation }> = ({ data }) => (
-  <div className="table-wrap">
-    <table className="data-table">
-      <thead>
-        <tr>
-          <th scope="col">{text.product}</th>
-          <th scope="col">{text.produced}</th>
-          <th scope="col">{text.adjusted}</th>
-          <th scope="col">{text.issued}</th>
-          <th scope="col">{text.movementStock}</th>
-          <th scope="col">{text.qrInStore}</th>
-          <th scope="col">{text.storeFigure}</th>
-          <th scope="col">{text.difference}</th>
-        </tr>
-      </thead>
-      <tbody>
-        {data.rows.map((row) => (
-          <tr key={row.variantId}>
-            <td>{`${row.article} ${row.size} ${row.color}`}</td>
-            <td>{row.produced}</td>
-            <td>{row.adjusted}</td>
-            <td>{row.issued}</td>
-            <td>{row.movementStock}</td>
-            <td>{row.qrInStore}</td>
-            <td>{row.storeFigure}</td>
-            <td>{row.difference === 0 ? text.agrees : `⚠ ${row.difference}`}</td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
-  </div>
-);
-
-const Reconciliation: React.FC<{ read: ReturnType<typeof useCartonReconciliation> }> = ({ read }) => {
-  if (read.loading && !read.value) return <StateView kind="loading" compact message={text.loading} />;
-  if (read.error) return <StateView kind="error" compact message={read.error} onRetry={() => void read.reload()} />;
-  const data = read.value;
-  if (!data) return null;
-  const pages = Math.max(1, Math.ceil(data.total / data.pageSize));
+const Matrices: React.FC<{ data: CartonStockMatrix; filtered: boolean; onPage: (page: number) => void }> = ({ data, filtered, onPage }) => {
+  if (data.articleCount === 0) {
+    return filtered ? <StateView kind="empty" title={text.noMatchTitle} hint={text.noMatchHint} /> : <StateView kind="empty" title={text.emptyTitle} hint={text.emptyHint} />;
+  }
   return (
-    <section aria-labelledby="carton-reconcile-title">
-      <h3 id="carton-reconcile-title" className="card-title">{text.reconcileTitle}</h3>
-      <Summary data={data} />
-      <Warnings data={data} />
-      {data.rows.length === 0 ? <StateView kind="empty" compact title={text.emptyTitle} hint={text.emptyHint} /> : <Table data={data} />}
-      {pages > 1 ? <Pager page={read.pageNo} pages={pages} onPage={read.setPageNo} /> : null}
-    </section>
+    <>
+      <div className="cs-articles">
+        {data.articles.map((article) => (
+          <CartonMatrix key={article.key} article={article} />
+        ))}
+      </div>
+      {data.pages > 1 ? <Pager page={data.page} pages={data.pages} onPage={onPage} /> : null}
+    </>
   );
 };
 
 export const CartonStockPage: React.FC = () => {
-  const read = useCartonReconciliation();
-  const { adjust, busy, outcome } = useCartonAdjust(read.reload);
+  const api = useDesktopApi();
+  const [series, setSeries] = useState("");
+  const read = useCallback<StockRead<CartonStockMatrix>>(
+    async (query) => parseCartonMatrixReply(await api.getCartonStockMatrix({ ...query, series })),
+    [api, series]
+  );
+  const stock = useStockList(read, CARTON_CHANGES);
+  const chooseSeries = (value: string) => {
+    setSeries(value);
+    stock.setPage(1);
+  };
+
+  const body = () => {
+    if (stock.error) return <StateView kind="error" title={text.failed} message={stock.error} onRetry={stock.retry} />;
+    if (!stock.data) return stock.loading ? <StateView kind="loading" message={text.loading} /> : null;
+    return <Matrices data={stock.data} filtered={stock.searching || series !== ""} onPage={stock.setPage} />;
+  };
+
   return (
-    <div className="page-stack">
-      <p className="text-muted">{text.subtitle}</p>
-      <CartonAdjustForm busy={busy} outcome={outcome} onAdjust={adjust} />
-      <Reconciliation read={read} />
+    <div className="page-stack carton-stock-page">
+      <div className="cs-panel">
+        <div className="cs-toolbar">
+          <label className="us-search cs-search">
+            <span className="us-search-icon" aria-hidden="true">{RAIL_ICONS.search}</span>
+            <input type="search" aria-label={text.searchLabel} placeholder={text.searchPlaceholder} value={stock.search} onChange={(event) => stock.setSearch(event.target.value)} />
+          </label>
+          <Picker icon={NAV_ICONS.stock} label={text.seriesLabel} all={text.allSeries} value={series} options={stock.data?.seriesOptions ?? []} onChange={chooseSeries} />
+        </div>
+        {body()}
+      </div>
     </div>
   );
 };

@@ -1502,9 +1502,9 @@ test("009: every event type this computer can apply is a type the cloud log acce
   const { APPLY_CONTRACTS } = await import("./applyEnvelope.js");
   // Every cloud migration that seeds the log's types: 009 the first five, 013 the eight master
   // records, 015 stock movements, 020 and 021 the account types, 026 carton stock movements, 028 the
-  // production-to-cash records.
+  // production-to-cash records, 029 the colour list.
   const seeds = new Set(seededTypes().keys());
-  for (const migration of [LEASED_RECORDS, STOCK_EVENTS, CLOUD_ACCOUNTS, PERMISSION_REQUESTS, CARTON_STOCK_EVENTS, PRODUCTION_TO_CASH]) {
+  for (const migration of [LEASED_RECORDS, STOCK_EVENTS, CLOUD_ACCOUNTS, PERMISSION_REQUESTS, CARTON_STOCK_EVENTS, PRODUCTION_TO_CASH, COLOR_TRANSLATIONS]) {
     const insert = migration.slice(migration.indexOf("insert into public.sync_aggregate_types"));
     for (const match of insert.slice(0, insert.indexOf(";")).matchAll(/\('([A-Z_]+)', (true|false), '/g)) {
       seeds.add(match[1] ?? "");
@@ -1749,12 +1749,13 @@ test("012: one transaction each way, and the rollback leaves the log alone", () 
 
 const LEASED_RECORDS = read("migrations/supabase/013_leased_records.up.sql");
 const PRODUCTION_TO_CASH = read("migrations/supabase/028_production_to_cash_records.up.sql");
+const COLOR_TRANSLATIONS = read("migrations/supabase/029_color_translation_records.up.sql");
 const LEASED_RECORDS_DOWN = read("migrations/supabase/013_leased_records.down.sql");
 
 /** The (type, lease domain) rows 013 seeds into leased_record_types. */
 const leasedRecordTypes = (): Map<string, string> => {
   const types = new Map<string, string>();
-  for (const migration of [LEASED_RECORDS, PRODUCTION_TO_CASH]) {
+  for (const migration of [LEASED_RECORDS, PRODUCTION_TO_CASH, COLOR_TRANSLATIONS]) {
     const insert = migration.slice(migration.indexOf("insert into public.leased_record_types"));
     for (const match of insert.slice(0, insert.indexOf(";")).matchAll(/\('([A-Z_]+)', '([A-Z_]+)'\)/g)) {
       types.set(match[1] ?? "", match[2] ?? "");
@@ -1765,8 +1766,8 @@ const leasedRecordTypes = (): Map<string, string> => {
 
 test("013: every record type is a log type, unscoped, under a lease this computer knows", () => {
   const types = leasedRecordTypes();
-  assert.equal(types.size, 18, "013's eight master-data record types of docs/37 W.1, and 028's ten");
-  const logTypes = [LEASED_RECORDS, PRODUCTION_TO_CASH].map((migration) => migration.slice(migration.indexOf("insert into public.sync_aggregate_types"))).join("\n");
+  assert.equal(types.size, 19, "013's eight master-data record types of docs/37 W.1, 028's ten, and 029's colour list");
+  const logTypes = [LEASED_RECORDS, PRODUCTION_TO_CASH, COLOR_TRANSLATIONS].map((migration) => migration.slice(migration.indexOf("insert into public.sync_aggregate_types"))).join("\n");
   for (const [type, domain] of types) {
     assert.match(logTypes, new RegExp(String.raw`\('${type}', false, '`), `${type} is seeded into the log's types, unscoped`);
     assert.ok((Object.values(LEASE_DOMAIN) as string[]).includes(domain), `${type}'s domain ${domain} is a lease domain`);

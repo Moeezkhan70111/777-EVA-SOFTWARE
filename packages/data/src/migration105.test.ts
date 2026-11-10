@@ -65,7 +65,8 @@ function withUpgraded(check: (db: SqliteDatabase, before: string, dir: string, d
     const before = snapshot(at104);
     assert.equal(columnsOf(at104, "gatepasses").includes("request_id"), false, "104 has no request columns");
     at104.close();
-    const upgraded = new SqliteDatabase({ dbPath, schemaPath: SCHEMA, migrationsDir: MIGRATIONS });
+    // Up to 105 exactly: what this file checks is a 105 database, whatever later migrations exist.
+    const upgraded = new SqliteDatabase({ dbPath, schemaPath: SCHEMA, migrationsDir: migrationsUpTo(dir, 105) });
     try {
       check(upgraded, before, dir, dbPath);
     } finally {
@@ -117,7 +118,7 @@ test("an older build refuses a 105 database, changing nothing; the down script p
     assert.throws(() => new SqliteDatabase({ dbPath, schemaPath: SCHEMA, migrationsDir: old }), /created by a newer version of 777 ERP/);
 
     // Rollback, as an operator would run it by hand: the down script, then the version forgotten.
-    const reopened = new SqliteDatabase({ dbPath, schemaPath: SCHEMA, migrationsDir: MIGRATIONS });
+    const reopened = new SqliteDatabase({ dbPath, schemaPath: SCHEMA, migrationsDir: migrationsUpTo(dir, 105) });
     const down = fs.readFileSync(path.join(MIGRATIONS, "105_document_request_ids.down.sql"), "utf8");
     reopened.db.exec("BEGIN IMMEDIATE TRANSACTION");
     for (const statement of down.replace(/--[^\n]*/g, "").split(";").map((s) => s.trim()).filter(Boolean)) reopened.db.exec(statement);

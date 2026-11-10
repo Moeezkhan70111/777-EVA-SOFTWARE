@@ -90,6 +90,11 @@ export const IPC = {
   getRawMaterialIssueSessionSummary: "erp:get-raw-material-issue-session-summary",
   rawMaterialIssueScan: "erp:raw-material-issue-scan",
   createWorkSection: "erp:create-work-section",
+  // The colour list: English colour -> what the floor calls it in Urdu (docs/45). Master data.
+  listColorTranslations: "erp:list-color-translations",
+  createColorTranslation: "erp:create-color-translation",
+  updateColorTranslation: "erp:update-color-translation",
+  deleteColorTranslation: "erp:delete-color-translation",
   // Machine Program: what each machine's two injectors make on a date, and the uppers that
   // reserves. A reservation layer over store stock — it never moves stock, Raw Material Output does.
   listMachines: "erp:list-machines",
@@ -273,6 +278,7 @@ export const IPC = {
   // Carton Stock: an administrator's adjustment, and the read-only reconciliation (docs/42).
   adjustCartonStock: "erp:adjust-carton-stock",
   getCartonStockReconciliation: "erp:get-carton-stock-reconciliation",
+  getCartonStockMatrix: "erp:get-carton-stock-matrix",
   listManualProduction: "erp:list-manual-production",
   voidManualProduction: "erp:void-manual-production",
   // Upper Move Out (Phase 3): upper packets issued to a named machine, and upper stock.

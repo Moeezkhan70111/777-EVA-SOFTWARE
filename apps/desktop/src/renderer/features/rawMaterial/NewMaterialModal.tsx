@@ -7,7 +7,8 @@ import { Modal } from "./Modal";
 import { AddUnitModal } from "./AddUnitModal";
 import { AttributeField } from "./AttributeField";
 import { UrduInput } from "../../components/shared/UrduInput";
-import { colorValueInUrdu, learnColorUrdu } from "../../utils/urdu";
+import { colorValueInEnglish, colorValueInUrdu } from "../../utils/urdu";
+import { isUrduText } from "@erp/domain";
 import {
   categoryPath,
   identityFields,
@@ -120,17 +121,32 @@ export const NewMaterialModal: React.FC<NewMaterialModalProps> = ({
     };
   }, [api, leafId]);
 
-  const setValue = (fieldKey: string, value: string) => {
-    setValues((current) => ({ ...current, [fieldKey]: value }));
+  const colorField = (fieldKey: string) => {
     const field = fields.find((candidate) => String(candidate.field_key) === fieldKey);
-    if (field && isColorFieldLabel(String(field.label)) && !urduEditedFields.has(fieldKey)) {
-      setValuesUrdu((current) => ({ ...current, [fieldKey]: colorValueInUrdu(value) }));
+    return field && isColorFieldLabel(String(field.label)) ? field : undefined;
+  };
+
+  /** The English values a dropdown colour offers, so an Urdu name both Grey and Gray share picks the one it has. */
+  const offeredColors = (field: Record<string, unknown>): string[] | undefined =>
+    Array.isArray(field.options) ? (field.options as Array<Record<string, unknown>>).map((option) => String(option.option_value)) : undefined;
+
+  const setValue = (fieldKey: string, typed: string) => {
+    const field = colorField(fieldKey);
+    // A colour is stored in English. Urdu typed here is read back to the colour list's English (docs/45).
+    const english = field && isUrduText(typed) ? colorValueInEnglish(typed, offeredColors(field)) ?? typed : typed;
+    setValues((current) => ({ ...current, [fieldKey]: english }));
+    if (field && !urduEditedFields.has(fieldKey)) {
+      setValuesUrdu((current) => ({ ...current, [fieldKey]: colorValueInUrdu(english) }));
     }
   };
 
   const setValueUrdu = (fieldKey: string, value: string) => {
     setUrduEditedFields((current) => new Set(current).add(fieldKey));
     setValuesUrdu((current) => ({ ...current, [fieldKey]: value }));
+    // Urdu typed first, with no English yet: the English the colour list gives it fills in.
+    const field = colorField(fieldKey);
+    const english = field && !(values[fieldKey] ?? "").trim() ? colorValueInEnglish(value, offeredColors(field)) : undefined;
+    if (english) setValues((current) => ({ ...current, [fieldKey]: english }));
   };
 
   const resetValues = () => {
@@ -156,16 +172,21 @@ export const NewMaterialModal: React.FC<NewMaterialModalProps> = ({
       return;
     }
 
+    // A colour is stored in English. Urdu the colour list could not read back is refused here, not saved as English.
+    const urduColor = fields.find((field) => colorField(String(field.field_key)) && isUrduText(values[String(field.field_key)] ?? ""));
+    if (urduColor) {
+      push("error", copy.colorTranslation.notSaved, copy.colorTranslation.urduNotInList(String(urduColor.label)));
+      return;
+    }
+
     // Only a colour the operator actually corrected by hand is saved as an override — one
-    // nobody touched is left out, so it keeps translating dynamically at print time. The
-    // correction is also learned (see colorValueInUrdu), so the NEXT material in this colour
-    // gets it as the default instead of repeating whatever was wrong before.
+    // nobody touched is left out, so it keeps translating dynamically at print time. A
+    // correction meant for every material in that colour belongs on the shared colour list
+    // (Color Translation), which every computer reads; it is no longer learned per computer.
     const editedValuesUrdu: Record<string, string> = {};
     for (const fieldKey of urduEditedFields) {
       const urdu = valuesUrdu[fieldKey]?.trim();
-      if (!urdu) continue;
-      editedValuesUrdu[fieldKey] = urdu;
-      learnColorUrdu(values[fieldKey] ?? "", urdu);
+      if (urdu) editedValuesUrdu[fieldKey] = urdu;
     }
 
     setCreating(true);

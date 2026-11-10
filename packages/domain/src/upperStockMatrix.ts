@@ -118,7 +118,8 @@ const sizeRank = (size: string): number => {
   return rank < 0 ? UPPER_SIZE_ORDER.length : rank;
 };
 
-const bySize = (a: string, b: string): number => sizeRank(a) - sizeRank(b) || naturally(a, b);
+/** The store's size order, for uppers and cartons alike: the sequence above first, then by number. */
+export const compareSizes = (a: string, b: string): number => sizeRank(a) - sizeRank(b) || naturally(a, b);
 
 /** One article's materials as a matrix. */
 const buildArticle = (key: string, materials: readonly UpperStockMaterial[]): UpperMatrixArticle => {
@@ -134,7 +135,7 @@ const buildArticle = (key: string, materials: readonly UpperStockMaterial[]): Up
     row.total = roundQuantity(row.total + material.onHand);
     rows.set(id, row);
   }
-  const ordered = [...rows.values()].sort((a, b) => bySize(a.size, b.size) || naturally(a.type, b.type));
+  const ordered = [...rows.values()].sort((a, b) => compareSizes(a.size, b.size) || naturally(a.type, b.type));
   const [first] = materials;
   return {
     key,

@@ -128,6 +128,22 @@ export function registerManualProductionHandlers(ctx: IpcContext): void {
     }
   });
 
+  // The Carton Stock page's matrix. Administrators only, like the page and the reconciliation.
+  ipcMain.handle(IPC.getCartonStockMatrix, (event, query?: unknown) => {
+    const who = administrator(event);
+    if (!who.ok) return { accepted: false, reason: who.reason };
+    const input = asRecord(query);
+    try {
+      return {
+        accepted: true,
+        ...db.cartonStockMatrix({ search: asString(input.search), series: asString(input.series), page: Number(input.page) || 1 }),
+      };
+    } catch (error) {
+      log("WARNING", "carton-matrix", error instanceof Error ? error.message : String(error));
+      return { accepted: false, reason: "This could not be loaded. Try again." };
+    }
+  });
+
   ipcMain.handle(IPC.getCartonStockReconciliation, (event, query?: unknown) => {
     const who = administrator(event);
     if (!who.ok) return { accepted: false, reason: who.reason, reconciliation: null };

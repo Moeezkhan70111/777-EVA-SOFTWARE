@@ -1,5 +1,8 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { colorValueInUrdu, learnColorUrdu, transliterateToUrdu, urduFieldValue, urduWhileTyping } from "./urdu";
+import { DEFAULT_COLOR_TRANSLATIONS } from "@erp/domain";
+import { colorValueInEnglish, colorValueInUrdu, transliterateToUrdu, urduFieldValue, urduWhileTyping } from "./urdu";
+import { publishColorTranslations } from "../features/colorTranslation/colorDictionaryStore";
+import { LEGACY_COLOR_CORRECTIONS_KEY } from "../features/colorTranslation/legacyColorCorrections";
 
 describe("Party name Urdu transliteration", () => {
   it("uses natural spellings for names, shop names, and cities", () => {
@@ -102,25 +105,41 @@ describe("Colour attribute Urdu translation", () => {
   });
 });
 
-describe("learnColorUrdu", () => {
+describe("the shared colour list drives the labels", () => {
+  const seeded = DEFAULT_COLOR_TRANSLATIONS.map((row, index) => ({ id: `c-${String(index)}`, englishName: row.english, urduName: row.urdu }));
+
   beforeEach(() => {
     window.localStorage.clear();
+    publishColorTranslations(seeded);
   });
 
-  it("remembers a correction for a colour the list does not name, for next time", () => {
-    expect(colorValueInUrdu("Maroon")).not.toBe("گہرا مرون");
-    learnColorUrdu("Maroon", "گہرا مرون");
-    expect(colorValueInUrdu("maroon")).toBe("گہرا مرون");
-  });
-
-  it("lets a human correction override the floor's own list too, once taught", () => {
-    expect(colorValueInUrdu("black")).toBe("سیاہ");
-    learnColorUrdu("Black", "کالا");
+  it("follows the list as it is edited: a changed Urdu prints, a removed colour is spelled out", () => {
+    publishColorTranslations(seeded.map((row) => (row.englishName === "Black" ? { ...row, urduName: "کالا" } : row)).filter((row) => row.englishName !== "Sky"));
     expect(colorValueInUrdu("BLACK")).toBe("کالا");
+    expect(colorValueInUrdu("sky")).not.toBe("سکائ");
+    expect(/[؀-ۿ]/.test(colorValueInUrdu("sky"))).toBe(true);
   });
 
-  it("ignores a blank correction rather than teaching an empty mapping", () => {
-    learnColorUrdu("Teal", "   ");
-    expect(colorValueInUrdu("teal")).not.toBe("");
+  it("names the owner's new colours", () => {
+    expect(colorValueInUrdu("Yellow")).toBe("پیلا");
+    expect(colorValueInUrdu("ARMY GREEN")).toBe("آرمی گرین");
+    expect(colorValueInUrdu("coffee")).toBe("کافی");
+    expect(colorValueInUrdu("LIGHT")).toBe("لایٹ");
+    expect(colorValueInUrdu("dark")).toBe("ڈارک");
+  });
+
+  it("keeps a correction this computer learned before the list, only where the list names nothing", () => {
+    window.localStorage.setItem(LEGACY_COLOR_CORRECTIONS_KEY, JSON.stringify({ maroon: "گہرا مرون", black: "کالا" }));
+    publishColorTranslations(seeded);
+    expect(colorValueInUrdu("Maroon")).toBe("گہرا مرون");
+    expect(colorValueInUrdu("BLACK")).toBe("سیاہ");
+  });
+
+  it("reads an Urdu colour back into the list's English, in capitals", () => {
+    expect(colorValueInEnglish("سیاہ")).toBe("BLACK");
+    expect(colorValueInEnglish("آرمی گرین")).toBe("ARMY GREEN");
+    expect(colorValueInEnglish("گرے")).toBeUndefined();
+    expect(colorValueInEnglish("گرے", ["BLACK", "GREY"])).toBe("GREY");
+    expect(colorValueInEnglish("نیلا")).toBeUndefined();
   });
 });

@@ -1983,6 +1983,13 @@ export interface DesktopApi {
   ): Promise<RawMaterialIssueResult>;
   createWorkSection(name: string): Promise<{ accepted: boolean; section?: WorkSection; reason?: string }>;
 
+  // ─── The colour list (docs/45) ────────────────────────────────────────────────
+  // Unknown on purpose: the screen validates what comes back (features/colorTranslation/colorTranslationReply.ts, R25).
+  listColorTranslations(): Promise<unknown>;
+  createColorTranslation(input: { englishName: string; urduName: string }): Promise<unknown>;
+  updateColorTranslation(id: string, input: { englishName: string; urduName: string }): Promise<unknown>;
+  deleteColorTranslation(id: string): Promise<unknown>;
+
   // ─── Machines and the Machine Program ───────────────────────────────────────
   // The machines are master data (Raw Material → Setup). The Machine Program is read-only: the
   // carton QRs the QR Generator registered, per product and colour, derived in the main process.
@@ -2347,6 +2354,8 @@ export interface DesktopApi {
   findProductionReceipt(qrId: string): Promise<{ accepted: boolean; receipt: ProductionReceipt | null; reason?: string }>;
   /** Manual Production: cartons typed in (in dozens) for a machine — its program today, store stock, the ledgers. */
   adjustCartonStock(input: CartonAdjustDraft & { requestId: string }): Promise<{ accepted: boolean; reason?: string; duplicate?: boolean }>;
+  /** The Carton Stock page's matrix (@erp/domain CartonStockMatrix), checked by the page. Administrators only. */
+  getCartonStockMatrix(query: { search: string; series: string; page: number }): Promise<unknown>;
   getCartonStockReconciliation(query: { page: number; pageSize: number }): Promise<{ accepted: boolean; reason?: string; reconciliation?: CartonReconciliation | null }>;
   recordManualProduction(input: { requestId: string; machineId: string; articleSizeId: string; color: string; dozens: string }): Promise<ManualProductionResult>;
   /** One business day's Manual Production (YYYY-MM-DD), newest first, a page at a time. */

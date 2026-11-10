@@ -26,6 +26,8 @@ export const DATA_KIND = {
   BILLING: "BILLING",
   /** Cash vouchers, so party balances too. */
   CASH: "CASH",
+  /** The colour list: what each English colour is called in Urdu (docs/45). */
+  COLORS: "COLORS",
   /** What this computer is waiting on: anything arriving can settle or start a wait. */
   SYNC: "SYNC",
 } as const;
@@ -102,6 +104,7 @@ const KIND_OF_TYPE: Readonly<Record<string, DataKind>> = {
   GATEPASS: DATA_KIND.BILLING,
   SALE_VOUCHER: DATA_KIND.BILLING,
   CASH_VOUCHER: DATA_KIND.CASH,
+  COLOR_TRANSLATION: DATA_KIND.COLORS,
 };
 
 /**

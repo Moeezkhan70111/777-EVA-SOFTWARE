@@ -49,6 +49,10 @@ export const LEASED_CHANNELS: Readonly<Record<string, readonly LeaseDomain[]>> =
 
   // ── Master data: materials and their taxonomy, units, parties, machines, work sections ──
   [IPC.createWorkSection]: MASTER,
+  // The colour list (docs/45).
+  [IPC.createColorTranslation]: MASTER,
+  [IPC.updateColorTranslation]: MASTER,
+  [IPC.deleteColorTranslation]: MASTER,
   [IPC.setRawMaterialMovementConfig]: MASTER,
   [IPC.applyRawMaterialSetupToCategory]: MASTER,
   [IPC.createInventoryUnit]: MASTER,

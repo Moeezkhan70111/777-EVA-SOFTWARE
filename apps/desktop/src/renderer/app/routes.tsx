@@ -55,6 +55,8 @@ export const APP_ROUTES = [
   "qr-management",
   "qr-journey",
   "discount-policy",
+  // The shared English-to-Urdu colour list (docs/45).
+  "color-translation",
   "sale-voucher-list",
   "sale-voucher-form",
   "purchase-voucher-list",

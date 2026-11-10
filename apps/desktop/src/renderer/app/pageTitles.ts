@@ -48,6 +48,7 @@ export const PAGE_TITLES: Record<AppRoute, string> = {
   "qr-management": "QR Management",
   "qr-journey": "QR Journey",
   "discount-policy": "Discount Policy",
+  "color-translation": copy.nav.items.colorTranslation.label,
   "sale-voucher-form": "Sale Voucher",
   "sale-voucher-list": "Sale Vouchers",
   "purchase-voucher-form": "Purchase Bill",

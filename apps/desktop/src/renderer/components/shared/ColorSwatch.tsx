@@ -45,14 +45,24 @@ const UNKNOWN_COLOUR = "#64748b";
 
 export const getColorHex = (color: string): string => COLOR_HEX[color.trim().toLowerCase()] ?? UNKNOWN_COLOUR;
 
+/** "blackblue" as ["black", "blue"] when both halves are known colours; otherwise the name as it is. */
+const splitJoined = (name: string): string[] => {
+  for (let cut = 3; cut <= name.length - 3; cut += 1) {
+    if (COLOR_HEX[name.slice(0, cut)] && COLOR_HEX[name.slice(cut)]) return [name.slice(0, cut), name.slice(cut)];
+  }
+  return [name];
+};
+
 /**
- * The swatch's fill. A colour the store names from two (BLACK RED) is drawn as both, half and half;
- * one nobody has mapped is a neutral grey, and its printed name still says what it is.
+ * The swatch's fill. A colour the store names from two (BLACK RED, or BLACKRED) is drawn as both,
+ * half and half; one nobody has mapped is a neutral grey, and its printed name still says what it is.
  */
 export const swatchBackground = (color: string): string => {
   const normalized = color.trim().toLowerCase();
   if (COLOR_HEX[normalized]) return COLOR_HEX[normalized];
-  const [first, second] = normalized.split(/\s+/).flatMap((word) => COLOR_HEX[word] ?? []);
+  // Products store a pair of colours joined (BLACKBLUE) as well as spaced (BLACK BLUE).
+  const words = normalized.includes(" ") ? normalized.split(/\s+/) : splitJoined(normalized);
+  const [first, second] = words.flatMap((word) => COLOR_HEX[word] ?? []);
   if (first && second) return `linear-gradient(90deg, ${first} 50%, ${second} 50%)`;
   return first ?? UNKNOWN_COLOUR;
 };

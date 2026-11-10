@@ -1,5 +1,6 @@
 import type { AppRoute } from "../../app/routes";
 import {
+  CARTON_STOCK_ARTWORK_URL,
   CREATE_GATEPASS_ARTWORK_URL,
   DANA_STOCK_ARTWORK_URL,
   GATEPASS_LIST_ARTWORK_URL,
@@ -151,6 +152,11 @@ export const NAV_SECTIONS: readonly NavSection[] = [
     tone: "info",
     items: [
       item("stock", t.stock, "stock"),
+      // First of the Dashboard's cards. Administrators only (ADMIN_ONLY_ROUTES), so only they see it.
+      {
+        ...item("carton-stock", t.cartonStock, "stock"),
+        feature: { artwork: CARTON_STOCK_ARTWORK_URL, theme: "sky", artworkHasScene: true, badge: "stock", onDashboard: true },
+      },
       {
         ...item("upper-stock", t.upperStock, "upper"),
         feature: { artwork: UPPER_STOCK_ARTWORK_URL, theme: "sky", artworkHasScene: true, badge: "upper", onDashboard: true },
@@ -159,7 +165,6 @@ export const NAV_SECTIONS: readonly NavSection[] = [
         ...item("dana-stock", t.danaStock, "dana"),
         feature: { artwork: DANA_STOCK_ARTWORK_URL, theme: "sky", artworkHasScene: true, badge: "dana", onDashboard: true },
       },
-      item("carton-stock", t.cartonStock, "stock"),
       item("raw-material", t.rawMaterial, "stock", ["raw-material-qr-generator"]),
       item("history", t.stockHistory, "history", ["stock-history"]),
       item("daily-production", t.dailyProduction, "daily"),
@@ -183,6 +188,7 @@ export const NAV_SECTIONS: readonly NavSection[] = [
       item("qr-management", t.qrManagement, "qr"),
       item("qr-journey", t.qrJourney, "qr"),
       item("discount-policy", t.discountPolicy, "balance"),
+      item("color-translation", t.colorTranslation, "settings"),
     ],
   },
   {

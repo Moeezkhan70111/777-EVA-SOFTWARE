@@ -67,6 +67,7 @@ import { gatepassCartonsMethods, type GatepassCartonsMethods } from "./database/
 import { cartonStockAdjustMethods, type CartonStockAdjustMethods } from "./database/cartonStockAdjust.js";
 import { cartonStockReconciliationMethods, type CartonStockReconciliationMethods } from "./database/cartonStockReconciliation.js";
 import { savedRequestMethods, type SavedRequestMethods } from "./database/savedRequests.js";
+import { colorTranslationsMethods, type ColorTranslationsMethods } from "./database/colorTranslations.js";
 
 import type { BackupRecord, HealthSnapshot, MoneyDriftSummary, MoneyDriftViolation, SqliteDatabaseOptions } from "./database/types.js";
 
@@ -74,6 +75,7 @@ import type { BackupRecord, HealthSnapshot, MoneyDriftSummary, MoneyDriftViolati
 // re-exported here so `@erp/data` keeps one import surface.
 export * from "./database/types.js";
 export { orderBy } from "./database/shared.js";
+export { ColorTranslationRefusedError, type ColorTranslationInput } from "./database/colorTranslations.js";
 export type { MutableTransactionContext } from "./database/shared.js";
 export type { ContractorLedgerAccount, ContractorLedgerReport } from "./database/contractorLedger.js";
 export {
@@ -1662,7 +1664,8 @@ export interface SqliteDatabase
     GatepassCartonsMethods,
     CartonStockAdjustMethods,
     CartonStockReconciliationMethods,
-    SavedRequestMethods {}
+    SavedRequestMethods,
+    ColorTranslationsMethods {}
 
 Object.assign(
   SqliteDatabase.prototype,
@@ -1710,5 +1713,6 @@ Object.assign(
   gatepassCartonsMethods,
   cartonStockAdjustMethods,
   cartonStockReconciliationMethods,
-  savedRequestMethods
+  savedRequestMethods,
+  colorTranslationsMethods
 );
