@@ -77,6 +77,8 @@ export const CloudSyncSection: React.FC<CloudSyncSectionProps> = ({ isAdmin }) =
 
   const [status, setStatus] = useState<CloudSyncStatus | null>(null);
   const [statusFailed, setStatusFailed] = useState(false);
+  // Counts successful status reads, so the Carton Cloud panel reads again with this section (Sync Now included).
+  const [statusReads, setStatusReads] = useState(0);
   const [parked, setParked] = useState<DeadLetterEvent[] | null>(null);
   const [parkedFailed, setParkedFailed] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
@@ -91,6 +93,7 @@ export const CloudSyncSection: React.FC<CloudSyncSectionProps> = ({ isAdmin }) =
       const answer: unknown = await api.getCloudSyncStatus();
       if (!isStatus(answer)) throw new Error("unexpected shape");
       setStatus(answer);
+      setStatusReads((reads) => reads + 1);
     } catch {
       setStatus(null);
       setStatusFailed(true);
@@ -218,7 +221,7 @@ export const CloudSyncSection: React.FC<CloudSyncSectionProps> = ({ isAdmin }) =
       {isAdmin && status?.configured === true && <BackfillPanel />}
 
       {/* Carton Cloud: off until an administrator activates it, once, on go-live day. */}
-      {isAdmin && status?.configured === true && <CartonCloudPanel />}
+      {isAdmin && status?.configured === true && <CartonCloudPanel refreshKey={statusReads} />}
 
       {confirming !== null && (
         <ConfirmDialog

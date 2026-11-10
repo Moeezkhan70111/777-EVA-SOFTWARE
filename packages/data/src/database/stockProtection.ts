@@ -240,8 +240,11 @@ export interface CartonCloudStatus {
 function leaseViews(db: BuildHandle, projectKey: string | null, deviceId: string | null, nowMs: number): { leases: CartonCloudLeaseView[]; problems: string[] } {
   const problems: string[] = [];
   const leases: CartonCloudLeaseView[] = [];
+  // Never read from the cloud: cartonCloudStatus gives that one reason, and activation is still refused. Adding "apply
+  // cloud migrations 026-028" for each lease blamed the cloud for what is only this computer not having synced yet.
+  if (projectKey === null) return { leases, problems };
   for (const domain of CARTON_CLOUD_REQUIRED_DOMAINS) {
-    const row = projectKey === null ? undefined : first(db, "SELECT holder_device_id, holder_label, epoch, fetched_at FROM sync_domain_leases WHERE domain = ? AND project_key = ?", domain, projectKey);
+    const row = first(db, "SELECT holder_device_id, holder_label, epoch, fetched_at FROM sync_domain_leases WHERE domain = ? AND project_key = ?", domain, projectKey);
     if (row === undefined) {
       problems.push(`The cloud has not reported the ${domain} lease. Apply cloud migrations 026-028, then sync.`);
       continue;

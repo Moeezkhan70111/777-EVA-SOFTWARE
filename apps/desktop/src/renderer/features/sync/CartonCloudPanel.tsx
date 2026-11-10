@@ -9,8 +9,17 @@ import type { CartonCloudStatus } from "../../types/desktopApi";
 // Carton Cloud activation, for an administrator (main/ipc/cartonCloud.ts). Off until activated: carton stock,
 // gatepasses, bills and cash vouchers made here stay here. Activating is once, for ever, and only what is made after it
 // may ever reach the cloud. The screen says what stops it, and asks before it does it.
+//
+// READ AGAIN WHENEVER THE CLOUD SYNC SECTION READS AGAIN (`refreshKey`). It used to read once, when Settings opened. On
+// a new computer that is before its first pull, so after Sync Now the section showed the log read to the end while
+// this panel still said the computer had never read from the cloud and named no lease holder (PC1, 11 Nov 2026).
 
-export const CartonCloudPanel: React.FC = () => {
+interface CartonCloudPanelProps {
+  /** Changes each time the surrounding Cloud Sync section has read its status again. */
+  readonly refreshKey?: number;
+}
+
+export const CartonCloudPanel: React.FC<CartonCloudPanelProps> = ({ refreshKey = 0 }) => {
   const api = useDesktopApi();
   const [status, setStatus] = useState<CartonCloudStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -33,7 +42,7 @@ export const CartonCloudPanel: React.FC = () => {
 
   useEffect(() => {
     void load();
-  }, [load]);
+  }, [load, refreshKey]);
 
   const activate = async (): Promise<string | null> => {
     if (status?.projectKey == null) return copy.cartonCloud.failed;
@@ -50,9 +59,9 @@ export const CartonCloudPanel: React.FC = () => {
   return (
     <div className="stack">
       <div className="settings-section-title">{copy.cartonCloud.title}</div>
-      {loading ? <StateView kind="loading" compact message={copy.cartonCloud.loading} /> : null}
+      {loading && status === null ? <StateView kind="loading" compact message={copy.cartonCloud.loading} /> : null}
       {!loading && error !== null ? <StateView kind="error" compact message={error} onRetry={() => void load()} /> : null}
-      {!loading && error === null && status !== null ? <StatusView status={status} onActivate={() => setConfirming(true)} /> : null}
+      {error === null && status !== null ? <StatusView status={status} onActivate={() => setConfirming(true)} /> : null}
       {confirming && status !== null ? (
         <ConfirmDialog
           title={copy.cartonCloud.confirmTitle}

@@ -63,6 +63,19 @@ describe("Carton Cloud activation", () => {
     expect(screen.queryByRole("button", { name: "Activate Carton Cloud" })).toBeNull();
   });
 
+  it("reads again when the Cloud Sync section reads again: a first pull after opening is not hidden (PC1)", async () => {
+    const NEVER = { ...OFF, projectKey: null, leases: [], problems: ["This computer has never read from the cloud. Set up cloud sync and sync once."] };
+    const getCartonCloudStatus = vi.fn().mockResolvedValue({ accepted: true, value: NEVER });
+    (window as unknown as { desktop: unknown }).desktop = { api: { getCartonCloudStatus, activateCartonCloud: vi.fn() } };
+    const { rerender } = render(<CartonCloudPanel refreshKey={1} />);
+    expect(await screen.findByText(/never read from the cloud/)).toBeTruthy();
+    getCartonCloudStatus.mockResolvedValue({ accepted: true, value: OFF });
+    rerender(<CartonCloudPanel refreshKey={2} />);
+    expect(await screen.findByText("CARTON_STOCK: PC 2 (this computer)")).toBeTruthy();
+    expect(screen.queryByText(/never read from the cloud/)).toBeNull();
+    expect(getCartonCloudStatus).toHaveBeenCalledTimes(2);
+  });
+
   it("shows a failure to read with a retry", async () => {
     const { getCartonCloudStatus } = withApi(new Error("no answer"));
     expect(await screen.findByText("no answer")).toBeTruthy();
