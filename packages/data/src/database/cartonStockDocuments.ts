@@ -259,9 +259,10 @@ export const cartonStockDocumentMethods = {
     const variant = this.db
       .prepare(
         `SELECT id, color FROM product_variants
-          WHERE article = ? AND size = ? AND color = ? AND deleted_at IS NULL AND COALESCE(status, 'ACTIVE') <> 'DISABLED' LIMIT 1`
+          WHERE UPPER(TRIM(article)) = UPPER(TRIM(?)) AND UPPER(TRIM(size)) = UPPER(TRIM(?)) AND UPPER(TRIM(color)) = ? AND deleted_at IS NULL AND COALESCE(status, 'ACTIVE') <> 'DISABLED'
+          ORDER BY (color = ?) DESC LIMIT 1`
       )
-      .get(text(size.article), text(size.size), wanted) as Row | undefined;
+      .get(text(size.article), text(size.size), wanted, wanted) as Row | undefined;
     if (!variant) {
       throw new CartonAdjustmentRefused(`${text(size.article)} ${text(size.size)} has no active colour ${wanted}. Add it with + beside Colour, then add the line again.`);
     }
@@ -306,7 +307,7 @@ export const cartonStockDocumentMethods = {
       const now = new Date().toISOString();
       for (const size of sizes) {
         const live = this.db
-          .prepare("SELECT 1 AS here FROM product_variants WHERE article = ? AND color = ? AND size = ? AND deleted_at IS NULL AND COALESCE(status, 'ACTIVE') <> 'DISABLED'")
+          .prepare("SELECT 1 AS here FROM product_variants WHERE UPPER(TRIM(article)) = UPPER(TRIM(?)) AND UPPER(TRIM(color)) = ? AND UPPER(TRIM(size)) = UPPER(TRIM(?)) AND deleted_at IS NULL AND COALESCE(status, 'ACTIVE') <> 'DISABLED'")
           .get(text(size.article), color, text(size.size));
         if (live) continue;
         const paisa = (value: unknown): number | null => (value == null ? null : Number(value));
@@ -338,21 +339,26 @@ export const cartonStockDocumentMethods = {
     // matches on it). A colour is NOT found through product_variants.article_size_id: on computers filled from the
     // cloud, a variant can point at another row of the same article and size, or at none, and finding it through that
     // link showed an existing colour as missing, offered to add it, added nothing, and then refused the post (PC1, 11
-    // Nov 2026). One row per size: a size held twice in article_sizes is shown once.
+    // Nov 2026). One row per size. Article, size and colour are compared ignoring case and outer spaces ("Black",
+    // "BLACK "), so a colour stored a little differently is still found and never offered as new.
     const live = "pv.deleted_at IS NULL AND COALESCE(pv.status, 'ACTIVE') <> 'DISABLED'";
     const name = text(article).trim();
     const rows = this.db
       .prepare(
         `WITH sizes AS (
-           SELECT MIN(id) AS id, size FROM article_sizes WHERE article = ? AND status = 'ACTIVE' AND deleted_at IS NULL GROUP BY size
+           SELECT MIN(id) AS id, size FROM article_sizes WHERE UPPER(TRIM(article)) = UPPER(TRIM(?)) AND status = 'ACTIVE' AND deleted_at IS NULL GROUP BY UPPER(TRIM(size))
          ), colours AS (
-           SELECT DISTINCT pv.color FROM product_variants pv WHERE pv.article = ? AND ${live}
+           SELECT DISTINCT UPPER(TRIM(pv.color)) AS color FROM product_variants pv WHERE UPPER(TRIM(pv.article)) = UPPER(TRIM(?)) AND ${live}
          )
          SELECT s.id AS article_size_id, s.size, c.color, pv.id AS variant_id, ${IN_STORE_STOCK_SQL} AS in_store,
                 EXISTS (SELECT 1 FROM carton_stock_adjustment_lines l JOIN carton_stock_adjustments d ON d.id = l.adjustment_id
                          WHERE d.kind = 'OPENING' AND l.product_variant_id = pv.id) AS has_opening
            FROM sizes s CROSS JOIN colours c
-           LEFT JOIN product_variants pv ON pv.article = ? AND pv.size = s.size AND pv.color = c.color AND ${live}`
+           LEFT JOIN product_variants pv ON pv.id = (
+             SELECT v.id FROM product_variants v
+              WHERE UPPER(TRIM(v.article)) = UPPER(TRIM(?)) AND UPPER(TRIM(v.size)) = UPPER(TRIM(s.size)) AND UPPER(TRIM(v.color)) = c.color
+                AND v.deleted_at IS NULL AND COALESCE(v.status, 'ACTIVE') <> 'DISABLED'
+              ORDER BY (v.color = c.color) DESC LIMIT 1)`
       )
       .all(name, name, name) as Row[];
     return rows.map((row) => ({

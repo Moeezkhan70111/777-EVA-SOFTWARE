@@ -230,3 +230,17 @@ test("a colour linked to another row of the same size, or to none, is found and 
     assert.equal(figureOf(fixture, "SK6", "10/13", "BLACK"), 4);
   });
 });
+
+test("a colour stored in another case or with a stray space shows in the list, is not added again, and takes stock", () => {
+  withFixture((fixture) => {
+    const { db, sku } = fixture;
+    // BLACK on 7/10 stored as "black " and linked to no size row, as an older screen or another computer may have left it.
+    db.db.prepare("UPDATE product_variants SET color = 'black ', article_size_id = NULL WHERE article = 'SK6' AND size = '7/10' AND color = 'BLACK'").run();
+    const black = db.cartonAdjustmentArticle("SK6").filter((c) => c.color === "BLACK");
+    assert.equal(black.length, 3, "BLACK is in the list once per size");
+    assert.equal(black.find((c) => c.size === "7/10")?.colorMissing, false, "and 7/10 has it");
+    assert.equal(db.addColorToArticle({ article: "SK6", color: "Black" }).added, 0, "never added a second time");
+    post(db, "OPENING", [line(sku("SK6", "7/10"), "BLACK", 8)]);
+    assert.equal(figureOf(fixture, "SK6", "7/10", "BLACK"), 8);
+  });
+});

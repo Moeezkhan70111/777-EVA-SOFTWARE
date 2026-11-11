@@ -604,6 +604,14 @@ export const copy = {
       `Version ${version} has been downloaded. Restart 777 ERP to finish installing it — your work is saved.`,
     restartNow: "Restart Now",
     installRefused: "The update could not be installed",
+    upToDateTitle: "✓ Up To Date",
+    upToDateBody: (version: string) => `You have the latest version (${version}).`,
+    offTitle: "⚠ Updates Are Off On This Computer",
+    failedTitle: "⚠ Could Not Check For Updates",
+    failedBody: "GitHub could not be reached. Check the internet connection and try again.",
+    stillDownloadingTitle: "Still Downloading",
+    stillDownloadingBody: "The new version is still downloading. It installs by itself when 777 ERP is next closed.",
+    tryAgain: (version: string) => `Version ${version} could not be installed. Close 777 ERP and open it again.`,
     // Raised only after repeated failures over days, never for one missed check.
     stalledTitle: "⚠ Not Receiving Updates",
     stalledBody: (days: number, reason: string) =>
@@ -2924,6 +2932,12 @@ export const copy = {
       pin: "Keep sidebar open",
       backup: "Backup",
       backupHint: "Create backup (Ctrl+B)",
+      update: "Update",
+      updateHint: "Check for a new version now, and install it straight away",
+      updateChecking: "Checking…",
+      updateDownloading: "Downloading…",
+      updatePercent: (percent: number) => `Downloading ${percent}%`,
+      updateInstalling: "Restarting…",
       version: (version: string) => `777 ERP ${version}`,
     },
     sections: {

@@ -9,6 +9,7 @@ import { SidebarNav } from "../../features/navigation/SidebarNav";
 import { useRailTooltip } from "../../features/navigation/useRailTooltip";
 import { useSidebarRail, useSlimRailScroll } from "../../features/navigation/useSidebarRail";
 import { SyncStatusIndicator } from "../../features/sync/SyncStatusIndicator";
+import { UpdateButton } from "../../features/navigation/UpdateButton";
 
 // Every permission an administrator can give a role or a user (Profile & Roles). A page the
 // user holds the permission for appears as a card on their Home and as a row in the sidebar
@@ -182,6 +183,8 @@ export const Navbar = ({ current, onSelect, appVersion, onBackup, user, hiddenRo
           {/* Whether this computer is sharing its work with the others, in four words
               (features/sync/syncHealth.ts). */}
           {user && <SyncStatusIndicator onOpenSettings={() => onSelect("settings")} />}
+          {/* Check GitHub now, and install a newer version straight away (hooks/useUpdateNow.ts). */}
+          {user && <UpdateButton />}
           <RailLink icon={RAIL_ICONS.backup} label={copy.nav.rail.backup} tip={copy.nav.rail.backupHint} onClick={onBackup} />
           <RailLink icon={RAIL_ICONS.pin} label={copy.nav.rail.pin} pressed={rail.pinned} className="nav-pin" onClick={rail.togglePinned} />
           <span className="navbar-version" data-tip={copy.nav.rail.version(appVersion)}>

@@ -80,6 +80,12 @@ export const NotificationsProvider = ({ children }: { children: React.ReactNode 
   return <NotificationsContext.Provider value={value}>{children}</NotificationsContext.Provider>;
 };
 
+/**
+ * The notices, or undefined outside a provider. For chrome that must never be the reason a screen fails to render --
+ * the navigation rail's Update button, which is also drawn by tests that render the rail alone.
+ */
+export const useOptionalNotifications = (): NoticeApi | undefined => useContext(NotificationsContext);
+
 export const useNotifications = (): NoticeApi => {
   const ctx = useContext(NotificationsContext);
   if (!ctx) {
