@@ -1719,6 +1719,16 @@ export interface AccountsStatus {
 
 /** What the member details' Save sends (data users.ts): a null role or job role leaves it as it is. */
 /** One adjustment as the form sends it. */
+/** A Stock Adjustment document as the page posts it (docs/46). The main process checks every field again. */
+export interface CartonAdjustmentPostDraft {
+  requestId: string;
+  kind: string;
+  businessDate: string;
+  reason: string;
+  remarks: string;
+  lines: Array<{ articleSizeId: string; color: string; direction: string; cartons: number }>;
+}
+
 export interface CartonAdjustDraft {
   articleSizeId: string;
   color: string;
@@ -2356,6 +2366,12 @@ export interface DesktopApi {
   adjustCartonStock(input: CartonAdjustDraft & { requestId: string }): Promise<{ accepted: boolean; reason?: string; duplicate?: boolean }>;
   /** The Carton Stock page's matrix (@erp/domain CartonStockMatrix), checked by the page. Administrators only. */
   getCartonStockMatrix(query: { search: string; series: string; page: number }): Promise<unknown>;
+  /** Stock Adjustment (docs/46): one document, all lines or none, under the carton lease. Administrators only. Checked by the page. */
+  postCartonStockAdjustment(input: CartonAdjustmentPostDraft): Promise<unknown>;
+  /** One article's colours and sizes with their figure in store and whether each has opening stock. Checked by the page. */
+  getCartonAdjustmentArticle(article: string): Promise<unknown>;
+  /** The posted documents, newest first. Checked by the page. */
+  listCartonStockAdjustments(query: { page: number; pageSize: number }): Promise<unknown>;
   getCartonStockReconciliation(query: { page: number; pageSize: number }): Promise<{ accepted: boolean; reason?: string; reconciliation?: CartonReconciliation | null }>;
   recordManualProduction(input: { requestId: string; machineId: string; articleSizeId: string; color: string; dozens: string }): Promise<ManualProductionResult>;
   /** One business day's Manual Production (YYYY-MM-DD), newest first, a page at a time. */

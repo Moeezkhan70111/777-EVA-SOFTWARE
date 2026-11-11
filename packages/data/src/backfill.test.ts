@@ -137,7 +137,7 @@ test("the backfill marks everything under the leases held now, and a material an
     const outcome = db.runBackfill(NOW);
     assert.equal(outcome.done, true);
     assert.equal(n(db, "SELECT COUNT(*) AS n FROM sync_dirty_records WHERE aggregate_type = 'STOCK_EVENT' AND lease_epoch = 3"), 3, "own movements only");
-    assert.equal(n(db, "SELECT COUNT(*) AS n FROM sync_dirty_records WHERE aggregate_type = 'INVENTORY_ITEM' AND lease_epoch = 2"), 2);
+    assert.equal(n(db, "SELECT COUNT(*) AS n FROM sync_dirty_records WHERE aggregate_type = 'INVENTORY_ITEM' AND lease_epoch = 3"), 2, "materials under the store's lease (cloud 031)");
     assert.equal(n(db, "SELECT COUNT(*) AS n FROM sync_dirty_records WHERE aggregate_type IN ('RAW_MATERIAL_QR_BATCH', 'RAW_MATERIAL_QR') AND lease_epoch = 3"), 3, "the run and its packets, marked");
     assert.deepEqual(sendable(db), [], "nothing goes before the materials it names");
     assert.ok(db.db.prepare("SELECT 1 FROM app_settings WHERE setting_key = ?").get(BACKFILL_SETTING_KEY));
@@ -150,9 +150,9 @@ test("the backfill marks everything under the leases held now, and a material an
     assert.equal(buildStockEvents(db.db, NOW).queued, 3);
     const order = sendable(db);
     assert.ok(order.indexOf("PARTY:p-1:1@2") < order.indexOf("RAW_MATERIAL_QR_BATCH:b-1@3"), "the supplier before the run");
-    assert.ok(order.indexOf("INVENTORY_ITEM:i-1:1@2") < order.indexOf("RAW_MATERIAL_QR_BATCH:b-1@3"), "the material before the run");
+    assert.ok(order.indexOf("INVENTORY_ITEM:i-1:1@3") < order.indexOf("RAW_MATERIAL_QR_BATCH:b-1@3"), "the material before the run");
     assert.ok(order.indexOf("RAW_MATERIAL_QR_BATCH:b-1@3") < order.indexOf("RAW_MATERIAL_QR:q-1@3"), "the run before its packets");
-    assert.ok(order.indexOf("INVENTORY_ITEM:i-1:1@2") < order.indexOf("STOCK_EVENT:e-1@3"), "the material before its stock");
+    assert.ok(order.indexOf("INVENTORY_ITEM:i-1:1@3") < order.indexOf("STOCK_EVENT:e-1@3"), "the material before its stock");
   });
 });
 
@@ -203,7 +203,7 @@ test("labels queued without an epoch before syncing are marked and queued again,
     buildLeasedRecordRevisions(db.db, NOW);
     buildLabelRuns(db.db, NOW);
     const order = sendable(db);
-    assert.ok(order.indexOf("INVENTORY_ITEM:i-1:1@2") < order.indexOf("RAW_MATERIAL_QR_BATCH:b-1@3"), "queued again, behind its material");
+    assert.ok(order.indexOf("INVENTORY_ITEM:i-1:1@3") < order.indexOf("RAW_MATERIAL_QR_BATCH:b-1@3"), "queued again, behind its material");
     const payload = JSON.parse(String((db.db.prepare("SELECT payload_json FROM sync_outbox WHERE dedupe_key = 'RAW_MATERIAL_QR_BATCH:b-1'").get() as { payload_json: string }).payload_json)) as Record<string, unknown>;
     assert.deepEqual([payload.batchId, payload.itemId, payload.quantity], ["b-1", "i-1", 2], "rebuilt whole from the run itself");
   });

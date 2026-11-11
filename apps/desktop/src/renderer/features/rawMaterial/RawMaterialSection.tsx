@@ -111,10 +111,12 @@ const RawMaterialSectionBody: React.FC<RawMaterialSectionProps> = ({
  * process refuses the writes themselves.
  */
 const SECTION_WRITES: Readonly<Record<WorkspaceTab, readonly LeaseDomain[]>> = {
-  stock: [LEASE_DOMAIN.RAW_MATERIAL_STORE, LEASE_DOMAIN.MASTER_DATA],
+  // Materials, their categories and units are the store's to write, with their stock (cloud 031, docs/47). The
+  // machines panel in Setup is general master data and says so itself (MachinesPanel).
+  stock: [LEASE_DOMAIN.RAW_MATERIAL_STORE],
   labels: [LEASE_DOMAIN.RAW_MATERIAL_STORE],
   receipts: [],
-  setup: [LEASE_DOMAIN.MASTER_DATA],
+  setup: [LEASE_DOMAIN.RAW_MATERIAL_STORE],
 };
 
 export const RawMaterialSection: React.FC<RawMaterialSectionProps> = (props) => (

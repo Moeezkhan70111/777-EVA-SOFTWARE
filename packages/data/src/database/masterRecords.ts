@@ -35,7 +35,8 @@ export type MasterRecordType =
   | typeof SYNC_AGGREGATE.MANUAL_PRODUCTION_ENTRY
   | typeof SYNC_AGGREGATE.GATEPASS
   | typeof SYNC_AGGREGATE.SALE_VOUCHER
-  | typeof SYNC_AGGREGATE.CASH_VOUCHER;
+  | typeof SYNC_AGGREGATE.CASH_VOUCHER
+  | typeof SYNC_AGGREGATE.CARTON_STOCK_ADJUSTMENT;
 
 /** A column naming another record that must be on this computer before this row can be written. */
 export interface RecordReference {
@@ -96,6 +97,7 @@ export const MASTER_RECORD_TYPES: readonly MasterRecordType[] = [
   SYNC_AGGREGATE.GATEPASS,
   SYNC_AGGREGATE.SALE_VOUCHER,
   SYNC_AGGREGATE.CASH_VOUCHER,
+  SYNC_AGGREGATE.CARTON_STOCK_ADJUSTMENT,
 ];
 
 export const MASTER_RECORDS: Readonly<Record<MasterRecordType, RecordTableSpec>> = {
@@ -198,6 +200,11 @@ export const MASTER_RECORDS: Readonly<Record<MasterRecordType, RecordTableSpec>>
     localColumns: ["request_fingerprint"],
     references: [partyRef("party_id")],
     children: [{ table: "cash_voucher_lines", parentColumn: "voucher_id", references: [partyRef("party_id")] }],
+  },
+  // A Stock Adjustment document (docs/46). Each line names the movement it made; the movement travels on its own.
+  [SYNC_AGGREGATE.CARTON_STOCK_ADJUSTMENT]: {
+    table: "carton_stock_adjustments",
+    children: [{ table: "carton_stock_adjustment_lines", parentColumn: "adjustment_id", references: [variantRef] }],
   },
 };
 

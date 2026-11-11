@@ -65,6 +65,7 @@ import { manualProductionMethods, type ManualProductionMethods } from "./databas
 import { manualProductionVoidMethods, type ManualProductionVoidMethods } from "./database/manualProductionVoid.js";
 import { gatepassCartonsMethods, type GatepassCartonsMethods } from "./database/gatepassCartons.js";
 import { cartonStockAdjustMethods, type CartonStockAdjustMethods } from "./database/cartonStockAdjust.js";
+import { cartonStockDocumentMethods, type CartonStockDocumentMethods } from "./database/cartonStockDocuments.js";
 import { cartonStockReconciliationMethods, type CartonStockReconciliationMethods } from "./database/cartonStockReconciliation.js";
 import { savedRequestMethods, type SavedRequestMethods } from "./database/savedRequests.js";
 import { colorTranslationsMethods, type ColorTranslationsMethods } from "./database/colorTranslations.js";
@@ -171,6 +172,16 @@ export {
 } from "./database/cartonStock.js";
 export type { CartonSql, CartonStockBuildResult, CartonStockEventPayload } from "./database/cartonStock.js";
 export { CARTON_ADJUST_DIRECTION, type CartonAdjustDirection, type CartonAdjustInput, type CartonAdjustResult } from "./database/cartonStockAdjust.js";
+export {
+  CartonAdjustmentRefused,
+  type CartonAdjustmentChoice,
+  type CartonAdjustmentDocument,
+  type CartonAdjustmentLine,
+  type CartonAdjustmentLineInput,
+  type CartonAdjustmentPage,
+  type CartonAdjustmentPostInput,
+  type CartonAdjustmentPostResult,
+} from "./database/cartonStockDocuments.js";
 export type { CartonReconciliation, CartonReconciliationRow } from "./database/cartonStockReconciliation.js";
 export { RequestConflictError, isRequestId, requestFingerprint } from "./database/requestFingerprint.js";
 export type { CashVoucherInput, CashVoucherSaved } from "./database/cash.js";
@@ -1663,6 +1674,7 @@ export interface SqliteDatabase
     ManualProductionVoidMethods,
     GatepassCartonsMethods,
     CartonStockAdjustMethods,
+    CartonStockDocumentMethods,
     CartonStockReconciliationMethods,
     SavedRequestMethods,
     ColorTranslationsMethods {}
@@ -1712,6 +1724,7 @@ Object.assign(
   manualProductionVoidMethods,
   gatepassCartonsMethods,
   cartonStockAdjustMethods,
+  cartonStockDocumentMethods,
   cartonStockReconciliationMethods,
   savedRequestMethods,
   colorTranslationsMethods

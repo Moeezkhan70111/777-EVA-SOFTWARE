@@ -100,8 +100,9 @@ describe("the lease gate", () => {
     installLeaseGate({ db, deviceId: "desktop-store", dataRoot: "C:/erp" });
     decisions.RAW_MATERIAL_STORE = { allowed: false, domain: "RAW_MATERIAL_STORE", reason: "CATCHING_UP", holderLabel: "Store PC" };
     const listener = vi.fn();
-    ipcMain.handle(IPC.removeInventoryItemForGood, listener);
-    await expect(registered.get(IPC.removeInventoryItemForGood)?.(event, "item-1")).rejects.toMatchObject({ reason: "CATCHING_UP" });
+    // The backfill marks master data and stock together: still both leases (materials alone are the store's, cloud 031).
+    ipcMain.handle(IPC.runBackfill, listener);
+    await expect(registered.get(IPC.runBackfill)?.(event)).rejects.toMatchObject({ reason: "CATCHING_UP" });
     expect(asked).toEqual(["MASTER_DATA", "RAW_MATERIAL_STORE"]);
     expect(listener).not.toHaveBeenCalled();
   });

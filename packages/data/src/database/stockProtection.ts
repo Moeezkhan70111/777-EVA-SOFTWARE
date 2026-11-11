@@ -53,7 +53,15 @@ const STOCK_TABLES = {
  */
 const TABLE_NAMES: readonly string[] = [...Object.values(STOCK_TABLES), "sale_returns"];
 
-export const STOCK_RECORD_TYPES: ReadonlySet<string> = new Set(Object.keys(STOCK_TABLES));
+/**
+ * A Stock Adjustment document (docs/46) is stock too, but it is NOT a cutoff table: adding a table to TABLE_NAMES would
+ * make every activation already made invalid (its cutoff has no entry for it, and its seal covers the list). Its table
+ * only exists from local 107, after go-live, so it is judged by its movements instead: a document is local exactly
+ * when one of the movements it made is (isLocalAdjustmentDocument).
+ */
+const DERIVED_STOCK_TYPES = [SYNC_AGGREGATE.CARTON_STOCK_ADJUSTMENT] as const;
+
+export const STOCK_RECORD_TYPES: ReadonlySet<string> = new Set([...Object.keys(STOCK_TABLES), ...DERIVED_STOCK_TYPES]);
 export const NEVER_SENT_TYPES: ReadonlySet<string> = new Set([SYNC_AGGREGATE.QR_MASTER, SYNC_AGGREGATE.PRODUCTION_PRODUCED]);
 export const NEVER_BACKFILLED_TYPES: ReadonlySet<string> = new Set([...STOCK_RECORD_TYPES, ...NEVER_SENT_TYPES]);
 
@@ -139,6 +147,7 @@ export const cartonCloudIsActive = (db: BuildHandle): boolean => activeCutoff(db
  * had is not news to send). A type that is not stock is never held back here.
  */
 export function isLocalStockRecord(db: BuildHandle, type: string, recordId: string): boolean {
+  if (type === SYNC_AGGREGATE.CARTON_STOCK_ADJUSTMENT) return isLocalAdjustmentDocument(db, recordId);
   const table = (STOCK_TABLES as Record<string, string>)[type];
   if (table === undefined) return false;
   const cutoff = activeCutoff(db);
@@ -160,6 +169,18 @@ function hasCloudPresence(db: BuildHandle, type: string, recordId: string): bool
     return first(db, "SELECT 1 AS here FROM carton_stock_events WHERE id = ? AND replicated_at IS NOT NULL", recordId) !== undefined;
   }
   return first(db, "SELECT 1 AS here FROM sync_record_revisions WHERE aggregate_type = ? AND record_id = ?", type, recordId) !== undefined;
+}
+
+/**
+ * True when a Stock Adjustment document may never be sent: Carton Cloud is not active here, or a movement it made is
+ * local. A document no longer here (never deleted, but read defensively) is local unless the cloud has it.
+ */
+function isLocalAdjustmentDocument(db: BuildHandle, documentId: string): boolean {
+  if (activeCutoff(db) === null) return true;
+  if (!tableExists(db, "carton_stock_adjustment_lines")) return true;
+  const lines = db.prepare("SELECT carton_stock_event_id AS event FROM carton_stock_adjustment_lines WHERE adjustment_id = ?").all(documentId) as Row[];
+  if (lines.length === 0) return !hasCloudPresence(db, SYNC_AGGREGATE.CARTON_STOCK_ADJUSTMENT, documentId);
+  return lines.some((line) => isLocalStockRecord(db, SYNC_AGGREGATE.CARTON_STOCK_EVENT, String(line.event)));
 }
 
 /**

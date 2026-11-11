@@ -9,6 +9,7 @@ export const PAGE_TITLES: Record<AppRoute, string> = {
   stock: "Current Stock",
   "upper-stock": copy.nav.items.upperStock.label,
   "carton-stock": copy.nav.items.cartonStock.label,
+  "stock-adjustment": copy.nav.items.stockAdjustment.label,
   "dana-stock": copy.nav.items.danaStock.label,
   "raw-material": "Raw Material",
   "raw-material-setup": "Raw Material Setup",

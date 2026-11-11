@@ -24,6 +24,7 @@ import {
   buildLeasedRecordRevisions,
   buildStockEvents,
   heldLeaseEpoch,
+  leaseDomainOf,
   readLeasedRecordPayload,
   readStockEventPayload,
   snapshotRecord,
@@ -37,6 +38,8 @@ import { LEASED_RECORD_CONTRACTS, writeOwnRecord } from "./leasedRecordContracts
 import { asRow, type SyncSqlHandle } from "./sqlPort.js";
 
 const ITEM = SYNC_AGGREGATE.INVENTORY_ITEM;
+/** The lease a material is written under. */
+const ITEM_DOMAIN = leaseDomainOf(ITEM) ?? LEASE_DOMAIN.RAW_MATERIAL_STORE;
 /** The revision the old removal sent. The builder makes the restored record the next one. */
 const DELETION_REVISION = 2;
 const RESTORED_REVISION = DELETION_REVISION + 1;
@@ -137,8 +140,9 @@ function databaseRefusals(db: SyncSqlHandle, records: RestoreRecords, expectedDe
   if (!columns.includes("removed_at")) {
     reasons.push("inventory_items has no removed_at column: install the release with migration 102 and start it once first.");
   }
-  if (heldLeaseEpoch(db, LEASE_DOMAIN.MASTER_DATA) === null) {
-    reasons.push("This computer does not hold the master-data lease, so a restored material could not be sent.");
+  // A material travels under the lease its type is written under (the store's, cloud 031), not a fixed one.
+  if (heldLeaseEpoch(db, ITEM_DOMAIN) === null) {
+    reasons.push("This computer does not hold the lease materials are written under, so a restored material could not be sent.");
   }
   if (heldLeaseEpoch(db, LEASE_DOMAIN.RAW_MATERIAL_STORE) === null) {
     reasons.push("This computer does not hold the raw-material store lease, so a movement to zero could not be sent.");
@@ -351,7 +355,7 @@ function checkMovements(db: SyncSqlHandle, records: RestoreRecords): RestoreChec
 }
 
 function checkMarks(db: SyncSqlHandle, records: RestoreRecords): RestoreCheck {
-  const epoch = heldLeaseEpoch(db, LEASE_DOMAIN.MASTER_DATA);
+  const epoch = heldLeaseEpoch(db, ITEM_DOMAIN);
   const markOf = "SELECT lease_epoch FROM sync_dirty_records WHERE aggregate_type = ? AND record_id = ?";
   const unmarked = records.materials.filter((material) => {
     const mark = asRow(db.prepare(markOf).get(ITEM, material.revision.recordId));

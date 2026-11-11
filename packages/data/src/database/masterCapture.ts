@@ -87,6 +87,9 @@ export const MASTER_CAPTURE: readonly MasterTableCapture[] = [
   { table: "dispatch_sessions", record: SYNC_AGGREGATE.SALE_VOUCHER, recordId: `${ROW}.voucher_id` },
   { table: "cash_vouchers", record: SYNC_AGGREGATE.CASH_VOUCHER, recordId: `${ROW}.id` },
   { table: "cash_voucher_lines", record: SYNC_AGGREGATE.CASH_VOUCHER, recordId: `${ROW}.voucher_id` },
+  // A Stock Adjustment document and its lines (docs/46): written once, never changed.
+  { table: "carton_stock_adjustments", record: SYNC_AGGREGATE.CARTON_STOCK_ADJUSTMENT, recordId: `${ROW}.id` },
+  { table: "carton_stock_adjustment_lines", record: SYNC_AGGREGATE.CARTON_STOCK_ADJUSTMENT, recordId: `${ROW}.adjustment_id` },
 ];
 
 /**

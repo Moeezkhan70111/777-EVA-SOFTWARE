@@ -30,6 +30,7 @@ import { registerSyncWaitingHandlers } from "./syncWaiting";
 import { registerBackfillHandlers } from "./backfill";
 import { registerCartonCloudHandlers } from "./cartonCloud";
 import { registerColorTranslationHandlers } from "./colorTranslations";
+import { registerCartonStockAdjustmentHandlers } from "./cartonStockAdjustments";
 import { registerDataChangeTraceHandler } from "./dataChangeTrace";
 
 export type { IpcContext } from "./context";
@@ -69,5 +70,6 @@ export function registerIpcHandlers(ctx: IpcContext): void {
   registerBackfillHandlers(ctx);
   registerCartonCloudHandlers(ctx);
   registerColorTranslationHandlers(ctx);
+  registerCartonStockAdjustmentHandlers(ctx);
   registerDataChangeTraceHandler(ctx);
 }

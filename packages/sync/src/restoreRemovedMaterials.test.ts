@@ -301,7 +301,7 @@ test("refuses a database from before the release", async () => {
 test("refuses when PC2 holds neither lease: nothing it restored could be sent", async () => {
   await withLog((pc2) => {
     run(pc2, "UPDATE sync_domain_leases SET holder_device_id = 'elsewhere'");
-    assert.match(refusalsFor(pc2), /master-data lease/);
+    assert.match(refusalsFor(pc2), /lease materials are written under/);
     assert.match(refusalsFor(pc2), /raw-material store lease/);
   });
 });

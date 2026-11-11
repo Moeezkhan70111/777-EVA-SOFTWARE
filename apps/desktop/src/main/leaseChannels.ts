@@ -9,7 +9,9 @@
 // and cash vouchers replicate (docs/43). The other two (machine programs, approvals) are enforced when
 // they replicate: leasing them before then would lock a computer out of work nothing else can see.
 //
-// A channel that writes BOTH -- an item import, a removal that deletes stock history -- needs both
+// Materials, their categories and units are written under the store's lease with their stock (cloud 031, docs/47),
+// so an item import or a removal that deletes stock history is one lease, the store's. BOTH remains for the backfill.
+// A channel that writes BOTH needs both
 // leases. In phase 1 one computer holds both (docs/37 W.1), so this never splits a write.
 //
 // leaseChannels.test.ts reads every handler module that registers through the guarded ipcMain and
@@ -53,28 +55,28 @@ export const LEASED_CHANNELS: Readonly<Record<string, readonly LeaseDomain[]>> =
   [IPC.createColorTranslation]: MASTER,
   [IPC.updateColorTranslation]: MASTER,
   [IPC.deleteColorTranslation]: MASTER,
-  [IPC.setRawMaterialMovementConfig]: MASTER,
-  [IPC.applyRawMaterialSetupToCategory]: MASTER,
-  [IPC.createInventoryUnit]: MASTER,
-  [IPC.createInventoryUnitConversion]: MASTER,
-  [IPC.createInventoryCategory]: MASTER,
-  [IPC.updateInventoryCategory]: MASTER,
-  [IPC.addInventoryCategoryField]: MASTER,
-  [IPC.updateInventoryCategoryField]: MASTER,
-  [IPC.removeInventoryCategoryField]: MASTER,
-  [IPC.addInventoryFieldOption]: MASTER,
-  [IPC.deleteInventoryFieldOption]: MASTER,
-  [IPC.createInventoryItem]: MASTER,
-  [IPC.setInventoryItemStatus]: MASTER,
-  [IPC.moveInventoryCategory]: MASTER,
-  [IPC.moveInventoryItem]: MASTER,
-  [IPC.setInventoryItemUnitLadder]: MASTER,
-  [IPC.applyUnitLadderToColours]: MASTER,
-  [IPC.saveUnitLadderPreset]: MASTER,
-  [IPC.deleteUnitLadderPreset]: MASTER,
-  [IPC.removeInventoryCategory]: MASTER,
-  [IPC.setInventoryItemUnit]: MASTER,
-  [IPC.updateInventoryItemPrice]: MASTER,
+  [IPC.setRawMaterialMovementConfig]: STORE,
+  [IPC.applyRawMaterialSetupToCategory]: STORE,
+  [IPC.createInventoryUnit]: STORE,
+  [IPC.createInventoryUnitConversion]: STORE,
+  [IPC.createInventoryCategory]: STORE,
+  [IPC.updateInventoryCategory]: STORE,
+  [IPC.addInventoryCategoryField]: STORE,
+  [IPC.updateInventoryCategoryField]: STORE,
+  [IPC.removeInventoryCategoryField]: STORE,
+  [IPC.addInventoryFieldOption]: STORE,
+  [IPC.deleteInventoryFieldOption]: STORE,
+  [IPC.createInventoryItem]: STORE,
+  [IPC.setInventoryItemStatus]: STORE,
+  [IPC.moveInventoryCategory]: STORE,
+  [IPC.moveInventoryItem]: STORE,
+  [IPC.setInventoryItemUnitLadder]: STORE,
+  [IPC.applyUnitLadderToColours]: STORE,
+  [IPC.saveUnitLadderPreset]: STORE,
+  [IPC.deleteUnitLadderPreset]: STORE,
+  [IPC.removeInventoryCategory]: STORE,
+  [IPC.setInventoryItemUnit]: STORE,
+  [IPC.updateInventoryItemPrice]: STORE,
   [IPC.createPartyGroup]: MASTER,
   [IPC.createParty]: MASTER,
   [IPC.updateParty]: MASTER,
@@ -87,17 +89,17 @@ export const LEASED_CHANNELS: Readonly<Record<string, readonly LeaseDomain[]>> =
   [IPC.sendMasterRecordAgain]: MASTER,
 
   // ── Both: master data whose change rewrites stock history (docs/37 W.5) ──
-  [IPC.importInventoryItems]: BOTH,
-  [IPC.deleteInventoryItem]: BOTH,
-  [IPC.removeInventoryItemForGood]: BOTH,
-  [IPC.correctInventoryItemUnit]: BOTH,
+  [IPC.importInventoryItems]: STORE,
+  [IPC.deleteInventoryItem]: STORE,
+  [IPC.removeInventoryItemForGood]: STORE,
+  [IPC.correctInventoryItemUnit]: STORE,
   // Approving a removal deletes the item, or the category, with its stock history.
-  [IPC.reviewRemovalRequest]: BOTH,
+  [IPC.reviewRemovalRequest]: STORE,
   // Closing a program puts its cut size back in the store: a stock movement, on a material (and
   // category) it creates the first time. Both are leased writes, so closing is too (found
   // 2026-10-26, when stock movements began to replicate). The program's other store steps --
   // store out, Dana, upper return -- were already store-leased, so its whole life is on the holder.
-  [IPC.completeMachineProgramProduction]: BOTH,
+  [IPC.completeMachineProgramProduction]: STORE,
   // The backfill sends master records and stock history: only the holder of both, caught up.
   [IPC.runBackfill]: BOTH,
 
@@ -108,6 +110,7 @@ export const LEASED_CHANNELS: Readonly<Record<string, readonly LeaseDomain[]>> =
   [IPC.recordManualProduction]: CARTONS,
   [IPC.voidManualProduction]: CARTONS,
   [IPC.adjustCartonStock]: CARTONS,
+  [IPC.postCartonStockAdjustment]: CARTONS,
   [IPC.createGatepass]: CARTONS_AND_SALES,
   [IPC.cancelGatepass]: CARTONS_AND_SALES,
 

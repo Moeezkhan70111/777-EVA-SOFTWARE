@@ -41,7 +41,7 @@ export function installLeaseGate(deps: LeaseGateDeps): void {
 
 const DOMAIN_WORDS: Readonly<Record<LeaseDomain, string>> = {
   [LEASE_DOMAIN.RAW_MATERIAL_STORE]: "the raw material store",
-  [LEASE_DOMAIN.MASTER_DATA]: "master data (materials, units, parties and machines)",
+  [LEASE_DOMAIN.MASTER_DATA]: "master data (parties, machines, products and colours)",
   [LEASE_DOMAIN.SALES_DISPATCH]: "sales and dispatch",
   [LEASE_DOMAIN.ACCOUNTS]: "accounts",
   [LEASE_DOMAIN.MACHINE_PROGRAMS]: "machine programs",

@@ -24,4 +24,5 @@ export * from "./leases.js";
 export * from "./stockEvents.js";
 export * from "./codes.js";
 export * from "./cartonStock.js";
+export * from "./cartonAdjustment.js";
 export * from "./colorTranslation.js";

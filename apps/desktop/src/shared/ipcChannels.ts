@@ -279,6 +279,10 @@ export const IPC = {
   adjustCartonStock: "erp:adjust-carton-stock",
   getCartonStockReconciliation: "erp:get-carton-stock-reconciliation",
   getCartonStockMatrix: "erp:get-carton-stock-matrix",
+  // Stock Adjustment documents: Opening Stock and Stock Adjustment (docs/46).
+  postCartonStockAdjustment: "erp:post-carton-stock-adjustment",
+  getCartonAdjustmentArticle: "erp:get-carton-adjustment-article",
+  listCartonStockAdjustments: "erp:list-carton-stock-adjustments",
   listManualProduction: "erp:list-manual-production",
   voidManualProduction: "erp:void-manual-production",
   // Upper Move Out (Phase 3): upper packets issued to a named machine, and upper stock.

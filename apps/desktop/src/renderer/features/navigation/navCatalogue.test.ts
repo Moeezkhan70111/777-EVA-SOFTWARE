@@ -47,9 +47,10 @@ describe("navigation catalogue", () => {
 
   // Carton adjustments are for administrators alone (owner, 6 Nov). The main process enforces it too.
   it("shows an administrator-only page to an administrator and to no role", () => {
-    expect(ADMIN_ONLY_ROUTES).toEqual(new Set(["carton-stock"]));
+    expect(ADMIN_ONLY_ROUTES).toEqual(new Set(["carton-stock", "stock-adjustment"]));
     const routesFor = (shown: ReturnType<typeof visibleNavSections>) => shown.flatMap((section) => section.items.map((entry) => entry.route));
     expect(routesFor(visibleNavSections(user([...assignable])))).not.toContain("carton-stock");
+    expect(routesFor(visibleNavSections(user([...assignable])))).not.toContain("stock-adjustment");
   });
 
   it("no longer offers the retired navbar permission", () => {

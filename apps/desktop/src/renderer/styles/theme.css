@@ -9792,3 +9792,34 @@ tr.has-error .gp-qty-stepper input { color: var(--err); }
   .ct-learned-row { grid-template-columns: 1fr 1fr; }
   .ct-actions { flex-wrap: wrap; }
 }
+
+/* ── Stock Adjustment (features/stockAdjustment, docs/46) ─────────────────────
+   Opening Stock and Stock Adjustment documents. Cards and tables are the app's own (card, data-table);
+   these are only the page's layout. Tokens only. */
+.sa-page { display: grid; gap: var(--space-4); }
+.sa-card { display: grid; gap: var(--space-3); }
+.sa-card-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-3); flex-wrap: wrap; }
+.sa-number { font-size: 0.75rem; color: var(--text-3); }
+.sa-hint { margin: 0; font-size: 0.8rem; color: var(--text-3); }
+.sa-header-grid,
+.sa-entry-grid { display: grid; gap: var(--space-3); grid-template-columns: minmax(0, 1fr); align-items: end; }
+.sa-toggle { display: inline-flex; border: 1px solid var(--border); border-radius: var(--radius-md); overflow: hidden; }
+.sa-toggle-btn { min-height: 44px; padding: 0 var(--space-4); border: 0; background: var(--surface-1); color: var(--text); font-weight: 600; cursor: pointer; }
+.sa-toggle-btn + .sa-toggle-btn { border-left: 1px solid var(--border); }
+.sa-toggle-btn.is-on { background: var(--accent-tint); color: var(--primary-blue); box-shadow: inset 0 -2px 0 var(--primary-blue); }
+.sa-table-wrap { overflow-x: auto; }
+.sa-table th, .sa-table td { padding: var(--space-2) var(--space-3); white-space: nowrap; }
+.sa-num, .sa-table th.sa-num { text-align: right; font-variant-numeric: tabular-nums; }
+.sa-result { font-weight: 700; color: var(--text); }
+.sa-qty { width: 7rem; min-height: 40px; text-align: right; font-variant-numeric: tabular-nums; }
+.sa-table tr.is-invalid .sa-qty { border-color: var(--danger-strong); }
+.sa-problem { display: block; margin-top: 2px; font-size: 0.72rem; white-space: normal; color: var(--danger-strong); }
+.sa-note { font-size: 0.75rem; color: var(--text-3); }
+.sa-table tfoot th, .sa-table tfoot td { border-top: 1px solid var(--border-dark); background: var(--surface-2); font-weight: 700; color: var(--text); }
+.sa-code { font-family: var(--font-mono); font-size: 0.78rem; }
+.sa-lines-cell { max-width: 22rem; overflow: hidden; text-overflow: ellipsis; color: var(--text-3); }
+.sa-actions { display: flex; align-items: center; justify-content: flex-end; gap: var(--space-3); flex-wrap: wrap; }
+@media (min-width: 768px) {
+  .sa-header-grid { grid-template-columns: 12rem minmax(0, 1fr) minmax(0, 1fr); }
+  .sa-entry-grid { grid-template-columns: minmax(0, 2fr) minmax(12rem, 1fr) auto; }
+}

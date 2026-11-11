@@ -80,6 +80,8 @@ test("every write path's movement carries the change it made: the queued deltas 
     f.db.adjustInventoryStock({ itemId: item.id, quantity: -3, eventType: "TRANSFER_OUT", note: "Hand move out" });
     f.db.adjustInventoryStock({ itemId: item.id, quantity: 4, eventType: "TRANSFER_IN", note: "Hand move in" });
 
+    // As a pass does (cloudSyncPass.ts): the materials first, now that they are the store's to send (cloud 031).
+    f.db.buildLeasedRecordRevisions(NOW);
     const built = f.db.buildStockEvents(NOW);
     const sent = f.queued();
     assert.deepEqual(built, { queued: 8, unqueued: 0, vanished: 0 }, "opening, three in, one out, three by hand");
@@ -117,6 +119,7 @@ test("only a new movement is captured: rewriting or deleting one is not sent, an
   try {
     f.holdStore(1);
     const item = f.db.createInventoryItem({ categoryId: f.categoryId, values: { colour: "GREEN" }, unitId: f.unitId, stockQuantity: 5 });
+    f.db.buildLeasedRecordRevisions(NOW);
     f.db.buildStockEvents(NOW);
     assert.equal(f.queued().length, 1);
 

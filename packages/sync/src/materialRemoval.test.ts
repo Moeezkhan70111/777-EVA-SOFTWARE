@@ -41,7 +41,8 @@ const one = (pc: Pc, sql: string, ...params: string[]) => pc.db.db.prepare(sql).
 function openHolder(): Pc {
   const pc = openPc("holder");
   run(pc, `INSERT INTO sync_domain_leases (domain, holder_device_id, holder_label, epoch, barrier_seq, granted_at, project_key, fetched_at)
-           VALUES ('MASTER_DATA', 'dev-holder', 'Store PC', 1, 0, ?, 'https://test.supabase.co', ?)`, NOW, NOW);
+           VALUES ('MASTER_DATA', 'dev-holder', 'Store PC', 1, 0, ?, 'https://test.supabase.co', ?),
+            ('RAW_MATERIAL_STORE', 'dev-holder', 'Store PC', 1, 0, ?, 'https://test.supabase.co', ?)`, NOW, NOW, NOW, NOW);
   run(pc, "INSERT INTO inventory_units (id, code, name, created_at, updated_at) VALUES ('u-kg', 'KG', 'Kilogram', ?, ?)", NOW, NOW);
   run(pc, "INSERT INTO inventory_categories (id, category_code, name, created_at, updated_at) VALUES ('c-1', 'C1', 'Dana', ?, ?)", NOW, NOW);
   run(pc, `INSERT INTO inventory_items (id, item_code, category_id, display_name, signature_hash, default_unit_id, created_at, updated_at)

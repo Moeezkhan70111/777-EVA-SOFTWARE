@@ -30,8 +30,9 @@ function openHolder(): Pc {
   const pc = openPc("holder");
   pc.db.db.prepare(
     `INSERT INTO sync_domain_leases (domain, holder_device_id, holder_label, epoch, barrier_seq, granted_at, project_key, fetched_at)
-     VALUES ('MASTER_DATA', 'dev-holder', 'Store PC', 1, 0, ?, 'https://test.supabase.co', ?)`
-  ).run(NOW, NOW);
+     VALUES ('MASTER_DATA', 'dev-holder', 'Store PC', 1, 0, ?, 'https://test.supabase.co', ?),
+            ('RAW_MATERIAL_STORE', 'dev-holder', 'Store PC', 1, 0, ?, 'https://test.supabase.co', ?)`
+  ).run(NOW, NOW, NOW, NOW);
   return pc;
 }
 

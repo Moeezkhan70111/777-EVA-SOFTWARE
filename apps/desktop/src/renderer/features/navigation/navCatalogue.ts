@@ -85,7 +85,7 @@ const item = (
 const { items: t, sections: s } = copy.nav;
 
 /** Pages for administrators alone, by the owner's decision: no role is ever offered them. */
-export const ADMIN_ONLY_ROUTES: ReadonlySet<AppRoute> = new Set<AppRoute>(["carton-stock"]);
+export const ADMIN_ONLY_ROUTES: ReadonlySet<AppRoute> = new Set<AppRoute>(["carton-stock", "stock-adjustment"]);
 
 export const NAV_SECTIONS: readonly NavSection[] = [
   {
@@ -157,6 +157,8 @@ export const NAV_SECTIONS: readonly NavSection[] = [
         ...item("carton-stock", t.cartonStock, "stock"),
         feature: { artwork: CARTON_STOCK_ARTWORK_URL, theme: "sky", artworkHasScene: true, badge: "stock", onDashboard: true },
       },
+      // Opening Stock and Stock Adjustment for carton stock (docs/46). Administrators only, like Carton Stock.
+      item("stock-adjustment", t.stockAdjustment, "stock"),
       {
         ...item("upper-stock", t.upperStock, "upper"),
         feature: { artwork: UPPER_STOCK_ARTWORK_URL, theme: "sky", artworkHasScene: true, badge: "upper", onDashboard: true },

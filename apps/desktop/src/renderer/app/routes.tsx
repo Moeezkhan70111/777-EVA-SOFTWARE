@@ -11,6 +11,8 @@ export const APP_ROUTES = [
   "dana-stock",
   // Carton adjustments and reconciliation: administrators only.
   "carton-stock",
+  // Opening Stock and Stock Adjustment documents for carton stock (docs/46): administrators only.
+  "stock-adjustment",
   // The Raw Material workspace. One destination with four tabs; the two routes after it are
   // deep links onto a tab, kept so the permissions that used to gate a page still gate it.
   "raw-material",

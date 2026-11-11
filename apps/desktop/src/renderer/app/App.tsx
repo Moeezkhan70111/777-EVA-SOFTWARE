@@ -10,6 +10,7 @@ import { DashboardPage } from "../pages/DashboardPage";
 import { StockPage } from "../pages/StockPage";
 import { KindStockPage } from "../features/kindStock/KindStockPage";
 import { CartonStockPage } from "../features/cartonStock/CartonStockPage";
+import { StockAdjustmentPage } from "../features/stockAdjustment/StockAdjustmentPage";
 import { UpperStockPage } from "../features/upperStock/UpperStockPage";
 import { RawMaterialInputPage } from "../pages/RawMaterialInputPage";
 import { RawMaterialOutputPage } from "../pages/RawMaterialOutputPage";
@@ -386,6 +387,8 @@ export const App = () => {
         return <KindStockPage kind={RAW_MATERIAL_KIND.DANA} />;
       case "carton-stock":
         return <CartonStockPage />;
+      case "stock-adjustment":
+        return <StockAdjustmentPage />;
       // One workspace, three doors. The two deep-link routes keep the permission their old
       // page had, and open on the tab that replaced it.
       case "raw-material":

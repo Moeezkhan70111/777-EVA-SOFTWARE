@@ -128,8 +128,9 @@ test("every master table has its insert, update and delete triggers after the da
 const seedLease = (db: SqliteDatabase, epoch: number) =>
   db.db.prepare(
     `INSERT OR REPLACE INTO sync_domain_leases (domain, holder_device_id, holder_label, epoch, barrier_seq, granted_at, project_key, fetched_at)
-     VALUES ('MASTER_DATA', 'dev-1', 'Store PC', ?, 0, ?, 'https://test.supabase.co', ?)`
-  ).run(epoch, NOW, NOW);
+     VALUES ('MASTER_DATA', 'dev-1', 'Store PC', ?, 0, ?, 'https://test.supabase.co', ?),
+            ('RAW_MATERIAL_STORE', 'dev-1', 'Store PC', ?, 0, ?, 'https://test.supabase.co', ?)`
+  ).run(epoch, NOW, NOW, epoch, NOW, NOW);
 
 function seedMaterial(db: SqliteDatabase, itemId: string): void {
   const run = (sql: string, ...params: Array<string | number>) => db.db.prepare(sql).run(...params);

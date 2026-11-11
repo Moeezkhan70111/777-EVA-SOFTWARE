@@ -17,7 +17,7 @@ const IPC_DIR = path.resolve(__dirname, "ipc");
 const GUARDED_MODULES = [
   "rawMaterials", "rawMaterialQr", "store", "parties", "machinePrograms", "upperMoveOut", "syncWaiting", "backfill",
   // Carton stock (docs/42): Manual Production and gatepasses move the carton figure.
-  "manualProduction", "gatepass",
+  "manualProduction", "gatepass", "cartonStockAdjustments",
   // The production-to-cash workflow (docs/43): products, bills and cash vouchers replicate.
   "products", "sales", "cash",
   // Carton QR scanning: on hold in this release; sale returns are leased to the sales holder (docs/44 §6).
@@ -67,6 +67,8 @@ const READS = new Set([
   "listUpperStock",
   // colorTranslations
   "listColorTranslations",
+  // cartonStockAdjustments
+  "getCartonAdjustmentArticle", "listCartonStockAdjustments",
   // manualProduction
   "getCartonStockReconciliation", "getCartonStockMatrix",
   // syncWaiting
@@ -136,10 +138,17 @@ describe("lease classification", () => {
     }
   });
 
-  it("a write that rewrites stock history needs both leases", () => {
-    for (const channel of [IPC.importInventoryItems, IPC.removeInventoryItemForGood, IPC.correctInventoryItemUnit, IPC.reviewRemovalRequest]) {
-      expect([...leasesFor(channel)].sort()).toEqual([LEASE_DOMAIN.MASTER_DATA, LEASE_DOMAIN.RAW_MATERIAL_STORE]);
+  it("materials are the store's with their stock; general master data stays MASTER_DATA; the backfill needs both", () => {
+    // Cloud 031 (docs/47): a material, its category and units travel under the store's lease, so a write that rewrites
+    // a material's stock history is one lease, the store's.
+    for (const channel of [IPC.createInventoryItem, IPC.createInventoryCategory, IPC.createInventoryUnit, IPC.saveUnitLadderPreset,
+      IPC.importInventoryItems, IPC.removeInventoryItemForGood, IPC.correctInventoryItemUnit, IPC.reviewRemovalRequest, IPC.completeMachineProgramProduction]) {
+      expect(leasesFor(channel)).toEqual([LEASE_DOMAIN.RAW_MATERIAL_STORE]);
     }
+    for (const channel of [IPC.createPartyGroup, IPC.createMachine, IPC.createProductGroup, IPC.createMainGroup]) {
+      expect(leasesFor(channel)).toEqual([LEASE_DOMAIN.MASTER_DATA]);
+    }
+    expect([...leasesFor(IPC.runBackfill)].sort()).toEqual([LEASE_DOMAIN.MASTER_DATA, LEASE_DOMAIN.RAW_MATERIAL_STORE]);
     expect(leasesFor(IPC.generateRawMaterialQrBatch)).toEqual([LEASE_DOMAIN.RAW_MATERIAL_STORE]);
     expect(leasesFor(IPC.createParty)).toEqual([LEASE_DOMAIN.MASTER_DATA]);
     expect(leasesFor(IPC.storeEntryScan)).toEqual([]);
