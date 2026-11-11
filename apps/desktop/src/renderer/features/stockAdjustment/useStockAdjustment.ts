@@ -8,7 +8,7 @@ import { useRequestId } from "../../hooks/useRequestId";
 import { toIsoDate } from "../../utils/dates";
 import { DATA_KIND } from "../../../shared/dataChange";
 import { leaseRefusalText } from "../../../shared/leaseRefusal";
-import { mergeLines, type DraftHeader, type DraftLine } from "./stockAdjustmentDraft";
+import { dozensText, mergeLines, type DraftHeader, type DraftLine } from "./stockAdjustmentDraft";
 import { parseChoicesReply, parseHistoryReply, parsePostReply, type AdjustmentChoice, type AdjustmentHistory } from "./stockAdjustmentReply";
 
 // The Stock Adjustment page's state and its calls to the main process. The page renders; this decides nothing about
@@ -73,7 +73,7 @@ export const useStockAdjustment = (onPosted: () => void) => {
       }
       request.settle({ renew: true });
       const { document } = reply.value;
-      setOutcome({ kind: "posted", message: text.posted(document.code, document.cartonsIn, document.cartonsOut) });
+      setOutcome({ kind: "posted", message: text.posted(document.code, dozensText(document.cartonsIn), dozensText(document.cartonsOut)) });
       setLines([]);
       setHeader(freshHeader(header.kind));
       onPosted();

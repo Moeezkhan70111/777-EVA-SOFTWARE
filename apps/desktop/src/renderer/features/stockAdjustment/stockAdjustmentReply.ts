@@ -11,6 +11,8 @@ export interface AdjustmentChoice {
   readonly color: string;
   readonly inStore: number;
   readonly hasOpening: boolean;
+  /** The article has this colour on another size but not on this one yet. */
+  readonly colorMissing: boolean;
 }
 
 export interface AdjustmentLine {
@@ -53,8 +55,9 @@ const failed = (reply: unknown): { ok: false; reason: string } => ({
   reason: isRecord(reply) && isText(reply.reason) ? reply.reason : copy.stockAdjustment.failed,
 });
 
-const isChoice = (value: unknown): value is AdjustmentChoice =>
-  isRecord(value) && isText(value.articleSizeId) && isText(value.size) && isText(value.color) && isNumber(value.inStore) && typeof value.hasOpening === "boolean";
+const isChoice = (value: unknown): value is Omit<AdjustmentChoice, "colorMissing"> & { colorMissing?: unknown } =>
+  isRecord(value) && isText(value.articleSizeId) && isText(value.size) && isText(value.color) && isNumber(value.inStore) && typeof value.hasOpening === "boolean" &&
+  (value.colorMissing === undefined || typeof value.colorMissing === "boolean");
 
 const isLine = (value: unknown): value is AdjustmentLine =>
   isRecord(value) && isNumber(value.lineNo) && isText(value.article) && isText(value.size) && isText(value.color) &&
@@ -67,7 +70,8 @@ const isDocument = (value: unknown): value is AdjustmentDocument =>
 
 export const parseChoicesReply = (reply: unknown): Checked<AdjustmentChoice[]> => {
   if (!isRecord(reply) || reply.accepted !== true) return failed(reply);
-  return Array.isArray(reply.choices) && reply.choices.every(isChoice) ? { ok: true, value: reply.choices } : failed(null);
+  if (!Array.isArray(reply.choices) || !reply.choices.every(isChoice)) return failed(null);
+  return { ok: true, value: reply.choices.map((choice) => ({ ...choice, colorMissing: choice.colorMissing === true })) };
 };
 
 export const parseHistoryReply = (reply: unknown): Checked<AdjustmentHistory> => {

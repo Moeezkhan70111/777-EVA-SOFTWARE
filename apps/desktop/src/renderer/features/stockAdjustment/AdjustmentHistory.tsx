@@ -5,6 +5,7 @@ import { copy } from "../../config/copy";
 import { formatDate, formatDateTime } from "../../utils/dates";
 import type { useAdjustmentHistory } from "./useStockAdjustment";
 import type { AdjustmentDocument } from "./stockAdjustmentReply";
+import { dozensText } from "./stockAdjustmentDraft";
 
 // Posted documents, newest first, from every computer: never changed once posted. A mistake is corrected by posting
 // another document.
@@ -12,7 +13,7 @@ import type { AdjustmentDocument } from "./stockAdjustmentReply";
 const text = copy.stockAdjustment;
 
 const linesText = (document: AdjustmentDocument): string =>
-  document.lines.map((line) => `${line.article} ${line.size} ${line.color} ${line.direction === "OUT" ? "−" : "+"}${line.cartons}`).join(" · ");
+  document.lines.map((line) => `${line.article} ${line.size} ${line.color} ${line.direction === "OUT" ? "−" : "+"}${dozensText(line.cartons)}`).join(" · ");
 
 export const AdjustmentHistory: React.FC<{ history: ReturnType<typeof useAdjustmentHistory> }> = ({ history }) => {
   const body = () => {
@@ -42,8 +43,8 @@ export const AdjustmentHistory: React.FC<{ history: ReturnType<typeof useAdjustm
                   <td>{formatDate(document.businessDate)}</td>
                   <td>{text.kinds[document.kind]}</td>
                   <td className="sa-lines-cell" title={linesText(document)}>{linesText(document)}</td>
-                  <td className="sa-num">{document.cartonsIn}</td>
-                  <td className="sa-num">{document.cartonsOut}</td>
+                  <td className="sa-num">{dozensText(document.cartonsIn)}</td>
+                  <td className="sa-num">{dozensText(document.cartonsOut)}</td>
                   <td>{document.remarks ? `${document.reason} — ${document.remarks}` : document.reason}</td>
                   <td>{text.postedBy(document.postedBy, formatDateTime(document.postedAt))}</td>
                 </tr>

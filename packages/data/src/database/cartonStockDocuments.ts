@@ -100,6 +100,8 @@ export interface CartonAdjustmentChoice {
   readonly color: string;
   readonly inStore: number;
   readonly hasOpening: boolean;
+  /** The article has this colour on another size but not on this one yet. */
+  readonly colorMissing: boolean;
 }
 
 /** What adding a colour to an article did. */
@@ -302,16 +304,26 @@ export const cartonStockDocumentMethods = {
     }
   },
 
-  /** One article's active colours and sizes, each with its figure in store and whether it has opening stock. */
+  /**
+   * One article's active sizes against EVERY colour the article has on any size, each with its figure in store and
+   * whether it has opening stock. Colours are kept per size in Product Master, so a colour made for some sizes is
+   * missing on others: such a pair comes back with colorMissing (no stock, no opening), so the screen still lists every
+   * size and can add the colour to it (addColorToArticle) before posting.
+   */
   cartonAdjustmentArticle(this: SqliteDatabase, article: string): CartonAdjustmentChoice[] {
+    const live = "pv.deleted_at IS NULL AND COALESCE(pv.status, 'ACTIVE') <> 'DISABLED'";
     const rows = this.db
       .prepare(
-        `SELECT a.id AS article_size_id, a.size, pv.color, ${IN_STORE_STOCK_SQL} AS in_store,
+        `WITH sizes AS (
+           SELECT id, size FROM article_sizes WHERE article = ? AND status = 'ACTIVE' AND deleted_at IS NULL
+         ), colours AS (
+           SELECT DISTINCT pv.color FROM product_variants pv JOIN sizes s ON s.id = pv.article_size_id WHERE ${live}
+         )
+         SELECT s.id AS article_size_id, s.size, c.color, pv.id AS variant_id, ${IN_STORE_STOCK_SQL} AS in_store,
                 EXISTS (SELECT 1 FROM carton_stock_adjustment_lines l JOIN carton_stock_adjustments d ON d.id = l.adjustment_id
                          WHERE d.kind = 'OPENING' AND l.product_variant_id = pv.id) AS has_opening
-           FROM article_sizes a JOIN product_variants pv ON pv.article_size_id = a.id
-          WHERE a.article = ? AND a.status = 'ACTIVE' AND a.deleted_at IS NULL
-            AND pv.deleted_at IS NULL AND COALESCE(pv.status, 'ACTIVE') <> 'DISABLED'`
+           FROM sizes s CROSS JOIN colours c
+           LEFT JOIN product_variants pv ON pv.article_size_id = s.id AND pv.color = c.color AND ${live}`
       )
       .all(text(article).trim()) as Row[];
     return rows.map((row) => ({
@@ -320,6 +332,7 @@ export const cartonStockDocumentMethods = {
       color: text(row.color),
       inStore: Number(row.in_store ?? 0),
       hasOpening: Number(row.has_opening) === 1,
+      colorMissing: row.variant_id == null,
     }));
   },
 

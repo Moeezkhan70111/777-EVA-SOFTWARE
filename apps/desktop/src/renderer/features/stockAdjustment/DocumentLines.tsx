@@ -4,7 +4,7 @@ import { ConfirmDialog } from "../../components/shared/ConfirmDialog";
 import { StateView } from "../../components/shared/StateView";
 import { copy } from "../../config/copy";
 import { formatDate } from "../../utils/dates";
-import { documentProblem, resultOf, totalsOf, type DraftHeader, type DraftLine } from "./stockAdjustmentDraft";
+import { documentProblem, dozensText, resultOf, totalsOf, type DraftHeader, type DraftLine } from "./stockAdjustmentDraft";
 import type { PostOutcome } from "./useStockAdjustment";
 
 // The document as it will be posted: every line with the figure it leaves, the totals, and Post, which asks first.
@@ -24,7 +24,7 @@ interface DocumentLinesProps {
 const movementText = (kind: CartonAdjustmentKind, line: DraftLine): string =>
   kind === "OPENING" ? text.kinds.OPENING : text.directions[line.direction];
 
-const signed = (line: DraftLine): string => `${line.direction === CARTON_ADJUSTMENT_DIRECTION.OUT ? "−" : "+"}${line.cartons}`;
+const signed = (line: DraftLine): string => `${line.direction === CARTON_ADJUSTMENT_DIRECTION.OUT ? "−" : "+"}${dozensText(line.cartons)}`;
 
 const Outcome: React.FC<{ outcome: PostOutcome }> = ({ outcome }) =>
   outcome.kind === "posted" ? (
@@ -41,8 +41,8 @@ export const DocumentLines: React.FC<DocumentLinesProps> = ({ header, lines, bus
     { label: text.kindLabel, value: text.kinds[header.kind] },
     { label: text.dateLabel, value: formatDate(header.businessDate) },
     { label: text.linesLabel, value: String(lines.length) },
-    { label: text.totalInLabel, value: String(totals.cartonsIn) },
-    { label: text.totalOutLabel, value: String(totals.cartonsOut) },
+    { label: text.totalInLabel, value: dozensText(totals.cartonsIn) },
+    { label: text.totalOutLabel, value: dozensText(totals.cartonsOut) },
     { label: text.reasonLabel, value: header.reason.trim() },
   ];
 
@@ -73,9 +73,9 @@ export const DocumentLines: React.FC<DocumentLinesProps> = ({ header, lines, bus
                   <td>{line.color}</td>
                   <td>{line.size}</td>
                   <td>{movementText(header.kind, line)}</td>
-                  <td className="sa-num">{line.inStore}</td>
+                  <td className="sa-num">{dozensText(line.inStore)}</td>
                   <td className="sa-num">{signed(line)}</td>
-                  <td className="sa-num sa-result">{resultOf(line)}</td>
+                  <td className="sa-num sa-result">{dozensText(resultOf(line))}</td>
                   <td>
                     <button type="button" className="btn btn-ghost btn-sm" aria-label={text.removeLine(line.article, line.size, line.color)} onClick={() => onRemove(line.key)}>
                       {text.remove}
@@ -87,7 +87,7 @@ export const DocumentLines: React.FC<DocumentLinesProps> = ({ header, lines, bus
             <tfoot>
               <tr>
                 <th scope="row" colSpan={5}>{text.totalsRow}</th>
-                <td className="sa-num">{text.totals(totals.cartonsIn, totals.cartonsOut)}</td>
+                <td className="sa-num">{text.totals(dozensText(totals.cartonsIn), dozensText(totals.cartonsOut))}</td>
                 <td colSpan={2} />
               </tr>
             </tfoot>

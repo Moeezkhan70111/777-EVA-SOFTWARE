@@ -1,5 +1,5 @@
 import React, { useId } from "react";
-import { colorToUrdu, type CartonMatrixArticle } from "@erp/domain";
+import { cartonsToDozens, colorToUrdu, type CartonMatrixArticle } from "@erp/domain";
 import { ColorSwatch } from "../../components/shared/ColorSwatch";
 import { copy } from "../../config/copy";
 import { useColorDictionary } from "../colorTranslation/colorDictionaryStore";
@@ -12,6 +12,9 @@ import { cellText } from "../upperStock/upperStock";
 
 const text = copy.cartonStock;
 
+/** The store counts cartons; the floor reads dozens (1 carton = half a dozen, owner 11 Nov 2026). */
+const dozenCell = (cartons: number): string => cellText(cartonsToDozens(cartons));
+
 export const CartonMatrix: React.FC<{ article: CartonMatrixArticle }> = ({ article }) => {
   const headingId = useId();
   const colors = useColorDictionary();
@@ -22,7 +25,7 @@ export const CartonMatrix: React.FC<{ article: CartonMatrixArticle }> = ({ artic
         <table className="cs-table">
           <thead>
             <tr>
-              <th scope="col" className="cs-size">{text.size}</th>
+              <th scope="col" className="cs-size">{text.sizeInDozens}</th>
               {article.colours.map((colour) => {
                 // Shown in Urdu from the shared colour list (docs/45), in English when the list does not name it.
                 // Only the label changes: the column, its figures and the swatch still go by the stored English.
@@ -44,9 +47,9 @@ export const CartonMatrix: React.FC<{ article: CartonMatrixArticle }> = ({ artic
               <tr key={row.key}>
                 <th scope="row" className="cs-size"><span className="cs-size-pill">{row.size}</span></th>
                 {row.quantities.map((quantity, column) => (
-                  <td key={article.colours[column]}>{cellText(quantity)}</td>
+                  <td key={article.colours[column]}>{dozenCell(quantity)}</td>
                 ))}
-                <td className="cs-total"><span className="cs-total-pill">{cellText(row.total)}</span></td>
+                <td className="cs-total"><span className="cs-total-pill">{dozenCell(row.total)}</span></td>
               </tr>
             ))}
           </tbody>

@@ -1,3 +1,5 @@
+import { CARTONS_PER_DOZEN, dozensToCartons } from "./units.js";
+
 // STOCK ADJUSTMENT DOCUMENTS (docs/46): Opening Stock and Stock Adjustment, in cartons.
 //
 //   OPENING      SA-000001 · SK6 RED · 7/10 +20, 10/13 +35   the first figure a product is given, once
@@ -48,4 +50,25 @@ export function isBusinessDate(value: unknown): value is string {
   if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
   const date = new Date(`${value}T00:00:00Z`);
   return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value;
+}
+
+// ─── Dozens on screen, cartons stored (owner, 11 Nov 2026) ──────────────────
+//
+// The floor counts in dozens; stock is kept in whole cartons, and one carton is half a dozen (units.ts). So the screen
+// takes and shows dozens, and every line is still whole cartons: 7.5 dozen is 15 cartons, 7.25 dozen is refused.
+
+export type CartonAdjustmentDozens = { ok: true; dozens: number; cartons: number } | { ok: false; reason: string };
+
+/** Typed dozens, checked and turned into whole cartons, or why not. */
+export function cartonAdjustmentDozens(typed: string): CartonAdjustmentDozens {
+  const raw = typed.trim();
+  if (raw === "") return { ok: false, reason: "Enter the dozens." };
+  const dozens = Number(raw);
+  if (!Number.isFinite(dozens) || dozens <= 0) return { ok: false, reason: "Enter dozens above zero, such as 10 or 7.5." };
+  const cartons = dozensToCartons(dozens);
+  if (!Number.isInteger(cartons)) return { ok: false, reason: `Enter whole or half dozens (1 dozen = ${CARTONS_PER_DOZEN} cartons).` };
+  if (cartons > CARTON_ADJUSTMENT_MAX_CARTONS) {
+    return { ok: false, reason: `One line may move at most ${(CARTON_ADJUSTMENT_MAX_CARTONS / CARTONS_PER_DOZEN).toLocaleString("en-US")} dozens.` };
+  }
+  return { ok: true, dozens, cartons };
 }

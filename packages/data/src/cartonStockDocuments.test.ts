@@ -192,3 +192,19 @@ test("the + beside Colour adds the colour to every active size of the article, o
     assert.equal(figureOf(fixture, "SK6", "7/10", "SKY BLUE"), 4);
   });
 });
+
+test("every size comes back for every colour of the article; a size the colour is not on is marked colorMissing", () => {
+  withFixture((fixture) => {
+    const { db, sku } = fixture;
+    // BLACK only on 7/10, as Product Master often has a colour on some sizes only.
+    db.db.prepare("UPDATE product_variants SET deleted_at = '2026-11-11T00:00:00.000Z' WHERE article = 'SK6' AND color = 'BLACK' AND size <> '7/10'").run();
+    const black = db.cartonAdjustmentArticle("SK6").filter((c) => c.color === "BLACK").map((c) => `${c.size}:${c.colorMissing}`).sort();
+    assert.deepEqual(black, ["10/13:true", "13/1:true", "7/10:false"]);
+    assert.ok(db.cartonAdjustmentArticle("SK6").filter((c) => c.color === "RED").every((c) => !c.colorMissing));
+    // Adding the colour fills in the sizes it is missing on, and they can take stock.
+    assert.deepEqual(db.addColorToArticle({ article: "SK6", color: "black" }), { color: "BLACK", added: 2, existing: 1 });
+    assert.ok(db.cartonAdjustmentArticle("SK6").filter((c) => c.color === "BLACK").every((c) => !c.colorMissing));
+    post(db, "OPENING", [line(sku("SK6", "13/1"), "BLACK", 6)]);
+    assert.equal(figureOf(fixture, "SK6", "13/1", "BLACK"), 6);
+  });
+});

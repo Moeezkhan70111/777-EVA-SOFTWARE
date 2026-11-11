@@ -8,7 +8,7 @@ import { publishColorTranslations } from "../colorTranslation/colorDictionarySto
 import { NotificationsProvider } from "../../state/NotificationsContext";
 import { CartonStockPage } from "./CartonStockPage";
 
-// CARTON STOCK: the cartons in store, one matrix per article. The main process reads every figure;
+// CARTON STOCK (shown in dozens: 1 carton = half a dozen): the cartons in store, one matrix per article. The main process reads every figure;
 // the screen arranges nothing of its own and changes nothing.
 
 const text = copy.cartonStock;
@@ -41,9 +41,9 @@ describe("the stock matrix", () => {
     await screen.findByRole("region", { name: "SK6 cartons in store" });
     expect(names()).toEqual(["SK6", "SK12", "SK30"]);
     // Colours are named in Urdu from the shared colour list (docs/45); the order is still the English one.
-    expect(matrix("SK6").getAllByRole("columnheader").map((cell) => cell.textContent)).toEqual(["Size", "بلو", "لال", "Total"]);
-    expect(matrix("SK6").getByRole("row", { name: "7/10 6 2 8" })).toBeInTheDocument();
-    expect(matrix("SK6").getByRole("row", { name: "4/6 - 5 5" })).toBeInTheDocument();
+    expect(matrix("SK6").getAllByRole("columnheader").map((cell) => cell.textContent)).toEqual(["Size (dozen)", "بلو", "لال", "Total"]);
+    expect(matrix("SK6").getByRole("row", { name: "7/10 3 1 4" })).toBeInTheDocument();
+    expect(matrix("SK6").getByRole("row", { name: "4/6 - 2.5 2.5" })).toBeInTheDocument();
     expect(matrix("SK6").getAllByRole("row")).toHaveLength(3);
   });
 
@@ -82,14 +82,14 @@ describe("the stock matrix", () => {
     ];
     show();
     await screen.findByRole("region", { name: "SK6 cartons in store" });
-    expect(matrix("SK6").getAllByRole("columnheader").map((cell) => cell.textContent)).toEqual(["Size", "آرمی گرین", "سیاہ لال", "MITALIC", "Total"]);
+    expect(matrix("SK6").getAllByRole("columnheader").map((cell) => cell.textContent)).toEqual(["Size (dozen)", "آرمی گرین", "سیاہ لال", "MITALIC", "Total"]);
     expect(matrix("SK6").getByRole("columnheader", { name: "MITALIC" })).toHaveAttribute("title", "MITALIC");
-    expect(matrix("SK6").getByRole("row", { name: "7/10 4 2 1 7" })).toBeInTheDocument();
+    expect(matrix("SK6").getByRole("row", { name: "7/10 2 1 0.5 3.5" })).toBeInTheDocument();
 
     act(() => publishColorTranslations([...seededList(), { id: "c-mitalic", englishName: "Mitalic", urduName: "میٹالک" }]));
     expect(await matrix("SK6").findByRole("columnheader", { name: "میٹالک" })).toBeInTheDocument();
     // The figures, and what was asked of the main process, are unchanged: only the label is translated.
-    expect(matrix("SK6").getByRole("row", { name: "7/10 4 2 1 7" })).toBeInTheDocument();
+    expect(matrix("SK6").getByRole("row", { name: "7/10 2 1 0.5 3.5" })).toBeInTheDocument();
     for (const [query] of api.getCartonStockMatrix.mock.calls as Array<[Record<string, unknown>]>) expect(JSON.stringify(query)).not.toMatch(/[؀-ۿ]/);
   });
 
@@ -122,16 +122,16 @@ describe("live updates from other computers, with the page open", () => {
   it("re-reads on a carton change and shows the new figure", async () => {
     const { announce } = installLiveBridge();
     show();
-    await screen.findByRole("row", { name: "7/10 6 2 8" });
+    await screen.findByRole("row", { name: "7/10 3 1 4" });
     figures = figures.map((figure) => (figure.article === "SK6" && figure.color === "RED" && figure.size === "7/10" ? { ...figure, quantity: 12 } : figure));
     announce(["CARTONS", "SYNC"]);
-    expect(await screen.findByRole("row", { name: "7/10 6 12 18" })).toBeInTheDocument();
+    expect(await screen.findByRole("row", { name: "7/10 3 6 9" })).toBeInTheDocument();
   });
 
   it("ignores changes that are not cartons or products", async () => {
     const { announce } = installLiveBridge();
     show();
-    await screen.findByRole("row", { name: "7/10 6 2 8" });
+    await screen.findByRole("row", { name: "7/10 3 1 4" });
     const readsBefore = api.getCartonStockMatrix.mock.calls.length;
     announce(["CASH", "PARTIES"]);
     await new Promise((resolve) => setTimeout(resolve, 300));
@@ -141,7 +141,7 @@ describe("live updates from other computers, with the page open", () => {
   it("leaving the page lets go of its subscription", async () => {
     const { listeners } = installLiveBridge();
     const page = show();
-    await screen.findByRole("row", { name: "7/10 6 2 8" });
+    await screen.findByRole("row", { name: "7/10 3 1 4" });
     expect(listeners.size).toBe(1);
     page.unmount();
     expect(listeners.size).toBe(0);
