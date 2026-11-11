@@ -121,7 +121,7 @@ test("bad documents are refused before anything is written", () => {
     assert.throws(() => post(db, "SOMETHING", [line(red, "RED", 1)]), /Opening Stock or Stock Adjustment/);
     assert.throws(() => post(db, "ADJUSTMENT", [line(red, "RED", 1)], { requestId: "not-a-uuid" }), /identified/);
     assert.throws(() => post(db, "ADJUSTMENT", [line(red, "RED", 1), line(red, "RED", 2)]), /entered twice/);
-    assert.throws(() => post(db, "ADJUSTMENT", [line(red, "GREEN", 1)]), /not found/);
+    assert.throws(() => post(db, "ADJUSTMENT", [line(red, "GREEN", 1)]), /no active colour GREEN/);
     assert.equal(count(db, "SELECT COUNT(*) AS n FROM carton_stock_events"), 0);
     assert.equal(count(db, "SELECT COUNT(*) AS n FROM carton_stock_adjustments"), 0);
   });
@@ -206,5 +206,27 @@ test("every size comes back for every colour of the article; a size the colour i
     assert.ok(db.cartonAdjustmentArticle("SK6").filter((c) => c.color === "BLACK").every((c) => !c.colorMissing));
     post(db, "OPENING", [line(sku("SK6", "13/1"), "BLACK", 6)]);
     assert.equal(figureOf(fixture, "SK6", "13/1", "BLACK"), 6);
+  });
+});
+
+test("a colour linked to another row of the same size, or to none, is found and takes stock (PC1, 11 Nov 2026)", () => {
+  withFixture((fixture) => {
+    const { db, sku } = fixture;
+    // RED on 7/10 linked to the wrong size row, as a computer filled from the cloud can hold it.
+    db.db.prepare("UPDATE product_variants SET article_size_id = ? WHERE article = 'SK6' AND size = '7/10' AND color = 'RED'").run(sku("SK6", "10/13"));
+    // And BLACK on 10/13 pointing at no row at all.
+    db.db.prepare("UPDATE product_variants SET article_size_id = NULL WHERE article = 'SK6' AND size = '10/13' AND color = 'BLACK'").run();
+
+    const red = db.cartonAdjustmentArticle("SK6").find((c) => c.size === "7/10" && c.color === "RED");
+    const black = db.cartonAdjustmentArticle("SK6").find((c) => c.size === "10/13" && c.color === "BLACK");
+    assert.equal(red?.colorMissing, false, "RED on 7/10 is not shown as a new colour");
+    assert.equal(black?.colorMissing, false, "BLACK on 10/13 is not shown as a new colour");
+    assert.equal(db.cartonAdjustmentArticle("SK6").filter((c) => c.size === "7/10").length, 2, "one row per size and colour, never doubled");
+    assert.deepEqual(db.addColorToArticle({ article: "SK6", color: "RED" }), { color: "RED", added: 0, existing: 3 }, "nothing added twice");
+
+    const result = post(db, "OPENING", [line(sku("SK6", "7/10"), "RED", 26), line(sku("SK6", "10/13"), "BLACK", 4)]);
+    assert.equal(result.document.cartonsIn, 30);
+    assert.equal(figureOf(fixture, "SK6", "7/10", "RED"), 26);
+    assert.equal(figureOf(fixture, "SK6", "10/13", "BLACK"), 4);
   });
 });

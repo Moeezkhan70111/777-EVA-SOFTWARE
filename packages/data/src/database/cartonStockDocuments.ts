@@ -211,7 +211,7 @@ export const cartonStockDocumentMethods = {
       .run(input.requestId, documentNumber, checked.kind, input.businessDate, checked.reason, checked.remarks, postedBy, workstation ? text(workstation.workstation_code) : null, input.storeLocationId, nowIso);
     const seen = new Set<string>();
     checked.lines.forEach((line, index) => {
-      const variant = this.stockableVariant(line.articleSizeId, line.color);
+      const variant = this.adjustableVariant(line.articleSizeId, line.color);
       const name = `${variant.article} ${variant.size} ${variant.color}`;
       if (seen.has(variant.id)) throw new CartonAdjustmentRefused(`${name} is entered twice. Enter each colour and size once.`);
       seen.add(variant.id);
@@ -243,6 +243,29 @@ export const cartonStockDocumentMethods = {
         )
         .run(crypto.randomUUID(), input.requestId, index + 1, variant.id, variant.articleSizeId, variant.article, variant.size, variant.color, line.direction, line.cartons, eventId);
     });
+  },
+
+  /**
+   * @internal The product a line names: the chosen size's article and size, and the colour -- matched on ARTICLE + SIZE +
+   * COLOUR, as product_variants is keyed, never through product_variants.article_size_id (see cartonAdjustmentArticle).
+   * Only an active size and an active colour take stock. The line keeps the size the operator chose.
+   */
+  adjustableVariant(this: SqliteDatabase, articleSizeId: string, color: string): { id: string; articleSizeId: string; article: string; size: string; color: string } {
+    const size = this.db
+      .prepare("SELECT id, article, size FROM article_sizes WHERE id = ? AND status = 'ACTIVE' AND deleted_at IS NULL")
+      .get(text(articleSizeId).trim()) as Row | undefined;
+    if (!size) throw new CartonAdjustmentRefused("That size is not active in Product Master. Choose the article again.");
+    const wanted = text(color).trim().toUpperCase();
+    const variant = this.db
+      .prepare(
+        `SELECT id, color FROM product_variants
+          WHERE article = ? AND size = ? AND color = ? AND deleted_at IS NULL AND COALESCE(status, 'ACTIVE') <> 'DISABLED' LIMIT 1`
+      )
+      .get(text(size.article), text(size.size), wanted) as Row | undefined;
+    if (!variant) {
+      throw new CartonAdjustmentRefused(`${text(size.article)} ${text(size.size)} has no active colour ${wanted}. Add it with + beside Colour, then add the line again.`);
+    }
+    return { id: text(variant.id), articleSizeId: text(size.id), article: text(size.article), size: text(size.size), color: text(variant.color) };
   },
 
   /** @internal Whether a product's colour has been given opening stock, here or on the computer that posted it. */
@@ -311,21 +334,27 @@ export const cartonStockDocumentMethods = {
    * size and can add the colour to it (addColorToArticle) before posting.
    */
   cartonAdjustmentArticle(this: SqliteDatabase, article: string): CartonAdjustmentChoice[] {
+    // A product is ARTICLE + SIZE + COLOUR (product_variants is UNIQUE on exactly that, and upsertProductVariant
+    // matches on it). A colour is NOT found through product_variants.article_size_id: on computers filled from the
+    // cloud, a variant can point at another row of the same article and size, or at none, and finding it through that
+    // link showed an existing colour as missing, offered to add it, added nothing, and then refused the post (PC1, 11
+    // Nov 2026). One row per size: a size held twice in article_sizes is shown once.
     const live = "pv.deleted_at IS NULL AND COALESCE(pv.status, 'ACTIVE') <> 'DISABLED'";
+    const name = text(article).trim();
     const rows = this.db
       .prepare(
         `WITH sizes AS (
-           SELECT id, size FROM article_sizes WHERE article = ? AND status = 'ACTIVE' AND deleted_at IS NULL
+           SELECT MIN(id) AS id, size FROM article_sizes WHERE article = ? AND status = 'ACTIVE' AND deleted_at IS NULL GROUP BY size
          ), colours AS (
-           SELECT DISTINCT pv.color FROM product_variants pv JOIN sizes s ON s.id = pv.article_size_id WHERE ${live}
+           SELECT DISTINCT pv.color FROM product_variants pv WHERE pv.article = ? AND ${live}
          )
          SELECT s.id AS article_size_id, s.size, c.color, pv.id AS variant_id, ${IN_STORE_STOCK_SQL} AS in_store,
                 EXISTS (SELECT 1 FROM carton_stock_adjustment_lines l JOIN carton_stock_adjustments d ON d.id = l.adjustment_id
                          WHERE d.kind = 'OPENING' AND l.product_variant_id = pv.id) AS has_opening
            FROM sizes s CROSS JOIN colours c
-           LEFT JOIN product_variants pv ON pv.article_size_id = s.id AND pv.color = c.color AND ${live}`
+           LEFT JOIN product_variants pv ON pv.article = ? AND pv.size = s.size AND pv.color = c.color AND ${live}`
       )
-      .all(text(article).trim()) as Row[];
+      .all(name, name, name) as Row[];
     return rows.map((row) => ({
       articleSizeId: text(row.article_size_id),
       size: text(row.size),
