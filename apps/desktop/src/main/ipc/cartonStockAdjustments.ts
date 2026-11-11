@@ -8,6 +8,8 @@
 //                               computer that does not hold carton stock before this handler runs.
 //   getCartonAdjustmentArticle  one article's colours and sizes with their figure, for the preview. Reads only.
 //   listCartonStockAdjustments  the posted documents, newest first. Reads only.
+//   addArticleColor             the "+" beside Colour: a new colour on every active size of the article. Master data,
+//                               so a write under the MASTER_DATA lease (leaseChannels.ts). An administrator.
 //
 // Who posted it and where are read here, never from the screen. Nothing here touches the raw material store.
 
@@ -24,6 +26,7 @@ export const STOCK_ADJUSTMENT_MESSAGES = {
   BUSY: "The document was not posted because another stock operation is in progress. Nothing was changed. Please try again.",
   NOT_POSTED: "The document could not be posted. Nothing was changed.",
   NOT_READ: "Stock adjustments could not be read.",
+  NOT_COLORED: "The colour could not be added. Nothing was changed.",
 } as const;
 
 const asLines = (value: unknown): Array<{ articleSizeId: string; color: string; direction: string; cartons: number }> =>
@@ -68,6 +71,20 @@ export function registerCartonStockAdjustmentHandlers(ctx: Pick<IpcContext, "db"
     } catch (error) {
       log("WARNING", "post-refused", error instanceof Error ? error.message : String(error), who.user.id);
       return { accepted: false, reason: refusalReason(error, STOCK_ADJUSTMENT_MESSAGES.BUSY, STOCK_ADJUSTMENT_MESSAGES.NOT_POSTED) };
+    }
+  });
+
+  ipcMain.handle(IPC.addArticleColor, (event, input?: unknown) => {
+    const who = administrator(event);
+    if (!who.ok) return { accepted: false, reason: who.reason };
+    const fields = asRecord(input);
+    try {
+      const result = db.addColorToArticle({ article: asString(fields.article), color: asString(fields.color) });
+      log("INFO", "add-color", JSON.stringify({ article: asString(fields.article), ...result }), who.user.id);
+      return { accepted: true, ...result };
+    } catch (error) {
+      log("WARNING", "add-color-refused", error instanceof Error ? error.message : String(error), who.user.id);
+      return { accepted: false, reason: refusalReason(error, STOCK_ADJUSTMENT_MESSAGES.BUSY, STOCK_ADJUSTMENT_MESSAGES.NOT_COLORED) };
     }
   });
 

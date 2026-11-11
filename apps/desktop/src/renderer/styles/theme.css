@@ -9823,3 +9823,9 @@ tr.has-error .gp-qty-stepper input { color: var(--err); }
   .sa-header-grid { grid-template-columns: 12rem minmax(0, 1fr) minmax(0, 1fr); }
   .sa-entry-grid { grid-template-columns: minmax(0, 2fr) minmax(12rem, 1fr) auto; }
 }
+/* The "+" beside Colour on Stock Adjustment, and its inline new-colour field. */
+.sa-color-row { display: flex; align-items: center; gap: var(--space-2); }
+.sa-color-row > :first-child { flex: 1 1 auto; min-width: 0; }
+.sa-add-color { min-width: 44px; min-height: 44px; padding: 0; font-size: 1.25rem; font-weight: 700; line-height: 1; }
+.sa-new-color { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; flex: 1 1 100%; }
+.sa-new-color .form-input { flex: 1 1 10rem; min-height: 40px; }

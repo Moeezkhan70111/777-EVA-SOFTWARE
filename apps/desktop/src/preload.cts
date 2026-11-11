@@ -287,6 +287,7 @@ contextBridge.exposeInMainWorld("desktop", {
     postCartonStockAdjustment: (input: Record<string, unknown>) => ipcRenderer.invoke(IPC.postCartonStockAdjustment, input),
     getCartonAdjustmentArticle: (article: string) => ipcRenderer.invoke(IPC.getCartonAdjustmentArticle, article),
     listCartonStockAdjustments: (query: Record<string, unknown>) => ipcRenderer.invoke(IPC.listCartonStockAdjustments, query),
+    addArticleColor: (input: Record<string, unknown>) => ipcRenderer.invoke(IPC.addArticleColor, input),
     listManualProduction: (query: Record<string, unknown>) => ipcRenderer.invoke(IPC.listManualProduction, query),
     voidManualProduction: (input: Record<string, unknown>) => ipcRenderer.invoke(IPC.voidManualProduction, input),
     issueUpperToMachine: (rawScan: string, machineId: string) => ipcRenderer.invoke(IPC.issueUpperToMachine, rawScan, machineId),

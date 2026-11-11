@@ -283,6 +283,7 @@ export const IPC = {
   postCartonStockAdjustment: "erp:post-carton-stock-adjustment",
   getCartonAdjustmentArticle: "erp:get-carton-adjustment-article",
   listCartonStockAdjustments: "erp:list-carton-stock-adjustments",
+  addArticleColor: "erp:add-article-color",
   listManualProduction: "erp:list-manual-production",
   voidManualProduction: "erp:void-manual-production",
   // Upper Move Out (Phase 3): upper packets issued to a named machine, and upper stock.

@@ -2372,6 +2372,8 @@ export interface DesktopApi {
   getCartonAdjustmentArticle(article: string): Promise<unknown>;
   /** The posted documents, newest first. Checked by the page. */
   listCartonStockAdjustments(query: { page: number; pageSize: number }): Promise<unknown>;
+  /** Adds a colour to every active size of an article (master data, MASTER_DATA lease). Administrators only. Checked by the page. */
+  addArticleColor(input: { article: string; color: string }): Promise<unknown>;
   getCartonStockReconciliation(query: { page: number; pageSize: number }): Promise<{ accepted: boolean; reason?: string; reconciliation?: CartonReconciliation | null }>;
   recordManualProduction(input: { requestId: string; machineId: string; articleSizeId: string; color: string; dozens: string }): Promise<ManualProductionResult>;
   /** One business day's Manual Production (YYYY-MM-DD), newest first, a page at a time. */

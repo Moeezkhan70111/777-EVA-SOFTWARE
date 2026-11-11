@@ -174,6 +174,7 @@ export type { CartonSql, CartonStockBuildResult, CartonStockEventPayload } from 
 export { CARTON_ADJUST_DIRECTION, type CartonAdjustDirection, type CartonAdjustInput, type CartonAdjustResult } from "./database/cartonStockAdjust.js";
 export {
   CartonAdjustmentRefused,
+  type ArticleColorResult,
   type CartonAdjustmentChoice,
   type CartonAdjustmentDocument,
   type CartonAdjustmentLine,

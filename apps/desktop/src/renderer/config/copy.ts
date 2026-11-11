@@ -2806,6 +2806,13 @@ export const copy = {
     historyEmptyTitle: "No documents yet",
     historyEmptyHint: "Post Opening Stock to give products their first carton figure.",
     postedBy: (who: string, when: string) => `${who}, ${when}`,
+    addColorLabel: (article: string) => `Add a new colour to ${article || "the article"}`,
+    newColorLabel: "New colour name",
+    newColorPlaceholder: "e.g. SKY BLUE",
+    addColor: "Add colour",
+    addingColor: "Adding…",
+    colorNotAdded: "The colour could not be added. Nothing was changed.",
+    cancel: "Cancel",
   },
 
   // The Color Translation page (features/colorTranslation): English colour -> what the floor calls it in Urdu.

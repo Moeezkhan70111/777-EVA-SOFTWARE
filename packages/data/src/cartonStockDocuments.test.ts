@@ -175,3 +175,20 @@ test("with Carton Cloud on, a document and its movements may travel, and the act
     assert.equal(isLocalStockRecord(db.db, "CARTON_STOCK_EVENT", after.document.lines[0]?.eventId ?? ""), false, "its movement may travel too");
   });
 });
+
+test("the + beside Colour adds the colour to every active size of the article, once, upper-case", () => {
+  withFixture((fixture) => {
+    const { db } = fixture;
+    const first = db.addColorToArticle({ article: "SK6", color: "  sky   blue " });
+    assert.deepEqual(first, { color: "SKY BLUE", added: 3, existing: 0 });
+    assert.deepEqual(db.cartonAdjustmentArticle("SK6").filter((c) => c.color === "SKY BLUE").map((c) => c.size).sort(), ["10/13", "13/1", "7/10"]);
+    assert.deepEqual(db.addColorToArticle({ article: "SK6", color: "Sky Blue" }), { color: "SKY BLUE", added: 0, existing: 3 }, "never duplicated");
+    assert.deepEqual(db.addColorToArticle({ article: "SK6", color: "red" }), { color: "RED", added: 0, existing: 3 });
+    assert.throws(() => db.addColorToArticle({ article: "SK6", color: " " }), /colour's name/);
+    assert.throws(() => db.addColorToArticle({ article: "NOPE", color: "RED" }), /no active sizes/);
+    assert.equal(count(db, "SELECT COUNT(*) AS n FROM sync_dirty_records WHERE aggregate_type = 'ARTICLE_SIZE'") > 0, true, "marked as product master data");
+    // The new colour can take opening stock straight away.
+    post(db, "OPENING", [line(fixture.sku("SK6", "7/10"), "SKY BLUE", 4)]);
+    assert.equal(figureOf(fixture, "SK6", "7/10", "SKY BLUE"), 4);
+  });
+});

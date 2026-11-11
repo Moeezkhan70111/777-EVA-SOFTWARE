@@ -102,6 +102,17 @@ export interface CartonAdjustmentChoice {
   readonly hasOpening: boolean;
 }
 
+/** What adding a colour to an article did. */
+export interface ArticleColorResult {
+  readonly color: string;
+  /** Sizes the colour was added to. */
+  readonly added: number;
+  /** Sizes that already had it. */
+  readonly existing: number;
+}
+
+const MAX_COLOR_LENGTH = 40;
+
 export interface CartonAdjustmentPage {
   readonly documents: readonly CartonAdjustmentDocument[];
   readonly total: number;
@@ -242,6 +253,53 @@ export const cartonStockDocumentMethods = {
         )
         .get(CARTON_ADJUSTMENT_KIND.OPENING, variantId)
     );
+  },
+
+  /**
+   * Adds a colour to every active size of an article, in one transaction: the colour the "+" beside Colour adds on the
+   * Stock Adjustment page. Master data (each variant travels with its product, ARTICLE_SIZE), so the IPC is leased to
+   * MASTER_DATA. Uses upsertProductVariant, the one place that decides whether a colour exists: a deleted colour is
+   * brought back with its id, never duplicated. Stored upper-case, as Product Master stores colours.
+   */
+  addColorToArticle(this: SqliteDatabase, input: { article: string; color: string }): ArticleColorResult {
+    const article = text(input.article).trim();
+    const color = text(input.color).trim().toUpperCase().replace(/\s+/g, " ");
+    if (!article) throw new CartonAdjustmentRefused("Choose the article first.");
+    if (!color) throw new CartonAdjustmentRefused("Type the colour's name.");
+    if (color.length > MAX_COLOR_LENGTH) throw new CartonAdjustmentRefused(`A colour name is at most ${MAX_COLOR_LENGTH} letters.`);
+    if (["N/A", "NULL", "UNDEFINED"].includes(color)) throw new CartonAdjustmentRefused("Type a real colour name.");
+    this.db.exec("BEGIN IMMEDIATE TRANSACTION");
+    try {
+      const sizes = this.db
+        .prepare(
+          `SELECT id, article, size, description, cost_price_paisa, selling_price_paisa, main_group_id, product_group_id, article_series_id, product_type_id, product_sub_group_id
+             FROM article_sizes WHERE article = ? AND status = 'ACTIVE' AND deleted_at IS NULL`
+        )
+        .all(article) as Row[];
+      if (sizes.length === 0) throw new CartonAdjustmentRefused(`${article} has no active sizes in Product Master.`);
+      let added = 0;
+      const now = new Date().toISOString();
+      for (const size of sizes) {
+        const live = this.db
+          .prepare("SELECT 1 AS here FROM product_variants WHERE article = ? AND color = ? AND size = ? AND deleted_at IS NULL AND COALESCE(status, 'ACTIVE') <> 'DISABLED'")
+          .get(text(size.article), color, text(size.size));
+        if (live) continue;
+        const paisa = (value: unknown): number | null => (value == null ? null : Number(value));
+        const orNull = (value: unknown): string | null => (value == null ? null : text(value));
+        this.upsertProductVariant({
+          articleSizeId: text(size.id), article: text(size.article), color, size: text(size.size), description: orNull(size.description),
+          costPricePaisa: paisa(size.cost_price_paisa), sellingPricePaisa: paisa(size.selling_price_paisa),
+          mainGroupId: orNull(size.main_group_id), productGroupId: orNull(size.product_group_id), articleSeriesId: orNull(size.article_series_id),
+          productTypeId: orNull(size.product_type_id), productSubGroupId: orNull(size.product_sub_group_id), status: "ACTIVE", now,
+        });
+        added += 1;
+      }
+      this.db.exec("COMMIT");
+      return { color, added, existing: sizes.length - added };
+    } catch (error) {
+      try { this.db.exec("ROLLBACK"); } catch { /* ignore missing transaction state */ }
+      throw error;
+    }
   },
 
   /** One article's active colours and sizes, each with its figure in store and whether it has opening stock. */

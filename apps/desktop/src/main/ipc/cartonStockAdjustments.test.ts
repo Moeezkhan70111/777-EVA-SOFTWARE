@@ -41,8 +41,9 @@ beforeEach(() => {
 const invoke = async (channel: string, ...args: unknown[]) => (await handlers.get(channel)!(windowEvent, ...args)) as Record<string, unknown>;
 
 describe("Stock Adjustment at the process boundary", () => {
-  it("is a write under the carton lease and nothing else", () => {
+  it("is a write under the carton lease and nothing else; a new colour is master data", () => {
     expect(leasesFor(IPC.postCartonStockAdjustment)).toEqual(["CARTON_STOCK"]);
+    expect(leasesFor(IPC.addArticleColor)).toEqual(["MASTER_DATA"]);
   });
 
   it("posts with who and where from the session and this computer, whatever the screen sends", async () => {

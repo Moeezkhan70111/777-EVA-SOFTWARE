@@ -26,9 +26,10 @@ const posted = {
 
 let api: Record<string, ReturnType<typeof vi.fn>>;
 
-const show = (canWrite = true) => {
+const show = (canWrite = true, masterData = false) => {
   api.getWriteLeases.mockResolvedValue([
     { domain: "CARTON_STOCK", canWrite, reason: canWrite ? null : "HELD_ELSEWHERE", holderLabel: canWrite ? null : "PC 1 -- Manual Production" },
+    { domain: "MASTER_DATA", canWrite: masterData, reason: masterData ? null : "HELD_ELSEWHERE", holderLabel: masterData ? null : "PC 1" },
   ]);
   render(<NotificationsProvider><StockAdjustmentPage /></NotificationsProvider>);
 };
@@ -45,6 +46,7 @@ beforeEach(() => {
     getCartonAdjustmentArticle: vi.fn().mockResolvedValue({ accepted: true, choices: [choice("10/13", 0), choice("7/10", 5, true), choice("13/1", 0)] }),
     listCartonStockAdjustments: vi.fn().mockResolvedValue({ accepted: true, page: { documents: [], total: 0, page: 1, pages: 1 } }),
     postCartonStockAdjustment: vi.fn().mockResolvedValue({ accepted: true, document: posted, duplicate: false }),
+    addArticleColor: vi.fn().mockResolvedValue({ accepted: true, color: "SKY BLUE", added: 3, existing: 0 }),
   };
   Object.defineProperty(window, "desktop", { value: { versions: { node: "22", chrome: "128", electron: "43" }, api }, configurable: true });
 });
@@ -115,6 +117,23 @@ describe("Stock Adjustment", () => {
     expect(await screen.findByText(/written on PC 1 -- Manual Production only/)).toBeInTheDocument();
     expect(screen.queryByRole("combobox", { name: text.articleLabel })).toBeNull();
     expect(await screen.findByText("SA-000001")).toBeInTheDocument();
+  });
+
+  it("the + beside Colour adds a new colour to the article and selects it, only where master data is written", async () => {
+    show(true, true);
+    await pick(text.articleLabel, "SK6");
+    await userEvent.click(await screen.findByRole("button", { name: text.addColorLabel("SK6") }));
+    api.getCartonAdjustmentArticle.mockResolvedValue({ accepted: true, choices: [choice("7/10", 0), { ...choice("7/10", 0), color: "SKY BLUE" }, { ...choice("10/13", 0), color: "SKY BLUE" }] });
+    await userEvent.type(screen.getByRole("textbox", { name: text.newColorLabel }), "sky blue{Enter}");
+    await waitFor(() => expect(api.addArticleColor).toHaveBeenCalledWith({ article: "SK6", color: "sky blue" }));
+    expect(await screen.findByRole("textbox", { name: text.quantityFor("10/13") })).toBeInTheDocument();
+    expect(screen.getAllByRole("rowheader").map((cell) => cell.textContent)).toEqual(["7/10", "10/13"]);
+  });
+
+  it("offers no + where master data is written on another computer", async () => {
+    show(true, false);
+    await pick(text.articleLabel, "SK6");
+    expect(screen.queryByRole("button", { name: text.addColorLabel("SK6") })).toBeNull();
   });
 
   it("shows a failure to read the history with a retry, never a blank list", async () => {

@@ -1,11 +1,13 @@
 import React, { useMemo, useState } from "react";
-import { CARTON_ADJUSTMENT_DIRECTION, CARTON_ADJUSTMENT_KIND, compareSizes, type CartonAdjustmentDirection, type CartonAdjustmentKind } from "@erp/domain";
+import { CARTON_ADJUSTMENT_DIRECTION, CARTON_ADJUSTMENT_KIND, LEASE_DOMAIN, compareSizes, type CartonAdjustmentDirection, type CartonAdjustmentKind } from "@erp/domain";
 import { SearchableCombobox } from "../../components/shared/SearchableCombobox";
 import { StateView } from "../../components/shared/StateView";
 import { copy } from "../../config/copy";
 import { entriesFrom, entryProblem, type DraftLine } from "./stockAdjustmentDraft";
 import { useArticleChoices } from "./useStockAdjustment";
 import { SizeQuantityTable } from "./SizeQuantityTable";
+import { AddColorControl } from "./AddColorControl";
+import { useWriteLease } from "../sync/useWriteLease";
 
 // ARTICLE → COLOUR → A QUANTITY PER SIZE. The article's sizes are the rows; each shows the figure in store now, the
 // quantity typed and the figure it would leave. "Add to document" puts the sizes with a quantity on the document.
@@ -24,6 +26,8 @@ export const ArticleEntry: React.FC<ArticleEntryProps> = ({ kind, articles, onAd
   const [direction, setDirection] = useState<CartonAdjustmentDirection>(CARTON_ADJUSTMENT_DIRECTION.IN);
   const [typed, setTyped] = useState<Record<string, string>>({});
   const choices = useArticleChoices(article);
+  // A new colour is product master data: offered only where MASTER_DATA is written.
+  const masterData = useWriteLease(LEASE_DOMAIN.MASTER_DATA);
   const effective = kind === CARTON_ADJUSTMENT_KIND.OPENING ? CARTON_ADJUSTMENT_DIRECTION.IN : direction;
 
   const colours = useMemo(() => [...new Set(choices.value.map((choice) => choice.color))].sort(), [choices.value]);
@@ -34,6 +38,7 @@ export const ArticleEntry: React.FC<ArticleEntryProps> = ({ kind, articles, onAd
 
   const chooseArticle = (value: string) => { setArticle(value); setColor(""); setTyped({}); };
   const chooseColor = (value: string) => { setColor(value); setTyped({}); };
+  const colorAdded = async (value: string) => { await choices.reload(); chooseColor(value); };
   const add = () => {
     if (!canAdd) return;
     onAdd(entries);
@@ -51,8 +56,11 @@ export const ArticleEntry: React.FC<ArticleEntryProps> = ({ kind, articles, onAd
         </div>
         <div className="mpr-field">
           <span className="input-label" aria-hidden="true">{text.colorLabel}</span>
-          <SearchableCombobox dropdown ariaLabel={text.colorLabel} placeholder={text.colorPlaceholder} value={color} emptyLabel={text.noColors}
-            options={colours.map((name) => ({ value: name, label: name }))} onChange={chooseColor} />
+          <div className="sa-color-row">
+            <SearchableCombobox dropdown ariaLabel={text.colorLabel} placeholder={text.colorPlaceholder} value={color} emptyLabel={text.noColors}
+              options={colours.map((name) => ({ value: name, label: name }))} onChange={chooseColor} />
+            {masterData.canWrite && article ? <AddColorControl article={article} onAdded={(value) => void colorAdded(value)} /> : null}
+          </div>
         </div>
         {kind === CARTON_ADJUSTMENT_KIND.ADJUSTMENT ? (
           <div className="mpr-field">
