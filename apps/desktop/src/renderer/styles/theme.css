@@ -9745,16 +9745,43 @@ tr.has-error .gp-qty-stepper input { color: var(--err); }
   display: flex; align-items: center; justify-content: center; margin: 0; padding: 16px; border-right: 1px solid var(--sp-line);
   background: var(--sp-ground); color: var(--sp-navy); font-size: 30px; font-weight: 800; letter-spacing: -0.01em; text-align: center; word-break: break-word;
 }
-.cs-table-scroll { min-width: 0; overflow-x: auto; }
-.cs-table-scroll:focus-visible { outline: 2px solid var(--sp-mode-on-start); outline-offset: -2px; }
-.cs-table { width: 100%; table-layout: fixed; border-collapse: separate; border-spacing: 0; font-variant-numeric: tabular-nums; }
-/* Colours that do not fit continue in a band underneath (cartonMatrixLayout): a clear line, then a note. */
-.cs-band + .cs-band { border-top: 3px solid var(--us-chip); }
-.cs-band-caption {
-  padding: 6px 14px; background: var(--sp-ground); color: var(--sp-navy-2); font-size: 13px; font-weight: 700; text-align: left; caption-side: top;
+.sideways-area { display: flex; flex-direction: column; min-width: 0; }
+/* MORE COLOURS THAN FIT (owner, 13 Nov 2026): the table scrolls sideways, and that must be impossible to miss.
+   A strip above it says so with arrow buttons that do it, the side with more colours fades out, and the
+   scrollbar is thick and coloured rather than the thin grey one nobody notices. */
+.sideways-strip {
+  display: flex; align-items: center; gap: 12px; padding: 8px 10px;
+  border-bottom: 1px solid var(--sp-line); background: var(--sp-blue-soft);
 }
+.sideways-hint { flex: 1; margin: 0; color: var(--sp-navy-2); font-size: 17px; font-weight: 700; text-align: center; }
+.sideways-btn {
+  display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; width: 52px; height: 44px;
+  border: 0; border-radius: var(--sp-radius-control); background: var(--sp-blue); color: var(--white); cursor: pointer;
+  box-shadow: var(--sp-mode-on-shadow);
+}
+.sideways-btn:hover:not(:disabled) { background: var(--sp-navy-2); }
+.sideways-btn:focus-visible { outline: 3px solid var(--sp-navy); outline-offset: 2px; }
+.sideways-btn:disabled { background: var(--us-chip); color: var(--sp-faint); box-shadow: none; cursor: default; }
+.sideways-icon { display: inline-flex; width: 26px; height: 26px; }
+.sideways-icon svg { width: 100%; height: 100%; stroke-width: 3; }
+.sideways-btn--left .sideways-icon { transform: rotate(-90deg); }
+.sideways-btn--right .sideways-icon { transform: rotate(90deg); }
+.sideways-frame { position: relative; min-width: 0; }
+.sideways-frame::before, .sideways-frame::after {
+  content: ""; position: absolute; top: 0; bottom: 18px; z-index: 3; width: 48px; pointer-events: none; opacity: 0; transition: opacity 160ms ease;
+}
+.sideways-frame::before { left: var(--sideways-pinned-start, 0px); background: linear-gradient(90deg, var(--sp-blue-soft), transparent); }
+.sideways-frame::after { right: var(--sideways-pinned-end, 0px); background: linear-gradient(270deg, var(--sp-blue-soft), transparent); }
+.sideways-frame.has-more-left::before, .sideways-frame.has-more-right::after { opacity: 1; }
+.sideways-scroll { min-width: 0; overflow-x: auto; scrollbar-width: auto; scrollbar-color: var(--sp-blue) var(--us-chip); }
+.sideways-scroll::-webkit-scrollbar { height: 18px; }
+.sideways-scroll::-webkit-scrollbar-track { background: var(--us-chip); }
+.sideways-scroll::-webkit-scrollbar-thumb { border: 3px solid var(--us-chip); border-radius: 9px; background: var(--sp-blue); }
+.sideways-scroll::-webkit-scrollbar-thumb:hover { background: var(--sp-navy-2); }
+.sideways-scroll:focus-visible { outline: 2px solid var(--sp-mode-on-start); outline-offset: -2px; }
+.cs-table { width: 100%; border-collapse: separate; border-spacing: 0; font-variant-numeric: tabular-nums; }
 .cs-table thead th { white-space: normal; line-height: 1.25; }
-.cs-table th.cs-colour-head { padding: 4px 8px; }
+.cs-table th.cs-colour-head { min-width: var(--cs-colour-min, 90px); padding: 4px 8px; }
 .cs-table th, .cs-table td {
   height: 46px; padding: 0 14px; border-right: 1px solid var(--sp-line); border-bottom: 1px solid var(--sp-line);
   color: var(--sp-navy); font-size: 19px; font-weight: 500; text-align: center; vertical-align: middle; white-space: nowrap;
@@ -9767,10 +9794,10 @@ tr.has-error .gp-qty-stepper input { color: var(--err); }
 .cs-dot.color-swatch { width: 16px; height: 16px; }
 
 /* Size and Total stay in place while the colours scroll under them. */
-.cs-table .cs-size { background: var(--white); border-right-color: transparent; }
+.cs-table .cs-size { position: sticky; left: 0; z-index: 2; background: var(--white); border-right: 2px solid var(--sp-line); }
 .cs-table thead .cs-size { background: var(--us-head); }
 .cs-size-pill { display: inline-block; min-width: min(96px, 100%); padding: 3px 14px; border-radius: 10px; background: var(--us-chip); color: var(--sp-navy-2); font-weight: 700; }
-.cs-table .cs-total { padding: 0 8px; background: var(--white); }
+.cs-table .cs-total { position: sticky; right: 0; z-index: 2; padding: 0 8px; background: var(--white); border-left: 2px solid var(--sp-line); }
 .cs-table thead .cs-total { background: var(--us-chip); font-size: 17px; letter-spacing: 0.02em; text-transform: uppercase; }
 .cs-total-pill { display: block; padding: 5px 10px; border-radius: 10px; background: var(--us-total); font-weight: 800; }
 
@@ -9803,6 +9830,7 @@ tr.has-error .gp-qty-stepper input { color: var(--err); }
 .carton-stock-page .cs-articles--stacked .cs-article-name { justify-content: flex-start; padding: 10px 16px; border-right: 0; border-bottom: 1px solid var(--sp-line); font-size: 22px; }
 .cs-articles--stacked .cs-table th, .cs-articles--stacked .cs-table td { padding: 0 6px; font-size: 16px; }
 .cs-articles--stacked .cs-size-pill { padding: 3px 6px; }
+@media (max-width: 760px) { .sideways-hint { font-size: 15px; } .sideways-strip { gap: 8px; padding: 6px 8px; } }
 
 @media (max-width: 900px) {
   .cs-skeleton-card { grid-template-columns: 1fr; }
@@ -9867,8 +9895,23 @@ tr.has-error .gp-qty-stepper input { color: var(--err); }
   .sa-entry-grid { grid-template-columns: minmax(0, 2fr) minmax(12rem, 1fr) auto; }
 }
 /* The "+" beside Colour on Stock Adjustment, and its inline new-colour field. */
-.sa-color-row { display: flex; align-items: center; gap: var(--space-2); }
-.sa-color-row > :first-child { flex: 1 1 auto; min-width: 0; }
-.sa-add-color { min-width: 44px; min-height: 44px; padding: 0; font-size: 1.25rem; font-weight: 700; line-height: 1; }
+/* The entry grid (owner, 13 Nov 2026): sizes down, colours across, a box in every cell. The Size column stays put
+   while many colours scroll sideways (SidewaysScrollArea). */
+.sa-grid-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); flex-wrap: wrap; }
+.sa-grid { width: 100%; border-collapse: separate; border-spacing: 0; }
+.sa-grid th, .sa-grid td { padding: var(--space-2); border-bottom: 1px solid var(--border); vertical-align: top; }
+.sa-grid thead th { background: var(--surface-2); white-space: nowrap; }
+.sa-grid .sa-grid-size { position: sticky; left: 0; z-index: 2; width: 96px; min-width: 96px; background: var(--surface-1); border-right: 2px solid var(--border); font-weight: 700; vertical-align: middle; }
+.sa-grid thead .sa-grid-size { background: var(--surface-2); }
+.sa-grid-colour { min-width: 8rem; text-align: left; }
+.sa-grid-colour-name { display: inline-flex; align-items: center; gap: var(--space-2); }
+.sa-cell { min-width: 8rem; }
+.sa-cell .sa-qty { width: 100%; min-width: 6rem; }
+.sa-cell.is-invalid .sa-qty { border-color: var(--danger-strong); }
+.sa-cell.is-locked { background: var(--surface-2); vertical-align: middle; }
+.sa-cell-figures { display: block; margin-top: 2px; font-size: 0.75rem; color: var(--text-3); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.sa-cell-figures.is-below-zero { color: var(--warning-strong); font-weight: 700; }
+.sa-cell .sa-new-on-size { display: block; margin-top: 2px; }
+.sa-add-color { min-height: 44px; padding: 0 var(--space-3); font-weight: 700; }
 .sa-new-color { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; flex: 1 1 100%; }
 .sa-new-color .form-input { flex: 1 1 10rem; min-height: 40px; }

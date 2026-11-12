@@ -33,6 +33,13 @@ export const copy = {
     pageOf: (page: number, pages: number) => `Page ${page} of ${pages}`,
   },
 
+  // The shared sideways-scroll strip (components/shared/SidewaysScrollArea), above a table of colours too wide to fit.
+  sidewaysScroll: {
+    hint: (count: number) => `${String(count)} colors — scroll sideways to see them all`,
+    left: "Show earlier colors",
+    right: "Show more colors",
+  },
+
   states: {
     loadFailedTitle: "Could not load this screen",
     loadFailedBody: "The data could not be read. Check the application log if this keeps happening.",
@@ -2736,9 +2743,6 @@ export const copy = {
     sizeInDozens: "Size (dozen)",
     total: "Total",
     tableLabel: (article: string) => `${article} cartons in store`,
-    /** Above each band when an article's colours take more than one: "Colors 1–7 of 14". */
-    colourBand: (first: number, last: number, count: number) =>
-      first === last ? `Color ${String(first)} of ${String(count)}` : `Colors ${String(first)}–${String(last)} of ${String(count)}`,
     noMatchTitle: "Nothing matches",
     noMatchHint: "Clear the search or choose All Article Series to see everything.",
     loading: "Loading carton stock…",
@@ -2768,8 +2772,6 @@ export const copy = {
     articleLabel: "Article",
     articlePlaceholder: "Search article…",
     colorLabel: "Colour",
-    colorPlaceholder: "Choose colour",
-    noColors: "This article has no colours",
     directionLabel: "Movement",
     directions: { IN: "Increase", OUT: "Decrease" } as const,
     loadingArticle: "Reading the article's sizes…",
@@ -2777,7 +2779,6 @@ export const copy = {
     noSizesHint: "Add or re-enable sizes and colours in Product Master first.",
     sizeColumn: "Size",
     inStoreColumn: "In store (dozen)",
-    openingColumn: "Opening (dozen)",
     resultColumn: "Result (dozen)",
     movementColumn: "Movement",
     cartonsColumn: "Dozen",
@@ -2785,16 +2786,23 @@ export const copy = {
     numberColumn: "Number",
     postedByColumn: "Posted by",
     hasOpening: "Has opening",
-    quantityFor: (size: string) => `Dozens for size ${size}`,
+    quantityFor: (color: string, size: string) => `Dozens for ${color}, size ${size}`,
+    /** The entry grid (owner, 13 Nov 2026): every colour and size of the article at once. */
+    gridLabel: (article: string) => `${article}: dozens per colour and size`,
+    gridHint: "Type dozens in any boxes — every colour and size at once. Up and Down arrows move along a colour; Enter adds them all.",
+    /** Under a box: the figure in store now, in dozens (the figure it would leave follows after an arrow). */
+    cellNow: (dozens: string) => `Now ${dozens}`,
+    typedSummary: (cells: number, dozens: string) => `${String(cells)} ${cells === 1 ? "box" : "boxes"} typed · ${dozens} dozen`,
+    newColorButton: "+ New colour",
     alreadyOpened: "Already has opening stock.",
     colorNotOnSize: "Colour not on this size",
-    newOnSize: "new colour for this size",
-    noColorsHintAdd: "Add its first colour with + beside Colour.",
+    newOnSize: "New on this size",
+    noColorsHintAdd: "Add its first colour with + New colour.",
     addToDocument: "Add to document",
     linesTitle: "Lines",
     linesLabel: "Lines",
     noLinesTitle: "No lines yet",
-    noLinesHint: "Choose an article and colour, enter dozens per size, then Add to document.",
+    noLinesHint: "Choose an article, type dozens in any of its colours and sizes, then Add to document.",
     totalsRow: "Total",
     totals: (dozensIn: string, dozensOut: string) => `+${dozensIn} / −${dozensOut} dozen`,
     totalInLabel: "In (dozen)",

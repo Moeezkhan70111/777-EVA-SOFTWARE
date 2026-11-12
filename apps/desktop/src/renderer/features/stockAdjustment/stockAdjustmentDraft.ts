@@ -4,6 +4,7 @@ import {
   cartonAdjustmentDozens,
   cartonAdjustmentResult,
   cartonsToDozens,
+  compareSizes,
   type CartonAdjustmentDirection,
   type CartonAdjustmentKind,
 } from "@erp/domain";
@@ -72,31 +73,72 @@ export function entryProblem(
   return null;
 }
 
-/** The lines the typed quantities make, for one article and colour. */
-export function entriesFrom(
+/**
+ * ONE ARTICLE AS A GRID (owner, 13 Nov 2026): sizes down, colours across, a box in every cell, so every colour and
+ * size of the article is typed at once instead of one colour at a time. Typed text is keyed by lineKey, one per cell.
+ */
+export interface EntryGrid {
+  /** The article's sizes in store order. */
+  readonly sizes: ReadonlyArray<{ readonly articleSizeId: string; readonly size: string }>;
+  /** Every colour the article has on any size, A to Z. */
+  readonly colours: readonly string[];
+  /** The choice behind each cell, by lineKey. A cell with none takes no quantity. */
+  readonly cells: ReadonlyMap<string, AdjustmentChoice>;
+}
+
+export function entryGrid(choices: readonly AdjustmentChoice[]): EntryGrid {
+  const sizes = new Map<string, string>();
+  for (const choice of choices) sizes.set(choice.articleSizeId, choice.size);
+  return {
+    sizes: [...sizes].map(([articleSizeId, size]) => ({ articleSizeId, size })).sort((a, b) => compareSizes(a.size, b.size)),
+    colours: [...new Set(choices.map((choice) => choice.color))].sort(),
+    cells: new Map(choices.map((choice) => [lineKey(choice.articleSizeId, choice.color), choice])),
+  };
+}
+
+const typedIn = (typed: Readonly<Record<string, string>>, choice: AdjustmentChoice): string => typed[lineKey(choice.articleSizeId, choice.color)] ?? "";
+
+/** The problem with each typed cell, by lineKey. Cells with nothing typed, or nothing wrong, are left out. */
+export function gridProblems(
+  choices: readonly AdjustmentChoice[],
+  kind: CartonAdjustmentKind,
+  direction: CartonAdjustmentDirection,
+  typed: Readonly<Record<string, string>>,
+  canAddColor: boolean
+): Map<string, string> {
+  const problems = new Map<string, string>();
+  for (const choice of choices) {
+    const problem = entryProblem(choice, kind, direction, typedIn(typed, choice), canAddColor);
+    if (problem) problems.set(lineKey(choice.articleSizeId, choice.color), problem);
+  }
+  return problems;
+}
+
+/** The lines the typed cells make, colour by colour and size by size, the order the grid reads. */
+export function gridEntries(
   article: string,
-  color: string,
   choices: readonly AdjustmentChoice[],
   typed: Readonly<Record<string, string>>,
   direction: CartonAdjustmentDirection
 ): DraftLine[] {
   return choices
-    .filter((choice) => choice.color === color && typedCartons(typed[choice.articleSizeId] ?? "") !== null)
+    .filter((choice) => typedCartons(typedIn(typed, choice)) !== null)
+    .sort((a, b) => a.color.localeCompare(b.color) || compareSizes(a.size, b.size))
     .map((choice) => ({
-      key: lineKey(choice.articleSizeId, color),
+      key: lineKey(choice.articleSizeId, choice.color),
       articleSizeId: choice.articleSizeId,
       article,
       size: choice.size,
-      color,
+      color: choice.color,
       direction,
-      cartons: Number(typedCartons(typed[choice.articleSizeId] ?? "")),
+      cartons: Number(typedCartons(typedIn(typed, choice))),
       inStore: choice.inStore,
     }));
 }
 
-/** Whether any typed size needs the colour added to it before its line can be posted. */
-export const needsColorAdded = (choices: readonly AdjustmentChoice[], color: string, typed: Readonly<Record<string, string>>): boolean =>
-  choices.some((choice) => choice.color === color && choice.colorMissing && typedCartons(typed[choice.articleSizeId] ?? "") !== null);
+/** The colours that must first be added to a size they are not on yet, because a quantity was typed there. */
+export const coloursToAdd = (choices: readonly AdjustmentChoice[], typed: Readonly<Record<string, string>>): string[] =>
+  [...new Set(choices.filter((choice) => choice.colorMissing && typedCartons(typedIn(typed, choice)) !== null).map((choice) => choice.color))].sort();
 
 /** New lines replace the same colour and size already on the document, in place; the rest go at the end. */
 export function mergeLines(lines: readonly DraftLine[], added: readonly DraftLine[]): DraftLine[] {

@@ -3,7 +3,7 @@ import { copy } from "../../config/copy";
 import { useDesktopApi } from "../../hooks/useDesktopApi";
 import { leaseRefusalText } from "../../../shared/leaseRefusal";
 
-// The "+" beside Colour: a new colour for the chosen article, on every one of its active sizes (main process
+// "+ New colour" above the grid: a new colour for the chosen article, on every one of its active sizes (main process
 // addColorToArticle). It is product master data, written where MASTER_DATA is held; the page only shows it there.
 
 const text = copy.stockAdjustment;
@@ -51,7 +51,7 @@ export const AddColorControl: React.FC<AddColorControlProps> = ({ article, onAdd
     return (
       <button type="button" className="btn btn-ghost sa-add-color" aria-label={text.addColorLabel(article)} title={text.addColorLabel(article)}
         disabled={!article} onClick={() => setOpen(true)}>
-        +
+        {text.newColorButton}
       </button>
     );
   }

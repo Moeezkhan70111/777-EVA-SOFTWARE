@@ -103,39 +103,60 @@ describe("the stock matrix", () => {
   });
 });
 
-// Many colours never scroll sideways: they continue in bands underneath, each with the sizes, and
-// the Total on the last. ResizeObserver stands in for the window, saying how wide the list is.
+// Many colours scroll sideways, and the card says so: a strip above the table names how many colours there are,
+// with arrow buttons that scroll it, each disabled at its end. jsdom lays nothing out, so the test says how wide
+// the table and its box are.
 describe("an article with more colours than fit across", () => {
   const COLOURS = ["RED", "BLUE", "GREEN", "BROWN", "SKIN", "PINK", "BLACK", "WHITE", "GREY", "NAVY", "MUSTARD", "ORANGE", "PURPLE", "CREAM"];
+  const scrolled = new WeakMap<Element, number>();
+  const scrollBy = vi.fn();
 
   beforeEach(() => {
     figures = COLOURS.map((color, index) => ({ article: "SK6", size: "7/10", color, series: "SKECHERS", quantity: (index + 1) * 2 }));
-    vi.stubGlobal(
-      "ResizeObserver",
-      class {
-        constructor(private readonly callback: ResizeObserverCallback) {}
-        // 1100px wide: 7 colours fit across, so 14 make two bands of 7.
-        observe(target: Element) { this.callback([{ target, contentRect: { width: 1100 } } as unknown as ResizeObserverEntry], this as unknown as ResizeObserver); }
-        unobserve() {}
-        disconnect() {}
-      }
-    );
-    return () => vi.unstubAllGlobals();
+    const isBox = (element: Element) => element.classList.contains("sideways-scroll");
+    const restore = [
+      ["scrollWidth", { get(this: Element) { return isBox(this) ? 1600 : 0; } }],
+      ["clientWidth", { get(this: Element) { return isBox(this) ? 800 : 0; } }],
+      ["scrollLeft", { get(this: Element) { return scrolled.get(this) ?? 0; }, set(this: Element, value: number) { scrolled.set(this, value); } }],
+    ].map(([name, descriptor]) => {
+      const before = Object.getOwnPropertyDescriptor(Element.prototype, name as string);
+      Object.defineProperty(Element.prototype, name as string, { configurable: true, ...(descriptor as PropertyDescriptor) });
+      return () => (before ? Object.defineProperty(Element.prototype, name as string, before) : undefined);
+    });
+    scrollBy.mockReset();
+    Object.defineProperty(Element.prototype, "scrollBy", { configurable: true, value: scrollBy });
+    return () => restore.forEach((undo) => undo());
   });
 
-  it("shows every colour in two bands of seven, sizes on both, the Total once at the end", async () => {
+  it("keeps every colour in one table, and says plainly to scroll sideways", async () => {
     show();
-    await screen.findByText("Colors 8–14 of 14");
-    const tables = matrix("SK6").getAllByRole("table");
-    expect(tables).toHaveLength(2);
-    expect(within(tables[0] as HTMLElement).getByText("Colors 1–7 of 14")).toBeInTheDocument();
-    const heads = tables.map((table) => within(table).getAllByRole("columnheader").map((cell) => cell.getAttribute("title") ?? cell.textContent));
-    expect(heads[0]).toEqual(["Size (dozen)", "BLACK", "BLUE", "BROWN", "CREAM", "GREEN", "GREY", "MUSTARD"]);
-    expect(heads[1]).toEqual(["Size (dozen)", "NAVY", "ORANGE", "PINK", "PURPLE", "RED", "SKIN", "WHITE", "Total"]);
-    // Every figure once: 2+4+…+28 cartons = 210 cartons = 105 dozen, on the last band's Total.
-    expect(within(tables[1] as HTMLElement).getByRole("row", { name: /^7\/10 .* 105$/ })).toBeInTheDocument();
-    expect(within(tables[0] as HTMLElement).queryByText("Total")).not.toBeInTheDocument();
+    await screen.findByText(copy.sidewaysScroll.hint(14));
+    const table = matrix("SK6").getByRole("table");
+    expect(within(table).getAllByRole("columnheader")).toHaveLength(16);
+    // Every figure once: 2+4+…+28 cartons = 210 cartons = 105 dozen, in the one Total.
+    expect(within(table).getByRole("row", { name: /^7\/10 .* 105$/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: copy.sidewaysScroll.left })).toBeDisabled();
+    expect(screen.getByRole("button", { name: copy.sidewaysScroll.right })).toBeEnabled();
   });
+
+  it("scrolls when an arrow is pressed, and turns the arrow off at the end", async () => {
+    show();
+    await userEvent.click(await screen.findByRole("button", { name: copy.sidewaysScroll.right }));
+    expect(scrollBy).toHaveBeenCalledWith({ left: 640, behavior: "smooth" });
+    const box = screen.getByRole("region", { name: "SK6 cartons in store" });
+    act(() => {
+      box.scrollLeft = 800;
+      box.dispatchEvent(new Event("scroll"));
+    });
+    expect(screen.getByRole("button", { name: copy.sidewaysScroll.right })).toBeDisabled();
+    expect(screen.getByRole("button", { name: copy.sidewaysScroll.left })).toBeEnabled();
+  });
+});
+
+it("shows no scroll strip when every colour fits", async () => {
+  show();
+  await screen.findByRole("region", { name: "SK6 cartons in store" });
+  expect(screen.queryByText(/scroll sideways/)).not.toBeInTheDocument();
 });
 
 // The list has no pages: it shows 20 articles, and 20 more each time its end scrolls near. jsdom has

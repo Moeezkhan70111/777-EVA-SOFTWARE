@@ -54,8 +54,11 @@ interface MatricesProps {
   endMarker: React.RefObject<HTMLDivElement | null>;
 }
 
-/** The cards' column widths come from cartonMatrixLayout, so the bands it works out are the ones drawn. */
-const LIST_STYLE = { "--cs-name-width": `${CARTON_LAYOUT.nameWidth}px` } as React.CSSProperties;
+/** The cards' column widths come from cartonMatrixLayout, the one source for them. */
+const LIST_STYLE = {
+  "--cs-name-width": `${CARTON_LAYOUT.nameWidth}px`,
+  "--cs-colour-min": `${CARTON_LAYOUT.colourMinWidth}px`,
+} as React.CSSProperties;
 
 const Matrices: React.FC<MatricesProps> = ({ data, filtered, loadingMore, endMarker }) => {
   // Measured once for the whole list: every card is as wide as the list.
