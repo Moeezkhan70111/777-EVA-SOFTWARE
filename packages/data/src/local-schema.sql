@@ -185,9 +185,11 @@ CREATE INDEX IF NOT EXISTS idx_production_events_variant_date ON production_even
 CREATE INDEX IF NOT EXISTS idx_production_events_factory_date ON production_events(factory_id, event_date);
 CREATE INDEX IF NOT EXISTS idx_production_events_event_type_date ON production_events(event_type, event_date);
 
+-- No CHECK (quantity_on_hand >= 0): a gatepass may take the figure below zero until production makes it up
+-- (local migration 108). Every other movement is refused by the application rather than go below zero.
 CREATE TABLE IF NOT EXISTS stock_projection_by_variant (
   product_variant_id TEXT PRIMARY KEY,
-  quantity_on_hand INTEGER NOT NULL DEFAULT 0 CHECK (quantity_on_hand >= 0),
+  quantity_on_hand INTEGER NOT NULL DEFAULT 0,
   quantity_reserved INTEGER NOT NULL DEFAULT 0,
   quantity_damaged INTEGER NOT NULL DEFAULT 0,
   last_event_ts TEXT,

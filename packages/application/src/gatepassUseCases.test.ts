@@ -24,6 +24,8 @@ interface World {
   bills: Record<string, { id: string; voucherNumber: string }>;
   /** Cartons Store Move Out has taken per line id — what a real STORE_EXIT event would record. */
   dispatched: Record<string, number>;
+  /** Carton QR on hold: a gatepass may take the store below zero (owner, 12 Nov 2026). */
+  mayGoBelowZero?: boolean;
 }
 
 function createWorld(initial: Partial<World> = {}) {
@@ -33,7 +35,7 @@ function createWorld(initial: Partial<World> = {}) {
   const audit: AuditLogPayload[] = [];
   const notices: BillingNoticePayload[] = [];
   const cancelledIds = new Set<string>();
-  const issued: Array<GatepassLineToIssue & { issuedBy: string }> = [];
+  const issued: Array<GatepassLineToIssue & { issuedBy: string; storeLocationId?: string }> = [];
   const returned: Array<{ gatepassId: string; returnedBy: string }> = [];
   let rollbacks = 0;
   let commits = 0;
@@ -89,9 +91,10 @@ function createWorld(initial: Partial<World> = {}) {
       async insertGatepassLines(payload) {
         lines.push(...payload.map((line) => ({ ...line })));
       },
-      async issueGatepassCartons(payload, issuedBy) {
-        issued.push(...payload.map((line) => ({ ...line, issuedBy })));
+      async issueGatepassCartons(payload, issuedBy, _tx, storeLocationId) {
+        issued.push(...payload.map((line) => ({ ...line, issuedBy, storeLocationId })));
       },
+      gatepassMayGoBelowZero: () => world.mayGoBelowZero ?? false,
       async appendAuditLog(payload) {
         audit.push({ ...payload });
       },
@@ -379,6 +382,47 @@ test("stock is re-read inside the transaction: INSUFFICIENT_STOCK when the clerk
 
   assert.deepEqual(w.counts(), { commits: 1, rollbacks: 3, headers: 1, lines: 1, audit: 1, notices: 1 });
   assert.equal(w.headers[0].gatepassNumber, 1, "rejected attempts consumed no number");
+});
+
+// Owner, 12 Nov 2026: the gatepass goes out first, Manual Production records the cartons later. While carton
+// QR is on hold a line may ask for more than Reflected Stock; the store goes below zero by the difference, the
+// rest comes from this computer's store, and the audit says by how much each line went short.
+test("while a gatepass may go below zero, a line above the store's stock is made, its shortfall audited, and the store travels", async () => {
+  const w = createWorld({ mayGoBelowZero: true, parties: { [ABC.id]: ABC }, stock: { [RED.productVariantId]: { ...RED, storeQuantity: 40 }, [BLUE.productVariantId]: BLUE } });
+
+  const short = await w.creator.execute({
+    partyId: ABC.id,
+    lines: [
+      { productVariantId: "v-blue", quantity: 10, reflectedStockSeen: 80 },
+      { productVariantId: "v-red", quantity: 50, reflectedStockSeen: 40 },
+    ],
+    actor: "clerk",
+    storeLocationId: "factory-777",
+  });
+  assert.equal(short.accepted, true, short.reason);
+  assert.equal(short.outcome, "CREATED");
+  assert.equal(short.totalQuantity, 60);
+  assert.deepEqual(w.issued.map((line) => [line.productVariantId, line.quantity, line.storeLocationId]).sort(), [
+    ["v-blue", 10, "factory-777"],
+    ["v-red", 50, "factory-777"],
+  ]);
+  const audited = (w.audit[0]?.payload as { lines: Array<{ productVariantId: string; shortBy: number; reflectedStockAtCreation: number }> }).lines;
+  assert.deepEqual(audited.map((line) => [line.productVariantId, line.reflectedStockAtCreation, line.shortBy]).sort(), [
+    ["v-blue", BLUE.storeQuantity, 0],
+    ["v-red", 40, 10],
+  ]);
+  assert.deepEqual(w.counts(), { commits: 1, rollbacks: 0, headers: 1, lines: 2, audit: 1, notices: 1 });
+
+  // A product with nothing at all in the store is made too: every carton of it is owed.
+  const empty = createWorld({ mayGoBelowZero: true, parties: { [ABC.id]: ABC }, stock: { [RED.productVariantId]: { ...RED, storeQuantity: 0 } } });
+  const made = await empty.creator.execute({ partyId: ABC.id, lines: [{ productVariantId: "v-red", quantity: 3 }], actor: "clerk", storeLocationId: "factory-777" });
+  assert.equal(made.accepted, true, made.reason);
+  assert.equal((empty.audit[0]?.payload as { lines: Array<{ shortBy: number }> }).lines[0]?.shortBy, 3);
+
+  // With carton QR scanning on, the same line is refused exactly as before.
+  const scanning = createWorld({ parties: { [ABC.id]: ABC }, stock: { [RED.productVariantId]: { ...RED, storeQuantity: 40 } } });
+  const refused = await scanning.creator.execute({ partyId: ABC.id, lines: [{ productVariantId: "v-red", quantity: 50 }], actor: "clerk", storeLocationId: "factory-777" });
+  assert.equal(refused.outcome, "INSUFFICIENT_STOCK");
 });
 
 // ─── Reservations: the exact sequence the business rule is defined by ──────────

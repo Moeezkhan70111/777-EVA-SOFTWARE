@@ -163,7 +163,9 @@ test("a movement delivered twice moves the figure once, and A's own movements co
   });
 });
 
-test("a movement that would take B below zero waits with its reason, writes nothing, and applies once its cause arrives", async () => {
+// A gatepass may take the figure below zero (owner, 12 Nov 2026), on every computer alike: one that receives it
+// before the production that covers it applies it at once and shows the minus, and ends on the same figure.
+test("a gatepass that arrives before its production applies at once on B, showing the minus, and B ends where A is", async () => {
   await withPcs(async (a, b) => {
     addProduct(b);
     a.produce("10");
@@ -171,15 +173,32 @@ test("a movement that would take B below zero waits with its reason, writes noth
     const [produced, issued] = sent(a.pc);
     assert.ok(produced && issued);
 
-    const early = applyEnvelope(b.db.db, issued, NOW);
+    assert.equal(applyEnvelope(b.db.db, issued, NOW).status, "APPLIED");
+    assert.deepEqual([inStore(b), onHand(b)], [-5, -5], "the minus, never clamped");
+    assert.equal(applyEnvelope(b.db.db, produced, NOW).status, "APPLIED");
+    assert.deepEqual([inStore(b), onHand(b)], [15, 15]);
+    assert.equal(inStore(a.pc), 15, "the same figure as A");
+  });
+});
+
+// Nothing else may: a voided production that arrives before the production it voids waits, as before.
+test("any other movement that would take B below zero waits with its reason, writes nothing, and applies once its cause arrives", async () => {
+  await withPcs(async (a, b) => {
+    addProduct(b);
+    const entry = a.produce("10");
+    a.pc.db.voidManualProduction({ entryId: entry.id, reason: "entered on the wrong machine", voidedBy: "admin", mayVoidEarlierDays: false });
+    const [produced, voided] = sent(a.pc);
+    assert.ok(produced && voided);
+
+    const early = applyEnvelope(b.db.db, voided, NOW);
     assert.equal(early.status, "REJECTED");
     assert.equal(early.permanent, false, "parked, never clamped and never refused for good");
     assert.equal(early.reason, `CARTON_STOCK_WOULD_GO_NEGATIVE:${red(b)}`);
     assert.equal(Number((b.db.db.prepare("SELECT COUNT(*) AS n FROM carton_stock_events").get() as { n: number }).n), 0, "nothing of it was written");
 
     assert.equal(applyEnvelope(b.db.db, produced, NOW).status, "APPLIED");
-    assert.equal(applyEnvelope(b.db.db, issued, NOW).status, "APPLIED");
-    assert.equal(inStore(b), 15);
+    assert.equal(applyEnvelope(b.db.db, voided, NOW).status, "APPLIED");
+    assert.equal(inStore(b), 0);
   });
 });
 

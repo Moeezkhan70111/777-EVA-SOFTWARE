@@ -4,6 +4,10 @@
 //                                                                         scanners, exactly as before
 //   the shortfall (cartons with no QR: Manual Production)               -> ISSUED DIRECTLY now, one
 //                                                                         GATEPASS_ISSUE movement
+//   more than the store holds (owner, 12 Nov 2026)                      -> issued all the same, from this
+//                                                                         computer's store, which goes
+//                                                                         below zero until production
+//                                                                         makes it up
 //
 //   issueGatepassCartons    splits each line and issues the shortfall, in the create transaction
 //   returnGatepassCartons   one GATEPASS_CANCEL movement for each issue not yet reversed, from the same
@@ -42,14 +46,17 @@ function qrAvailableFor(sql: CartonSql, line: GatepassLineToIssue): number {
   return Number(inStore.n) - Number(claimed.n);
 }
 
-/** Takes `cartons` of the line out of the store now, row by row. Refuses rather than overdraw. */
-function issueNow(sql: CartonSql, line: GatepassLineToIssue, cartons: number, issuedBy: string, nowIso: string): void {
+/**
+ * Takes `cartons` of the line out of the store now, row by row. What the store does not hold comes from
+ * `storeLocationId` (this computer's store), below zero. Only without a store is a shortfall refused.
+ */
+function issueNow(sql: CartonSql, line: GatepassLineToIssue, cartons: number, issuedBy: string, nowIso: string, storeLocationId?: string): void {
   let rows: Array<{ locationId: string; cartons: number }>;
   try {
-    rows = storeRowsToTakeFrom(sql, line.productVariantId, cartons);
+    rows = storeRowsToTakeFrom(sql, line.productVariantId, cartons, storeLocationId);
   } catch (error) {
     if (!(error instanceof CartonStockWouldGoNegative)) throw error;
-    throw new Error(`The store does not hold ${cartons} carton(s) of ${line.label}. Nothing was saved.`);
+    throw new Error(`The store does not hold ${cartons} carton(s) of ${line.label}, and this computer has no store set up to take them from. Nothing was saved.`);
   }
   for (const row of rows) {
     recordCartonStockMovement(sql, {
@@ -67,16 +74,26 @@ function issueNow(sql: CartonSql, line: GatepassLineToIssue, cartons: number, is
 
 export const gatepassCartonsMethods = {
   /**
+   * Whether a new gatepass may take the store below zero (owner, 12 Nov 2026): only while carton QR is on hold.
+   * With QR scanning on, the cartons beyond what is free are other gatepasses' reserved QR cartons.
+   */
+  gatepassMayGoBelowZero(this: SqliteDatabase): boolean {
+    return this.cartonQrOnHold;
+  },
+
+  /**
    * Splits every line and takes its shortfall out of the store. Inside the create transaction only,
    * after the lines are written and the Reflected Stock check has passed, under the same write lock.
    */
-  async issueGatepassCartons(this: SqliteDatabase, lines: GatepassLineToIssue[], issuedBy: string, tx: TransactionContext): Promise<void> {
+  async issueGatepassCartons(this: SqliteDatabase, lines: GatepassLineToIssue[], issuedBy: string, tx: TransactionContext, storeLocationId?: string): Promise<void> {
     const context = tx as MutableTransactionContext;
     for (const line of lines) {
       // While carton QR is on hold nothing would ever scan a reservation out: the whole line leaves now.
       const qrAvailable = this.cartonQrOnHold ? 0 : qrAvailableFor(context.db, line);
       const split = splitGatepassLine(line.quantity, qrAvailable);
-      if (split.issueNow > 0) issueNow(context.db, line, split.issueNow, issuedBy, context.nowIso);
+      // Below zero only while carton QR is on hold (gatepassMayGoBelowZero): otherwise refused as before.
+      const shortfallFrom = this.cartonQrOnHold ? storeLocationId : undefined;
+      if (split.issueNow > 0) issueNow(context.db, line, split.issueNow, issuedBy, context.nowIso, shortfallFrom);
     }
   },
 

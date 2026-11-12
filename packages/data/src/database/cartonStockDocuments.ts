@@ -229,6 +229,8 @@ export const cartonStockDocumentMethods = {
           createdBy: postedBy,
           createdAt: nowIso,
           reason: `${code} ${checked.kind === CARTON_ADJUSTMENT_KIND.OPENING ? "Opening stock" : "Stock adjustment"}: ${checked.reason}`,
+          // A decrease may go below zero only while carton QR is on hold (owner, 12 Nov 2026).
+          refuseBelowZero: !this.cartonQrOnHold,
         });
       } catch (error) {
         if (error instanceof CartonStockWouldGoNegative) {

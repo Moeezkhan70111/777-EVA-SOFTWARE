@@ -11,9 +11,21 @@
 // CartonStockWouldGoNegative: a local writer turns it into a reason the operator can act on, and the
 // applier parks the event as a named wait. A figure that looks fine and isn't is the one outcome
 // this must never produce.
+//
+// THE ONE EXCEPTION IS A GATEPASS (owner, 12 Nov 2026; @erp/domain cartonMovementMayGoBelowZero): it may take
+// more than the store holds, and the figure shows the shortfall as a minus until Manual Production makes it
+// up. The figure is never clamped then either: -3 means three cartons left on a gatepass before they were made.
+// Local migration 108 lifted the database's own ">= 0" check for this. Every other movement is still refused.
 
 import crypto from "node:crypto";
-import { CARTON_STOCK_EVENT_TYPE, cartonStockDelta, isCartonAdjustment, isCartonStockEventType, type CartonStockEventType } from "@erp/domain";
+import {
+  CARTON_STOCK_EVENT_TYPE,
+  cartonMovementMayGoBelowZero,
+  cartonStockDelta,
+  isCartonAdjustment,
+  isCartonStockEventType,
+  type CartonStockEventType,
+} from "@erp/domain";
 import { IN_STORE_LOCATION_TYPE } from "@erp/application";
 import { enqueueProductVariant, enqueueSyncEvent, heldLeaseEpoch, leaseDomainOf, SYNC_AGGREGATE, type SyncWriteHandle } from "./syncEvents.js";
 import type { BuildHandle } from "./masterRecords.js";
@@ -43,12 +55,28 @@ const quantityIn = (sql: CartonSql, query: string, ...params: Bindable[]): numbe
   return Number(row?.quantity_on_hand ?? 0);
 };
 
-/** THE ONE PLACE the carton figure moves: both projections, together, never below zero. */
-export function moveCartonStock(sql: CartonSql, move: { variantId: string; locationId: string; delta: number; nowIso: string }): void {
-  if (move.delta < 0) {
+export interface CartonMove {
+  variantId: string;
+  locationId: string;
+  delta: number;
+  nowIso: string;
+  /**
+   * The movement's type, when it has one. It alone decides whether the figure may go below zero
+   * (cartonMovementMayGoBelowZero: a gatepass issue only), here and on every computer that applies it.
+   */
+  eventType?: CartonStockEventType;
+  /** The writer's own say: refuse below zero even for a type that may go there (carton QR scanning is on). */
+  refuseBelowZero?: boolean;
+}
+
+/** THE ONE PLACE the carton figure moves: both projections, together, never below zero but for a gatepass. */
+export function moveCartonStock(sql: CartonSql, move: CartonMove): void {
+  const mayGoBelowZero = !move.refuseBelowZero && move.eventType !== undefined && cartonMovementMayGoBelowZero(move.eventType);
+  if (move.delta < 0 && !mayGoBelowZero) {
     takeCartons(sql, move);
     return;
   }
+  // Adding cartons, or a gatepass taking them: the rows may not exist yet (a product never made), so upsert.
   sql
     .prepare(
       `INSERT INTO stock_projection_by_variant (product_variant_id, quantity_on_hand, last_event_ts, updated_at)
@@ -107,6 +135,8 @@ export interface CartonStockMovement {
   readonly gatepassLineId?: string | null;
   /** Required on an adjustment: why the figure moved. */
   readonly reason?: string | null;
+  /** Refuse below zero even where the type may go there: carton QR scanning is on (see CartonMove). */
+  readonly refuseBelowZero?: boolean;
 }
 
 /**
@@ -146,15 +176,28 @@ export function recordCartonStockMovement(sql: CartonSql, movement: CartonStockM
       id, movement.variantId, movement.eventType, movement.cartons, delta, IN_STORE_LOCATION_TYPE, movement.locationId,
       movement.createdBy, movement.createdAt, movement.manualProductionEntryId ?? null, movement.gatepassId ?? null, movement.gatepassLineId ?? null, movement.reason ?? null
     );
-  moveCartonStock(sql, { variantId: movement.variantId, locationId: movement.locationId, delta, nowIso: movement.createdAt });
+  moveCartonStock(sql, {
+    variantId: movement.variantId,
+    locationId: movement.locationId,
+    delta,
+    nowIso: movement.createdAt,
+    eventType: movement.eventType,
+    refuseBelowZero: movement.refuseBelowZero,
+  });
   return id;
 }
 
 /**
  * Where a gatepass takes `cartons` of a variant from: the store rows holding it, fullest first.
- * With one store that is one row. Refuses when the store does not hold them all.
+ * With one store that is one row. What the store does not hold is taken from `shortfallFrom` (this
+ * computer's store), taking it below zero. Without one, a shortfall is refused as before.
  */
-export function storeRowsToTakeFrom(sql: CartonSql, variantId: string, cartons: number): Array<{ locationId: string; cartons: number }> {
+export function storeRowsToTakeFrom(
+  sql: CartonSql,
+  variantId: string,
+  cartons: number,
+  shortfallFrom?: string
+): Array<{ locationId: string; cartons: number }> {
   const rows = sql
     .prepare(
       `SELECT location_id, quantity_on_hand FROM stock_projection_by_location
@@ -170,7 +213,13 @@ export function storeRowsToTakeFrom(sql: CartonSql, variantId: string, cartons: 
     taken.push({ locationId: String(row.location_id), cartons: take });
     left -= take;
   }
-  if (left > 0) throw new CartonStockWouldGoNegative(variantId);
+  if (left > 0) {
+    const store = shortfallFrom?.trim();
+    if (!store) throw new CartonStockWouldGoNegative(variantId);
+    const same = taken.find((row) => row.locationId === store);
+    if (same) same.cartons += left;
+    else taken.push({ locationId: store, cartons: left });
+  }
   return taken;
 }
 

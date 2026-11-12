@@ -45,3 +45,13 @@ export const isCartonStockEventType = (value: unknown): value is CartonStockEven
 /** The change one movement makes to the carton figure. */
 export const cartonStockDelta = (eventType: CartonStockEventType, cartons: number): number =>
   TAKES_OUT.has(eventType) ? -cartons : cartons;
+
+/**
+ * STOCK FIRST, PRODUCTION AFTER (owner, 12 Nov 2026): a gatepass, and a Stock Adjustment decrease, may take more
+ * cartons than the store holds. The figure goes below zero until Manual Production records the cartons and brings
+ * it back. A voided production is still refused rather than take the figure below zero. The computer that makes the
+ * movement and every computer that receives it apply the same rule, so the figure agrees everywhere. (The writers
+ * allow it only while carton QR is on hold: gatepassCartons.ts, cartonStockDocuments.ts, cartonStockAdjust.ts.)
+ */
+const MAY_GO_BELOW_ZERO: ReadonlySet<string> = new Set([CARTON_STOCK_EVENT_TYPE.GATEPASS_ISSUE, CARTON_STOCK_EVENT_TYPE.CARTON_ADJUST_OUT]);
+export const cartonMovementMayGoBelowZero = (eventType: CartonStockEventType): boolean => MAY_GO_BELOW_ZERO.has(eventType);

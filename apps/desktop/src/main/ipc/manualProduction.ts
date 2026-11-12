@@ -15,7 +15,7 @@ import type { IpcMainInvokeEvent } from "electron";
 import { ipcMain } from "../leaseGuard";
 import { IPC } from "../../shared/ipcChannels";
 import type { IpcContext } from "./context";
-import { PERMISSION, USER_ROLE, asRecord, asString } from "@erp/domain";
+import { CARTON_STOCK_MOST_SHOWN, CARTON_STOCK_PAGE_SIZE, PERMISSION, USER_ROLE, asRecord, asString } from "@erp/domain";
 import { rejection } from "../authorize";
 import { refusalReason } from "../writeRefusal";
 
@@ -129,14 +129,17 @@ export function registerManualProductionHandlers(ctx: IpcContext): void {
   });
 
   // The Carton Stock page's matrix. Administrators only, like the page and the reconciliation.
+  // The page scrolls without end: it asks for its first `shown` articles, 20 more each time.
   ipcMain.handle(IPC.getCartonStockMatrix, (event, query?: unknown) => {
     const who = administrator(event);
     if (!who.ok) return { accepted: false, reason: who.reason };
     const input = asRecord(query);
+    const asked = Math.trunc(Number(input.shown));
+    const shown = Number.isFinite(asked) && asked > 0 ? Math.min(asked, CARTON_STOCK_MOST_SHOWN) : CARTON_STOCK_PAGE_SIZE;
     try {
       return {
         accepted: true,
-        ...db.cartonStockMatrix({ search: asString(input.search), series: asString(input.series), page: Number(input.page) || 1 }),
+        ...db.cartonStockMatrix({ search: asString(input.search), series: asString(input.series), page: 1, pageSize: shown }),
       };
     } catch (error) {
       log("WARNING", "carton-matrix", error instanceof Error ? error.message : String(error));

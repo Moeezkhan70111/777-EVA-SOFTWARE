@@ -27,8 +27,21 @@ export const outstandingQuantity = (requested: number, dispatchedFromStore: numb
 /** Reflected Stock = Current Stock − Reserved. Negative means the store is over-committed. */
 export const reflectedStock = (currentStock: number, reserved: number): number => currentStock - reserved;
 
-/** The most a new Gatepass may ask for: Reflected Stock, never below zero. */
+/**
+ * What a new Gatepass can take without the store going below zero: Reflected Stock, never below zero.
+ * Since 12 Nov 2026 it is not a limit: a gatepass may ask for more (cartonMovementMayGoBelowZero), and
+ * the screen warns on any line that does.
+ */
 export const maxNewGatepassQuantity = (currentStock: number, reserved: number): number => Math.max(0, reflectedStock(currentStock, reserved));
+
+/**
+ * The In Store figure once the line is made: Current Stock minus what it takes. It is the figure Carton
+ * Stock shows. Below zero is allowed for a gatepass; the line warns so the operator knows production is owed.
+ */
+export const stockAfterGatepass = (currentStock: number, requested: number): number => currentStock - requested;
+
+/** How many cartons a line takes beyond what the store physically holds: what production owes for it. */
+export const gatepassShortBy = (currentStock: number, requested: number): number => Math.max(0, -stockAfterGatepass(Math.max(0, currentStock), requested));
 
 /**
  * How a new line is split. `qrAvailable` is the QR cartons in the store that no other live Gatepass

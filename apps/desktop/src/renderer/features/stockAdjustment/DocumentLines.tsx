@@ -6,6 +6,7 @@ import { copy } from "../../config/copy";
 import { formatDate } from "../../utils/dates";
 import { documentProblem, dozensText, resultOf, totalsOf, type DraftHeader, type DraftLine } from "./stockAdjustmentDraft";
 import type { PostOutcome } from "./useStockAdjustment";
+import { ResultCell } from "./ResultCell";
 
 // The document as it will be posted: every line with the figure it leaves, the totals, and Post, which asks first.
 
@@ -75,7 +76,7 @@ export const DocumentLines: React.FC<DocumentLinesProps> = ({ header, lines, bus
                   <td>{movementText(header.kind, line)}</td>
                   <td className="sa-num">{dozensText(line.inStore)}</td>
                   <td className="sa-num">{signed(line)}</td>
-                  <td className="sa-num sa-result">{dozensText(resultOf(line))}</td>
+                  <ResultCell cartons={resultOf(line)} />
                   <td>
                     <button type="button" className="btn btn-ghost btn-sm" aria-label={text.removeLine(line.article, line.size, line.color)} onClick={() => onRemove(line.key)}>
                       {text.remove}

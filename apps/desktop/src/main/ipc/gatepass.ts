@@ -22,7 +22,7 @@ function describeCreate(result: { outcome: string; code?: string; totalQuantity?
 }
 
 export function registerGatepassHandlers(ctx: IpcContext): void {
-  const { db, logger, deviceId, paths, useCases } = ctx;
+  const { db, logger, deviceId, paths, useCases, scanContext } = ctx;
   const { createGatepassUseCase, cancelGatepassUseCase } = useCases;
 
   // Token-authorised like the store station. "gatepass" covers viewing, creating and
@@ -114,6 +114,8 @@ export function registerGatepassHandlers(ctx: IpcContext): void {
         actorUserId: auth.userId,
         deviceId,
         requestId,
+        // A line may ask for more than the store holds: the rest comes from this computer's store, below zero.
+        storeLocationId: scanContext.factoryId,
       });
 
       logger.log({ module: "gatepass", severity: result.accepted ? "INFO" : "WARNING", operation: "create-gatepass", deviceId, userId: auth.userId, message: describeCreate(result, auth.username) });

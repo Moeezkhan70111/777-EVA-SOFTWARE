@@ -1,3 +1,4 @@
+import { stockAfterGatepass } from "@erp/domain";
 import type { Gatepass, GatepassLineInput } from "../../types/desktopApi";
 import { articleWithGroup, compareNatural, rowKeyOf, type StockGrid, type StockGridRow } from "../../utils/gatepassGrid";
 import { copy } from "../../config/copy";
@@ -7,13 +8,13 @@ import { copy } from "../../config/copy";
 // The clerk adds an article + size ("SK6 · 7/10"), sees every colour the store holds for
 // it with its three figures — Current Stock (physically In Store), Reserved (owed to other
 // outstanding Gatepasses) and Reflected Stock (what this document may take) — and types how
-// many cartons go on the Gatepass, never more than Reflected Stock. This module turns those
+// many cartons go on the Gatepass. More than Reflected Stock is allowed (owner, 12 Nov 2026): the
+// store goes below zero until Manual Production makes it up, and the line says so. This module turns those
 // typed texts into checked quantities, per-article totals and the lines that are sent to
 // CreateGatepassUseCase. No React, no I/O — the page and the summary panel both read from
 // here so there is one set of totals on screen.
 //
-// Nothing here moves stock: the use case re-reads all three figures inside its transaction
-// and refuses the document if Reflected Stock no longer covers what was typed.
+// Nothing here moves stock: the use case re-reads all three figures inside its transaction.
 
 // ─── Quantity validation ─────────────────────────────────────────────────────
 // Empty and "0" both mean "this colour is not on the Gatepass".
@@ -24,22 +25,21 @@ export interface QuantityCheck {
   error: string | null;
 }
 
-export const checkQuantity = (text: string, available: number): QuantityCheck => {
+export const checkQuantity = (text: string): QuantityCheck => {
   const trimmed = text.trim();
   if (trimmed === "") return { value: 0, error: null };
   if (!/^-?\d+(\.\d+)?$/.test(trimmed)) return { value: null, error: copy.gatepass.qtyNotWhole };
   const value = Number(trimmed);
   if (value < 0) return { value: null, error: copy.gatepass.qtyNegative };
   if (!Number.isInteger(value)) return { value: null, error: copy.gatepass.qtyFraction };
-  if (value > available) return { value: null, error: copy.gatepass.qtyExceeds(available) };
   return { value, error: null };
 };
 
-/** The − / + buttons: one carton up or down from what is typed, never below 0 or above Reflected Stock. */
-export const stepQuantity = (text: string, delta: 1 | -1, available: number): number => {
+/** The − / + buttons: one carton up or down from what is typed, never below 0. Above Reflected Stock is allowed. */
+export const stepQuantity = (text: string, delta: 1 | -1): number => {
   const parsed = Number(text.trim());
   const current = Number.isInteger(parsed) ? parsed : 0;
-  return Math.min(available, Math.max(0, current + delta));
+  return Math.max(0, current + delta);
 };
 
 // ─── Draft model ─────────────────────────────────────────────────────────────
@@ -53,8 +53,10 @@ export interface DraftColour {
   reserved: number;
   /** Reflected Stock: currentStock − reserved, as the backend will re-check it. */
   reflected: number;
-  /** The most this document may take: Reflected Stock, never below 0. */
+  /** What this document can take without the store going below zero: Reflected Stock, never below 0. */
   available: number;
+  /** The In Store figure once this line is made (Current Stock − quantity), as Carton Stock shows it. Below zero: production is owed. */
+  after: number;
   /** Exactly what the clerk typed. */
   text: string;
   check: QuantityCheck;
@@ -103,8 +105,9 @@ const buildArticle = (row: StockGridRow, inputs: Record<string, string>): DraftA
         reserved: cell.reserved,
         reflected: cell.reflected,
         available: cell.available,
+        after: stockAfterGatepass(cell.currentStock, checkQuantity(text).value ?? 0),
         text,
-        check: checkQuantity(text, cell.available),
+        check: checkQuantity(text),
       };
     });
   return {
@@ -169,6 +172,7 @@ export const buildDraftFromDocument = (document: Pick<Gatepass, "lines">): Gatep
       reserved: 0,
       reflected: line.storeQuantityAtCreation,
       available: line.storeQuantityAtCreation,
+      after: stockAfterGatepass(line.storeQuantityAtCreation, line.quantity),
       text: String(line.quantity),
       check: { value: line.quantity, error: null },
       progress: { dispatchedFromStore: line.dispatchedFromStoreQuantity, issuedDirectly: line.issuedDirectlyQuantity, outstanding: line.outstandingQuantity },

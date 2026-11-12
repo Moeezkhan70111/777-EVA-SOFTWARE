@@ -78,9 +78,18 @@ describe("reading the carton matrix", () => {
     expect(db.cartonStockMatrix).not.toHaveBeenCalled();
   });
 
-  it("passes on only the search, the series and the page", () => {
-    expect(call(IPC.getCartonStockMatrix, { search: "sk", series: "SKECHERS", article: "SK6", page: 2, pageSize: 999 })).toMatchObject({ accepted: true, articleCount: 0 });
-    expect(db.cartonStockMatrix).toHaveBeenLastCalledWith({ search: "sk", series: "SKECHERS", page: 2 });
+  it("passes on only the search, the series and how many articles are shown", () => {
+    expect(call(IPC.getCartonStockMatrix, { search: "sk", series: "SKECHERS", article: "SK6", page: 2, pageSize: 999, shown: 60 })).toMatchObject({ accepted: true, articleCount: 0 });
+    expect(db.cartonStockMatrix).toHaveBeenLastCalledWith({ search: "sk", series: "SKECHERS", page: 1, pageSize: 60 });
+  });
+
+  it("shows the first 20 when the count is missing or not a number, and never more than the most one read may return", () => {
+    for (const shown of [undefined, "lots", 0, -5, Number.NaN]) {
+      call(IPC.getCartonStockMatrix, { shown });
+      expect(db.cartonStockMatrix).toHaveBeenLastCalledWith({ search: "", series: "", page: 1, pageSize: 20 });
+    }
+    call(IPC.getCartonStockMatrix, { shown: 1e9 });
+    expect(db.cartonStockMatrix).toHaveBeenLastCalledWith({ search: "", series: "", page: 1, pageSize: 2000 });
   });
 });
 

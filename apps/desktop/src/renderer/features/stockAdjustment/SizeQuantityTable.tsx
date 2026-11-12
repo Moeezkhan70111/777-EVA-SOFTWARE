@@ -3,6 +3,7 @@ import { CARTON_ADJUSTMENT_KIND, type CartonAdjustmentDirection, type CartonAdju
 import { copy } from "../../config/copy";
 import { dozensText, resultOf, typedCartons } from "./stockAdjustmentDraft";
 import type { AdjustmentChoice } from "./stockAdjustmentReply";
+import { ResultCell } from "./ResultCell";
 
 // One article and colour, a row per size, IN DOZENS: in store now, the dozens typed, the figure it would leave. A size
 // that already has opening stock says so in words and takes no opening quantity. A size the colour is not on yet says
@@ -21,9 +22,10 @@ interface SizeQuantityTableProps {
   onEnter: () => void;
 }
 
-const resultText = (row: AdjustmentChoice, direction: CartonAdjustmentDirection, typed: string): string => {
+/** The figure the typed quantity would leave, or null when nothing usable is typed. */
+const resultCartons = (row: AdjustmentChoice, direction: CartonAdjustmentDirection, typed: string): number | null => {
   const cartons = typedCartons(typed);
-  return cartons === null ? "—" : dozensText(resultOf({ inStore: row.inStore, direction, cartons }));
+  return cartons === null ? null : resultOf({ inStore: row.inStore, direction, cartons });
 };
 
 /** Why a row takes no quantity, in words, or null when it does. */
@@ -71,7 +73,7 @@ export const SizeQuantityTable: React.FC<SizeQuantityTableProps> = ({ kind, dire
                     </>
                   )}
                 </td>
-                <td className="sa-num sa-result">{locked ? dozensText(row.inStore) : resultText(row, direction, typed[row.articleSizeId] ?? "")}</td>
+                <ResultCell cartons={locked ? row.inStore : resultCartons(row, direction, typed[row.articleSizeId] ?? "")} />
               </tr>
             );
           })}

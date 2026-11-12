@@ -52,15 +52,19 @@ export const useStockList = <T>(read: StockRead<T>, changes: readonly DataKind[]
     void load(false);
   }, [load]);
 
+  // Only a search that changed starts again from page 1: opening the page, or typing back to the
+  // same words, leaves the page (or Carton Stock's loaded articles) where it is.
   useEffect(() => {
+    const next = search.trim();
+    if (next === settledSearch) return undefined;
     const timer = window.setTimeout(() => {
-      setSettledSearch(search.trim());
+      setSettledSearch(next);
       setPage(1);
     }, SEARCH_SETTLE_MS);
     return () => window.clearTimeout(timer);
-  }, [search]);
+  }, [search, settledSearch]);
 
   useDataChanged(changes, () => void load(true));
 
-  return { search, setSearch, searching: settledSearch !== "", setPage, data, loading, error, retry: () => void load(false) };
+  return { search, setSearch, searching: settledSearch !== "", page, setPage, data, loading, error, retry: () => void load(false) };
 };

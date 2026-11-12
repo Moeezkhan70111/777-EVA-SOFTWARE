@@ -1,4 +1,4 @@
-import { maxNewGatepassQuantity, outstandingQuantity, reflectedStock } from "@erp/domain";
+import { gatepassShortBy, maxNewGatepassQuantity, outstandingQuantity, reflectedStock } from "@erp/domain";
 import type { TransactionContext, TransactionManager } from "./ports.js";
 
 // Gatepass: an operational document that reserves store stock for a party. It sits beside
@@ -56,6 +56,11 @@ export interface CreateGatepassInput {
   actor: string;
   actorUserId?: string | null;
   deviceId?: string | null;
+  /**
+   * This computer's store. When a gatepass may go below zero (repo.gatepassMayGoBelowZero), what a line asks
+   * for beyond the store's stock is taken from it, and Manual Production makes it up later (owner, 12 Nov 2026).
+   */
+  storeLocationId?: string | null;
   /**
    * The screen's id for one press of Create, kept across a retry whose answer was lost (migration 105).
    * The same id asking for the same gatepass returns the one already made (ALREADY_SAVED); asking for a
@@ -245,10 +250,17 @@ export interface CreateGatepassDeps {
     insertGatepass(payload: GatepassHeaderPayload, tx: TransactionContext): Promise<void>;
     insertGatepassLines(lines: GatepassLinePayload[], tx: TransactionContext): Promise<void>;
     /**
-     * Takes each line's cartons out of the store as a carton movement, in this transaction. Throws
-     * (rolling the whole gatepass back) when the store does not hold them.
+     * Takes each line's cartons out of the store as a carton movement, in this transaction. What the store
+     * does not hold comes from `storeLocationId`, below zero. Throws (rolling the whole gatepass back) only
+     * when there is a shortfall and no store to take it from.
      */
-    issueGatepassCartons(lines: GatepassLineToIssue[], issuedBy: string, tx: TransactionContext): Promise<void>;
+    issueGatepassCartons(lines: GatepassLineToIssue[], issuedBy: string, tx: TransactionContext, storeLocationId?: string): Promise<void>;
+    /**
+     * Whether a gatepass may ask for more than Reflected Stock, taking the store below zero (owner, 12 Nov 2026).
+     * Only while carton QR is on hold: with QR scanning on, the cartons beyond Reflected Stock are other
+     * gatepasses' reserved QR cartons, and taking them would leave those scans with nothing to take. Absent: no.
+     */
+    gatepassMayGoBelowZero?(): boolean;
     appendAuditLog(payload: AuditLogPayload, tx: TransactionContext): Promise<void>;
     /**
      * Makes the gatepass's one bill, in this transaction: its number and its link to the gatepass, and no lines
@@ -366,7 +378,8 @@ export class CreateGatepassUseCase {
         await this.deps.repo.issueGatepassCartons(
           linePayloads.map((line) => ({ gatepassId, lineId: line.id, productVariantId: line.productVariantId, quantity: line.quantity, label: describeLine(line) })),
           actor,
-          tx
+          tx,
+          optionalText(input.storeLocationId) ?? undefined
         );
         // After the stock: a gatepass that could not issue its cartons leaves no bill behind.
         const bill = await this.deps.repo.generateGatepassBill({ gatepassId, partyId: party.id, voucherDate: gatepassDate }, tx);
@@ -462,12 +475,17 @@ export class CreateGatepassUseCase {
    * Current Stock and the other Gatepasses' outstanding quantity as they are NOW, inside the
    * write lock, so two clerks cannot both pass on stale numbers. All-or-nothing: one short
    * line refuses the whole document.
+   *
+   * EXCEPT WHILE A GATEPASS MAY GO BELOW ZERO (owner, 12 Nov 2026; repo.gatepassMayGoBelowZero): then a line may
+   * ask for more, the store goes below zero, and Manual Production makes it up later. The figures are read all
+   * the same, so the audit records what the store held and by how much each line went short.
    */
   private async reserveLines(lines: GatepassLineInput[], tx: TransactionContext) {
     const variantIds = lines.map((line) => String(line.productVariantId).trim());
     const stockRows = await this.deps.repo.getStoreStockForVariants(variantIds, tx);
     const stockById = new Map(stockRows.map((row) => [row.productVariantId, row]));
 
+    const mayGoBelowZero = this.deps.repo.gatepassMayGoBelowZero?.call(this.deps.repo) ?? false;
     const shortages: GatepassShortage[] = [];
     const linePayloads: GatepassLinePayload[] = [];
     const auditLines: Array<Record<string, unknown>> = [];
@@ -483,7 +501,8 @@ export class CreateGatepassUseCase {
       }
       const requested = line.quantity;
       const reflected = reflectedStock(stock.storeQuantity, stock.reservedQuantity);
-      if (requested > maxNewGatepassQuantity(stock.storeQuantity, stock.reservedQuantity)) {
+      // More than is free for a new gatepass: refused, unless a gatepass may go below zero.
+      if (requested > maxNewGatepassQuantity(stock.storeQuantity, stock.reservedQuantity) && !mayGoBelowZero) {
         shortages.push({
           productVariantId: variantId,
           article: stock.article,
@@ -518,6 +537,8 @@ export class CreateGatepassUseCase {
         storeQuantityAtCreation: stock.storeQuantity,
         reservedAtCreation: stock.reservedQuantity,
         reflectedStockAtCreation: reflected,
+        // How far this line takes the In Store figure below zero: what production now owes for it. 0 when it fits.
+        shortBy: gatepassShortBy(stock.storeQuantity, requested),
       });
     }
 

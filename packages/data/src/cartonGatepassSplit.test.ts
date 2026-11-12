@@ -15,6 +15,7 @@ import {
 } from "@erp/application";
 import { PERMISSION } from "@erp/domain";
 import { SqliteDatabase } from "./sqliteDatabase.js";
+import { CartonStockWouldGoNegative, moveCartonStock } from "./database/cartonStock.js";
 import { UuidGenerator } from "./idGenerator.js";
 
 // A GATEPASS LINE IS SPLIT WHEN IT IS MADE (docs/42 section 3.5, revised 2026-11-03), against the real
@@ -527,5 +528,82 @@ test("L11. two connections creating gatepasses at once never reserve the same QR
     } finally {
       second.close();
     }
+  });
+});
+
+// ─── Gatepass first, production after (owner, 12 Nov 2026) ─────────────────────────────────────────
+// While carton QR is on hold (as on every office computer), a gatepass may take more cartons than the store
+// holds. The figure goes below zero, by exactly the shortfall, until Manual Production makes it up. With QR
+// scanning on, the same gatepass is still refused (test 9 above).
+
+const makeGatepassFromStore = (f: Fixture, quantity: number, productVariantId: string = f.red) =>
+  new CreateGatepassUseCase({ txManager: f.db, repo: f.db, idGenerator: ids() }).execute({
+    partyId: f.customer, lines: [{ productVariantId, quantity }], actor: "clerk", storeLocationId: FACTORY,
+  });
+/** Both projections the carton figure lives in, which must always agree. */
+const cartonFigures = (f: Fixture, variantId: string = f.red) => ({
+  variant: Number((f.raw.prepare("SELECT quantity_on_hand AS n FROM stock_projection_by_variant WHERE product_variant_id = ?").get(variantId) as { n?: number } | undefined)?.n ?? 0),
+  store: Number((f.raw.prepare("SELECT SUM(quantity_on_hand) AS n FROM stock_projection_by_location WHERE product_variant_id = ? AND location_type = 'WAREHOUSE'").get(variantId) as { n?: number } | undefined)?.n ?? 0),
+});
+
+test("G1. QR on hold: a gatepass for more than the store holds is made, the figure goes below zero, and production brings it back", async () => {
+  await withFixture(async (f) => {
+    f.db.cartonQrOnHold = true;
+    stockManual(f, f.db, 2);
+    const made = await makeGatepassFromStore(f, 5);
+    assert.equal(made.accepted, true, made.reason);
+    assert.deepEqual(movements(f), ["GATEPASS_ISSUE 5"], "one movement for the whole line, never clamped");
+    assert.deepEqual(cartonFigures(f), { variant: -3, store: -3 });
+    assert.deepEqual(figures(f), { current: -3, reserved: 0, reflected: -3 });
+    assert.deepEqual(line(f, made.gatepassId!), { quantity: 5, scanned: 0, issued: 5, outstanding: 0 });
+    // The audit says how far the line went short.
+    const audit = f.raw.prepare("SELECT payload_json FROM audit_log WHERE event_type = 'GATEPASS_CREATED'").get() as { payload_json: string };
+    assert.equal((JSON.parse(audit.payload_json) as { lines: Array<{ shortBy: number }> }).lines[0]?.shortBy, 3);
+
+    // Manual Production of the owed cartons, and more: the figure is the plain sum of the movements.
+    stockManual(f, f.db, 4);
+    assert.deepEqual(cartonFigures(f), { variant: 1, store: 1 });
+
+    // Cancelling puts back exactly what the gatepass took.
+    const cancelled = await cancel(f, made.gatepassId!);
+    assert.equal(cancelled.accepted, true, cancelled.reason);
+    assert.deepEqual(cartonFigures(f), { variant: 6, store: 6 });
+  });
+});
+
+test("G2. QR on hold: a product the store has never held goes on a gatepass, listed at 0, and shows the minus", async () => {
+  await withFixture(async (f) => {
+    f.db.cartonQrOnHold = true;
+    assert.deepEqual(f.db.listStoreStock().map((r) => [r.article, r.color, r.storeQuantity]), [["SK6", "RED", 0]], "listed before any carton exists");
+    const made = await makeGatepassFromStore(f, 3);
+    assert.equal(made.accepted, true, made.reason);
+    assert.deepEqual(cartonFigures(f), { variant: -3, store: -3 });
+    assert.deepEqual(f.db.listStoreStock().map((r) => [r.color, r.storeQuantity, r.reflectedQuantity]), [["RED", -3, -3]]);
+    // A second gatepass the same day takes it further: nothing is lost or clamped.
+    assert.equal((await makeGatepassFromStore(f, 2)).accepted, true);
+    assert.deepEqual(cartonFigures(f), { variant: -5, store: -5 });
+  });
+});
+
+test("G3. a voided production may never go below zero; an adjustment out only while carton QR is on hold", async () => {
+  await withFixture(async (f) => {
+    f.db.cartonQrOnHold = true;
+    stockManual(f, f.db, 2);
+    assert.equal((await makeGatepassFromStore(f, 5)).accepted, true);
+    const before = cartonFigures(f);
+    const nowIso = new Date().toISOString();
+    assert.throws(() => moveCartonStock(f.raw, { variantId: f.red, locationId: FACTORY, delta: -1, nowIso, eventType: "MANUAL_PRODUCTION_VOID" }), CartonStockWouldGoNegative);
+    assert.throws(() => moveCartonStock(f.raw, { variantId: f.red, locationId: FACTORY, delta: -1, nowIso }), CartonStockWouldGoNegative, "no type: refused");
+    assert.throws(
+      () => moveCartonStock(f.raw, { variantId: f.red, locationId: FACTORY, delta: -1, nowIso, eventType: "CARTON_ADJUST_OUT", refuseBelowZero: true }),
+      CartonStockWouldGoNegative,
+      "the writer refuses it while QR scanning is on"
+    );
+    assert.deepEqual(cartonFigures(f), before, "nothing moved");
+    moveCartonStock(f.raw, { variantId: f.red, locationId: FACTORY, delta: -1, nowIso, eventType: "CARTON_ADJUST_OUT" });
+    assert.deepEqual(cartonFigures(f), { variant: before.variant - 1, store: before.store - 1 }, "a decrease goes below zero");
+    assert.equal(f.db.gatepassMayGoBelowZero(), true);
+    f.db.cartonQrOnHold = false;
+    assert.equal(f.db.gatepassMayGoBelowZero(), false, "QR scanning on: refused as before");
   });
 });

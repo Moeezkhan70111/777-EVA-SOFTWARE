@@ -54,7 +54,10 @@ export interface CartonStockQuery {
   pageSize?: number;
 }
 
+/** Articles the page adds each time its end scrolls into view. */
 export const CARTON_STOCK_PAGE_SIZE = 20;
+/** The most articles one read may return, whatever the screen asks. */
+export const CARTON_STOCK_MOST_SHOWN = 2000;
 
 const naturally = (a: string, b: string): number => a.localeCompare(b, undefined, { numeric: true });
 

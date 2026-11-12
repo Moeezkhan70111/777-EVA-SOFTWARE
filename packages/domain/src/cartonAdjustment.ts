@@ -6,7 +6,8 @@ import { CARTONS_PER_DOZEN, dozensToCartons } from "./units.js";
 //   ADJUSTMENT   SA-000002 · SK6 RED · 7/10 -2 (count short)  a correction, in or out, with a reason
 //
 // Each line is one CARTON_ADJUST_IN or CARTON_ADJUST_OUT movement (cartonStock.ts): the figure moves exactly as it
-// does for every other carton movement, and never below zero. A posted document is never changed; a mistake is put
+// does for every other carton movement. A decrease may take it below zero while carton QR is on hold (owner,
+// 12 Nov 2026): production is added later to balance it. A posted document is never changed; a mistake is put
 // right by another document. Manual Production is a different thing and is not used here.
 //
 // These rules are the screen's and the database's: the screen shows the problem before posting, and the database

@@ -7,7 +7,7 @@
 import type { SqliteDatabase } from "../sqliteDatabase.js";
 import { cartonCloudIsActive, isLocalStockRecord } from "./stockProtection.js";
 import { SYNC_AGGREGATE } from "./syncEvents.js";
-import { IN_STORE_LOCATION_TYPE, formatGatepassCode } from "@erp/application";
+import { formatGatepassCode } from "@erp/application";
 import type {
   AuditLogPayload,
   BillingNoticePayload,
@@ -111,8 +111,8 @@ const mapLineProgress = (line: Record<string, unknown>) => {
 
 export const gatepassMethods = {
   /**
-   * Live store figures for one article, one row per colour + size that currently holds
-   * anything: Current Stock, Reserved and Reflected Stock.
+   * Live store figures for one article, one row per active colour + size in Product Master:
+   * Current Stock, Reserved and Reflected Stock, 0 or below zero included.
    */
   listStoreStockByArticle(this: SqliteDatabase, article: string): GatepassStockRow[] {
     const needle = String(article ?? "").trim();
@@ -121,18 +121,14 @@ export const gatepassMethods = {
   },
 
   /**
-   * Live store figures for every active variant that physically holds anything — the whole
-   * store on one grid, the way the paper gatepass book shows it (article + size rows, colour
-   * columns). A fully reserved variant still appears (Current 5, Reserved 5, Reflected 0) so
-   * the clerk sees why it cannot be cut. Starts from the location projection so only variants
-   * with stock are visited, not the entire Product Master.
+   * Live store figures for every active variant in Product Master — the whole store on one grid,
+   * the way the paper gatepass book shows it (article + size rows, colour columns). Since
+   * 12 Nov 2026 a gatepass may be made before the cartons are (the figure goes below zero until
+   * Manual Production makes them up), so a colour with nothing in the store, or already below
+   * zero, is listed too, with its figure as it is.
    */
   listStoreStock(this: SqliteDatabase): GatepassStockRow[] {
-    return this.queryStoreStock(
-      `EXISTS (SELECT 1 FROM stock_projection_by_location spl
-               WHERE spl.product_variant_id = pv.id AND spl.location_type = ? AND spl.quantity_on_hand > 0)`,
-      [IN_STORE_LOCATION_TYPE]
-    );
+    return this.queryStoreStock("1 = 1", []);
   },
 
   queryStoreStock(this: SqliteDatabase, whereClause: string, whereValues: Array<string | number>): GatepassStockRow[] {
@@ -151,7 +147,7 @@ export const gatepassMethods = {
       )
       .all(...whereValues) as Array<Record<string, unknown>>;
 
-    return rows.map(mapStockRow).filter((row) => row.storeQuantity > 0);
+    return rows.map(mapStockRow);
   },
 
   async getPartyForGatepass(this: SqliteDatabase, partyId: string, tx: TransactionContext): Promise<GatepassPartyRecord | null> {

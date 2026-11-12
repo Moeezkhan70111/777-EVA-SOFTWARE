@@ -99,15 +99,22 @@ describe("Stock Adjustment", () => {
     expect((screen.getByRole("button", { name: text.addToDocument }) as HTMLButtonElement).disabled).toBe(true);
   });
 
-  it("a decrease larger than the store holds is refused on the screen, and cannot be added", async () => {
+  // Owner, 12 Nov 2026: a decrease may take the store below zero; production is added later to balance it.
+  it("a decrease larger than the store holds is allowed: the result shows the minus with a warning, and it can be added", async () => {
     show();
     await userEvent.click(await screen.findByRole("tab", { name: text.kinds.ADJUSTMENT }));
     await pick(text.articleLabel, "SK6");
     await pick(text.colorLabel, "RED");
     await userEvent.click(screen.getByRole("button", { name: text.directions.OUT }));
     await userEvent.type(await screen.findByRole("textbox", { name: text.quantityFor("7/10") }), "6");
-    expect(screen.getByRole("alert")).toHaveTextContent(text.notEnough("5"));
-    expect((screen.getByRole("button", { name: text.addToDocument }) as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    const row = screen.getByRole("row", { name: /^7.10 / });
+    expect(within(row).getByText(`⚠ ${text.belowZero}`)).toBeInTheDocument();
+    expect(row).toHaveTextContent("-1");
+    expect((screen.getByRole("button", { name: text.addToDocument }) as HTMLButtonElement).disabled).toBe(false);
+    await userEvent.click(screen.getByRole("button", { name: text.addToDocument }));
+    const lines = screen.getByRole("region", { name: text.linesTitle });
+    expect(await within(lines).findByText(`⚠ ${text.belowZero}`)).toBeInTheDocument();
   });
 
   it("every size shows for a colour; a size without it gets the colour added first, then the line", async () => {
@@ -195,7 +202,7 @@ describe("the document being written", () => {
   it("checks a quantity the way the main process does, in dozens", () => {
     expect(entryProblem(row, "ADJUSTMENT", "OUT", "", true)).toBeNull();
     expect(entryProblem(row, "ADJUSTMENT", "OUT", "5", true)).toBeNull();
-    expect(entryProblem(row, "ADJUSTMENT", "OUT", "5.5", true)).toBe(text.notEnough("5"));
+    expect(entryProblem(row, "ADJUSTMENT", "OUT", "5.5", true)).toBeNull(); // below zero is allowed (owner, 12 Nov 2026)
     expect(entryProblem(row, "ADJUSTMENT", "IN", "2.25", true)).not.toBeNull();
     expect(entryProblem(row, "ADJUSTMENT", "IN", "0", true)).not.toBeNull();
     expect(entryProblem({ ...row, hasOpening: true }, "OPENING", "IN", "3", true)).toBe(text.alreadyOpened);

@@ -440,8 +440,11 @@ test("a refusal for any other reason is not sent again: resending cannot help it
 
 // ─── G6: a movement that cannot apply says so in words ───
 
-test("a movement that would take the figure below zero waits, is visible, and applies once its cause arrives", async () => {
-  await withOffice(async ({ cloud, a, b, c, machine }) => {
+// A Stock Adjustment decrease may take the figure below zero (owner, 12 Nov 2026), on every computer alike: one that
+// reads it before the stock it takes from applies it at once and shows the minus, never clamped, and nothing waits.
+// (A voided production arriving early still waits: cartonStockEvents.test.ts.)
+test("an adjustment decrease read before its stock applies at once, shows the minus, and agrees once the stock arrives", async () => {
+  await withOffice(async ({ cloud, a, b, machine }) => {
     produce(a, machine);
     await pass(a, cloud);
     adjust(a, "OUT", 5);
@@ -453,11 +456,9 @@ test("a movement that would take the figure below zero waits, is visible, and ap
     const shortLog = { fetchChanges: async (afterSeq: number) => [variant, { ...taken, seq: 2 }].filter((change) => change.seq > afterSeq) };
     await new SyncPull(b.db.db, shortLog as never, { now: () => clock.ms, project: PROJECT }).runOnce();
 
-    assert.equal(inStore(b), 0, "never clamped");
-    const wait = waitingSummary(b.db.db, clock.ms).entries[0];
-    assert.equal(wait?.cause.kind, "CARTONS_SHORT");
-    assert.equal(b.db.cartonStockReconciliation().waiting, 1);
-    assert.equal(c.db.cartonStockReconciliation().waiting, 0);
+    assert.equal(inStore(b), -5, "the minus, never clamped");
+    assert.equal(waitingSummary(b.db.db, clock.ms).entries.length, 0, "nothing waits");
+    assert.equal(b.db.cartonStockReconciliation().waiting, 0);
   });
 });
 

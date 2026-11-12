@@ -9,8 +9,9 @@ import type { DraftArticle, DraftColour } from "./gatepassDraft";
 //   Writing:  Colour │ Current Stock │ Reserved │ Reflected Stock │ [ qty ] /reflected
 //   Reading:  Colour │ In Store at creation │ Gatepass Qty │ Moved out │ Outstanding
 //
-// The quantity box is capped at Reflected Stock — Current Stock is shown so the operator
-// understands "5 are in the store, 4 are already promised, 1 can go on this Gatepass".
+// Current Stock is shown so the operator understands "5 are in the store, 4 are already promised,
+// 1 is free". The box is not capped (owner, 12 Nov 2026): typing more than is free takes the store
+// below zero, and the row says by how much, so production knows what it owes.
 
 interface ColourRowProps {
   article: DraftArticle;
@@ -79,9 +80,15 @@ export const ColourRow: React.FC<ColourRowProps> = ({ article, colour, inputRef,
   const label = `${articleWithGroup(article.article, article.groupName)} ${colour.colour} ${article.size}`;
   const value = colour.check.value;
   const selected = (value ?? 0) > 0;
-  const fullyReserved = colour.available === 0;
+  // Nothing free because other gatepasses hold it all: not a colour that simply has nothing In Store.
+  const fullyReserved = colour.available === 0 && colour.reserved > 0;
   const errorId = `gp-qty-error-${colour.productVariantId}`;
-  const rowClass = [selected ? "is-selected" : "", colour.check.error ? "has-error" : "", fullyReserved ? "is-reserved" : ""].filter(Boolean).join(" ");
+  const goesBelowZero = selected && colour.after < 0;
+  const warningId = `gp-qty-warning-${colour.productVariantId}`;
+  const describedBy = [colour.check.error ? errorId : "", goesBelowZero ? warningId : ""].filter(Boolean).join(" ") || undefined;
+  const rowClass = [selected ? "is-selected" : "", colour.check.error ? "has-error" : "", goesBelowZero ? "is-short" : "", fullyReserved ? "is-reserved" : ""]
+    .filter(Boolean)
+    .join(" ");
 
   return (
     <tr className={rowClass || undefined}>
@@ -109,7 +116,7 @@ export const ColourRow: React.FC<ColourRowProps> = ({ article, colour, inputRef,
               placeholder="0"
               aria-label={copy.gatepass.quantityFor(label)}
               aria-invalid={Boolean(colour.check.error)}
-              aria-describedby={colour.check.error ? errorId : undefined}
+              aria-describedby={describedBy}
               value={colour.text}
               onChange={(e) => onQuantityChange?.(colour.productVariantId, e.target.value)}
               onFocus={(e) => e.target.select()}
@@ -123,22 +130,19 @@ export const ColourRow: React.FC<ColourRowProps> = ({ article, colour, inputRef,
                 }
               }}
             />
-            <button
-              type="button"
-              aria-label={copy.gatepass.increase(label)}
-              disabled={value !== null && value >= colour.available}
-              onClick={() => onStep?.(colour.productVariantId, 1)}
-            >
+            <button type="button" aria-label={copy.gatepass.increase(label)} onClick={() => onStep?.(colour.productVariantId, 1)}>
               +
             </button>
           </div>
-          <span className="gp-qty-max" aria-hidden="true">
-            /{colour.available}
-          </span>
         </div>
         {colour.check.error && (
           <div id={errorId} className="gp-qty-error" role="alert">
             ⚠ {colour.check.error}
+          </div>
+        )}
+        {goesBelowZero && !colour.check.error && (
+          <div id={warningId} className="gp-qty-warning" data-testid={testId("below-zero", article, colour)}>
+            ⚠ {copy.gatepass.goesBelowZero(colour.after)}
           </div>
         )}
       </td>

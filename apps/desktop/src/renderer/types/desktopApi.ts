@@ -2365,7 +2365,8 @@ export interface DesktopApi {
   /** Manual Production: cartons typed in (in dozens) for a machine — its program today, store stock, the ledgers. */
   adjustCartonStock(input: CartonAdjustDraft & { requestId: string }): Promise<{ accepted: boolean; reason?: string; duplicate?: boolean }>;
   /** The Carton Stock page's matrix (@erp/domain CartonStockMatrix), checked by the page. Administrators only. */
-  getCartonStockMatrix(query: { search: string; series: string; page: number }): Promise<unknown>;
+  /** The first `shown` articles matching the search and series: the page asks for more as it scrolls. */
+  getCartonStockMatrix(query: { search: string; series: string; shown: number }): Promise<unknown>;
   /** Stock Adjustment (docs/46): one document, all lines or none, under the carton lease. Administrators only. Checked by the page. */
   postCartonStockAdjustment(input: CartonAdjustmentPostDraft): Promise<unknown>;
   /** One article's colours and sizes with their figure in store and whether each has opening stock. Checked by the page. */

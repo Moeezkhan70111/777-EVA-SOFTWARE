@@ -82,6 +82,8 @@ export const cartonStockAdjustMethods = {
         createdBy: input.adjustedBy.trim(),
         createdAt: new Date().toISOString(),
         reason,
+        // A decrease may go below zero only while carton QR is on hold (owner, 12 Nov 2026).
+        refuseBelowZero: !this.cartonQrOnHold,
       });
       this.db.exec("COMMIT");
       return { eventId, eventType, cartons: input.cartons, balanceDelta: cartonStockDelta(eventType, input.cartons), duplicate: false };

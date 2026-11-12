@@ -28,12 +28,6 @@ export const useGatepassDraft = (grid: StockGrid): GatepassDraftApi => {
 
   const draft = useMemo(() => buildDraft(grid, addedKeys, inputs), [grid, addedKeys, inputs]);
 
-  const availableOf = useMemo(() => {
-    const out: Record<string, number> = {};
-    for (const row of grid.rows) for (const cell of Object.values(row.cells)) out[cell.productVariantId] = cell.available;
-    return out;
-  }, [grid]);
-
   const addArticle = useCallback(
     (key: string): "added" | "existing" => {
       const existing = addedKeys.includes(key);
@@ -66,13 +60,9 @@ export const useGatepassDraft = (grid: StockGrid): GatepassDraftApi => {
     setInputs((prev) => ({ ...prev, [productVariantId]: text }));
   }, []);
 
-  const stepQuantityBy = useCallback(
-    (productVariantId: string, delta: 1 | -1) => {
-      const available = availableOf[productVariantId] ?? 0;
-      setInputs((prev) => ({ ...prev, [productVariantId]: String(stepQuantity(prev[productVariantId] ?? "", delta, available)) }));
-    },
-    [availableOf]
-  );
+  const stepQuantityBy = useCallback((productVariantId: string, delta: 1 | -1) => {
+    setInputs((prev) => ({ ...prev, [productVariantId]: String(stepQuantity(prev[productVariantId] ?? "", delta)) }));
+  }, []);
 
   const clear = useCallback(() => {
     setAddedKeys([]);

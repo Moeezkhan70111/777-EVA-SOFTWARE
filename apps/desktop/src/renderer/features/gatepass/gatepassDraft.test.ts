@@ -32,28 +32,29 @@ const SK6_46 = rowKeyOf("SK6", "4/6");
 const SK12_46 = rowKeyOf("SK12", "4/6");
 
 describe("checkQuantity", () => {
-  it("treats empty and zero as not selected, rejects text, negatives, fractions and anything above Reflected Stock", () => {
-    expect(checkQuantity("", 10)).toEqual({ value: 0, error: null });
-    expect(checkQuantity("0", 10)).toEqual({ value: 0, error: null });
-    expect(checkQuantity(" 7 ", 10)).toEqual({ value: 7, error: null });
-    expect(checkQuantity("10", 10)).toEqual({ value: 10, error: null });
-    expect(checkQuantity("abc", 10).error).toMatch(/whole number/i);
-    expect(checkQuantity("-1", 10).error).toMatch(/negative/i);
-    expect(checkQuantity("1.5", 10).error).toMatch(/whole cartons/i);
-    expect(checkQuantity("11", 10)).toEqual({ value: null, error: "Only 10 available" });
+  it("treats empty and zero as not selected, rejects text, negatives and fractions, and allows more than the store holds", () => {
+    expect(checkQuantity("")).toEqual({ value: 0, error: null });
+    expect(checkQuantity("0")).toEqual({ value: 0, error: null });
+    expect(checkQuantity(" 7 ")).toEqual({ value: 7, error: null });
+    expect(checkQuantity("10")).toEqual({ value: 10, error: null });
+    expect(checkQuantity("abc").error).toMatch(/whole number/i);
+    expect(checkQuantity("-1").error).toMatch(/negative/i);
+    expect(checkQuantity("1.5").error).toMatch(/whole cartons/i);
+    // Owner, 12 Nov 2026: a gatepass may take more than the store holds; production makes it up later.
+    expect(checkQuantity("11")).toEqual({ value: 11, error: null });
   });
 });
 
 describe("stepQuantity", () => {
-  it("moves one carton at a time and never leaves 0…available", () => {
-    expect(stepQuantity("", 1, 5)).toBe(1);
-    expect(stepQuantity("4", 1, 5)).toBe(5);
-    expect(stepQuantity("5", 1, 5)).toBe(5);
-    expect(stepQuantity("1", -1, 5)).toBe(0);
-    expect(stepQuantity("0", -1, 5)).toBe(0);
-    // Unusable text starts again from 0; too much comes back to Reflected Stock.
-    expect(stepQuantity("abc", 1, 5)).toBe(1);
-    expect(stepQuantity("9", -1, 5)).toBe(5);
+  it("moves one carton at a time, never below 0, and past what the store holds", () => {
+    expect(stepQuantity("", 1)).toBe(1);
+    expect(stepQuantity("4", 1)).toBe(5);
+    expect(stepQuantity("5", 1)).toBe(6);
+    expect(stepQuantity("1", -1)).toBe(0);
+    expect(stepQuantity("0", -1)).toBe(0);
+    // Unusable text starts again from 0.
+    expect(stepQuantity("abc", 1)).toBe(1);
+    expect(stepQuantity("9", -1)).toBe(8);
   });
 });
 
@@ -63,8 +64,8 @@ describe("buildStockGrid", () => {
     expect(red).toEqual({ productVariantId: "v-sk6-red-710", currentStock: 120, reserved: 20, reflected: 100, available: 100 });
     const navy = grid.rows.find((r) => r.key === SK6_46)!.cells.NAVY;
     expect(navy).toEqual({ productVariantId: "v-sk6-navy-46", currentStock: 15, reserved: 15, reflected: 0, available: 0 });
-    // Nothing physically In Store: not on the grid at all.
-    expect(grid.rows.find((r) => r.key === SK6_710)!.cells.GREEN).toBeUndefined();
+    // Nothing physically In Store: on the grid all the same, so it can go on a gatepass (owner, 12 Nov 2026).
+    expect(grid.rows.find((r) => r.key === SK6_710)!.cells.GREEN).toEqual({ productVariantId: "v-sk6-green-710", currentStock: 0, reserved: 0, reflected: 0, available: 0 });
     // Over-committed (a free move-out took stock a gatepass still owes): the input allows nothing, the figure stays honest.
     const over = buildStockGrid([stockRow("v-x", "SK6", "RED", "7/10", 2, 3)]).rows[0].cells.RED;
     expect(over).toMatchObject({ currentStock: 2, reserved: 3, reflected: -1, available: 0 });
@@ -72,11 +73,12 @@ describe("buildStockGrid", () => {
 });
 
 describe("buildDraft", () => {
-  it("keeps articles in the order they were added, colours in natural order, and drops colours with no store stock", () => {
+  it("keeps articles in the order they were added, colours in natural order, and keeps colours with no store stock", () => {
     const draft = buildDraft(grid, [SK12_46, SK6_710], {});
     expect(draft.articles.map((a) => a.key)).toEqual([SK12_46, SK6_710]);
     expect(draft.articles[1].colours.map((c) => [c.colour, c.currentStock, c.reserved, c.reflected, c.available])).toEqual([
       ["BLUE", 80, 0, 80, 80],
+      ["GREEN", 0, 0, 0, 0],
       ["RED", 120, 20, 100, 100],
     ]);
     expect(draft.total).toBe(0);
@@ -106,19 +108,27 @@ describe("buildDraft", () => {
     ]);
   });
 
-  it("refuses more than Reflected Stock even when Current Stock would cover it, and leaves a bad line out of what would be sent", () => {
-    // RED 7/10: 120 In Store, 20 reserved → 101 is refused although the store physically holds it.
-    const draft = buildDraft(grid, [SK6_710], { "v-sk6-red-710": "101", "v-sk6-blue-710": "10" });
-    const sk6 = draft.articles[0];
-    expect(sk6.errorCount).toBe(1);
-    expect(sk6.colours.find((c) => c.colour === "RED")!.check.error).toBe("Only 100 available");
-    expect(draft.errorCount).toBe(1);
-    expect(draft.total).toBe(10);
-    expect(draft.lines).toEqual([{ productVariantId: "v-sk6-blue-710", quantity: 10, reflectedStockSeen: 80 }]);
-    // Exactly Reflected Stock is fine.
-    expect(buildDraft(grid, [SK6_710], { "v-sk6-red-710": "100" }).errorCount).toBe(0);
-    // A fully reserved colour cannot take even one carton.
-    expect(buildDraft(grid, [SK6_46], { "v-sk6-navy-46": "1" }).articles[0].colours.find((c) => c.colour === "NAVY")!.check.error).toBe("Only 0 available");
+  it("allows more than the store holds, sends it, and says what the In Store figure will be (owner, 12 Nov 2026)", () => {
+    // RED 7/10: 120 In Store (20 of them reserved). 121 goes on the gatepass and takes In Store to -1,
+    // the figure Carton Stock will show.
+    const draft = buildDraft(grid, [SK6_710], { "v-sk6-red-710": "121", "v-sk6-blue-710": "10" });
+    const red = draft.articles[0].colours.find((c) => c.colour === "RED")!;
+    expect(red.check).toEqual({ value: 121, error: null });
+    expect(red.after).toBe(-1);
+    expect(draft.articles[0].colours.find((c) => c.colour === "BLUE")!.after).toBe(70);
+    expect(draft.errorCount).toBe(0);
+    expect(draft.total).toBe(131);
+    expect(draft.lines).toEqual([
+      { productVariantId: "v-sk6-blue-710", quantity: 10, reflectedStockSeen: 80 },
+      { productVariantId: "v-sk6-red-710", quantity: 121, reflectedStockSeen: 100 },
+    ]);
+    // Exactly what is In Store leaves it at 0.
+    expect(buildDraft(grid, [SK6_710], { "v-sk6-red-710": "120" }).articles[0].colours.find((c) => c.colour === "RED")!.after).toBe(0);
+    // A fully reserved colour can take cartons too, and goes below zero past what it holds.
+    const navy = buildDraft(grid, [SK6_46], { "v-sk6-navy-46": "16" }).articles[0].colours.find((c) => c.colour === "NAVY")!;
+    expect([navy.check.error, navy.after]).toEqual([null, -1]);
+    // A colour with nothing In Store goes below zero by every carton.
+    expect(buildDraft(grid, [SK6_710], { "v-sk6-green-710": "3" }).articles[0].colours.find((c) => c.colour === "GREEN")!.after).toBe(-3);
   });
 
   it("ignores an added key the store no longer holds", () => {
@@ -132,8 +142,10 @@ describe("createBlocker", () => {
     const empty = buildDraft(grid, [SK6_710], {});
     expect(createBlocker(empty, "")).toBe("Select a party first.");
     expect(createBlocker(empty, "p-1")).toBe("Add an article and enter at least one quantity.");
-    const bad = buildDraft(grid, [SK6_710], { "v-sk6-red-710": "999" });
+    const bad = buildDraft(grid, [SK6_710], { "v-sk6-red-710": "1.5" });
     expect(createBlocker(bad, "p-1")).toBe("Fix the highlighted quantities first.");
+    // More than the store holds is not an error: it blocks nothing (owner, 12 Nov 2026).
+    expect(createBlocker(buildDraft(grid, [SK6_710], { "v-sk6-red-710": "999" }), "p-1")).toBeNull();
     const good = buildDraft(grid, [SK6_710], { "v-sk6-red-710": "1" });
     expect(createBlocker(good, "p-1")).toBeNull();
   });

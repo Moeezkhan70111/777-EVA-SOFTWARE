@@ -142,8 +142,9 @@ interface Office {
 }
 
 const gatepassDeps = (pc: Pc) => ({ txManager: pc.db, repo: pc.db, idGenerator: idGen });
+/** As the desktop makes one: this computer's store goes with it, for what the store does not hold (owner, 12 Nov 2026). */
 const issueGatepass = (pc: Pc, office: Office, quantity: number) =>
-  new CreateGatepassUseCase(gatepassDeps(pc)).execute({ partyId: office.customer, lines: [{ productVariantId: office.red, quantity }], actor: "clerk" });
+  new CreateGatepassUseCase(gatepassDeps(pc)).execute({ partyId: office.customer, lines: [{ productVariantId: office.red, quantity }], actor: "clerk", storeLocationId: STORE });
 const cancelGatepass = (pc: Pc, gatepassId: string) =>
   new CancelGatepassUseCase(gatepassDeps(pc)).execute({ gatepassId, reason: "wrong party", actor: "clerk" });
 
@@ -261,8 +262,9 @@ test("4, 5, 6: a gatepass reads available stock, takes it once, and makes one li
     const { a, b, cloud } = office;
     produce(a, office, "10");
     assert.equal(a.db.listStoreStock()[0]?.reflectedQuantity, 20, "the gatepass grid shows what can be cut");
-    const refused = await issueGatepass(a, office, 21);
-    assert.equal(refused.accepted, false, "not more than the store holds");
+    // A party with no such product on Product Master is still refused, and leaves nothing behind.
+    const refused = await new CreateGatepassUseCase(gatepassDeps(a)).execute({ partyId: office.customer, lines: [{ productVariantId: "no-such-product", quantity: 1 }], actor: "clerk" });
+    assert.equal(refused.accepted, false);
     assert.equal(count(a, "gatepasses"), 0);
     assert.equal(count(a, "sale_vouchers"), 0, "a refused gatepass leaves no bill");
 
@@ -278,6 +280,28 @@ test("4, 5, 6: a gatepass reads available stock, takes it once, and makes one li
     await passAll(cloud, a, b);
     assert.equal(inStore(b, office), 14);
     assert.equal(b.db.findSaleVoucherByGatepass(made.gatepassId ?? "")?.id, made.billId, "the same bill, under the same link, on the other computer");
+    assertSameEverywhere(office);
+  });
+});
+
+// Owner, 12 Nov 2026: the gatepass goes out first and Manual Production records the cartons later. Office
+// computers hold carton QR, so a gatepass may take more than the store holds: both computers show the minus
+// and agree, and the production that follows brings both back.
+test("4b: a gatepass for more than the store holds is made, both computers show the minus, and production balances it", async () => {
+  await withOffice(async (office) => {
+    const { a, b, cloud } = office;
+    produce(a, office, "10");
+    const made = await issueGatepass(a, office, 21);
+    assert.equal(made.accepted, true, made.reason);
+    assert.equal(inStore(a, office), -1, "one carton owed to production");
+    assert.equal(a.db.findSaleVoucherByGatepass(made.gatepassId ?? "")?.id, made.billId, "billed like any other");
+
+    await passAll(cloud, a, b);
+    assert.equal(inStore(b, office), -1, "the other computer applies it too, never waiting for production");
+
+    produce(a, office, "1");
+    await passAll(cloud, a, b);
+    assert.deepEqual([inStore(a, office), inStore(b, office)], [1, 1]);
     assertSameEverywhere(office);
   });
 });

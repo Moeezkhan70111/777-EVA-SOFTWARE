@@ -60,7 +60,14 @@ function writeCartonStockEvent(sql: SyncSqlHandle, event: CartonStockEventPayloa
     ) > 0;
   if (!inserted) return false;
   try {
-    moveCartonStock(sql, { variantId: event.productVariantId, locationId: event.locationId, delta: event.balanceDelta, nowIso: replicatedAt });
+    // The same rule as the computer that made it: a gatepass may take the figure below zero, nothing else may.
+    moveCartonStock(sql, {
+      variantId: event.productVariantId,
+      locationId: event.locationId,
+      delta: event.balanceDelta,
+      nowIso: replicatedAt,
+      eventType: event.eventType,
+    });
   } catch (error) {
     // Rolled back with the row by the applier, and parked with its reason.
     if (error instanceof CartonStockWouldGoNegative) throw new ApplyMustWait(error.message);

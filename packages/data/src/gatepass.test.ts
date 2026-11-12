@@ -204,7 +204,7 @@ test("schema — gatepasses and gatepass_lines exist, are additive, and referenc
   }
 });
 
-test("store stock by article: one row per colour + size that is In Store, nothing from the factory or the gate", async () => {
+test("store stock by article: one row per active colour + size, with only what is In Store counted, nothing from the factory or the gate", async () => {
   const f = createFixture();
   try {
     await stockVariant(f.db, f.raw, "SK6", "7/10", "RED", 3);
@@ -218,31 +218,38 @@ test("store stock by article: one row per colour + size that is In Store, nothin
     // Another article entirely.
     await stockVariant(f.db, f.raw, "SK12", "7/10", "BLACK", 4);
 
+    // Every active colour + size is listed, so a gatepass can be made before the cartons are (owner,
+    // 12 Nov 2026). The black carton is still on the factory floor: SK6 BLACK is listed with 0 in the store.
     const rows = f.db.listStoreStockByArticle("SK6").map((r) => [r.color, r.size, r.storeQuantity]);
     assert.deepEqual(rows, [
+      ["BLACK", "7/10", 0],
       ["BLUE", "7/10", 1],
       ["RED", "4/6", 2],
       ["RED", "7/10", 3],
     ]);
-    assert.deepEqual(f.db.listStoreStockByArticle("sk6").length, 3, "article lookup is case-insensitive");
+    assert.deepEqual(f.db.listStoreStockByArticle("sk6").length, 4, "article lookup is case-insensitive");
     assert.deepEqual(f.db.listStoreStockByArticle("SK99"), []);
     assert.deepEqual(f.db.listStoreStockByArticle(""), []);
     // Agrees with Current Stock's own store column.
     const inventory = f.db.listInventory("SK6").find((r) => r.color === "BLUE" && r.size === "7/10");
     assert.equal(inventory?.storeQuantity, 1);
 
-    // The whole store in one read — every article, same figures, nothing with zero In Store
-    // (the black carton is still on the factory floor, so SK6 BLACK does not appear at all).
+    // The whole store in one read — every article, same figures, zero In Store included
+    // (the black carton is still on the factory floor, so SK6 BLACK shows 0).
     const whole = f.db.listStoreStock().map((r) => [r.article, r.color, r.size, r.storeQuantity]);
     assert.deepEqual(whole, [
       ["SK12", "BLACK", "7/10", 4],
+      ["SK6", "BLACK", "7/10", 0],
       ["SK6", "BLUE", "7/10", 1],
       ["SK6", "RED", "4/6", 2],
       ["SK6", "RED", "7/10", 3],
     ]);
-    // Once the last blue carton leaves the store, the row disappears rather than showing 0.
+    // Once the last blue carton leaves the store, the row stays and shows 0, so it can still go on a gatepass.
     assert.equal((await mover(f.db).execute({ rawScan: blue.ids[1], context: CONTEXT })).outcome, "MOVED_OUT");
-    assert.ok(!f.db.listStoreStock().some((r) => r.color === "BLUE"));
+    assert.deepEqual(
+      f.db.listStoreStock().filter((r) => r.color === "BLUE").map((r) => r.storeQuantity),
+      [0]
+    );
   } finally {
     f.cleanup();
   }

@@ -99,6 +99,24 @@ test("an adjustment adds and takes out, and never takes the figure below zero", 
   });
 });
 
+// Owner, 12 Nov 2026: while carton QR is on hold (as on every office computer) a decrease may take the figure below
+// zero, and production is added later to balance it. With QR scanning on it is refused, as the test above shows.
+test("with carton QR on hold, a decrease past what the store holds is posted and the figure goes below zero", () => {
+  withFixture((fixture) => {
+    const { db, sku } = fixture;
+    db.cartonQrOnHold = true;
+    post(db, "OPENING", [line(sku("SK6", "7/10"), "RED", 4)]);
+    const result = post(db, "ADJUSTMENT", [line(sku("SK6", "7/10"), "RED", 10, "OUT"), line(sku("SK6", "13/1"), "BLACK", 3, "OUT")]);
+    assert.equal(result.document.cartonsOut, 13);
+    assert.equal(figureOf(fixture, "SK6", "7/10", "RED"), -6, "never clamped");
+    assert.equal(figureOf(fixture, "SK6", "13/1", "BLACK"), -3, "a product the store never held");
+    assert.ok(ledgerMatchesFigure(db), "the figure is still the sum of its movements");
+    // Production, or an increase, brings it back.
+    post(db, "ADJUSTMENT", [line(sku("SK6", "7/10"), "RED", 8, "IN")]);
+    assert.equal(figureOf(fixture, "SK6", "7/10", "RED"), 2);
+  });
+});
+
 test("several articles and colours in one document", () => {
   withFixture((fixture) => {
     const { db, sku } = fixture;

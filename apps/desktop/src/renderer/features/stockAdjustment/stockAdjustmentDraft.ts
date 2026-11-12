@@ -69,7 +69,6 @@ export function entryProblem(
   if (!quantity.ok) return quantity.reason;
   if (choice.colorMissing && !canAddColor) return text.colorNotOnSize;
   if (kind === CARTON_ADJUSTMENT_KIND.OPENING && choice.hasOpening) return text.alreadyOpened;
-  if (resultOf({ inStore: choice.inStore, direction, cartons: quantity.cartons }) < 0) return text.notEnough(dozensText(choice.inStore));
   return null;
 }
 
@@ -118,6 +117,5 @@ export function documentProblem(header: DraftHeader, lines: readonly DraftLine[]
   if (lines.length === 0) return text.noLines;
   if (!header.businessDate) return text.dateRequired;
   if (!header.reason.trim()) return text.reasonRequired;
-  if (lines.some((line) => resultOf(line) < 0)) return text.wouldGoNegative;
   return null;
 }

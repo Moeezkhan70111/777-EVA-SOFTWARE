@@ -6062,8 +6062,10 @@ tr.is-selected .gp-qty-stepper { border-color: var(--primary-light); }
 tr.is-selected .gp-qty-stepper input { color: var(--primary-blue); }
 tr.has-error .gp-qty-stepper { border-color: var(--err); }
 tr.has-error .gp-qty-stepper input { color: var(--err); }
-.gp-qty-max { font-size: .78rem; color: var(--text-3); font-variant-numeric: tabular-nums; }
 .gp-colour-table .gp-qty-error { text-align: left; }
+/* More than the store holds: allowed, the store goes below zero until production makes it up. Amber, with its own words. */
+.gp-qty-warning { margin-top: 4px; padding: 3px 8px; border: 1px solid var(--warning-line); border-radius: 6px; background: var(--warning-soft); color: var(--warning-strong); font-size: .74rem; font-weight: 600; text-align: left; }
+.gp-colour-table tr.is-short td { background: var(--warning-soft); }
 
 /* Summary panel */
 .gp-summary { min-height: 0; display: flex; flex-direction: column; gap: 10px; padding: 14px 16px; box-shadow: 0px 3px 4px rgba(195, 195, 195, 60);}
@@ -9736,7 +9738,7 @@ tr.has-error .gp-qty-stepper input { color: var(--err); }
 
 .cs-articles { display: flex; flex-direction: column; gap: 22px; }
 .cs-article {
-  display: grid; grid-template-columns: minmax(150px, 220px) minmax(0, 1fr);
+  display: grid; grid-template-columns: var(--cs-name-width, 220px) minmax(0, 1fr);
   border: 1px solid var(--sp-line); border-radius: 16px; background: var(--white); box-shadow: var(--sp-card-shadow); overflow: hidden;
 }
 .carton-stock-page .cs-article-name {
@@ -9745,7 +9747,14 @@ tr.has-error .gp-qty-stepper input { color: var(--err); }
 }
 .cs-table-scroll { min-width: 0; overflow-x: auto; }
 .cs-table-scroll:focus-visible { outline: 2px solid var(--sp-mode-on-start); outline-offset: -2px; }
-.cs-table { width: 100%; border-collapse: separate; border-spacing: 0; font-variant-numeric: tabular-nums; }
+.cs-table { width: 100%; table-layout: fixed; border-collapse: separate; border-spacing: 0; font-variant-numeric: tabular-nums; }
+/* Colours that do not fit continue in a band underneath (cartonMatrixLayout): a clear line, then a note. */
+.cs-band + .cs-band { border-top: 3px solid var(--us-chip); }
+.cs-band-caption {
+  padding: 6px 14px; background: var(--sp-ground); color: var(--sp-navy-2); font-size: 13px; font-weight: 700; text-align: left; caption-side: top;
+}
+.cs-table thead th { white-space: normal; line-height: 1.25; }
+.cs-table th.cs-colour-head { padding: 4px 8px; }
 .cs-table th, .cs-table td {
   height: 46px; padding: 0 14px; border-right: 1px solid var(--sp-line); border-bottom: 1px solid var(--sp-line);
   color: var(--sp-navy); font-size: 19px; font-weight: 500; text-align: center; vertical-align: middle; white-space: nowrap;
@@ -9758,18 +9767,49 @@ tr.has-error .gp-qty-stepper input { color: var(--err); }
 .cs-dot.color-swatch { width: 16px; height: 16px; }
 
 /* Size and Total stay in place while the colours scroll under them. */
-.cs-table .cs-size { position: sticky; left: 0; z-index: 1; width: 160px; min-width: 120px; background: var(--white); border-right-color: transparent; }
+.cs-table .cs-size { background: var(--white); border-right-color: transparent; }
 .cs-table thead .cs-size { background: var(--us-head); }
-.cs-size-pill { display: inline-block; min-width: 96px; padding: 3px 14px; border-radius: 10px; background: var(--us-chip); color: var(--sp-navy-2); font-weight: 700; }
-.cs-table .cs-total { position: sticky; right: 0; z-index: 1; width: 170px; min-width: 110px; padding: 0 8px; background: var(--white); }
+.cs-size-pill { display: inline-block; min-width: min(96px, 100%); padding: 3px 14px; border-radius: 10px; background: var(--us-chip); color: var(--sp-navy-2); font-weight: 700; }
+.cs-table .cs-total { padding: 0 8px; background: var(--white); }
 .cs-table thead .cs-total { background: var(--us-chip); font-size: 17px; letter-spacing: 0.02em; text-transform: uppercase; }
 .cs-total-pill { display: block; padding: 5px 10px; border-radius: 10px; background: var(--us-total); font-weight: 800; }
 
+/* A long list stays smooth: cards out of view are not laid out or painted until they scroll near. */
+.cs-articles > .cs-article { content-visibility: auto; contain-intrinsic-size: auto 240px; }
+.cs-list-end { height: 1px; }
+
+/* Skeleton: the page's shape in soft grey bars while its figures load. */
+.cs-skeleton {
+  display: block; border-radius: 10px;
+  background: linear-gradient(90deg, var(--us-head) 0%, var(--sp-ground) 50%, var(--us-head) 100%) 0 0 / 200% 100%;
+  animation: cs-skeleton-shimmer 1.3s ease-in-out infinite;
+}
+.cs-skeleton--search { flex: 1 1 360px; min-height: 52px; border-radius: 12px; }
+.cs-skeleton--picker { flex: 0 0 220px; min-height: 52px; border-radius: 12px; }
+.cs-skeleton--title { width: 60%; height: 30px; background-image: linear-gradient(90deg, var(--us-chip) 0%, var(--us-head) 50%, var(--us-chip) 100%); }
+.cs-skeleton--pill { flex: 0 0 96px; height: 24px; }
+.cs-skeleton--cell { flex: 1; height: 16px; }
+.cs-skeleton-name { display: flex; align-items: center; justify-content: center; padding: 16px; border-right: 1px solid var(--sp-line); background: var(--sp-ground); }
+.cs-skeleton-table { display: flex; flex-direction: column; min-width: 0; }
+.cs-skeleton-row { display: flex; align-items: center; gap: 28px; height: 46px; padding: 0 22px; border-bottom: 1px solid var(--sp-line); }
+.cs-skeleton-row:last-child { border-bottom: 0; }
+.cs-skeleton-row--head { height: 48px; background: var(--us-head); }
+.cs-skeleton-row--head .cs-skeleton { background: var(--white); animation: none; opacity: 0.8; }
+@keyframes cs-skeleton-shimmer { from { background-position: 100% 0; } to { background-position: -100% 0; } }
+@media (prefers-reduced-motion: reduce) { .cs-skeleton { animation: none; } }
+
+/* A narrow list: the name sits above the matrix (cartonMatrixLayout decides, from the list's width). */
+.cs-articles--stacked .cs-article { grid-template-columns: 1fr; }
+.carton-stock-page .cs-articles--stacked .cs-article-name { justify-content: flex-start; padding: 10px 16px; border-right: 0; border-bottom: 1px solid var(--sp-line); font-size: 22px; }
+.cs-articles--stacked .cs-table th, .cs-articles--stacked .cs-table td { padding: 0 6px; font-size: 16px; }
+.cs-articles--stacked .cs-size-pill { padding: 3px 6px; }
 
 @media (max-width: 900px) {
-  .cs-article { grid-template-columns: 1fr; }
-  .carton-stock-page .cs-article-name { justify-content: flex-start; padding: 10px 16px; border-right: 0; border-bottom: 1px solid var(--sp-line); font-size: 22px; }
+  .cs-skeleton-card { grid-template-columns: 1fr; }
   .cs-picker { flex: 1 1 200px; }
+  .cs-skeleton-name { justify-content: flex-start; padding: 12px 16px; border-right: 0; border-bottom: 1px solid var(--sp-line); }
+  .cs-skeleton-row { gap: 14px; padding: 0 14px; }
+  .cs-skeleton--pill { flex-basis: 56px; }
 }
 
 /* ─── Urdu text and the Color Translation page (docs/45) ─────────────────────── */
@@ -9811,6 +9851,9 @@ tr.has-error .gp-qty-stepper input { color: var(--err); }
 .sa-table th, .sa-table td { padding: var(--space-2) var(--space-3); white-space: nowrap; }
 .sa-num, .sa-table th.sa-num { text-align: right; font-variant-numeric: tabular-nums; }
 .sa-result { font-weight: 700; color: var(--text); }
+/* A decrease past what the store holds: allowed, the figure goes below zero until production. Amber, with words. */
+.sa-result.is-below-zero { color: var(--warning-strong); background: var(--warning-soft); }
+.sa-below-zero { display: block; margin-top: 2px; font-size: .72rem; font-weight: 600; white-space: normal; }
 .sa-qty { width: 7rem; min-height: 40px; text-align: right; font-variant-numeric: tabular-nums; }
 .sa-table tr.is-invalid .sa-qty { border-color: var(--danger-strong); }
 .sa-problem { display: block; margin-top: 2px; font-size: 0.72rem; white-space: normal; color: var(--danger-strong); }

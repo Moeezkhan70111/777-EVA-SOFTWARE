@@ -240,7 +240,8 @@ export const copy = {
     qtyNotWhole: "Enter a whole number of cartons.",
     qtyNegative: "Quantity cannot be negative.",
     qtyFraction: "Enter whole cartons only.",
-    qtyExceeds: (available: number) => `Only ${available} available`,
+    /** More than the store holds: allowed (owner, 12 Nov 2026), the store goes below zero until production. */
+    goesBelowZero: (after: number) => `Stock goes to ${String(after)}. Add the production later to balance it.`,
     blockerParty: "Select a party first.",
     blockerErrors: "Fix the highlighted quantities first.",
     blockerLines: "Add an article and enter at least one quantity.",
@@ -2735,9 +2736,13 @@ export const copy = {
     sizeInDozens: "Size (dozen)",
     total: "Total",
     tableLabel: (article: string) => `${article} cartons in store`,
+    /** Above each band when an article's colours take more than one: "Colors 1–7 of 14". */
+    colourBand: (first: number, last: number, count: number) =>
+      first === last ? `Color ${String(first)} of ${String(count)}` : `Colors ${String(first)}–${String(last)} of ${String(count)}`,
     noMatchTitle: "Nothing matches",
     noMatchHint: "Clear the search or choose All Article Series to see everything.",
     loading: "Loading carton stock…",
+    loadingMore: "Loading more articles…",
     failed: "Carton stock could not be loaded.",
     emptyTitle: "No carton stock yet",
     emptyHint: "Stock appears here once Manual Production is recorded.",
@@ -2752,7 +2757,7 @@ export const copy = {
     kinds: { OPENING: "Opening Stock", ADJUSTMENT: "Stock Adjustment" } as const,
     kindHint: {
       OPENING: "The first carton figure for a colour and size. Given once; correct it later with a Stock Adjustment.",
-      ADJUSTMENT: "Adds or takes out cartons to correct the figure. It never takes stock below zero.",
+      ADJUSTMENT: "Adds or takes out cartons to correct the figure. A decrease may take stock below zero: add the production later to balance it.",
     } as const,
     dateLabel: "Transaction date",
     reasonLabel: "Reason",
@@ -2782,7 +2787,6 @@ export const copy = {
     hasOpening: "Has opening",
     quantityFor: (size: string) => `Dozens for size ${size}`,
     alreadyOpened: "Already has opening stock.",
-    notEnough: (inStore: string) => `Only ${inStore} dozen in store.`,
     colorNotOnSize: "Colour not on this size",
     newOnSize: "new colour for this size",
     noColorsHintAdd: "Add its first colour with + beside Colour.",
@@ -2800,7 +2804,8 @@ export const copy = {
     noLines: "Add at least one line.",
     dateRequired: "Enter the transaction date.",
     reasonRequired: "Give a reason.",
-    wouldGoNegative: "A line would take stock below zero.",
+    /** A decrease past what the store holds: allowed (owner, 12 Nov 2026), production balances it later. */
+    belowZero: "Below zero. Add the production later to balance it.",
     post: { OPENING: "Post Opening Stock", ADJUSTMENT: "Post Stock Adjustment" } as const,
     posting: "Posting…",
     confirmTitle: { OPENING: "Post this Opening Stock?", ADJUSTMENT: "Post this Stock Adjustment?" } as const,
