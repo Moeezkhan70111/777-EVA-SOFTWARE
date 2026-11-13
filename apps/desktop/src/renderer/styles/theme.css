@@ -9735,20 +9735,39 @@ tr.has-error .gp-qty-stepper input { color: var(--err); }
   display: flex; flex-direction: column; gap: 18px; padding: 22px;
   border: 1px solid var(--sp-line); border-radius: var(--dash-card-radius); background: rgba(255, 255, 255, 0.7); box-shadow: var(--sp-card-shadow);
 }
+/* Total Carton Stock: the shared KpiCard in this page's look, above the search. */
+.kpi-card.cs-summary { align-self: flex-start; min-width: 260px; padding: 14px 22px; border: 1px solid var(--sp-line); border-radius: 14px; background: var(--us-head); box-shadow: var(--sp-card-shadow); }
+.kpi-card.cs-summary:hover { transform: none; box-shadow: var(--sp-card-shadow); }
+.cs-summary .kpi-label { color: var(--sp-navy-2); font-size: 0.8rem; }
+.cs-summary .kpi-value { color: var(--sp-navy); font-size: 2.2rem; }
+.cs-summary .text-muted { color: var(--sp-navy-2); }
 .cs-toolbar { display: flex; flex-wrap: wrap; align-items: stretch; gap: 14px; }
 .cs-search { flex: 1 1 360px; min-height: 52px; }
-.cs-picker {
-  position: relative; display: inline-flex; flex: 0 0 auto; align-items: center; gap: 12px; min-width: 220px; min-height: 52px; padding: 0 16px;
-  border: 1px solid var(--sp-line); border-radius: 12px; background: var(--white); box-shadow: var(--us-field-shadow); color: var(--sp-navy);
+/* The article series picker (SeriesPicker): the shared searchable picker, drawn as this page's field, its icon in a
+   blue tile; the open panel shows each series with its articles and a dozen badge. */
+.cs-series { flex: 0 1 300px; min-width: 260px; }
+.cs-series .pv-item-combobox--panel .form-input {
+  height: 52px; padding-left: 62px; padding-right: 46px; border: 1px solid var(--sp-line); border-radius: 12px;
+  background: var(--white); box-shadow: var(--us-field-shadow); color: var(--sp-navy); font-size: 15px; font-weight: 700;
+  transition: border-color 120ms ease, box-shadow 120ms ease;
 }
-.cs-picker:focus-within { border-color: var(--sp-mode-on-start); }
-.cs-picker-icon { display: inline-flex; flex: 0 0 auto; width: 24px; height: 24px; color: var(--sp-navy-2); }
-.cs-picker-icon svg, .cs-picker-arrow svg { width: 100%; height: 100%; }
-.carton-stock-page .cs-picker select {
-  flex: 1; min-width: 0; min-height: 0; padding: 0 26px 0 0; border: 0; outline: none; appearance: none; background: transparent; box-shadow: none;
-  color: var(--sp-navy); font: inherit; font-size: 15px; font-weight: 700; cursor: pointer;
+.cs-series .pv-item-combobox--panel .form-input::placeholder { color: var(--sp-navy); opacity: 1; }
+.cs-series .pv-item-combobox--panel .form-input:hover { border-color: var(--sp-blue-line); }
+.cs-series .pv-item-combobox--panel.is-open .form-input, .cs-series .pv-item-combobox--panel .form-input:focus-visible {
+  border-color: var(--sp-mode-on-start); box-shadow: 0 0 0 4px color-mix(in srgb, var(--sp-blue) 14%, transparent);
 }
-.cs-picker-arrow { position: absolute; right: 16px; display: inline-flex; width: 18px; height: 18px; pointer-events: none; transform: rotate(180deg); }
+.cs-series .combobox-icon {
+  left: 8px; width: 38px; height: 38px; align-items: center; justify-content: center;
+  border-radius: 10px; background: var(--sp-blue-soft); color: var(--sp-navy-2);
+}
+.cs-series .combobox-icon svg { width: 22px; height: 22px; }
+.cs-series .combobox-chevron { right: 10px; color: var(--sp-navy-2); }
+.cs-series .combobox-chevron svg { width: 20px; height: 20px; }
+.cs-series .combobox-panel .city-option { padding: 12px 14px; border-radius: 10px; border-bottom-color: transparent; }
+.cs-series .combobox-panel .city-option[aria-selected="true"] { background: var(--sp-blue-soft); box-shadow: inset 4px 0 0 var(--sp-mode-on-start); }
+.cs-series .combobox-panel .city-option-label { font-size: 15px; font-weight: 700; }
+.cs-series .combobox-panel .city-option-detail { color: var(--sp-muted); }
+.cs-series .combobox-panel .badge-info { font-size: 13px; font-weight: 800; font-variant-numeric: tabular-nums; }
 
 .cs-articles { display: flex; flex-direction: column; gap: 22px; }
 .cs-article {
@@ -9814,6 +9833,11 @@ tr.has-error .gp-qty-stepper input { color: var(--err); }
 .cs-table .cs-total { position: sticky; right: 0; z-index: 2; padding: 0 8px; background: var(--white); border-left: 2px solid var(--sp-line); }
 .cs-table thead .cs-total { background: var(--us-chip); font-size: 17px; letter-spacing: 0.02em; text-transform: uppercase; }
 .cs-total-pill { display: block; padding: 5px 10px; border-radius: 10px; background: var(--us-total); font-weight: 800; }
+/* The Total row: each colour added up, and the article's grand total in the corner. */
+.cs-table tfoot th, .cs-table tfoot td { border-top: 2px solid var(--sp-line); border-bottom: 0; background: var(--us-head); font-weight: 800; }
+.cs-table tfoot .cs-size { background: var(--us-chip); font-size: 17px; letter-spacing: 0.02em; text-transform: uppercase; }
+.cs-table tfoot .cs-total { background: var(--us-head); }
+.cs-grand-pill { background: var(--sp-navy-2); color: var(--white); }
 
 /* A long list stays smooth: cards out of view are not laid out or painted until they scroll near. */
 .cs-articles > .cs-article { content-visibility: auto; contain-intrinsic-size: auto 240px; }
@@ -9848,7 +9872,7 @@ tr.has-error .gp-qty-stepper input { color: var(--err); }
 
 @media (max-width: 900px) {
   .cs-skeleton-card { grid-template-columns: 1fr; }
-  .cs-picker { flex: 1 1 200px; }
+  .cs-series { flex: 1 1 200px; }
   .cs-skeleton-name { justify-content: flex-start; padding: 12px 16px; border-right: 0; border-bottom: 1px solid var(--sp-line); }
   .cs-skeleton-row { gap: 14px; padding: 0 14px; }
   .cs-skeleton--pill { flex-basis: 56px; }

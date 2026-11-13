@@ -23,6 +23,12 @@ const matrix = (article: string) => within(screen.getByRole("region", { name: `$
 // Read straight from the page: role queries over dozens of tables are too slow for jsdom.
 const names = () => Array.from(document.querySelectorAll("h2"), (heading) => heading.textContent);
 
+/** Opens the article series picker and picks one (the shared searchable picker, as a panel). */
+const pickSeries = async (label: string) => {
+  await userEvent.click(screen.getByRole("combobox", { name: text.seriesLabel }));
+  await userEvent.click(screen.getByRole("option", { name: new RegExp(`^${label}`) }));
+};
+
 const seededList = () => DEFAULT_COLOR_TRANSLATIONS.map((row, index) => ({ id: `c-${String(index)}`, englishName: row.english, urduName: row.urdu }));
 
 beforeEach(() => {
@@ -37,7 +43,7 @@ beforeEach(() => {
 });
 
 describe("the stock matrix", () => {
-  it("shows one card per article, Size down the side, its colours across, a Total per size and no grand total", async () => {
+  it("shows one card per article, Size down the side, its colours across, a Total per size, and a Total row with each colour and the grand total", async () => {
     show();
     await screen.findByRole("region", { name: "SK6 cartons in store" });
     expect(names()).toEqual(["SK6", "SK12", "SK30"]);
@@ -45,7 +51,16 @@ describe("the stock matrix", () => {
     expect(matrix("SK6").getAllByRole("columnheader").map((cell) => cell.textContent)).toEqual(["Size (dozen)", "بلو", "لال", "Total"]);
     expect(matrix("SK6").getByRole("row", { name: "7/10 3 1 4" })).toBeInTheDocument();
     expect(matrix("SK6").getByRole("row", { name: "4/6 - 2.5 2.5" })).toBeInTheDocument();
-    expect(matrix("SK6").getAllByRole("row")).toHaveLength(3);
+    expect(matrix("SK6").getByRole("row", { name: "Total 3 3.5 6.5" })).toBeInTheDocument();
+    expect(matrix("SK6").getAllByRole("row")).toHaveLength(4);
+  });
+
+  it("a card at the top gives the total carton stock in dozens, and follows the search", async () => {
+    show();
+    const card = () => document.querySelector(".cs-summary");
+    await waitFor(() => expect(card()).toHaveTextContent(`${text.totalCardLabel}11${text.totalCardSub(3, "22", false)}`));
+    await userEvent.type(screen.getByRole("searchbox", { name: text.searchLabel }), "sk6");
+    await waitFor(() => expect(card()).toHaveTextContent(`${text.totalCardLabel}6.5${text.totalCardSub(1, "13", true)}`));
   });
 
   it("narrows by search and by article series, and offers no article or colour picker", async () => {
@@ -56,11 +71,16 @@ describe("the stock matrix", () => {
     await userEvent.clear(screen.getByRole("searchbox", { name: text.searchLabel }));
     await waitFor(() => expect(names()).toEqual(["SK6", "SK12", "SK30"]));
 
-    const series = screen.getByRole("combobox", { name: text.seriesLabel });
-    expect(within(series).getAllByRole("option").map((option) => option.textContent)).toEqual([text.allSeries, "DOUBLE COLOR", "SKECHERS"]);
-    await userEvent.selectOptions(series, "DOUBLE COLOR");
+    // Each series says how many articles it has and what they hold; All is the whole store, whatever the search.
+    await userEvent.click(screen.getByRole("combobox", { name: text.seriesLabel }));
+    expect(screen.getAllByRole("option").map((option) => option.textContent)).toEqual([
+      `${text.allSeries}${text.seriesDozens("11")}${text.seriesArticles(3)}`,
+      `DOUBLE COLOR${text.seriesDozens("1.5")}${text.seriesArticles(1)}`,
+      `SKECHERS${text.seriesDozens("9.5")}${text.seriesArticles(2)}`,
+    ]);
+    await userEvent.click(screen.getByRole("option", { name: /^DOUBLE COLOR/ }));
     await waitFor(() => expect(names()).toEqual(["SK30"]));
-    await userEvent.selectOptions(series, "SKECHERS");
+    await pickSeries("SKECHERS");
     await waitFor(() => expect(names()).toEqual(["SK6", "SK12"]));
     expect(screen.getAllByRole("combobox")).toHaveLength(1);
   });
@@ -237,7 +257,7 @@ describe("loading as the list scrolls", () => {
     await screen.findByText("SK20", { selector: "h2" }, { timeout: 4000 });
     endComesIntoView();
     await screen.findByText("SK40", { selector: "h2" }, { timeout: 4000 });
-    await userEvent.selectOptions(screen.getByRole("combobox", { name: text.seriesLabel }), "SKECHERS");
+    await pickSeries("SKECHERS");
     await waitFor(() => expect(api.getCartonStockMatrix).toHaveBeenLastCalledWith({ search: "", series: "SKECHERS", shown: 20 }));
     await waitFor(() => expect(names()).toHaveLength(20));
   });

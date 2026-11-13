@@ -1,4 +1,4 @@
-import type { CartonMatrixArticle, CartonMatrixRow, CartonStockMatrix } from "@erp/domain";
+import type { CartonMatrixArticle, CartonMatrixRow, CartonSeriesOption, CartonStockHeld, CartonStockMatrix } from "@erp/domain";
 import { copy } from "../../config/copy";
 import type { StockReply } from "../kindStock/useStockList";
 
@@ -24,15 +24,26 @@ const isArticle = (value: unknown): value is CartonMatrixArticle =>
   isText(value.key) &&
   isText(value.article) &&
   isTextList(value.colours) &&
+  isNumber(value.total) &&
+  Array.isArray(value.colourTotals) &&
+  value.colourTotals.length === value.colours.length &&
+  value.colourTotals.every(isNumber) &&
   Array.isArray(value.rows) &&
   value.rows.every((row) => isRow(row, (value.colours as string[]).length));
+
+const isHeld = (value: unknown): value is CartonStockHeld => isRecord(value) && isNumber(value.articles) && isNumber(value.cartons);
+const isSeriesOption = (value: unknown): value is CartonSeriesOption => isRecord(value) && isText(value.series) && isHeld(value);
+const isSeriesList = (value: unknown): value is CartonSeriesOption[] => Array.isArray(value) && value.every(isSeriesOption);
 
 /** The main process's answer as the page can use it. Anything malformed is a failure, never a blank list. */
 export const parseCartonMatrixReply = (reply: unknown): StockReply<CartonStockMatrix> => {
   if (!isRecord(reply)) return { ok: false, reason: copy.cartonStock.failed };
   if (reply.accepted !== true) return { ok: false, reason: isText(reply.reason) ? reply.reason : copy.cartonStock.failed };
-  const { articles, articleCount, page, pages, seriesOptions } = reply;
+  const { articles, articleCount, totalCartons, page, pages, seriesOptions, allSeries } = reply;
   const wellFormed =
-    Array.isArray(articles) && articles.every(isArticle) && isNumber(articleCount) && isNumber(page) && isNumber(pages) && isTextList(seriesOptions);
-  return wellFormed ? { ok: true, data: { articles, articleCount, page, pages, seriesOptions } } : { ok: false, reason: copy.cartonStock.failed };
+    Array.isArray(articles) && articles.every(isArticle) && isNumber(articleCount) && isNumber(totalCartons) &&
+    isNumber(page) && isNumber(pages) && isSeriesList(seriesOptions) && isHeld(allSeries);
+  return wellFormed
+    ? { ok: true, data: { articles, articleCount, totalCartons, page, pages, seriesOptions, allSeries } }
+    : { ok: false, reason: copy.cartonStock.failed };
 };

@@ -8,14 +8,17 @@ import { cellText } from "../upperStock/upperStock";
 import type { CartonLayout } from "./cartonMatrixLayout";
 
 // One article's cartons in store: its name in a block on the left, then Size down the side, its own
-// colours across the top, and a Total per size. No grand total and no total per colour: the owner's
-// design. When there are more colours than fit, the table scrolls sideways inside the card, the Size
+// colours across the top, a Total per size, and a Total row along the bottom: each colour added up and the article's
+// grand total in the corner (owner, 13 Nov 2026). When there are more colours than fit, the table scrolls sideways inside the card, the Size
 // and Total columns held in place, and the card says so plainly (SidewaysScrollArea).
 
 const text = copy.cartonStock;
 
 /** The store counts cartons; the floor reads dozens (1 carton = half a dozen, owner 11 Nov 2026). */
 const dozenCell = (cartons: number): string => cellText(cartonsToDozens(cartons));
+
+/** The same figure in dozens where nothing is a dash: 0 reads "0" (the Total Carton Stock card). */
+export const dozenFigure = (cartons: number): string => (cartons === 0 ? "0" : dozenCell(cartons));
 
 const ColourHead: React.FC<{ colour: string; colors: ColorDictionary }> = ({ colour, colors }) => {
   // Shown in Urdu from the shared colour list (docs/45), in English when the list does not name it.
@@ -62,6 +65,15 @@ const MatrixTable: React.FC<{ article: CartonMatrixArticle; layout: CartonLayout
           </tr>
         ))}
       </tbody>
+      <tfoot>
+        <tr className="cs-grand">
+          <th scope="row" className="cs-size">{text.total}</th>
+          {article.colourTotals.map((quantity, column) => (
+            <td key={article.colours[column]}>{dozenCell(quantity)}</td>
+          ))}
+          <td className="cs-total"><span className="cs-total-pill cs-grand-pill">{dozenCell(article.total)}</span></td>
+        </tr>
+      </tfoot>
     </table>
   );
 };

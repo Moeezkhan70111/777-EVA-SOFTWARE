@@ -1,7 +1,7 @@
 // The Carton Stock page's matrix: each article as Size down the side and Colour across the top, with
-// a Total per size, narrowed by a search and by article series. The figures are the store figure the other screens read (cartons in store,
-// cartonStockReconciliation's storeFigure); this only arranges them. There is no grand total and no
-// total per colour, by the owner's design.
+// a Total per size, a Total per colour and a grand total for the article (owner, 13 Nov 2026), narrowed by a search and
+// by article series. The figures are the store figure the other screens read (cartons in store,
+// cartonStockReconciliation's storeFigure); this only arranges and adds them.
 //
 //   COLUMNS ARE THE ARTICLE'S OWN COLOURS, so no stock is left off the page.
 //   SIZES FOLLOW THE STORE'S ORDER (compareSizes), the same as Upper Stock.
@@ -34,16 +34,34 @@ export interface CartonMatrixArticle {
   article: string;
   colours: string[];
   rows: CartonMatrixRow[];
+  /** Every size added up, one per colour, in the same order as colours. */
+  colourTotals: number[];
+  /** Every carton of the article in store. */
+  total: number;
 }
 
 export interface CartonStockMatrix {
   articles: CartonMatrixArticle[];
   /** Matching articles across every page. */
   articleCount: number;
+  /** Every carton of every matching article, across every page: the page's Total Carton Stock card. */
+  totalCartons: number;
   page: number;
   pages: number;
-  /** Every article series with stock, for the picker: not narrowed by the search. */
-  seriesOptions: string[];
+  /** Every article series with stock, for the picker, each with what it holds: not narrowed by the search. */
+  seriesOptions: CartonSeriesOption[];
+  /** What the whole store holds, for the picker's "All Article Series": not narrowed by the search or series. */
+  allSeries: CartonStockHeld;
+}
+
+/** How many articles have stock, and their cartons. */
+export interface CartonStockHeld {
+  articles: number;
+  cartons: number;
+}
+
+export interface CartonSeriesOption extends CartonStockHeld {
+  series: string;
 }
 
 export interface CartonStockQuery {
@@ -61,6 +79,17 @@ export const CARTON_STOCK_MOST_SHOWN = 2000;
 
 const naturally = (a: string, b: string): number => a.localeCompare(b, undefined, { numeric: true });
 
+const heldBy = (figures: readonly CartonStockFigure[]): CartonStockHeld => ({
+  articles: new Set(figures.map((figure) => attributeKey(figure.article))).size,
+  cartons: roundQuantity(figures.reduce((sum, figure) => sum + figure.quantity, 0)),
+});
+
+/** Every series with stock, A to Z, with its articles and cartons. A product with no series is in no option. */
+const seriesOptionsOf = (held: readonly CartonStockFigure[]): CartonSeriesOption[] => {
+  const names = [...new Set(held.map((figure) => attributeKey(figure.series)).filter(Boolean))].sort(naturally);
+  return names.map((series) => ({ series, ...heldBy(held.filter((figure) => attributeKey(figure.series) === series)) }));
+};
+
 const buildArticle = (article: string, figures: readonly CartonStockFigure[]): CartonMatrixArticle => {
   const colours = [...new Set(figures.map((figure) => attributeKey(figure.color)))].sort(naturally);
   const rows = new Map<string, CartonMatrixRow>();
@@ -72,12 +101,14 @@ const buildArticle = (article: string, figures: readonly CartonStockFigure[]): C
     row.total = roundQuantity(row.total + figure.quantity);
     rows.set(size, row);
   }
-  return { key: article, article, colours, rows: [...rows.values()].sort((a, b) => compareSizes(a.size, b.size)) };
+  const sorted = [...rows.values()].sort((a, b) => compareSizes(a.size, b.size));
+  const colourTotals = colours.map((_, column) => roundQuantity(sorted.reduce((sum, row) => sum + (row.quantities[column] ?? 0), 0)));
+  const total = roundQuantity(sorted.reduce((sum, row) => sum + row.total, 0));
+  return { key: article, article, colours, rows: sorted, colourTotals, total };
 };
 
 export const buildCartonStockMatrix = (figures: readonly CartonStockFigure[], query: CartonStockQuery = {}): CartonStockMatrix => {
   const held = figures.filter((figure) => figure.quantity !== 0);
-  const seriesOptions = [...new Set(held.map((figure) => attributeKey(figure.series)).filter(Boolean))].sort(naturally);
 
   const series = attributeKey(query.series);
   const words = attributeKey(query.search).split(/\s+/).filter(Boolean);
@@ -92,12 +123,15 @@ export const buildCartonStockMatrix = (figures: readonly CartonStockFigure[], qu
   const articles = [...groups.entries()].sort(([a], [b]) => naturally(a, b)).map(([name, group]) => buildArticle(name, group));
   const pageSize = Math.max(Math.trunc(query.pageSize ?? CARTON_STOCK_PAGE_SIZE), 1);
   const pages = Math.max(Math.ceil(articles.length / pageSize), 1);
+  const totalCartons = roundQuantity(articles.reduce((sum, article) => sum + article.total, 0));
   const page = Math.min(Math.max(Math.trunc(query.page ?? 1), 1), pages);
   return {
     articles: articles.slice((page - 1) * pageSize, page * pageSize),
     articleCount: articles.length,
+    totalCartons,
     page,
     pages,
-    seriesOptions,
+    seriesOptions: seriesOptionsOf(held),
+    allSeries: heldBy(held),
   };
 };

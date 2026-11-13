@@ -24,11 +24,20 @@ test("works out the owner's example, one Total per size, sizes in the store's or
   assert.equal(articles.find((article) => article.article === "SK12")?.rows[0]?.total, 16);
 });
 
+test("adds every size up per colour, and the whole article into a grand total", () => {
+  const sk6 = buildCartonStockMatrix(STOCK).articles.find((article) => article.article === "SK6");
+  assert.deepEqual(sk6?.colourTotals, [6, 7, 14, 7]);
+  assert.equal(sk6?.total, 34);
+  const [negative] = buildCartonStockMatrix([figure("SK6", "7/10", "RED", -2), figure("SK6", "4/6", "RED", 5)]).articles;
+  assert.deepEqual(negative?.colourTotals, [3]);
+  assert.equal(negative?.total, 3);
+});
+
 test("leaves out products with nothing in store, and articles with nothing at all", () => {
   const { articles, seriesOptions } = buildCartonStockMatrix([...STOCK, figure("SK99", "7/10", "RED", 0, "EMPTY"), figure("SK6", "8/10", "PINK", 0)]);
   assert.equal(articles.some((article) => article.article === "SK99"), false);
   assert.equal(articles.find((article) => article.article === "SK6")?.colours.includes("PINK"), false);
-  assert.equal(seriesOptions.includes("EMPTY"), false);
+  assert.equal(seriesOptions.some((option) => option.series === "EMPTY"), false);
 });
 
 test("shows a negative figure as it is, never hidden", () => {
@@ -44,7 +53,7 @@ test("search and article series narrow it; the series picker always offers every
   assert.deepEqual(names({ series: "AR" }), ["AR3"]);
   const narrowed = buildCartonStockMatrix(STOCK, { series: "AR", search: "zzz" });
   assert.equal(narrowed.articleCount, 0);
-  assert.deepEqual(narrowed.seriesOptions, ["AR", "SKECHERS"]);
+  assert.deepEqual(narrowed.seriesOptions.map((option) => option.series), ["AR", "SKECHERS"]);
   assert.equal(buildCartonStockMatrix(STOCK, { search: "velcro" }).articleCount, 0);
 });
 
@@ -64,7 +73,19 @@ test("adds the same words in any case and spacing as one product", () => {
   assert.deepEqual(article?.rows.map((row) => row.quantities), [[3]]);
 });
 
+test("each series in the picker says how many articles it has and their cartons; All is the whole store", () => {
+  const matrix = buildCartonStockMatrix(STOCK, { search: "velcro", series: "AR" });
+  assert.deepEqual(matrix.seriesOptions, [{ series: "AR", articles: 1, cartons: 3 }, { series: "SKECHERS", articles: 2, cartons: 50 }]);
+  assert.deepEqual(matrix.allSeries, { articles: 4, cartons: 62 });
+});
+
 test("pages by article", () => {
   const page = buildCartonStockMatrix(STOCK, { pageSize: 3, page: 9 });
   assert.deepEqual([page.page, page.pages, page.articleCount, page.articles.length], [2, 2, 4, 1]);
+});
+
+test("the total carton stock counts every matching article, not only the page shown", () => {
+  assert.equal(buildCartonStockMatrix(STOCK, { pageSize: 1 }).totalCartons, 62);
+  assert.equal(buildCartonStockMatrix(STOCK, { series: "SKECHERS" }).totalCartons, 50);
+  assert.equal(buildCartonStockMatrix(STOCK, { search: "velcro" }).totalCartons, 0);
 });

@@ -1,15 +1,18 @@
 import React, { useCallback, useState } from "react";
 import { CARTON_STOCK_PAGE_SIZE, type CartonStockMatrix } from "@erp/domain";
 import { StateView } from "../../components/shared/StateView";
+import { KpiCard } from "../../components/dashboard/KpiCard";
 import { copy } from "../../config/copy";
 import { useDesktopApi } from "../../hooks/useDesktopApi";
 import { DATA_KIND } from "../../../shared/dataChange";
 import { useStockList, type StockRead } from "../kindStock/useStockList";
-import { NAV_ICONS, RAIL_ICONS } from "../navigation/NavIcons";
+import { RAIL_ICONS } from "../navigation/NavIcons";
 import { CartonMatrix } from "./CartonMatrix";
 import { CARTON_LAYOUT, cartonLayout } from "./cartonMatrixLayout";
 import { CartonCardsSkeleton, CartonStockSkeleton } from "./CartonStockSkeleton";
 import { parseCartonMatrixReply } from "./cartonMatrixReply";
+import { dozenFigure } from "./CartonMatrix";
+import { SeriesPicker } from "./SeriesPicker";
 import { useElementWidth } from "./useElementWidth";
 import { useLoadMoreOnScroll } from "./useLoadMoreOnScroll";
 
@@ -22,29 +25,8 @@ import { useLoadMoreOnScroll } from "./useLoadMoreOnScroll";
 
 const text = copy.cartonStock;
 const CARTON_CHANGES = [DATA_KIND.CARTONS, DATA_KIND.PRODUCTS] as const;
-
-interface PickerProps {
-  icon: React.ReactNode;
-  label: string;
-  all: string;
-  value: string;
-  options: readonly string[];
-  onChange: (value: string) => void;
-}
-
-/** All, or one value. Its options are every series with stock, whatever the search says. */
-const Picker: React.FC<PickerProps> = ({ icon, label, all, value, options, onChange }) => (
-  <label className="cs-picker">
-    <span className="cs-picker-icon" aria-hidden="true">{icon}</span>
-    <select aria-label={label} value={value} onChange={(event) => onChange(event.target.value)}>
-      <option value="">{all}</option>
-      {options.map((option) => (
-        <option key={option} value={option}>{option}</option>
-      ))}
-    </select>
-    <span className="cs-picker-arrow" aria-hidden="true">{RAIL_ICONS.chevronUp}</span>
-  </label>
-);
+/** The picker's "All" before the first read answers. */
+const NOTHING_HELD = { articles: 0, cartons: 0 };
 
 interface MatricesProps {
   data: CartonStockMatrix;
@@ -116,8 +98,12 @@ export const CartonStockPage: React.FC = () => {
             <span className="us-search-icon" aria-hidden="true">{RAIL_ICONS.search}</span>
             <input type="search" aria-label={text.searchLabel} placeholder={text.searchPlaceholder} value={stock.search} onChange={(event) => stock.setSearch(event.target.value)} />
           </label>
-          <Picker icon={NAV_ICONS.stock} label={text.seriesLabel} all={text.allSeries} value={series} options={stock.data?.seriesOptions ?? []} onChange={chooseSeries} />
+          <SeriesPicker value={series} options={stock.data?.seriesOptions ?? []} allSeries={stock.data?.allSeries ?? NOTHING_HELD} onChange={chooseSeries} />
         </div>
+        {stock.data && !stock.error ? (
+          <KpiCard className="cs-summary" label={text.totalCardLabel} value={dozenFigure(stock.data.totalCartons)}
+            sub={text.totalCardSub(stock.data.articleCount, stock.data.totalCartons.toLocaleString(), stock.searching || series !== "")} />
+        ) : null}
         {body()}
       </div>
     </div>
