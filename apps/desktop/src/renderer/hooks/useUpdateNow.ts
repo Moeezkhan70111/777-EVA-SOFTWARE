@@ -1,26 +1,19 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { copy } from "../config/copy";
 import { useOptionalNotifications, type NoticeKind } from "../state/NotificationsContext";
+import { isUpdateStatus, useUpdateStatus } from "../state/UpdateStatusContext";
+import type { UpdatePressState } from "../features/navigation/updateButtonView";
 import type { AppUpdateStatus } from "../types/desktopApi";
 
 // THE UPDATE BUTTON (owner, 11 Nov 2026): "click it, see if GitHub has a newer version, and if so update now".
 //
-// The automatic checks stay as they are (main/updater.ts: 90 s after launch, then every four hours). This only asks
-// the same updater to check NOW (checkForUpdates), follows its download, and installs the moment it is on disk
-// (installUpdate, which restarts 777 ERP). Pressed by a person, so restarting straight away is what they asked for.
+// The automatic checks run on their own (main/updater.ts: 15 s after launch, then every two minutes). A press asks
+// the same updater to check NOW (checkForUpdates). If a version is already on disk it installs at once; if one is
+// downloading, the press is remembered and the install happens the moment the shared status
+// (state/UpdateStatusContext.tsx) reports it READY. Pressed by a person, so restarting straight away is what they
+// asked for. With a download failed, a press is the retry.
 //
 // Every step is the main process's: this decides nothing about versions, files or signatures.
-
-/** How often the download is followed while it runs. */
-const FOLLOW_MS = 2_000;
-/** A download that has not finished in this long is left to the automatic install on the next restart. */
-const FOLLOW_LIMIT_MS = 45 * 60 * 1000;
-
-export type UpdateNowState =
-  | { readonly kind: "IDLE" }
-  | { readonly kind: "CHECKING" }
-  | { readonly kind: "DOWNLOADING"; readonly percent: number | null }
-  | { readonly kind: "INSTALLING" };
 
 type UpdateBridge = {
   checkForUpdates: () => Promise<unknown>;
@@ -35,71 +28,84 @@ export const readUpdateBridge = (): UpdateBridge | null => {
   return api as UpdateBridge;
 };
 
-const asStatus = (value: unknown): AppUpdateStatus | null => {
-  if (typeof value !== "object" || value === null) return null;
-  const record = value as Record<string, unknown>;
-  return typeof record.phase === "string" && typeof record.currentVersion === "string" ? (value as AppUpdateStatus) : null;
-};
+export interface UpdateNow {
+  /** What a press is doing. */
+  readonly press: UpdatePressState;
+  /** The live status every screen shares, or null before the first read. */
+  readonly status: AppUpdateStatus | null;
+  readonly run: () => void;
+  readonly available: boolean;
+}
 
-const pause = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
-
-export const useUpdateNow = (): { state: UpdateNowState; run: () => void; available: boolean } => {
+export const useUpdateNow = (): UpdateNow => {
   const bridge = readUpdateBridge();
+  const shared = useUpdateStatus();
+  const status = shared?.status ?? null;
   const notices = useOptionalNotifications();
   const push = useCallback((kind: NoticeKind, title: string, message?: string) => notices?.push(kind, title, message, 8000), [notices]);
-  const [state, setState] = useState<UpdateNowState>({ kind: "IDLE" });
+  const [press, setPress] = useState<UpdatePressState>({ kind: "IDLE" });
   const busy = useRef(false);
-  const alive = useRef(true);
-  useEffect(() => () => { alive.current = false; }, []);
+  /** A press found a download running: install the moment it is on disk. */
+  const installWhenReady = useRef(false);
 
   const install = useCallback(async (version: string | undefined) => {
     if (!bridge) return;
-    setState({ kind: "INSTALLING" });
+    installWhenReady.current = false;
+    setPress({ kind: "INSTALLING" });
     const outcome = await bridge.installUpdate();
     // Accepted: 777 ERP is closing to install, and opens again on the new version. Nothing more to say.
-    if (!outcome.accepted) push("error", copy.update.installRefused, outcome.reason ?? copy.update.tryAgain(version ?? ""));
+    if (!outcome.accepted) {
+      setPress({ kind: "IDLE" });
+      push("error", copy.update.installRefused, outcome.reason ?? copy.update.tryAgain(version ?? ""));
+    }
   }, [bridge, push]);
 
-  /** Follows the download until it is on disk, then installs. */
-  const follow = useCallback(async (first: AppUpdateStatus) => {
-    if (!bridge) return;
-    const started = Date.now();
-    let status: AppUpdateStatus | null = first;
-    while (alive.current && status?.phase === "DOWNLOADING" && Date.now() - started < FOLLOW_LIMIT_MS) {
-      setState({ kind: "DOWNLOADING", percent: typeof status.percent === "number" ? status.percent : null });
-      await pause(FOLLOW_MS);
-      status = asStatus(await bridge.getUpdateStatus());
+  // Follows a download a press found running, through the shared status.
+  useEffect(() => {
+    if (!installWhenReady.current || status === null) return;
+    if (status.phase === "READY") {
+      void install(status.availableVersion);
+    } else if (status.phase === "ERROR") {
+      installWhenReady.current = false;
+      push("error", copy.update.failedTitle, status.reason ?? copy.update.failedBody);
     }
-    if (status?.phase === "READY") return install(status.availableVersion);
-    if (status?.phase === "DOWNLOADING") push("info", copy.update.stillDownloadingTitle, copy.update.stillDownloadingBody);
-    else push("error", copy.update.failedTitle, status?.reason ?? copy.update.failedBody);
-  }, [bridge, install, push]);
+  }, [status, install, push]);
 
-  const answer = useCallback(async (status: AppUpdateStatus | null) => {
-    switch (status?.phase) {
-      case "READY": return install(status.availableVersion);
-      case "DOWNLOADING": return follow(status);
-      case "UP_TO_DATE": return push("success", copy.update.upToDateTitle, copy.update.upToDateBody(status.currentVersion));
-      case "DISABLED": return push("warning", copy.update.offTitle, status.reason ?? copy.update.failedBody);
-      default: return push("error", copy.update.failedTitle, status?.reason ?? copy.update.failedBody);
+  const answer = useCallback(async (checked: AppUpdateStatus | null) => {
+    switch (checked?.phase) {
+      case "READY": return install(checked.availableVersion);
+      case "DOWNLOADING":
+        // Without the shared status nothing would follow it; it still installs on the next quit.
+        if (shared === null) return push("info", copy.update.stillDownloadingTitle, copy.update.stillDownloadingBody);
+        installWhenReady.current = true;
+        return;
+      case "UP_TO_DATE": return push("success", copy.update.upToDateTitle, copy.update.upToDateBody(checked.currentVersion));
+      case "DISABLED": return push("warning", copy.update.offTitle, checked.reason ?? copy.update.failedBody);
+      default: return push("error", copy.update.failedTitle, checked?.reason ?? copy.update.failedBody);
     }
-  }, [follow, install, push]);
+  }, [install, push, shared]);
 
   const run = useCallback(() => {
     if (!bridge || busy.current) return;
+    if (status?.phase === "READY") {
+      void install(status.availableVersion);
+      return;
+    }
     busy.current = true;
-    setState({ kind: "CHECKING" });
+    setPress({ kind: "CHECKING" });
     void (async () => {
       try {
-        await answer(asStatus(await bridge.checkForUpdates()));
+        const checked = await bridge.checkForUpdates();
+        await shared?.refresh();
+        await answer(isUpdateStatus(checked) ? checked : null);
       } catch {
         push("error", copy.update.failedTitle, copy.update.failedBody);
       } finally {
         busy.current = false;
-        if (alive.current) setState((current) => (current.kind === "INSTALLING" ? current : { kind: "IDLE" }));
+        setPress((current) => (current.kind === "INSTALLING" ? current : { kind: "IDLE" }));
       }
     })();
-  }, [answer, bridge, push]);
+  }, [answer, bridge, install, push, shared, status]);
 
-  return { state, run, available: bridge !== null };
+  return { press, status, run, available: bridge !== null };
 };

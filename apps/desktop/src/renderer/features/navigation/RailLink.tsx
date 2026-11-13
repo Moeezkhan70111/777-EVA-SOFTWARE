@@ -14,7 +14,12 @@ export const RailLink: React.FC<{
   pressed?: boolean;
   /** The tooltip, when it should say more than the label. */
   tip?: string;
-}> = ({ icon, label, active = false, onClick, className, pressed, tip }) => (
+  /**
+   * A small mark on the picture, for the slim rail where the label is hidden (the Update button's
+   * progress). Decorative: the label already says it in words.
+   */
+  badge?: React.ReactNode;
+}> = ({ icon, label, active = false, onClick, className, pressed, tip, badge }) => (
   <button
     type="button"
     className={`nav-top-btn${active ? " active" : ""}${className ? ` ${className}` : ""}`}
@@ -23,7 +28,10 @@ export const RailLink: React.FC<{
     data-tip={tip ?? label}
     onClick={onClick}
   >
-    <span className="nav-top-icon" aria-hidden="true">{icon}</span>
+    <span className="nav-top-icon" aria-hidden="true">
+      {icon}
+      {badge}
+    </span>
     <span className="nav-top-label">{label}</span>
   </button>
 );

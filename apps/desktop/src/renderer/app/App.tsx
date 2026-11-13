@@ -2,7 +2,6 @@ import React, { useCallback, useMemo, useRef, useState } from "react";
 import { ACCESS_STATUS, PERMISSION, RAW_MATERIAL_KIND, USER_ROLE } from "@erp/domain";
 import { Navbar } from "../components/layout/Navbar";
 import { NotificationCenter } from "../components/layout/NotificationCenter";
-import { useAppUpdate } from "../hooks/useAppUpdate";
 import { useNumberRangeWarning } from "../hooks/useNumberRangeWarning";
 import { useClockWarning } from "../hooks/useClockWarning";
 import { useTimezoneWarning } from "../hooks/useTimezoneWarning";
@@ -110,9 +109,7 @@ type WorkspaceTab = "messages" | "tasks" | "requests" | "notifications" | "activ
 export const App = () => {
   const api = useDesktopApi();
   const { push } = useNotifications();
-  // Automatic updates: silent until a downloaded version is waiting, then one "Restart Now"
-  // prompt. Mounted here because it belongs to the application, not to any one screen.
-  useAppUpdate();
+  // Automatic updates' "Restart Now" prompt is mounted beside App in main.tsx (AppUpdateWatcher).
   // Party ledgers and balances open only on the Accounts holder (ledgerVisibility.ts).
   const ledgersShown = useLedgersShown();
   const hiddenRoutes = hiddenLedgerRoutes(ledgersShown);

@@ -12,9 +12,15 @@
 //   3. commits that bump and tags it
 //   4. pushes the commit and the tag
 //   5. builds every workspace, then the signed-or-unsigned Windows installer
-//   6. creates the GitHub release, ONCE -- see the note at step 6 on why that matters
-//   7. publishes the installer to GitHub Releases, where the office PCs look for it
-//   8. reads the release back and warns if it is not what it should be
+//   6. creates the GitHub release ONCE, as a DRAFT the office PCs cannot see (or resumes one)
+//   7. packages the installer, publishing nothing
+//   8. verifies the artifacts on disk
+//   9. uploads them into the draft
+//  10. reads the draft back and refuses unless every asset is whole, then makes it PUBLIC
+//  11. reads the published release back and warns if it is not what it should be
+//
+// The draft-first order is scripts/releasePublication.mjs: a public release never exists before
+// its installer and latest.yml do.
 //
 // WHY THE TREE MUST BE CLEAN FIRST. electron-builder copies `migrations/sqlite` out of the
 // WORKING TREE, so a build from a dirty tree can ship a migration that exists in no commit --
@@ -34,6 +40,7 @@ import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import url from "node:url";
+import { ReleaseStop, findOrCreateDraft, publishDraft, uploadAssets, verifyDraft } from "./releasePublication.mjs";
 
 const here = path.dirname(url.fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, "..");
@@ -78,7 +85,7 @@ const run = (command, commandArgs, options = {}) =>
 const runVisible = (command, commandArgs, options = {}) =>
   execFileSync(command, commandArgs, { cwd: repoRoot, stdio: "inherit", ...options });
 
-const TOTAL_STEPS = 10;
+const TOTAL_STEPS = 11;
 const step = (number, text) => console.log(`\n[${String(number)}/${String(TOTAL_STEPS)}] ${text}`);
 
 // ─── 1. Preflight ────────────────────────────────────────────────────────────
@@ -303,35 +310,28 @@ const github = async (method, pathname, body) => {
   return { status: response.status, text: await response.text() };
 };
 
-step(6, `Creating the GitHub release for ${tag}`);
-let releaseId = null;
-try {
-  const existing = await github("GET", `/releases/tags/${tag}`);
-  if (existing.status === 200) {
-    releaseId = JSON.parse(existing.text).id;
-    console.log(`  a release for ${tag} already exists (id ${String(releaseId)}) — uploading into it.`);
-  } else if (existing.status === 404) {
-    const created = await github("POST", "/releases", {
-      tag_name: tag,
-      name: `777 ERP ${nextVersion}`,
-      draft: false,
-      prerelease: false,
-    });
-    if (created.status < 200 || created.status >= 300) {
-      // The message is GitHub's and carries no credential; the token only ever goes in a header.
-      refuse("the GitHub release could not be created, so nothing was published.", created.text);
-    }
-    releaseId = JSON.parse(created.text).id;
-    console.log(`  created (id ${String(releaseId)}), and it is the only release for ${tag}.`);
-  } else {
-    refuse("GitHub would not say whether a release exists, so nothing was published.", existing.text);
+/** Runs one releasePublication step, turning its ReleaseStop into this script's refusal. */
+const publicationStep = async (work) => {
+  try {
+    return await work();
+  } catch (error) {
+    // The messages are GitHub's and this module's; the token only ever goes in a header.
+    if (error instanceof ReleaseStop) refuse(error.message, error.detail);
+    refuse("GitHub could not be reached, so the release was left as it was.", String(error));
   }
-} catch (error) {
-  refuse("the GitHub release could not be created, so nothing was published.", String(error));
-}
-if (releaseId == null) {
-  refuse("GitHub did not return a release id, so the assets could not be uploaded anywhere.");
-}
+};
+
+// AS A DRAFT (releasePublication.mjs): until step 10 nothing here is visible to the office PCs, so
+// none of them is ever answered "no latest.yml" while this build runs. Created before the build so
+// an already-published tag is refused in seconds rather than after ten minutes of packaging.
+step(6, `Creating the GitHub release for ${tag} as a draft`);
+const draft = await publicationStep(() => findOrCreateDraft({ github, tag, name: `777 ERP ${nextVersion}` }));
+const releaseId = draft.id;
+console.log(
+  draft.reused
+    ? `  a draft for ${tag} already exists (id ${String(releaseId)}) — resuming it, keeping ${String(draft.assets.length)} asset(s) already there if whole.`
+    : `  created draft ${String(releaseId)}, the only release for ${tag}. No PC can see it yet.`
+);
 
 // ─── 7. Package, WITHOUT publishing ──────────────────────────────────────────
 //
@@ -375,8 +375,8 @@ try {
 } catch {
   refuse(
     "the built artifacts did not pass verification, so NOTHING was uploaded.",
-    `The release ${tag} exists on GitHub with no assets. Fix the build and release the next\n` +
-      `patch -- do not rewrite a pushed tag. The failed artifacts are in apps/desktop/release.`
+    `The release ${tag} exists on GitHub only as a DRAFT, which no PC can see. Fix the build and\n` +
+      `release the next patch -- do not rewrite a pushed tag. The failed artifacts are in apps/desktop/release.`
   );
 }
 
@@ -387,7 +387,7 @@ try {
 // latest.yml is what every computer reads to decide what to fetch. Upload under the on-disk name
 // and electron-updater would ask GitHub for a file that is not there.
 
-step(9, "Uploading the verified assets");
+step(9, "Uploading the verified assets into the draft");
 const releaseDir = path.join(desktopDir, "release");
 const latestYml = fs.readFileSync(path.join(releaseDir, "latest.yml"), "utf-8");
 const feedName = /^\s*path:\s*'?"?([^\s'"]+)'?"?\s*$/m.exec(latestYml)?.[1];
@@ -409,46 +409,60 @@ const uploads = [
   { as: feedName, from: installerOnDisk.full, type: "application/octet-stream" },
   { as: `${feedName}.blockmap`, from: `${installerOnDisk.full}.blockmap`, type: "application/octet-stream" },
   { as: "latest.yml", from: path.join(releaseDir, "latest.yml"), type: "text/yaml" },
-];
-
-for (const upload of uploads) {
+].map((upload) => {
   if (!fs.existsSync(upload.from)) {
-    refuse(`${path.basename(upload.from)} is missing, so the release would be incomplete.`);
+    refuse(`${path.basename(upload.from)} is missing, so the release would be incomplete. It stays a draft.`);
   }
-  const body = fs.readFileSync(upload.from);
-  let response;
-  try {
-    response = await fetch(
-      `https://uploads.github.com/repos/${releaseApi.owner}/${releaseApi.repo}/releases/${String(releaseId)}/assets?name=${encodeURIComponent(upload.as)}`,
-      {
-        method: "POST",
-        headers: {
-          authorization: `Bearer ${process.env.GH_TOKEN}`,
-          accept: "application/vnd.github+json",
-          "user-agent": "777-erp-release",
-          "content-type": upload.type,
-          "content-length": String(body.byteLength),
-        },
-        body,
-      }
-    );
-  } catch (error) {
-    refuse(`${upload.as} could not be uploaded.`, String(error));
-  }
-  if (response.status < 200 || response.status >= 300) {
-    const detail = await response.text();
-    refuse(`${upload.as} was refused by GitHub (${String(response.status)}).`, detail);
-  }
-  console.log(`  uploaded ${upload.as} (${(body.byteLength / (1024 * 1024)).toFixed(2)} MB)`);
-}
+  const size = fs.statSync(upload.from).size;
+  if (size <= 0) refuse(`${path.basename(upload.from)} is empty, so the release would be incomplete. It stays a draft.`);
+  return { ...upload, size };
+});
 
-// ─── 10. Confirm what actually landed ────────────────────────────────────────
+/** One POST to uploads.github.com, with the token in the header and never in the URL. */
+const uploadAsset = async (name, upload) => {
+  const body = fs.readFileSync(upload.from);
+  const response = await fetch(
+    `https://uploads.github.com/repos/${releaseApi.owner}/${releaseApi.repo}/releases/${String(releaseId)}/assets?name=${encodeURIComponent(name)}`,
+    {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${process.env.GH_TOKEN}`,
+        accept: "application/vnd.github+json",
+        "user-agent": "777-erp-release",
+        "content-type": upload.type,
+        "content-length": String(body.byteLength),
+      },
+      body,
+    }
+  );
+  return { status: response.status, text: await response.text() };
+};
+
+await publicationStep(() =>
+  uploadAssets({ github, uploadAsset, existingAssets: draft.assets, uploads, log: (line) => console.log(line) })
+);
+
+// ─── 10. Verify the draft on GitHub, then make it public ─────────────────────
+//
+// THE ONLY MOMENT THE OFFICE PCs CAN SEE THIS VERSION. Read back from GitHub, not from what this
+// script believes it sent: every asset present, fully uploaded, the size it is on disk, the right
+// tag. Anything short of that refuses, and the release stays an invisible draft.
+
+step(10, "Verifying the draft on GitHub, then publishing it");
+await publicationStep(() =>
+  verifyDraft({ github, releaseId, tag, expected: uploads.map((upload) => ({ name: upload.as, size: upload.size })) })
+);
+console.log(`  every asset is on the draft, whole: ${uploads.map((upload) => upload.as).join(", ")}`);
+await publicationStep(() => publishDraft({ github, releaseId, tag }));
+console.log(`  ${tag} is public and the latest release. The office PCs see it on their next check.`);
+
+// ─── 11. Confirm what actually landed ────────────────────────────────────────
 //
 // Not decoration. The two failures this release path has actually had were both SILENT: a tag
 // pushed with nothing behind it, and artifacts split across duplicate releases. Both would have
 // been caught here in a second.
 
-step(10, "Confirming the published release");
+step(11, "Confirming the published release");
 try {
   const all = await github("GET", "/releases?per_page=100");
   const releases = JSON.parse(all.text).filter((release) => release.tag_name === tag);
@@ -476,7 +490,7 @@ try {
 }
 
 console.log(`\n777 ERP ${nextVersion} is published.`);
-console.log("\nThe office PCs pick it up within four hours, or on their next start. Each one needs");
+console.log("\nThe office PCs pick it up within two minutes (15 s after a start). Each one needs");
 console.log("ERP_UPDATE_TOKEN set, or it will keep running the version it has — see docs.");
 console.log("\nNOTE: the installer is unsigned until a code-signing certificate exists (docs/25),");
 console.log("so Windows will warn before each update installs.");

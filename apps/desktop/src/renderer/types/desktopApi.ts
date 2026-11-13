@@ -1485,6 +1485,9 @@ export interface AppUpdateStatus {
   availableVersion?: string;
   percent?: number;
   reason?: string;
+  /** In ERROR only: CHECK, DOWNLOAD or CONFIGURATION (main/updater.ts UpdateFailure). */
+  failure?: "CHECK" | "DOWNLOAD" | "CONFIGURATION";
+  consecutiveFailures?: number;
   lastCheckedAt?: string;
   /** When a check last succeeded, across restarts. */
   lastSuccessAt?: string;

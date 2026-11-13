@@ -23,7 +23,17 @@ export interface PolledRead<T> {
   reload: () => Promise<void>;
 }
 
-export const usePolledRead = <T>(read: () => Promise<PolledReply<T>>, options: { intervalMs: number; failed: string }): PolledRead<T> => {
+export interface PolledReadOptions<T> {
+  intervalMs: number;
+  failed: string;
+  /**
+   * When a new answer is the same as the one shown, the old value is kept, so a poll that brings
+   * nothing new re-renders nothing (the update status is read every few seconds).
+   */
+  isSame?: (previous: T, next: T) => boolean;
+}
+
+export const usePolledRead = <T>(read: () => Promise<PolledReply<T>>, options: PolledReadOptions<T>): PolledRead<T> => {
   const { intervalMs, failed } = options;
   const [value, setValue] = useState<T | null>(null);
   const [loading, setLoading] = useState(true);
@@ -31,6 +41,8 @@ export const usePolledRead = <T>(read: () => Promise<PolledReply<T>>, options: {
   const [stale, setStale] = useState(false);
   const loadedRef = useRef(false);
   const readRef = useRef(read);
+  const isSameRef = useRef(options.isSame);
+  isSameRef.current = options.isSame;
 
   const reload = useCallback(async () => {
     const asked = read;
@@ -38,7 +50,8 @@ export const usePolledRead = <T>(read: () => Promise<PolledReply<T>>, options: {
       const reply = await asked();
       if (readRef.current !== asked) return; // the screen has moved on to another read
       if (!reply.accepted) throw new Error(reply.reason ?? failed);
-      setValue(reply.value);
+      const next = reply.value;
+      setValue((previous) => (previous !== null && isSameRef.current?.(previous, next) === true ? previous : next));
       setError(null);
       setStale(false);
       loadedRef.current = true;

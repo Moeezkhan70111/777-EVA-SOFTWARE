@@ -84,10 +84,19 @@ jobs:
           }
           Write-Host "tag $($env:INPUT_TAG) matches the committed version $version"
 
+      # A GATE, unlike the workspace suites in build-windows.yml. These tests are the proof that
+      # the publishing code keeps a release a draft until it is whole (scripts/releasePublication.mjs);
+      # if they fail, that code cannot be trusted to publish, so the job stops here, before any
+      # credential is used or anything is created on GitHub. They need only Node's built-ins, so
+      # they run before npm ci and fail fast. Run here only: nothing else in CI runs them.
+      - name: Test the release-publication code (GATE -- a failure stops the release)
+        id: release_tests
+        run: node --test scripts/releasePublication.test.mjs
+
       - name: Install dependencies from the lockfile
         run: npm ci
 
-      # release.mjs --publish-only runs the workspace build itself (step 5), then 6 to 10 above.
+      # release.mjs --publish-only runs the workspace build itself (step 5), then 6 to 11 above.
       # GH_TOKEN is scoped to this step alone -- no other step needs a credential, and
       # electron-builder publishes implicitly in CI when it finds a token with no explicit policy.
       - name: Build, verify and publish
@@ -115,14 +124,24 @@ jobs:
         if: always()
         env:
           PUBLISH_OUTCOME: ${{ steps.publish.outcome }}
+          RELEASE_TESTS_OUTCOME: ${{ steps.release_tests.outcome }}
           INPUT_TAG: ${{ inputs.tag }}
         run: |
           $ErrorActionPreference = 'Stop'
+          $tests = if ($env:RELEASE_TESTS_OUTCOME) { $env:RELEASE_TESTS_OUTCOME } else { 'did not run' }
+          $publish = if ($env:PUBLISH_OUTCOME) { $env:PUBLISH_OUTCOME } else { 'did not run' }
           $lines = @()
           $lines += "## Release $($env:INPUT_TAG)"
           $lines += ''
-          $lines += 'Published from CI. The order was: create the release once, package without'
-          $lines += 'publishing, verify the artifacts, then upload only what passed.'
+          $lines += "| Stage | Result |"
+          $lines += '| --- | --- |'
+          $lines += "| Release-publication tests (gate) | ``$tests`` |"
+          $lines += "| Build, verify and publish | ``$publish`` |"
+          $lines += ''
+          $lines += 'Published from CI. The order was: create the release once as a DRAFT (invisible'
+          $lines += 'to the office PCs), package without publishing, verify the artifacts, upload only'
+          $lines += 'what passed, read the draft back from GitHub, and only then make it public.'
+          $lines += 'If this run failed, the release is still a draft: re-run to resume it.'
           $lines += ''
           $lines += '### UNSIGNED'
           $lines += ''

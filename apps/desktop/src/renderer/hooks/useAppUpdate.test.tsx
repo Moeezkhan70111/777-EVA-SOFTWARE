@@ -6,17 +6,21 @@
 
 import React from "react";
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { NotificationsProvider } from "../state/NotificationsContext";
+import { UpdateStatusProvider } from "../state/UpdateStatusContext";
 import { NotificationCenter } from "../components/layout/NotificationCenter";
-import { useAppUpdate } from "./useAppUpdate";
+import { AppUpdateWatcher } from "./useAppUpdate";
 import type { AppUpdateStatus } from "../types/desktopApi";
 
-const Harness = () => {
-  useAppUpdate();
-  return <NotificationCenter />;
-};
+// Mounted as the application mounts it (app/main.tsx): the shared status, then the watcher.
+const Harness = () => (
+  <UpdateStatusProvider>
+    <AppUpdateWatcher />
+    <NotificationCenter />
+  </UpdateStatusProvider>
+);
 
 const renderWith = (status: unknown, installResult: { accepted: boolean; reason?: string } = { accepted: true }) => {
   const getUpdateStatus = vi.fn().mockResolvedValue(status);
@@ -95,6 +99,38 @@ describe("the one prompt it does show", () => {
     expect(await screen.findByText(/could not be installed/i)).toBeTruthy();
     // The prompt goes: pressing it again would not help.
     await waitFor(() => expect(screen.queryByRole("button", { name: /Restart Now/i })).toBeNull());
+  });
+
+  it("appears within one five-second read of the download finishing (was up to a minute)", async () => {
+    // Faked before rendering, so the five-second read is a timer this test can move.
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const { getUpdateStatus } = renderWith(status({ phase: "DOWNLOADING", percent: 90, availableVersion: "0.3.2" }));
+      await waitFor(() => expect(getUpdateStatus).toHaveBeenCalled());
+      getUpdateStatus.mockResolvedValue(status({ phase: "READY", availableVersion: "0.3.2" }));
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(5_000);
+      });
+      expect(await screen.findByText(/Update Ready/i)).toBeTruthy();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("withdraws the prompt when a newer release replaces the downloaded one", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const { getUpdateStatus } = renderWith(status({ phase: "READY", availableVersion: "0.3.2" }));
+      expect(await screen.findByRole("button", { name: /Restart Now/i })).toBeTruthy();
+      // main/updater.ts: 0.3.3 was published, 0.3.2's file is gone, and Restart would be refused.
+      getUpdateStatus.mockResolvedValue(status({ phase: "DOWNLOADING", percent: 0, availableVersion: "0.3.3" }));
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(5_000);
+      });
+      await waitFor(() => expect(screen.queryByRole("button", { name: /Restart Now/i })).toBeNull());
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("shows ONE prompt however many times the poll reports the same thing", async () => {
