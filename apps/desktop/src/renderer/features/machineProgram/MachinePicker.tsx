@@ -22,6 +22,8 @@ interface MachinePickerProps {
   onSelect: (machine: MachineRecord) => void;
   /** Opens the Machine Program to set machines up; absent when this user cannot. */
   onSetUpMachines?: () => void;
+  /** Numbers the picker as a step of a page (Manual Production's step 1): a tick once a machine is chosen. */
+  step?: number;
 }
 
 const MachineOption: React.FC<{ machine: MachineRecord; selected: boolean; onSelect: () => void }> = ({ machine, selected, onSelect }) => {
@@ -46,7 +48,7 @@ const MachineOption: React.FC<{ machine: MachineRecord; selected: boolean; onSel
   );
 };
 
-export const MachinePicker: React.FC<MachinePickerProps> = ({ machines, selectedId, onSelect, onSetUpMachines }) => {
+export const MachinePicker: React.FC<MachinePickerProps> = ({ machines, selectedId, onSelect, onSetUpMachines, step }) => {
   const body = () => {
     if (machines.loading && machines.rows.length === 0) return <StateView kind="loading" compact message={text.loading} />;
     if (machines.error) return <StateView kind="error" compact message={machines.error} onRetry={() => void machines.reload()} />;
@@ -73,7 +75,10 @@ export const MachinePicker: React.FC<MachinePickerProps> = ({ machines, selected
   return (
     <section className="card mpk-card">
       <div className="mpk-head">
-        <h2 id="mpk-label" className="mpk-label">{text.label}</h2>
+        <h2 id="mpk-label" className="mpk-label">
+          {step ? <span className={selectedId ? "qr-step-num is-done" : "qr-step-num"} aria-hidden="true">{selectedId ? "✓" : step}</span> : null}
+          {text.label}
+        </h2>
         <span className={selectedId ? "mpk-hint" : "mpk-hint mpk-hint--required"}>
           {selectedId ? text.hint : `${text.chooseFirst} ${text.hint}`}
         </span>

@@ -2342,6 +2342,8 @@ export interface DesktopApi {
   saveRateList(payload: { html: string; fileName: string }): Promise<{ accepted: boolean; canceled?: boolean; filePath?: string; reason?: string }>;
   /** Prints a ready-made document with no dialog: on the default printer, or the one `printer` names by role. Page size in inches. */
   printDocument(payload: { html: string; pageSize?: { widthIn: number; heightIn: number }; printer?: PrinterRole }): Promise<{ accepted: boolean; reason?: string }>;
+  /** Saves a ready-made document as a PDF where the person chooses (A4). Checked by the caller. */
+  savePdfDocument(payload: { html: string; fileName: string; landscape?: boolean }): Promise<unknown>;
   listHistory(query: Record<string, unknown>): Promise<PagedResult<HistoryRow>>;
   listDispatchHistory(query: Record<string, unknown>): Promise<PagedResult<HistoryRow>>;
   listDispatchSessions(filter?: Record<string, unknown>): Promise<DispatchSessionSummary[]>;
@@ -2387,6 +2389,23 @@ export interface DesktopApi {
    * the Contractor Ledger. Kept and marked voided, never deleted. The reason is required.
    */
   voidManualProduction(input: { entryId: string; reason: string }): Promise<{ accepted: boolean; entry: ManualProductionEntry | null; reason?: string }>;
+  /** The Manual Production page's Save: every line recorded, or none (docs/48). Checked by the page. */
+  saveManualProduction(input: { lines: ReadonlyArray<{ requestId: string; machineId: string; articleSizeId: string; color: string; dozens: string }> }): Promise<unknown>;
+  /** Marks today's production complete, once. Checked by the page. */
+  completeProductionDay(): Promise<unknown>;
+  /** One business day's production (YYYY-MM-DD), per machine and together. Checked by the page. */
+  getProductionDay(query: { date: string }): Promise<unknown>;
+  /** Whether a business day (YYYY-MM-DD) is marked complete. Checked by the page. */
+  getProductionDayMark(query: { date: string }): Promise<unknown>;
+  /** Today's live figures of one article on one machine: what the edit grid starts from. Checked by the page. */
+  getManualProductionArticle(query: { machineName: string; article: string }): Promise<unknown>;
+  /** Sets one article's figures on one machine today; each changed one is reversed and recorded again. Checked by the page. */
+  editManualProduction(input: {
+    requestId: string;
+    machineId: string;
+    article: string;
+    cells: ReadonlyArray<{ articleSizeId: string; color: string; dozens: string }>;
+  }): Promise<unknown>;
   /** Upper Move Out: one upper packet issued out of the store to the named machine. */
   issueUpperToMachine(rawScan: string, machineId: string): Promise<UpperIssueResult>;
   /** One business day's issues to one machine, newest first, a page at a time. */

@@ -90,6 +90,8 @@ export const MASTER_CAPTURE: readonly MasterTableCapture[] = [
   // A Stock Adjustment document and its lines (docs/46): written once, never changed.
   { table: "carton_stock_adjustments", record: SYNC_AGGREGATE.CARTON_STOCK_ADJUSTMENT, recordId: `${ROW}.id` },
   { table: "carton_stock_adjustment_lines", record: SYNC_AGGREGATE.CARTON_STOCK_ADJUSTMENT, recordId: `${ROW}.adjustment_id` },
+  // A completed production day (docs/48): one row is one record.
+  { table: "production_days", record: SYNC_AGGREGATE.PRODUCTION_DAY, recordId: `${ROW}.id` },
 ];
 
 /**

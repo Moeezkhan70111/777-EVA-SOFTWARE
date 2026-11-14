@@ -26,7 +26,12 @@ export const APP_ROUTES = [
   "stock-history",
   "production-history",
   "live-production",
+  // What was saved on the Manual Production page, one day at a time, by machine (docs/48).
   "daily-production",
+  // The scan-based day report Daily Production used to be (production_events): kept, under its own name.
+  "scan-production",
+  // Manual Production: a page of its own since 14 Nov 2026 (it was a QR Generator tab).
+  "manual-production",
   "daily-dispatch",
   "live-dispatch",
   "dispatch-history",

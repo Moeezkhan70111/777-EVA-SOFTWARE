@@ -78,12 +78,22 @@ const MatrixTable: React.FC<{ article: CartonMatrixArticle; layout: CartonLayout
   );
 };
 
-export const CartonMatrix: React.FC<{ article: CartonMatrixArticle; layout: CartonLayout }> = ({ article, layout }) => {
+interface CartonMatrixProps {
+  article: CartonMatrixArticle;
+  layout: CartonLayout;
+  /** The table's accessible name. Carton Stock's own when not given. */
+  tableLabel?: (article: string) => string;
+  /** A control under the article's name (the Manual Production page's Edit). None on Carton Stock. */
+  action?: React.ReactNode;
+}
+
+export const CartonMatrix: React.FC<CartonMatrixProps> = ({ article, layout, tableLabel = text.tableLabel, action }) => {
   const headingId = useId();
+  const name = <h2 className="cs-article-name" id={headingId}>{article.article}</h2>;
   return (
     <section className="cs-article" aria-labelledby={headingId}>
-      <h2 className="cs-article-name" id={headingId}>{article.article}</h2>
-      <SidewaysScrollArea label={text.tableLabel(article.article)} colourCount={article.colours.length}
+      {action ? <div className="cs-article-head">{name}<div className="cs-article-action">{action}</div></div> : name}
+      <SidewaysScrollArea label={tableLabel(article.article)} colourCount={article.colours.length}
         pinnedStart={layout.sizeWidth} pinnedEnd={layout.totalWidth}>
         <MatrixTable article={article} layout={layout} />
       </SidewaysScrollArea>

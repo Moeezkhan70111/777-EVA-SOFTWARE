@@ -63,6 +63,8 @@ import { upperMoveOutMethods, type UpperMoveOutMethods } from "./database/upperM
 import { productionReconciliationMethods, type ProductionReconciliationMethods } from "./database/productionReconciliation.js";
 import { manualProductionMethods, type ManualProductionMethods } from "./database/manualProduction.js";
 import { manualProductionVoidMethods, type ManualProductionVoidMethods } from "./database/manualProductionVoid.js";
+import { manualProductionEditMethods, type ManualProductionEditMethods } from "./database/manualProductionEdit.js";
+import { productionDayMethods, type ProductionDayMethods } from "./database/productionDays.js";
 import { gatepassCartonsMethods, type GatepassCartonsMethods } from "./database/gatepassCartons.js";
 import { cartonStockAdjustMethods, type CartonStockAdjustMethods } from "./database/cartonStockAdjust.js";
 import { cartonStockDocumentMethods, type CartonStockDocumentMethods } from "./database/cartonStockDocuments.js";
@@ -1673,6 +1675,8 @@ export interface SqliteDatabase
     ProductionReconciliationMethods,
     ManualProductionMethods,
     ManualProductionVoidMethods,
+    ManualProductionEditMethods,
+    ProductionDayMethods,
     GatepassCartonsMethods,
     CartonStockAdjustMethods,
     CartonStockDocumentMethods,
@@ -1723,6 +1727,8 @@ Object.assign(
   productionReconciliationMethods,
   manualProductionMethods,
   manualProductionVoidMethods,
+  manualProductionEditMethods,
+  productionDayMethods,
   gatepassCartonsMethods,
   cartonStockAdjustMethods,
   cartonStockDocumentMethods,

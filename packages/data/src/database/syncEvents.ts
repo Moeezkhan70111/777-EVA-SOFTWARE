@@ -93,6 +93,8 @@ export const SYNC_AGGREGATE = {
   /** An Opening Stock or Stock Adjustment document with its lines (local 107, cloud 030, docs/46). Its cartons move by
    * CARTON_ADJUST_IN and CARTON_ADJUST_OUT movements, which travel as CARTON_STOCK_EVENT. */
   CARTON_STOCK_ADJUSTMENT: "CARTON_STOCK_ADJUSTMENT",
+  /** A business day whose production was marked complete (local 109, cloud 032, docs/48). It moves no stock. */
+  PRODUCTION_DAY: "PRODUCTION_DAY",
   /**
    * One raw-material stock movement, as stored, with the change it made to its material's balance
    * (balanceDelta). Append-only: captured when inserted (masterCapture.ts, EVENT_CAPTURE), applied
@@ -149,6 +151,7 @@ export const LEASED_AGGREGATE_DOMAIN: Readonly<Partial<Record<SyncAggregateType,
   [SYNC_AGGREGATE.COLOR_TRANSLATION]: LEASE_DOMAIN.MASTER_DATA,
   [SYNC_AGGREGATE.MANUAL_PRODUCTION_ENTRY]: LEASE_DOMAIN.CARTON_STOCK,
   [SYNC_AGGREGATE.CARTON_STOCK_ADJUSTMENT]: LEASE_DOMAIN.CARTON_STOCK,
+  [SYNC_AGGREGATE.PRODUCTION_DAY]: LEASE_DOMAIN.CARTON_STOCK,
   [SYNC_AGGREGATE.GATEPASS]: LEASE_DOMAIN.SALES_DISPATCH,
   [SYNC_AGGREGATE.SALE_VOUCHER]: LEASE_DOMAIN.SALES_DISPATCH,
   [SYNC_AGGREGATE.CASH_VOUCHER]: LEASE_DOMAIN.ACCOUNTS,

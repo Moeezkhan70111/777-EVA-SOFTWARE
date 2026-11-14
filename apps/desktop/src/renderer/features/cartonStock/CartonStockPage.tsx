@@ -7,13 +7,13 @@ import { useDesktopApi } from "../../hooks/useDesktopApi";
 import { DATA_KIND } from "../../../shared/dataChange";
 import { useStockList, type StockRead } from "../kindStock/useStockList";
 import { RAIL_ICONS } from "../navigation/NavIcons";
-import { CartonMatrix } from "./CartonMatrix";
-import { CARTON_LAYOUT, cartonLayout } from "./cartonMatrixLayout";
+import { ProductionStatusBox } from "../productionDay/ProductionStatusBox";
+import { useTodayMark } from "../productionDay/useProductionDay";
+import { CartonMatrixList } from "./CartonMatrixList";
 import { CartonCardsSkeleton, CartonStockSkeleton } from "./CartonStockSkeleton";
 import { parseCartonMatrixReply } from "./cartonMatrixReply";
 import { dozenFigure } from "./CartonMatrix";
 import { SeriesPicker } from "./SeriesPicker";
-import { useElementWidth } from "./useElementWidth";
 import { useLoadMoreOnScroll } from "./useLoadMoreOnScroll";
 
 // CARTON STOCK, FOR AN ADMINISTRATOR: the cartons in store, one matrix per article (the owner's
@@ -36,26 +36,13 @@ interface MatricesProps {
   endMarker: React.RefObject<HTMLDivElement | null>;
 }
 
-/** The cards' column widths come from cartonMatrixLayout, the one source for them. */
-const LIST_STYLE = {
-  "--cs-name-width": `${CARTON_LAYOUT.nameWidth}px`,
-  "--cs-colour-min": `${CARTON_LAYOUT.colourMinWidth}px`,
-} as React.CSSProperties;
-
 const Matrices: React.FC<MatricesProps> = ({ data, filtered, loadingMore, endMarker }) => {
-  // Measured once for the whole list: every card is as wide as the list.
-  const [listRef, listWidth] = useElementWidth<HTMLDivElement>();
   if (data.articleCount === 0) {
     return filtered ? <StateView kind="empty" title={text.noMatchTitle} hint={text.noMatchHint} /> : <StateView kind="empty" title={text.emptyTitle} hint={text.emptyHint} />;
   }
-  const layout = cartonLayout(listWidth);
   return (
     <>
-      <div ref={listRef} className={layout.stacked ? "cs-articles cs-articles--stacked" : "cs-articles"} style={LIST_STYLE}>
-        {data.articles.map((article) => (
-          <CartonMatrix key={article.key} article={article} layout={layout} />
-        ))}
-      </div>
+      <CartonMatrixList articles={data.articles} />
       {loadingMore ? <CartonCardsSkeleton count={2} message={text.loadingMore} /> : null}
       <div ref={endMarker} className="cs-list-end" aria-hidden="true" />
     </>
@@ -71,6 +58,8 @@ export const CartonStockPage: React.FC = () => {
     [api, series]
   );
   const stock = useStockList(read, CARTON_CHANGES);
+  // Grey until today's production is completed on the Manual Production page, then green (owner, 14 Nov 2026).
+  const today = useTodayMark();
   const chooseSeries = (value: string) => {
     setSeries(value);
     stock.setPage(1);
@@ -100,10 +89,13 @@ export const CartonStockPage: React.FC = () => {
           </label>
           <SeriesPicker value={series} options={stock.data?.seriesOptions ?? []} allSeries={stock.data?.allSeries ?? NOTHING_HELD} onChange={chooseSeries} />
         </div>
-        {stock.data && !stock.error ? (
-          <KpiCard className="cs-summary" label={text.totalCardLabel} value={dozenFigure(stock.data.totalCartons)}
-            sub={text.totalCardSub(stock.data.articleCount, stock.data.totalCartons.toLocaleString(), stock.searching || series !== "")} />
-        ) : null}
+        <div className="cs-overview">
+          {stock.data && !stock.error ? (
+            <KpiCard className="cs-summary" label={text.totalCardLabel} value={dozenFigure(stock.data.totalCartons)}
+              sub={text.totalCardSub(stock.data.articleCount, stock.data.totalCartons.toLocaleString(), stock.searching || series !== "")} />
+          ) : null}
+          <ProductionStatusBox mark={today.value?.mark ?? null} loading={today.loading} error={today.error} />
+        </div>
         {body()}
       </div>
     </div>

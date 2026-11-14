@@ -1388,6 +1388,12 @@ export interface ManualProductionResult {
   duplicate: boolean;
 }
 
+/** What the Manual Production page's Save did: every line's entry, and how many a retried Save had already made. */
+export interface ManualProductionBatchResult {
+  entries: ManualProductionEntry[];
+  duplicates: number;
+}
+
 export interface HistoryQuery {
   search?: string;
   fromDate?: string;

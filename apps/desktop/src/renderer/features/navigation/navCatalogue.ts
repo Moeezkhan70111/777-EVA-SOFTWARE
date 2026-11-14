@@ -2,6 +2,7 @@ import type { AppRoute } from "../../app/routes";
 import {
   CARTON_STOCK_ARTWORK_URL,
   CREATE_GATEPASS_ARTWORK_URL,
+  DAILY_PRODUCTION_ARTWORK_URL,
   DANA_STOCK_ARTWORK_URL,
   GATEPASS_LIST_ARTWORK_URL,
   MACHINE_ARTWORK_URL,
@@ -157,6 +158,8 @@ export const NAV_SECTIONS: readonly NavSection[] = [
         ...item("carton-stock", t.cartonStock, "stock"),
         feature: { artwork: CARTON_STOCK_ARTWORK_URL, theme: "sky", artworkHasScene: true, badge: "stock", onDashboard: true },
       },
+      // Typing in each machine's production, and completing the day (docs/48). Live Production, like scanning it.
+      item("manual-production", t.manualProduction, "machine"),
       // Opening Stock and Stock Adjustment for carton stock (docs/46). Administrators only, like Carton Stock.
       item("stock-adjustment", t.stockAdjustment, "stock"),
       {
@@ -169,7 +172,12 @@ export const NAV_SECTIONS: readonly NavSection[] = [
       },
       item("raw-material", t.rawMaterial, "stock", ["raw-material-qr-generator"]),
       item("history", t.stockHistory, "history", ["stock-history"]),
-      item("daily-production", t.dailyProduction, "daily"),
+      // A Dashboard card (owner, 14 Nov 2026): the day's production, clearly, for anyone given Daily Production.
+      {
+        ...item("daily-production", t.dailyProduction, "daily"),
+        feature: { artwork: DAILY_PRODUCTION_ARTWORK_URL, theme: "sky", artworkHasScene: true, badge: "daily", onDashboard: true },
+      },
+      item("scan-production", t.scanProduction, "daily"),
       item("daily-dispatch", t.dailyDispatch, "daily"),
       item("production-history", t.productionHistory, "history"),
       item("dispatch-history", t.dispatchHistory, "history"),

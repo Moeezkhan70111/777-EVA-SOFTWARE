@@ -6,7 +6,8 @@
 import { ipcMain } from "../leaseGuard";
 import { IPC } from "../../shared/ipcChannels";
 import type { IpcContext } from "./context";
-import { BrowserWindow, dialog } from "electron";
+import { BrowserWindow } from "electron";
+import { saveHtmlAsPdf } from "../pdfFile";
 import { PERMISSION, PRODUCT_STATUS, optionalOneOf } from "@erp/domain";
 import type { ProductListKind } from "@erp/data";
 import fs from "node:fs";
@@ -253,45 +254,13 @@ export function registerProductsHandlers(ctx: IpcContext): void {
   ipcMain.handle(IPC.saveRateList, async (event, payload?: { html?: string; fileName?: string }) => {
     authorizer.requireUser(event);
     if (!payload?.html) return { accepted: false, reason: "Rate list content is required" };
-    const parent = BrowserWindow.fromWebContents(event.sender) ?? undefined;
-    const saveOptions = {
-      defaultPath: payload.fileName || "rate-list.pdf",
-      filters: [{ name: "PDF document", extensions: ["pdf"] }],
-    };
-    const result = parent
-      ? await dialog.showSaveDialog(parent, saveOptions)
-      : await dialog.showSaveDialog(saveOptions);
-    if (result.canceled || !result.filePath) return { accepted: false, canceled: true };
-
-    const tempHtmlPath = path.join(paths.scratchDir, `rate-list-${Date.now()}-${Math.random().toString(36).slice(2)}.html`);
-    const printWindow = new BrowserWindow({ show: false, webPreferences: { sandbox: true } });
-    try {
-      // Chromium rejects large percent-encoded data URLs; a temporary local file keeps images and CSS intact.
-      fs.writeFileSync(tempHtmlPath, payload.html, "utf8");
-      await printWindow.loadFile(tempHtmlPath);
-      const pdf = await printWindow.webContents.printToPDF({ printBackground: true, pageSize: "A4" });
-      let savedPath = result.filePath;
-      try {
-        fs.writeFileSync(savedPath, pdf);
-      } catch (error) {
-        const code = (error as { code?: string }).code;
-        if (!(["EBUSY", "EPERM", "EACCES"] as string[]).includes(code ?? "")) throw error;
-
-        const parsedPath = path.parse(result.filePath);
-        let suffix = 1;
-        do {
-          savedPath = path.join(parsedPath.dir, `${parsedPath.name} (${suffix})${parsedPath.ext}`);
-          suffix += 1;
-        } while (fs.existsSync(savedPath));
-        fs.writeFileSync(savedPath, pdf);
-      }
-      return { accepted: true, filePath: savedPath };
-    } catch (error) {
-      return { accepted: false, reason: error instanceof Error ? error.message : "Could not generate PDF" };
-    } finally {
-      if (!printWindow.isDestroyed()) printWindow.destroy();
-      try { fs.unlinkSync(tempHtmlPath); } catch { /* already removed */ }
-    }
+    // The shared Save-as-PDF (pdfFile.ts), as the production reports use it.
+    return saveHtmlAsPdf({
+      parent: BrowserWindow.fromWebContents(event.sender) ?? undefined,
+      html: payload.html,
+      fileName: payload.fileName || "rate-list.pdf",
+      scratchDir: paths.scratchDir,
+    });
   });
 
   ipcMain.handle(IPC.listProductGroups, () => {

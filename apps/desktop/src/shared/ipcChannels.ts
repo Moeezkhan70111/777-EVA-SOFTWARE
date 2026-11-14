@@ -213,6 +213,8 @@ export const IPC = {
   saveProductImage: "erp:save-product-image",
   saveRateList: "erp:save-rate-list",
   printDocument: "erp:print-document",
+  // Any "Download PDF": the renderer's document, saved where the person chooses (main/pdfFile.ts).
+  savePdfDocument: "erp:save-pdf-document",
   getNextProductCode: "erp:get-next-product-code",
   listProductGroups: "erp:list-product-groups",
   createProductGroup: "erp:create-product-group",
@@ -286,6 +288,14 @@ export const IPC = {
   addArticleColor: "erp:add-article-color",
   listManualProduction: "erp:list-manual-production",
   voidManualProduction: "erp:void-manual-production",
+  // The Manual Production page's Save, "Complete today's production", and a day's production read back (docs/48).
+  saveManualProduction: "erp:save-manual-production",
+  completeProductionDay: "erp:complete-production-day",
+  getProductionDay: "erp:get-production-day",
+  getProductionDayMark: "erp:get-production-day-mark",
+  // Editing today's production of one article on one machine (database/manualProductionEdit.ts).
+  getManualProductionArticle: "erp:get-manual-production-article",
+  editManualProduction: "erp:edit-manual-production",
   // Upper Move Out (Phase 3): upper packets issued to a named machine, and upper stock.
   issueUpperToMachine: "erp:issue-upper-to-machine",
   listUpperIssues: "erp:list-upper-issues",

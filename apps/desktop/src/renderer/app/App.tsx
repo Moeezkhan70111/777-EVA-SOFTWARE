@@ -18,7 +18,10 @@ import { MachineProgramPage } from "../features/machineProgram/MachineProgramPag
 import { ProductionHistoryPage } from "../pages/ProductionHistoryPage";
 import { HistoryPage } from "../pages/HistoryPage";
 import { LiveProductionPage } from "../pages/LiveProductionPage";
-import { DailyProductionPage } from "../pages/DailyProductionPage";
+// The scan-based day report, under its own name since Daily Production shows the Manual Production day (docs/48).
+import { DailyProductionPage as ScanProductionPage } from "../pages/DailyProductionPage";
+import { DailyProductionPage } from "../features/productionDay/DailyProductionPage";
+import { ManualProductionPage } from "../features/manualProduction/ManualProductionPage";
 import { DailyDispatchPage } from "../pages/DailyDispatchPage";
 import { LiveDispatchPage } from "../pages/LiveDispatchPage";
 import { DispatchHistoryPage } from "../pages/DispatchHistoryPage";
@@ -447,7 +450,16 @@ export const App = () => {
       case "live-production":
         return <LiveProductionPage />;
       case "daily-production":
-        return <DailyProductionPage />;
+        return <DailyProductionPage onRecordProduction={canOpenRoute(session, "manual-production") ? () => setRoute("manual-production") : undefined} />;
+      case "scan-production":
+        return <ScanProductionPage />;
+      case "manual-production":
+        return (
+          <ManualProductionPage
+            onOpenDaily={canOpenRoute(session, "daily-production") ? () => setRoute("daily-production") : undefined}
+            onSetUpMachines={canOpenRoute(session, "machine-program") ? () => setRoute("machine-program") : undefined}
+          />
+        );
       case "daily-dispatch":
         return <DailyDispatchPage />;
       case "live-dispatch":
@@ -742,7 +754,7 @@ export const App = () => {
           <div className="app-main">
             {showPageHeader ? (
               <div className="app-head">
-                <PageHeader title={PAGE_TITLES[shownRoute]} actions={headerActions} />
+                <PageHeader title={PAGE_TITLES[shownRoute]} actions={headerActions} onDashboard={shownRoute === HOME_ROUTE ? undefined : () => setRoute(HOME_ROUTE)} />
               </div>
             ) : null}
             <main className={`page-content${!showNavbar || FULLSCREEN_ROUTES.has(route) ? " page-content--fullscreen" : ""}`}>

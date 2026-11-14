@@ -19,7 +19,8 @@ const isRow = (value: unknown, columns: number): value is CartonMatrixRow =>
   value.quantities.length === columns &&
   value.quantities.every(isNumber);
 
-const isArticle = (value: unknown): value is CartonMatrixArticle =>
+/** One article's matrix, checked. Shared with the Daily Production page, which draws the same matrices. */
+export const isArticle = (value: unknown): value is CartonMatrixArticle =>
   isRecord(value) &&
   isText(value.key) &&
   isText(value.article) &&

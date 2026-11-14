@@ -109,6 +109,12 @@ export const LEASED_CHANNELS: Readonly<Record<string, readonly LeaseDomain[]>> =
   // split. A gatepass is here because it takes its cartons out the moment it is made.
   [IPC.recordManualProduction]: CARTONS,
   [IPC.voidManualProduction]: CARTONS,
+  // The Manual Production page's Save is the same write, many lines at once. Completing the day is written where
+  // production is: its record travels under the carton lease (docs/48).
+  [IPC.saveManualProduction]: CARTONS,
+  [IPC.completeProductionDay]: CARTONS,
+  // Editing today's production reverses entries and records new ones: the same writes as Void and Save.
+  [IPC.editManualProduction]: CARTONS,
   [IPC.adjustCartonStock]: CARTONS,
   [IPC.postCartonStockAdjustment]: CARTONS,
   // The "+" beside Colour on Stock Adjustment: a colour of a product is product master data (docs/43, docs/47).

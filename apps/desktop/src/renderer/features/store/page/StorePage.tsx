@@ -2,6 +2,7 @@ import React, { useCallback, useRef, useState } from "react";
 import type { AppRoute } from "../../../app/routes";
 import { copy } from "../../../config/copy";
 import { PageHeader } from "../../../components/layout/PageHeader";
+import { HOME_ROUTE } from "../../auth/session";
 import { SplitHandle, splitWidth, useSplitFraction } from "../../../components/shared/SplitHandle";
 import { useRawMaterialLookups } from "../../rawMaterial/useRawMaterialLookups";
 import { SCAN_STATION_CSS } from "../../scanStation/scanStation";
@@ -95,6 +96,7 @@ export const StorePage: React.FC<StorePageProps> = (props) => {
           wears the same header (PageHeader); this page draws its own so it sits on the sky. */}
       <PageHeader
         title={copy.storePage.title}
+        onDashboard={() => onNavigate(HOME_ROUTE)}
         actions={
           <>
             {props.showMachinePrograms ? (

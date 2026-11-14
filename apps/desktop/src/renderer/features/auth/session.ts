@@ -103,6 +103,9 @@ export const routePermission: Partial<Record<AppRoute, PermissionCode>> = {
 
   "live-production": PERMISSION.LIVE_PRODUCTION,
   "daily-production": PERMISSION.DAILY_PRODUCTION,
+  "scan-production": PERMISSION.DAILY_PRODUCTION,
+  // Recording production, scanned or typed, is Live Production (main/ipc/productionDay.ts checks the same).
+  "manual-production": PERMISSION.LIVE_PRODUCTION,
 
   "live-dispatch": PERMISSION.LIVE_DISPATCH,
   "gatepass-store-scan": PERMISSION.STORE_SCANNING,

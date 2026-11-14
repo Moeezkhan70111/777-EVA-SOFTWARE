@@ -68,7 +68,7 @@ export const DailyProductionPage = () => {
       {/* ── Toolbar ── */}
       <div className="toolbar">
         <div className="toolbarHeadings">
-        <div className="page-title" >Daily Production</div>
+        <div className="page-title" >{copy.nav.items.scanProduction.label}</div>
               <div style={styles.pageDate}>
                 Production Date: {formatDateLabel(date)}
               </div></div>

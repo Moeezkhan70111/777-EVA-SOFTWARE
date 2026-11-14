@@ -1,29 +1,33 @@
 import React, { useState } from "react";
-import { formatDozens } from "@erp/domain";
+import { formatDozens, type ProductionDayView } from "@erp/domain";
 import { Pager } from "../../components/shared/Pager";
 import { StateView } from "../../components/shared/StateView";
 import { TabStrip } from "../../components/shared/TabStrip";
 import { copy } from "../../config/copy";
+import type { PolledRead } from "../../hooks/usePolledRead";
 import type { ManualProductionEntry, ManualProductionPage } from "../../types/desktopApi";
 import { formatTime } from "../../utils/dates";
-import { ReceiptSummary } from "../receiveProduction/ReceiptSummary";
+import type { ProductChoice } from "./productChoices";
+import { TodayProduction } from "./TodayProduction";
 import type { ManualProductionDay } from "./useManualProduction";
 import { VoidEntryDialog } from "./VoidEntryDialog";
 
 /** Voids one entry; resolves with null once done, or the reason it was not. */
 type OnVoid = (entryId: string, reason: string) => Promise<string | null>;
 
-// MANUAL PRODUCTION TODAY — in two sections, like Receive Production's:
+// MANUAL PRODUCTION TODAY — in two sections (owner, 14 Nov 2026):
 //
-//   [ Details ] [ Summary ]
-//   Details: every entry, newest first, a page at a time
+//   [ Production ] [ Entries ]
+//   Production: each machine, each article as a Size x Colour matrix with its totals, Edit on every article, and
+//               Download PDF for the day or one machine (TodayProduction)
+//   Entries:    every entry, newest first, a page at a time, with Void, and voided and edited ones marked
 //     Entry        Article  Size  Colour  Dozens   Cartons  Machine               Saved at   By
 //     MAN-000003   SK6      7/10  RED     10 DZN        20  MACHINE 1 · MP-000123  10:42 AM   admin
-//   Summary: the day added up per article, size and colour, with the total (ReceiptSummary, shared)
 //
-// Both sections come from the one read (listManualProduction), so they always agree.
+// Production reads the day per machine (productionDayView); Entries reads the entries (listManualProduction). Both
+// are read again after every Save, Edit and Void.
 
-type Section = "details" | "summary";
+type Section = "production" | "entries";
 
 const text = copy.manualProduction;
 const columns = copy.receiveProduction;
@@ -93,14 +97,22 @@ const Details: React.FC<{ day: ManualProductionDay; page: ManualProductionPage; 
   );
 };
 
-export const ManualProductionList: React.FC<{ day: ManualProductionDay; onVoid: OnVoid }> = ({ day, onVoid }) => {
-  const [section, setSection] = useState<Section>("details");
+interface ManualProductionListProps {
+  day: ManualProductionDay;
+  onVoid: OnVoid;
+  /** Today's production per machine and article: the Production section (TodayProduction). */
+  production: PolledRead<ProductionDayView>;
+  products: readonly ProductChoice[];
+  onEdited: () => void;
+}
+
+export const ManualProductionList: React.FC<ManualProductionListProps> = ({ day, onVoid, production, products, onEdited }) => {
+  const [section, setSection] = useState<Section>("production");
   const page = day.page;
-  const body = () => {
+  const entries = () => {
     if (day.loading && !page) return <StateView kind="loading" compact message={text.loading} />;
     if (day.error && !page) return <StateView kind="error" compact message={day.error} onRetry={() => void day.reload()} />;
     if (!page || page.totalEntries === 0) return <StateView kind="empty" compact title={text.emptyTitle} hint={text.emptyHint} />;
-    if (section === "summary") return <ReceiptSummary lines={page.summary} totalCartons={page.totalCartons} caption={text.summaryCaption} />;
     return <Details day={day} page={page} onVoid={onVoid} />;
   };
 
@@ -112,8 +124,8 @@ export const ManualProductionList: React.FC<{ day: ManualProductionDay; onVoid: 
       </div>
       <TabStrip
         items={[
-          { id: "details", label: text.sectionDetails },
-          { id: "summary", label: text.sectionSummary },
+          { id: "production", label: copy.productionEdit.sectionProduction },
+          { id: "entries", label: copy.productionEdit.sectionEntries },
         ]}
         active={section}
         onSelect={setSection}
@@ -121,7 +133,7 @@ export const ManualProductionList: React.FC<{ day: ManualProductionDay; onVoid: 
       />
       {day.stale ? <p className="rp-stale" role="status">⚠ {text.offline}</p> : null}
       <div role="tabpanel" aria-labelledby={`tab-${section}`} className="rp-section">
-        {body()}
+        {section === "production" ? <TodayProduction production={production} products={products} onEdited={onEdited} /> : entries()}
       </div>
     </section>
   );

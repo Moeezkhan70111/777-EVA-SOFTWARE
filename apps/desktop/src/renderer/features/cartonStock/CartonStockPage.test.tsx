@@ -4,6 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { DEFAULT_COLOR_TRANSLATIONS, buildCartonStockMatrix, type CartonStockFigure } from "@erp/domain";
 import { copy } from "../../config/copy";
+import { toIsoDate } from "../../utils/dates";
 import { publishColorTranslations } from "../colorTranslation/colorDictionaryStore";
 import { NotificationsProvider } from "../../state/NotificationsContext";
 import { CartonStockPage } from "./CartonStockPage";
@@ -13,7 +14,7 @@ import { CartonStockPage } from "./CartonStockPage";
 
 const text = copy.cartonStock;
 
-const api = { getCartonStockMatrix: vi.fn() };
+const api = { getCartonStockMatrix: vi.fn(), getProductionDayMark: vi.fn() };
 
 /** The store figures the matrix is built from, as the main process would read them. */
 let figures: CartonStockFigure[] = [];
@@ -39,7 +40,40 @@ beforeEach(() => {
     { article: "SK30", size: "4/6", color: "RED", series: "DOUBLE COLOR", quantity: 3 },
   ];
   api.getCartonStockMatrix.mockReset().mockImplementation(async (query: { search: string; series: string; shown: number }) => ({ accepted: true, ...buildCartonStockMatrix(figures, { search: query.search, series: query.series, pageSize: query.shown }) }));
+  api.getProductionDayMark.mockReset().mockResolvedValue({ accepted: true, mark: null });
   Object.defineProperty(window, "desktop", { value: { versions: { node: "22", chrome: "128", electron: "43" }, api }, configurable: true });
+});
+
+// Owner, 14 Nov 2026: a box that stays grey, "Production not added", until someone completes today's production on the
+// Manual Production page; then green, "Production added". It asks for today, and follows carton changes from sync.
+describe("today's production box", () => {
+  const status = copy.productionDay;
+  const MARK = { date: "2026-11-14", completedAt: "2026-11-14T13:05:00.000Z", completedBy: "aslam", cartons: 22, entries: 2 };
+  const box = () => document.querySelector(".pd-status");
+
+  it("is grey and says Production not added until the day is completed, for today", async () => {
+    show();
+    expect(await screen.findByText(status.notAdded)).toBeInTheDocument();
+    expect(box()).toHaveClass("is-pending");
+    expect(box()).toHaveTextContent("○");
+    expect(api.getProductionDayMark).toHaveBeenCalledWith({ date: toIsoDate() });
+  });
+
+  it("turns green and says Production added, with when and by whom, once the day is completed", async () => {
+    api.getProductionDayMark.mockResolvedValue({ accepted: true, mark: MARK });
+    show();
+    expect(await screen.findByText(status.added)).toBeInTheDocument();
+    expect(box()).toHaveClass("is-added");
+    expect(box()).toHaveTextContent("✓");
+    expect(box()).toHaveTextContent(status.addedBy("6:05 PM", "aslam"));
+  });
+
+  it("never says added when the answer cannot be trusted: it says the status could not be read", async () => {
+    api.getProductionDayMark.mockResolvedValue({ accepted: true, mark: { date: "2026-11-14", completedBy: 7 } });
+    show();
+    expect(await screen.findByText(status.unknown)).toBeInTheDocument();
+    expect(screen.queryByText(status.added)).toBeNull();
+  });
 });
 
 describe("the stock matrix", () => {
@@ -303,7 +337,8 @@ describe("live updates from other computers, with the page open", () => {
     const { listeners } = installLiveBridge();
     const page = show();
     await screen.findByRole("row", { name: "7/10 3 1 4" });
-    expect(listeners.size).toBe(1);
+    // The matrix, and today's production status box (useTodayMark): both follow carton changes.
+    expect(listeners.size).toBe(2);
     page.unmount();
     expect(listeners.size).toBe(0);
   });

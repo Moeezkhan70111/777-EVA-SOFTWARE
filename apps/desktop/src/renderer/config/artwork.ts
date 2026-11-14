@@ -31,3 +31,9 @@ export const DANA_STOCK_ARTWORK_URL = "./assets/stock/dana-stock.png";
 
 /** The Carton Stock card: three 777 SEVEN cartons with slippers, from the owner's card design, cut the same way. */
 export const CARTON_STOCK_ARTWORK_URL = "./assets/stock/carton-stock.png";
+
+/**
+ * The Daily Production card (14 Nov 2026): a production sheet with its day's bars, a machine and a finished 777
+ * carton. Drawn as a vector (SVG) in the cards' sky palette, so it stays sharp; the card draws its cloud and sparks.
+ */
+export const DAILY_PRODUCTION_ARTWORK_URL = "./assets/production/daily-production.svg";

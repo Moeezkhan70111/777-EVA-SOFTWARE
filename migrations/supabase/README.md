@@ -13,7 +13,7 @@
 
 Apply in this order, in the Supabase SQL editor, on an **empty** project, one file at a time:
 
-`schema.sql` → `002` → `003` → … → `019` → `020` → `021` → `022` → `023` → `024` → `025` → `026` → `027` → `028` → `029` → `030` → `031`
+`schema.sql` → `002` → `003` → … → `019` → `020` → `021` → `022` → `023` → `024` → `025` → `026` → `027` → `028` → `029` → `030` → `031` → `032`
 
 After each one, run `verify_applied_state.sql`. Its header lists exactly which checks a project
 one migration behind fails, so a half-applied project is diagnosed rather than guessed at. The
@@ -89,7 +89,9 @@ changes would have to discard data to succeed, and they are written to fail inst
 
 `031_raw_material_master_on_store_lease.up.sql` follows `030`: units, unit ladder presets, categories and materials move from MASTER_DATA to RAW_MATERIAL_STORE in `leased_record_types` (docs/47), so the store computer writes its materials with their stock. Rows only. **Prepared, not applied to test or production.** Apply before the store computer runs the release that writes them under the store lease.
 
-**Reverse in the opposite order: `031` → `030` → `029` → `028` → `027` → `026` → `025` → `024` → `023` → `022` → `021` → `020` → `019` → `018` → … → `003` → `002`.** Each down file's header
+`032_production_day_records.up.sql` follows `031` (it does not need it): a day whose production was marked complete on the Manual Production page becomes a leased record under the carton lease (docs/48, local migration 109). Rows only, no new function, and no stock moves by it. **Applied to PRODUCTION (`ykhvbmhmeefdtrzqeoxm`) on 14 Nov 2026 on the owner's explicit authorisation; NOT applied to TEST** (owner: production only). Before: `CARTON_STOCK` present in `lease_domains`, neither `PRODUCTION_DAY` row present. After: `sync_aggregate_types` (`PRODUCTION_DAY`, `factory_scoped = false`) and `leased_record_types` (`PRODUCTION_DAY` → `CARTON_STOCK`) both present; nothing else changed. Applied through Supabase's migration call, so it is recorded in production's migration history as `20261114105620 032_production_day_records` — the first entry there: `002`–`031` were run directly and are not recorded in that history. The file's own header still reads "PREPARED, NOT APPLIED": it is left exactly as the text that was applied. A computer on a release without local 109 sends no completed day; one that waited before this was applied now delivers on its next retry.
+
+**Reverse in the opposite order: `032` → `031` → `030` → `029` → `028` → `027` → `026` → `025` → `024` → `023` → `022` → `021` → `020` → `019` → `018` → … → `003` → `002`.** Each down file's header
 says what reversing it costs: `018`'s re-opens the PC2/PC3 failure, for example. Reversing `005`
 re-opens the cross-factory read, and reversing `006` re-opens unbound access, re-enables any
 device revoked before the rollback and discards the claim audit. Both headers say so. `004_rls_policies.down.sql` revokes a

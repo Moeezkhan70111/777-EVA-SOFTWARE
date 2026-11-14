@@ -151,10 +151,10 @@ describe("HomePage — the Dashboard's own cards", () => {
     expect(screen.getByRole("status")).toHaveTextContent("Your pages are in the sidebar");
   });
 
-  it("shows an administrator Carton Stock first, then both stock cards, and Carton Stock opens its page", () => {
+  it("shows an administrator Carton Stock first, then both stock cards and Daily Production, and Carton Stock opens its page", () => {
     const onNavigate = vi.fn();
     render(<HomePage user={user([], "ADMIN")} onNavigate={onNavigate} />);
-    expect(cardNames()).toEqual(["nav-tile-carton-stock", "nav-tile-upper-stock", "nav-tile-dana-stock"]);
+    expect(cardNames()).toEqual(["nav-tile-carton-stock", "nav-tile-upper-stock", "nav-tile-dana-stock", "nav-tile-daily-production"]);
     const card = screen.getByRole("button", { name: "Carton Stock" });
     expect(card.querySelector("img")).toHaveAttribute("src", "./assets/stock/carton-stock.png");
     fireEvent.click(card);

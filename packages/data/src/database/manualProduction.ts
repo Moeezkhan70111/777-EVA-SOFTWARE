@@ -1,6 +1,7 @@
 // Manual Production — cartons recorded by typing them in, with no carton QR (owner, 2026-10-14).
 //
 //   WRITE  recordManualProduction    MACHINE 1 · SK6 7/10 RED · 10 DOZEN  ->  MAN-000001, 20 cartons
+//   WRITE  recordManualProductionBatch   the Manual Production page's Save: every line, or none (docs/48)
 //   READ   listManualProduction      one business day: the entries, and the day per article/size/colour
 //
 // One entry, in ONE BEGIN IMMEDIATE transaction, does three things together or not at all:
@@ -23,9 +24,9 @@
 // These methods are merged onto SqliteDatabase (see sqliteDatabase.ts, "Feature modules").
 
 import type { SqliteDatabase } from "../sqliteDatabase.js";
-import type { ManualProductionEntry, ManualProductionPage, ManualProductionResult, ProductionReceiptSummaryLine } from "./types.js";
+import type { ManualProductionBatchResult, ManualProductionEntry, ManualProductionPage, ManualProductionResult, ProductionReceiptSummaryLine } from "./types.js";
 import { formatMachineProgramCodeNumber } from "@erp/application";
-import { CARTON_STOCK_EVENT_TYPE, RATE_SOURCE, businessDayStartIso, cartonsToDozens, formatManualProductionCode, manualProductionCartons } from "@erp/domain";
+import { CARTON_STOCK_EVENT_TYPE, MANUAL_PRODUCTION_MOST_LINES, RATE_SOURCE, businessDayStartIso, cartonsToDozens, formatManualProductionCode, manualProductionCartons } from "@erp/domain";
 import { allocateNumberInRange } from "./numberRange.js";
 import { recordCartonStockMovement } from "./cartonStock.js";
 
@@ -52,6 +53,32 @@ export interface ManualProductionInput {
   storeLocationId: string;
   createdBy: string | null;
 }
+
+/** One line of the Manual Production page's Save. */
+export interface ManualProductionBatchLine {
+  requestId: string;
+  machineId: string;
+  articleSizeId: string;
+  color: string;
+  /** As typed, in DOZEN. */
+  dozens: unknown;
+}
+
+export interface ManualProductionBatchInput {
+  lines: readonly ManualProductionBatchLine[];
+  storeLocationId: string;
+  createdBy: string | null;
+}
+
+/** A line as it will be written: identified, its quantity in whole cartons. Throws the reason, naming the line. */
+const checkedBatchLine = (line: ManualProductionBatchLine, index: number) => {
+  const lineNo = index + 1;
+  const requestId = text(line.requestId).trim();
+  if (!requestId) throw new Error(`Line ${String(lineNo)} could not be identified. Press Save again.`);
+  const quantity = manualProductionCartons(line.dozens);
+  if (!quantity.ok) throw new Error(`Line ${String(lineNo)}: ${quantity.reason}`);
+  return { lineNo, requestId, machineId: text(line.machineId), articleSizeId: text(line.articleSizeId), color: text(line.color), dozens: line.dozens, cartons: quantity.cartons };
+};
 
 const ENTRY_SELECT = `
   SELECT e.id, e.entry_number, e.article, e.size, e.color, e.cartons, e.entry_ts, e.created_by,
@@ -98,30 +125,68 @@ export const manualProductionMethods = {
 
     this.db.exec("BEGIN IMMEDIATE TRANSACTION");
     try {
-      const already = this.findManualProductionByRequest(requestId);
-      if (already) {
-        this.db.exec("COMMIT");
-        return { entry: already, duplicate: true };
-      }
-      const variant = this.stockableVariant(input.articleSizeId, input.color);
-      const nowIso = new Date().toISOString();
-      const program = this.openMachineDayProgramInTransaction({ machineId: input.machineId, createdBy: input.createdBy, nowIso });
-      const id = this.insertManualProductionEntry({ requestId, variant, cartons: quantity.cartons, programId: program.id, storeLocationId, createdBy: input.createdBy, nowIso });
-      recordCartonStockMovement(this.db, {
-        variantId: variant.id,
-        eventType: CARTON_STOCK_EVENT_TYPE.MANUAL_PRODUCE,
-        cartons: quantity.cartons,
-        locationId: storeLocationId,
-        createdBy: input.createdBy,
-        createdAt: nowIso,
-        manualProductionEntryId: id,
-      });
+      const result = this.recordManualProductionInTransaction({ ...input, requestId, storeLocationId }, quantity.cartons, new Date().toISOString());
       this.db.exec("COMMIT");
-      return { entry: this.getManualProductionEntry(id), duplicate: false };
+      return result;
     } catch (error) {
       try { this.db.exec("ROLLBACK"); } catch { /* ignore missing transaction state */ }
       throw error;
     }
+  },
+
+  /**
+   * The Manual Production page's Save (docs/48): several lines, for one machine or several, in ONE transaction --
+   * every line is recorded or none is. Each line is exactly one recordManualProduction: its own entry number, its
+   * own movement, its machine's program for today. Each carries its own request id, so a Save retried after no
+   * answer returns the entries already made and adds nothing. A line that is refused refuses the whole Save, and
+   * its reason says which line.
+   */
+  recordManualProductionBatch(this: SqliteDatabase, input: ManualProductionBatchInput): ManualProductionBatchResult {
+    const storeLocationId = text(input.storeLocationId).trim();
+    if (!storeLocationId) throw new Error("This computer has no store set up to stock the cartons in.");
+    const lines = input.lines.map((line, index) => checkedBatchLine(line, index));
+    if (lines.length === 0) throw new Error("Add at least one quantity before saving.");
+    if (lines.length > MANUAL_PRODUCTION_MOST_LINES) throw new Error(`Save at most ${String(MANUAL_PRODUCTION_MOST_LINES)} lines at a time.`);
+    if (new Set(lines.map((line) => line.requestId)).size !== lines.length) throw new Error("This Save could not be identified. Press Save again.");
+
+    this.db.exec("BEGIN IMMEDIATE TRANSACTION");
+    try {
+      const nowIso = new Date().toISOString();
+      const results = lines.map((line) => {
+        try {
+          return this.recordManualProductionInTransaction({ ...line, storeLocationId, createdBy: input.createdBy }, line.cartons, nowIso);
+        } catch (error) {
+          throw new Error(`Line ${String(line.lineNo)}: ${error instanceof Error ? error.message : String(error)}`);
+        }
+      });
+      this.db.exec("COMMIT");
+      return { entries: results.map((result) => result.entry), duplicates: results.filter((result) => result.duplicate).length };
+    } catch (error) {
+      try { this.db.exec("ROLLBACK"); } catch { /* ignore missing transaction state */ }
+      throw error;
+    }
+  },
+
+  /**
+   * @internal One entry: the machine's program for today, the entry, its movement. A request id already used
+   * returns the entry it made. Call ONLY inside BEGIN IMMEDIATE, with the quantity already checked.
+   */
+  recordManualProductionInTransaction(this: SqliteDatabase, input: ManualProductionInput, cartons: number, nowIso: string): ManualProductionResult {
+    const already = this.findManualProductionByRequest(input.requestId);
+    if (already) return { entry: already, duplicate: true };
+    const variant = this.stockableVariant(input.articleSizeId, input.color);
+    const program = this.openMachineDayProgramInTransaction({ machineId: input.machineId, createdBy: input.createdBy, nowIso });
+    const id = this.insertManualProductionEntry({ requestId: input.requestId, variant, cartons, programId: program.id, storeLocationId: input.storeLocationId, createdBy: input.createdBy, nowIso });
+    recordCartonStockMovement(this.db, {
+      variantId: variant.id,
+      eventType: CARTON_STOCK_EVENT_TYPE.MANUAL_PRODUCE,
+      cartons,
+      locationId: input.storeLocationId,
+      createdBy: input.createdBy,
+      createdAt: nowIso,
+      manualProductionEntryId: id,
+    });
+    return { entry: this.getManualProductionEntry(id), duplicate: false };
   },
 
   /**

@@ -17,7 +17,7 @@ const IPC_DIR = path.resolve(__dirname, "ipc");
 const GUARDED_MODULES = [
   "rawMaterials", "rawMaterialQr", "store", "parties", "machinePrograms", "upperMoveOut", "syncWaiting", "backfill",
   // Carton stock (docs/42): Manual Production and gatepasses move the carton figure.
-  "manualProduction", "gatepass", "cartonStockAdjustments",
+  "manualProduction", "productionDay", "gatepass", "cartonStockAdjustments",
   // The production-to-cash workflow (docs/43): products, bills and cash vouchers replicate.
   "products", "sales", "cash",
   // Carton QR scanning: on hold in this release; sale returns are leased to the sales holder (docs/44 §6).
@@ -77,6 +77,8 @@ const READS = new Set([
   "getBackfillPlan",
   // manualProduction
   "listManualProduction",
+  // productionDay
+  "getProductionDay", "getProductionDayMark", "getManualProductionArticle",
   // gatepass
   "listGatepassStock", "listGatepassStoreStock", "getGatepass", "getGatepassByNumber", "countGatepassesByStage",
   "getGatepassJourney", "getGatepassDeliveryProof", "getGatepassScanProgress", "listGatepasses",
@@ -172,9 +174,12 @@ describe("lease classification", () => {
   });
 
   it("every movement of the carton figure needs the carton lease, and nothing else does (docs/42)", () => {
-    for (const channel of [IPC.recordManualProduction, IPC.voidManualProduction, IPC.adjustCartonStock]) {
+    for (const channel of [IPC.recordManualProduction, IPC.voidManualProduction, IPC.adjustCartonStock, IPC.saveManualProduction, IPC.completeProductionDay, IPC.editManualProduction]) {
       expect(leasesFor(channel)).toEqual([LEASE_DOMAIN.CARTON_STOCK]);
     }
+    expect(leasesFor(IPC.getProductionDay)).toEqual([]);
+    expect(leasesFor(IPC.getProductionDayMark)).toEqual([]);
+    expect(leasesFor(IPC.getManualProductionArticle)).toEqual([]);
     // A gatepass also needs the sales lease: it is a sales document, and it makes a bill (docs/43).
     for (const channel of [IPC.createGatepass, IPC.cancelGatepass]) {
       expect(leasesFor(channel)).toEqual([LEASE_DOMAIN.CARTON_STOCK, LEASE_DOMAIN.SALES_DISPATCH]);

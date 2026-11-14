@@ -14,6 +14,7 @@ import path from "node:path";
 import { IPC } from "../../shared/ipcChannels";
 import { PRINTER_ROLE } from "../../shared/printerRole";
 import { findSlipPrinter, slipPageSize } from "../slipPrinter";
+import { safePdfName, saveHtmlAsPdf, type SavePdfResult } from "../pdfFile";
 import type { IpcContext } from "./context";
 
 const MICRONS_PER_INCH = 25400;
@@ -95,5 +96,23 @@ export function registerPrintingHandlers(ctx: IpcContext): void {
       if (!printWindow.isDestroyed()) printWindow.destroy();
       try { fs.unlinkSync(tempHtmlPath); } catch { /* already removed */ }
     }
+  });
+
+  // "Download PDF": the renderer's document, saved as a PDF where the person chooses (pdfFile.ts). It writes a file
+  // the person picked, and nothing in the ERP, so it is open to anyone signed in, like printing.
+  ipcMain.handle(IPC.savePdfDocument, async (event, payload?: { html?: unknown; fileName?: unknown; landscape?: unknown }): Promise<SavePdfResult> => {
+    authorizer.requireUser(event);
+    if (typeof payload?.html !== "string" || payload.html.trim() === "") return { accepted: false, reason: "There is nothing to save." };
+    const result = await saveHtmlAsPdf({
+      parent: BrowserWindow.fromWebContents(event.sender) ?? undefined,
+      html: payload.html,
+      fileName: safePdfName(typeof payload.fileName === "string" ? payload.fileName : "", "document"),
+      scratchDir: paths.scratchDir,
+      landscape: payload.landscape === true,
+    });
+    if (!result.accepted && "reason" in result) {
+      logger.log({ module: "printing", severity: "WARNING", operation: "save-pdf", deviceId, message: `PDF not saved: ${result.reason}` });
+    }
+    return result;
   });
 }

@@ -26,3 +26,4 @@ export * from "./codes.js";
 export * from "./cartonStock.js";
 export * from "./cartonAdjustment.js";
 export * from "./colorTranslation.js";
+export * from "./productionDay.js";

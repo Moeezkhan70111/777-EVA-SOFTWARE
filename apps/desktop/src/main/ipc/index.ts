@@ -23,6 +23,7 @@ import { registerPrintingHandlers } from "./printing";
 import { registerContractorLedgerHandlers } from "./contractorLedger";
 import { registerUpperMoveOutHandlers } from "./upperMoveOut";
 import { registerManualProductionHandlers } from "./manualProduction";
+import { registerProductionDayHandlers } from "./productionDay";
 import { registerUpdateHandlers } from "./updates";
 import { installLeaseGate } from "../leaseGuard";
 import { registerLeaseHandlers } from "./leases";
@@ -64,6 +65,7 @@ export function registerIpcHandlers(ctx: IpcContext): void {
   registerContractorLedgerHandlers(ctx);
   registerUpperMoveOutHandlers(ctx);
   registerManualProductionHandlers(ctx);
+  registerProductionDayHandlers(ctx);
   registerUpdateHandlers(ctx);
   registerLeaseHandlers(ctx);
   registerSyncWaitingHandlers(ctx);

@@ -9953,3 +9953,154 @@ tr.has-error .gp-qty-stepper input { color: var(--err); }
 .sa-add-color { min-height: 44px; padding: 0 var(--space-3); font-weight: 700; }
 .sa-new-color { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; flex: 1 1 100%; }
 .sa-new-color .form-input { flex: 1 1 10rem; min-height: 40px; }
+
+/* ════════════════════════════ MANUAL PRODUCTION, DAILY PRODUCTION, THE DAY'S STATUS (docs/48, 14 Nov 2026) ════════════════════════════
+   In the Store page's palette: white cards on the sky, navy text, the blue of Move in for the main action, green only
+   for a finished day. */
+
+/* The way back to the Dashboard, beside the logo on every page but the Dashboard (PageHeader). */
+.page-head-start { justify-self: start; display: flex; align-items: center; gap: var(--space-3); min-width: 0; }
+.page-head-home {
+  display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 16px 0 8px;
+  border: 1px solid var(--sp-line); border-radius: 999px; background: var(--white); box-shadow: var(--sp-card-shadow);
+  color: var(--sp-navy-2); font: inherit; font-size: 14px; font-weight: 700; cursor: pointer; white-space: nowrap;
+  transition: border-color 120ms ease, box-shadow 120ms ease, transform 120ms ease;
+}
+.page-head-home:hover { border-color: var(--sp-blue-line); box-shadow: var(--sp-mode-shadow); transform: translateY(-1px); }
+.page-head-home:focus-visible { outline: 3px solid var(--sp-blue); outline-offset: 2px; }
+.page-head-home-icon { display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; border-radius: 999px; background: var(--sp-blue-soft); color: var(--sp-blue); }
+.page-head-home-icon svg { width: 17px; height: 17px; }
+
+/* Today's production: grey until the day is completed, then green. Said in words and with ○ / ✓ too. */
+.pd-status {
+  display: inline-flex; align-items: center; gap: 14px; min-height: 64px; padding: 12px 20px 12px 14px;
+  border: 1px solid var(--neutral-300); border-radius: 14px; background: var(--neutral-100); color: var(--neutral-700);
+  box-shadow: var(--sp-card-shadow); transition: background 240ms ease, border-color 240ms ease, color 240ms ease;
+}
+.pd-status-mark {
+  flex: none; display: inline-flex; align-items: center; justify-content: center; width: 40px; height: 40px;
+  border-radius: 999px; background: var(--white); color: var(--neutral-500); font-size: 20px; font-weight: 800;
+}
+.pd-status-text { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.pd-status-eyebrow { font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--neutral-600); }
+.pd-status-title { font-size: 18px; font-weight: 800; line-height: 1.2; }
+.pd-status-note { font-size: 13px; color: var(--neutral-600); }
+.pd-status.is-added { border-color: var(--success-line); background: var(--success-soft); color: var(--success-deep); }
+.pd-status.is-added .pd-status-mark { background: var(--sp-ready); color: var(--white); }
+.pd-status.is-added .pd-status-eyebrow, .pd-status.is-added .pd-status-note { color: var(--success-strong); }
+.pd-status.is-unknown { opacity: 0.8; }
+.pd-status--compact { min-height: 52px; padding: 8px 16px 8px 10px; }
+.pd-status--compact .pd-status-mark { width: 32px; height: 32px; font-size: 16px; }
+
+/* Carton Stock: the total and today's production side by side over the list. */
+.cs-overview { display: flex; flex-wrap: wrap; align-items: stretch; gap: 14px; }
+.cs-overview .kpi-card.cs-summary { align-self: stretch; }
+
+/* ── The Manual Production page ── */
+.mnp-page { display: flex; flex-direction: column; gap: 18px; font-family: var(--sp-font); color: var(--sp-navy); }
+.mnp-page .card { margin: 0; border: 1px solid var(--sp-line); border-radius: var(--dash-card-radius); box-shadow: var(--sp-card-shadow); background: var(--white); }
+.mnp-page .mpk-card { margin: 0; }
+.mnp-today {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 16px 20px; padding: 16px 20px;
+  border: 1px solid var(--sp-line); border-radius: var(--dash-card-radius); background: rgba(255, 255, 255, 0.75); box-shadow: var(--sp-card-shadow);
+}
+.mnp-today-figures { display: flex; flex-direction: column; gap: 2px; flex: 1 1 260px; min-width: 0; }
+.mnp-today-label { font-size: 12px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--sp-muted); }
+.mnp-today-value { font-size: 22px; font-weight: 800; color: var(--sp-navy); font-variant-numeric: tabular-nums; }
+.mnp-today-link { align-self: flex-start; padding-left: 0; color: var(--sp-blue); font-weight: 700; }
+.mnp-complete { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
+.mnp-complete-btn.btn {
+  min-height: 52px; padding: 0 22px; border: 0; border-radius: 12px; background: var(--sp-ready); color: var(--white);
+  font-size: 16px; font-weight: 800; box-shadow: 0 6px 16px rgba(22, 163, 74, 0.28);
+}
+.mnp-complete-btn.btn:hover:not(:disabled) { background: var(--success-strong); }
+.mnp-complete-btn.btn:disabled { background: var(--neutral-300); color: var(--neutral-600); box-shadow: none; }
+.mnp-complete .mnp-note { flex: none; max-width: 300px; text-align: right; }
+
+.mnp-card { display: flex; flex-direction: column; gap: 14px; padding: 20px 22px; }
+.mnp-card-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 18px; }
+.mnp-page .mpk-label, .mnp-card-title { display: inline-flex; align-items: center; gap: 12px; margin: 0; font-size: 19px; font-weight: 800; color: var(--sp-navy); }
+.mnp-article-pick { flex: 0 1 380px; min-width: 240px; }
+.mnp-article-pick .pv-item-combobox--panel .form-input {
+  height: 52px; padding-left: 16px; border: 2px solid var(--sp-blue-line); border-radius: 12px; background: var(--white);
+  color: var(--sp-navy); font-size: 17px; font-weight: 800;
+}
+.mnp-article-pick .pv-item-combobox--panel.is-open .form-input, .mnp-article-pick .pv-item-combobox--panel .form-input:focus-visible { border-color: var(--sp-blue); box-shadow: 0 0 0 4px color-mix(in srgb, var(--sp-blue) 14%, transparent); }
+.mnp-article-pick .pv-item-combobox--panel .form-input::placeholder { color: var(--sp-muted); font-weight: 600; }
+.mnp-hint { margin: 0; color: var(--sp-muted); font-size: 14px; }
+.mnp-hint--warn { padding: 10px 14px; border-radius: 10px; background: var(--warning-soft); color: var(--warning-deep); font-weight: 700; }
+.mnp-page .sa-grid thead th { background: var(--us-head); color: var(--sp-navy); }
+.mnp-page .sa-grid .sa-grid-size { color: var(--sp-navy-2); }
+.mnp-page .sa-cell .sa-qty { min-height: 44px; border-radius: 10px; font-size: 17px; font-weight: 700; }
+.mnp-page .sa-cell.is-typed { background: var(--sp-blue-wash); }
+.mnp-page .sa-cell.is-typed .sa-qty { border-color: var(--sp-blue); }
+.mnp-in-list { color: var(--sp-blue); font-weight: 700; }
+.mnp-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 10px 12px; }
+.mnp-actions .btn { min-height: 46px; border-radius: 10px; font-weight: 700; }
+.mnp-actions .btn-primary { padding: 0 22px; background: linear-gradient(90deg, var(--sp-mode-on-start), var(--sp-mode-on-end)); border: 0; box-shadow: var(--sp-mode-on-shadow); }
+.mnp-actions .btn-primary:disabled { background: var(--neutral-300); color: var(--neutral-600); box-shadow: none; }
+.mnp-note { flex: 1 1 260px; color: var(--sp-muted); font-size: 13px; }
+.mnp-typed { padding: 6px 12px; border-radius: 999px; background: var(--sp-blue-soft); color: var(--sp-navy-2); font-weight: 700; font-variant-numeric: tabular-nums; }
+
+.mnp-list-totals { padding: 6px 14px; border-radius: 999px; background: var(--us-head); color: var(--sp-navy); font-weight: 800; font-variant-numeric: tabular-nums; }
+.mnp-machine-block { border: 1px solid var(--sp-line); border-radius: 12px; overflow: hidden; }
+.mnp-machine-block .mnp-machine-name { margin: 0; padding: 10px 16px; background: var(--sp-ground); color: var(--sp-navy-2); font-size: 15px; font-weight: 800; }
+.mnp-lines { width: 100%; }
+.mnp-lines th, .mnp-lines td { padding: 8px 16px; }
+.mnp-colour { display: inline-flex; align-items: center; gap: 8px; }
+.mnp-remove-cell { text-align: right; width: 1%; white-space: nowrap; }
+
+/* ── The Daily Production page ── */
+.pd-page { font-family: var(--sp-font); color: var(--sp-navy); }
+.pd-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 14px; }
+.pd-head-day { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 18px; }
+.pd-day-picker { display: flex; align-items: center; gap: 8px; }
+.pd-day-picker .btn { min-height: 46px; border-radius: 10px; font-weight: 700; }
+.pd-day-step.btn { display: inline-flex; align-items: center; justify-content: center; width: 46px; padding: 0; font-size: 24px; line-height: 1; }
+.pd-day-field .form-input { min-height: 46px; border-radius: 10px; font-weight: 700; color: var(--sp-navy); }
+.pd-day-name { font-size: 22px; font-weight: 800; color: var(--sp-navy); }
+.pd-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 14px; }
+.pd-kpis .kpi-card.cs-summary { min-width: 0; align-self: stretch; }
+.pd-kpi--main.kpi-card.cs-summary { background: linear-gradient(135deg, var(--sp-mode-on-start), var(--sp-mode-on-end)); border-color: transparent; }
+.pd-kpi--main.cs-summary .kpi-label, .pd-kpi--main.cs-summary .kpi-value { color: var(--white); }
+.pd-tabs { margin-top: 4px; }
+.pd-panel { display: flex; flex-direction: column; gap: 14px; }
+.pd-machine-line { margin: 0; color: var(--sp-muted); font-weight: 700; }
+.pd-foot-note { margin: 0; color: var(--sp-muted); font-size: 13px; }
+
+@media (max-width: 760px) {
+  .page-head-home { padding: 0 8px; }
+  .page-head-home { font-size: 0; gap: 0; }
+  .page-head-home-icon { width: 30px; height: 30px; }
+  .mnp-complete { align-items: stretch; flex: 1 1 100%; }
+  .mnp-complete .mnp-note { text-align: left; max-width: none; }
+  .mnp-article-pick { flex: 1 1 100%; }
+  .pd-day-name { font-size: 18px; }
+}
+
+/* ── Manual Production: today's production as matrices, Edit, Download PDF (TodayProduction, EditProductionDialog,
+      ProductionPdfButton). The matrices are the shared Carton Stock cards; these only place them and the controls. ── */
+.mpe-production { display: flex; flex-direction: column; gap: 18px; }
+.mpe-day-actions { display: flex; justify-content: flex-end; }
+.mpe-machine { display: flex; flex-direction: column; gap: 12px; }
+.mpe-machine-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+  padding-bottom: 6px; border-bottom: 1px solid var(--sp-line);
+}
+.mpe-machine-name { margin: 0; font-size: 18px; font-weight: 800; color: var(--sp-navy); }
+/* A card with a control under its name (only when a page gives one: Carton Stock's cards are unchanged). */
+.cs-article-head { display: flex; flex-direction: column; border-right: 1px solid var(--sp-line); background: var(--sp-ground); }
+.carton-stock-page .cs-article-head .cs-article-name { flex: 1; border-right: 0; }
+.cs-article-action { display: flex; justify-content: center; padding: 0 12px 14px; }
+.cs-articles--stacked .cs-article-head { flex-direction: row; align-items: center; justify-content: space-between; border-right: 0; border-bottom: 1px solid var(--sp-line); }
+.carton-stock-page .cs-articles--stacked .cs-article-head .cs-article-name { border-bottom: 0; }
+.cs-articles--stacked .cs-article-action { padding: 0 16px; }
+.pd-tabs-row { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.pd-pdf-button { min-height: 44px; }
+.mpe-changes {
+  display: flex; flex-direction: column; gap: 6px; margin-top: 14px; padding: 12px 14px;
+  border: 1px solid var(--sp-line); border-radius: 12px; background: var(--sp-ground);
+}
+.mpe-changes-title { font-size: 12px; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; color: var(--sp-navy-2); }
+.mpe-changes ul { margin: 0; padding-left: 18px; }
+.mpe-changes-none { color: var(--sp-muted); }

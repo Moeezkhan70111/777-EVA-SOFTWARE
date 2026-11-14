@@ -36,7 +36,8 @@ export type MasterRecordType =
   | typeof SYNC_AGGREGATE.GATEPASS
   | typeof SYNC_AGGREGATE.SALE_VOUCHER
   | typeof SYNC_AGGREGATE.CASH_VOUCHER
-  | typeof SYNC_AGGREGATE.CARTON_STOCK_ADJUSTMENT;
+  | typeof SYNC_AGGREGATE.CARTON_STOCK_ADJUSTMENT
+  | typeof SYNC_AGGREGATE.PRODUCTION_DAY;
 
 /** A column naming another record that must be on this computer before this row can be written. */
 export interface RecordReference {
@@ -98,6 +99,7 @@ export const MASTER_RECORD_TYPES: readonly MasterRecordType[] = [
   SYNC_AGGREGATE.SALE_VOUCHER,
   SYNC_AGGREGATE.CASH_VOUCHER,
   SYNC_AGGREGATE.CARTON_STOCK_ADJUSTMENT,
+  SYNC_AGGREGATE.PRODUCTION_DAY,
 ];
 
 export const MASTER_RECORDS: Readonly<Record<MasterRecordType, RecordTableSpec>> = {
@@ -206,6 +208,8 @@ export const MASTER_RECORDS: Readonly<Record<MasterRecordType, RecordTableSpec>>
     table: "carton_stock_adjustments",
     children: [{ table: "carton_stock_adjustment_lines", parentColumn: "adjustment_id", references: [variantRef] }],
   },
+  // A completed production day (docs/48): one row, referring to nothing. It is a mark, not stock.
+  [SYNC_AGGREGATE.PRODUCTION_DAY]: { table: "production_days" },
 };
 
 export const isMasterRecordType = (value: string): value is MasterRecordType =>

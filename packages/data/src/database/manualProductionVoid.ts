@@ -38,7 +38,7 @@ export interface VoidManualProductionInput {
   mayVoidEarlierDays: boolean;
 }
 
-interface EntryToVoid {
+export interface EntryToVoid {
   id: string;
   code: string;
   variantId: string;
@@ -68,25 +68,35 @@ export const manualProductionVoidMethods = {
       if (enteredOn !== businessDateOf(nowIso) && !input.mayVoidEarlierDays) {
         throw new Error(`${entry.code} was entered on ${enteredOn}. Only an administrator can void an entry from an earlier day.`);
       }
-      this.refuseVoidIfCartonsGone(entry);
-      this.db
-        .prepare("UPDATE manual_production_entries SET voided_at = ?, voided_by = ?, void_reason = ? WHERE id = ? AND voided_at IS NULL")
-        .run(nowIso, input.voidedBy, reason, entry.id);
-      recordCartonStockMovement(this.db, {
-        variantId: entry.variantId,
-        eventType: CARTON_STOCK_EVENT_TYPE.MANUAL_PRODUCTION_VOID,
-        cartons: entry.cartons,
-        locationId: entry.locationId,
-        createdBy: input.voidedBy,
-        createdAt: nowIso,
-        manualProductionEntryId: entry.id,
-      });
+      this.voidManualEntryInTransaction(entry, { reason, voidedBy: input.voidedBy, nowIso });
       this.db.exec("COMMIT");
       return this.getManualProductionEntry(entry.id);
     } catch (error) {
       try { this.db.exec("ROLLBACK"); } catch { /* ignore missing transaction state */ }
       throw error;
     }
+  },
+
+  /**
+   * @internal The void itself, shared by Void and by an edit (manualProductionEdit.ts): the cartons must still be in
+   * the store, the entry is marked voided with who and why, and one MANUAL_PRODUCTION_VOID movement takes its cartons
+   * out. Call ONLY inside BEGIN IMMEDIATE, with the entry live and the caller's own day rule already applied.
+   */
+  voidManualEntryInTransaction(this: SqliteDatabase, entry: EntryToVoid, input: { reason: string; voidedBy: string | null; nowIso: string }): void {
+    this.refuseVoidBeforeFreshStart(entry);
+    this.refuseVoidIfCartonsGone(entry);
+    this.db
+      .prepare("UPDATE manual_production_entries SET voided_at = ?, voided_by = ?, void_reason = ? WHERE id = ? AND voided_at IS NULL")
+      .run(input.nowIso, input.voidedBy, input.reason, entry.id);
+    recordCartonStockMovement(this.db, {
+      variantId: entry.variantId,
+      eventType: CARTON_STOCK_EVENT_TYPE.MANUAL_PRODUCTION_VOID,
+      cartons: entry.cartons,
+      locationId: entry.locationId,
+      createdBy: input.voidedBy,
+      createdAt: input.nowIso,
+      manualProductionEntryId: entry.id,
+    });
   },
 
   /**
