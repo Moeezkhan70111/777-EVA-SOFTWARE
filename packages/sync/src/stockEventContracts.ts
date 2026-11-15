@@ -12,7 +12,9 @@
 //
 //   * a balance kept here in a different unit than the event's. The store PC never records an
 //     event in another unit than its balance, so this means a unit correction (docs/37 W.5, not
-//     replicated yet) -- adding the quantity anyway would mix units in one number.
+//     replicated yet) -- adding the quantity anyway would mix units in one number. Where this
+//     balance is certainly a mirror of the store's, the correction is repeated here instead
+//     (followUnitCorrection); otherwise it waits.
 //   * nothing else. A Dana issue's machine program is NOT waited for: programs do not replicate yet
 //     (W.6), so the event is stored without the link and the program's id is kept aside
 //     (pending_machine_program_id, migration 097) until they do.
@@ -43,6 +45,40 @@ export const stockEventContract = defineContract({
   write: (sql, event, replicatedAt) => withCaptureSuppressed(sql as CaptureHandle, () => writeStockEvent(sql, event, replicatedAt)),
   conflict: eventConflict,
 });
+
+/**
+ * The store's "Correct unit" (correctInventoryItemUnit) re-states a material in another unit WITHOUT
+ * converting a figure -- 5 CAN becomes 5 PIECES -- and re-stamps its balance and movements. Only the
+ * material's new unit replicates; the re-stamp does not (W.5). A reader then holds the old unit
+ * while the store's next movement arrives in the new one, and would wait for ever (PAPER TAP,
+ * RM-001247: corrected CAN -> PIECES on 6 Nov 2026, its 13 Nov move out parked on PC1 and PC3).
+ *
+ * This repeats that re-stamp here, but only where it is certainly the same correction:
+ *   * the material here already carries the movement's unit -- its corrected record has arrived;
+ *   * every other movement here for it came from the store (replicated_at) in the balance's unit,
+ *     so this balance is purely a mirror of the store's, never a figure counted here.
+ * The store never converts a balance when its unit changes, so re-stamping changes no quantity.
+ * Anything else still waits: a balance this computer counted itself must not be re-labelled.
+ */
+function followUnitCorrection(sql: SyncSqlHandle, event: StockEventPayload, balanceUnitId: string, replicatedAt: string): boolean {
+  const item = asRow(sql.prepare("SELECT default_unit_id FROM inventory_items WHERE id = ?").get(event.itemId));
+  if (item === null || item.default_unit_id !== event.unitId) return false;
+  const others = asRow(
+    sql
+      .prepare(
+        `SELECT COUNT(*) AS total,
+                SUM(CASE WHEN replicated_at IS NOT NULL AND unit_id = ? THEN 1 ELSE 0 END) AS mirrored
+         FROM inventory_stock_events WHERE item_id = ? AND id <> ?`
+      )
+      .get(balanceUnitId, event.itemId, event.eventId)
+  );
+  const total = Number(others?.total ?? 0);
+  if (total === 0 || Number(others?.mirrored ?? 0) !== total) return false;
+
+  sql.prepare("UPDATE inventory_stock_balances SET unit_id = ?, updated_at = ? WHERE item_id = ?").run(event.unitId, replicatedAt, event.itemId);
+  sql.prepare("UPDATE inventory_stock_events SET unit_id = ? WHERE item_id = ?").run(event.unitId, event.itemId);
+  return true;
+}
 
 function writeStockEvent(sql: SyncSqlHandle, event: StockEventPayload, replicatedAt: string): boolean {
   const programHere =
@@ -75,7 +111,7 @@ function writeStockEvent(sql: SyncSqlHandle, event: StockEventPayload, replicate
   if (!inserted) return false;
 
   const balance = asRow(sql.prepare("SELECT unit_id FROM inventory_stock_balances WHERE item_id = ?").get(event.itemId));
-  if (balance !== null && balance.unit_id !== event.unitId) {
+  if (balance !== null && balance.unit_id !== event.unitId && !followUnitCorrection(sql, event, String(balance.unit_id), replicatedAt)) {
     throw new ApplyMustWait(`STOCK_UNIT_DIFFERS:${event.itemId}`);
   }
   sql

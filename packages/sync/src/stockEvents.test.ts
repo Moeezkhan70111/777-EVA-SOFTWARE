@@ -155,6 +155,64 @@ test("a balance kept here in another unit waits rather than mixing units, and wr
   }
 });
 
+const unitHere = (pc: Pc, table: "inventory_stock_balances" | "inventory_stock_events"): string[] =>
+  (pc.db.db.prepare(`SELECT DISTINCT unit_id AS u FROM ${table} WHERE item_id = 'i-1'`).all() as Array<{ u: string }>).map((row) => row.u);
+
+test("after the store's unit correction, its next movement follows the correction here instead of waiting for ever", () => {
+  const holder = openHolder();
+  const reader = openPc("reader");
+  try {
+    record(holder, "e-open", "RECEIVE", 5, 5);
+    const before = sent(holder);
+    receiveMaterial(reader, before);
+    assert.equal(apply(reader, before.get("STOCK_EVENT:e-open")).status, "APPLIED");
+
+    // On the store: 5 KG were really 5 PIECES (PAPER TAP, 6 Nov 2026), then 2 PIECES move out.
+    run(holder, "INSERT INTO inventory_units (id, code, name, created_at, updated_at) VALUES ('u-pc', 'PIECES', 'Pieces', ?, ?)", NOW, NOW);
+    holder.db.correctInventoryItemUnit({ itemId: "i-1", unitId: "u-pc", reason: "entered in the wrong unit" });
+    run(holder, "INSERT INTO inventory_stock_events (id, item_id, event_type, quantity, unit_id, note, created_at) VALUES ('e-out', 'i-1', 'TRANSFER_OUT', -2, 'u-pc', 'test', ?)", NOW);
+    run(holder, "UPDATE inventory_stock_balances SET quantity_on_hand = quantity_on_hand - 2 WHERE item_id = 'i-1'");
+    const after = sent(holder);
+
+    assert.equal(apply(reader, after.get("INVENTORY_UNIT:u-pc:1")).status, "APPLIED");
+    const early = apply(reader, after.get("STOCK_EVENT:e-out"));
+    assert.deepEqual([early.status, early.reason], ["REJECTED", "STOCK_UNIT_DIFFERS:i-1"], "before the corrected material arrives, it waits");
+    assert.equal(apply(reader, after.get("INVENTORY_ITEM:i-1:2")).status, "APPLIED");
+    assert.equal(apply(reader, after.get("STOCK_EVENT:e-out")).status, "APPLIED");
+
+    assert.equal(balance(reader), 3, "5 - 2: no figure converted");
+    assert.equal(balance(reader), balance(holder));
+    assert.deepEqual(unitHere(reader, "inventory_stock_balances"), ["u-pc"]);
+    assert.deepEqual(unitHere(reader, "inventory_stock_events"), ["u-pc"], "re-stamped as the store re-stamped its own");
+    assert.equal(marks(reader), 0, "the repeated correction is not the reader's own to send");
+  } finally {
+    holder.close();
+    reader.close();
+  }
+});
+
+test("a balance counted on this computer is never re-labelled to follow a unit change: it waits", () => {
+  const holder = openHolder();
+  const reader = openPc("reader");
+  try {
+    receiveMaterial(reader, sent(holder));
+    run(reader, "INSERT INTO inventory_units (id, code, name, created_at, updated_at) VALUES ('u-g', 'G', 'Gram', ?, ?)", NOW, NOW);
+    record(reader, "e-local", "RECEIVE", 4, 4); // counted here: no replicated_at
+    run(reader, "UPDATE inventory_items SET default_unit_id = 'u-g' WHERE id = 'i-1'");
+    const moved = {
+      eventId: "e-g", itemId: "i-1", eventType: "RECEIVE", quantity: 500, unitId: "u-g", note: null, createdBy: null,
+      createdAt: NOW, partyId: null, machineProgramId: null, balanceDelta: 500,
+    };
+    const outcome = apply(reader, envelope("STOCK_EVENT", "e-g", moved));
+    assert.deepEqual([outcome.status, outcome.reason, outcome.permanent], ["REJECTED", "STOCK_UNIT_DIFFERS:i-1", false]);
+    assert.equal(balance(reader), 4);
+    assert.deepEqual(unitHere(reader, "inventory_stock_balances"), ["u-kg"], "nothing re-labelled");
+  } finally {
+    holder.close();
+    reader.close();
+  }
+});
+
 test("a Dana issue keeps its machine program aside where programs are not, and another movement under its id is refused", () => {
   const holder = openHolder();
   const reader = openPc("reader");
