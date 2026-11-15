@@ -18,6 +18,8 @@ const GUARDED_MODULES = [
   "rawMaterials", "rawMaterialQr", "store", "parties", "machinePrograms", "upperMoveOut", "syncWaiting", "backfill",
   // Carton stock (docs/42): Manual Production and gatepasses move the carton figure.
   "manualProduction", "productionDay", "gatepass", "cartonStockAdjustments",
+  // Move In vouchers (docs/49): a voucher moves the raw-material balance.
+  "handVouchers",
   // The production-to-cash workflow (docs/43): products, bills and cash vouchers replicate.
   "products", "sales", "cash",
   // Carton QR scanning: on hold in this release; sale returns are leased to the sales holder (docs/44 §6).
@@ -69,6 +71,8 @@ const READS = new Set([
   "listColorTranslations",
   // cartonStockAdjustments
   "getCartonAdjustmentArticle", "listCartonStockAdjustments",
+  // handVouchers
+  "getHandVoucher",
   // manualProduction
   "getCartonStockReconciliation", "getCartonStockMatrix",
   // syncWaiting

@@ -1,12 +1,14 @@
 import React, { useId, useState } from "react";
 import type { UpperMatrixArticle } from "@erp/domain";
 import { ColorSwatch } from "../../components/shared/ColorSwatch";
+import { ColourName } from "../colorTranslation/ColourName";
 import { copy } from "../../config/copy";
 import { NAV_ICONS, RAIL_ICONS } from "../navigation/NavIcons";
 import { categoryLabel, cellText, stockPillText } from "./upperStock";
 
 // One article's stock on its own card: its name, its kind and what it holds across the head, then
-// Size down the side, its own colours across the top, a Total per size, and one grand total. There
+// Size down the side, its own colours across the top (in Urdu, from the shared colour list), a Total per size, and
+// one grand total. There
 // is deliberately no total per colour. The head stays when the card is folded shut, so an article
 // and its total can still be read with the table away.
 //
@@ -49,7 +51,7 @@ export const UpperMatrix: React.FC<{ article: UpperMatrixArticle }> = ({ article
                 <th scope="col" key={colour}>
                   <span className="us-colour">
                     {colour ? <ColorSwatch color={colour} className="us-swatch" /> : null}
-                    {colour || copy.upperStock.noColour}
+                    {colour ? <ColourName colour={colour} /> : copy.upperStock.noColour}
                   </span>
                 </th>
               ))}

@@ -9851,6 +9851,7 @@ tr.has-error .gp-qty-stepper input { color: var(--err); }
 }
 .cs-skeleton--search { flex: 1 1 360px; min-height: 52px; border-radius: 12px; }
 .cs-skeleton--picker { flex: 0 0 220px; min-height: 52px; border-radius: 12px; }
+.cs-skeleton--summary { flex: 0 0 280px; min-height: 92px; border-radius: 14px; }
 .cs-skeleton--title { width: 60%; height: 30px; background-image: linear-gradient(90deg, var(--us-chip) 0%, var(--us-head) 50%, var(--us-chip) 100%); }
 .cs-skeleton--pill { flex: 0 0 96px; height: 24px; }
 .cs-skeleton--cell { flex: 1; height: 16px; }
@@ -9971,30 +9972,60 @@ tr.has-error .gp-qty-stepper input { color: var(--err); }
 .page-head-home-icon { display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; border-radius: 999px; background: var(--sp-blue-soft); color: var(--sp-blue); }
 .page-head-home-icon svg { width: 17px; height: 17px; }
 
-/* Today's production: grey until the day is completed, then green. Said in words and with ○ / ✓ too. */
+/* Today's production: a quiet one-line pill, grey until the day is completed, then green text. Said in words and
+   with ○ / ✓ too. It is there to check, not to catch the eye (owner, 15 Nov 2026). */
 .pd-status {
-  display: inline-flex; align-items: center; gap: 14px; min-height: 64px; padding: 12px 20px 12px 14px;
-  border: 1px solid var(--neutral-300); border-radius: 14px; background: var(--neutral-100); color: var(--neutral-700);
-  box-shadow: var(--sp-card-shadow); transition: background 240ms ease, border-color 240ms ease, color 240ms ease;
+  display: inline-flex; align-self: center; align-items: center; min-height: 32px; padding: 4px 12px 4px 6px; cursor: default;
+  border: 1px solid var(--neutral-200); border-radius: 999px; background: var(--white); color: var(--neutral-600);
+  font-size: 13px; line-height: 1.3; white-space: nowrap; transition: color 240ms ease, border-color 240ms ease;
 }
 .pd-status-mark {
-  flex: none; display: inline-flex; align-items: center; justify-content: center; width: 40px; height: 40px;
-  border-radius: 999px; background: var(--white); color: var(--neutral-500); font-size: 20px; font-weight: 800;
+  flex: none; display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px;
+  border-radius: 999px; color: var(--neutral-500); font-size: 12px; font-weight: 700;
 }
-.pd-status-text { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
-.pd-status-eyebrow { font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--neutral-600); }
-.pd-status-title { font-size: 18px; font-weight: 800; line-height: 1.2; }
-.pd-status-note { font-size: 13px; color: var(--neutral-600); }
-.pd-status.is-added { border-color: var(--success-line); background: var(--success-soft); color: var(--success-deep); }
+/* Collapsed to the mark and the words; hovering or focusing slides the when-and-who open. */
+.pd-status-mark { margin-right: 8px; }
+.pd-status-body {
+  display: inline-flex; align-items: center; max-width: 0; overflow: hidden; opacity: 0; white-space: nowrap;
+  transition: max-width 260ms ease, opacity 180ms ease, margin 260ms ease;
+}
+.pd-status:hover .pd-status-body, .pd-status:focus-visible .pd-status-body { max-width: 400px; margin-left: 8px; opacity: 1; }
+.pd-status:focus-visible { outline: 3px solid var(--sp-blue); outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) { .pd-status-body { transition: none; } }
+.pd-status-title { font-weight: 600; }
+.pd-status-note { color: var(--neutral-500); }
+.pd-status-note::before { content: "·"; margin-right: 8px; }
+.pd-status.is-added { border-color: var(--success-line); color: var(--success-strong); }
 .pd-status.is-added .pd-status-mark { background: var(--sp-ready); color: var(--white); }
-.pd-status.is-added .pd-status-eyebrow, .pd-status.is-added .pd-status-note { color: var(--success-strong); }
 .pd-status.is-unknown { opacity: 0.8; }
-.pd-status--compact { min-height: 52px; padding: 8px 16px 8px 10px; }
-.pd-status--compact .pd-status-mark { width: 32px; height: 32px; font-size: 16px; }
 
 /* Carton Stock: the total and today's production side by side over the list. */
 .cs-overview { display: flex; flex-wrap: wrap; align-items: stretch; gap: 14px; }
 .cs-overview .kpi-card.cs-summary { align-self: stretch; }
+
+/* A page's main total (Carton Stock, Daily Production): the Store page's blue, white figures. */
+.kpi-card.cs-summary.cs-summary--hero {
+  border-color: transparent; background: linear-gradient(135deg, var(--sp-mode-on-start), var(--sp-mode-on-end));
+  box-shadow: var(--sp-mode-on-shadow);
+}
+.cs-summary--hero .kpi-label, .cs-summary--hero .kpi-value { color: var(--white); }
+.cs-summary--hero .kpi-label { opacity: 0.9; letter-spacing: 0.06em; }
+.cs-summary.cs-summary--hero .text-muted { color: rgba(255, 255, 255, 0.85); }
+
+/* Today's production as a card beside the total: never collapsed, light grey until added, then light green. */
+.pd-status.pd-status--card {
+  align-self: stretch; align-items: center; gap: 14px; min-width: 280px; padding: 14px 22px 14px 16px;
+  border-radius: 14px; border-color: var(--neutral-300); background: var(--neutral-100); color: var(--neutral-700);
+  font-size: 14px; white-space: normal; box-shadow: var(--sp-card-shadow); transition: background 240ms ease, border-color 240ms ease;
+}
+.pd-status--card .pd-status-mark { width: 40px; height: 40px; margin: 0; background: var(--white); font-size: 20px; font-weight: 800; }
+.pd-status--card .pd-status-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.pd-status--card .pd-status-eyebrow { font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--neutral-500); }
+.pd-status--card .pd-status-title { font-size: 17px; font-weight: 800; line-height: 1.25; }
+.pd-status--card .pd-status-note { font-size: 13px; color: var(--neutral-600); }
+.pd-status--card .pd-status-note::before { content: none; }
+.pd-status--card.is-added { border-color: var(--success-line); background: var(--success-soft); color: var(--success-deep); }
+.pd-status--card.is-added .pd-status-eyebrow, .pd-status--card.is-added .pd-status-note { color: var(--success-strong); }
 
 /* ── The Manual Production page ── */
 .mnp-page { display: flex; flex-direction: column; gap: 18px; font-family: var(--sp-font); color: var(--sp-navy); }
@@ -10061,12 +10092,42 @@ tr.has-error .gp-qty-stepper input { color: var(--err); }
 .pd-day-name { font-size: 22px; font-weight: 800; color: var(--sp-navy); }
 .pd-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 14px; }
 .pd-kpis .kpi-card.cs-summary { min-width: 0; align-self: stretch; }
-.pd-kpi--main.kpi-card.cs-summary { background: linear-gradient(135deg, var(--sp-mode-on-start), var(--sp-mode-on-end)); border-color: transparent; }
-.pd-kpi--main.cs-summary .kpi-label, .pd-kpi--main.cs-summary .kpi-value { color: var(--white); }
-.pd-tabs { margin-top: 4px; }
+/* The total, then one card per machine (MachinePicker), styled like the Store page's In / Out buttons: white cards
+   with an icon tile that lift on hover; the chosen one in the same blue gradient, white text and a ✓. */
+.pd-kpis { grid-template-columns: minmax(200px, 260px) 1fr; align-items: center; }
+.pd-machines { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 10px; min-width: 0; }
+.pd-machine {
+  position: relative; display: flex; align-items: center; gap: 12px; min-height: 64px; padding: 10px 36px 10px 12px;
+  text-align: left; cursor: pointer; border: 1px solid var(--sp-line); border-radius: var(--sp-radius-mode);
+  background: var(--white); color: var(--sp-navy); font: inherit; box-shadow: var(--sp-card-shadow);
+  transition: background 200ms ease, border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease, color 160ms ease;
+}
+.pd-machine:not(.is-selected):hover { border-color: var(--sp-blue-line); box-shadow: var(--sp-mode-shadow); transform: translateY(-2px); }
+.pd-machine:active { transform: translateY(0); }
+.pd-machine:focus-visible { outline: 3px solid var(--sp-navy-2); outline-offset: 2px; }
+.pd-machine-icon {
+  flex: none; display: inline-flex; align-items: center; justify-content: center; width: 38px; height: 38px;
+  border-radius: var(--sp-radius-control); background: var(--sp-blue-soft); color: var(--sp-blue);
+  transition: background 160ms ease, color 160ms ease;
+}
+.pd-machine-icon svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.pd-machine-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.pd-machine-name { overflow: hidden; font-size: 15px; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
+.pd-machine-dozens { font-size: 12px; font-weight: 600; color: var(--sp-muted); }
+.pd-machine-mark {
+  position: absolute; top: 50%; right: 12px; transform: translateY(-50%); display: inline-flex; align-items: center;
+  justify-content: center; width: 20px; height: 20px; border-radius: 999px; background: rgba(255, 255, 255, 0.24);
+  color: var(--white); font-size: 12px; font-weight: 800;
+}
+.pd-machine.is-selected {
+  border-color: transparent; color: var(--white);
+  background: linear-gradient(90deg, var(--sp-mode-on-start), var(--sp-mode-on-end)); box-shadow: var(--sp-mode-on-shadow);
+}
+.pd-machine.is-selected .pd-machine-icon { background: rgba(255, 255, 255, 0.2); color: var(--white); }
+.pd-machine.is-selected .pd-machine-dozens { color: rgba(255, 255, 255, 0.88); }
+@media (prefers-reduced-motion: reduce) { .pd-machine, .pd-machine-icon { transition: none; } .pd-machine:hover { transform: none; } }
+@media (max-width: 760px) { .pd-kpis { grid-template-columns: 1fr; } }
 .pd-panel { display: flex; flex-direction: column; gap: 14px; }
-.pd-machine-line { margin: 0; color: var(--sp-muted); font-weight: 700; }
-.pd-foot-note { margin: 0; color: var(--sp-muted); font-size: 13px; }
 
 @media (max-width: 760px) {
   .page-head-home { padding: 0 8px; }
@@ -10095,8 +10156,19 @@ tr.has-error .gp-qty-stepper input { color: var(--err); }
 .cs-articles--stacked .cs-article-head { flex-direction: row; align-items: center; justify-content: space-between; border-right: 0; border-bottom: 1px solid var(--sp-line); }
 .carton-stock-page .cs-articles--stacked .cs-article-head .cs-article-name { border-bottom: 0; }
 .cs-articles--stacked .cs-article-action { padding: 0 16px; }
-.pd-tabs-row { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
-.pd-pdf-button { min-height: 44px; }
+.pd-tabs-row { display: flex; align-items: center; justify-content: flex-end; gap: 12px; flex-wrap: wrap; }
+/* Export PDF: solid navy (the sidebar's active colour), white text and icon, so it stands off the page without
+   competing with the blue machine cards (every page that has one). */
+.btn.pd-pdf-button {
+  display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 18px; border-radius: var(--sp-radius-control);
+  border: 1px solid var(--sp-navy-2); background: var(--sp-navy-2); color: var(--white); font-weight: 700;
+  box-shadow: var(--sp-card-shadow); transition: background 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+}
+.btn.pd-pdf-button:hover:not(:disabled) {
+  border-color: var(--sp-navy); background: var(--sp-navy); color: var(--white); box-shadow: var(--sp-mode-shadow); transform: translateY(-1px);
+}
+.btn.pd-pdf-button:focus-visible { outline: 3px solid var(--sp-blue); outline-offset: 2px; }
+.pd-pdf-icon { flex: none; width: 18px; height: 18px; }
 .mpe-changes {
   display: flex; flex-direction: column; gap: 6px; margin-top: 14px; padding: 12px 14px;
   border: 1px solid var(--sp-line); border-radius: 12px; background: var(--sp-ground);
@@ -10104,3 +10176,127 @@ tr.has-error .gp-qty-stepper input { color: var(--err); }
 .mpe-changes-title { font-size: 12px; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; color: var(--sp-navy-2); }
 .mpe-changes ul { margin: 0; padding-left: 18px; }
 .mpe-changes-none { color: var(--sp-muted); }
+
+/* ── Store > Receiving > By hand: the Move In voucher (StoreInVoucherPanel, docs/49). Several materials from one
+      supplier as one numbered voucher. The pager is the shared .gp-nav; the fields are the hand move's own .mo-*
+      labels; only the line grid and the stored voucher's layout are new. Tokens only (R3). Mobile first: a line
+      stacks on a narrow screen and sits on one row from 900px. ── */
+.siv-panel { display: flex; flex-direction: column; gap: 14px; padding: 12px 14px 14px; container-type: inline-size; }
+.siv-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.siv-new { min-height: 44px; }
+
+.siv-form { display: flex; flex-direction: column; }
+.siv-head-fields { display: flex; flex-wrap: wrap; gap: 12px 24px; align-items: flex-end; }
+.siv-field { display: flex; flex-direction: column; min-width: 0; }
+.siv-field--supplier { flex: 1 1 320px; max-width: 560px; }
+.siv-field--date { flex: 0 0 auto; }
+.siv-date { display: inline-flex; align-items: center; min-height: 44px; font-size: .95rem; font-weight: 800; color: var(--foreground); }
+
+.siv-lines { display: flex; flex-direction: column; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.siv-line {
+  display: grid; grid-template-columns: 24px minmax(0, 1fr) minmax(0, 1fr) 44px;
+  grid-template-areas: "no material material remove" ". qty unit ." ". equals equals .";
+  gap: 8px; align-items: center; padding: 8px 10px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg);
+}
+.siv-line.has-problem { border-color: var(--danger); }
+.siv-line-no { grid-area: no; font-size: .8rem; font-weight: 800; color: var(--text-3); font-variant-numeric: tabular-nums; text-align: center; }
+.siv-line-material { grid-area: material; min-width: 0; }
+.siv-line .siv-line-qty { grid-area: qty; min-height: 44px; font-weight: 800; text-align: right; font-variant-numeric: tabular-nums; }
+.siv-line .siv-line-unit { grid-area: unit; min-height: 44px; font-weight: 700; }
+.siv-line-equals { grid-area: equals; font-size: .84rem; color: var(--text-2); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.siv-line-remove {
+  grid-area: remove; width: 44px; height: 44px; cursor: pointer;
+  background: transparent; border: 1px solid var(--border); border-radius: var(--radius-md);
+  font: inherit; font-size: .9rem; font-weight: 800; color: var(--text-3);
+}
+.siv-line-remove:hover:not(:disabled) { border-color: var(--danger); color: var(--danger); }
+.siv-line-remove:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+.siv-line-remove:disabled { cursor: default; opacity: .35; }
+.siv-line-problem { grid-column: 2 / -1; margin: 0; font-size: .8rem; font-weight: 700; color: var(--danger); }
+.siv-commit { gap: 10px; }
+
+/* The pane, not the window, decides: the By hand pane is narrow beside the scan rail. */
+@container (min-width: 760px) {
+  .siv-line { grid-template-columns: 24px minmax(220px, 1fr) 110px 110px 130px 44px; grid-template-areas: "no material qty unit equals remove"; }
+}
+
+.siv-details { display: flex; flex-direction: column; gap: 8px; }
+.siv-details-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.siv-details-title { display: flex; align-items: center; gap: 10px; }
+.siv-code { margin: 0; font-family: Consolas, "Courier New", monospace; font-size: 1.15rem; font-weight: 800; color: var(--primary-blue); }
+.siv-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.siv-actions .btn { min-height: 44px; }
+.siv-meta { margin: 0; font-size: .86rem; color: var(--text-2); }
+.siv-table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: var(--radius-lg); }
+.siv-table .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+/* ── PAGE IDENTITY (owner, 15 Nov 2026: "every card page is looking the same"). A page opened from a Dashboard card
+      wears that card's colour and picture (features/navigation/pageIdentity.ts), so it is known at a glance:
+        Carton Stock  blue     Upper Stock  violet     Dana Stock  green     Daily Production  teal
+      Each tone redefines the tokens these pages are already drawn with -- the title, its rule, the sky, the matrix
+      heads, chips, totals and bands, the size pills, the summary card -- so nothing on the pages themselves changes,
+      and every other page keeps the store blue. The tokens are set on .app-main, which holds the header and the page.
+      --app-ground-top is mixed from --sp-sky-top at :root, so each tone mixes it again. Carton Stock keeps the
+      store blue the tokens already hold. ── */
+.page-head-mid { justify-self: center; display: flex; align-items: center; gap: 16px; min-width: 0; }
+.page-head-art { display: block; height: 64px; width: auto; max-width: 132px; object-fit: contain; filter: drop-shadow(0 6px 10px rgba(12, 27, 56, 0.14)); }
+@media (max-width: 900px) { .page-head-art { height: 44px; max-width: 88px; } }
+@media (max-width: 640px) { .page-head-art { display: none; } }
+
+.app-main[data-page-tone] { --app-ground-top: color-mix(in srgb, var(--sp-sky-top) 55%, var(--sp-ground)); }
+.app-main[data-page-tone] .data-table thead tr { background: var(--us-head); }
+
+.app-main[data-page-tone="upper"] {
+  --sp-title-top:      #6A2BC8;
+  --sp-title-bottom:   #3E1680;
+  --sp-title-rule:     #C4A6FA;
+  --sp-sky-top:        #EDE5FD;
+  --sp-mode-on-start:  #7C3AED;
+  --sp-mode-on-end:    #A06BFF;
+  --sp-blue-soft:      #F3EDFE;
+  --sp-blue-line:      #DCCBFB;
+  --sp-navy-2:         #44207F;
+  --us-head:           #EFE9FA;
+  --us-chip:           #E4D9F8;
+  --us-total:          #F1EAFC;
+  --us-bar:            #E8DFF7;
+  --us-band-navy:      linear-gradient(100deg, #2B1159 0%, #431F88 60%, #5A2CB0 100%);
+  --us-band-blue:      linear-gradient(100deg, #5B2DB4 0%, #6D3DCC 60%, #7E50DC 100%);
+}
+
+.app-main[data-page-tone="dana"] {
+  --sp-title-top:      #0E8A47;
+  --sp-title-bottom:   #075A2D;
+  --sp-title-rule:     #6FDCA5;
+  --sp-sky-top:        #E0F5E9;
+  --sp-mode-on-start:  #12A150;
+  --sp-mode-on-end:    #3CC583;
+  --sp-blue-soft:      #E9F8EF;
+  --sp-blue-line:      #C2E8D2;
+  --sp-navy-2:         #145C36;
+  --us-head:           #E5F4EB;
+  --us-chip:           #D4EEDE;
+  --us-total:          #E8F7EE;
+  --us-bar:            #DBF0E3;
+  --us-band-navy:      linear-gradient(100deg, #093B20 0%, #0E5A31 60%, #147A43 100%);
+  --us-band-blue:      linear-gradient(100deg, #128A4B 0%, #199E58 60%, #22B066 100%);
+}
+
+.app-main[data-page-tone="daily"] {
+  --sp-title-top:      #0E7C83;
+  --sp-title-bottom:   #075158;
+  --sp-title-rule:     #6FD6DC;
+  --sp-sky-top:        #DDF3F4;
+  --sp-mode-on-start:  #0E8C93;
+  --sp-mode-on-end:    #2FB5BC;
+  --sp-blue-soft:      #E7F7F8;
+  --sp-blue-line:      #BFE6E8;
+  --sp-navy-2:         #0D5A60;
+  --us-head:           #E3F3F4;
+  --us-chip:           #D0ECEE;
+  --us-total:          #E8F6F7;
+  --us-bar:            #D8EFF0;
+  --us-band-navy:      linear-gradient(100deg, #063A3F 0%, #0A5A61 60%, #0F7A82 100%);
+  --us-band-blue:      linear-gradient(100deg, #0E8C93 0%, #16A0A7 60%, #22B3BA 100%);
+}

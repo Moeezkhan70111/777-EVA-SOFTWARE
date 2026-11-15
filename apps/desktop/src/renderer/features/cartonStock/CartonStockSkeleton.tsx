@@ -42,6 +42,11 @@ export const CartonCardsSkeleton: React.FC<{ count: number; message: string }> =
 export const CartonStockSkeleton: React.FC = () => (
   <div className="page-stack carton-stock-page">
     <div className="cs-panel">
+      {/* The total and today's production come first, as on the page. */}
+      <div className="cs-overview" aria-hidden="true">
+        <span className="cs-skeleton cs-skeleton--summary" />
+        <span className="cs-skeleton cs-skeleton--summary" />
+      </div>
       <div className="cs-toolbar" aria-hidden="true">
         <span className="cs-skeleton cs-skeleton--search" />
         <span className="cs-skeleton cs-skeleton--picker" />

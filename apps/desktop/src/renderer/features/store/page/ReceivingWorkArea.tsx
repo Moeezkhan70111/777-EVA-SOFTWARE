@@ -43,7 +43,7 @@ export const ReceivingWorkArea: React.FC<ReceivingWorkAreaProps> = (props) => {
   const pane = (() => {
     if (!tab) return <StateView kind="empty" title={copy.storePage.noTabs} hint={copy.storePage.noTabsHint} />;
     if (tab === "material") return <NewMaterialForm lookups={lookups} formKey={formKey} onDone={() => setFormKey((key) => key + 1)} />;
-    if (tab === "byHand") return <ManualEntry token={token} />;
+    if (tab === "byHand") return <ManualEntry direction={STORE_DIRECTION.IN} token={token} username={username} />;
     if (tab === "report") return <StoreDailyReport direction={STORE_DIRECTION.IN} token={token} />;
     if (tab === "journey") return <QrJourneyPage username={username} />;
     return (

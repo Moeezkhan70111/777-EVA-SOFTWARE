@@ -31,6 +31,7 @@ import { StorePage } from "../features/store/page/StorePage";
 import { AccessRequestList, pendingRequestCount } from "../components/layout/AccessRequestList";
 import { PageHeader } from "../components/layout/PageHeader";
 import { PAGE_TITLES } from "./pageTitles";
+import { pageIdentityOf } from "../features/navigation/pageIdentity";
 import { HeaderActions } from "../components/layout/HeaderActions";
 import { STORE_MODE_ROUTE, isStoreRoute, storeModeOfRoute, type StoreMode } from "../features/store/page/storeTabs";
 import { StoreWorkspacePage } from "../features/store/StoreWorkspacePage";
@@ -302,6 +303,7 @@ export const App = () => {
   // The Store page draws the page header itself, on its sky; every other screen beside the
   // sidebar gets it here.
   const showPageHeader = showNavbar && !isAddingAccount && !isStoreRoute(shownRoute);
+  const pageIdentity = showPageHeader ? pageIdentityOf(shownRoute) : null;
 
   const content = useMemo(() => {
     if (needsBootstrap) {
@@ -751,10 +753,16 @@ export const App = () => {
             />
           )}
 
-          <div className="app-main">
+          {/* A Dashboard card's page wears its card's colour (theme.css [data-page-tone]) and picture (pageIdentity.ts). */}
+          <div className="app-main" data-page-tone={pageIdentity?.tone}>
             {showPageHeader ? (
               <div className="app-head">
-                <PageHeader title={PAGE_TITLES[shownRoute]} actions={headerActions} onDashboard={shownRoute === HOME_ROUTE ? undefined : () => setRoute(HOME_ROUTE)} />
+                <PageHeader
+                  title={PAGE_TITLES[shownRoute]}
+                  actions={headerActions}
+                  onDashboard={shownRoute === HOME_ROUTE ? undefined : () => setRoute(HOME_ROUTE)}
+                  artwork={pageIdentity?.artwork}
+                />
               </div>
             ) : null}
             <main className={`page-content${!showNavbar || FULLSCREEN_ROUTES.has(route) ? " page-content--fullscreen" : ""}`}>

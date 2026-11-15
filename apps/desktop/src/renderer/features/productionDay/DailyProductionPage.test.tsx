@@ -32,10 +32,11 @@ describe("Daily Production", () => {
     expect(api.getProductionDay).toHaveBeenCalledWith({ date: toIsoDate() });
     const figures = document.querySelector(".pd-kpis") as HTMLElement;
     expect(figures).toHaveTextContent(`${text.kpiDozens}15.5`);
-    expect(figures).toHaveTextContent(`${text.kpiCartons}31`);
-    expect(figures).toHaveTextContent(`${text.kpiMachines}2`);
-    expect(figures).toHaveTextContent(`${text.kpiEntries}3`);
-    expect(screen.getAllByRole("tab").map((tab) => tab.textContent)).toEqual([text.allMachines, text.machineTab("MACHINE 1", "12.5"), text.machineTab("MACHINE 2", "3")]);
+    // Beside the total, one button per machine in place of the Cartons / Machines / Entries cards (owner, 15 Nov 2026).
+    const tabs = within(figures).getAllByRole("tab");
+    expect(tabs.map((tab) => tab.querySelector(".pd-machine-name")?.textContent)).toEqual([text.allMachines, "MACHINE 1", "MACHINE 2"]);
+    expect(tabs.map((tab) => tab.querySelector(".pd-machine-dozens")?.textContent)).toEqual([text.machineDozens("15.5"), text.machineDozens("12.5"), text.machineDozens("3")]);
+    expect(tabs[0]).toHaveAttribute("aria-selected", "true");
     expect(names()).toEqual(["SK6", "SK12"]);
     const sk6 = screen.getByRole("region", { name: text.tableLabel("SK6") });
     expect(within(sk6).getByRole("row", { name: "7/10 - 10 10" })).toBeInTheDocument();
@@ -44,9 +45,9 @@ describe("Daily Production", () => {
 
   it("one machine at a time, with what it made", async () => {
     show();
-    await userEvent.click(await screen.findByRole("tab", { name: text.machineTab("MACHINE 2", "3") }));
+    await userEvent.click(await screen.findByRole("tab", { name: /MACHINE 2/ }));
     expect(names()).toEqual(["SK12"]);
-    expect(screen.getByText(text.machineSummary("MACHINE 2", "3", 1))).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: /MACHINE 2/ })).toHaveAttribute("aria-selected", "true");
   });
 
   it("says whether the day was completed", async () => {

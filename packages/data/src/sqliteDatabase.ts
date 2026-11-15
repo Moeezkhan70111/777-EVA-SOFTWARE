@@ -68,6 +68,7 @@ import { productionDayMethods, type ProductionDayMethods } from "./database/prod
 import { gatepassCartonsMethods, type GatepassCartonsMethods } from "./database/gatepassCartons.js";
 import { cartonStockAdjustMethods, type CartonStockAdjustMethods } from "./database/cartonStockAdjust.js";
 import { cartonStockDocumentMethods, type CartonStockDocumentMethods } from "./database/cartonStockDocuments.js";
+import { handVoucherMethods, type HandVoucherMethods } from "./database/handVouchers.js";
 import { cartonStockReconciliationMethods, type CartonStockReconciliationMethods } from "./database/cartonStockReconciliation.js";
 import { savedRequestMethods, type SavedRequestMethods } from "./database/savedRequests.js";
 import { colorTranslationsMethods, type ColorTranslationsMethods } from "./database/colorTranslations.js";
@@ -185,6 +186,16 @@ export {
   type CartonAdjustmentPostInput,
   type CartonAdjustmentPostResult,
 } from "./database/cartonStockDocuments.js";
+export {
+  HandVoucherRefused,
+  type HandVoucher,
+  type HandVoucherDeleteInput,
+  type HandVoucherEditInput,
+  type HandVoucherLine,
+  type HandVoucherLineInput,
+  type HandVoucherSaveInput,
+  type HandVoucherView,
+} from "./database/handVouchers.js";
 export type { CartonReconciliation, CartonReconciliationRow } from "./database/cartonStockReconciliation.js";
 export { RequestConflictError, isRequestId, requestFingerprint } from "./database/requestFingerprint.js";
 export type { CashVoucherInput, CashVoucherSaved } from "./database/cash.js";
@@ -1680,6 +1691,7 @@ export interface SqliteDatabase
     GatepassCartonsMethods,
     CartonStockAdjustMethods,
     CartonStockDocumentMethods,
+    HandVoucherMethods,
     CartonStockReconciliationMethods,
     SavedRequestMethods,
     ColorTranslationsMethods {}
@@ -1732,6 +1744,7 @@ Object.assign(
   gatepassCartonsMethods,
   cartonStockAdjustMethods,
   cartonStockDocumentMethods,
+  handVoucherMethods,
   cartonStockReconciliationMethods,
   savedRequestMethods,
   colorTranslationsMethods

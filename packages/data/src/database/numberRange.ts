@@ -198,6 +198,8 @@ export const NUMBER_SITES = {
   machineProgram: { table: "machine_programs", column: "program_number", parse: { kind: "INT" }, noun: "machine program numbers", origin: "origin_device_id" },
   manualProduction: { table: "manual_production_entries", column: "entry_number", parse: { kind: "INT" }, noun: "manual production numbers", origin: "origin_device_id", travelsAs: "MANUAL_PRODUCTION_ENTRY" },
   cartonAdjustment: { table: "carton_stock_adjustments", column: "document_number", parse: { kind: "INT" }, noun: "stock adjustment numbers", origin: "origin_device_id", travelsAs: "CARTON_STOCK_ADJUSTMENT" },
+  storeInVoucher: { table: "store_hand_vouchers", column: "voucher_number", parse: { kind: "INT" }, where: "direction = 'IN'", noun: "Move In voucher numbers", origin: "origin_device_id", travelsAs: "STORE_HAND_VOUCHER" },
+  storeOutVoucher: { table: "store_hand_vouchers", column: "voucher_number", parse: { kind: "INT" }, where: "direction = 'OUT'", noun: "Move Out voucher numbers", origin: "origin_device_id", travelsAs: "STORE_HAND_VOUCHER" },
   partyCode: { table: "parties", column: "party_code", parse: { kind: "SUFFIX", from: 5 }, noun: "party codes", origin: "origin_device_id", travelsAs: "PARTY" },
   productCode: { table: "article_sizes", column: "product_code", parse: { kind: "SUFFIX", from: 5 }, where: "product_code IS NOT NULL", noun: "product codes", origin: "origin_device_id", travelsAs: "ARTICLE_SIZE" },
   rmReceivingSession: { table: "raw_material_receiving_sessions", column: "session_number", parse: { kind: "INT" }, noun: "raw material receiving numbers", origin: "device_id" },

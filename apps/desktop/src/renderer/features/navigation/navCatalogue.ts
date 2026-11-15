@@ -44,7 +44,16 @@ export interface FeatureCardSpec {
   badge?: NavIconId;
   /** One of the Dashboard's own cards. Everything else opens from the sidebar (HomePage). */
   onDashboard?: boolean;
+  /**
+   * The page's own colour (owner, 15 Nov 2026: "every card page is looking the same"). The page opened from this card
+   * is drawn in it -- title, sky, tables, totals -- with the card's artwork beside its title (pageIdentity.ts). Mapped
+   * to theme tokens in theme.css (R3).
+   */
+  pageTone?: PageTone;
 }
+
+/** Each Dashboard card page's colour, so a page is known at a glance, not by reading its heading. */
+export type PageTone = "carton" | "upper" | "dana" | "daily";
 
 /** Decorative colour family of a section's tiles. Mapped to theme tokens in theme.css (R3). */
 export type NavTone = "action" | "ok" | "warn" | "info" | "neutral";
@@ -156,7 +165,7 @@ export const NAV_SECTIONS: readonly NavSection[] = [
       // First of the Dashboard's cards. Administrators only (ADMIN_ONLY_ROUTES), so only they see it.
       {
         ...item("carton-stock", t.cartonStock, "stock"),
-        feature: { artwork: CARTON_STOCK_ARTWORK_URL, theme: "sky", artworkHasScene: true, badge: "stock", onDashboard: true },
+        feature: { artwork: CARTON_STOCK_ARTWORK_URL, theme: "sky", artworkHasScene: true, badge: "stock", onDashboard: true, pageTone: "carton" },
       },
       // Typing in each machine's production, and completing the day (docs/48). Live Production, like scanning it.
       item("manual-production", t.manualProduction, "machine"),
@@ -164,18 +173,18 @@ export const NAV_SECTIONS: readonly NavSection[] = [
       item("stock-adjustment", t.stockAdjustment, "stock"),
       {
         ...item("upper-stock", t.upperStock, "upper"),
-        feature: { artwork: UPPER_STOCK_ARTWORK_URL, theme: "sky", artworkHasScene: true, badge: "upper", onDashboard: true },
+        feature: { artwork: UPPER_STOCK_ARTWORK_URL, theme: "sky", artworkHasScene: true, badge: "upper", onDashboard: true, pageTone: "upper" },
       },
       {
         ...item("dana-stock", t.danaStock, "dana"),
-        feature: { artwork: DANA_STOCK_ARTWORK_URL, theme: "sky", artworkHasScene: true, badge: "dana", onDashboard: true },
+        feature: { artwork: DANA_STOCK_ARTWORK_URL, theme: "sky", artworkHasScene: true, badge: "dana", onDashboard: true, pageTone: "dana" },
       },
       item("raw-material", t.rawMaterial, "stock", ["raw-material-qr-generator"]),
       item("history", t.stockHistory, "history", ["stock-history"]),
       // A Dashboard card (owner, 14 Nov 2026): the day's production, clearly, for anyone given Daily Production.
       {
         ...item("daily-production", t.dailyProduction, "daily"),
-        feature: { artwork: DAILY_PRODUCTION_ARTWORK_URL, theme: "sky", artworkHasScene: true, badge: "daily", onDashboard: true },
+        feature: { artwork: DAILY_PRODUCTION_ARTWORK_URL, theme: "sky", artworkHasScene: true, badge: "daily", onDashboard: true, pageTone: "daily" },
       },
       item("scan-production", t.scanProduction, "daily"),
       item("daily-dispatch", t.dailyDispatch, "daily"),

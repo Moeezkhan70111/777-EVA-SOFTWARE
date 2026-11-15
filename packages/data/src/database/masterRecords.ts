@@ -37,7 +37,8 @@ export type MasterRecordType =
   | typeof SYNC_AGGREGATE.SALE_VOUCHER
   | typeof SYNC_AGGREGATE.CASH_VOUCHER
   | typeof SYNC_AGGREGATE.CARTON_STOCK_ADJUSTMENT
-  | typeof SYNC_AGGREGATE.PRODUCTION_DAY;
+  | typeof SYNC_AGGREGATE.PRODUCTION_DAY
+  | typeof SYNC_AGGREGATE.STORE_HAND_VOUCHER;
 
 /** A column naming another record that must be on this computer before this row can be written. */
 export interface RecordReference {
@@ -100,6 +101,7 @@ export const MASTER_RECORD_TYPES: readonly MasterRecordType[] = [
   SYNC_AGGREGATE.CASH_VOUCHER,
   SYNC_AGGREGATE.CARTON_STOCK_ADJUSTMENT,
   SYNC_AGGREGATE.PRODUCTION_DAY,
+  SYNC_AGGREGATE.STORE_HAND_VOUCHER,
 ];
 
 export const MASTER_RECORDS: Readonly<Record<MasterRecordType, RecordTableSpec>> = {
@@ -210,6 +212,12 @@ export const MASTER_RECORDS: Readonly<Record<MasterRecordType, RecordTableSpec>>
   },
   // A completed production day (docs/48): one row, referring to nothing. It is a mark, not stock.
   [SYNC_AGGREGATE.PRODUCTION_DAY]: { table: "production_days" },
+  // A store hand voucher (docs/49): its party, and each line's material. Its movements travel as STOCK_EVENT.
+  [SYNC_AGGREGATE.STORE_HAND_VOUCHER]: {
+    table: "store_hand_vouchers",
+    references: [partyRef("party_id")],
+    children: [{ table: "store_hand_voucher_lines", parentColumn: "voucher_id", references: [{ column: "item_id", table: "inventory_items", record: SYNC_AGGREGATE.INVENTORY_ITEM }] }],
+  },
 };
 
 export const isMasterRecordType = (value: string): value is MasterRecordType =>

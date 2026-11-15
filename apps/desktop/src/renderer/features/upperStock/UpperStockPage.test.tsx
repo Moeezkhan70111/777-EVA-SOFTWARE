@@ -52,12 +52,21 @@ describe("UpperStockPage", () => {
     expect(screen.queryByRole("img")).not.toBeInTheDocument();
   });
 
+  it("heads the colours in Urdu from the shared colour list, the English kept as the tooltip", async () => {
+    serve();
+    render(<UpperStockPage />);
+    await screen.findByRole("region", { name: "SK6 stock" });
+    const black = matrix("SK6").getByText("سیاہ");
+    expect(black).toHaveAttribute("lang", "ur");
+    expect(black).toHaveAttribute("title", "BLACK");
+  });
+
   it("works out the size totals and one grand total, with a dash for nothing and no row per colour", async () => {
     serve();
     render(<UpperStockPage />);
     await screen.findByRole("region", { name: "SK6 stock" });
     const table = matrix("SK6");
-    expect(table.getAllByRole("columnheader").map((cell) => cell.textContent)).toEqual(["Size", "BLACK", "RED", "Total"]);
+    expect(table.getAllByRole("columnheader").map((cell) => cell.textContent)).toEqual(["Size", "سیاہ", "لال", "Total"]);
     expect(table.getByRole("row", { name: "4/6 5 - 5" })).toBeInTheDocument();
     expect(table.getByRole("row", { name: "7/10 10 20 30" })).toBeInTheDocument();
     expect(table.getByRole("row", { name: "Total DOZEN 35" })).toBeInTheDocument();

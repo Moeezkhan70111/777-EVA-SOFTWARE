@@ -21,7 +21,8 @@ import {
   STORE_MOVEMENT_SOURCE,
   buildStoreDailyReport,
   isScanStockEvent,
-  stockEventDirection,
+  stockEventReportDirection,
+  stockEventReportQuantity,
   stockEventSource,
   type StoreDailyReport,
   type StoreDayCartonEntry,
@@ -134,7 +135,7 @@ export const storeDailyReportMethods = {
 
     return rows
       .filter((row) => !isScanStockEvent(textOrNull(row.note)))
-      .filter((row) => stockEventDirection(text(row.event_type), Number(row.quantity ?? 0)) === direction)
+      .filter((row) => stockEventReportDirection(text(row.event_type), Number(row.quantity ?? 0), textOrNull(row.note)) === direction)
       .map((row) => ({
         kind: "MATERIAL",
         id: text(row.id),
@@ -142,8 +143,9 @@ export const storeDailyReportMethods = {
         at: text(row.created_at),
         itemId: text(row.item_id),
         itemDisplayName: text(row.display_name),
-        // Typed moves out are stored negative; the report's direction already says which way.
-        quantity: Math.abs(Number(row.quantity ?? 0)),
+        // Typed moves out are stored negative; the report's direction already says which way. A hand voucher's
+        // reversal stays negative, so its own side of the day nets it out (stockEventReportQuantity).
+        quantity: stockEventReportQuantity(text(row.event_type), Number(row.quantity ?? 0), textOrNull(row.note)),
         unitCode: text(row.unit_code),
         qrId: null,
         partyName: textOrNull(row.party_name),

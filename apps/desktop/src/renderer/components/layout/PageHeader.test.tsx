@@ -12,8 +12,20 @@ describe("PageHeader", () => {
     const parts = Array.from(header.children);
 
     expect(parts[0]).toContainElement(within(header).getByRole("img", { name: "777 SEVEN" }));
-    expect(parts[1]).toBe(within(header).getByRole("heading", { level: 1, name: "Current Stock" }));
+    expect(parts[1]).toContainElement(within(header).getByRole("heading", { level: 1, name: "Current Stock" }));
     expect(parts[2]).toContainElement(within(header).getByRole("button", { name: "Bell" }));
+  });
+
+  // Owner, 15 Nov 2026: a Dashboard card's page shows its card's picture beside the title, so it is known at a glance.
+  it("shows a page's picture beside its title when it has one, as decoration, and none otherwise", () => {
+    const { container, unmount } = render(<PageHeader title="Upper Stock" artwork="./assets/stock/upper-stock.png" />);
+    const art = container.querySelector(".page-head-art");
+    expect(art).toHaveAttribute("src", "./assets/stock/upper-stock.png");
+    expect(art).toHaveAttribute("alt", "");
+    expect(screen.queryByRole("img", { name: /upper/i })).not.toBeInTheDocument();
+    unmount();
+    const plain = render(<PageHeader title="Current Stock" />);
+    expect(plain.container.querySelector(".page-head-art")).toBeNull();
   });
 
   // Owner, 14 Nov 2026: a way back to the Dashboard on every page but the Dashboard itself.

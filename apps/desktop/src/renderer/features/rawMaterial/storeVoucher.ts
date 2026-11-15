@@ -89,6 +89,15 @@ export interface StoreVoucher {
   byMaterial: StoreVoucherMaterial[];
   /** The line printed in place of the table when the session holds nothing. */
   nothingLine: string;
+  /**
+   * A typed document rather than a scanning session (a store hand voucher): its number is headed "Voucher", it has a
+   * time rather than a start and an end, and its lines have no packets to count.
+   */
+  typed?: boolean;
+  /** A reference or purpose printed under the summary, when there is one. */
+  note?: string | null;
+  /** What the note is: "Reference", "What for". */
+  noteLabel?: string;
 }
 
 export interface StoreVoucherOptions {
@@ -148,7 +157,22 @@ export const quantityFigure = (byMaterial: StoreVoucherMaterial[]): string => {
   return String(Number(byMaterial.reduce((sum, material) => sum + material.quantity, 0).toFixed(3)));
 };
 
+/** A typed voucher's table: material and quantity, no packets. */
+const typedMaterialsTable = (voucher: StoreVoucher): string => {
+  const e = escapeHtml;
+  const rows = voucher.byMaterial
+    .map((row) => `<tr><td>${e(slipMaterialName(row.itemDisplayName, row.categoryLabel))}${categoryBadges(row.categoryLabel)}</td><td class="num">${row.quantity} ${e(row.unitCode)}</td></tr>`)
+    .join("");
+  const total = voucher.byMaterial.length > 0 ? `<tfoot><tr><td>Total quantity</td><td class="num">${e(quantityTotalLine(voucher.byMaterial))}</td></tr></tfoot>` : "";
+  return `<table class="materials-table">
+      <thead><tr><th>Material</th><th class="num">Qty</th></tr></thead>
+      <tbody>${rows || `<tr><td colspan="2">${e(voucher.nothingLine)}</td></tr>`}</tbody>
+      ${total}
+    </table>`;
+};
+
 const materialsTable = (voucher: StoreVoucher): string => {
+  if (voucher.typed) return typedMaterialsTable(voucher);
   const e = escapeHtml;
   const rows = voucher.byMaterial
     .map((row) => `<tr><td>${e(slipMaterialName(row.itemDisplayName, row.categoryLabel))}${categoryBadges(row.categoryLabel)}</td><td class="num">${row.packets}</td><td class="num">${row.quantity} ${e(row.unitCode)}</td></tr>`)
@@ -192,16 +216,17 @@ export const renderStoreVoucherHtml = (voucher: StoreVoucher, options: StoreVouc
     </div>
 
     <table class="session-table">
-      <thead><tr><th>Session</th><th>Date</th><th>Time</th></tr></thead>
+      <thead><tr><th>${voucher.typed ? "Voucher" : "Session"}</th><th>Date</th><th>Time</th></tr></thead>
       <tbody><tr>
         <td>${e(session.code)}</td>
         <td>${e(sessionDateLine(session.startedAt, session.closedAt))}</td>
-        <td>${e(sessionTimeLine(session.startedAt, session.closedAt))}</td>
+        <td>${e(voucher.typed ? formatClockTime(session.startedAt) : sessionTimeLine(session.startedAt, session.closedAt))}</td>
       </tr></tbody>
     </table>
 
     <div class="summary-heading">Summary</div>
     ${materialsTable(voucher)}
+    ${voucher.note ? `<div class="printed-by">${e(voucher.noteLabel ?? "Reference")}: ${e(voucher.note)}</div>` : ""}
 
     <div class="sign">
       <div>Received by</div>

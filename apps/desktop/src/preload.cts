@@ -155,6 +155,10 @@ contextBridge.exposeInMainWorld("desktop", {
       ipcRenderer.invoke(IPC.getRawMaterialHandMoveOptions, itemId, direction, opts),
     moveRawMaterialByHand: (input: Record<string, unknown>, opts?: { token?: string }) =>
       ipcRenderer.invoke(IPC.moveRawMaterialByHand, input, opts),
+    saveHandVoucher: (input: Record<string, unknown>, opts?: { token?: string }) => ipcRenderer.invoke(IPC.saveHandVoucher, input, opts),
+    editHandVoucher: (input: Record<string, unknown>, opts?: { token?: string }) => ipcRenderer.invoke(IPC.editHandVoucher, input, opts),
+    deleteHandVoucher: (input: Record<string, unknown>, opts?: { token?: string }) => ipcRenderer.invoke(IPC.deleteHandVoucher, input, opts),
+    getHandVoucher: (direction: string, voucherNumber: number | null, opts?: { token?: string }) => ipcRenderer.invoke(IPC.getHandVoucher, direction, voucherNumber, opts),
     listRawMaterialMovementConfig: (search?: string) => ipcRenderer.invoke(IPC.listRawMaterialMovementConfig, search),
     setRawMaterialMovementConfig: (itemId: string, input: Record<string, unknown>) =>
       ipcRenderer.invoke(IPC.setRawMaterialMovementConfig, itemId, input),

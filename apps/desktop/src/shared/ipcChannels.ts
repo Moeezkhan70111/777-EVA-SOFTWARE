@@ -138,6 +138,11 @@ export const IPC = {
   // Moving raw material in or out by hand, for loose stock that carries no label.
   getRawMaterialHandMoveOptions: "erp:get-raw-material-hand-move-options",
   moveRawMaterialByHand: "erp:move-raw-material-by-hand",
+  // Move In vouchers: several materials received by hand as one numbered voucher (docs/49).
+  saveHandVoucher: "erp:save-hand-voucher",
+  editHandVoucher: "erp:edit-hand-voucher",
+  deleteHandVoucher: "erp:delete-hand-voucher",
+  getHandVoucher: "erp:get-hand-voucher",
   listRawMaterialMovementConfig: "erp:list-raw-material-movement-config",
   setRawMaterialMovementConfig: "erp:set-raw-material-movement-config",
   // The pack and route a new material in a sub-category should start from, and the bulk

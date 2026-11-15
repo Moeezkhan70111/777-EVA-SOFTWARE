@@ -92,6 +92,9 @@ export const MASTER_CAPTURE: readonly MasterTableCapture[] = [
   { table: "carton_stock_adjustment_lines", record: SYNC_AGGREGATE.CARTON_STOCK_ADJUSTMENT, recordId: `${ROW}.adjustment_id` },
   // A completed production day (docs/48): one row is one record.
   { table: "production_days", record: SYNC_AGGREGATE.PRODUCTION_DAY, recordId: `${ROW}.id` },
+  // A store hand voucher (Move In SIV-, Move Out SOV-) and its lines (docs/49): edited or deleted on its own day, as a new revision.
+  { table: "store_hand_vouchers", record: SYNC_AGGREGATE.STORE_HAND_VOUCHER, recordId: `${ROW}.id` },
+  { table: "store_hand_voucher_lines", record: SYNC_AGGREGATE.STORE_HAND_VOUCHER, recordId: `${ROW}.voucher_id` },
 ];
 
 /**

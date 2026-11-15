@@ -95,6 +95,9 @@ export const SYNC_AGGREGATE = {
   CARTON_STOCK_ADJUSTMENT: "CARTON_STOCK_ADJUSTMENT",
   /** A business day whose production was marked complete (local 109, cloud 032, docs/48). It moves no stock. */
   PRODUCTION_DAY: "PRODUCTION_DAY",
+  /** A store hand voucher with its lines (local 110, cloud 033, docs/49): raw material moved in (SIV-) or out (SOV-)
+   * without labels. Its lines move stock by hand-move movements, which travel as STOCK_EVENT. Edited or deleted on its own day only. */
+  STORE_HAND_VOUCHER: "STORE_HAND_VOUCHER",
   /**
    * One raw-material stock movement, as stored, with the change it made to its material's balance
    * (balanceDelta). Append-only: captured when inserted (masterCapture.ts, EVENT_CAPTURE), applied
@@ -152,6 +155,7 @@ export const LEASED_AGGREGATE_DOMAIN: Readonly<Partial<Record<SyncAggregateType,
   [SYNC_AGGREGATE.MANUAL_PRODUCTION_ENTRY]: LEASE_DOMAIN.CARTON_STOCK,
   [SYNC_AGGREGATE.CARTON_STOCK_ADJUSTMENT]: LEASE_DOMAIN.CARTON_STOCK,
   [SYNC_AGGREGATE.PRODUCTION_DAY]: LEASE_DOMAIN.CARTON_STOCK,
+  [SYNC_AGGREGATE.STORE_HAND_VOUCHER]: LEASE_DOMAIN.RAW_MATERIAL_STORE,
   [SYNC_AGGREGATE.GATEPASS]: LEASE_DOMAIN.SALES_DISPATCH,
   [SYNC_AGGREGATE.SALE_VOUCHER]: LEASE_DOMAIN.SALES_DISPATCH,
   [SYNC_AGGREGATE.CASH_VOUCHER]: LEASE_DOMAIN.ACCOUNTS,

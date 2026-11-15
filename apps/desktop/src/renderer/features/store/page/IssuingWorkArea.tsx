@@ -7,11 +7,11 @@ import { QrJourneyPage } from "../../../pages/QrJourneyPage";
 import { RawMaterialSection } from "../../rawMaterial/RawMaterialSection";
 import type { useRawMaterialLookups } from "../../rawMaterial/useRawMaterialLookups";
 import { StoreDailyReport } from "../dailyReport/StoreDailyReport";
-import { HandMovePanel } from "../HandMovePanel";
+import { ManualEntry } from "../sections/ManualEntry";
 import { IssuedToday } from "./IssuedToday";
 import { ISSUING_TABS, allowedTabs, shownTab, type IssuingTab, type StoreAccess } from "./storeTabs";
 
-// ISSUING's work area: By hand | Issued today | Stock | Daily report. By hand is Move Out by Hand,
+// ISSUING's work area: By hand | Issued today | Stock | Daily report. By hand is Move Out by Hand (a Move Out voucher),
 // Stock the same section Receiving shows, and Daily report the day's issues (a tab since 0.4.1).
 
 interface IssuingWorkAreaProps {
@@ -49,14 +49,7 @@ export const IssuingWorkArea: React.FC<IssuingWorkAreaProps> = (props) => {
         />
       );
     }
-    return (
-      <div className="si-manual-open">
-        <header className="si-manual-head">
-          <h2 className="si-manual-title">{copy.moveOut.manualTitle}</h2>
-        </header>
-        <HandMovePanel direction="OUT" token={token} />
-      </div>
-    );
+    return <ManualEntry direction={STORE_DIRECTION.OUT} token={token} username={username} />;
   })();
 
   return (

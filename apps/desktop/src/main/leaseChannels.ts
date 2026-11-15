@@ -45,6 +45,10 @@ export const LEASED_CHANNELS: Readonly<Record<string, readonly LeaseDomain[]>> =
   [IPC.returnMachineProgramUpper]: STORE,
   [IPC.issueUpperToMachine]: STORE,
   [IPC.moveRawMaterialByHand]: STORE,
+  // A Move In voucher moves the balance by the same write, and travels under the store lease (docs/49).
+  [IPC.saveHandVoucher]: STORE,
+  [IPC.editHandVoucher]: STORE,
+  [IPC.deleteHandVoucher]: STORE,
   [IPC.adjustInventoryStock]: STORE,
   // Approving a correction changes the stock it corrects.
   [IPC.reviewStockCorrectionRequest]: STORE,

@@ -2,11 +2,11 @@ import React, { useState } from "react";
 import type { ProductionDayView } from "@erp/domain";
 import { KpiCard } from "../../components/dashboard/KpiCard";
 import { StateView } from "../../components/shared/StateView";
-import { TabStrip, type TabStripItem } from "../../components/shared/TabStrip";
 import { copy } from "../../config/copy";
 import { formatLongDate, shiftIsoDate, toIsoDate } from "../../utils/dates";
 import { dozenFigure } from "../cartonStock/CartonMatrix";
 import { CartonMatrixList } from "../cartonStock/CartonMatrixList";
+import { ALL_MACHINES, MachinePicker } from "./MachinePicker";
 import { ProductionPdfButton } from "./ProductionPdfButton";
 import { ProductionStatusBox } from "./ProductionStatusBox";
 import { useProductionDay } from "./useProductionDay";
@@ -16,15 +16,14 @@ import { useProductionPdf } from "./useProductionPdf";
 // one day, clearly.
 //
 //   [‹] [ 14 Nov 2026 ] [›] [Today]                                         [ ✓ Production added ]
-//   [ TOTAL 120.5 DOZEN ] [ CARTONS 241 ] [ MACHINES 3 ] [ ENTRIES 18 ]
-//   [ All machines ] [ MACHINE 1 · 40 ] [ MACHINE 2 · 60.5 ] [ MACHINE 3 · 20 ]
+//   [ TOTAL 120.5 DOZEN ] [ All machines 120.5 ✓ ] [ MACHINE 1 40 › ] [ MACHINE 2 60.5 › ]   (MachinePicker)
+//                                                                                        [ ⬇ Export PDF ]
 //   one card per article: sizes down, colours across, totals per size, per colour and the article's (CartonMatrix)
 //
 // It only shows: every figure is the main process's (productionDayView), voided entries left out. It follows the
 // day as it is saved, and as completed days and entries arrive from other computers.
 
 const text = copy.productionDay;
-const ALL = "all";
 
 interface DailyProductionPageProps {
   /** Opens the Manual Production page; absent when this user may not record production. */
@@ -46,32 +45,22 @@ const DayPicker: React.FC<{ date: string; onChange: (date: string) => void }> = 
   );
 };
 
-const Figures: React.FC<{ day: ProductionDayView }> = ({ day }) => (
-  <div className="pd-kpis">
-    <KpiCard className="cs-summary pd-kpi pd-kpi--main" label={text.kpiDozens} value={dozenFigure(day.totalCartons)} />
-    <KpiCard className="cs-summary pd-kpi" label={text.kpiCartons} value={day.totalCartons.toLocaleString()} />
-    <KpiCard className="cs-summary pd-kpi" label={text.kpiMachines} value={day.machines.length} />
-    <KpiCard className="cs-summary pd-kpi" label={text.kpiEntries} value={day.entries.toLocaleString()} />
-  </div>
-);
-
 const Production: React.FC<{ day: ProductionDayView }> = ({ day }) => {
-  const [view, setView] = useState<string>(ALL);
+  const [view, setView] = useState<string>(ALL_MACHINES);
   const pdf = useProductionPdf();
   const machine = day.machines.find((item) => item.machineName === view);
-  const tabs: TabStripItem<string>[] = [
-    { id: ALL, label: text.allMachines },
-    ...day.machines.map((item) => ({ id: item.machineName, label: text.machineTab(item.machineName, dozenFigure(item.cartons)) })),
-  ];
+  const active = machine ? view : ALL_MACHINES;
   return (
     <>
-      {/* The PDF is of what is shown: the whole day under All machines, or the machine chosen. */}
-      <div className="pd-tabs-row">
-        <TabStrip items={tabs} active={machine ? view : ALL} onSelect={setView} label={text.viewsLabel} className="pd-tabs" />
-        <ProductionPdfButton day={day} machineName={machine ? machine.machineName : null} pdf={pdf} />
+      <div className="pd-kpis">
+        <KpiCard className="cs-summary cs-summary--hero pd-kpi" label={text.kpiDozens} value={dozenFigure(day.totalCartons)} />
+        <MachinePicker day={day} active={active} onSelect={setView} />
       </div>
-      <div role="tabpanel" aria-labelledby={`tab-${machine ? view : ALL}`} className="pd-panel">
-        {machine ? <p className="pd-machine-line">{text.machineSummary(machine.machineName, dozenFigure(machine.cartons), machine.entries)}</p> : null}
+      <div role="tabpanel" aria-labelledby={`tab-${active}`} className="pd-panel">
+        {/* The PDF is of what is shown: the whole day under All machines, or the machine chosen. */}
+        <div className="pd-tabs-row">
+          <ProductionPdfButton day={day} machineName={machine ? machine.machineName : null} pdf={pdf} />
+        </div>
         <CartonMatrixList articles={machine ? machine.articles : day.articles} tableLabel={text.tableLabel} />
       </div>
     </>
@@ -91,10 +80,7 @@ export const DailyProductionPage: React.FC<DailyProductionPageProps> = ({ onReco
       return <StateView kind="empty" title={text.emptyTitle} hint={isToday ? text.emptyHintToday : text.emptyHintPast} action={action} />;
     }
     return (
-      <>
-        <Figures day={shown} />
-        <Production key={shown.date} day={shown} />
-      </>
+      <Production key={shown.date} day={shown} />
     );
   };
 
@@ -106,10 +92,9 @@ export const DailyProductionPage: React.FC<DailyProductionPageProps> = ({ onReco
             <DayPicker date={day.date} onChange={day.setDate} />
             <span className="pd-day-name">{formatLongDate(day.date)}</span>
           </div>
-          <ProductionStatusBox mark={shown?.completed ?? null} loading={!shown && !day.error} error={shown ? null : day.error} compact={!isToday} eyebrow={isToday ? text.statusLabel : text.dayStatusLabel(formatLongDate(day.date))} />
+          <ProductionStatusBox mark={shown?.completed ?? null} loading={!shown && !day.error} error={shown ? null : day.error} eyebrow={isToday ? undefined : text.dayStatusLabel(formatLongDate(day.date))} />
         </div>
         {body()}
-        <p className="pd-foot-note">{text.scanNote}</p>
       </div>
     </div>
   );

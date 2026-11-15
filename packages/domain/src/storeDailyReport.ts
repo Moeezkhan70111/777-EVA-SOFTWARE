@@ -98,6 +98,30 @@ export const stockEventDirection = (eventType: string, quantity: number): StoreD
 const startsWithNote = (note: string | null, prefix: string): boolean => (note ?? "").trim().startsWith(prefix);
 
 /**
+ * A Move Out voucher's line taken back when the voucher is edited or deleted (handVoucher.ts): material put back on
+ * the balance, so an IN type, but written as a manual move OUT. No other writer notes a TRANSFER_IN that way.
+ */
+const isOutVoucherReversal = (eventType: string, note: string | null): boolean =>
+  eventType === "TRANSFER_IN" && startsWithNote(note, STOCK_EVENT_NOTE.MANUAL_OUT);
+
+/** Which day's report a stock event belongs to: its direction, except that a Move Out reversal counts on the OUT side. */
+export const stockEventReportDirection = (eventType: string, quantity: number, note: string | null): StoreDirection | null =>
+  isOutVoucherReversal(eventType, note) ? STORE_DIRECTION.OUT : stockEventDirection(eventType, quantity);
+
+/**
+ * How much a stock event counts for in the report of its direction.
+ *
+ * Positive for every movement except a hand voucher's line taken back (handVoucher.ts): a Move In reversal is a
+ * RECEIVE written negative, a Move Out reversal a manual-move-out TRANSFER_IN. Each counts against its own side of the
+ * day, so the day shows what actually moved, not the line and its reversal added together. No other writer stores a
+ * RECEIVE negative.
+ */
+export const stockEventReportQuantity = (eventType: string, quantity: number, note: string | null = null): number => {
+  if (isOutVoucherReversal(eventType, note)) return -Math.abs(quantity);
+  return eventType === "RECEIVE" ? quantity : Math.abs(quantity);
+};
+
+/**
  * True for the stock event a packet SCAN writes beside its QR event. The report reads scans from
  * the QR event log, which also knows the supplier and the section, so these are left out of the
  * stock events to keep every scan counted exactly once.
@@ -126,7 +150,7 @@ export interface StoreDayMaterialEntry {
   at: string;
   itemId: string;
   itemDisplayName: string;
-  /** Always positive — the direction is the report's. */
+  /** Positive — the direction is the report's — except a Move In voucher's reversal, which counts against the day. */
   quantity: number;
   unitCode: string;
   qrId: string | null;

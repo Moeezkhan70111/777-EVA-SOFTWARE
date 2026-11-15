@@ -18,6 +18,7 @@ vi.mock("../../rawMaterial/useRawMaterialLookups", () => ({
 }));
 vi.mock("../sections/NewMaterialForm", () => ({ NewMaterialForm: () => <div data-testid="new-material">new material form</div> }));
 vi.mock("../HandMovePanel", () => ({ HandMovePanel: ({ direction }: { direction: string }) => <div data-testid={`hand-${direction}`}>by hand</div> }));
+vi.mock("../handVoucher/HandVoucherPanel", () => ({ HandVoucherPanel: ({ direction }: { direction: string }) => <div data-testid={`hand-${direction}`}>by hand</div> }));
 vi.mock("../dailyReport/StoreDailyReport", () => ({
   StoreDailyReport: ({ direction }: { direction: string }) => <div data-testid="daily-report">{`report:${direction}`}</div>,
 }));

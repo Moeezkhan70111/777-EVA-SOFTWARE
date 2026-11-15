@@ -1,9 +1,9 @@
 import React, { useId } from "react";
-import { cartonsToDozens, colorToUrdu, type CartonMatrixArticle, type ColorDictionary } from "@erp/domain";
+import { cartonsToDozens, type CartonMatrixArticle } from "@erp/domain";
 import { ColorSwatch } from "../../components/shared/ColorSwatch";
 import { SidewaysScrollArea } from "../../components/shared/SidewaysScrollArea";
 import { copy } from "../../config/copy";
-import { useColorDictionary } from "../colorTranslation/colorDictionaryStore";
+import { ColourName } from "../colorTranslation/ColourName";
 import { cellText } from "../upperStock/upperStock";
 import type { CartonLayout } from "./cartonMatrixLayout";
 
@@ -20,22 +20,19 @@ const dozenCell = (cartons: number): string => cellText(cartonsToDozens(cartons)
 /** The same figure in dozens where nothing is a dash: 0 reads "0" (the Total Carton Stock card). */
 export const dozenFigure = (cartons: number): string => (cartons === 0 ? "0" : dozenCell(cartons));
 
-const ColourHead: React.FC<{ colour: string; colors: ColorDictionary }> = ({ colour, colors }) => {
-  // Shown in Urdu from the shared colour list (docs/45), in English when the list does not name it.
-  // Only the label changes: the column, its figures and the swatch still go by the stored English.
-  const urdu = colorToUrdu(colour, colors);
+const ColourHead: React.FC<{ colour: string }> = ({ colour }) => {
+  // Shown in Urdu from the shared colour list (ColourName). The column, its figures and the swatch go by the English.
   return (
     <th scope="col" className="cs-colour-head" title={colour}>
       <span className="cs-colour">
         <ColorSwatch color={colour} className="cs-dot" />
-        {urdu ? <span className="urdu-text" lang="ur" dir="rtl">{urdu}</span> : colour}
+        <ColourName colour={colour} />
       </span>
     </th>
   );
 };
 
 const MatrixTable: React.FC<{ article: CartonMatrixArticle; layout: CartonLayout }> = ({ article, layout }) => {
-  const colors = useColorDictionary();
   return (
     <table className="cs-table">
       <colgroup>
@@ -49,7 +46,7 @@ const MatrixTable: React.FC<{ article: CartonMatrixArticle; layout: CartonLayout
         <tr>
           <th scope="col" className="cs-size">{text.sizeInDozens}</th>
           {article.colours.map((colour) => (
-            <ColourHead key={colour} colour={colour} colors={colors} />
+            <ColourHead key={colour} colour={colour} />
           ))}
           <th scope="col" className="cs-total">{text.total}</th>
         </tr>

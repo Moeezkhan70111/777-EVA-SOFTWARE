@@ -1,6 +1,6 @@
 import type { PrinterRole } from "../../shared/printerRole";
 import type { DataChangeTrace } from "../../shared/dataChange";
-import type { ClaimPartyRole, ContractorLedger, ContractorRole, LeaseDomain, ReceiveProductionOutcome, StoreDailyReport, StoreDirection, UpperIssueOutcome, UpperProductionComparison, UpperReconciliation } from "@erp/domain";
+import type { ClaimPartyRole, ContractorLedger, ContractorRole, LeaseDomain, ReceiveProductionOutcome, StoreDailyReport, StoreDirection, HandVoucherStatus, UpperIssueOutcome, UpperProductionComparison, UpperReconciliation } from "@erp/domain";
 
 export type SortOrder = "ASC" | "DESC";
 
@@ -2151,6 +2151,14 @@ export interface DesktopApi {
     },
     opts?: { token?: string }
   ): Promise<RawMaterialHandMoveResult>;
+  /** A new store hand voucher, in or out: every line moved, or none. `requestId` makes a retried Save safe. */
+  saveHandVoucher(input: HandVoucherBodyInput & { direction: StoreDirection; requestId: string }, opts?: { token?: string }): Promise<unknown>;
+  /** Today's voucher, said again from the revision the screen shows. */
+  editHandVoucher(input: HandVoucherBodyInput & { voucherId: string; revision: number }, opts?: { token?: string }): Promise<unknown>;
+  /** Today's voucher, taken back. It keeps its number, marked deleted. */
+  deleteHandVoucher(input: { voucherId: string; revision: number }, opts?: { token?: string }): Promise<unknown>;
+  /** One voucher of a direction by number, or the newest when null, with its neighbours. Replies are read by handVoucherReply.ts. */
+  getHandVoucher(direction: StoreDirection, voucherNumber: number | null, opts?: { token?: string }): Promise<unknown>;
   listRawMaterialMovementConfig(search?: string): Promise<RawMaterialMovementConfigRow[]>;
   setRawMaterialMovementConfig(
     itemId: string,
@@ -2951,6 +2959,64 @@ export interface RawMaterialHandMoveResult {
   typedUnitCode?: string;
   quantityOnHand?: number;
 }
+
+/** One line of a store hand voucher: what was typed, and what it came to in the stock unit. */
+export interface HandVoucherLine {
+  lineNo: number;
+  itemId: string;
+  itemName: string;
+  typedQuantity: number;
+  typedUnitCode: string;
+  quantity: number;
+  stockUnitCode: string;
+}
+
+/** A store hand voucher: material moved in (from a supplier) or out (to a supplier or contractor) without labels (docs/49). */
+export interface HandVoucher {
+  id: string;
+  direction: StoreDirection;
+  voucherNumber: number;
+  code: string;
+  businessDate: string;
+  partyId: string;
+  partyName: string;
+  note: string | null;
+  status: HandVoucherStatus;
+  revision: number;
+  createdBy: string;
+  createdAt: string;
+  updatedBy: string | null;
+  updatedAt: string;
+  deletedBy: string | null;
+  deletedAt: string | null;
+  /** Posted and written today: it may still be edited or deleted. */
+  editable: boolean;
+  lines: HandVoucherLine[];
+}
+
+/** One voucher and the numbers either side of it, for Previous / Next. */
+export interface HandVoucherView {
+  voucher: HandVoucher | null;
+  previousNumber: number | null;
+  nextNumber: number | null;
+  latestNumber: number | null;
+}
+
+/** A line as the screen sends it: the quantity as typed. */
+export interface HandVoucherLineInput {
+  itemId: string;
+  quantity: string;
+  unitCode: string;
+}
+
+export interface HandVoucherBodyInput {
+  partyId: string;
+  note: string | null;
+  lines: HandVoucherLineInput[];
+}
+
+export type HandVoucherReply = { accepted: true; voucher: HandVoucher } | { accepted: false; reason: string };
+export type HandVoucherViewReply = { accepted: true; view: HandVoucherView } | { accepted: false; reason: string };
 
 /** What would happen if a category were filed somewhere else, and what would stop it. */
 export interface CategoryMovePreview {

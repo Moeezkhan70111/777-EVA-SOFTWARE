@@ -82,19 +82,20 @@ export const CartonStockPage: React.FC = () => {
   return (
     <div className="page-stack carton-stock-page">
       <div className="cs-panel">
+        {/* The total and today's production first (owner, 16 Nov 2026), then the search and series under them. */}
+        <div className="cs-overview">
+          {stock.data && !stock.error ? (
+            <KpiCard className="cs-summary cs-summary--hero" label={text.totalCardLabel} value={dozenFigure(stock.data.totalCartons)}
+              sub={text.totalCardSub(stock.data.articleCount, stock.data.totalCartons.toLocaleString(), stock.searching || series !== "")} />
+          ) : null}
+          <ProductionStatusBox variant="card" mark={today.value?.mark ?? null} loading={today.loading} error={today.error} />
+        </div>
         <div className="cs-toolbar">
           <label className="us-search cs-search">
             <span className="us-search-icon" aria-hidden="true">{RAIL_ICONS.search}</span>
             <input type="search" aria-label={text.searchLabel} placeholder={text.searchPlaceholder} value={stock.search} onChange={(event) => stock.setSearch(event.target.value)} />
           </label>
           <SeriesPicker value={series} options={stock.data?.seriesOptions ?? []} allSeries={stock.data?.allSeries ?? NOTHING_HELD} onChange={chooseSeries} />
-        </div>
-        <div className="cs-overview">
-          {stock.data && !stock.error ? (
-            <KpiCard className="cs-summary" label={text.totalCardLabel} value={dozenFigure(stock.data.totalCartons)}
-              sub={text.totalCardSub(stock.data.articleCount, stock.data.totalCartons.toLocaleString(), stock.searching || series !== "")} />
-          ) : null}
-          <ProductionStatusBox mark={today.value?.mark ?? null} loading={today.loading} error={today.error} />
         </div>
         {body()}
       </div>

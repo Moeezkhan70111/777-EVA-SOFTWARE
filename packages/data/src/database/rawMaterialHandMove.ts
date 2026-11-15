@@ -40,6 +40,34 @@ const refuse = (outcome: RawMaterialHandMoveResult["outcome"], reason: string): 
   reason,
 });
 
+/** A hand move every rule has accepted, as it will be written. */
+export interface CheckedHandMove {
+  readonly direction: HandMoveDirection;
+  readonly options: RawMaterialHandMoveOptions;
+  readonly stockUnit: string;
+  readonly stockUnitId: string;
+  /** Who delivered it, moving IN. */
+  readonly partyId: string | null;
+  /** What was typed, rounded, in `typedUnit`. */
+  readonly typed: number;
+  readonly typedUnit: string;
+  /** What it comes to in the stock unit, positive. */
+  readonly moving: number;
+  /** The movement's note: what was typed, then the operator's own words. */
+  readonly note: string;
+}
+
+const movedResult = (move: CheckedHandMove, quantityOnHand: number): RawMaterialHandMoveResult => ({
+  accepted: true,
+  outcome: "MOVED",
+  direction: move.direction,
+  quantity: move.moving,
+  unitCode: move.stockUnit,
+  typedQuantity: move.typed,
+  typedUnitCode: move.typedUnit,
+  quantityOnHand: round(quantityOnHand),
+});
+
 export const rawMaterialHandMoveMethods = {
   /**
    * What the Store In / Move Out screens need to offer one material: the units it may be
@@ -90,40 +118,83 @@ export const rawMaterialHandMoveMethods = {
    * nothing is written unless the whole thing is sound.
    */
   moveRawMaterialByHand(this: SqliteDatabase, input: RawMaterialHandMoveInput): RawMaterialHandMoveResult {
+    const checked = this.checkHandMove(input);
+    if ("refused" in checked) return checked.refused;
+
+    this.db.exec("BEGIN IMMEDIATE TRANSACTION");
+    try {
+      const applied = this.applyCheckedHandMove(checked, { actor: input.actor, machineProgramId: input.machineProgramId ?? null });
+      this.db.exec("COMMIT");
+      return movedResult(checked, applied.quantityOnHand);
+    } catch (error) {
+      this.db.exec("ROLLBACK");
+      return refuse("NOT_ENOUGH_STOCK", error instanceof Error ? error.message : "The move could not be saved. Nothing was changed.");
+    }
+  },
+
+  /**
+   * @internal Applies a hand move that checkHandMove accepted: one movement on the material's balance.
+   * Call ONLY inside BEGIN IMMEDIATE. Shared with the Move In voucher, whose lines are hand moves in.
+   */
+  applyCheckedHandMove(
+    this: SqliteDatabase,
+    move: CheckedHandMove,
+    extra: { actor?: string | null; machineProgramId?: string | null; eventId?: string }
+  ): { quantityOnHand: number; eventId: string } {
+    return this.applyInventoryStockChange({
+      itemId: move.options.itemId,
+      quantity: move.direction === "IN" ? move.moving : -move.moving,
+      eventType: move.direction === "IN" ? "RECEIVE" : "TRANSFER_OUT",
+      unitId: move.stockUnitId,
+      note: move.note,
+      createdBy: extra.actor ? String(extra.actor) : undefined,
+      partyId: move.partyId,
+      machineProgramId: extra.machineProgramId ?? null,
+      eventId: extra.eventId,
+    });
+  },
+
+  /**
+   * @internal Every rule of a hand move, read against the database as it is now, without writing anything: the
+   * move as it would be applied, or the refusal the storekeeper reads. Run it inside the write's transaction when the
+   * answer must still hold at the write.
+   */
+  checkHandMove(this: SqliteDatabase, input: RawMaterialHandMoveInput): CheckedHandMove | { refused: RawMaterialHandMoveResult } {
     const direction: HandMoveDirection = input.direction === "IN" ? "IN" : "OUT";
+    const no = (outcome: RawMaterialHandMoveResult["outcome"], reason: string) => ({ refused: refuse(outcome, reason) });
     const options = this.getRawMaterialHandMoveOptions(String(input.itemId ?? ""), direction);
-    if (!options) return refuse("NOT_FOUND", "This raw material is no longer in the master.");
+    if (!options) return no("NOT_FOUND", "This raw material is no longer in the master.");
     if (options.blockedReason) {
-      return refuse(options.labelledPacketsInStore > 0 && direction === "OUT" ? "HAS_LABELLED_PACKETS" : "NOT_ELIGIBLE", options.blockedReason);
+      return no(options.labelledPacketsInStore > 0 && direction === "OUT" ? "HAS_LABELLED_PACKETS" : "NOT_ELIGIBLE", options.blockedReason);
     }
 
     const stockUnit = options.stockUnitCode;
     const stockUnitId = options.stockUnitId;
-    if (!stockUnit || !stockUnitId) return refuse("NOT_ELIGIBLE", "This material has no stock unit yet, so nothing can be moved on it.");
+    if (!stockUnit || !stockUnitId) return no("NOT_ELIGIBLE", "This material has no stock unit yet, so nothing can be moved on it.");
 
     // Receiving is supplier-at-a-time, the same rule a scanning session follows: material that
     // arrives has to name whoever delivered it, label or no label.
     let partyId: string | null = null;
     if (direction === "IN") {
       partyId = String(input.partyId ?? "").trim() || null;
-      if (!partyId) return refuse("NO_SUPPLIER", "Choose the supplier this delivery came from.");
+      if (!partyId) return no("NO_SUPPLIER", "Choose the supplier this delivery came from.");
       const party = this.db
         .prepare("SELECT id, party_name, party_type FROM parties WHERE id = ? AND deleted_at IS NULL LIMIT 1")
         .get(partyId) as { id: string; party_name: string; party_type: string } | undefined;
-      if (!party) return refuse("NO_SUPPLIER", "That supplier is not in the Party Master.");
+      if (!party) return no("NO_SUPPLIER", "That supplier is not in the Party Master.");
       if (!isRawMaterialReceiptPartyType(party.party_type)) {
-        return refuse("NO_SUPPLIER", `Only a supplier's delivery is moved in, and ${party.party_name} is not a supplier. Nothing was moved.`);
+        return no("NO_SUPPLIER", `Only a supplier's delivery is moved in, and ${party.party_name} is not a supplier. Nothing was moved.`);
       }
     }
 
     const typedUnit = String(input.unitCode ?? "").trim().toUpperCase();
     if (!options.units.includes(typedUnit)) {
-      return refuse("UNKNOWN_UNIT", `${typedUnit || "That unit"} is not one of the units this material is counted in.`);
+      return no("UNKNOWN_UNIT", `${typedUnit || "That unit"} is not one of the units this material is counted in.`);
     }
 
     const typed = Number(input.quantity);
     if (!Number.isFinite(typed) || typed <= 0) {
-      return refuse("INVALID_QUANTITY", direction === "IN" ? "Type how much came in — a number above 0." : "Type how much is going out — a number above 0.");
+      return no("INVALID_QUANTITY", direction === "IN" ? "Type how much came in — a number above 0." : "Type how much is going out — a number above 0.");
     }
 
     // The material's OWN ladder, never the global conversion table: 1 RULE = 975 INCH is a
@@ -131,12 +202,12 @@ export const rawMaterialHandMoveMethods = {
     const steps: UnitLadderStep[] = options.steps.map((step) => ({ fromUnit: step.fromUnit, toUnit: step.toUnit, factor: step.factor }));
     const inStockUnit = typedUnit === stockUnit ? typed : convertOnLadder(steps, typed, typedUnit, stockUnit);
     if (inStockUnit == null || !Number.isFinite(inStockUnit) || inStockUnit <= 0) {
-      return refuse("UNKNOWN_UNIT", `${typedUnit} cannot be turned into ${stockUnit} for this material. Check its unit ladder.`);
+      return no("UNKNOWN_UNIT", `${typedUnit} cannot be turned into ${stockUnit} for this material. Check its unit ladder.`);
     }
 
     const moving = round(inStockUnit);
     if (direction === "OUT" && moving > options.quantityOnHand) {
-      return refuse(
+      return no(
         "NOT_ENOUGH_STOCK",
         `Only ${options.quantityOnHand} ${stockUnit} is in the store. ${round(typed)} ${typedUnit} is ${moving} ${stockUnit}.`
       );
@@ -148,40 +219,14 @@ export const rawMaterialHandMoveMethods = {
     // is wrong in two ways is refused for the more basic one first. Dana issues always carry
     // their program in the note, so this never stops one.
     if (direction === "OUT" && typedNote === "") {
-      return refuse("NO_PURPOSE", "Say what this is going out for — e.g. cutting table.");
+      return no("NO_PURPOSE", "Say what this is going out for — e.g. cutting table.");
     }
     // What the operator typed is kept word for word beside what it came to, so the ledger can
     // be read back without redoing the arithmetic.
     const what = direction === "IN" ? STOCK_EVENT_NOTE.MANUAL_IN : STOCK_EVENT_NOTE.MANUAL_OUT;
     const note = [`${what} — ${round(typed)} ${typedUnit}`, typedNote].filter(Boolean).join(" · ");
 
-    this.db.exec("BEGIN IMMEDIATE TRANSACTION");
-    try {
-      const applied = this.applyInventoryStockChange({
-        itemId: options.itemId,
-        quantity: direction === "IN" ? moving : -moving,
-        eventType: direction === "IN" ? "RECEIVE" : "TRANSFER_OUT",
-        unitId: stockUnitId,
-        note,
-        createdBy: input.actor ? String(input.actor) : undefined,
-        partyId,
-        machineProgramId: input.machineProgramId ?? null,
-      });
-      this.db.exec("COMMIT");
-      return {
-        accepted: true,
-        outcome: "MOVED",
-        direction,
-        quantity: moving,
-        unitCode: stockUnit,
-        typedQuantity: round(typed),
-        typedUnitCode: typedUnit,
-        quantityOnHand: round(applied.quantityOnHand),
-      };
-    } catch (error) {
-      this.db.exec("ROLLBACK");
-      return refuse("NOT_ENOUGH_STOCK", error instanceof Error ? error.message : "The move could not be saved. Nothing was changed.");
-    }
+    return { direction, options, stockUnit, stockUnitId, partyId, typed: round(typed), typedUnit, moving, note };
   },
 };
 

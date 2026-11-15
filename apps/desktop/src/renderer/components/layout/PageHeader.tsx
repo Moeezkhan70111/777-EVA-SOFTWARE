@@ -24,6 +24,8 @@ interface PageHeaderProps {
   actions?: React.ReactNode;
   /** Goes back to the Dashboard. Absent on the Dashboard itself. */
   onDashboard?: () => void;
+  /** The Dashboard card's picture, beside the title of a page opened from one (pageIdentity.ts). Decorative. */
+  artwork?: string;
 }
 
 const DashboardIcon = () => (
@@ -35,7 +37,7 @@ const DashboardIcon = () => (
   </svg>
 );
 
-export const PageHeader: React.FC<PageHeaderProps> = ({ title, actions, onDashboard }) => (
+export const PageHeader: React.FC<PageHeaderProps> = ({ title, actions, onDashboard, artwork }) => (
   <header className="page-head">
     <div className="page-head-start">
       <img className="page-head-logo" src={BRAND_LOGO_URL} alt={copy.app.brandLine} />
@@ -46,7 +48,10 @@ export const PageHeader: React.FC<PageHeaderProps> = ({ title, actions, onDashbo
         </button>
       ) : null}
     </div>
-    <h1 className="page-head-title">{title}</h1>
+    <div className="page-head-mid">
+      {artwork ? <img className="page-head-art" src={artwork} alt="" aria-hidden="true" /> : null}
+      <h1 className="page-head-title">{title}</h1>
+    </div>
     <div className="page-head-actions">{actions}</div>
   </header>
 );
