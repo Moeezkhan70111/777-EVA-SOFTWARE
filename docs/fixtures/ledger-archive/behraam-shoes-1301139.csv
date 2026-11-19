@@ -1,0 +1,46 @@
+party_code,customer_name,transaction_date,voucher_number,transaction_type,bill_number,description,quantity,debit,credit,running_balance,sequence
+1301139,Behraam Shoes Karachi,30/09/2026,0,,,Opening Balance,,-,-,"202,200",1
+1301139,Behraam Shoes Karachi,09/10/2026,11802,SL,14302,4 Dzn HR-1 7/10 EVR Gents@7920 Discount 1440,4,"30,240",-,"232,440",2
+1301139,Behraam Shoes Karachi,09/10/2026,11802,SL,14302,7 Dzn HR-2 7/10 EVR Gents@7920 Discount 2520,7,"52,920",-,"285,360",3
+1301139,Behraam Shoes Karachi,09/10/2026,11802,SL,14302,2 Dzn HR-3 7/10 EVR Gents@7920 Discount 720,2,"15,120",-,"300,480",4
+1301139,Behraam Shoes Karachi,17/10/2026,3181,CV,,received khawaja talal hassan meezan,0,-,"300,000",480,5
+1301139,Behraam Shoes Karachi,17/10/2026,1307,JV,,LEDGER NILL,0,-,480,0,6
+1301139,Behraam Shoes Karachi,29/10/2026,12046,SL,14509,1 Dzn SK46 11/13 EVR Gents@4680 Discount 360,1,"4,320",-,"4,320",7
+1301139,Behraam Shoes Karachi,29/10/2026,12046,SL,14509,1 Dzn SK46 8/10 EVR Gents@4320 Discount 360,1,"3,960",-,"8,280",8
+1301139,Behraam Shoes Karachi,29/10/2026,12046,SL,14509,2 Dzn SK6 7/10 EVR Gents@6360 Discount 720,2,"12,000",-,"20,280",9
+1301139,Behraam Shoes Karachi,29/10/2026,12046,SL,14509,2 Dzn SK6 4/6 EVR Gents@5520 Discount 720,2,"10,320",-,"30,600",10
+1301139,Behraam Shoes Karachi,29/10/2026,12046,SL,14509,2 Dzn SK6 1/3 EVR Gents@5040 Discount 720,2,"9,360",-,"39,960",11
+1301139,Behraam Shoes Karachi,29/10/2026,12046,SL,14509,2 Dzn SK6 11/13 EVR Gents@4680 Discount 720,2,"8,640",-,"48,600",12
+1301139,Behraam Shoes Karachi,29/10/2026,12046,SL,14509,2 Dzn SK6 8/10 EVR Gents@4320 Discount 720,2,"7,920",-,"56,520",13
+1301139,Behraam Shoes Karachi,29/10/2026,12046,SL,14509,2 Dzn SK38 4/6 EVR Gents@5280 Discount 720,2,"9,840",-,"66,360",14
+1301139,Behraam Shoes Karachi,29/10/2026,12046,SL,14509,2 Dzn SK38 1/3 EVR Gents@4920 Discount 720,2,"9,120",-,"75,480",15
+1301139,Behraam Shoes Karachi,29/10/2026,12046,SL,14509,2 Dzn HR-2 7/10 EVR Gents@7920 Discount 720,2,"15,120",-,"90,600",16
+1301139,Behraam Shoes Karachi,29/10/2026,12046,SL,14509,3 Dzn HR-1 7/10 EVR Gents@7920 Discount 1080,3,"22,680",-,"113,280",17
+1301139,Behraam Shoes Karachi,29/10/2026,12046,SL,14509,2 Dzn SK30 4/6 EVR Gents@5640 Discount 720,2,"10,560",-,"123,840",18
+1301139,Behraam Shoes Karachi,29/10/2026,12046,SL,14509,2 Dzn SK30 1/3 EVR Gents@5040 Discount 720,2,"9,360",-,"133,200",19
+1301139,Behraam Shoes Karachi,29/10/2026,12046,SL,14509,2 Dzn SK30 11/13 EVR Gents@4680 Discount 720,2,"8,640",-,"141,840",20
+1301139,Behraam Shoes Karachi,29/10/2026,12046,SL,14509,2 Dzn SK30 8/10 EVR Gents@4320 Discount 720,2,"7,920",-,"149,760",21
+1301139,Behraam Shoes Karachi,29/10/2026,12046,SL,14509,1 Dzn SK46 4/6 EVR Gents@5640 Discount 360,1,"5,280",-,"155,040",22
+1301139,Behraam Shoes Karachi,29/10/2026,12046,SL,14509,1 Dzn SK46 1/3 EVR Gents@5040 Discount 360,1,"4,680",-,"159,720",23
+1301139,Behraam Shoes Karachi,04/11/2026,12132,SL,14535,3 Dzn SK26 7/10 EVR Gents@6120 Discount 1080,3,"17,280",-,"177,000",24
+1301139,Behraam Shoes Karachi,04/11/2026,12132,SL,14535,3 Dzn SK32 7/10 EVR Gents@6240 Discount 1080,3,"17,640",-,"194,640",25
+1301139,Behraam Shoes Karachi,04/11/2026,12132,SL,14535,2 Dzn K1 24/29 @4800 Discount 720,2,"8,880",-,"203,520",26
+1301139,Behraam Shoes Karachi,04/11/2026,12132,SL,14535,3 Dzn SK6 7/10 EVR Gents@6360 Discount 1080,3,"18,000",-,"221,520",27
+1301139,Behraam Shoes Karachi,04/11/2026,12132,SL,14535,3 Dzn SK34 7/10 EVR Gents@6240 Discount 1080,3,"17,640",-,"239,160",28
+1301139,Behraam Shoes Karachi,04/11/2026,12132,SL,14535,2 Dzn X2 7/10 EVR Gents@9240 Discount 720,2,"17,760",-,"256,920",29
+1301139,Behraam Shoes Karachi,04/11/2026,12132,SL,14535,2 Dzn AR-4 7/10 EVR Gents@7920 Discount 720,2,"15,120",-,"272,040",30
+1301139,Behraam Shoes Karachi,04/11/2026,12132,SL,14535,1 Dzn SK6 4/6 EVR Gents@5520 Discount 360,1,"5,160",-,"277,200",31
+1301139,Behraam Shoes Karachi,04/11/2026,12132,SL,14535,1 Dzn SK6 1/3 EVR Gents@5040 Discount 360,1,"4,680",-,"281,880",32
+1301139,Behraam Shoes Karachi,13/11/2026,12306,SL,13384,1 Dzn SK26 4/6 EVR Gents@5280 Discount 360,1,"4,920",-,"286,800",33
+1301139,Behraam Shoes Karachi,13/11/2026,12306,SL,13384,1 Dzn SK26 1/3 EVR Gents@4920 Discount 360,1,"4,560",-,"291,360",34
+1301139,Behraam Shoes Karachi,13/11/2026,12306,SL,13384,3 Dzn SK38 7/10 EVR Gents@6240 Discount 1080,3,"17,640",-,"309,000",35
+1301139,Behraam Shoes Karachi,13/11/2026,12306,SL,13384,1 Dzn SK10 4/6 EVR Gents@5520 Discount 360,1,"5,160",-,"314,160",36
+1301139,Behraam Shoes Karachi,13/11/2026,12306,SL,13384,1 Dzn SK10 1/3 EVR Gents@5040 Discount 360,1,"4,680",-,"318,840",37
+1301139,Behraam Shoes Karachi,13/11/2026,12306,SL,13384,1 Dzn SK34 4/6 EVR Gents@5280 Discount 360,1,"4,920",-,"323,760",38
+1301139,Behraam Shoes Karachi,13/11/2026,12306,SL,13384,1 Dzn SK34 1/3 EVR Gents@4920 Discount 360,1,"4,560",-,"328,320",39
+1301139,Behraam Shoes Karachi,13/11/2026,12306,SL,13384,1 Dzn SK34 11/13 EVR Gents@4560 Discount 360,1,"4,200",-,"332,520",40
+1301139,Behraam Shoes Karachi,13/11/2026,12306,SL,13384,1 Dzn SK34 8/10 EVR Gents@4200 Discount 360,1,"3,840",-,"336,360",41
+1301139,Behraam Shoes Karachi,13/11/2026,12306,SL,13384,1 Dzn SK32 4/6 EVR Gents@5280 Discount 360,1,"4,920",-,"341,280",42
+1301139,Behraam Shoes Karachi,13/11/2026,12306,SL,13384,1 Dzn SK32 1/3 EVR Gents@4920 Discount 360,1,"4,560",-,"345,840",43
+1301139,Behraam Shoes Karachi,13/11/2026,12306,SL,13384,1 Dzn SK32 11/13 EVR Gents@4560 Discount 360,1,"4,200",-,"350,040",44
+1301139,Behraam Shoes Karachi,13/11/2026,12306,SL,13384,1 Dzn SK32 8/10 EVR Gents@4200 Discount 360,1,"3,840",-,"353,880",45

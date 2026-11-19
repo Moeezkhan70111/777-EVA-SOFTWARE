@@ -23,7 +23,13 @@ export interface SavePdfOptions {
   /** Where the temporary page is written (runtimePaths scratchDir). */
   scratchDir: string;
   landscape?: boolean;
+  /** "Page 2 of 5" at the foot of every page, drawn by Chromium (the page cannot count its own pages). */
+  pageNumbers?: boolean;
 }
+
+/** Chromium's own footer: its pageNumber and totalPages spans are filled in per page. */
+const PAGE_NUMBER_FOOTER =
+  '<div style="width:100%;font-size:8px;color:#666;text-align:right;padding:0 12mm;font-family:Segoe UI,Arial,sans-serif">Page <span class="pageNumber"></span> of <span class="totalPages"></span></div>';
 
 const LOCKED = new Set(["EBUSY", "EPERM", "EACCES"]);
 
@@ -62,7 +68,12 @@ export async function saveHtmlAsPdf(options: SavePdfOptions): Promise<SavePdfRes
   try {
     fs.writeFileSync(tempHtmlPath, options.html, "utf8");
     await printWindow.loadFile(tempHtmlPath);
-    const pdf = await printWindow.webContents.printToPDF({ printBackground: true, pageSize: "A4", landscape: options.landscape ?? false });
+    const pdf = await printWindow.webContents.printToPDF({
+      printBackground: true,
+      pageSize: "A4",
+      landscape: options.landscape ?? false,
+      ...(options.pageNumbers ? { displayHeaderFooter: true, headerTemplate: "<span></span>", footerTemplate: PAGE_NUMBER_FOOTER } : {}),
+    });
     return { accepted: true, filePath: writeBesideIfLocked(choice.filePath, pdf) };
   } catch (error) {
     return { accepted: false, reason: error instanceof Error ? error.message : "The PDF could not be made." };

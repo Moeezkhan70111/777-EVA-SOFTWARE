@@ -106,7 +106,14 @@ const KIND_OF_TYPE: Readonly<Record<string, DataKind>> = {
   ARTICLE_SIZE: DATA_KIND.PRODUCTS,
   GATEPASS: DATA_KIND.BILLING,
   SALE_VOUCHER: DATA_KIND.BILLING,
+  // Pending Orders reload with gatepasses: an order, or what a gatepass dispatched against one (docs/52).
+  CUSTOMER_ORDER: DATA_KIND.BILLING,
+  GATEPASS_ORDER_ALLOCATION: DATA_KIND.BILLING,
   CASH_VOUCHER: DATA_KIND.CASH,
+  // An old ledger imported on another computer: the Customer Ledger screen shows it (docs/50). Never a balance.
+  LEDGER_ARCHIVE_STATEMENT: DATA_KIND.BILLING,
+  // An opening balance posted, corrected or reversed on the accounts computer: a party balance moved (docs/53).
+  PARTY_OPENING_BALANCE: DATA_KIND.CASH,
   COLOR_TRANSLATION: DATA_KIND.COLORS,
 };
 

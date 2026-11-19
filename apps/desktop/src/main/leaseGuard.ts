@@ -41,12 +41,13 @@ export function installLeaseGate(deps: LeaseGateDeps): void {
 
 const DOMAIN_WORDS: Readonly<Record<LeaseDomain, string>> = {
   [LEASE_DOMAIN.RAW_MATERIAL_STORE]: "the raw material store",
-  [LEASE_DOMAIN.MASTER_DATA]: "master data (parties, machines, products and colours)",
+  [LEASE_DOMAIN.MASTER_DATA]: "master data (machines, products and colours)",
   [LEASE_DOMAIN.SALES_DISPATCH]: "sales and dispatch",
   [LEASE_DOMAIN.ACCOUNTS]: "accounts",
   [LEASE_DOMAIN.MACHINE_PROGRAMS]: "machine programs",
   [LEASE_DOMAIN.APPROVALS]: "approvals",
   [LEASE_DOMAIN.CARTON_STOCK]: "carton stock (Manual Production and gatepasses)",
+  [LEASE_DOMAIN.PARTIES]: "parties",
 };
 
 /** A leased write refused on this computer. The message is for the operator, as it stands. */

@@ -39,6 +39,8 @@ export const PAGE_TITLES: Record<AppRoute, string> = {
   "gatepass-list": "Gatepass List",
   "gatepass-store-scan": "Gatepass — Store Scan",
   "gatepass-dispatch-scan": "Gatepass — Dispatch Scan",
+  "orders-entry": copy.nav.items.ordersEntry.label,
+  "pending-orders": copy.nav.items.pendingOrders.label,
   "party-list": "Party Management",
   "party-form": "Party",
   "customer-ledger": "Customer Ledger",

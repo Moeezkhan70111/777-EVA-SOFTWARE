@@ -50,6 +50,9 @@ export const APP_ROUTES = [
   "gatepass-list",
   "gatepass-store-scan",
   "gatepass-dispatch-scan",
+  // Customer orders (docs/52): entering them, and what is still owed by party.
+  "orders-entry",
+  "pending-orders",
   "party-list",
   "party-form",
   "customer-ledger",

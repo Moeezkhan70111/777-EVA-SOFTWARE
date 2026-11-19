@@ -8,6 +8,7 @@ import { refuseTestFinancialDocument } from "./stockProtection.js";
 import type { PagedResult, SaleVoucherLineRecord } from "./types.js";
 import { addMoney, fromPaisa, subtractMoney, toPaisa } from "@erp/domain";
 import { allocateNumberInRange } from "./numberRange.js";
+import { OPENING_BALANCE_ENTRY_NUMBER } from "./partyOpeningBalances.js";
 import { RequestConflictError, fingerprintText, isRequestId, requestFingerprint } from "./requestFingerprint.js";
 
 type CashVoucherLineInput = { partyId: string; description: string; modeOfTransfer: string; bankAccountTitle?: string; chequeNumber?: string; chequeDate?: string; onlineFrom?: string; onlineTo?: string; referenceNo?: string; receiptAmount: number; paymentAmount: number };
@@ -420,7 +421,8 @@ export const cashMethods = {
       voucherId: string;
       voucherNumber: string;
       voucherDate: string;
-      voucherType: "SALE" | "CASH_RECEIPT" | "CASH_PAYMENT" | "SALE_RETURN";
+      /** OPENING_BALANCE: the customer's posted opening balance (docs/53), dated when it takes effect. Not a voucher. */
+      voucherType: "SALE" | "CASH_RECEIPT" | "CASH_PAYMENT" | "SALE_RETURN" | "OPENING_BALANCE";
       description: string;
       modeOfTransfer?: string;
       onlineFrom?: string;
@@ -476,19 +478,36 @@ export const cashMethods = {
       .prepare("SELECT COALESCE(SUM(total_amount_paisa), 0) as total FROM live_sale_returns WHERE party_id = ? AND return_date < ? AND status = 'ACTIVE' AND deleted_at IS NULL")
       .get(partyId, fromDate) as { total: number };
 
-    const openingBalance = fromPaisa(openingSales.total - openingReceipts.total + openingPayments.total - openingReturns.total);
+    // The customer's posted opening balance (docs/53): before the range it is part of the opening figure, inside it
+    // it is a row of its own. Never a voucher: it moves this balance and nothing else.
+    const posted = this.openingBalanceForLedger(partyId, "CUSTOMER", fromDate, toDate);
+    const openingBalance = fromPaisa(posted.beforePaisa + openingSales.total - openingReceipts.total + openingPayments.total - openingReturns.total);
 
     // Get all transactions in date range
     const transactions: Array<{
       id: string;
       number: string;
       date: string;
-      type: "SALE" | "CASH_RECEIPT" | "CASH_PAYMENT" | "SALE_RETURN";
+      type: "SALE" | "CASH_RECEIPT" | "CASH_PAYMENT" | "SALE_RETURN" | "OPENING_BALANCE";
       description: string;
       modeOfTransfer?: string;
       subPartyUrdu?: string;
       amount: number;
+      /** Only for OPENING_BALANCE: which column it is in. */
+      debit?: boolean;
     }> = [];
+
+    if (posted.row) {
+      transactions.push({
+        id: posted.row.id,
+        number: OPENING_BALANCE_ENTRY_NUMBER,
+        date: posted.row.date,
+        type: "OPENING_BALANCE",
+        description: posted.row.reference,
+        amount: fromPaisa(posted.row.amountPaisa),
+        debit: posted.row.direction === "DEBIT",
+      });
+    }
 
     // Add sale vouchers
     const sales = this.db
@@ -617,8 +636,8 @@ export const cashMethods = {
     // Sort by date then by type (sales first, then returns, then cash)
     transactions.sort((a, b) => {
       if (a.date !== b.date) return a.date.localeCompare(b.date);
-      // Sales before returns before cash transactions on same date
-      const typeOrder = { SALE: 1, SALE_RETURN: 2, CASH_RECEIPT: 3, CASH_PAYMENT: 4 };
+      // The opening balance first, then sales before returns before cash transactions on same date
+      const typeOrder = { OPENING_BALANCE: 0, SALE: 1, SALE_RETURN: 2, CASH_RECEIPT: 3, CASH_PAYMENT: 4 };
       return typeOrder[a.type] - typeOrder[b.type];
     });
 
@@ -628,7 +647,11 @@ export const cashMethods = {
       let debitAmount = 0;
       let creditAmount = 0;
 
-      if (tx.type === "SALE" || tx.type === "CASH_PAYMENT") {
+      if (tx.type === "OPENING_BALANCE") {
+        // A DEBIT is what the customer owed the old books, a CREDIT an advance they held.
+        if (tx.debit) { debitAmount = tx.amount; runningBalance = addMoney(runningBalance, tx.amount); }
+        else { creditAmount = tx.amount; runningBalance = subtractMoney(runningBalance, tx.amount); }
+      } else if (tx.type === "SALE" || tx.type === "CASH_PAYMENT") {
         debitAmount = tx.amount;
         runningBalance = addMoney(runningBalance, tx.amount);
       } else if (tx.type === "CASH_RECEIPT" || tx.type === "SALE_RETURN") {

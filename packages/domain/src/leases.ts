@@ -4,7 +4,7 @@
 // IDENTITY flows are deliberately absent: they stay multi-writer, because their identities are
 // deduplicated by construction. The carton stock FIGURE is not an identity, and is leased (docs/42).
 //
-// Must match the rows cloud migrations 011 and 026 seed into lease_domains. cloudSchema.test.ts checks it.
+// Must match the rows cloud migrations 011, 026 and 035 seed into lease_domains. cloudSchema.test.ts checks it.
 
 export const LEASE_DOMAIN = {
   RAW_MATERIAL_STORE: "RAW_MATERIAL_STORE",
@@ -21,6 +21,11 @@ export const LEASE_DOMAIN = {
    * out, and Manual Production's machine-day program and contractor ledger are never split.
    */
   CARTON_STOCK: "CARTON_STOCK",
+  /**
+   * Parties and party groups (docs/51, cloud 035): held by the store computer (PC2), so it can add the supplier or
+   * contractor in front of it. Taken out of MASTER_DATA, which keeps products, sizes, machines, groups and colours.
+   */
+  PARTIES: "PARTIES",
 } as const;
 
 export type LeaseDomain = (typeof LEASE_DOMAIN)[keyof typeof LEASE_DOMAIN];

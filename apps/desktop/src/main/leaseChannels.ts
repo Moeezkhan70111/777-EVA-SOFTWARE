@@ -23,6 +23,8 @@ import { IPC } from "../shared/ipcChannels";
 
 const STORE: readonly LeaseDomain[] = [LEASE_DOMAIN.RAW_MATERIAL_STORE];
 const MASTER: readonly LeaseDomain[] = [LEASE_DOMAIN.MASTER_DATA];
+/** Parties and party groups: their own lease, held by the store computer (cloud 035, docs/51). */
+const PARTIES: readonly LeaseDomain[] = [LEASE_DOMAIN.PARTIES];
 const BOTH: readonly LeaseDomain[] = [LEASE_DOMAIN.MASTER_DATA, LEASE_DOMAIN.RAW_MATERIAL_STORE];
 const CARTONS: readonly LeaseDomain[] = [LEASE_DOMAIN.CARTON_STOCK];
 const SALES: readonly LeaseDomain[] = [LEASE_DOMAIN.SALES_DISPATCH];
@@ -81,10 +83,11 @@ export const LEASED_CHANNELS: Readonly<Record<string, readonly LeaseDomain[]>> =
   [IPC.removeInventoryCategory]: STORE,
   [IPC.setInventoryItemUnit]: STORE,
   [IPC.updateInventoryItemPrice]: STORE,
-  [IPC.createPartyGroup]: MASTER,
-  [IPC.createParty]: MASTER,
-  [IPC.updateParty]: MASTER,
-  [IPC.deleteParty]: MASTER,
+  // Parties are written where the store is: their own lease, not MASTER_DATA (cloud 035, docs/51).
+  [IPC.createPartyGroup]: PARTIES,
+  [IPC.createParty]: PARTIES,
+  [IPC.updateParty]: PARTIES,
+  [IPC.deleteParty]: PARTIES,
   [IPC.createMachine]: MASTER,
   [IPC.setMachineStatus]: MASTER,
   [IPC.addMachine]: MASTER,
@@ -150,6 +153,11 @@ export const LEASED_CHANNELS: Readonly<Record<string, readonly LeaseDomain[]>> =
   [IPC.deleteVoucherLineItem]: SALES,
   [IPC.deleteSaleVoucher]: SALES,
   [IPC.saveGatepassDeliveryProof]: SALES,
+  // Customer orders travel under the gatepass's lease: written where gatepasses are made, so a gatepass allocates
+  // against every order there is (docs/52).
+  [IPC.saveCustomerOrder]: SALES,
+  [IPC.editCustomerOrder]: SALES,
+  [IPC.cancelCustomerOrder]: SALES,
   // A sale return credits the customer and is not sent to the cloud in this release: one computer records them, the
   // one holding the sales lease (owner, 9 Nov 2026; docs/44 §6). Also on the carton QR hold below: refused everywhere
   // while the hold lasts, and only on the sales holder once it is lifted.
@@ -159,6 +167,12 @@ export const LEASED_CHANNELS: Readonly<Record<string, readonly LeaseDomain[]>> =
   [IPC.createCashVoucher]: ACCOUNTS,
   [IPC.updateCashVoucher]: ACCOUNTS,
   [IPC.deleteCashVoucher]: ACCOUNTS,
+  // An imported old ledger is accounts work, and travels under the accounts lease (docs/50). It is never accounting.
+  [IPC.importLedgerArchive]: ACCOUNTS,
+  // An opening balance is the accounts' starting position for a party, posted where cash vouchers are (docs/53).
+  [IPC.postPartyOpeningBalance]: ACCOUNTS,
+  [IPC.reversePartyOpeningBalance]: ACCOUNTS,
+  [IPC.correctPartyOpeningBalance]: ACCOUNTS,
 };
 
 /**
@@ -184,6 +198,8 @@ export const CARTON_QR_HOLD_CHANNELS: ReadonlySet<string> = new Set([
  * Listed so the classification test can tell "decided" from "forgotten".
  */
 export const UNLEASED_WRITE_CHANNELS: Readonly<Record<string, string>> = {
+  [IPC.attachLedgerArchiveSource]:
+    "An old ledger's PDF kept in this computer's own folder. The file does not travel, and nothing in the ERP changes until the import, which is leased.",
   [IPC.storeEntryScan]: "Carton QR flow: multi-writer by the owner's decision (docs/37 W.1).",
   [IPC.processScan]: "Carton QR production scan: on the carton QR hold in this release (CARTON_QR_HOLD_CHANNELS); its lease is decided when QR resumes.",
   [IPC.receiveProduction]: "Carton QR receiving: on the carton QR hold in this release; its lease is decided when QR resumes.",

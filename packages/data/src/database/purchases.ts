@@ -7,6 +7,10 @@ import type { SqliteDatabase } from "../sqliteDatabase.js";
 import type { PagedResult } from "./types.js";
 import { addMoney, businessToday, fromPaisa, fromPaisaOrNull, multiplyMoney, subtractMoney, toPaisa } from "@erp/domain";
 import { allocateNumberInRange } from "./numberRange.js";
+import { OPENING_BALANCE_ENTRY_NUMBER, openingBalancePaisaSql } from "./partyOpeningBalances.js";
+
+/** What a supplier ledger row is. OPENING_BALANCE is the supplier's opening balance (docs/53), not a voucher. */
+type SupplierLedgerType = "PURCHASE" | "CASH_PAYMENT" | "CASH_RECEIPT" | "CLAIM" | "OPENING_BALANCE";
 
 export const purchasesMethods = {
   getNextPurchaseVoucherNumber(this: SqliteDatabase): string {
@@ -220,7 +224,8 @@ export const purchasesMethods = {
 
   getSupplierLedger(this: SqliteDatabase, partyId: string, query: { fromDate?: string; toDate?: string } = {}): {
     partyId: string; partyName: string; openingBalance: number; closingBalance: number;
-    entries: Array<{ voucherId: string; voucherNumber: string; voucherDate: string; voucherType: "PURCHASE" | "CASH_PAYMENT" | "CASH_RECEIPT" | "CLAIM"; description: string; modeOfTransfer?: string; debitAmount: number; creditAmount: number; balance: number }>;
+    // OPENING_BALANCE: the supplier's posted opening balance (docs/53), dated when it takes effect. Not a voucher.
+    entries: Array<{ voucherId: string; voucherNumber: string; voucherDate: string; voucherType: SupplierLedgerType; description: string; modeOfTransfer?: string; debitAmount: number; creditAmount: number; balance: number }>;
   } {
     const party = this.getParty(partyId);
     if (!party) return { partyId, partyName: "", openingBalance: 0, closingBalance: 0, entries: [] };
@@ -233,9 +238,15 @@ export const purchasesMethods = {
     // A claim against the supplier (damaged uppers, migration 076) is a deduction from what we owe.
     const claims = this.listPartyClaims(partyId);
     const openingClaims = claims.filter((claim) => claim.claimDate < fromDate).reduce((total, claim) => total + claim.amountPaisa, 0);
-    const openingBalance = fromPaisa(openingPurchases.t - openingPayments.t - openingClaims); // positive = we owe supplier
+    // The supplier's posted opening balance (docs/53): before the range it is part of the opening figure, inside it a
+    // row of its own. Credit-positive, like this ledger: a CREDIT is what we owed, a DEBIT what we had paid ahead.
+    const posted = this.openingBalanceForLedger(partyId, "SUPPLIER", fromDate, toDate);
+    const openingBalance = fromPaisa(posted.beforePaisa + openingPurchases.t - openingPayments.t - openingClaims); // positive = we owe supplier
 
-    const transactions: Array<{ id: string; number: string; date: string; type: "PURCHASE" | "CASH_PAYMENT" | "CASH_RECEIPT" | "CLAIM"; description: string; modeOfTransfer?: string; amount: number }> = [];
+    const transactions: Array<{ id: string; number: string; date: string; type: SupplierLedgerType; description: string; modeOfTransfer?: string; amount: number; credit?: boolean }> = [];
+    if (posted.row) {
+      transactions.push({ id: posted.row.id, number: OPENING_BALANCE_ENTRY_NUMBER, date: posted.row.date, type: "OPENING_BALANCE", description: posted.row.reference, amount: fromPaisa(posted.row.amountPaisa), credit: posted.row.direction === "CREDIT" });
+    }
 
     const purchases = this.db.prepare("SELECT id, voucher_number, voucher_date, total_amount_paisa, COALESCE(remarks,'') as remarks, COALESCE(reference_no,'') as ref FROM purchase_vouchers WHERE party_id = ? AND voucher_date BETWEEN ? AND ? AND status != 'CANCELLED' AND deleted_at IS NULL ORDER BY voucher_date ASC, created_at ASC").all(partyId, fromDate, toDate) as Array<Record<string, unknown>>;
     for (const p of purchases) {
@@ -256,14 +267,14 @@ export const purchasesMethods = {
       transactions.push({ id: claim.claimId, number: claim.claimNumber, date: claim.claimDate, type: "CLAIM", description: claim.description, amount: fromPaisa(claim.amountPaisa) });
     }
 
-    const order: Record<string, number> = { PURCHASE: 1, CASH_PAYMENT: 2, CASH_RECEIPT: 3, CLAIM: 4 };
+    const order: Record<string, number> = { OPENING_BALANCE: 0, PURCHASE: 1, CASH_PAYMENT: 2, CASH_RECEIPT: 3, CLAIM: 4 };
     transactions.sort((a, b) => (a.date !== b.date ? a.date.localeCompare(b.date) : order[a.type] - order[b.type]));
 
     let running = openingBalance;
     const entries = transactions.map((tx) => {
       let debit = 0;
       let credit = 0;
-      if (tx.type === "PURCHASE") { credit = tx.amount; running = addMoney(running, tx.amount); }
+      if (tx.type === "PURCHASE" || (tx.type === "OPENING_BALANCE" && tx.credit)) { credit = tx.amount; running = addMoney(running, tx.amount); }
       else { debit = tx.amount; running = subtractMoney(running, tx.amount); }
       return { voucherId: tx.id, voucherNumber: tx.number, voucherDate: tx.date, voucherType: tx.type, description: tx.description, modeOfTransfer: tx.modeOfTransfer, debitAmount: debit, creditAmount: credit, balance: running };
     });
@@ -271,7 +282,7 @@ export const purchasesMethods = {
     return { partyId, partyName: party.partyName, openingBalance, closingBalance: running, entries };
   },
 
-  listSupplierBalances(this: SqliteDatabase, query: { asOfDate?: string } = {}): { rows: Array<{ partyId: string; partyName: string; city: string | null; balance: number; lastVoucherDate: string | null; totalPurchases: number; totalPayments: number }>; total: number } {
+  listSupplierBalances(this: SqliteDatabase, query: { asOfDate?: string } = {}): { rows: Array<{ partyId: string; partyName: string; city: string | null; balance: number; lastVoucherDate: string | null; totalPurchases: number; totalPayments: number; openingBalance: number }>; total: number } {
     // The Karachi calendar date, not the UTC one. Every filter below is
     // `voucher_date <= asOfDate`, so a UTC default silently dropped every voucher,
     // payment and claim dated today for the five hours after local midnight -- a balance
@@ -285,7 +296,9 @@ export const purchasesMethods = {
            p.id AS party_id, p.party_name, p.city,
            (SELECT COALESCE(SUM(pv.total_amount_paisa),0) FROM purchase_vouchers pv WHERE pv.party_id = p.id AND pv.deleted_at IS NULL AND pv.status != 'CANCELLED' AND pv.voucher_date <= ?) AS total_purchases_paisa,
            (SELECT COALESCE(SUM(cv.payment_amount_paisa),0) FROM cash_vouchers cv WHERE cv.party_id = p.id AND cv.deleted_at IS NULL AND cv.status = 'ACTIVE' AND cv.voucher_date <= ?) AS total_payments_paisa,
-           (SELECT COALESCE(SUM(pv.total_amount_paisa),0) FROM purchase_vouchers pv WHERE pv.party_id = p.id AND pv.deleted_at IS NULL AND pv.status != 'CANCELLED' AND pv.voucher_date <= ?)
+           ${openingBalancePaisaSql("SUPPLIER", "p.id", "ob.effective_date <= ?")} AS opening_paisa,
+           ${openingBalancePaisaSql("SUPPLIER", "p.id", "ob.effective_date <= ?")}
+           + (SELECT COALESCE(SUM(pv.total_amount_paisa),0) FROM purchase_vouchers pv WHERE pv.party_id = p.id AND pv.deleted_at IS NULL AND pv.status != 'CANCELLED' AND pv.voucher_date <= ?)
            - (SELECT COALESCE(SUM(cv.payment_amount_paisa),0) FROM cash_vouchers cv WHERE cv.party_id = p.id AND cv.deleted_at IS NULL AND cv.status = 'ACTIVE' AND cv.voucher_date <= ?)
            - (SELECT COALESCE(SUM(pc.amount_paisa),0) FROM party_claims pc WHERE pc.party_id = p.id AND pc.status = 'POSTED' AND pc.claim_date <= ?) AS balance_paisa,
            (SELECT MAX(dt) FROM (
@@ -297,7 +310,7 @@ export const purchasesMethods = {
          WHERE p.deleted_at IS NULL AND p.party_type = 'SUPPLIER' AND p.status = 'ACTIVE'
          ORDER BY balance_paisa DESC, p.party_name ASC`
       )
-      .all(asOfDate, asOfDate, asOfDate, asOfDate, asOfDate, asOfDate, asOfDate) as Array<Record<string, unknown>>;
+      .all(asOfDate, asOfDate, asOfDate, asOfDate, asOfDate, asOfDate, asOfDate, asOfDate, asOfDate) as Array<Record<string, unknown>>;
     return {
       rows: rows.map((row) => ({
         partyId: String(row.party_id ?? ""),
@@ -307,6 +320,7 @@ export const purchasesMethods = {
         lastVoucherDate: row.last_voucher_date ? String(row.last_voucher_date) : null,
         totalPurchases: fromPaisa(Number(row.total_purchases_paisa ?? 0)),
         totalPayments: fromPaisa(Number(row.total_payments_paisa ?? 0)),
+        openingBalance: fromPaisa(Number(row.opening_paisa ?? 0)),
       })),
       total: rows.length,
     };

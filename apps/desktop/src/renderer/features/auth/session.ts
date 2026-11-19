@@ -133,6 +133,10 @@ export const routePermission: Partial<Record<AppRoute, PermissionCode>> = {
   gatepass: PERMISSION.GATEPASS,
   "gatepass-list": PERMISSION.GATEPASS,
 
+  // Customer orders (docs/52). Cancelling is checked separately (orders-cancel) by the main process and the page.
+  "orders-entry": PERMISSION.ORDERS_ENTER,
+  "pending-orders": PERMISSION.ORDERS_VIEW,
+
   stock: PERMISSION.STOCK,
   // Independent of Stock and of each other: a profile may hold either, both or neither.
   "upper-stock": PERMISSION.STOCK_UPPER_VIEW,

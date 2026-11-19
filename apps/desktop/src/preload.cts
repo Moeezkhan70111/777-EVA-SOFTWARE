@@ -159,6 +159,13 @@ contextBridge.exposeInMainWorld("desktop", {
     editHandVoucher: (input: Record<string, unknown>, opts?: { token?: string }) => ipcRenderer.invoke(IPC.editHandVoucher, input, opts),
     deleteHandVoucher: (input: Record<string, unknown>, opts?: { token?: string }) => ipcRenderer.invoke(IPC.deleteHandVoucher, input, opts),
     getHandVoucher: (direction: string, voucherNumber: number | null, opts?: { token?: string }) => ipcRenderer.invoke(IPC.getHandVoucher, direction, voucherNumber, opts),
+    saveCustomerOrder: (input: Record<string, unknown>, opts?: { token?: string }) => ipcRenderer.invoke(IPC.saveCustomerOrder, input, opts),
+    editCustomerOrder: (input: Record<string, unknown>, opts?: { token?: string }) => ipcRenderer.invoke(IPC.editCustomerOrder, input, opts),
+    cancelCustomerOrder: (input: Record<string, unknown>, opts?: { token?: string }) => ipcRenderer.invoke(IPC.cancelCustomerOrder, input, opts),
+    getCustomerOrder: (orderNumber: number | null, opts?: { token?: string }) => ipcRenderer.invoke(IPC.getCustomerOrder, orderNumber, opts),
+    getCustomerOrderArticle: (article: string, opts?: { token?: string }) => ipcRenderer.invoke(IPC.getCustomerOrderArticle, article, opts),
+    listPendingOrderParties: (query: Record<string, unknown>, opts?: { token?: string }) => ipcRenderer.invoke(IPC.listPendingOrderParties, query, opts),
+    listPendingOrderLines: (partyId: string, query: Record<string, unknown>, opts?: { token?: string }) => ipcRenderer.invoke(IPC.listPendingOrderLines, partyId, query, opts),
     listRawMaterialMovementConfig: (search?: string) => ipcRenderer.invoke(IPC.listRawMaterialMovementConfig, search),
     setRawMaterialMovementConfig: (itemId: string, input: Record<string, unknown>) =>
       ipcRenderer.invoke(IPC.setRawMaterialMovementConfig, itemId, input),
@@ -275,7 +282,7 @@ contextBridge.exposeInMainWorld("desktop", {
     saveRateList: (payload: { html: string; fileName: string }) => ipcRenderer.invoke(IPC.saveRateList, payload),
     printDocument: (payload: { html: string; pageSize?: { widthIn: number; heightIn: number }; printer?: string }) =>
       ipcRenderer.invoke(IPC.printDocument, payload),
-    savePdfDocument: (payload: { html: string; fileName: string; landscape?: boolean }) => ipcRenderer.invoke(IPC.savePdfDocument, payload),
+    savePdfDocument: (payload: { html: string; fileName: string; landscape?: boolean; pageNumbers?: boolean }) => ipcRenderer.invoke(IPC.savePdfDocument, payload),
     listHistory: (query: Record<string, unknown>) => ipcRenderer.invoke(IPC.listHistory, query),
     listDispatchHistory: (query: Record<string, unknown>) => ipcRenderer.invoke(IPC.listDispatchHistory, query),
     listDispatchSessions: (filter?: Record<string, unknown>) => ipcRenderer.invoke(IPC.listDispatchSessions, filter),
@@ -441,6 +448,18 @@ contextBridge.exposeInMainWorld("desktop", {
     listCashVouchers: (query?: Record<string, unknown>) => ipcRenderer.invoke(IPC.listCashVouchers, query),
     deleteCashVoucher: (id: string) => ipcRenderer.invoke(IPC.deleteCashVoucher, id),
     getCustomerLedgerWithCash: (partyId: string, query?: Record<string, unknown>) => ipcRenderer.invoke(IPC.getCustomerLedgerWithCash, partyId, query),
+    // Historical ledger archive (docs/50)
+    previewLedgerArchive: (input: Record<string, unknown>) => ipcRenderer.invoke(IPC.previewLedgerArchive, input),
+    importLedgerArchive: (input: Record<string, unknown>) => ipcRenderer.invoke(IPC.importLedgerArchive, input),
+    getLedgerArchive: (partyId: string, query?: Record<string, unknown>) => ipcRenderer.invoke(IPC.getLedgerArchive, partyId, query),
+    attachLedgerArchiveSource: (input: { name: string; dataUrl: string }) => ipcRenderer.invoke(IPC.attachLedgerArchiveSource, input),
+    openLedgerArchiveSource: (hash: string) => ipcRenderer.invoke(IPC.openLedgerArchiveSource, hash),
+    // Opening balances and the ledger reconciliation (docs/53)
+    getPartyOpeningBalance: (partyId: string) => ipcRenderer.invoke(IPC.getPartyOpeningBalance, partyId),
+    postPartyOpeningBalance: (input: Record<string, unknown>) => ipcRenderer.invoke(IPC.postPartyOpeningBalance, input),
+    reversePartyOpeningBalance: (input: Record<string, unknown>) => ipcRenderer.invoke(IPC.reversePartyOpeningBalance, input),
+    correctPartyOpeningBalance: (input: Record<string, unknown>) => ipcRenderer.invoke(IPC.correctPartyOpeningBalance, input),
+    getLedgerReconciliation: (side: string) => ipcRenderer.invoke(IPC.getLedgerReconciliation, side),
     // Purchase Voucher Management (supplier bills)
     getNextPurchaseVoucherNumber: () => ipcRenderer.invoke(IPC.getNextPurchaseVoucherNumber),
     createPurchaseVoucher: (input: Record<string, unknown>) => ipcRenderer.invoke(IPC.createPurchaseVoucher, input),

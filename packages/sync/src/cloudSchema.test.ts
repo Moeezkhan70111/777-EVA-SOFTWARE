@@ -1502,9 +1502,9 @@ test("009: every event type this computer can apply is a type the cloud log acce
   const { APPLY_CONTRACTS } = await import("./applyEnvelope.js");
   // Every cloud migration that seeds the log's types: 009 the first five, 013 the eight master
   // records, 015 stock movements, 020 and 021 the account types, 026 carton stock movements, 028 the
-  // production-to-cash records, 029 the colour list, 030 the Stock Adjustment documents, 032 the completed production days, 033 the Move In vouchers.
+  // production-to-cash records, 029 the colour list, 030 the Stock Adjustment documents, 032 the completed production days, 033 the Move In vouchers, 034 the ledger archive statements, 036 the customer orders and their allocations, 037 the opening balances.
   const seeds = new Set(seededTypes().keys());
-  for (const migration of [LEASED_RECORDS, STOCK_EVENTS, CLOUD_ACCOUNTS, PERMISSION_REQUESTS, CARTON_STOCK_EVENTS, PRODUCTION_TO_CASH, COLOR_TRANSLATIONS, ADJUSTMENT_DOCUMENTS, PRODUCTION_DAYS, STORE_HAND_VOUCHERS]) {
+  for (const migration of [LEASED_RECORDS, STOCK_EVENTS, CLOUD_ACCOUNTS, PERMISSION_REQUESTS, CARTON_STOCK_EVENTS, PRODUCTION_TO_CASH, COLOR_TRANSLATIONS, ADJUSTMENT_DOCUMENTS, PRODUCTION_DAYS, STORE_HAND_VOUCHERS, LEDGER_ARCHIVE, CUSTOMER_ORDERS, OPENING_BALANCES]) {
     const insert = migration.slice(migration.indexOf("insert into public.sync_aggregate_types"));
     for (const match of insert.slice(0, insert.indexOf(";")).matchAll(/\('([A-Z_]+)', (true|false), '/g)) {
       seeds.add(match[1] ?? "");
@@ -1556,9 +1556,12 @@ const declarationOf = (sql: string, name: string): string => {
 };
 
 test("011: the cloud's lease domains are exactly this computer's", () => {
-  // 011 seeds the first six; 026 adds CARTON_STOCK, read from its lease_domains insert alone.
-  const cartonLease = CARTON_STOCK_EVENTS.slice(CARTON_STOCK_EVENTS.indexOf("insert into public.lease_domains"));
-  const seeded = [LEASES, cartonLease.slice(0, cartonLease.indexOf(";"))].flatMap((sql) =>
+  // 011 seeds the first six; 026 adds CARTON_STOCK and 035 PARTIES, each read from its lease_domains insert alone.
+  const insertOf = (sql: string): string => {
+    const from = sql.slice(sql.indexOf("insert into public.lease_domains"));
+    return from.slice(0, from.indexOf(";"));
+  };
+  const seeded = [LEASES, insertOf(CARTON_STOCK_EVENTS), insertOf(PARTIES_LEASE)].flatMap((sql) =>
     [...sql.matchAll(/^\s+\('([A-Z_]+)', '/gm)].map((match) => match[1])
   );
   assert.deepEqual([...seeded].sort(), Object.values(LEASE_DOMAIN).sort());
@@ -1754,31 +1757,39 @@ const ADJUSTMENT_DOCUMENTS = read("migrations/supabase/030_carton_stock_adjustme
 const RAW_MATERIAL_MASTER = read("migrations/supabase/031_raw_material_master_on_store_lease.up.sql");
 const PRODUCTION_DAYS = read("migrations/supabase/032_production_day_records.up.sql");
 const STORE_HAND_VOUCHERS = read("migrations/supabase/033_store_hand_voucher_records.up.sql");
+const LEDGER_ARCHIVE = read("migrations/supabase/034_ledger_archive_records.up.sql");
+const OPENING_BALANCES = read("migrations/supabase/037_party_opening_balance_records.up.sql");
+const PARTIES_LEASE = read("migrations/supabase/035_parties_lease.up.sql");
+const PARTIES_LEASE_DOWN = read("migrations/supabase/035_parties_lease.down.sql");
+const CUSTOMER_ORDERS = read("migrations/supabase/036_customer_order_records.up.sql");
 const LEASED_RECORDS_DOWN = read("migrations/supabase/013_leased_records.down.sql");
 
 /** The (type, lease domain) rows 013 seeds into leased_record_types. */
 const leasedRecordTypes = (): Map<string, string> => {
   const types = new Map<string, string>();
-  for (const migration of [LEASED_RECORDS, PRODUCTION_TO_CASH, COLOR_TRANSLATIONS, ADJUSTMENT_DOCUMENTS, PRODUCTION_DAYS, STORE_HAND_VOUCHERS]) {
+  for (const migration of [LEASED_RECORDS, PRODUCTION_TO_CASH, COLOR_TRANSLATIONS, ADJUSTMENT_DOCUMENTS, PRODUCTION_DAYS, STORE_HAND_VOUCHERS, LEDGER_ARCHIVE, CUSTOMER_ORDERS, OPENING_BALANCES]) {
     const insert = migration.slice(migration.indexOf("insert into public.leased_record_types"));
     for (const match of insert.slice(0, insert.indexOf(";")).matchAll(/\('([A-Z_]+)', '([A-Z_]+)'\)/g)) {
       types.set(match[1] ?? "", match[2] ?? "");
     }
   }
-  // 031 moves the raw-material taxonomy to the store's lease: applied as the cloud applies it, after the inserts.
-  const moved = /set lease_domain = '([A-Z_]+)'\s+where aggregate_type in \(([^)]*)\)/.exec(RAW_MATERIAL_MASTER);
-  assert.ok(moved, "031 says which types move, and to which lease");
-  for (const type of [...(moved[2] ?? "").matchAll(/'([A-Z_]+)'/g)].map((match) => match[1] ?? "")) {
-    assert.ok(types.has(type), `031 moves ${type}, a record type 013 or 028 seeded`);
-    types.set(type, moved[1] ?? "");
+  // 031 moves the raw-material taxonomy to the store's lease, 035 parties to their own: applied as the cloud applies
+  // them, in order, after the inserts.
+  for (const [name, migration] of [["031", RAW_MATERIAL_MASTER], ["035", PARTIES_LEASE]] as const) {
+    const moved = /set lease_domain = '([A-Z_]+)'\s+where aggregate_type in \(([^)]*)\)/.exec(migration);
+    assert.ok(moved, `${name} says which types move, and to which lease`);
+    for (const type of [...(moved[2] ?? "").matchAll(/'([A-Z_]+)'/g)].map((match) => match[1] ?? "")) {
+      assert.ok(types.has(type), `${name} moves ${type}, a record type 013 or 028 seeded`);
+      types.set(type, moved[1] ?? "");
+    }
   }
   return types;
 };
 
 test("013: every record type is a log type, unscoped, under a lease this computer knows", () => {
   const types = leasedRecordTypes();
-  assert.equal(types.size, 22, "013's eight master-data record types of docs/37 W.1, 028's ten, 029's colour list, 030's Stock Adjustment documents, 032's completed production days and 033's Move In vouchers");
-  const logTypes = [LEASED_RECORDS, PRODUCTION_TO_CASH, COLOR_TRANSLATIONS, ADJUSTMENT_DOCUMENTS, PRODUCTION_DAYS, STORE_HAND_VOUCHERS].map((migration) => migration.slice(migration.indexOf("insert into public.sync_aggregate_types"))).join("\n");
+  assert.equal(types.size, 26, "013's eight master-data record types of docs/37 W.1, 028's ten, 029's colour list, 030's Stock Adjustment documents, 032's completed production days, 033's Move In vouchers, 034's ledger archive statements, 036's customer orders and allocations, and 037's opening balances");
+  const logTypes = [LEASED_RECORDS, PRODUCTION_TO_CASH, COLOR_TRANSLATIONS, ADJUSTMENT_DOCUMENTS, PRODUCTION_DAYS, STORE_HAND_VOUCHERS, LEDGER_ARCHIVE, CUSTOMER_ORDERS, OPENING_BALANCES].map((migration) => migration.slice(migration.indexOf("insert into public.sync_aggregate_types"))).join("\n");
   for (const [type, domain] of types) {
     assert.match(logTypes, new RegExp(String.raw`\('${type}', false, '`), `${type} is seeded into the log's types, unscoped`);
     assert.ok((Object.values(LEASE_DOMAIN) as string[]).includes(domain), `${type}'s domain ${domain} is a lease domain`);
@@ -2100,4 +2111,35 @@ test("026: the movements are closed to every client, only the push is callable, 
   const down = sqlOnly(CARTON_STOCK_EVENTS_DOWN);
   assert.doesNotMatch(down, /delete from public\.(sync_event_log|domain_lease_events)/, "both logs are append-only");
   assert.match(down, /raise exception 'CARTON_STOCK is held by a computer/, "a held lease is released first, never dropped");
+});
+
+test("035: parties move to their own lease, granted to nobody, with every other lease untouched", () => {
+  const sql = sqlOnly(PARTIES_LEASE);
+  // Exactly the two party types move, to PARTIES. Products, sizes, machines and colours stay MASTER_DATA.
+  const types = leasedRecordTypes();
+  assert.equal(types.get("PARTY"), LEASE_DOMAIN.PARTIES);
+  assert.equal(types.get("PARTY_GROUP"), LEASE_DOMAIN.PARTIES);
+  for (const stays of ["MACHINE", "WORK_SECTION", "MAIN_GROUP", "PRODUCT_GROUP", "ARTICLE_SERIES", "PRODUCT_TYPE", "PRODUCT_SUB_GROUP", "ARTICLE_SIZE", "COLOR_TRANSLATION"]) {
+    assert.equal(types.get(stays), LEASE_DOMAIN.MASTER_DATA, `${stays} stays under MASTER_DATA`);
+  }
+  // This computer captures parties under the same lease the cloud now checks.
+  assert.equal(LEASED_AGGREGATE_DOMAIN.PARTY, LEASE_DOMAIN.PARTIES);
+  assert.equal(LEASED_AGGREGATE_DOMAIN.PARTY_GROUP, LEASE_DOMAIN.PARTIES);
+
+  // Nothing is granted, released or taken over: no lease function is called, and the only change to domain_leases is
+  // the new row, made once, with no holder.
+  assert.doesNotMatch(sql, /grant_domain_lease|release_domain_lease|domain_lease_events/);
+  assert.doesNotMatch(sql, /update\s+public\.domain_leases|delete\s+from/i);
+  assert.match(sql, /insert into public\.domain_leases \(domain, barrier_seq\)/);
+  assert.doesNotMatch(sql, /holder_device_id/, "PARTIES starts held by nobody");
+  assert.match(sql, /on conflict \(domain\) do nothing;\s*update public\.leased_record_types/, "a second run makes no second row and moves no barrier");
+  // The holder must have pulled every party the office computer wrote before it writes one.
+  assert.match(sql, /coalesce\(max\(l\.seq\), 0\)\s+from public\.sync_event_log l\s+where l\.aggregate_type in \('PARTY', 'PARTY_GROUP'\)/);
+  // Rows only: no business table, no function, no grant to a client role.
+  assert.doesNotMatch(sql, /create\s|alter\s|revoke\s|grant\s+execute|leased_records\b(?!_)|sync_event_log\s+set/i);
+
+  // The way back returns both types to MASTER_DATA and removes the unheld domain.
+  const down = sqlOnly(PARTIES_LEASE_DOWN);
+  assert.match(down, /set lease_domain = 'MASTER_DATA'\s+where aggregate_type in \('PARTY', 'PARTY_GROUP'\)/);
+  assert.match(down, /delete from public\.domain_leases where domain = 'PARTIES'/);
 });

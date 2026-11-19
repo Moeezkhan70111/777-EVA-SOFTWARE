@@ -13,7 +13,7 @@
 
 Apply in this order, in the Supabase SQL editor, on an **empty** project, one file at a time:
 
-`schema.sql` → `002` → `003` → … → `019` → `020` → `021` → `022` → `023` → `024` → `025` → `026` → `027` → `028` → `029` → `030` → `031` → `032` → `033`
+`schema.sql` → `002` → `003` → … → `019` → `020` → `021` → `022` → `023` → `024` → `025` → `026` → `027` → `028` → `029` → `030` → `031` → `032` → `033` → `034` → `035` → `036` → `037`
 
 After each one, run `verify_applied_state.sql`. Its header lists exactly which checks a project
 one migration behind fails, so a half-applied project is diagnosed rather than guessed at. The
@@ -93,7 +93,15 @@ changes would have to discard data to succeed, and they are written to fail inst
 
 `033_store_hand_voucher_records.up.sql` follows `032` (it does not need it): a store hand voucher (Store > Move in / Move out > By hand: SIV- and SOV-), with its lines, becomes a leased record under the store lease (docs/49, local migration 110). Rows only, no new function, and no stock moves by it: each line and each reversal travels as its own `STOCK_EVENT`. **Prepared, **Applied to PRODUCTION (`ykhvbmhmeefdtrzqeoxm`) on 15 Nov 2026 UTC on the owner's explicit authorisation; NOT applied to TEST** (owner: production directly). Recorded in production's migration history as `20261115195518 033_store_hand_voucher_records`. The file keeps the text that was applied.** Apply before the store computer runs the release that carries local 110; until then a voucher waits as `UNKNOWN_RECORD_TYPE` and the stock still travels.
 
-**Reverse in the opposite order: `033` → `032` → `031` → `030` → `029` → `028` → `027` → `026` → `025` → `024` → `023` → `022` → `021` → `020` → `019` → `018` → … → `003` → `002`.** Each down file's header
+`034_ledger_archive_records.up.sql` follows `033` (it does not need it): a customer's historical ledger statement from the previous accounting software, with its rows, becomes a leased record under the ACCOUNTS lease (docs/50, local migration 111). Rows only, no new function. An archive, never accounting: no balance, cash book or stock in the cloud is worked out from it. **Prepared, NOT applied to either project.** Apply before the accounts computer runs the release that carries local 111; until then an imported statement waits as `UNKNOWN_RECORD_TYPE` and nothing else is held up.
+
+`035_parties_lease.up.sql` follows `034` (it does not need it; it needs `011` and `013`): parties and party groups move from MASTER_DATA to a new lease, PARTIES, written on the store computer (docs/51). Rows only: `lease_domains` gains PARTIES, `domain_leases` gains its row **held by nobody** with its barrier at the last party revision in the log, and `leased_record_types` moves PARTY and PARTY_GROUP to it. Nothing is granted, released or taken over; MASTER_DATA is not touched. **Prepared, not applied to test or production.** Apply only after every computer runs the release that knows PARTIES and the office computer has sent its party changes, then grant PARTIES to the store computer (docs/51). Its down file is refused once PARTIES has been granted, by design.
+
+`036_customer_order_records.up.sql` follows `035` (it needs neither `034` nor `035`; it needs `011` and `013`): a customer order (Enter Orders) with its lines, and what each gatepass dispatched against orders with its lines, become two leased records under the sales lease (docs/52, local migration 112). Rows only, no new function, and neither moves stock, money or a ledger. **Prepared, NOT applied to TEST or PRODUCTION.** Apply before the computer holding SALES_DISPATCH runs the release that carries local 112; until then an order and an allocation wait as `UNKNOWN_RECORD_TYPE` and gatepasses, bills and stock still travel.
+
+`037_party_opening_balance_records.up.sql` follows `035` (it needs `034`, `013` and `011`, not `035` or `036`): a customer's or supplier's opening balance from the previous accounting software, with every posting and reversal, becomes a leased record under the ACCOUNTS lease (docs/53, local migration 113). Rows only, no new function. It counts only in that party's balance. **Prepared, NOT applied to either project.** Apply `034` and this before the accounts computer runs the release that carries local 113; until then an opening balance waits as `UNKNOWN_RECORD_TYPE` and nothing else is held up.
+
+**Reverse in the opposite order: `037` → `036` → `035` → `034` → `033` → `032` → `031` → `030` → `029` → `028` → `027` → `026` → `025` → `024` → `023` → `022` → `021` → `020` → `019` → `018` → … → `003` → `002`.** Each down file's header
 says what reversing it costs: `018`'s re-opens the PC2/PC3 failure, for example. Reversing `005`
 re-opens the cross-factory read, and reversing `006` re-opens unbound access, re-enables any
 device revoked before the rollback and discards the claim audit. Both headers say so. `004_rls_policies.down.sql` revokes a

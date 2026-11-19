@@ -40,6 +40,8 @@ import { StoreMoveOutPage } from "../pages/StoreMoveOutPage";
 import { GatepassPage } from "../pages/GatepassPage";
 import { GatepassListPage } from "../pages/GatepassListPage";
 import { GatepassScanPage } from "../features/gatepass/GatepassScanPage";
+import { OrderEntryPage } from "../features/orders/OrderEntryPage";
+import { PendingOrdersPage } from "../features/orders/PendingOrdersPage";
 import { QrJourneyPage } from "../pages/QrJourneyPage";
 import { PartyListPage } from "../pages/PartyListPage";
 import { PartyFormPage } from "../pages/PartyFormPage";
@@ -572,6 +574,10 @@ export const App = () => {
             onBack={() => setRoute("gatepass-list")}
           />
         );
+      case "orders-entry":
+        return <OrderEntryPage token={sessionToken ?? ""} canCancel={hasPermission(session, PERMISSION.ORDERS_CANCEL)} isAdmin={session.role === USER_ROLE.ADMIN} />;
+      case "pending-orders":
+        return <PendingOrdersPage token={sessionToken ?? ""} onEnterOrders={canOpenRoute(session, "orders-entry") ? () => setRoute("orders-entry") : undefined} />;
       case "party-list":
         return (
           <PartyListPage

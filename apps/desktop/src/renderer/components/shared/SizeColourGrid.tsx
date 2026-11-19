@@ -34,9 +34,13 @@ interface SizeColourGridProps {
   /** Enter in any box. */
   onEnter: () => void;
   renderCell: (size: GridSize, colour: string, box: GridBoxProps) => React.ReactNode;
+  /** Something beside a colour's name in its heading, e.g. a button that takes the colour off (Enter Orders). */
+  renderColourAction?: (colour: string) => React.ReactNode;
+  /** A last row under the sizes, e.g. each colour's total (Enter Orders). Its cells are the page's own <td>s. */
+  footer?: { label: string; renderCell: (colour: string) => React.ReactNode };
 }
 
-export const SizeColourGrid: React.FC<SizeColourGridProps> = ({ label, sizeHeader, sizes, colours, onEnter, renderCell }) => {
+export const SizeColourGrid: React.FC<SizeColourGridProps> = ({ label, sizeHeader, sizes, colours, onEnter, renderCell, renderColourAction, footer }) => {
   const tableRef = useRef<HTMLTableElement>(null);
 
   const keyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
@@ -56,7 +60,7 @@ export const SizeColourGrid: React.FC<SizeColourGridProps> = ({ label, sizeHeade
             <th scope="col" className="sa-grid-size">{sizeHeader}</th>
             {colours.map((colour) => (
               <th scope="col" key={colour} className="sa-grid-colour">
-                <span className="sa-grid-colour-name"><ColorSwatch color={colour} />{colour}</span>
+                <span className="sa-grid-colour-name"><ColorSwatch color={colour} />{colour}{renderColourAction?.(colour)}</span>
               </th>
             ))}
           </tr>
@@ -71,6 +75,16 @@ export const SizeColourGrid: React.FC<SizeColourGridProps> = ({ label, sizeHeade
             </tr>
           ))}
         </tbody>
+        {footer ? (
+          <tfoot>
+            <tr className="sa-grid-foot">
+              <th scope="row" className="sa-grid-size">{footer.label}</th>
+              {colours.map((colour) => (
+                <React.Fragment key={colour}>{footer.renderCell(colour)}</React.Fragment>
+              ))}
+            </tr>
+          </tfoot>
+        ) : null}
       </table>
     </SidewaysScrollArea>
   );

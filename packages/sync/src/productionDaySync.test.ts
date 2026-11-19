@@ -26,8 +26,8 @@ const clock = { ms: Date.now() };
 const nowIso = () => new Date(clock.ms).toISOString();
 const DOMAIN_OF: Readonly<Record<string, LeaseDomain>> = {
   ARTICLE_SIZE: LEASE_DOMAIN.MASTER_DATA,
-  PARTY: LEASE_DOMAIN.MASTER_DATA,
-  PARTY_GROUP: LEASE_DOMAIN.MASTER_DATA,
+  PARTY: LEASE_DOMAIN.PARTIES,
+  PARTY_GROUP: LEASE_DOMAIN.PARTIES,
   MACHINE: LEASE_DOMAIN.MASTER_DATA,
   WORK_SECTION: LEASE_DOMAIN.MASTER_DATA,
   CARTON_STOCK_EVENT: LEASE_DOMAIN.CARTON_STOCK,
@@ -40,6 +40,7 @@ class Cloud {
   knowsProductionDays = true;
   readonly leases = new Map<LeaseDomain, { holder: string; epoch: number }>([
     [LEASE_DOMAIN.MASTER_DATA, { holder: "dev-pc1", epoch: 2 }],
+    [LEASE_DOMAIN.PARTIES, { holder: "dev-pc1", epoch: 2 }],
     [LEASE_DOMAIN.CARTON_STOCK, { holder: "dev-pc1", epoch: 2 }],
     [LEASE_DOMAIN.RAW_MATERIAL_STORE, { holder: "dev-pc2", epoch: 1 }],
   ]);

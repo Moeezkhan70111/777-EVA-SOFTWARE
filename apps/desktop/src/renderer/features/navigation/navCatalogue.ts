@@ -5,6 +5,7 @@ import {
   DAILY_PRODUCTION_ARTWORK_URL,
   DANA_STOCK_ARTWORK_URL,
   GATEPASS_LIST_ARTWORK_URL,
+  PENDING_ORDERS_ARTWORK_URL,
   MACHINE_ARTWORK_URL,
   UPPER_STOCK_ARTWORK_URL,
 } from "../../config/artwork";
@@ -53,7 +54,7 @@ export interface FeatureCardSpec {
 }
 
 /** Each Dashboard card page's colour, so a page is known at a glance, not by reading its heading. */
-export type PageTone = "carton" | "upper" | "dana" | "daily";
+export type PageTone = "carton" | "upper" | "dana" | "daily" | "orders";
 
 /** Decorative colour family of a section's tiles. Mapped to theme tokens in theme.css (R3). */
 export type NavTone = "action" | "ok" | "warn" | "info" | "neutral";
@@ -63,7 +64,8 @@ export type NavIconId =
   | "dashboard" | "workspace" | "scan" | "dispatch" | "return" | "store" | "voucher"
   | "stock" | "history" | "daily" | "party" | "product" | "qr" | "cash" | "ledger"
   | "balance" | "purchase" | "settings" | "health" | "logs" | "machine" | "upper" | "dana"
-  | "ragzine" | "pvc" | "pasting";
+  | "ragzine" | "pvc" | "pasting"
+  | "order" | "pending";
 
 export interface NavItem {
   route: AppRoute;
@@ -191,6 +193,20 @@ export const NAV_SECTIONS: readonly NavSection[] = [
       item("production-history", t.productionHistory, "history"),
       item("dispatch-history", t.dispatchHistory, "history"),
       item("return-history", t.returnHistory, "history"),
+    ],
+  },
+  {
+    // Customer orders (docs/52), after Inventory so its Dashboard card follows the stock and production cards.
+    id: "orders",
+    label: s.orders,
+    tone: "warn",
+    items: [
+      item("orders-entry", t.ordersEntry, "order"),
+      // A Dashboard card: what each party is still owed, for anyone given Pending Orders. Its page wears amber.
+      {
+        ...item("pending-orders", t.pendingOrders, "pending"),
+        feature: { artwork: PENDING_ORDERS_ARTWORK_URL, theme: "sky", artworkHasScene: true, badge: "pending", onDashboard: true, pageTone: "orders" },
+      },
     ],
   },
   {

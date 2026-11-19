@@ -33,6 +33,9 @@ import { registerCartonCloudHandlers } from "./cartonCloud";
 import { registerColorTranslationHandlers } from "./colorTranslations";
 import { registerCartonStockAdjustmentHandlers } from "./cartonStockAdjustments";
 import { registerHandVoucherHandlers } from "./handVouchers";
+import { registerLedgerArchiveHandlers } from "./ledgerArchive";
+import { registerPartyOpeningBalanceHandlers } from "./partyOpeningBalances";
+import { registerCustomerOrderHandlers } from "./customerOrders";
 import { registerDataChangeTraceHandler } from "./dataChangeTrace";
 
 export type { IpcContext } from "./context";
@@ -75,5 +78,8 @@ export function registerIpcHandlers(ctx: IpcContext): void {
   registerColorTranslationHandlers(ctx);
   registerCartonStockAdjustmentHandlers(ctx);
   registerHandVoucherHandlers(ctx);
+  registerLedgerArchiveHandlers(ctx);
+  registerPartyOpeningBalanceHandlers(ctx);
+  registerCustomerOrderHandlers(ctx);
   registerDataChangeTraceHandler(ctx);
 }

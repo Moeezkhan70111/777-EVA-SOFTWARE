@@ -56,7 +56,8 @@ function seedHistory(run: (sql: string, ...params: Array<string | number | null>
 
 const grantBoth = (run: (sql: string, ...params: Array<string | number | null>) => void, masterEpoch = 2, storeEpoch = 3) => {
   run("INSERT OR REPLACE INTO app_settings (setting_key, setting_value, value_type, is_encrypted, updated_by, updated_at) VALUES ('device.id', 'dev-store', 'string', 0, 'test', '2026-10-26T00:00:00.000Z')");
-  for (const [domain, epoch] of [["MASTER_DATA", masterEpoch], ["RAW_MATERIAL_STORE", storeEpoch]] as const) {
+  // The store computer also holds PARTIES (cloud 035, docs/51): its parties travel under that lease.
+  for (const [domain, epoch] of [["MASTER_DATA", masterEpoch], ["PARTIES", 1], ["RAW_MATERIAL_STORE", storeEpoch]] as const) {
     run(
       `INSERT OR REPLACE INTO sync_domain_leases (domain, holder_device_id, holder_label, epoch, barrier_seq, granted_at, project_key, fetched_at)
        VALUES (?, 'dev-store', 'Store PC', ?, 0, ?, 'https://test.supabase.co', ?)`,

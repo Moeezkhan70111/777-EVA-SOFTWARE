@@ -274,7 +274,8 @@ test("'send again' refuses every stock document before activation, and old ones 
     const entry = a.produce("1");
     assert.equal(markRecordToSendAgain(a.pc.db.db, "MANUAL_PRODUCTION_ENTRY", entry.id, NOW), "CARTON_CLOUD_NOT_ACTIVE");
     const party = (a.pc.db.db.prepare("SELECT id FROM parties LIMIT 1").get() as { id: string }).id;
-    cacheLease(a.pc, "MASTER_DATA", a.pc.deviceId);
+    // A party is sent again under its own lease (cloud 035, docs/51).
+    cacheLease(a.pc, "PARTIES", a.pc.deviceId);
     assert.equal(markRecordToSendAgain(a.pc.db.db, "PARTY", party, NOW), "MARKED");
     activate(a.pc);
     assert.equal(markRecordToSendAgain(a.pc.db.db, "MANUAL_PRODUCTION_ENTRY", entry.id, NOW), "LOCAL_STOCK_DATA");

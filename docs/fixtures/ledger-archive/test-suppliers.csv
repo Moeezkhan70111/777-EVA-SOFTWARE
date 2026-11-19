@@ -1,0 +1,11 @@
+party_code,supplier_name,transaction_date,voucher_number,transaction_type,bill_number,description,quantity,debit,credit,running_balance,sequence
+2200417,Test Supplier Rubber Soles,30/09/2026,0,,,Opening Balance,0,-,-,"150,000",1
+2200417,Test Supplier Rubber Soles,05/10/2026,5011,PV,778,Rubber sheet 200 kg @450,,-,"90,000","240,000",2
+2200417,Test Supplier Rubber Soles,12/10/2026,3190,CV,,paid cash,,"100,000",-,"140,000",3
+2200417,Test Supplier Rubber Soles,20/10/2026,5040,PV,802,Sole compound 120 kg @500,,-,"60,000","200,000",4
+2200417,Test Supplier Rubber Soles,28/10/2026,1320,JV,,claim damaged sheets,,"12,500",-,"187,500",5
+2200417,Test Supplier Rubber Soles,03/11/2026,3222,CV,,online meezan,,"50,000",-,"137,500",6
+2200533,Test Supplier Packing Cartons,30/09/2026,0,,,Opening Balance,0,-,-,"80,000 Cr",1
+2200533,Test Supplier Packing Cartons,08/10/2026,5020,PV,41,Cartons 1000 pcs @45,,-,"45,000","125,000 Cr",2
+2200533,Test Supplier Packing Cartons,15/10/2026,3201,CV,,paid,,"70,000",-,"55,000 Cr",3
+2200533,Test Supplier Packing Cartons,30/10/2026,3240,CV,,advance,,"60,000",-,"5,000 Dr",4

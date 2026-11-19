@@ -10300,3 +10300,231 @@ tr.has-error .gp-qty-stepper input { color: var(--err); }
   --us-band-navy:      linear-gradient(100deg, #063A3F 0%, #0A5A61 60%, #0F7A82 100%);
   --us-band-blue:      linear-gradient(100deg, #0E8C93 0%, #16A0A7 60%, #22B3BA 100%);
 }
+
+/* ─── Historical ledger archive on the Customer Ledger (docs/50) ─────────────────────────────────────────────────
+   Archived rows sit in the one ledger table, marked in words ("Archived") and by a muted surface, never by colour
+   alone. Their balance is the one the old software printed. */
+.ledger-archived-row td { background: var(--surface-faint); }
+.ledger-archived-row { cursor: default; }
+.ledger-archived-desc { white-space: pre-line; min-width: 240px; }
+.ledger-archived-balance { color: var(--neutral-600); font-style: italic; }
+.ledger-archived-tag { display: inline-block; padding: 1px 6px; border: 1px solid var(--line-strong); border-radius: var(--radius-sm); color: var(--neutral-600); font-size: 10px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; white-space: nowrap; }
+.customer-ledger-type-archived { color: var(--neutral-600); }
+.customer-ledger-type-archived .customer-ledger-type-dot { background: var(--neutral-400); }
+.customer-ledger-table tfoot .ledger-archived-total td { background: var(--surface-faint); color: var(--neutral-600); }
+.ledger-download-actions { display: flex; gap: 8px; }
+.ledger-archive-strip { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 24px; margin: 0 20px 14px; padding: 10px 14px; border: 1px dashed var(--line-strong); border-radius: var(--radius-lg); background: var(--surface-faint); color: var(--neutral-600); font-size: 12px; }
+.ledger-archive-note { justify-content: space-between; }
+.ledger-archive-heading { display: flex; flex-direction: column; gap: 2px; min-width: 200px; }
+.ledger-archive-heading strong { color: var(--chrome-ink); font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; }
+.ledger-archive-figures { display: flex; flex-wrap: wrap; gap: 8px 22px; }
+.ledger-archive-figure span { display: block; font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; }
+.ledger-archive-figure strong { color: var(--chrome-ink); font-size: 14px; font-variant-numeric: tabular-nums; }
+.ledger-archive-sources { display: flex; flex-wrap: wrap; gap: 6px 14px; margin-left: auto; }
+.ledger-archive-source { min-height: 32px; border: 0; background: transparent; color: var(--chrome-link); font-size: 12px; font-weight: 700; cursor: pointer; text-decoration: underline; padding: 0; }
+.ledger-import-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+.ledger-import-pick { display: inline-flex; align-items: center; min-height: 44px; position: relative; }
+.ledger-import-pick input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+.ledger-import-pick.is-disabled { opacity: .45; pointer-events: none; }
+.ledger-import-file { margin: 4px 0; color: var(--neutral-600); font-size: 12px; }
+.ledger-import-error { margin: 8px 0; padding: 8px 12px; border-radius: var(--radius-sm); background: var(--err-bg); color: var(--err); font-size: 12px; font-weight: 600; }
+.ledger-import-note { margin: 8px 0 0; color: var(--neutral-600); font-size: 12px; }
+.ledger-import-table-wrap { overflow-x: auto; border: 1px solid var(--line-grey-60); border-radius: var(--radius-md); }
+.ledger-import-table { min-width: 1000px; }
+.ledger-import-code { display: block; color: var(--neutral-500); font-size: 11px; }
+.ledger-import-customer { min-width: 220px; }
+.ledger-import-customer small { display: block; margin-top: 3px; color: var(--neutral-500); font-size: 10px; }
+.ledger-import-status { font-weight: 700; white-space: nowrap; }
+.ledger-import-status--ok { color: var(--ok); }
+.ledger-import-status--warn { color: var(--warn); }
+.ledger-import-status--err { color: var(--err); }
+.ledger-import-details { margin-top: 4px; font-size: 11px; }
+.ledger-import-details summary { cursor: pointer; color: var(--chrome-link); }
+.ledger-import-details ul { margin: 4px 0 0; padding-left: 16px; max-width: 420px; white-space: normal; }
+.ledger-import-done { padding: 14px 16px; border-radius: var(--radius-md); background: var(--ok-bg); color: var(--success-text); }
+.ledger-import-done p { margin: 4px 0 0; }
+/* Opening balances and the reconciliation (docs/53): the opening balance IS in the live balance, so its strip is solid, not dashed like the archive's. */
+.opening-balance-strip { border-style: solid; background: var(--surface-1); }
+.opening-balance-source { font-size: 12px; font-weight: 600; }
+.opening-balance-warning { flex-basis: 100%; margin: 0; padding: 6px 10px; border-radius: var(--radius-sm); background: var(--warn-bg); color: var(--chrome-ink); font-size: 12px; }
+.opening-balance-history { flex-basis: 100%; }
+.opening-balance-form { display: grid; gap: 12px; }
+.opening-balance-form > .customer-ledger-print { justify-self: start; }
+.opening-balance-field { display: grid; gap: 4px; }
+.opening-balance-field label { font-size: 12px; font-weight: 700; color: var(--chrome-ink); }
+.opening-balance-field input, .opening-balance-field select { min-height: 44px; padding: 0 10px; border: 1px solid var(--line-strong); border-radius: var(--radius-sm); background: var(--surface-1); color: var(--text); font: inherit; }
+.opening-balance-directions { display: grid; gap: 6px; margin: 0; padding: 0; border: 0; }
+.opening-balance-directions legend { margin-bottom: 4px; font-size: 12px; font-weight: 700; color: var(--chrome-ink); }
+.opening-balance-direction { display: flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 10px; border: 1px solid var(--line-grey-60); border-radius: var(--radius-sm); cursor: pointer; font-size: 13px; }
+.opening-balance-posted { margin: 0; padding: 8px 12px; border-radius: var(--radius-sm); background: var(--surface-faint); font-size: 12px; }
+.opening-balance-form ul.ledger-import-error { list-style: none; }
+.reconciliation-difference { color: var(--warn); font-weight: 800; }
+.supplier-ledger-tab-title { font-weight: 700; font-size: 13px; color: var(--chrome-ink); }
+@media (max-width: 768px) {
+  .ledger-archive-sources { margin-left: 0; }
+  .ledger-download-actions { flex-wrap: wrap; }
+}
+/* ── Enter Orders and Pending Orders (docs/52) ─────────────────────────────────────────────────────────────────────
+   Compact cards, the shared grid (sa-grid) and the shared toggle (sa-toggle). Pending is the strongest figure on both
+   pages. Every colour is a token; progress is said in words with a mark, never by colour alone (R18). */
+.ord-page { display: flex; flex-direction: column; gap: var(--space-3); }
+.ord-form { display: flex; flex-direction: column; gap: var(--space-3); }
+.ord-head { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1.2fr) minmax(0, 1fr); gap: var(--space-3); padding: var(--space-3) var(--space-4); align-items: end; }
+.ord-muted { color: var(--text-3); font-size: 0.8rem; }
+.ord-hint { margin: 0; color: var(--text-3); font-size: 0.8rem; }
+.ord-num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.ord-actions { display: inline-flex; gap: var(--space-2); margin-left: auto; }
+
+.ord-block { padding: var(--space-3) var(--space-4); display: flex; flex-direction: column; gap: var(--space-2); }
+.ord-block-head { display: flex; align-items: center; gap: var(--space-3); }
+.ord-block-title { margin: 0; font-size: 1rem; font-weight: 700; color: var(--text); }
+.ord-block-total { margin-left: auto; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--primary); }
+.ord-chips { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.ord-chip { display: inline-flex; align-items: center; gap: var(--space-1); min-height: 36px; padding: 0 var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface-1); color: var(--text); font-weight: 600; font-size: 0.8rem; cursor: pointer; }
+.ord-chip.is-on { background: var(--primary-soft); border-color: var(--primary); color: var(--primary); }
+.ord-chip:disabled { cursor: not-allowed; opacity: 0.7; }
+.ord-colour-off { margin-left: var(--space-1); border: 0; background: transparent; color: var(--text-3); cursor: pointer; padding: 0 var(--space-1); min-width: 24px; min-height: 24px; }
+.ord-colour-off:hover { color: var(--danger); }
+.ord-cell { min-width: 6.5rem; }
+.ord-cell--none { color: var(--text-3); text-align: center; vertical-align: middle; }
+.ord-input { width: 100%; min-height: 36px; text-align: right; font-variant-numeric: tabular-nums; }
+.ord-cell.has-problem .ord-input { border-color: var(--danger); background: var(--err-bg); }
+.sa-grid-foot th, .sa-grid-foot td { background: var(--surface-2); font-weight: 700; border-bottom: 0; }
+
+.ord-foot-bar { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-3); padding: var(--space-3) var(--space-4); position: sticky; bottom: 0; z-index: 3; }
+.ord-total-label { color: var(--text-3); font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.04em; }
+.ord-total { font-size: 1.15rem; font-variant-numeric: tabular-nums; }
+.ord-problem { color: var(--danger-strong); font-size: 0.8rem; }
+
+.ord-summary { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-4); padding: var(--space-3) var(--space-4); }
+.ord-summary-main { display: flex; flex-direction: column; gap: var(--space-1); min-width: 14rem; }
+.ord-figures { display: flex; gap: var(--space-5); margin: 0; }
+.ord-figures div { display: flex; flex-direction: column; align-items: flex-end; }
+.ord-figures dt { color: var(--text-3); font-size: 0.75rem; }
+.ord-figures dd { margin: 0; font-weight: 700; font-variant-numeric: tabular-nums; }
+.ord-figure-pending dd { font-size: 1.35rem; color: var(--primary); }
+.ord-cancelled { margin: 0; color: var(--text-3); font-size: 0.85rem; }
+
+.ord-table-wrap { overflow-x: auto; }
+.ord-table { width: 100%; }
+.ord-article { font-weight: 600; }
+.ord-colour { display: inline-flex; align-items: center; gap: var(--space-2); }
+.ord-pending { font-weight: 800; font-size: 1.05rem; color: var(--primary); }
+.ord-codes { color: var(--text-3); font-size: 0.78rem; font-family: var(--font-mono); }
+.ord-progress { white-space: nowrap; }
+
+.ord-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); }
+.ord-search { position: relative; flex: 1 1 18rem; max-width: 26rem; }
+.ord-search .input { width: 100%; min-height: 44px; padding-left: 2.25rem; }
+.ord-search-icon { position: absolute; left: var(--space-3); top: 50%; width: 16px; height: 16px; transform: translateY(-50%); color: var(--text-3); }
+.ord-toolbar-total { margin-left: auto; font-variant-numeric: tabular-nums; }
+.ord-parties { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-2); }
+.ord-party { padding: 0; overflow: hidden; }
+
+@media (max-width: 768px) {
+  .ord-head { grid-template-columns: 1fr; }
+  .ord-party-head { flex-wrap: wrap; }
+  .ord-party-figures { margin-left: 0; width: 100%; justify-content: space-between; }
+  .ord-toolbar-total { margin-left: 0; }
+}
+/* Enter Orders: the grid as wide as its boxes, not the card, and the summary's status pill only as wide as its words. */
+.ord-block .sa-grid { width: auto; }
+.ord-block .ord-cell { width: 7.5rem; min-width: 7.5rem; }
+.ord-summary-main .badge { align-self: flex-start; }
+.ord-toolbar .sa-toggle-btn { font-size: 0.85rem; }
+
+/* PENDING ORDERS COLOUR: 70 / 20 / 10 (owner, 18 Nov 2026).
+     70% MAIN       calm neutrals: white cards on a light cool-grey page, plain table bodies
+     20% SECONDARY  the ERP navy (the logo's blue family): title, party names, table heads, size labels, active filter text
+     10% ACCENT     amber, only for what is still owed: pending figures, the progress bar, the active filter's underline
+   The page tone redefines the tokens the shared header and grid already use; the three roles are --ord-main,
+   --ord-secondary and --ord-accent, so the split can be changed here and nowhere else. */
+.app-main[data-page-tone="orders"] {
+  --ord-main:          #F4F6FA;
+  --ord-main-line:     #E2E7EF;
+  --ord-secondary:     #123A6B;
+  --ord-secondary-2:   #0A2748;
+  --ord-secondary-soft:#EAF0F8;
+  --ord-accent:        #C26A06;
+  --ord-accent-deep:   #9A5204;
+  --sp-title-top:      var(--ord-secondary);
+  --sp-title-bottom:   var(--ord-secondary-2);
+  --sp-title-rule:     #9FB6D6;
+  --sp-sky-top:        var(--ord-main);
+  --sp-mode-on-start:  var(--ord-secondary);
+  --sp-mode-on-end:    #2D5C94;
+  --sp-blue-soft:      var(--ord-secondary-soft);
+  --sp-blue-line:      #CFDCEC;
+  --sp-navy-2:         var(--ord-secondary);
+  --us-head:           var(--ord-secondary-soft);
+  --us-chip:           #DCE6F3;
+  --us-total:          var(--ord-main);
+  --us-bar:            #E3EAF4;
+  --us-band-navy:      linear-gradient(100deg, #0A2748 0%, #123A6B 60%, #1D4E8A 100%);
+  --us-band-blue:      linear-gradient(100deg, #123A6B 0%, #1D4E8A 60%, #2D5C94 100%);
+}
+/* ACCENT: the pending figures. */
+.app-main[data-page-tone="orders"] .ord-pending,
+.app-main[data-page-tone="orders"] .ord-party-pending,
+.app-main[data-page-tone="orders"] .ord-matrix-total strong,
+.app-main[data-page-tone="orders"] .ord-figure-pending dd { color: var(--ord-accent-deep); }
+.app-main[data-page-tone="orders"] .ord-meter > span { background: var(--ord-accent); }
+/* SECONDARY: names and heads. Active filter: navy words on white, amber underline. */
+.app-main[data-page-tone="orders"] .sa-toggle-btn.is-on { background: var(--surface-1); color: var(--ord-secondary); box-shadow: inset 0 -3px 0 var(--ord-accent); }
+.app-main[data-page-tone="orders"] .ord-party-name,
+.app-main[data-page-tone="orders"] .ord-matrix-title { color: var(--ord-secondary); }
+.app-main[data-page-tone="orders"] .ord-matrix .sa-grid thead th,
+.app-main[data-page-tone="orders"] .ord-matrix .sa-grid .sa-grid-size { color: var(--ord-secondary); }
+/* MAIN: neutral surfaces. */
+.app-main[data-page-tone="orders"] .ord-party-body { background: var(--ord-main); }
+.app-main[data-page-tone="orders"] .ord-matrix,
+.app-main[data-page-tone="orders"] .ord-party { border-color: var(--ord-main-line); }
+
+/* Pending Orders, a party opened: one matrix per article, sizes down and colours across. Pending is large in each box,
+   ordered and dispatched small under it; a fully dispatched box is quiet and says ✓. */
+
+/* ── Pending Orders: three levels, one loud number per level (owner, 18 Nov 2026: "too cluttered, no hierarchy") ──
+   1 PARTY    the name, one quiet line under it (orders · how much is dispatched · a thin bar), and on the right the
+              party's pending cartons, the largest figure on the page.
+   2 ARTICLE  a compact card per article, side by side; its pending total sits in its own head.
+   3 BOX      only what is pending, in plain text. A dispatched box is a small ✓; a size never ordered is empty.
+   Ordered and dispatched per box are on hover (title) and read out (aria-label). Colours are tokens. */
+.ord-party-head { display: flex; align-items: center; gap: var(--space-4); width: 100%; min-height: 72px; padding: var(--space-3) var(--space-5); border: 0; background: transparent; color: var(--text); text-align: left; cursor: pointer; }
+.ord-party-head:hover { background: var(--surface-2); }
+.ord-party.is-open .ord-party-head { border-bottom: 1px solid var(--border); }
+.ord-chevron { width: 1rem; color: var(--text-3); font-size: 0.8rem; }
+.ord-party-main { display: flex; flex-direction: column; gap: 6px; flex: 1 1 auto; min-width: 0; }
+.ord-party-name { font-size: 1.05rem; font-weight: 700; color: var(--text); }
+.ord-party-meta { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; font-size: 0.8rem; color: var(--text-3); font-variant-numeric: tabular-nums; }
+.ord-meter { display: inline-block; width: 120px; height: 6px; border-radius: 999px; background: var(--surface-2); overflow: hidden; }
+.ord-meter > span { display: block; height: 100%; border-radius: inherit; background: var(--primary); }
+.ord-meter.is-done > span { background: var(--ok); }
+.ord-party-total { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; line-height: 1; }
+.ord-party-pending { font-size: 1.75rem; font-weight: 800; color: var(--primary); font-variant-numeric: tabular-nums; }
+.ord-pending-label { font-size: 0.7rem; font-weight: 600; color: var(--text-3); text-transform: uppercase; letter-spacing: 0.06em; }
+.ord-party-body { padding: var(--space-4) var(--space-5) var(--space-5); background: var(--surface-2); }
+
+.ord-matrices { display: flex; flex-wrap: wrap; align-items: flex-start; gap: var(--space-4); }
+.ord-matrix { max-width: 100%; background: var(--surface-1); border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; }
+.ord-matrix-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-5); padding: var(--space-3) var(--space-4); border-bottom: 1px solid var(--border); }
+.ord-matrix-name { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.ord-matrix-title { margin: 0; font-size: 1rem; font-weight: 700; color: var(--text); }
+.ord-matrix-head .ord-codes { font-size: 0.7rem; }
+.ord-matrix-total { display: flex; align-items: baseline; gap: 4px; white-space: nowrap; font-size: 0.75rem; color: var(--text-3); }
+.ord-matrix-total strong { font-size: 1.2rem; font-weight: 800; color: var(--primary); font-variant-numeric: tabular-nums; }
+.ord-matrix .sa-grid { width: auto; }
+.ord-matrix .sa-grid th, .ord-matrix .sa-grid td { padding: 8px 14px; border-bottom: 1px solid var(--border-soft); }
+.ord-matrix .sa-grid tbody tr:last-child th, .ord-matrix .sa-grid tbody tr:last-child td { border-bottom: 1px solid var(--border); }
+.ord-matrix .sa-grid .sa-grid-size { width: 72px; min-width: 72px; font-weight: 600; border-right: 1px solid var(--border); }
+.ord-mcell { min-width: 4.5rem; text-align: right; vertical-align: middle; }
+.ord-mcell-pending { font-size: 1rem; font-weight: 600; color: var(--text); font-variant-numeric: tabular-nums; }
+.ord-mcell.is-done .ord-mcell-pending { font-size: 0.85rem; color: var(--ok); }
+.ord-matrix .sa-grid-foot th, .ord-matrix .sa-grid-foot td { background: transparent; border-bottom: 0; font-size: 0.85rem; font-weight: 700; color: var(--text-2); }
+.app-main[data-page-tone="orders"] .ord-meter.is-done > span { background: var(--ok); }
+@media (max-width: 768px) { .ord-party-head { padding: var(--space-3) var(--space-4); } .ord-party-pending { font-size: 1.4rem; } .ord-meter { width: 80px; } }
+/* Each colour's heading over its numbers, and an arrow you can see. */
+.ord-matrix .sa-grid-colour { text-align: right; }
+.ord-chevron { font-size: 0.95rem; color: var(--text-2); }
+/* MAIN, not the app's warm surface-2: the row hover and the progress bar's track stay in the page's neutral. */
+.app-main[data-page-tone="orders"] .ord-party-head:hover { background: var(--ord-main); }
+.app-main[data-page-tone="orders"] .ord-meter { background: var(--ord-main-line); }

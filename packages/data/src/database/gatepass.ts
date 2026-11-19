@@ -73,6 +73,31 @@ const RESERVED_FOR_VARIANT_SQL = `COALESCE((SELECT SUM(gl.quantity - ${LINE_SETT
 // Physical In Store cartons for one variant come from IN_STORE_STOCK_SQL in ./shared.js —
 // the single definition of Current Stock, shared with the Stock screen and the dashboard.
 
+/**
+ * One immutable audit_log row, on `db`, inside whatever transaction the caller holds. The one writer of audit rows for
+ * documents: gatepasses here, customer orders (customerOrders.ts) too.
+ */
+export function insertAuditRow(db: MutableTransactionContext["db"], payload: AuditLogPayload, nowIso: string): void {
+  const payloadJson = JSON.stringify(payload.payload ?? {});
+  db.prepare(
+    `INSERT INTO audit_log (
+      id, event_type, event_version, entity_type, entity_id, actor_user_id, actor_device_id, actor_role_code,
+      occurred_at, payload_json, hash_sha256, created_at
+    ) VALUES (?, ?, 1, ?, ?, ?, ?, NULL, ?, ?, ?, ?)`
+  ).run(
+    payload.id,
+    payload.eventType,
+    payload.entityType,
+    payload.entityId,
+    payload.actorUserId,
+    payload.actorDeviceId,
+    payload.occurredAt,
+    payloadJson,
+    createHash("sha256").update(payloadJson).digest("hex"),
+    nowIso
+  );
+}
+
 const mapVariantStock = (row: Record<string, unknown>): GatepassVariantStock => ({
   productVariantId: String(row.id ?? ""),
   article: String(row.article ?? ""),
@@ -361,26 +386,7 @@ export const gatepassMethods = {
   /** Immutable audit row in the schema's audit_log table, written in the caller's transaction. */
   async appendAuditLog(this: SqliteDatabase, payload: AuditLogPayload, tx: TransactionContext): Promise<void> {
     const context = tx as MutableTransactionContext;
-    const payloadJson = JSON.stringify(payload.payload ?? {});
-    context.db
-      .prepare(
-        `INSERT INTO audit_log (
-          id, event_type, event_version, entity_type, entity_id, actor_user_id, actor_device_id, actor_role_code,
-          occurred_at, payload_json, hash_sha256, created_at
-        ) VALUES (?, ?, 1, ?, ?, ?, ?, NULL, ?, ?, ?, ?)`
-      )
-      .run(
-        payload.id,
-        payload.eventType,
-        payload.entityType,
-        payload.entityId,
-        payload.actorUserId,
-        payload.actorDeviceId,
-        payload.occurredAt,
-        payloadJson,
-        createHash("sha256").update(payloadJson).digest("hex"),
-        context.nowIso
-      );
+    insertAuditRow(context.db, payload, context.nowIso);
   },
 
   /** The gatepass's one bill, in the create transaction (docs/43). */

@@ -20,12 +20,17 @@ const GUARDED_MODULES = [
   "manualProduction", "productionDay", "gatepass", "cartonStockAdjustments",
   // Move In vouchers (docs/49): a voucher moves the raw-material balance.
   "handVouchers",
+  // Customer orders (docs/52): written where gatepasses are, under the sales lease.
+  "customerOrders",
   // The production-to-cash workflow (docs/43): products, bills and cash vouchers replicate.
   "products", "sales", "cash",
   // Carton QR scanning: on hold in this release; sale returns are leased to the sales holder (docs/44 §6).
   "scanning",
   // The colour list (docs/45): master data.
   "colorTranslations",
+  // The historical ledger archive (docs/50): imported under the accounts lease.
+  "ledgerArchive",
+  "partyOpeningBalances",
 ];
 
 /** Channels these modules register that only read. Checked by hand, one by one. */
@@ -73,6 +78,12 @@ const READS = new Set([
   "getCartonAdjustmentArticle", "listCartonStockAdjustments",
   // handVouchers
   "getHandVoucher",
+  // ledgerArchive: a preview writes nothing; opening a kept PDF only reads it
+  "previewLedgerArchive", "getLedgerArchive", "openLedgerArchiveSource",
+  // partyOpeningBalances: reading a position or the reconciliation writes nothing
+  "getPartyOpeningBalance", "getLedgerReconciliation",
+  // customerOrders
+  "getCustomerOrder", "getCustomerOrderArticle", "listPendingOrderParties", "listPendingOrderLines",
   // manualProduction
   "getCartonStockReconciliation", "getCartonStockMatrix",
   // syncWaiting
@@ -144,25 +155,28 @@ describe("lease classification", () => {
     }
   });
 
-  it("materials are the store's with their stock; general master data stays MASTER_DATA; the backfill needs both", () => {
+  it("materials are the store's with their stock; parties their own; general master data stays MASTER_DATA; the backfill needs both", () => {
     // Cloud 031 (docs/47): a material, its category and units travel under the store's lease, so a write that rewrites
     // a material's stock history is one lease, the store's.
     for (const channel of [IPC.createInventoryItem, IPC.createInventoryCategory, IPC.createInventoryUnit, IPC.saveUnitLadderPreset,
       IPC.importInventoryItems, IPC.removeInventoryItemForGood, IPC.correctInventoryItemUnit, IPC.reviewRemovalRequest, IPC.completeMachineProgramProduction]) {
       expect(leasesFor(channel)).toEqual([LEASE_DOMAIN.RAW_MATERIAL_STORE]);
     }
-    for (const channel of [IPC.createPartyGroup, IPC.createMachine, IPC.createProductGroup, IPC.createMainGroup]) {
+    for (const channel of [IPC.createMachine, IPC.createProductGroup, IPC.createMainGroup]) {
       expect(leasesFor(channel)).toEqual([LEASE_DOMAIN.MASTER_DATA]);
     }
     expect([...leasesFor(IPC.runBackfill)].sort()).toEqual([LEASE_DOMAIN.MASTER_DATA, LEASE_DOMAIN.RAW_MATERIAL_STORE]);
     expect(leasesFor(IPC.generateRawMaterialQrBatch)).toEqual([LEASE_DOMAIN.RAW_MATERIAL_STORE]);
-    expect(leasesFor(IPC.createParty)).toEqual([LEASE_DOMAIN.MASTER_DATA]);
+    // Cloud 035 (docs/51): parties and their groups are written under their own lease, held by the store computer.
+    for (const channel of [IPC.createParty, IPC.updateParty, IPC.deleteParty, IPC.createPartyGroup]) {
+      expect(leasesFor(channel)).toEqual([LEASE_DOMAIN.PARTIES]);
+    }
     expect(leasesFor(IPC.storeEntryScan)).toEqual([]);
   });
 
   it("the domains that replicate are enforced, and the two that do not yet are not", () => {
     const domains = new Set(Object.values(LEASED_CHANNELS).flat());
-    expect([...domains].sort()).toEqual([LEASE_DOMAIN.ACCOUNTS, LEASE_DOMAIN.CARTON_STOCK, LEASE_DOMAIN.MASTER_DATA, LEASE_DOMAIN.RAW_MATERIAL_STORE, LEASE_DOMAIN.SALES_DISPATCH]);
+    expect([...domains].sort()).toEqual([LEASE_DOMAIN.ACCOUNTS, LEASE_DOMAIN.CARTON_STOCK, LEASE_DOMAIN.MASTER_DATA, LEASE_DOMAIN.PARTIES, LEASE_DOMAIN.RAW_MATERIAL_STORE, LEASE_DOMAIN.SALES_DISPATCH]);
   });
 
   it("the production-to-cash workflow writes only under the lease of what it writes (docs/43)", () => {

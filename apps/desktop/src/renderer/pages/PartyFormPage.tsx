@@ -10,7 +10,8 @@ import { desktopApi } from "../hooks/useDesktopApi";
 import { leaseRefusalText } from "../../shared/leaseRefusal";
 
 /** Parties and machines are master data: written on one computer, read on the others (docs/37 section W). */
-const MASTER_DATA_ONLY = [LEASE_DOMAIN.MASTER_DATA] as const;
+/** Parties are written under their own lease, held by the store computer (docs/51). */
+const PARTIES_ONLY = [LEASE_DOMAIN.PARTIES] as const;
 
 const MAJOR_PAKISTAN_CITIES = [
   "Karachi",
@@ -460,7 +461,7 @@ export const PartyFormPage: React.FC<PartyFormPageProps> = ({ partyId, onNavigat
 
   return (
     <div className="page party-form-page">
-      <LeaseNotices domains={MASTER_DATA_ONLY} />
+      <LeaseNotices domains={PARTIES_ONLY} />
       <div className="party-form-heading">
         <div className="headingAddParty">
         

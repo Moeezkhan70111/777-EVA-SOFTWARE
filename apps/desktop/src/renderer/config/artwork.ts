@@ -37,3 +37,10 @@ export const CARTON_STOCK_ARTWORK_URL = "./assets/stock/carton-stock.png";
  * carton. Drawn as a vector (SVG) in the cards' sky palette, so it stays sharp; the card draws its cloud and sparks.
  */
 export const DAILY_PRODUCTION_ARTWORK_URL = "./assets/production/daily-production.svg";
+
+/**
+ * The Pending Orders card (docs/52): a party's order sheet with lines ticked off by gatepasses and lines still waiting,
+ * two 777 cartons and an amber hourglass for what is owed. Drawn as a vector (SVG) in the sky cards' palette, like
+ * Daily Production; it carries its own ground, so the card draws no cloud.
+ */
+export const PENDING_ORDERS_ARTWORK_URL = "./assets/orders/pending-orders.svg";

@@ -92,6 +92,30 @@ describe("the lease gate", () => {
     await expect(registered.get(IPC.createParty)?.(event, { partyName: "Supplier" })).resolves.toEqual({
       accepted: true, input: { partyName: "Supplier" },
     });
+    expect(asked).toEqual(["PARTIES"]);
+  });
+
+  // Cloud 035 (docs/51): parties are their own lease. The office computer keeps MASTER_DATA, and is refused a party.
+  it("refuses a party write on a computer that holds MASTER_DATA but not PARTIES, before the handler runs", async () => {
+    const { ipcMain, installLeaseGate } = await loadGuard();
+    installLeaseGate({ db, deviceId: "desktop-office", dataRoot: "C:/erp" });
+    decisions.PARTIES = { allowed: false, domain: "PARTIES", reason: "HELD_ELSEWHERE", holderLabel: "Store PC" };
+    for (const channel of [IPC.createParty, IPC.updateParty, IPC.deleteParty, IPC.createPartyGroup]) {
+      const listener = vi.fn();
+      ipcMain.handle(channel, listener);
+      await expect(registered.get(channel)?.(event, {})).rejects.toMatchObject({ code: "LEASE_REQUIRED", domain: "PARTIES", reason: "HELD_ELSEWHERE" });
+      expect(listener).not.toHaveBeenCalled();
+    }
+    expect(asked.every((domain) => domain === "PARTIES")).toBe(true);
+  });
+
+  it("still lets the MASTER_DATA holder write products, sizes and machines when it does not hold PARTIES", async () => {
+    const { ipcMain, installLeaseGate } = await loadGuard();
+    installLeaseGate({ db, deviceId: "desktop-office", dataRoot: "C:/erp" });
+    decisions.PARTIES = { allowed: false, domain: "PARTIES", reason: "HELD_ELSEWHERE", holderLabel: "Store PC" };
+    const listener = vi.fn(() => ({ accepted: true }));
+    ipcMain.handle(IPC.createProductGroup, listener);
+    await expect(registered.get(IPC.createProductGroup)?.(event, { groupName: "SLIPPERS" })).resolves.toEqual({ accepted: true });
     expect(asked).toEqual(["MASTER_DATA"]);
   });
 

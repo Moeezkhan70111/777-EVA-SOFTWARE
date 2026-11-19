@@ -1,6 +1,6 @@
 import type { PrinterRole } from "../../shared/printerRole";
 import type { DataChangeTrace } from "../../shared/dataChange";
-import type { ClaimPartyRole, ContractorLedger, ContractorRole, LeaseDomain, ReceiveProductionOutcome, StoreDailyReport, StoreDirection, HandVoucherStatus, UpperIssueOutcome, UpperProductionComparison, UpperReconciliation } from "@erp/domain";
+import type { ClaimPartyRole, ContractorLedger, ContractorRole, LeaseDomain, ReceiveProductionOutcome, StoreDailyReport, StoreDirection, HandVoucherStatus, CustomerOrderStatus, OrderProgress, PendingOrderFilter, UpperIssueOutcome, UpperProductionComparison, UpperReconciliation } from "@erp/domain";
 
 export type SortOrder = "ASC" | "DESC";
 
@@ -2159,6 +2159,21 @@ export interface DesktopApi {
   deleteHandVoucher(input: { voucherId: string; revision: number }, opts?: { token?: string }): Promise<unknown>;
   /** One voucher of a direction by number, or the newest when null, with its neighbours. Replies are read by handVoucherReply.ts. */
   getHandVoucher(direction: StoreDirection, voucherNumber: number | null, opts?: { token?: string }): Promise<unknown>;
+  // Customer orders and Pending Orders (docs/52). Every reply is read by features/orders/orderReply.ts (R25).
+  /** A new order: every line, or none. `requestId` makes a retried Save safe. */
+  saveCustomerOrder(input: CustomerOrderBodyInput & { requestId: string }, opts?: { token?: string }): Promise<unknown>;
+  /** The order said again, from the revision the screen shows. */
+  editCustomerOrder(input: CustomerOrderBodyInput & { orderId: string; revision: number }, opts?: { token?: string }): Promise<unknown>;
+  /** The order closed, with a reason. */
+  cancelCustomerOrder(input: { orderId: string; revision: number; reason: string }, opts?: { token?: string }): Promise<unknown>;
+  /** One order by number, or the newest when null, with its neighbours. */
+  getCustomerOrder(orderNumber: number | null, opts?: { token?: string }): Promise<unknown>;
+  /** One article's live colours and sizes: the only cells an order may be typed in. */
+  getCustomerOrderArticle(article: string, opts?: { token?: string }): Promise<unknown>;
+  /** Pending Orders: one row per party, a page at a time. */
+  listPendingOrderParties(query: PendingOrderQueryInput, opts?: { token?: string }): Promise<unknown>;
+  /** Pending Orders: one party's products. */
+  listPendingOrderLines(partyId: string, query: Omit<PendingOrderQueryInput, "page" | "pageSize">, opts?: { token?: string }): Promise<unknown>;
   listRawMaterialMovementConfig(search?: string): Promise<RawMaterialMovementConfigRow[]>;
   setRawMaterialMovementConfig(
     itemId: string,
@@ -2351,7 +2366,7 @@ export interface DesktopApi {
   /** Prints a ready-made document with no dialog: on the default printer, or the one `printer` names by role. Page size in inches. */
   printDocument(payload: { html: string; pageSize?: { widthIn: number; heightIn: number }; printer?: PrinterRole }): Promise<{ accepted: boolean; reason?: string }>;
   /** Saves a ready-made document as a PDF where the person chooses (A4). Checked by the caller. */
-  savePdfDocument(payload: { html: string; fileName: string; landscape?: boolean }): Promise<unknown>;
+  savePdfDocument(payload: { html: string; fileName: string; landscape?: boolean; pageNumbers?: boolean }): Promise<unknown>;
   listHistory(query: Record<string, unknown>): Promise<PagedResult<HistoryRow>>;
   listDispatchHistory(query: Record<string, unknown>): Promise<PagedResult<HistoryRow>>;
   listDispatchSessions(filter?: Record<string, unknown>): Promise<DispatchSessionSummary[]>;
@@ -2610,6 +2625,18 @@ export interface DesktopApi {
   getCashVoucherByNumber(voucherNumber: number): Promise<CashVoucher | null>;
   listCashVouchers(query?: Record<string, unknown>): Promise<PagedResult<CashVoucher>>;
   deleteCashVoucher(id: string): Promise<{ accepted: boolean; reason?: string }>;
+  // Historical ledger archive (docs/50). Answers are read by features/ledgerArchive/archiveReplies.ts (R25).
+  previewLedgerArchive(input: Record<string, unknown>): Promise<unknown>;
+  importLedgerArchive(input: Record<string, unknown>): Promise<unknown>;
+  getLedgerArchive(partyId: string, query?: Record<string, unknown>): Promise<unknown>;
+  attachLedgerArchiveSource(input: { name: string; dataUrl: string }): Promise<unknown>;
+  openLedgerArchiveSource(hash: string): Promise<unknown>;
+  // Opening balances and the ledger reconciliation (docs/53). Read by features/ledgerArchive/openingBalanceReplies.ts (R25).
+  getPartyOpeningBalance(partyId: string): Promise<unknown>;
+  postPartyOpeningBalance(input: Record<string, unknown>): Promise<unknown>;
+  reversePartyOpeningBalance(input: Record<string, unknown>): Promise<unknown>;
+  correctPartyOpeningBalance(input: Record<string, unknown>): Promise<unknown>;
+  getLedgerReconciliation(side: string): Promise<unknown>;
   getCustomerLedgerWithCash(partyId: string, query?: Record<string, unknown>): Promise<{
     partyId: string;
     partyName: string;
@@ -2620,7 +2647,7 @@ export interface DesktopApi {
       voucherId: string;
       voucherNumber: string;
       voucherDate: string;
-      voucherType: "SALE" | "CASH_RECEIPT" | "CASH_PAYMENT";
+      voucherType: "SALE" | "CASH_RECEIPT" | "CASH_PAYMENT" | "SALE_RETURN" | "OPENING_BALANCE";
       description: string;
       modeOfTransfer?: string;
       onlineFrom?: string;
@@ -2720,7 +2747,7 @@ export interface DesktopApi {
       voucherId: string;
       voucherNumber: string;
       voucherDate: string;
-      voucherType: "PURCHASE" | "CASH_PAYMENT" | "CASH_RECEIPT";
+      voucherType: "PURCHASE" | "CASH_PAYMENT" | "CASH_RECEIPT" | "CLAIM" | "OPENING_BALANCE";
       description: string;
       modeOfTransfer?: string;
       debitAmount: number;
@@ -2728,7 +2755,7 @@ export interface DesktopApi {
       balance: number;
     }>;
   }>;
-  listSupplierBalances(query?: Record<string, unknown>): Promise<{ rows: Array<{ partyId: string; partyName: string; city: string | null; balance: number; lastVoucherDate: string | null; totalPurchases: number; totalPayments: number }>; total: number }>;
+  listSupplierBalances(query?: Record<string, unknown>): Promise<{ rows: Array<{ partyId: string; partyName: string; city: string | null; balance: number; lastVoucherDate: string | null; totalPurchases: number; totalPayments: number; openingBalance: number }>; total: number }>;
   /** Contractors a ledger can be opened for, with the work they are on record for. */
   listContractorLedgerAccounts(): Promise<{ accepted: boolean; reason?: string; accounts?: ContractorLedgerAccount[] }>;
   /** One contractor's ledger (or the printing ledger) for an inclusive `YYYY-MM-DD` range. */
@@ -3877,4 +3904,111 @@ export interface SaveMachineProgramLineInput {
   lineId?: string | null;
   itemId: string;
   quantity: number;
+}
+
+// ─── Customer orders and Pending Orders (docs/52) ─────────────────────────────
+
+/** One product on an order: what was ordered, what gatepasses dispatched against it, what it still owes. */
+export interface CustomerOrderLine {
+  id: string;
+  lineNo: number;
+  productVariantId: string;
+  article: string;
+  color: string;
+  size: string;
+  quantity: number;
+  dispatched: number;
+  pending: number;
+}
+
+export interface CustomerOrderTotals {
+  ordered: number;
+  dispatched: number;
+  pending: number;
+}
+
+export interface CustomerOrder {
+  id: string;
+  orderNumber: number;
+  code: string;
+  businessDate: string;
+  partyId: string;
+  partyName: string;
+  note: string | null;
+  status: CustomerOrderStatus;
+  revision: number;
+  createdBy: string;
+  createdAt: string;
+  updatedBy: string | null;
+  updatedAt: string;
+  cancelledBy: string | null;
+  cancelledAt: string | null;
+  cancelReason: string | null;
+  totals: CustomerOrderTotals;
+  lines: CustomerOrderLine[];
+}
+
+/** One order and the numbers either side of it, for Previous / Next. */
+export interface CustomerOrderView {
+  order: CustomerOrder | null;
+  previousNumber: number | null;
+  nextNumber: number | null;
+  latestNumber: number | null;
+}
+
+/** A line as the screen sends it: the cartons as typed. */
+export interface CustomerOrderLineInput {
+  productVariantId: string;
+  quantity: number;
+}
+
+export interface CustomerOrderBodyInput {
+  partyId: string;
+  note: string | null;
+  lines: CustomerOrderLineInput[];
+}
+
+/** One live product of an article: a cell an order may be typed in. */
+export interface CustomerOrderArticleProduct {
+  productVariantId: string;
+  size: string;
+  color: string;
+}
+
+export interface PendingOrderQueryInput {
+  search?: string;
+  filter?: PendingOrderFilter;
+  page?: number;
+  pageSize?: number;
+}
+
+export interface PendingOrderParty {
+  partyId: string;
+  partyName: string;
+  ordered: number;
+  dispatched: number;
+  pending: number;
+  lineCount: number;
+  orderCount: number;
+  progress: OrderProgress;
+}
+
+export interface PendingOrderPartyPage {
+  rows: PendingOrderParty[];
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPending: number;
+}
+
+export interface PendingOrderLine {
+  productVariantId: string;
+  article: string;
+  color: string;
+  size: string;
+  ordered: number;
+  dispatched: number;
+  pending: number;
+  progress: OrderProgress;
+  orderCodes: string[];
 }

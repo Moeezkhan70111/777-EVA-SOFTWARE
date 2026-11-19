@@ -143,6 +143,14 @@ export const IPC = {
   editHandVoucher: "erp:edit-hand-voucher",
   deleteHandVoucher: "erp:delete-hand-voucher",
   getHandVoucher: "erp:get-hand-voucher",
+  // Customer orders and Pending Orders (docs/52)
+  saveCustomerOrder: "erp:save-customer-order",
+  editCustomerOrder: "erp:edit-customer-order",
+  cancelCustomerOrder: "erp:cancel-customer-order",
+  getCustomerOrder: "erp:get-customer-order",
+  getCustomerOrderArticle: "erp:get-customer-order-article",
+  listPendingOrderParties: "erp:list-pending-order-parties",
+  listPendingOrderLines: "erp:list-pending-order-lines",
   listRawMaterialMovementConfig: "erp:list-raw-material-movement-config",
   setRawMaterialMovementConfig: "erp:set-raw-material-movement-config",
   // The pack and route a new material in a sub-category should start from, and the bulk
@@ -392,6 +400,18 @@ export const IPC = {
   getCustomerLedger: "erp:get-customer-ledger",
   listCustomerBalances: "erp:list-customer-balances",
   getCustomerLedgerWithCash: "erp:get-customer-ledger-with-cash",
+  // Historical ledger archive: old software's customer ledgers, kept as printed (docs/50). Never accounting.
+  previewLedgerArchive: "erp:preview-ledger-archive",
+  importLedgerArchive: "erp:import-ledger-archive",
+  getLedgerArchive: "erp:get-ledger-archive",
+  attachLedgerArchiveSource: "erp:attach-ledger-archive-source",
+  openLedgerArchiveSource: "erp:open-ledger-archive-source",
+  // Opening balances carried in from the old software, and the reconciliation beside the archive (docs/53).
+  getPartyOpeningBalance: "erp:get-party-opening-balance",
+  postPartyOpeningBalance: "erp:post-party-opening-balance",
+  reversePartyOpeningBalance: "erp:reverse-party-opening-balance",
+  correctPartyOpeningBalance: "erp:correct-party-opening-balance",
+  getLedgerReconciliation: "erp:get-ledger-reconciliation",
 
   // Discounts
   getPartyDiscountReport: "erp:get-party-discount-report",

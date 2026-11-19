@@ -98,6 +98,17 @@ export const SYNC_AGGREGATE = {
   /** A store hand voucher with its lines (local 110, cloud 033, docs/49): raw material moved in (SIV-) or out (SOV-)
    * without labels. Its lines move stock by hand-move movements, which travel as STOCK_EVENT. Edited or deleted on its own day only. */
   STORE_HAND_VOUCHER: "STORE_HAND_VOUCHER",
+  /** A customer's statement from the previous accounting software, with its rows, kept as printed (local 111, cloud 034,
+   * docs/50). An archive, never accounting: no balance, cash book, stock figure or report is worked out from it. */
+  LEDGER_ARCHIVE_STATEMENT: "LEDGER_ARCHIVE_STATEMENT",
+  /** A customer's or supplier's opening balance carried in from the previous accounting software, with every posting
+   * and reversal that led to it (local 113, cloud 037, docs/53). Counts in the party's live balance, and nothing else. */
+  PARTY_OPENING_BALANCE: "PARTY_OPENING_BALANCE",
+  /** A customer order with its lines (local 112, cloud 036, docs/52). It moves no stock, money or ledger. */
+  CUSTOMER_ORDER: "CUSTOMER_ORDER",
+  /** What one gatepass was counted against on customer orders, with its lines (local 112, cloud 036, docs/52). Written
+   * by the gatepass's own transaction and reversed by its cancel. It moves no stock, money or ledger. */
+  GATEPASS_ORDER_ALLOCATION: "GATEPASS_ORDER_ALLOCATION",
   /**
    * One raw-material stock movement, as stored, with the change it made to its material's balance
    * (balanceDelta). Append-only: captured when inserted (masterCapture.ts, EVENT_CAPTURE), applied
@@ -133,8 +144,10 @@ export { LEASE_DOMAIN, type LeaseDomain };
 export const LEASED_AGGREGATE_DOMAIN: Readonly<Partial<Record<SyncAggregateType, LeaseDomain>>> = {
   [SYNC_AGGREGATE.RAW_MATERIAL_QR_BATCH]: LEASE_DOMAIN.RAW_MATERIAL_STORE,
   [SYNC_AGGREGATE.RAW_MATERIAL_QR]: LEASE_DOMAIN.RAW_MATERIAL_STORE,
-  [SYNC_AGGREGATE.PARTY_GROUP]: LEASE_DOMAIN.MASTER_DATA,
-  [SYNC_AGGREGATE.PARTY]: LEASE_DOMAIN.MASTER_DATA,
+  // Parties and their groups have their own lease, held by the store computer (cloud 035, docs/51): it adds the supplier or
+  // contractor in front of it, while products, sizes, machines and colours stay with MASTER_DATA on the office computer.
+  [SYNC_AGGREGATE.PARTY_GROUP]: LEASE_DOMAIN.PARTIES,
+  [SYNC_AGGREGATE.PARTY]: LEASE_DOMAIN.PARTIES,
   // The raw-material taxonomy travels with the stock it describes, under the store's lease (cloud 031, docs/47): the
   // store computer adds its materials while general master data is written on the office computer.
   [SYNC_AGGREGATE.INVENTORY_UNIT]: LEASE_DOMAIN.RAW_MATERIAL_STORE,
@@ -158,7 +171,14 @@ export const LEASED_AGGREGATE_DOMAIN: Readonly<Partial<Record<SyncAggregateType,
   [SYNC_AGGREGATE.STORE_HAND_VOUCHER]: LEASE_DOMAIN.RAW_MATERIAL_STORE,
   [SYNC_AGGREGATE.GATEPASS]: LEASE_DOMAIN.SALES_DISPATCH,
   [SYNC_AGGREGATE.SALE_VOUCHER]: LEASE_DOMAIN.SALES_DISPATCH,
+  // Orders are written where gatepasses are, so a gatepass allocates against every order there is (docs/52).
+  [SYNC_AGGREGATE.CUSTOMER_ORDER]: LEASE_DOMAIN.SALES_DISPATCH,
+  [SYNC_AGGREGATE.GATEPASS_ORDER_ALLOCATION]: LEASE_DOMAIN.SALES_DISPATCH,
   [SYNC_AGGREGATE.CASH_VOUCHER]: LEASE_DOMAIN.ACCOUNTS,
+  // Imported on the computer that writes cash vouchers: the archive belongs to the accounts, not to master data.
+  [SYNC_AGGREGATE.LEDGER_ARCHIVE_STATEMENT]: LEASE_DOMAIN.ACCOUNTS,
+  // Posted where cash vouchers are written: it is the accounts' starting position for a party.
+  [SYNC_AGGREGATE.PARTY_OPENING_BALANCE]: LEASE_DOMAIN.ACCOUNTS,
 };
 
 /** The lease an event type is written under, or null when it is not leased. */

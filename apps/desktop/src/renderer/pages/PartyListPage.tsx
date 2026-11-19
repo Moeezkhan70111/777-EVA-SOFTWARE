@@ -9,7 +9,8 @@ import { leaseRefusalText } from "../../shared/leaseRefusal";
 import { withoutIpcPrefix } from "../utils/ipcError";
 
 /** Parties and machines are master data: written on one computer, read on the others (docs/37 section W). */
-const MASTER_DATA_ONLY = [LEASE_DOMAIN.MASTER_DATA] as const;
+/** Parties are written under their own lease, held by the store computer (docs/51). */
+const PARTIES_ONLY = [LEASE_DOMAIN.PARTIES] as const;
 
 interface PartyListPageProps {
   onNavigate: (route: AppRoute, id?: string) => void;
@@ -148,7 +149,7 @@ export const PartyListPage: React.FC<PartyListPageProps> = ({ onNavigate }) => {
 
   return (
     <div className="page party-list-page">
-      <LeaseNotices domains={MASTER_DATA_ONLY} />
+      <LeaseNotices domains={PARTIES_ONLY} />
       {/* Delete confirmation modal */}
       {confirmDelete && (
         <div

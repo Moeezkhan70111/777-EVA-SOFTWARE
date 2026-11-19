@@ -58,6 +58,16 @@ export const NAV_PERMISSION_MODULES = [
     ],
   },
   {
+    // Customer orders (docs/52). Nobody is given these by default: an administrator grants them here.
+    id: "orders",
+    label: "Orders",
+    children: [
+      ["orders-enter", "Enter Orders (create / edit)"],
+      ["pending-orders", "Pending Orders (view)"],
+      ["orders-cancel", "Cancel Orders"],
+    ],
+  },
+  {
     id: "inventory",
     label: "Inventory",
     children: [

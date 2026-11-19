@@ -226,6 +226,22 @@ export interface AuditLogPayload {
   payload: Record<string, unknown>;
 }
 
+/** A gatepass's lines, to be counted against its party's open customer orders (docs/52). */
+export interface GatepassOrderAllocationInput {
+  gatepassId: string;
+  partyId: string;
+  actor: string;
+  actorUserId?: string | null;
+  deviceId?: string | null;
+  lines: Array<{ gatepassLineId: string; productVariantId: string; quantity: number }>;
+}
+
+/** What the allocation counted against orders, and what no order was owed. */
+export interface GatepassOrderAllocationSummary {
+  allocatedQuantity: number;
+  unallocatedQuantity: number;
+}
+
 /** A notice for every user who bills — written in the same transaction as the document. */
 export interface BillingNoticePayload {
   kind: "GATEPASS_CREATED" | "GATEPASS_CANCELLED";
@@ -255,6 +271,11 @@ export interface CreateGatepassDeps {
      * when there is a shortfall and no store to take it from.
      */
     issueGatepassCartons(lines: GatepassLineToIssue[], issuedBy: string, tx: TransactionContext, storeLocationId?: string): Promise<void>;
+    /**
+     * Counts the gatepass's lines against the party's open customer orders, oldest order first, in this transaction
+     * (docs/52). Persisted, so it is there after a restart and travels. Moves no stock, money or ledger.
+     */
+    allocateGatepassToOrders(payload: GatepassOrderAllocationInput, tx: TransactionContext): Promise<GatepassOrderAllocationSummary>;
     /**
      * Whether a gatepass may ask for more than Reflected Stock, taking the store below zero (owner, 12 Nov 2026).
      * Only while carton QR is on hold: with QR scanning on, the cartons beyond Reflected Stock are other
@@ -380,6 +401,15 @@ export class CreateGatepassUseCase {
           actor,
           tx,
           optionalText(input.storeLocationId) ?? undefined
+        );
+        // Pending orders (docs/52): what this gatepass dispatches is counted against the party's orders, in this
+        // transaction, so a gatepass that is not made allocates nothing. A retried Create returned above, before this.
+        await this.deps.repo.allocateGatepassToOrders(
+          {
+            gatepassId, partyId: party.id, actor, actorUserId: input.actorUserId ?? null, deviceId: input.deviceId ?? null,
+            lines: linePayloads.map((line) => ({ gatepassLineId: line.id, productVariantId: line.productVariantId, quantity: line.quantity })),
+          },
+          tx
         );
         // After the stock: a gatepass that could not issue its cartons leaves no bill behind.
         const bill = await this.deps.repo.generateGatepassBill({ gatepassId, partyId: party.id, voucherDate: gatepassDate }, tx);
@@ -638,6 +668,14 @@ export interface CancelGatepassDeps {
      * and returns how many. A gatepass that took none (made before carton movements) puts none back.
      */
     returnGatepassCartons(gatepassId: string, returnedBy: string, tx: TransactionContext): Promise<number>;
+    /**
+     * Reverses exactly what this gatepass was counted against on customer orders (docs/52), in this transaction, and
+     * returns how many cartons go back to pending. Nothing to reverse is 0; a second reversal finds nothing.
+     */
+    reverseGatepassOrderAllocation(
+      payload: { gatepassId: string; actor: string; reason: string; actorUserId?: string | null; deviceId?: string | null },
+      tx: TransactionContext
+    ): Promise<number>;
     appendAuditLog(payload: AuditLogPayload, tx: TransactionContext): Promise<void>;
     /** The live (not deleted) sale voucher made from this gatepass, if any. */
     getLinkedSaleVoucher(gatepassId: string, tx: TransactionContext): Promise<{ id: string; voucherNumber: string } | null>;
@@ -732,6 +770,11 @@ export class CancelGatepassUseCase {
         }
         // Only after the guarded status move: a second cancel never gets here, so nothing is put back twice.
         const returnedToStock = await this.deps.repo.returnGatepassCartons(gatepassId, actor, tx);
+        // Its exact allocation against customer orders goes back to pending (docs/52), in the same transaction.
+        await this.deps.repo.reverseGatepassOrderAllocation(
+          { gatepassId, actor, reason, actorUserId: input.actorUserId ?? null, deviceId: input.deviceId ?? null },
+          tx
+        );
         // The bill made with it was never entered (entering one moves the gatepass past CREATED), so no money goes.
         await this.deps.repo.cancelUnenteredBill({ gatepassId, reason, cancelledAt: tx.nowIso }, tx);
 

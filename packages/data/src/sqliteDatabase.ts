@@ -69,6 +69,12 @@ import { gatepassCartonsMethods, type GatepassCartonsMethods } from "./database/
 import { cartonStockAdjustMethods, type CartonStockAdjustMethods } from "./database/cartonStockAdjust.js";
 import { cartonStockDocumentMethods, type CartonStockDocumentMethods } from "./database/cartonStockDocuments.js";
 import { handVoucherMethods, type HandVoucherMethods } from "./database/handVouchers.js";
+import { ledgerArchiveMethods, type LedgerArchiveMethods } from "./database/ledgerArchive.js";
+import { partyOpeningBalanceMethods, type PartyOpeningBalanceMethods } from "./database/partyOpeningBalances.js";
+import { partyLedgerReconciliationMethods, type PartyLedgerReconciliationMethods } from "./database/partyLedgerReconciliation.js";
+import { customerOrderMethods, type CustomerOrderMethods } from "./database/customerOrders.js";
+import { orderAllocationMethods, type OrderAllocationMethods } from "./database/orderAllocation.js";
+import { pendingOrderMethods, type PendingOrderMethods } from "./database/pendingOrders.js";
 import { cartonStockReconciliationMethods, type CartonStockReconciliationMethods } from "./database/cartonStockReconciliation.js";
 import { savedRequestMethods, type SavedRequestMethods } from "./database/savedRequests.js";
 import { colorTranslationsMethods, type ColorTranslationsMethods } from "./database/colorTranslations.js";
@@ -196,10 +202,37 @@ export {
   type HandVoucherSaveInput,
   type HandVoucherView,
 } from "./database/handVouchers.js";
+export {
+  LedgerArchiveRefused,
+  type LedgerArchiveEntry,
+  type LedgerArchiveImportInput,
+  type LedgerArchiveImportResult,
+  type LedgerArchiveMatch,
+  type LedgerArchivePreview,
+  type LedgerArchiveSourceDocument,
+  type LedgerArchiveStatementInput,
+  type LedgerArchiveStatementPreview,
+  type LedgerArchiveStatementSummary,
+  type LedgerArchiveView,
+} from "./database/ledgerArchive.js";
+export {
+  OpeningBalanceRefused,
+  OPENING_BALANCE_ENTRY_TYPE,
+  type CorrectOpeningBalanceInput,
+  type PartyOpeningBalanceEntry,
+  type PartyOpeningBalanceView,
+  type PartyOpeningPosition,
+  type PostOpeningBalanceInput,
+  type ReverseOpeningBalanceInput,
+} from "./database/partyOpeningBalances.js";
+export type { PartyReconciliationReport, PartyReconciliationRow } from "./database/partyLedgerReconciliation.js";
 export type { CartonReconciliation, CartonReconciliationRow } from "./database/cartonStockReconciliation.js";
 export { RequestConflictError, isRequestId, requestFingerprint } from "./database/requestFingerprint.js";
 export type { CashVoucherInput, CashVoucherSaved } from "./database/cash.js";
 export type { ManualSaleVoucherInput, ManualSaleVoucherSaved, SaleLineInput } from "./database/sales.js";
+export { CustomerOrderRefused, type CustomerOrder, type CustomerOrderLine, type CustomerOrderView } from "./database/customerOrders.js";
+export type { CustomerOrderArticleProduct, PendingOrderLine, PendingOrderParty, PendingOrderPartyPage } from "./database/pendingOrders.js";
+export { ORDER_LINE_DISPATCHED_SQL } from "./database/orderAllocation.js";
 export { SAVED_REQUEST_KIND, type SavedRequest, type SavedRequestKind } from "./database/savedRequests.js";
 export {
   ACTIVATION_LEASE_MAX_AGE_MS,
@@ -1692,6 +1725,12 @@ export interface SqliteDatabase
     CartonStockAdjustMethods,
     CartonStockDocumentMethods,
     HandVoucherMethods,
+    LedgerArchiveMethods,
+    PartyOpeningBalanceMethods,
+    PartyLedgerReconciliationMethods,
+    CustomerOrderMethods,
+    OrderAllocationMethods,
+    PendingOrderMethods,
     CartonStockReconciliationMethods,
     SavedRequestMethods,
     ColorTranslationsMethods {}
@@ -1745,6 +1784,12 @@ Object.assign(
   cartonStockAdjustMethods,
   cartonStockDocumentMethods,
   handVoucherMethods,
+  ledgerArchiveMethods,
+  partyOpeningBalanceMethods,
+  partyLedgerReconciliationMethods,
+  customerOrderMethods,
+  orderAllocationMethods,
+  pendingOrderMethods,
   cartonStockReconciliationMethods,
   savedRequestMethods,
   colorTranslationsMethods

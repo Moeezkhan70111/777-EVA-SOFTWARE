@@ -46,6 +46,13 @@ export const PERMISSION = {
   MUNSHI: "munshi",
   GATEPASS: "gatepass",
   GATEPASS_CANCEL: "gatepass-cancel",
+  /**
+   * Customer orders (docs/52). Three codes, none given to anyone by a migration: an administrator holds them, and a
+   * role or person is given them in Users. Viewing the Pending Orders screen; entering and editing orders; cancelling one.
+   */
+  ORDERS_VIEW: "pending-orders",
+  ORDERS_ENTER: "orders-enter",
+  ORDERS_CANCEL: "orders-cancel",
   STOCK: "stock",
   /**
    * The Upper Stock and Dana Stock pages. Independent of each other and of STOCK: a role may hold

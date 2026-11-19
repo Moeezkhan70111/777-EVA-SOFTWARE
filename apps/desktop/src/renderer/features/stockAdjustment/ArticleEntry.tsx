@@ -5,7 +5,7 @@ import { StateView } from "../../components/shared/StateView";
 import { copy } from "../../config/copy";
 import { dozensText, totalsOf, type DraftLine } from "./stockAdjustmentDraft";
 import { QuantityGrid } from "./QuantityGrid";
-import { AddColorControl } from "./AddColorControl";
+import { AddColorControl } from "../../components/shared/AddColorControl";
 import { useArticleGrid } from "./useArticleGrid";
 
 // ARTICLE → EVERY COLOUR AND SIZE AT ONCE, IN DOZENS (owner, 13 Nov 2026). Choosing the article shows its sizes down

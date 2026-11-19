@@ -68,6 +68,10 @@ export const NAV_ICONS: Record<NavIconId, React.ReactNode> = {
   pasting: <Svg><path d="m14.62 9.38 3.9-3.9a2 2 0 0 1 2.83 2.83l-3.9 3.9" /><path d="M9 11.5a3.5 3.5 0 0 1 3.5 3.5c0 1.93-1.57 3.5-3.5 3.5H3.5c1.5-1 2-2.25 2-3.5A3.5 3.5 0 0 1 9 11.5z" /><path d="m11.5 12 3.12-2.62 2.83 2.83L15 15" /></Svg>,
   // pellets, heaped: drawn for Dana in the same line
   dana:<Svg><circle cx="12" cy="5.5" r="2.6" /><circle cx="7.75" cy="12.25" r="2.6" /><circle cx="16.25" cy="12.25" r="2.6" /><circle cx="3.75" cy="19" r="2.6" /><circle cx="12" cy="19" r="2.6" /><circle cx="20.25" cy="19" r="2.6" /></Svg>,
+  // clipboard-pen
+  order: <Svg><rect width="8" height="4" x="8" y="2" rx="1" /><path d="M10.4 12.6a2 2 0 0 1 3 3L8 21l-4 1 1-4Z" /><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-5.5" /><path d="M4 13.5V6a2 2 0 0 1 2-2h2" /></Svg>,
+  // hourglass
+  pending: <Svg><path d="M5 22h14M5 2h14" /><path d="M17 22v-4.172a2 2 0 0 0-.586-1.414L12 12l-4.414 4.414A2 2 0 0 0 7 17.828V22" /><path d="M7 2v4.172a2 2 0 0 0 .586 1.414L12 12l4.414-4.414A2 2 0 0 0 17 6.172V2" /></Svg>,
 };
 
 // Sections that need a picture of their own rather than one of their pages'.
@@ -83,6 +87,7 @@ export const SECTION_ICONS: Record<NavSectionId, React.ReactNode> = {
   store: NAV_ICONS.store,
   munshi: MUNSHI_ICON,
   gatepass: NAV_ICONS.voucher,
+  orders: NAV_ICONS.order,
   machineProgram: NAV_ICONS.machine,
   inventory: NAV_ICONS.stock,
   masters: LAYERS_ICON,

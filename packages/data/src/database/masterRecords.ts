@@ -38,7 +38,11 @@ export type MasterRecordType =
   | typeof SYNC_AGGREGATE.CASH_VOUCHER
   | typeof SYNC_AGGREGATE.CARTON_STOCK_ADJUSTMENT
   | typeof SYNC_AGGREGATE.PRODUCTION_DAY
-  | typeof SYNC_AGGREGATE.STORE_HAND_VOUCHER;
+  | typeof SYNC_AGGREGATE.STORE_HAND_VOUCHER
+  | typeof SYNC_AGGREGATE.LEDGER_ARCHIVE_STATEMENT
+  | typeof SYNC_AGGREGATE.PARTY_OPENING_BALANCE
+  | typeof SYNC_AGGREGATE.CUSTOMER_ORDER
+  | typeof SYNC_AGGREGATE.GATEPASS_ORDER_ALLOCATION;
 
 /** A column naming another record that must be on this computer before this row can be written. */
 export interface RecordReference {
@@ -102,6 +106,11 @@ export const MASTER_RECORD_TYPES: readonly MasterRecordType[] = [
   SYNC_AGGREGATE.CARTON_STOCK_ADJUSTMENT,
   SYNC_AGGREGATE.PRODUCTION_DAY,
   SYNC_AGGREGATE.STORE_HAND_VOUCHER,
+  SYNC_AGGREGATE.LEDGER_ARCHIVE_STATEMENT,
+  SYNC_AGGREGATE.PARTY_OPENING_BALANCE,
+  // After GATEPASS: an allocation names the gatepass's lines and the order's lines.
+  SYNC_AGGREGATE.CUSTOMER_ORDER,
+  SYNC_AGGREGATE.GATEPASS_ORDER_ALLOCATION,
 ];
 
 export const MASTER_RECORDS: Readonly<Record<MasterRecordType, RecordTableSpec>> = {
@@ -217,6 +226,41 @@ export const MASTER_RECORDS: Readonly<Record<MasterRecordType, RecordTableSpec>>
     table: "store_hand_vouchers",
     references: [partyRef("party_id")],
     children: [{ table: "store_hand_voucher_lines", parentColumn: "voucher_id", references: [{ column: "item_id", table: "inventory_items", record: SYNC_AGGREGATE.INVENTORY_ITEM }] }],
+  },
+  // A customer's archived statement from the old software (docs/50): its customer, and its rows. Never accounting.
+  [SYNC_AGGREGATE.LEDGER_ARCHIVE_STATEMENT]: {
+    table: "ledger_archive_statements",
+    references: [partyRef("party_id")],
+    children: [{ table: "ledger_archive_entries", parentColumn: "statement_id" }],
+  },
+  // A party's opening balance (docs/53): its party, the archived statement it was checked against if any, and every
+  // posting and reversal. A correction is one revision, so a receiver never holds two positions for one party.
+  [SYNC_AGGREGATE.PARTY_OPENING_BALANCE]: {
+    table: "party_opening_balances",
+    references: [partyRef("party_id"), { column: "archive_statement_id", table: "ledger_archive_statements", record: SYNC_AGGREGATE.LEDGER_ARCHIVE_STATEMENT }],
+    children: [{ table: "party_opening_balance_entries", parentColumn: "opening_balance_id" }],
+  },
+  // A customer order (docs/52): its party, and each line's product. It moves nothing.
+  [SYNC_AGGREGATE.CUSTOMER_ORDER]: {
+    table: "customer_orders",
+    references: [partyRef("party_id")],
+    children: [{ table: "customer_order_lines", parentColumn: "order_id", references: [variantRef] }],
+  },
+  // One gatepass's allocation against orders (docs/52): the gatepass and its party, and each line's gatepass line and
+  // order line, so a receiver writes it only once both documents are there.
+  [SYNC_AGGREGATE.GATEPASS_ORDER_ALLOCATION]: {
+    table: "gatepass_order_allocations",
+    references: [partyRef("party_id"), { column: "gatepass_id", table: "gatepasses", record: SYNC_AGGREGATE.GATEPASS }],
+    children: [
+      {
+        table: "gatepass_order_allocation_lines",
+        parentColumn: "allocation_id",
+        references: [
+          { column: "gatepass_line_id", table: "gatepass_lines", record: SYNC_AGGREGATE.GATEPASS },
+          { column: "order_line_id", table: "customer_order_lines", record: SYNC_AGGREGATE.CUSTOMER_ORDER },
+        ],
+      },
+    ],
   },
 };
 

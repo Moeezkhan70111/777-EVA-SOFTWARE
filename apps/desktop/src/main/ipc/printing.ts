@@ -100,7 +100,7 @@ export function registerPrintingHandlers(ctx: IpcContext): void {
 
   // "Download PDF": the renderer's document, saved as a PDF where the person chooses (pdfFile.ts). It writes a file
   // the person picked, and nothing in the ERP, so it is open to anyone signed in, like printing.
-  ipcMain.handle(IPC.savePdfDocument, async (event, payload?: { html?: unknown; fileName?: unknown; landscape?: unknown }): Promise<SavePdfResult> => {
+  ipcMain.handle(IPC.savePdfDocument, async (event, payload?: { html?: unknown; fileName?: unknown; landscape?: unknown; pageNumbers?: unknown }): Promise<SavePdfResult> => {
     authorizer.requireUser(event);
     if (typeof payload?.html !== "string" || payload.html.trim() === "") return { accepted: false, reason: "There is nothing to save." };
     const result = await saveHtmlAsPdf({
@@ -109,6 +109,7 @@ export function registerPrintingHandlers(ctx: IpcContext): void {
       fileName: safePdfName(typeof payload.fileName === "string" ? payload.fileName : "", "document"),
       scratchDir: paths.scratchDir,
       landscape: payload.landscape === true,
+      pageNumbers: payload.pageNumbers === true,
     });
     if (!result.accepted && "reason" in result) {
       logger.log({ module: "printing", severity: "WARNING", operation: "save-pdf", deviceId, message: `PDF not saved: ${result.reason}` });

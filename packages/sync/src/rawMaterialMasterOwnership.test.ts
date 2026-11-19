@@ -112,11 +112,12 @@ function addMaterial(pc2: Pc): string {
   return pc2.db.createInventoryItem({ categoryId, unitId, stockQuantity: 10, values: { article: "SK6" } }).id;
 }
 
-test("the raw-material taxonomy is the store's lease; general master data stays MASTER_DATA", () => {
+test("the raw-material taxonomy is the store's lease; parties have their own (035); the rest stays MASTER_DATA", () => {
   for (const type of ["INVENTORY_UNIT", "UNIT_LADDER_PRESET", "INVENTORY_CATEGORY", "INVENTORY_ITEM", "STOCK_EVENT", "RAW_MATERIAL_QR_BATCH", "RAW_MATERIAL_QR"]) {
     assert.equal(leaseDomainOf(type), LEASE_DOMAIN.RAW_MATERIAL_STORE, type);
   }
-  for (const type of ["PARTY_GROUP", "PARTY", "WORK_SECTION", "MACHINE", "MAIN_GROUP", "PRODUCT_GROUP", "ARTICLE_SIZE", "COLOR_TRANSLATION"]) {
+  for (const type of ["PARTY_GROUP", "PARTY"]) assert.equal(leaseDomainOf(type), LEASE_DOMAIN.PARTIES, type);
+  for (const type of ["WORK_SECTION", "MACHINE", "MAIN_GROUP", "PRODUCT_GROUP", "ARTICLE_SIZE", "COLOR_TRANSLATION"]) {
     assert.equal(leaseDomainOf(type), LEASE_DOMAIN.MASTER_DATA, type);
   }
 });
