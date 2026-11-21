@@ -31,6 +31,10 @@ const GUARDED_MODULES = [
   // The historical ledger archive (docs/50): imported under the accounts lease.
   "ledgerArchive",
   "partyOpeningBalances",
+  // Purchase bills (docs/54): written under the accounts lease, where supplier balances are.
+  "purchases",
+  // Claims (docs/55): priced, posted, reversed and rejected under the accounts lease.
+  "partyClaims",
 ];
 
 /** Channels these modules register that only read. Checked by hand, one by one. */
@@ -79,9 +83,13 @@ const READS = new Set([
   // handVouchers
   "getHandVoucher",
   // ledgerArchive: a preview writes nothing; opening a kept PDF only reads it
-  "previewLedgerArchive", "getLedgerArchive", "openLedgerArchiveSource",
+  "previewLedgerArchive", "getLedgerArchive", "openLedgerArchiveSource", "getLedgerArchiveBatch",
   // partyOpeningBalances: reading a position or the reconciliation writes nothing
-  "getPartyOpeningBalance", "getLedgerReconciliation",
+  "getPartyOpeningBalance", "getLedgerReconciliation", "previewBulkOpeningBalances",
+  // purchases: the next number is read, not taken; the ledger and balances only read
+  "getNextPurchaseVoucherNumber", "getPurchaseVoucher", "listPurchaseVouchers", "getSupplierLedger", "listSupplierBalances",
+  // partyClaims: the requests and their history only read
+  "listPartyClaimRequests", "getPartyClaimRequest",
   // customerOrders
   "getCustomerOrder", "getCustomerOrderArticle", "listPendingOrderParties", "listPendingOrderLines",
   // manualProduction
@@ -177,6 +185,22 @@ describe("lease classification", () => {
   it("the domains that replicate are enforced, and the two that do not yet are not", () => {
     const domains = new Set(Object.values(LEASED_CHANNELS).flat());
     expect([...domains].sort()).toEqual([LEASE_DOMAIN.ACCOUNTS, LEASE_DOMAIN.CARTON_STOCK, LEASE_DOMAIN.MASTER_DATA, LEASE_DOMAIN.PARTIES, LEASE_DOMAIN.RAW_MATERIAL_STORE, LEASE_DOMAIN.SALES_DISPATCH]);
+  });
+
+  it("a claim is posted, rejected and reversed only by the accounts holder, and the store can only ask, in closing a program (docs/55)", () => {
+    for (const channel of [IPC.postPartyClaim, IPC.rejectPartyClaimRequest, IPC.reversePartyClaim]) {
+      expect(leasesFor(channel)).toEqual([LEASE_DOMAIN.ACCOUNTS]);
+    }
+    expect(leasesFor(IPC.completeMachineProgramProduction)).toEqual([LEASE_DOMAIN.RAW_MATERIAL_STORE]);
+  });
+
+  it("parties are written under their own lease, and gatepasses under carton stock and sales together (docs/55)", () => {
+    for (const channel of [IPC.createParty, IPC.updateParty, IPC.deleteParty, IPC.createPartyGroup]) {
+      expect(leasesFor(channel)).toEqual([LEASE_DOMAIN.PARTIES]);
+    }
+    for (const channel of [IPC.createGatepass, IPC.cancelGatepass]) {
+      expect(leasesFor(channel)).toEqual([LEASE_DOMAIN.CARTON_STOCK, LEASE_DOMAIN.SALES_DISPATCH]);
+    }
   });
 
   it("the production-to-cash workflow writes only under the lease of what it writes (docs/43)", () => {

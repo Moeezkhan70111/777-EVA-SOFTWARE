@@ -4,6 +4,7 @@ import { useDesktopApi } from "../hooks/useDesktopApi";
 import type { Party } from "../types/desktopApi";
 import { useNotifications } from "../state/NotificationsContext";
 import { copy } from "../config/copy";
+import { leaseRefusalText } from "../../shared/leaseRefusal";
 import { toIsoDate } from "../utils/dates";
 import { formatWholeMoney } from "../app/format";
 import { SearchableCombobox as ItemCombobox } from "../components/shared/SearchableCombobox";
@@ -171,6 +172,9 @@ export const PurchaseVoucherFormPage: React.FC<PurchaseVoucherFormPageProps> = (
       if (!result.accepted) { push("error", copy.toast.failed, result.reason ?? "Could not save"); return; }
       push("success", voucherId ? "Updated" : "Saved", `Purchase bill #${voucherNumber} saved`);
       onNavigate("purchase-voucher-list");
+    } catch (error) {
+      // A bill is written only on the computer holding the Accounts lease (docs/54): say who writes it.
+      push("error", copy.toast.failed, leaseRefusalText(error) ?? "Could not save");
     } finally {
       setLoading(false);
     }

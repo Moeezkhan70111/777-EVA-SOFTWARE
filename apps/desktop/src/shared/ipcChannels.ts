@@ -406,12 +406,22 @@ export const IPC = {
   getLedgerArchive: "erp:get-ledger-archive",
   attachLedgerArchiveSource: "erp:attach-ledger-archive-source",
   openLedgerArchiveSource: "erp:open-ledger-archive-source",
+  getLedgerArchiveBatch: "erp:get-ledger-archive-batch",
+  withdrawLedgerArchiveBatch: "erp:withdraw-ledger-archive-batch",
   // Opening balances carried in from the old software, and the reconciliation beside the archive (docs/53).
   getPartyOpeningBalance: "erp:get-party-opening-balance",
   postPartyOpeningBalance: "erp:post-party-opening-balance",
   reversePartyOpeningBalance: "erp:reverse-party-opening-balance",
   correctPartyOpeningBalance: "erp:correct-party-opening-balance",
   getLedgerReconciliation: "erp:get-ledger-reconciliation",
+  previewBulkOpeningBalances: "erp:preview-bulk-opening-balances",
+  postBulkOpeningBalances: "erp:post-bulk-opening-balances",
+  // Claims: the store asks when a program closes, Accounts prices and posts (docs/55).
+  listPartyClaimRequests: "erp:list-party-claim-requests",
+  getPartyClaimRequest: "erp:get-party-claim-request",
+  postPartyClaim: "erp:post-party-claim",
+  rejectPartyClaimRequest: "erp:reject-party-claim-request",
+  reversePartyClaim: "erp:reverse-party-claim",
 
   // Discounts
   getPartyDiscountReport: "erp:get-party-discount-report",

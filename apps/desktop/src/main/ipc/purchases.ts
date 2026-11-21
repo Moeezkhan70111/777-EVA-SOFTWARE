@@ -2,8 +2,12 @@
 //
 // IPC handlers are registered per feature; every write is authorised through ctx.authorizer
 // (see ../authorize.ts) and every channel name comes from shared/ipcChannels.ts.
+//
+// A BILL IS WRITTEN ON THE ACCOUNTS COMPUTER (docs/54). Creating, editing and deleting one are leased to ACCOUNTS
+// (leaseChannels.ts), where cash vouchers and opening balances are written and the supplier balances are shown, and the
+// bill travels from there as the PURCHASE_VOUCHER record. A computer that is not synced writes as before.
 
-import { ipcMain } from "electron";
+import { ipcMain } from "../leaseGuard";
 import { businessToday } from "@erp/domain";
 import { IPC } from "../../shared/ipcChannels";
 import type { IpcContext } from "./context";

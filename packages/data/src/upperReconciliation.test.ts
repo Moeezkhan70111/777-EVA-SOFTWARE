@@ -22,7 +22,8 @@ import { UuidGenerator } from "./idGenerator.js";
 //   6 cartons come back                                   → 36 pairs to account for
 //   a sealed 2-DOZEN packet is scanned back (Return Upper) → stock + 2 DOZEN, 12 pairs left
 //   1 missing carton came back as B (MIX label)            → 6 pairs left
-//   on closing: 5 cut size pairs + 1 pair claimed           → nothing left
+//   on closing: 5 cut size pairs + 1 pair claim REQUESTED   → nothing left
+//   Accounts prices the request at Rs 50 a pair and posts it → Rs 50 on the supplier's ledger (docs/55)
 //
 // Every step against the real database, the way the screens make it.
 
@@ -150,8 +151,17 @@ const sixCartonsBack = async (f: Fixture) => {
 };
 
 const claim = (overrides: Partial<UpperClaim> = {}): UpperClaim => ({
-  role: CLAIM_PARTY_ROLE.SUPPLIER, supplierPartyId: null, pairs: 1, ratePaisa: 5_000, reason: "torn upper", ...overrides,
+  role: CLAIM_PARTY_ROLE.SUPPLIER, supplierPartyId: null, pairs: 1, reason: "torn upper", ...overrides,
 });
+
+const countOf = (f: Fixture, table: string): number => (f.raw.prepare(`SELECT COUNT(*) AS n FROM ${table}`).get() as { n: number }).n;
+
+/** Accounts posts the one pending request at `ratePaisa` a pair, as the Claims screen does. */
+const postOnlyRequest = (f: Fixture, ratePaisa: number) => {
+  const [request] = f.db.listPartyClaimRequests().rows;
+  assert.ok(request, "a request waits for Accounts");
+  return f.db.postClaimFromRequest({ claimId: crypto.randomUUID(), requestId: request.requestId, ratePaisa, actor: "accounts" });
+};
 
 const voidCount = (f: Fixture, ids: string[]): number =>
   ids.filter((id) => (f.raw.prepare("SELECT status FROM qr_codes WHERE id = ?").get(id) as { status: string }).status === "VOID").length;
@@ -250,7 +260,7 @@ test("F — B carton: MIX labels printed, every original not back voided and tra
   });
 });
 
-test("D, E, G — the owner's example closes: cut size, a claim on the supplier's ledger, and every pair once", async () => {
+test("D, E, G — the owner's example closes: cut size, a claim request, and every pair once. Accounts posts the claim", async () => {
   await withFixture(async (f) => {
     f.db.bootstrapFirstAdmin("owner", "Password123");
     const { programId, packets, lineId } = await sixCartonsBack(f);
@@ -264,10 +274,12 @@ test("D, E, G — the owner's example closes: cut size, a claim on the supplier'
     assert.throws(() => close({ cutSizeUppers: 0, cutSizePairs: 5, claims: [] }), /1 of the 6 remaining pairs/);
     assert.throws(() => close({ cutSizeUppers: 2, cutSizePairs: 3, claims: [claim({ supplierPartyId: f.otherSupplier })] }), /supplier whose uppers went out/);
     assert.equal(f.db.isMachineProgramClosed(programId), false);
-    assert.equal((f.raw.prepare("SELECT COUNT(*) AS n FROM party_claims").get() as { n: number }).n, 0, "a refused close posts no claim");
+    assert.equal(countOf(f, "party_claim_requests"), 0, "a refused close records no request");
 
     const closed = close({ cutSizeUppers: 2, cutSizePairs: 3, claims: [claim({ supplierPartyId: f.supplier })] });
     assert.equal(closed.outcome, "RECONCILED");
+    assert.equal(countOf(f, "party_claims"), 0, "closing a program posts no claim: the store does not decide an amount");
+    assert.equal(f.db.getSupplierLedger(f.supplier).entries.some((entry) => entry.voucherType === "CLAIM"), false, "nothing on the ledger yet");
 
     const cutStock = f.raw
       .prepare(
@@ -287,6 +299,21 @@ test("D, E, G — the owner's example closes: cut size, a claim on the supplier'
     );
     // 72 pairs out = 36 back as cartons + 24 returned + 6 as a B carton + 3 + 2 cut size + 1 claimed.
     assert.equal(36 + saved.returnedUpperPairs + saved.bCartons * 6 + saved.cutSizePairs + saved.cutSizeUppers + saved.claims[0].pairs, 72);
+    assert.deepEqual(
+      [saved.claims[0].requestNumber, saved.claims[0].status, saved.claims[0].claimNumber, saved.claims[0].amountPaisa],
+      ["CR-000001", "PENDING", null, null],
+      "the program shows the request waiting for Accounts"
+    );
+    const [request] = f.db.listPartyClaimRequests().rows;
+    assert.deepEqual(
+      [request.programCode, request.materialName, request.partyName, request.pairs, request.reason, request.role],
+      ["MP-000001", request.materialName, "ABC UPPER", 1, "torn upper", "SUPPLIER"]
+    );
+    assert.match(request.materialName, /SK6/, "the material is named on the request itself");
+
+    postOnlyRequest(f, 5_000);
+    const posted = f.view(programId).lines[0].saved!.claims[0];
+    assert.deepEqual([posted.status, posted.claimNumber, posted.amountPaisa], ["POSTED", "CL-000001", 5_000]);
 
     const ledger = f.db.getSupplierLedger(f.supplier);
     const claimRow = ledger.entries.find((entry) => entry.voucherType === "CLAIM")!;
@@ -297,7 +324,7 @@ test("D, E, G — the owner's example closes: cut size, a claim on the supplier'
     assert.equal(balance.balance, -50);
 
     const notice = f.raw.prepare("SELECT message FROM user_notifications WHERE kind = 'MACHINE_PROGRAM_RECONCILED'").get() as { message: string };
-    assert.match(notice.message, /1 pair of SK6 7\/10 RED claimed to ABC UPPER for Rs 50.00 — "torn upper"/);
+    assert.match(notice.message, /1 pair of SK6 7\/10 RED to be claimed from ABC UPPER — "torn upper"/);
   });
 });
 
@@ -307,10 +334,11 @@ test("a claim against the packing contractor stands on the contractor ledger as 
     await f.returnUpper(f.db, programId, packets[2]);
     f.db.completeMachineProgramProduction({
       programId,
-      entries: [{ lineId, cutSizeUppers: 0, cutSizePairs: 10, claims: [claim({ role: CLAIM_PARTY_ROLE.PACKING, pairs: 2, ratePaisa: 2_500, reason: "lost at packing" })] }],
+      entries: [{ lineId, cutSizeUppers: 0, cutSizePairs: 10, claims: [claim({ role: CLAIM_PARTY_ROLE.PACKING, pairs: 2, reason: "lost at packing" })] }],
       closedBy: ACTOR,
       deviceId: "device-1",
     });
+    postOnlyRequest(f, 2_500);
     const ledger = f.db.getContractorLedger(f.packingContractor, { fromDate: "2000-01-01", toDate: "2999-12-31" });
     const claimed = ledger.entries.find((entry) => entry.kind === "CLAIM");
     assert.ok(claimed, "the claim is on the packing contractor's ledger");
@@ -332,12 +360,12 @@ test("closing voids every original label still out, so none can be produced or s
   });
 });
 
-test("I — a close that fails part-way writes nothing: no closure, no stock, no claim", async () => {
+test("I — a close that fails part-way writes nothing: no closure, no stock, no claim request", async () => {
   await withFixture(async (f) => {
     const { programId, packets, lineId } = await sixCartonsBack(f);
     await f.returnUpper(f.db, programId, packets[2]);
     // The cut size material's unit is taken by another unit's stock first, so receiving cut size
-    // fails AFTER the closure row and the claim have been written — and all of it must roll back.
+    // fails AFTER the closure row and the claim request have been written — and all of it must roll back.
     f.raw.prepare("INSERT INTO inventory_units (id, code, name, unit_family, decimal_scale, created_at, updated_at) VALUES ('kg', 'KG', 'Kilogram', 'WEIGHT', 0, '', '')").run();
     const cat = f.db.createInventoryCategory({ name: "CUT SIZE PAIRS" });
     f.db.addInventoryCategoryField({ categoryId: cat, fieldKey: "item", label: "ITEM", fieldType: "TEXT", required: true });
@@ -352,11 +380,11 @@ test("I — a close that fails part-way writes nothing: no closure, no stock, no
       })
     );
     assert.equal(f.db.isMachineProgramClosed(programId), false);
-    assert.equal((f.raw.prepare("SELECT COUNT(*) AS n FROM party_claims").get() as { n: number }).n, 0);
+    assert.equal(countOf(f, "party_claim_requests"), 0);
     assert.equal((f.raw.prepare("SELECT COUNT(*) AS n FROM machine_program_reconciliation_lines").get() as { n: number }).n, 0);
 
     // Recorded the right way — the 11 pairs were loose uppers — the close goes through, and the
-    // claim the failed attempt rolled back is posted now, once.
+    // request the failed attempt rolled back is recorded now, once.
     const closed = f.db.completeMachineProgramProduction({
       programId, entries: [{ lineId, cutSizeUppers: 11, cutSizePairs: 0, claims: [claim({ supplierPartyId: f.supplier })] }], closedBy: ACTOR, deviceId: "device-1",
     });
@@ -364,8 +392,9 @@ test("I — a close that fails part-way writes nothing: no closure, no stock, no
     assert.throws(
       () => f.db.completeMachineProgramProduction({ programId, entries: [], closedBy: ACTOR, deviceId: "device-1" }),
       /already closed/,
-      "a retried close never posts twice"
+      "a retried close never records twice"
     );
-    assert.equal((f.raw.prepare("SELECT COUNT(*) AS n FROM party_claims").get() as { n: number }).n, 1);
+    assert.equal(countOf(f, "party_claim_requests"), 1);
+    assert.equal(countOf(f, "party_claims"), 0);
   });
 });

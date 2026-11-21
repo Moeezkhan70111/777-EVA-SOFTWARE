@@ -6,6 +6,10 @@
 //   reversePartyOpeningBalance  takes it out of the live balance, with a reason
 //   correctPartyOpeningBalance  a reversal and a new posting, together
 //   getLedgerReconciliation     every customer's or supplier's archive against its opening balance
+//   previewBulkOpeningBalances  every party's opening balance at a cutover date, read from its archive. Writes nothing
+//   postBulkOpeningBalances     the chosen ones, all or none, exactly as previewed (database/bulkOpeningBalances.ts)
+//
+// THE CUTOVER DATE is always the administrator's: nothing here or in the screen supplies one.
 //
 // WHO. Posting, reversing and correcting change a party's live balance with no document behind them, so they are an
 // ADMINISTRATOR's, on the computer holding the ACCOUNTS lease (leaseChannels.ts), where cash vouchers are written.
@@ -16,6 +20,7 @@ import { ipcMain } from "../leaseGuard";
 import { IPC } from "../../shared/ipcChannels";
 import type { IpcContext } from "./context";
 import { LEDGER_SIDE, asRecord, asString, isLedgerArchiveSide, type LedgerSide } from "@erp/domain";
+import { DATA_KIND, type DataKind } from "../../shared/dataChange";
 import { rejection, type SessionUser } from "../authorize";
 import { refusalReason } from "../writeRefusal";
 import { LEDGER_PERMISSION } from "./ledgerArchive";
@@ -29,6 +34,7 @@ export const OPENING_BALANCE_MESSAGES = {
   NOT_ALLOWED_VIEW: "Your account does not have access to this ledger.",
   ADMIN_ONLY: "Only an administrator can post, correct or reverse an opening balance.",
   REPORT_NOT_LOADED: "The reconciliation could not be loaded. Try again.",
+  BULK_NOT_LOADED: "The opening balances could not be worked out. Try again.",
 } as const;
 
 /** Exactly what these handlers need. */
@@ -38,6 +44,8 @@ export interface OpeningBalanceContext {
   logger: Pick<IpcContext["logger"], "log">;
   authorizer: Pick<IpcContext["authorizer"], "requireAdmin" | "requirePermission">;
   deviceId: string;
+  /** Tells open screens what changed (main/dataChanged.ts). Nothing when absent. */
+  announce?: (kinds: readonly DataKind[]) => void;
 }
 
 /** The posted figures as sent. Their meaning is checked by the data layer, not here. */
@@ -54,6 +62,7 @@ const versionOf = (value: unknown): number => (typeof value === "number" && Numb
 
 export function registerPartyOpeningBalanceHandlers(ctx: OpeningBalanceContext): void {
   const { db, logger, authorizer, deviceId } = ctx;
+  const announce = ctx.announce ?? (() => undefined);
   const log = (severity: "INFO" | "WARNING" | "ERROR", operation: string, message: string, userId?: string) =>
     logger.log({ module: "opening-balance", severity, operation, deviceId, userId, message });
 
@@ -124,6 +133,40 @@ export function registerPartyOpeningBalanceHandlers(ctx: OpeningBalanceContext):
         requestId: asString(fields.requestId), partyId: asString(fields.partyId), expectedVersion: versionOf(fields.expectedVersion), reason: fields.reason, ...postingOf(fields), actor,
       })
     );
+  });
+
+  ipcMain.handle(IPC.previewBulkOpeningBalances, (event, side?: unknown, cutoverDate?: unknown, opts?: unknown) => {
+    const user = admin(event, opts);
+    if (!user.ok) return { accepted: false, reason: user.reason };
+    const ledger = isLedgerArchiveSide(side) ? side : LEDGER_SIDE.CUSTOMER;
+    try {
+      return { accepted: true, preview: db.previewBulkOpeningBalances(ledger, asString(cutoverDate)) };
+    } catch (error) {
+      const reason = refusalReason(error, OPENING_BALANCE_MESSAGES.BUSY, OPENING_BALANCE_MESSAGES.BULK_NOT_LOADED);
+      log("WARNING", "bulk-preview", reason, user.user.id);
+      return { accepted: false, reason };
+    }
+  });
+
+  ipcMain.handle(IPC.postBulkOpeningBalances, (event, input?: unknown, opts?: unknown) => {
+    const user = admin(event, opts);
+    if (!user.ok) return { accepted: false, reason: user.reason };
+    const fields = asRecord(input);
+    const expected = (Array.isArray(fields.expected) ? fields.expected : []).map((item) => {
+      const row = asRecord(item);
+      return { partyId: row.partyId, direction: row.direction, amountPaisa: row.amountPaisa, archiveStatementId: row.archiveStatementId };
+    });
+    try {
+      const result = db.postBulkOpeningBalances({ requestId: asString(fields.requestId), side: fields.side, cutoverDate: fields.cutoverDate, expected, actor: user.user.username });
+      log("INFO", "bulk-post", JSON.stringify({ side: fields.side, cutoverDate: fields.cutoverDate, posted: result.posted, duplicate: result.duplicate }), user.user.id);
+      // Party balances moved: every open ledger reloads its opening balance (useOpeningBalance listens for CASH).
+      announce([DATA_KIND.CASH]);
+      return { accepted: true, result };
+    } catch (error) {
+      const reason = refusalReason(error, OPENING_BALANCE_MESSAGES.BUSY, OPENING_BALANCE_MESSAGES.NOT_SAVED);
+      log("WARNING", "bulk-post", reason, user.user.id);
+      return { accepted: false, reason };
+    }
   });
 
   ipcMain.handle(IPC.getLedgerReconciliation, (event, side?: unknown, opts?: unknown) => {

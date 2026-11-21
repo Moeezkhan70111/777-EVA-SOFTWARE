@@ -12,13 +12,12 @@ import {
 } from "./machineProgramReconciliation.js";
 
 // Reconciling an upper line: the cartons that did not come back, as pairs, and every pair given
-// exactly one fate — cut size upper, cut size pairs, or a claim at an amount against a party.
+// exactly one fate — cut size upper, cut size pairs, or a claim request against a party (priced later by Accounts).
 
 const claim = (overrides: Partial<UpperClaim> = {}): UpperClaim => ({
   role: CLAIM_PARTY_ROLE.SUPPLIER,
   supplierPartyId: "s-1",
   pairs: 1,
-  ratePaisa: 5_000,
   reason: "torn upper",
   ...overrides,
 });
@@ -50,15 +49,13 @@ test("the ways must add up to the remaining pairs exactly", () => {
   assert.match(upperReconciliationProblem(6, entry({ cutSizeUppers: -1, cutSizePairs: 7 })) ?? "", /whole numbers/);
 });
 
-test("a claim needs its party, a whole number of pairs, an amount and a reason", () => {
+test("a claim request needs its party, a whole number of pairs and a reason, and no amount", () => {
   const problem = (overrides: Partial<UpperClaim>) => upperReconciliationProblem(1, entry({ claims: [claim(overrides)] }));
   assert.equal(problem({}), null);
   assert.match(problem({ supplierPartyId: null }) ?? "", /supplier/);
   assert.equal(problem({ role: CLAIM_PARTY_ROLE.PACKING, supplierPartyId: null }), null, "a contractor is the program's own");
   assert.match(problem({ pairs: 0 }) ?? "", /whole pairs/);
   assert.match(problem({ pairs: 0.5 }) ?? "", /whole pairs/);
-  assert.match(problem({ ratePaisa: 0 }) ?? "", /amount/);
-  assert.match(problem({ ratePaisa: 12.5 }) ?? "", /amount/);
   assert.match(problem({ reason: "  " }) ?? "", /reason/);
 });
 

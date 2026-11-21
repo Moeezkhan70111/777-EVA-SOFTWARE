@@ -126,7 +126,7 @@ describe("SupplierLedgerPage with an archived ledger and an opening balance", ()
     expect(screen.queryByRole("button", { name: "Import old ledger" })).toBeNull();
     renderPage([PERMISSION.SUPPLIER_LEDGER, PERMISSION.CASH_VOUCHER_FORM]);
     fireEvent.click(await screen.findByRole("button", { name: "Import old ledger" }));
-    expect(await screen.findByText(/One file may hold several suppliers/)).toBeInTheDocument();
+    expect(await screen.findByText(/Customer reports may be chosen with them/)).toBeInTheDocument();
   });
 
   it("the reconciliation says each supplier's status in words, with the difference", async () => {

@@ -34,7 +34,7 @@ const csvFile = (csv: string): File =>
     arrayBuffer: async () => new TextEncoder().encode(csv).buffer,
   });
 
-const chooseFile = (csv: string = CSV) => fireEvent.change(screen.getByLabelText("Ledger CSV file"), { target: { files: [csvFile(csv)] } });
+const chooseFile = (csv: string = CSV) => fireEvent.change(screen.getByLabelText("Ledger files (.xls, .xlsx or CSV)"), { target: { files: [csvFile(csv)] } });
 
 describe("ImportArchiveDialog", () => {
   it("groups the file by customer, imports only the ready statement, and says what it did", async () => {
@@ -92,5 +92,73 @@ describe("ImportArchiveDialog", () => {
     await waitFor(() => expect(importLedgerArchive).toHaveBeenCalledTimes(2));
     const [first, second] = importLedgerArchive.mock.calls.map((call) => (call[0] as { batchId: string }).batchId);
     expect(second).toBe(first);
+  });
+  // The previous software's Supplier Ledger Report, saved as CSV text (docs/53): read by the report reader, not the template.
+  const SUPPLIER_REPORT = [
+    ",777 EVA Shoes", ",,,,,Supplier Ledger Report", ",,,Name : 1201903 - SYNTHETIC SUPPLIER FOXTROT", "From,:,01/09/2026", "To,:,20/11/2026",
+    "Date,,No.,Type,Bill.No,Description,,,,Qty,Debit,,Credit,,Balance",
+    "31/08/2026,,0,,,Opening Balance,,,,0,,0,,,0",
+    "12/10/2026,,5101,PU,,Total Qty= 140,,,,140,0,,123000,,,-123000",
+    ",,,,,Total :,,,140,0,,123000,,,-123000",
+  ].join("\n");
+  const SUPPLIERS = [{ id: "s1", partyCode: "PTY-000200", partyName: "SYNTHETIC SUPPLIER FOXTROT", partyType: "SUPPLIER", status: "ACTIVE" }] as Party[];
+  const textFile = (content: string, name: string): File =>
+    Object.assign(new File([content], name, { type: "text/csv" }), { text: async () => content, arrayBuffer: async () => new TextEncoder().encode(content).buffer });
+  const chooseFiles = (...files: File[]) => fireEvent.change(screen.getByLabelText("Ledger files (.xls, .xlsx or CSV)"), { target: { files } });
+  const supplierStatement = statement({ side: "SUPPLIER", partyCode: "1201903", customerName: "SYNTHETIC SUPPLIER FOXTROT", match: { partyId: "s1", partyName: "SYNTHETIC SUPPLIER FOXTROT", partyCode: "PTY-000200", how: "NAME" }, totals: totals(2) });
+
+  it("imports several files at once, customers and suppliers mixed, each statement with its own side, file and report", async () => {
+    const previewLedgerArchive = vi.fn().mockResolvedValue({
+      accepted: true,
+      preview: { alreadyImported: null, statements: [statement({ partyCode: "1301139", customerName: "Behraam Shoes Karachi", match: behraamMatch }), statement({ partyCode: "777", customerName: "Unknown Traders", totals: totals(1) }), supplierStatement] },
+    });
+    const importLedgerArchive = vi.fn().mockResolvedValue({ accepted: true, result: { batchId: "b", duplicate: false, statements: [{ id: "x1", rowCount: 2, closingBalancePaisa: 1 }, { id: "x2", rowCount: 2, closingBalancePaisa: 1 }] } });
+    const listParties = vi.fn().mockResolvedValue({ rows: SUPPLIERS, total: 1, page: 1, pageSize: 1000 });
+    renderDialog({ previewLedgerArchive, importLedgerArchive, listParties });
+    chooseFiles(csvFile(CSV), textFile(SUPPLIER_REPORT, "foxtrot.csv"));
+
+    expect(await screen.findByText(/2 files chosen/)).toBeInTheDocument();
+    const sent = previewLedgerArchive.mock.calls[0]?.[0] as { fileHash: string; statements: Array<{ side: string; sourceFile: { name: string }; report: { partyCode: string; printedTotals: { credit: string } } | null }> };
+    expect(sent.fileHash).toBe("");
+    expect(sent.statements.map((item) => [item.side, item.sourceFile.name, item.report?.partyCode ?? null])).toEqual([
+      ["CUSTOMER", "behraam.csv", null], ["CUSTOMER", "behraam.csv", null], ["SUPPLIER", "foxtrot.csv", "1201903"],
+    ]);
+    expect(sent.statements[2]?.report?.printedTotals.credit).toBe("123000");
+    await waitFor(() => expect(listParties).toHaveBeenCalledWith(expect.objectContaining({ partyType: "SUPPLIER" })));
+    expect(screen.getByLabelText("Original ledger PDF")).toBeDisabled();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Import 2 statements" }));
+    await screen.findByText("✓ Old ledger imported");
+    const imported = importLedgerArchive.mock.calls[0]?.[0] as { fileName: string; statements: Array<{ partyId: string; side: string; sourceDocument: unknown }> };
+    expect(imported.fileName).toBe("behraam.csv and 1 more");
+    expect(imported.statements.map((item) => [item.partyId, item.side, item.sourceDocument])).toEqual([["p1", "CUSTOMER", null], ["s1", "SUPPLIER", null]]);
+  });
+
+  it("reads the same file chosen twice once, and says so", async () => {
+    const previewLedgerArchive = vi.fn().mockResolvedValue({ accepted: true, preview: { alreadyImported: null, statements: [statement({ match: behraamMatch }), statement({})] } });
+    renderDialog({ previewLedgerArchive, importLedgerArchive: vi.fn() });
+    chooseFiles(csvFile(CSV), textFile(CSV, "copy-of-behraam.csv"));
+    expect(await screen.findByText(/copy-of-behraam.csv is the same file as one already chosen/)).toBeInTheDocument();
+    expect((previewLedgerArchive.mock.calls[0]?.[0] as { statements: unknown[] }).statements).toHaveLength(2);
+  });
+
+  it("a report the reader could not account for is never imported, whatever the preview says", async () => {
+    const noTotal = SUPPLIER_REPORT.split("\n").slice(0, -1).join("\n");
+    const previewLedgerArchive = vi.fn().mockResolvedValue({ accepted: true, preview: { alreadyImported: null, statements: [supplierStatement] } });
+    renderDialog({ previewLedgerArchive, importLedgerArchive: vi.fn(), listParties: vi.fn().mockResolvedValue({ rows: SUPPLIERS, total: 1, page: 1, pageSize: 1000 }) });
+    chooseFiles(textFile(noTotal, "foxtrot.csv"));
+    expect(await screen.findByText(/✕ 2 problems/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Import 0 statements" })).toBeDisabled();
+  });
+
+  it("a statement already imported from its file, among others, blocks only itself", async () => {
+    const previewLedgerArchive = vi.fn().mockResolvedValue({
+      accepted: true,
+      preview: { alreadyImported: null, statements: [statement({ match: behraamMatch, fileAlreadyImported: { fileName: "behraam.csv", importedBy: "accounts" } }), statement({}), supplierStatement] },
+    });
+    renderDialog({ previewLedgerArchive, importLedgerArchive: vi.fn(), listParties: vi.fn().mockResolvedValue({ rows: SUPPLIERS, total: 1, page: 1, pageSize: 1000 }) });
+    chooseFiles(csvFile(CSV), textFile(SUPPLIER_REPORT, "foxtrot.csv"));
+    expect(await screen.findByText(/✕ Already imported from this file \(behraam.csv, by accounts\)/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Import 1 statement" })).toBeEnabled();
   });
 });

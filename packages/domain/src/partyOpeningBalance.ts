@@ -208,3 +208,43 @@ export function reconcilePartyLedger(input: { side: LedgerSide; statements: read
   };
 }
 
+
+// ─── An opening balance at a cutover date, from the archive ─────────────────
+
+/** One archived line's printed balance, in archive order (date, then statement, then the report's own order). */
+export interface ArchiveBalancePoint {
+  readonly statementId: string;
+  readonly entryDate: string;
+  readonly balancePaisa: number;
+  readonly balanceRule: ArchiveBalanceRule;
+}
+
+/** The archive's balance as the ERP takes over: the last line dated BEFORE the cutover, read the side's way. */
+export interface CutoverBalance {
+  /** Receivable (customer) or payable (supplier) positive. */
+  readonly sidePaisa: number;
+  readonly statementId: string;
+  /** The date of the line it was read from. */
+  readonly asOf: string;
+  /** Archived lines dated on or after the cutover: the live ERP should hold those, so they are not counted. */
+  readonly linesOnOrAfterCutover: number;
+}
+
+/**
+ * The opening balance the archive gives at `cutoverDate` (YYYY-MM-DD, the first day the ERP holds the party's live
+ * entries). Null when no archived line is dated before it. Never adds anything up again: it reads the balance the old
+ * software printed on that line.
+ */
+export function archiveBalanceAtCutover(side: LedgerSide, points: readonly ArchiveBalancePoint[], cutoverDate: string): CutoverBalance | null {
+  let last: ArchiveBalancePoint | null = null;
+  let after = 0;
+  for (const point of points) {
+    if (point.entryDate < cutoverDate) last = point;
+    else after += 1;
+  }
+  if (last === null) return null;
+  return { sidePaisa: archiveBalanceForSide(last.balancePaisa, side, last.balanceRule), statementId: last.statementId, asOf: last.entryDate, linesOnOrAfterCutover: after };
+}
+
+/** Whether a text is a real calendar day, YYYY-MM-DD. */
+export const isIsoDay = (value: unknown): value is string => typeof value === "string" && isRealDay(value);

@@ -29,6 +29,7 @@ const VIEW = { partyId: "c1", version: 1, status: "POSTED" };
 
 let signedIn: SessionUser | null;
 let posted: Array<Record<string, unknown>>;
+let announced: Array<readonly string[]>;
 
 const build = (): OpeningBalanceContext => {
   const authorizer = new Authorizer(() => signedIn);
@@ -40,8 +41,10 @@ const build = (): OpeningBalanceContext => {
     reversePartyOpeningBalance: () => VIEW,
     correctPartyOpeningBalance: () => VIEW,
     partyLedgerReconciliation: (side: string) => ({ side, rows: [] }),
+    previewBulkOpeningBalances: (side: string, cutoverDate: string) => ({ side, cutoverDate, proposals: [] }),
+    postBulkOpeningBalances: (input: Record<string, unknown>) => { posted.push(input); return { duplicate: false, posted: 1, partyIds: ["c1"] }; },
   };
-  return { db: db as unknown as OpeningBalanceContext["db"], logger: { log: () => undefined }, authorizer, deviceId: "device-under-test" };
+  return { db: db as unknown as OpeningBalanceContext["db"], logger: { log: () => undefined }, authorizer, deviceId: "device-under-test", announce: (kinds) => void announced.push(kinds) };
 };
 
 const invoke = async (channel: string, ...args: unknown[]): Promise<Record<string, unknown>> => {
@@ -54,6 +57,7 @@ beforeEach(() => {
   handlers.clear();
   signedIn = ADMIN;
   posted = [];
+  announced = [];
   registerPartyOpeningBalanceHandlers(build());
 });
 
@@ -82,5 +86,21 @@ describe("opening balances at the process boundary", () => {
     await expect(invoke(IPC.getLedgerReconciliation, "CUSTOMER")).resolves.toMatchObject({ accepted: true });
     await expect(invoke(IPC.getLedgerReconciliation, "SUPPLIER")).resolves.toMatchObject({ accepted: false });
     await expect(invoke(IPC.getPartyOpeningBalance, "nobody")).resolves.toMatchObject({ accepted: false });
+  });
+
+  it("every party at a cutover: an administrator's, under the ACCOUNTS lease, the date and figures passed on as sent", async () => {
+    expect([...(LEASED_CHANNELS[IPC.postBulkOpeningBalances] ?? [])]).toEqual(["ACCOUNTS"]);
+    expect(LEASED_CHANNELS[IPC.previewBulkOpeningBalances]).toBeUndefined();
+    await expect(invoke(IPC.previewBulkOpeningBalances, "SUPPLIER", "2026-11-21")).resolves.toMatchObject({ accepted: true, preview: { side: "SUPPLIER", cutoverDate: "2026-11-21" } });
+    const expected = [{ partyId: "c1", direction: "DEBIT", amountPaisa: 100, archiveStatementId: "st", extra: "dropped" }];
+    await expect(invoke(IPC.postBulkOpeningBalances, { requestId: "r", side: "CUSTOMER", cutoverDate: "2026-11-21", expected, actor: "someone-else" })).resolves.toMatchObject({ accepted: true });
+    expect(posted[0]).toEqual({ requestId: "r", side: "CUSTOMER", cutoverDate: "2026-11-21", expected: [{ partyId: "c1", direction: "DEBIT", amountPaisa: 100, archiveStatementId: "st" }], actor: "owner" });
+    // Open ledgers are told, so the selected party's Opening balance panel reloads (useOpeningBalance listens for CASH).
+    expect(announced).toEqual([["CASH"]]);
+    signedIn = ACCOUNTS;
+    await expect(invoke(IPC.previewBulkOpeningBalances, "CUSTOMER", "2026-11-21")).resolves.toMatchObject({ accepted: false });
+    await expect(invoke(IPC.postBulkOpeningBalances, { requestId: "r2", side: "CUSTOMER", cutoverDate: "2026-11-21", expected })).resolves.toMatchObject({ accepted: false });
+    expect(posted).toHaveLength(1);
+    expect(announced).toHaveLength(1);
   });
 });

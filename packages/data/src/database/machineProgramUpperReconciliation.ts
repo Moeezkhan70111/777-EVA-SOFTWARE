@@ -4,7 +4,7 @@
 //   "these missing cartons came back as B"          convertUpperCartonsToB      (before closing)
 //   "labels that can never come back now"            voidUnreturnedUpperLabels   (on closing)
 //   "cut size back into the store"                   receiveCutSize              (on closing)
-//   "claim these pairs against that party"           postPartyClaim              (on closing)
+//   "ask Accounts to claim these pairs"              recordClaimRequest          (on closing)
 //
 // The closing calls the last three inside its own transaction, so nothing here opens one except
 // convertUpperCartonsToB, which stands alone. These methods are merged onto SqliteDatabase (see
@@ -14,15 +14,14 @@ import type { SqliteDatabase } from "../sqliteDatabase.js";
 import {
   B_CARTON_COLOUR,
   CARTON_GRADE,
-  PARTY_CLAIM_STATUS,
   QR_BATCH_SOURCE,
   STOCK_EVENT_NOTE,
-  claimAmountPaisa,
+  formatClaimRequestCode,
   upperBConversionProblem,
   type ClaimPartyRole,
 } from "@erp/domain";
 import type { GeneratedQrBatch } from "./qrCodes.js";
-import { allocateNumberInRange } from "./numberRange.js";
+import { allocateNumberInRange, readLocalDeviceId } from "./numberRange.js";
 
 const text = (value: unknown): string => (value == null ? "" : String(value));
 
@@ -211,28 +210,29 @@ export const machineProgramUpperReconciliationMethods = {
   },
 
   /**
-   * Posts one claim against a party: a numbered deduction that stands on their ledger from today.
-   * Assumes the caller's transaction. The amount is worked out here from the pairs and the amount
-   * a pair, and the table checks it again.
+   * Records one claim REQUEST against a party (docs/55): how many pairs of which material, on which program, and why.
+   * It carries no money and stands on no ledger. Accounts prices and posts it on the accounts computer
+   * (partyClaimPosting.ts). Assumes the caller's transaction, so it is written with the program's closure or not at all.
+   * The program's code and the material's name are stored with it, because neither travels.
    */
-  postPartyClaim(
+  recordClaimRequest(
     this: SqliteDatabase,
-    input: { partyId: string; role: ClaimPartyRole; programId: string; lineId: string; itemId: string; pairs: number; ratePaisa: number; reason: string; actor: string }
+    input: { partyId: string; role: ClaimPartyRole; programId: string; programCode: string; lineId: string; itemId: string; pairs: number; reason: string; actor: string }
   ): string {
-    const next = { n: allocateNumberInRange(this, "partyClaim") };
-    const claimNumber = `CL-${String(next.n).padStart(6, "0")}`;
+    const material = this.db.prepare("SELECT display_name FROM inventory_items WHERE id = ?").get(input.itemId) as { display_name?: string } | undefined;
+    const requestNumber = formatClaimRequestCode(allocateNumberInRange(this, "claimRequest"));
     this.db
       .prepare(
-        `INSERT INTO party_claims (id, claim_number, party_id, party_role, program_id, upper_line_id, item_id,
-           quantity_pairs, rate_paisa, amount_paisa, reason, claim_date, status, created_by, created_at)
+        `INSERT INTO party_claim_requests (id, request_number, party_id, party_role, program_id, program_code, upper_line_id,
+           item_id, material_name, quantity_pairs, reason, request_date, created_by, created_at, origin_device_id)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
       .run(
-        crypto.randomUUID(), claimNumber, input.partyId, input.role, input.programId, input.lineId, input.itemId,
-        input.pairs, input.ratePaisa, claimAmountPaisa(input), input.reason.trim(), this.localYmd(new Date()),
-        PARTY_CLAIM_STATUS.POSTED, input.actor, new Date().toISOString()
+        crypto.randomUUID(), requestNumber, input.partyId, input.role, input.programId, input.programCode, input.lineId,
+        input.itemId, text(material?.display_name).trim() || input.itemId, input.pairs, input.reason.trim(),
+        this.localYmd(new Date()), input.actor, new Date().toISOString(), readLocalDeviceId(this)
       );
-    return claimNumber;
+    return requestNumber;
   },
 };
 

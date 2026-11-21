@@ -2664,6 +2664,9 @@ select:focus, textarea:focus, .form-input:focus { border-color: var(--primary-bl
   white-space: nowrap;
 }
 
+.qr-history-more { display: flex; justify-content: center; padding: 12px 0 4px; }
+.qr-history-more .btn { min-height: 44px; }
+
 .qr-history-table th:last-child,
 .qr-history-table td:last-child { width: 100; white-space: nowrap; }
 
@@ -10341,6 +10344,8 @@ tr.has-error .gp-qty-stepper input { color: var(--err); }
 .ledger-import-details { margin-top: 4px; font-size: 11px; }
 .ledger-import-details summary { cursor: pointer; color: var(--chrome-link); }
 .ledger-import-details ul { margin: 4px 0 0; padding-left: 16px; max-width: 420px; white-space: normal; }
+/* A bulk opening balance row: why a party is left out, or what to check (docs/53). */
+.ledger-import-notes { margin: 4px 0 0; padding-left: 16px; max-width: 420px; white-space: normal; font-size: 11px; color: var(--neutral-600); }
 .ledger-import-done { padding: 14px 16px; border-radius: var(--radius-md); background: var(--ok-bg); color: var(--success-text); }
 .ledger-import-done p { margin: 4px 0 0; }
 /* Opening balances and the reconciliation (docs/53): the opening balance IS in the live balance, so its strip is solid, not dashed like the archive's. */
@@ -10528,3 +10533,25 @@ tr.has-error .gp-qty-stepper input { color: var(--err); }
 /* MAIN, not the app's warm surface-2: the row hover and the progress bar's track stay in the page's neutral. */
 .app-main[data-page-tone="orders"] .ord-party-head:hover { background: var(--ord-main); }
 .app-main[data-page-tone="orders"] .ord-meter { background: var(--ord-main-line); }
+
+/* ── Claims (docs/55): the store's claim requests, priced and posted by Accounts. Cards from 360px up. ── */
+.claims-page { display: flex; flex-direction: column; gap: var(--space-3); }
+.claims-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-2); }
+.claims-card { display: flex; flex-direction: column; gap: var(--space-1); padding: var(--space-3) var(--space-4); border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface-1); }
+.claims-card p { margin: 0; }
+.claims-card-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+.claims-number { font-variant-numeric: tabular-nums; }
+.claims-status { margin-left: auto; white-space: nowrap; }
+.claims-party { font-weight: 600; }
+.claims-muted { margin: 0; color: var(--text-3); font-size: 0.8rem; }
+.claims-outcome { font-variant-numeric: tabular-nums; }
+.claims-history { font-size: 0.85rem; color: var(--text-3); }
+.claims-history ul { margin: var(--space-1) 0 0; padding-left: var(--space-4); }
+.claims-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-1); }
+.claims-actions .btn { min-height: 44px; }
+.claims-dialog { display: flex; flex-direction: column; gap: var(--space-3); }
+.claims-dialog p { margin: 0; }
+.claims-field { display: flex; flex-direction: column; gap: var(--space-1); font-weight: 600; }
+.claims-field .form-input { min-height: 44px; font-variant-numeric: tabular-nums; }
+.claims-preview { font-size: 1.15rem; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--primary); }
+.claims-problem { color: var(--danger-strong); font-size: 0.85rem; }

@@ -9,8 +9,9 @@ import { cartonsToPairs } from "./units.js";
 //     B CARTON         came off the machine in mixed colours: MIX labels    (before closing)
 //     CUT SIZE UPPER   loose uppers from an opened packet, back in the store (on closing)
 //     CUT SIZE PAIRS   slippers made but never packed in a carton           (on closing)
-//     CLAIM            damaged or lost — claimed, at an amount, to the upper's SUPPLIER or the
-//                      MACHINE or PACKING contractor, and deducted on their ledger (on closing)
+//     CLAIM            damaged or lost — a CLAIM REQUEST against the upper's SUPPLIER or the
+//                      MACHINE or PACKING contractor (on closing). The store says how many pairs and
+//                      why. Accounts prices and posts it on the accounts computer (partyClaims.ts, docs/55)
 //
 // A returned packet and a B carton change the cartons themselves (fewer due, more back), so they
 // are done first and the shortfall shrinks; what is left is accounted for when the program closes,
@@ -54,14 +55,15 @@ export type ClaimPartyRole = (typeof CLAIM_PARTY_ROLE)[keyof typeof CLAIM_PARTY_
 export const PARTY_CLAIM_STATUS = { POSTED: "POSTED", REVERSED: "REVERSED" } as const;
 export type PartyClaimStatus = (typeof PARTY_CLAIM_STATUS)[keyof typeof PARTY_CLAIM_STATUS];
 
-/** One claim for damaged or lost pairs: who, how many, at what amount a pair, and why. */
+/**
+ * One claim REQUEST for damaged or lost pairs, as the store records it when a program closes: who, how many, and why.
+ * It carries no money. Accounts prices and posts it (partyClaims.ts, docs/55): the store never decides an amount.
+ */
 export interface UpperClaim {
   role: ClaimPartyRole;
   /** The supplier claimed against. Contractors are the program's own, so they are not chosen here. */
   supplierPartyId: string | null;
   pairs: number;
-  /** The amount claimed for ONE pair, in integer paisa. */
-  ratePaisa: number;
   reason: string;
 }
 
@@ -74,8 +76,8 @@ export interface UpperReconciliation {
   claims: UpperClaim[];
 }
 
-/** What one claim deducts from the party: pairs × the amount a pair — exact, in paisa. */
-export const claimAmountPaisa = (claim: Pick<UpperClaim, "pairs" | "ratePaisa">): number => claim.pairs * claim.ratePaisa;
+/** What one posted claim deducts from the party: pairs × the amount a pair — exact, in paisa. */
+export const claimAmountPaisa = (claim: { pairs: number; ratePaisa: number }): number => claim.pairs * claim.ratePaisa;
 
 /** How many of the remaining pairs a reconciliation accounts for. */
 export const accountedPairs = (entry: UpperReconciliation): number =>
@@ -88,7 +90,6 @@ const claimProblem = (claim: UpperClaim): string | null => {
   if (!Number.isInteger(claim.pairs) || claim.pairs < 1) return "A claim is for whole pairs, at least 1.";
   if (!Object.values(CLAIM_PARTY_ROLE).includes(claim.role)) return "Choose who the claim is against.";
   if (claim.role === CLAIM_PARTY_ROLE.SUPPLIER && !claim.supplierPartyId) return "Choose the supplier the claim is against.";
-  if (!Number.isInteger(claim.ratePaisa) || claim.ratePaisa < 1) return "Type the amount claimed for one pair — more than 0.";
   if (!claim.reason.trim()) return "Say why the pairs are claimed — the claim needs a reason.";
   return null;
 };
@@ -97,8 +98,8 @@ const claimProblem = (claim: UpperClaim): string | null => {
  * Why one line's reconciliation cannot be saved, or null when it accounts for every remaining pair.
  *
  * The ways must add up to the remaining pairs EXACTLY — fewer leaves pairs nobody answered for,
- * more would claim or return pairs that were never missing. Every claim needs its party, its
- * amount and its reason.
+ * more would claim or return pairs that were never missing. Every claim request needs its party
+ * and its reason. Its amount is not the store's: Accounts sets it when it posts the claim.
  */
 export const upperReconciliationProblem = (remainingPairs: number, entry: UpperReconciliation): string | null => {
   if (![entry.cutSizeUppers, entry.cutSizePairs].every(isPairCount)) return "Count pairs in whole numbers, 0 or more.";

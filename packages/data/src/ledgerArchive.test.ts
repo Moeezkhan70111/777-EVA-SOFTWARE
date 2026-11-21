@@ -149,7 +149,7 @@ test("NEVER TWICE: a retried batch finds itself; the same file, the same stateme
     assert.equal(retry.statements.length, 1);
     assert.equal(f.count("SELECT COUNT(*) AS n FROM ledger_archive_entries"), 45, "the retry wrote nothing");
 
-    assert.throws(() => importReference(f), /This file was already imported \(behraam-shoes-1301139\.csv, by accounts\)/);
+    assert.throws(() => importReference(f), /Behraam Shoes Karachi in this file was already imported \(behraam-shoes-1301139\.csv, by accounts\)/);
 
     // The same rows, re-saved as a different file (another name, another hash).
     const resaved = `${referenceText()}\n`;

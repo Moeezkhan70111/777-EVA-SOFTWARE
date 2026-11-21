@@ -47,6 +47,10 @@ export interface ArchiveStatement {
   sourceDocumentHash: string | null;
   importedBy: string;
   importedAt: string;
+  /** Set once its import was withdrawn (docs/53): kept for the record, out of every ledger. */
+  withdrawnAt: string | null;
+  withdrawnBy: string | null;
+  withdrawalReason: string | null;
 }
 
 export interface ArchiveView {
@@ -105,6 +109,9 @@ function readStatement(raw: unknown): ArchiveStatement | null {
     sourceDocumentHash: strOrNull(raw.sourceDocumentHash),
     importedBy: str(raw.importedBy),
     importedAt: str(raw.importedAt),
+    withdrawnAt: strOrNull(raw.withdrawnAt),
+    withdrawnBy: strOrNull(raw.withdrawnBy),
+    withdrawalReason: strOrNull(raw.withdrawalReason),
   };
 }
 
@@ -133,6 +140,10 @@ export function readArchiveView(raw: unknown): Reply<ArchiveView> {
 export type MatchHow = "EARLIER_IMPORT" | "PARTY_CODE" | "NAME" | "CHOSEN";
 
 export interface PreviewStatement {
+  /** Whose ledger it is: one import may hold customers and suppliers. */
+  side: LedgerArchiveSide;
+  /** This statement's own file was already imported. */
+  fileAlreadyImported: { fileName: string; importedBy: string } | null;
   partyCode: string;
   customerName: string;
   match: { partyId: string; partyName: string; partyCode: string; how: MatchHow } | null;
@@ -172,7 +183,10 @@ function readPreviewStatement(raw: unknown): PreviewStatement | null {
   const totals = readTotals(raw.totals);
   const repeatedRows = int(raw.repeatedRows);
   if (totals === null || repeatedRows === null) return null;
+  const file = raw.fileAlreadyImported;
   return {
+    side: sideOf(raw.side),
+    fileAlreadyImported: isRecord(file) ? { fileName: str(file.fileName), importedBy: str(file.importedBy) } : null,
     partyCode: str(raw.partyCode),
     customerName: str(raw.customerName),
     match: readMatch(raw.match),
@@ -219,6 +233,25 @@ export function readSourceDocument(raw: unknown): Reply<SourceDocument> {
   const hash = str(raw.source.hash);
   if (bytes === null || !/^[0-9a-f]{64}$/.test(hash)) return { ok: false, reason: null };
   return { ok: true, value: { name: str(raw.source.name), hash, bytes } };
+}
+
+/** Every statement one import wrote, for the withdrawal dialog. */
+export function readArchiveBatch(raw: unknown): Reply<ArchiveStatement[]> {
+  if (!isRecord(raw) || raw.accepted !== true) return refused(raw);
+  const statements = readAll(raw.statements, readStatement);
+  return statements === null ? { ok: false, reason: null } : { ok: true, value: statements };
+}
+
+export interface WithdrawOutcome {
+  duplicate: boolean;
+  statements: number;
+}
+
+export function readWithdrawOutcome(raw: unknown): Reply<WithdrawOutcome> {
+  if (!isRecord(raw) || raw.accepted !== true || !isRecord(raw.result)) return refused(raw);
+  const statements = readAll(raw.result.statements, readStatement);
+  if (statements === null || statements.some((statement) => statement.withdrawnAt === null)) return { ok: false, reason: null };
+  return { ok: true, value: { duplicate: raw.result.duplicate === true, statements: statements.length } };
 }
 
 /** An answer that is only accepted or refused. */

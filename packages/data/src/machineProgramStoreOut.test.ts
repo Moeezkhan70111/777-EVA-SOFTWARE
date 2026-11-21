@@ -1103,7 +1103,7 @@ test("every carton back: the program closes COMPLETE, and what was never issued 
   });
 });
 
-test("cartons short: every missing pair is accounted for, claims carry amounts and reasons, and the admins are told", async () => {
+test("cartons short: every missing pair is accounted for, claim requests carry pairs and reasons (no amount), and the admins are told", async () => {
   await withFixture(async (f) => {
     f.db.bootstrapFirstAdmin("owner", "Password123");
     const { programId, blackLine, cartons } = await programWithCartonsBack(f, 9);
@@ -1111,7 +1111,7 @@ test("cartons short: every missing pair is accounted for, claims carry amounts a
     assert.equal(line.shortfallUppers, 6, "1 carton short is 6 pairs");
     assert.deepEqual(line.suppliers.map((supplier) => supplier.name), ["ABC UPPER"]);
 
-    const claim = (overrides: Record<string, unknown>) => ({ role: "SUPPLIER", supplierPartyId: f.supplierA, pairs: 1, ratePaisa: 5_000, reason: "torn upper", ...overrides });
+    const claim = (overrides: Record<string, unknown>) => ({ role: "SUPPLIER", supplierPartyId: f.supplierA, pairs: 1, reason: "torn upper", ...overrides });
     const close = (entry: Record<string, unknown>) =>
       f.db.completeMachineProgramProduction({
         programId, entries: [{ lineId: blackLine, cutSizeUppers: 0, cutSizePairs: 0, claims: [], ...entry }], closedBy: ACTOR, deviceId: "device-1",
@@ -1124,19 +1124,20 @@ test("cartons short: every missing pair is accounted for, claims carry amounts a
 
     const closed = close({
       cutSizeUppers: 4,
-      claims: [claim({}), claim({ role: "PACKING", supplierPartyId: null, reason: "not found at packing", ratePaisa: 4_000 })],
+      claims: [claim({}), claim({ role: "PACKING", supplierPartyId: null, reason: "not found at packing" })],
     });
     assert.equal(closed.outcome, "RECONCILED");
     const saved = f.db.getMachineProgramReconciliation(programId)!.lines.find((row) => row.lineId === blackLine)!.saved!;
     assert.equal(saved.cutSizeUppers, 4);
     assert.deepEqual(
-      saved.claims.map((entry) => [entry.claimNumber, entry.partyName, entry.pairs, entry.amountPaisa]),
-      [["CL-000001", "ABC UPPER", 1, 5_000], ["CL-000002", "CONTRACTOR B", 1, 4_000]]
+      saved.claims.map((entry) => [entry.requestNumber, entry.status, entry.claimNumber, entry.partyName, entry.pairs, entry.amountPaisa]),
+      [["CR-000001", "PENDING", null, "ABC UPPER", 1, null], ["CR-000002", "PENDING", null, "CONTRACTOR B", 1, null]]
     );
+    assert.equal((f.raw.prepare("SELECT COUNT(*) AS n FROM party_claims").get() as { n: number }).n, 0, "no claim is posted by the store");
     const notice = f.raw.prepare("SELECT title, message FROM user_notifications WHERE kind = 'MACHINE_PROGRAM_RECONCILED'").get() as { title: string; message: string };
-    assert.equal(notice.title, "Uppers claimed on MP-000001");
-    assert.match(notice.message, /claimed to ABC UPPER for Rs 50.00 — "torn upper"/);
-    assert.match(notice.message, /claimed to CONTRACTOR B for Rs 40.00 — "not found at packing"/);
+    assert.equal(notice.title, "Claims requested on MP-000001");
+    assert.match(notice.message, /to be claimed from ABC UPPER — "torn upper"/);
+    assert.match(notice.message, /to be claimed from CONTRACTOR B — "not found at packing"/);
 
     // Closed means final: the last carton's label is void, and nothing is stored in against it.
     const late = await cartonIn(f).execute({ programId, rawScan: cartons[9], context: CONTEXT, actor: ACTOR });

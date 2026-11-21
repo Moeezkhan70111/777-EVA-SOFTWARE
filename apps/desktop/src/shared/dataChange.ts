@@ -114,6 +114,15 @@ const KIND_OF_TYPE: Readonly<Record<string, DataKind>> = {
   LEDGER_ARCHIVE_STATEMENT: DATA_KIND.BILLING,
   // An opening balance posted, corrected or reversed on the accounts computer: a party balance moved (docs/53).
   PARTY_OPENING_BALANCE: DATA_KIND.CASH,
+  // A purchase bill written on the accounts computer: a supplier balance moved (docs/54).
+  PURCHASE_VOUCHER: DATA_KIND.CASH,
+  // Claims (docs/55): a request arriving from the store, and Accounts' posting, reversal or rejection. A posted claim
+  // moves a party balance, so all three are CASH, and the Claims screen listens for it.
+  PARTY_CLAIM_REQUEST: DATA_KIND.CASH,
+  PARTY_CLAIM: DATA_KIND.CASH,
+  PARTY_CLAIM_REJECTION: DATA_KIND.CASH,
+  // A carton return credits the customer: a customer balance moved (docs/55).
+  SALE_RETURN: DATA_KIND.BILLING,
   COLOR_TRANSLATION: DATA_KIND.COLORS,
 };
 

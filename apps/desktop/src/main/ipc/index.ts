@@ -1,4 +1,5 @@
 import type { IpcContext } from "./context";
+import { announceDataChanged } from "../dataChanged";
 import { registerSessionHandlers } from "./session";
 import { registerUsersHandlers } from "./users";
 import { registerWorkspaceHandlers } from "./workspace";
@@ -35,6 +36,7 @@ import { registerCartonStockAdjustmentHandlers } from "./cartonStockAdjustments"
 import { registerHandVoucherHandlers } from "./handVouchers";
 import { registerLedgerArchiveHandlers } from "./ledgerArchive";
 import { registerPartyOpeningBalanceHandlers } from "./partyOpeningBalances";
+import { registerPartyClaimHandlers } from "./partyClaims";
 import { registerCustomerOrderHandlers } from "./customerOrders";
 import { registerDataChangeTraceHandler } from "./dataChangeTrace";
 
@@ -78,8 +80,11 @@ export function registerIpcHandlers(ctx: IpcContext): void {
   registerColorTranslationHandlers(ctx);
   registerCartonStockAdjustmentHandlers(ctx);
   registerHandVoucherHandlers(ctx);
-  registerLedgerArchiveHandlers(ctx);
-  registerPartyOpeningBalanceHandlers(ctx);
+  // A bulk opening balance or a withdrawn import changes what open ledger screens show: they are told, as after a sync.
+  const announce = (kinds: Parameters<typeof announceDataChanged>[0]) => void announceDataChanged(kinds);
+  registerLedgerArchiveHandlers({ ...ctx, announce });
+  registerPartyOpeningBalanceHandlers({ ...ctx, announce });
+  registerPartyClaimHandlers({ ...ctx, announce });
   registerCustomerOrderHandlers(ctx);
   registerDataChangeTraceHandler(ctx);
 }

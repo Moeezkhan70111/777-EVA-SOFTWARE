@@ -177,7 +177,7 @@ export const purchasesMethods = {
     this.db.exec("BEGIN IMMEDIATE TRANSACTION");
     try {
       if (input.lines) {
-        this.db.prepare("UPDATE purchase_voucher_line_items SET deleted_at = ? WHERE voucher_id = ?").run(now, voucherId);
+        this.db.prepare("UPDATE purchase_voucher_line_items SET deleted_at = ? WHERE voucher_id = ? AND deleted_at IS NULL").run(now, voucherId);
         const insertLine = this.db.prepare(
           `INSERT INTO purchase_voucher_line_items (id, voucher_id, item_id, quantity, unit_price_paisa, total_price_paisa, created_at, updated_at, deleted_at)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL)`
@@ -192,8 +192,9 @@ export const purchasesMethods = {
           totalAmount = addMoney(totalAmount, lineTotal);
           insertLine.run(crypto.randomUUID(), voucherId, line.itemId, qty, toPaisa(price), toPaisa(lineTotal), now, now);
         }
-        this.db.prepare("UPDATE purchase_voucher_line_items SET deleted_at = NULL WHERE voucher_id = ? AND deleted_at = ?").run(voucherId, now);
-        this.db.prepare("DELETE FROM purchase_voucher_line_items WHERE voucher_id = ? AND deleted_at IS NOT NULL").run(voucherId);
+        // The replaced lines stay, marked deleted at this edit: a bill shows only its current lines, and its history is kept.
+        // (Until 20 Nov 2026 the replaced lines were un-marked here, so an edited bill listed its old lines beside the new
+        // ones while its total counted only the new.)
         this.db.prepare("UPDATE purchase_vouchers SET total_quantity = ?, total_amount_paisa = ?, updated_at = ? WHERE id = ?").run(totalQuantity, toPaisa(totalAmount), now, voucherId);
       }
       const updates: string[] = ["updated_at = ?"];

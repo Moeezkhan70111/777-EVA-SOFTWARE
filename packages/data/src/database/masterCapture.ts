@@ -101,6 +101,14 @@ export const MASTER_CAPTURE: readonly MasterTableCapture[] = [
   // A party's opening balance and its history (docs/53): a posting or reversal is a new revision of the one record.
   { table: "party_opening_balances", record: SYNC_AGGREGATE.PARTY_OPENING_BALANCE, recordId: `${ROW}.id` },
   { table: "party_opening_balance_entries", record: SYNC_AGGREGATE.PARTY_OPENING_BALANCE, recordId: `${ROW}.opening_balance_id` },
+  { table: "purchase_vouchers", record: SYNC_AGGREGATE.PURCHASE_VOUCHER, recordId: `${ROW}.id` },
+  { table: "purchase_voucher_line_items", record: SYNC_AGGREGATE.PURCHASE_VOUCHER, recordId: `${ROW}.voucher_id` },
+  // Claims (docs/55): the store's request, Accounts' claim (posting and reversal are revisions of it) and rejection.
+  { table: "party_claim_requests", record: SYNC_AGGREGATE.PARTY_CLAIM_REQUEST, recordId: `${ROW}.id` },
+  { table: "party_claims", record: SYNC_AGGREGATE.PARTY_CLAIM, recordId: `${ROW}.id` },
+  { table: "party_claim_rejections", record: SYNC_AGGREGATE.PARTY_CLAIM_REJECTION, recordId: `${ROW}.id` },
+  // A customer's carton return credit, and its cancellation with its bill (docs/55).
+  { table: "sale_returns", record: SYNC_AGGREGATE.SALE_RETURN, recordId: `${ROW}.id` },
   // A customer order and its lines, and one gatepass's allocation against orders and its lines (docs/52).
   { table: "customer_orders", record: SYNC_AGGREGATE.CUSTOMER_ORDER, recordId: `${ROW}.id` },
   { table: "customer_order_lines", record: SYNC_AGGREGATE.CUSTOMER_ORDER, recordId: `${ROW}.order_id` },

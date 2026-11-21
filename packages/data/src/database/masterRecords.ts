@@ -41,6 +41,11 @@ export type MasterRecordType =
   | typeof SYNC_AGGREGATE.STORE_HAND_VOUCHER
   | typeof SYNC_AGGREGATE.LEDGER_ARCHIVE_STATEMENT
   | typeof SYNC_AGGREGATE.PARTY_OPENING_BALANCE
+  | typeof SYNC_AGGREGATE.PURCHASE_VOUCHER
+  | typeof SYNC_AGGREGATE.PARTY_CLAIM_REQUEST
+  | typeof SYNC_AGGREGATE.PARTY_CLAIM
+  | typeof SYNC_AGGREGATE.PARTY_CLAIM_REJECTION
+  | typeof SYNC_AGGREGATE.SALE_RETURN
   | typeof SYNC_AGGREGATE.CUSTOMER_ORDER
   | typeof SYNC_AGGREGATE.GATEPASS_ORDER_ALLOCATION;
 
@@ -108,6 +113,14 @@ export const MASTER_RECORD_TYPES: readonly MasterRecordType[] = [
   SYNC_AGGREGATE.STORE_HAND_VOUCHER,
   SYNC_AGGREGATE.LEDGER_ARCHIVE_STATEMENT,
   SYNC_AGGREGATE.PARTY_OPENING_BALANCE,
+  // After PARTY and INVENTORY_ITEM: a bill names its supplier, each line its material.
+  SYNC_AGGREGATE.PURCHASE_VOUCHER,
+  // After PARTY and INVENTORY_ITEM: a request names its party and material. A claim and a rejection name the request.
+  SYNC_AGGREGATE.PARTY_CLAIM_REQUEST,
+  SYNC_AGGREGATE.PARTY_CLAIM,
+  SYNC_AGGREGATE.PARTY_CLAIM_REJECTION,
+  // After SALE_VOUCHER and ARTICLE_SIZE: a return names its customer, its bill and its product.
+  SYNC_AGGREGATE.SALE_RETURN,
   // After GATEPASS: an allocation names the gatepass's lines and the order's lines.
   SYNC_AGGREGATE.CUSTOMER_ORDER,
   SYNC_AGGREGATE.GATEPASS_ORDER_ALLOCATION,
@@ -232,6 +245,42 @@ export const MASTER_RECORDS: Readonly<Record<MasterRecordType, RecordTableSpec>>
     table: "ledger_archive_statements",
     references: [partyRef("party_id")],
     children: [{ table: "ledger_archive_entries", parentColumn: "statement_id" }],
+  },
+  // A supplier's purchase bill (docs/54). A replaced line stays, marked deleted, so the bill's history travels with it.
+  [SYNC_AGGREGATE.PURCHASE_VOUCHER]: {
+    table: "purchase_vouchers",
+    references: [partyRef("party_id")],
+    children: [
+      {
+        table: "purchase_voucher_line_items",
+        parentColumn: "voucher_id",
+        references: [{ column: "item_id", table: "inventory_items", record: SYNC_AGGREGATE.INVENTORY_ITEM }],
+      },
+    ],
+  },
+  // Claims (docs/55). Program and upper line ids are the store's references, kept for tracing: programs do not travel,
+  // so they are not looked up. The program's code and the material's name travel as text with the record.
+  [SYNC_AGGREGATE.PARTY_CLAIM_REQUEST]: {
+    table: "party_claim_requests",
+    references: [partyRef("party_id"), { column: "item_id", table: "inventory_items", record: SYNC_AGGREGATE.INVENTORY_ITEM }],
+  },
+  [SYNC_AGGREGATE.PARTY_CLAIM]: {
+    table: "party_claims",
+    references: [
+      partyRef("party_id"),
+      { column: "item_id", table: "inventory_items", record: SYNC_AGGREGATE.INVENTORY_ITEM },
+      { column: "request_id", table: "party_claim_requests", record: SYNC_AGGREGATE.PARTY_CLAIM_REQUEST },
+    ],
+  },
+  [SYNC_AGGREGATE.PARTY_CLAIM_REJECTION]: {
+    table: "party_claim_rejections",
+    references: [{ column: "request_id", table: "party_claim_requests", record: SYNC_AGGREGATE.PARTY_CLAIM_REQUEST }],
+  },
+  // A customer's carton return credit (docs/55). Its QR, dispatch and bill line ids are the sales computer's references:
+  // the QR flows do not travel, and only the customer's ledger and balance read a return.
+  [SYNC_AGGREGATE.SALE_RETURN]: {
+    table: "sale_returns",
+    references: [partyRef("party_id"), variantRef, { column: "sale_voucher_id", table: "sale_vouchers", record: SYNC_AGGREGATE.SALE_VOUCHER }],
   },
   // A party's opening balance (docs/53): its party, the archived statement it was checked against if any, and every
   // posting and reversal. A correction is one revision, so a receiver never holds two positions for one party.

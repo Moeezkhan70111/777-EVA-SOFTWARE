@@ -4,6 +4,7 @@ import { useDesktopApi } from "../hooks/useDesktopApi";
 import type { PurchaseVoucherListRow } from "../types/desktopApi";
 import { useNotifications } from "../state/NotificationsContext";
 import { copy } from "../config/copy";
+import { leaseRefusalText } from "../../shared/leaseRefusal";
 import { formatDate } from "../utils/dates";
 
 interface PurchaseVoucherListPageProps {
@@ -57,7 +58,7 @@ export const PurchaseVoucherListPage: React.FC<PurchaseVoucherListPageProps> = (
       }
     } catch (error) {
       console.error("Failed to delete purchase voucher:", error);
-      push("error", copy.toast.failed, "Could not delete bill");
+      push("error", copy.toast.failed, leaseRefusalText(error) ?? "Could not delete bill");
     }
   };
 

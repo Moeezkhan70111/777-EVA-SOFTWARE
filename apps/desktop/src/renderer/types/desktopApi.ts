@@ -2631,12 +2631,22 @@ export interface DesktopApi {
   getLedgerArchive(partyId: string, query?: Record<string, unknown>): Promise<unknown>;
   attachLedgerArchiveSource(input: { name: string; dataUrl: string }): Promise<unknown>;
   openLedgerArchiveSource(hash: string): Promise<unknown>;
+  getLedgerArchiveBatch(batchId: string): Promise<unknown>;
+  withdrawLedgerArchiveBatch(input: Record<string, unknown>): Promise<unknown>;
   // Opening balances and the ledger reconciliation (docs/53). Read by features/ledgerArchive/openingBalanceReplies.ts (R25).
   getPartyOpeningBalance(partyId: string): Promise<unknown>;
   postPartyOpeningBalance(input: Record<string, unknown>): Promise<unknown>;
   reversePartyOpeningBalance(input: Record<string, unknown>): Promise<unknown>;
   correctPartyOpeningBalance(input: Record<string, unknown>): Promise<unknown>;
   getLedgerReconciliation(side: string): Promise<unknown>;
+  previewBulkOpeningBalances(side: string, cutoverDate: string): Promise<unknown>;
+  postBulkOpeningBalances(input: Record<string, unknown>): Promise<unknown>;
+  // Claims (docs/55). Read by features/claims/claimReplies.ts (R25).
+  listPartyClaimRequests(query: Record<string, unknown>): Promise<unknown>;
+  getPartyClaimRequest(requestId: string): Promise<unknown>;
+  postPartyClaim(input: Record<string, unknown>): Promise<unknown>;
+  rejectPartyClaimRequest(input: Record<string, unknown>): Promise<unknown>;
+  reversePartyClaim(input: Record<string, unknown>): Promise<unknown>;
   getCustomerLedgerWithCash(partyId: string, query?: Record<string, unknown>): Promise<{
     partyId: string;
     partyName: string;
@@ -3655,13 +3665,21 @@ export type ReconciliationLossParty = "MACHINE" | "PACKING";
 
 /**
  * What the store says became of one upper line's remaining pairs when the program closes: cut size
- * uppers, cut size pairs and priced claims. The rule they must meet is @erp/domain's.
+ * uppers, cut size pairs and claim requests (no money: Accounts prices them, docs/55). The rule they must meet is
+ * @erp/domain's.
  */
 export type ReconciliationEntryInput = UpperReconciliation & { lineId: string };
 
-/** A claim as a closed program shows it. Claims from before priced claims carry no number or amount. */
+/**
+ * A claim as a closed program shows it (docs/55): a request with where Accounts has it, a claim the store posted
+ * before requests existed, or wastage recorded before priced claims (no number, no amount).
+ */
 export interface SavedReconciliationClaim {
+  /** The posted claim's CL- number, or null while nothing is posted. */
   claimNumber: string | null;
+  /** The request's CR- number, or null for a claim from before requests. */
+  requestNumber: string | null;
+  status: "PENDING" | "POSTED" | "REJECTED" | null;
   role: ClaimPartyRole;
   partyName: string;
   pairs: number;

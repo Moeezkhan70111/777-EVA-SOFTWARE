@@ -1,35 +1,24 @@
 import { useCallback, useState } from "react";
-import { groupArchiveRows, ledgerArchiveRowsOf, type LedgerArchiveRowInput, type LedgerArchiveSide } from "@erp/domain";
+import type { LedgerArchiveSide } from "@erp/domain";
 import { useDesktopApi } from "../../hooks/useDesktopApi";
-import { readSheetFile } from "../../utils/importFile";
 import {
   readImportOutcome,
   readImportPreview,
   readSourceDocument,
   type ImportOutcome,
   type ImportPreview,
-  type PreviewStatement,
   type SourceDocument,
 } from "./archiveReplies";
+import { batchFileOf, readImportSession, statementInput, statementReady, withReadNotes, type ImportSession } from "./importSession";
 
-// THE IMPORT, STEP BY STEP (docs/50): choose a CSV → it is read, grouped by customer and checked by the main process
-// → each customer is matched (or chosen) → only statements with no problem are imported, all in one go, under one
-// batch id that a retry reuses. Nothing here decides whether a row is valid: the domain rules do, again, in the main
-// process.
+// THE IMPORT, STEP BY STEP (docs/50, 53): choose one or several files (the previous software's .xls reports, customers
+// and suppliers mixed, or template CSVs) → each is read, split by party and checked by the main process → each party
+// is matched (or chosen) → only statements with no problem are imported, all in one go, under one batch id that a
+// retry reuses. Nothing here decides whether a row is valid: the domain rules do, again, in the main process.
+
+export { statementReady } from "./importSession";
 
 export type ImportPhase = "choose" | "reading" | "preview" | "importing" | "done";
-
-export interface ChosenFile {
-  name: string;
-  hash: string;
-  /** One customer's rows per statement, in the order the preview lists them. */
-  statements: LedgerArchiveRowInput[][];
-}
-
-const sha256Hex = async (file: File): Promise<string> => {
-  const digest = await crypto.subtle.digest("SHA-256", await file.arrayBuffer());
-  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
-};
 
 const readAsDataUrl = (file: File): Promise<string> =>
   new Promise((resolve, reject) => {
@@ -39,15 +28,22 @@ const readAsDataUrl = (file: File): Promise<string> =>
     reader.readAsDataURL(file);
   });
 
-/** Whether a statement may be imported as it stands. */
-export const statementReady = (statement: PreviewStatement): boolean =>
-  statement.match !== null && statement.problems.length === 0 && statement.alreadyStored === null && statement.repeatedRows === 0;
+const errorText = (caught: unknown, fallback: string): string => (caught instanceof Error ? caught.message : fallback);
 
-/** One import, for the ledger it was opened from: customers or suppliers. */
+/** The ready statements, as the import sends them. One PDF belongs to one file: attached only to a lone file's import. */
+function readyStatements(session: ImportSession, preview: ImportPreview, source: SourceDocument | null) {
+  const pdf = session.files.length === 1 ? source : null;
+  return preview.statements.flatMap((statement, index) => {
+    const chosen = session.statements[index];
+    return chosen && statementReady(statement) ? [{ ...statementInput(chosen, statement.match?.partyId), sourceDocument: pdf }] : [];
+  });
+}
+
+/** One import, opened from a ledger: customers or suppliers. `side` is used only for a template CSV. */
 export function useArchiveImport(side: LedgerArchiveSide = "CUSTOMER") {
   const api = useDesktopApi();
   const [phase, setPhase] = useState<ImportPhase>("choose");
-  const [file, setFile] = useState<ChosenFile | null>(null);
+  const [session, setSession] = useState<ImportSession | null>(null);
   const [preview, setPreview] = useState<ImportPreview | null>(null);
   const [choices, setChoices] = useState<Record<number, string>>({});
   const [source, setSource] = useState<SourceDocument | null>(null);
@@ -56,48 +52,51 @@ export function useArchiveImport(side: LedgerArchiveSide = "CUSTOMER") {
   const [outcome, setOutcome] = useState<ImportOutcome | null>(null);
 
   const runPreview = useCallback(
-    async (chosen: ChosenFile, partyIds: Record<number, string>) => {
-      const reply = readImportPreview(
-        await api.previewLedgerArchive({ side, fileHash: chosen.hash, statements: chosen.statements.map((rows, index) => ({ rows, partyId: partyIds[index] })) })
-      );
-      if (!reply.ok) throw new Error(reply.reason ?? "The file could not be checked.");
-      setPreview(reply.value);
+    async (chosen: ImportSession, partyIds: Record<number, string>) => {
+      // The batch-level "already imported" check is for a single file; with several, each statement says its own.
+      const fileHash = chosen.files.length === 1 ? (chosen.files[0]?.hash ?? "") : "";
+      const statements = chosen.statements.map((statement, index) => statementInput(statement, partyIds[index]));
+      const reply = readImportPreview(await api.previewLedgerArchive({ side, fileHash, statements }));
+      if (!reply.ok) throw new Error(reply.reason ?? "The files could not be checked.");
+      setPreview(withReadNotes(reply.value, chosen));
     },
     [api, side]
   );
 
-  const chooseCsv = useCallback(
-    async (picked: File) => {
+  const chooseFiles = useCallback(
+    async (picked: readonly File[]) => {
+      if (picked.length === 0) return;
       setPhase("reading");
       setError(null);
+      setPreview(null);
       try {
-        const sheet = await readSheetFile(picked);
-        const chosen = { name: picked.name, hash: await sha256Hex(picked), statements: groupArchiveRows(ledgerArchiveRowsOf(sheet.headers, sheet.rows)) };
-        setFile(chosen);
+        const chosen = await readImportSession(picked, side);
+        setSession(chosen);
         setChoices({});
+        setSource(null);
         setBatchId(crypto.randomUUID());
-        await runPreview(chosen, {});
-        setPhase("preview");
+        if (chosen.statements.length > 0) await runPreview(chosen, {});
+        setPhase(chosen.statements.length > 0 ? "preview" : "choose");
       } catch (caught) {
-        setError(caught instanceof Error ? caught.message : "The file could not be read.");
+        setError(errorText(caught, "The files could not be read."));
         setPhase("choose");
       }
     },
-    [runPreview]
+    [runPreview, side]
   );
 
   const chooseCustomer = useCallback(
     async (index: number, partyId: string) => {
-      if (!file) return;
+      if (!session) return;
       const next = { ...choices, [index]: partyId };
       setChoices(next);
       try {
-        await runPreview(file, next);
+        await runPreview(session, next);
       } catch (caught) {
-        setError(caught instanceof Error ? caught.message : "The file could not be checked.");
+        setError(errorText(caught, "The files could not be checked."));
       }
     },
-    [choices, file, runPreview]
+    [choices, session, runPreview]
   );
 
   const attachPdf = useCallback(
@@ -111,11 +110,11 @@ export function useArchiveImport(side: LedgerArchiveSide = "CUSTOMER") {
   );
 
   const confirm = useCallback(async () => {
-    if (!file || !preview) return;
-    const ready = preview.statements.map((statement, index) => ({ statement, index })).filter(({ statement }) => statementReady(statement));
+    if (!session || !preview) return;
     setPhase("importing");
     setError(null);
-    const statements = ready.map(({ statement, index }) => ({ partyId: statement.match?.partyId, rows: file.statements[index], sourceDocument: source }));
+    const file = batchFileOf(session);
+    const statements = readyStatements(session, preview, source);
     const reply = readImportOutcome(await api.importLedgerArchive({ side, batchId, fileName: file.name, fileHash: file.hash, statements }).catch(() => null));
     if (reply.ok) {
       setOutcome(reply.value);
@@ -124,10 +123,10 @@ export function useArchiveImport(side: LedgerArchiveSide = "CUSTOMER") {
       setError(reply.reason ?? "Nothing was imported. Try again.");
       setPhase("preview");
     }
-  }, [api, batchId, file, preview, side, source]);
+  }, [api, batchId, session, preview, side, source]);
 
   const readyCount = preview && !preview.alreadyImported ? preview.statements.filter(statementReady).length : 0;
-  return { phase, file, preview, choices, source, error, outcome, readyCount, chooseCsv, chooseCustomer, attachPdf, confirm };
+  return { phase, session, preview, choices, source, error, outcome, readyCount, chooseFiles, chooseCustomer, attachPdf, confirm };
 }
 
 export type ArchiveImport = ReturnType<typeof useArchiveImport>;

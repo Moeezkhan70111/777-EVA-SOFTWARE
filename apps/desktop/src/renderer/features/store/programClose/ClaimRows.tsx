@@ -1,18 +1,17 @@
 import React from "react";
-import { CLAIM_PARTY_ROLE, fromPaisa, type ClaimPartyRole } from "@erp/domain";
+import { CLAIM_PARTY_ROLE, type ClaimPartyRole } from "@erp/domain";
 import { copy } from "../../../config/copy";
-import { formatMoney } from "../../../app/format";
 import type { ReconciliationLine, ReconciliationParty } from "../../../types/desktopApi";
-import { claimTotalPaisa, cleanCount, cleanRupees, newClaim, ratePaisaOf, type ClaimDraft } from "./upperDraft";
+import { cleanCount, newClaim, type ClaimDraft } from "./upperDraft";
 
-// DAMAGED / CLAIM — pairs claimed against whoever is answerable, at an amount a pair.
+// DAMAGED / CLAIM — pairs to be claimed from whoever is answerable, and why.
 //
-//   Against [ Supplier — ABC UPPER ▾ ]  Pairs [ 1 ]  Amount per pair (Rs) [ 50 ]  Total Rs 50.00
-//   Reason  [ torn upper                                        ]                        [ × ]
+//   Against [ Supplier — ABC UPPER ▾ ]  Pairs [ 1 ]  Reason [ torn upper ]   [ × ]
 //   + Add claim
 //
-// The total is shown before anything is saved; it is deducted on that party's ledger when the
-// program closes. Each claim's fields stay together, and adding one never clears another.
+// No amount: closing the program sends each one to Accounts as a claim request, and Accounts prices it and posts it
+// to that party's ledger on the accounts computer (docs/55). Each claim's fields stay together, and adding one never
+// clears another.
 
 const text = copy.programClose;
 
@@ -41,7 +40,6 @@ const chosen = (value: string): Pick<ClaimDraft, "role" | "supplierPartyId"> => 
 
 const ClaimRow: React.FC<{ claim: ClaimDraft; index: number; line: ReconciliationLine; parties: Parties; disabled: boolean; onChange: (claim: ClaimDraft | null) => void }> = ({ claim, index, line, parties, disabled, onChange }) => {
   const set = (patch: Partial<ClaimDraft>) => onChange({ ...claim, ...patch });
-  const rateBad = claim.rate !== "" && !Number.isFinite(ratePaisaOf(claim.rate));
   const id = `${line.lineId}-${claim.key}`;
   return (
     <li className="mur-claim">
@@ -58,14 +56,7 @@ const ClaimRow: React.FC<{ claim: ClaimDraft; index: number; line: Reconciliatio
         <span>{text.claimPairs}</span>
         <input id={`${id}-pairs`} className="form-input mur-count" type="text" inputMode="numeric" placeholder="0" value={claim.pairs} disabled={disabled} onChange={(event) => set({ pairs: cleanCount(event.target.value) })} />
       </label>
-      <label className="mur-claim-field">
-        <span>{text.claimRate}</span>
-        <input className="form-input mur-money" type="text" inputMode="decimal" placeholder="0" value={claim.rate} disabled={disabled} aria-invalid={rateBad} onChange={(event) => set({ rate: cleanRupees(event.target.value) })} />
-      </label>
-      <div className="mur-claim-field mur-claim-total">
-        <span>{text.claimTotal}</span>
-        <b>Rs {formatMoney(fromPaisa(claimTotalPaisa(claim)))}</b>
-      </div>
+
       <label className="mur-claim-field mur-claim-field--reason">
         <span>{text.claimReason}</span>
         <input className="form-input" type="text" value={claim.reason} placeholder={text.reasonPlaceholder} disabled={disabled} onChange={(event) => set({ reason: event.target.value })} />
@@ -73,7 +64,6 @@ const ClaimRow: React.FC<{ claim: ClaimDraft; index: number; line: Reconciliatio
       <button type="button" className="mur-claim-remove" aria-label={text.removeClaim(index + 1)} disabled={disabled} onClick={() => onChange(null)}>
         ×
       </button>
-      {rateBad ? <p className="mur-field-problem" role="alert">⚠ {text.rateInvalid}</p> : null}
     </li>
   );
 };

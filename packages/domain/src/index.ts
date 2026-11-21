@@ -31,4 +31,6 @@ export * from "./handVoucher.js";
 export * from "./delimitedText.js";
 export * from "./ledgerArchive.js";
 export * from "./partyOpeningBalance.js";
+export * from "./partyClaims.js";
+export * from "./legacyLedgerReport.js";
 export * from "./customerOrder.js";

@@ -452,12 +452,13 @@ describe("Receiving — a machine program", () => {
     expect(within(line).getByRole("status")).toHaveTextContent("2 of the 6 remaining pairs are not accounted for yet.");
     await userEvent.type(within(line).getByLabelText("Cut Size Pairs — pairs of SK6 7/10 · BLACK / GREY"), "1");
 
-    // A claim: the only supplier is already named; the pairs, the amount and the reason are typed.
+    // A claim request: the only supplier is already named; the pairs and the reason are typed. The store types no
+    // amount: Accounts prices the claim on the accounts computer (docs/55).
     await userEvent.click(within(line).getByRole("button", { name: "+ Add claim" }));
     expect(within(line).getByLabelText("Against")).toHaveValue("SUPPLIER:s-1");
     await userEvent.type(within(line).getByLabelText("Pairs"), "1");
-    await userEvent.type(within(line).getByLabelText("Amount per pair (Rs)"), "50");
-    expect(within(line).getByText("Rs 50.00")).toBeInTheDocument();
+    expect(within(line).queryByLabelText(/Amount/)).not.toBeInTheDocument();
+    expect(within(line).queryByText(/^Rs /)).not.toBeInTheDocument();
     expect(submit).toBeDisabled();
     await userEvent.type(within(line).getByLabelText("Reason"), "torn upper");
 
@@ -473,7 +474,7 @@ describe("Receiving — a machine program", () => {
           entries: [
             {
               lineId: "line-black", cutSizeUppers: 4, cutSizePairs: 1,
-              claims: [{ role: "SUPPLIER", supplierPartyId: "s-1", pairs: 1, ratePaisa: 5000, reason: "torn upper" }],
+              claims: [{ role: "SUPPLIER", supplierPartyId: "s-1", pairs: 1, reason: "torn upper" }],
             },
           ],
         },

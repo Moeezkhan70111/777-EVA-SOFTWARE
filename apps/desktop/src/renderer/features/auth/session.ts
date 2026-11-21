@@ -178,6 +178,8 @@ export const routePermission: Partial<Record<AppRoute, PermissionCode>> = {
   "supplier-ledger": PERMISSION.SUPPLIER_LEDGER,
   "supplier-balance": PERMISSION.SUPPLIER_BALANCE,
   "contractor-ledger": PERMISSION.CONTRACTOR_LEDGER,
+  // Claims (docs/55): seen by anyone given Claims. Posting is for administrators only.
+  "party-claims": PERMISSION.PARTY_CLAIMS,
 
   "cash-voucher-form": PERMISSION.CASH_VOUCHER_FORM,
   "cash-voucher-list": PERMISSION.CASH_VOUCHER_LIST,

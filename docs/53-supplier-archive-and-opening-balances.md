@@ -108,6 +108,73 @@ printed credit less debit and one printed with Cr / Dr.
 Behraam Shoes Karachi (1301139): archive opening 202,200, debit 452,160, credit 300,480, closing 353,880, every row
 following. Posting 353,880 DEBIT gives **Matched**, difference 0, live balance 353,880.
 
+## Moving the previous software's ledgers in (20 Nov 2026)
+
+The old software (777 EVA Shoes) exports a **Customer Ledger Report** or **Supplier Ledger Report** as Excel 97-2003
+(`.xls`). Import old ledger now reads these directly, several files at once, customers and suppliers mixed.
+
+- **Reading** (`@erp/domain` `legacyLedgerReport.ts`; the file is opened in the screen with SheetJS `xlsx` 0.20.3,
+  Apache-2.0, pinned from cdn.sheetjs.com, approved under R22). The report is a printed page laid into cells:
+  - headings repeat on every page and are skipped;
+  - the figures sit in different columns on different rows, so each line's last four figures are read right to left
+    as Qty, Debit, Credit, Balance;
+  - a wrapped description is joined to its line;
+  - dates are read from the cell's date format by UTC arithmetic, never a local `Date` (UTC+5 would give the day
+    before).
+- **Checked, all of it, again in the main process:**
+  - the title says which ledger;
+  - the party code's prefix matches it (1301… customers, 1201… suppliers);
+  - the Opening Balance line is present, and every line is dated inside the From/To period;
+  - every line's balance follows from the one before (**debit less credit on both sides**, so a supplier's payable
+    prints negative and is read as what we owe);
+  - the lines add up exactly to the report's **Total :** line: quantity, debit, credit and closing.
+  - Anything the reader cannot account for refuses that statement.
+- **Kept as printed.** Repeated identical lines are kept (they differ only by balance). So are voucher types,
+  references, quantities and descriptions. A supplier's CV lines keep their direction: payments, claims, goods
+  returned and labour are debits; "bill no …" lines are credits.
+- **History only.** Nothing but archive rows is written. No sale, purchase bill, cash voucher, stock movement or
+  production record is made, and the live balance does not move until an opening balance is posted.
+- **One import, several files.** Each statement carries its own side, file and report. The same file chosen twice in
+  one session is read once. A PDF can be attached only when one file is imported on its own.
+- **Tracked per statement.** "Already imported" is decided per party within a file (its file, ledger, old code and
+  name), not per file. In a file naming several parties, importing some leaves the others importable. The file counts
+  as imported only once every party in it is, and the same party from the same file is never imported twice.
+
+### Opening balances at a cutover (administrators)
+
+Ledger header > **Post opening balances…**
+
+1. The administrator types the cutover date. **There is no default.**
+2. For every party with an archive, the preview works out the balance printed on its **last archived line dated before
+   the cutover**, read the side's way: a receivable or advance for a customer, a payable or paid-ahead for a supplier.
+   It is posted effective on the cutover date.
+3. A party is left out, with its reason, when:
+   - it already has an opening balance;
+   - its archive does not add up;
+   - no line is dated before the cutover;
+   - its balance is zero.
+4. A warning is shown when archived lines fall on or after the cutover, or when live entries start before it.
+5. The chosen parties are posted **together or not at all**, after a confirmation. Each is a normal opening balance,
+   checked against the statement it was read from, and correctable or reversible one by one.
+6. The main process works every figure out again and refuses the whole post if any differs from what was previewed.
+7. A retry with the same request id posts nothing twice. Each party's request id is derived from it.
+8. It is audited as `PARTY_OPENING_BALANCES_BULK_POSTED`.
+9. Open ledger screens are told (`announceDataChanged`, kind CASH), so the party on screen shows its new opening
+   balance at once.
+
+### Withdrawing an import (administrators)
+
+The old software's figures > **Withdraw <file> (imported <when>)…**: one button per import, named by its file and time.
+
+- Every statement the import wrote is marked withdrawn, with who, when and the required reason (local **114**). It
+  is audited as `LEDGER_ARCHIVE_WITHDRAWN`.
+- **Nothing is erased.** The rows stay. A withdrawn statement is left out of the ledgers, the reconciliation, matching
+  and the duplicate-file check, so the corrected file can be imported again.
+- **Refused while a posted opening balance was checked against the import.** Reverse that opening balance first.
+  The reconciliation never loses its footing silently.
+- The withdrawal travels as a new revision of the same `LEDGER_ARCHIVE_STATEMENT` record, so no cloud migration is
+  needed. Open ledger screens are told (kind BILLING) and reload their archive and reconciliation.
+
 ## Migrations
 
 | | Local | Cloud |
@@ -116,6 +183,13 @@ following. Posting 353,880 DEBIT gives **Matched**, difference 0, live balance 3
 | Parties lease (51) | none | 035 (prepared, not applied) |
 | Pending Orders ([52](52-pending-orders.md)) | 112 | 036 (prepared, not applied) |
 | **This** | **113** `113_party_opening_balances` | **037** `037_party_opening_balance_records` (prepared, not applied) |
+| Withdrawing an import | **114** `114_ledger_archive_withdrawal` | none: travels in the record |
+
+034, 036 and 037 are on TEST since 19 Nov 2026, not production.
+
+- **Local 114.** Adds `withdrawn_at`, `withdrawn_by`, `withdrawal_reason` and `withdrawal_request_id` to
+  `ledger_archive_statements`. The same-content index becomes unique only among statements in force, so a withdrawn
+  import can be imported again. The down file refuses while any statement is withdrawn.
 
 - **Local 113.**
   - Adds `ledger_side` and `balance_rule` to `ledger_archive_statements`. Defaults are CUSTOMER and
@@ -140,7 +214,10 @@ following. Posting 353,880 DEBIT gives **Matched**, difference 0, live balance 3
 
 ## Known limits
 
-- **Purchase vouchers and party claims do not replicate** (they are not leased records, and Purchase Bill is not
+- **Purchase bills now travel and are written on the ACCOUNTS holder only (docs/54, local 115, cloud 038). Party
+  claims still do not travel** (docs/54 explains why and what deciding it needs). The text below was written before
+  docs/54 and still holds for claims and for bills stored before that release:
+  **purchase vouchers and party claims do not replicate** (they are not leased records, and Purchase Bill is not
   lease-gated: any computer can enter one). A supplier's opening balance and archive reach every computer, but its
   purchases stay on the computer they were entered on. The existing app already allows for this:
   `features/parties/ledgerVisibility.ts` shows Supplier Ledger and Supplier Balance **only on the computer holding the
@@ -156,6 +233,12 @@ following. Posting 353,880 DEBIT gives **Matched**, difference 0, live balance 3
 - The form uses the project's existing state-based form pattern with the domain's own validation. React Hook Form and
   Zod (R17) are not installed in this project, and were not added for one form.
 - Contractors' ledgers are not covered.
+- **Matching by name.** A report's party is matched by an earlier import of its code, then by ERP party code (the
+  old codes are not ERP codes), then by exact name. An unmatched party must be chosen by hand.
+- **Test fixtures are synthetic** (`docs/fixtures/legacy-ledgers/README.md`). They are derived from six real exports
+  and keep their layout and edge cases, with no real name, code, description or amount. The real exports are kept
+  outside the repository and are not the migration dataset. Those exports start on 01/06/2026 for customers and
+  01/09/2026 for suppliers. Whether earlier history is needed is the owner's decision.
 
 ## Before it can be used
 
@@ -166,3 +249,4 @@ following. Posting 353,880 DEBIT gives **Matched**, difference 0, live balance 3
    balance, open both ledgers and the reconciliation.
 4. On the accounts computer: import the old ledgers (customers, then suppliers), post each opening balance (an
    administrator), and check the reconciliation shows ✓ Matched for every party before relying on the balances.
+   **Do not post at a cutover until the owner has confirmed the cutover date.**

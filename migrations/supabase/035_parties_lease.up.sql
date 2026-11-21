@@ -1,9 +1,13 @@
--- Parties get their own write lease, held by the store computer (docs/51).
+-- Parties get their own write lease, PARTIES, held by the ACCOUNTS computer, PC1 (docs/51, revised by docs/55).
 --
--- MASTER_DATA covered parties together with products, article sizes, machines, groups and colours, and it is held by
--- the office computer (PC1). The store computer (PC2) receives suppliers' deliveries and issues to contractors, and
--- could not add the party in front of it. Parties and party groups now travel under a lease of their own, PARTIES,
--- like the raw-material taxonomy moved to the store's lease in 031. Everything else stays under MASTER_DATA.
+-- REVISED 21 Nov 2026, BEFORE IT WAS APPLIED ANYWHERE. This was written to give PARTIES to the store computer (PC2) so
+-- it could add the supplier or contractor in front of it. The owner has since fixed the computers' roles (docs/55):
+-- PC1 creates and edits every party, as the authoritative accounts computer, and PC2 must NEVER hold PARTIES. The SQL
+-- below is unchanged (it never granted anything to anyone); only who is to be granted PARTIES afterwards has changed.
+--
+-- MASTER_DATA covers parties together with products, article sizes, machines, groups and colours, held by PC1. Parties
+-- and party groups now travel under a lease of their own, so that who writes parties is a decision of its own, like
+-- the raw-material taxonomy moved to the store's lease in 031. Everything else stays under MASTER_DATA.
 --
 --   PARTY_GROUP, PARTY                                         MASTER_DATA -> PARTIES
 --   products, article sizes, machines, work sections, colours  MASTER_DATA, unchanged
@@ -11,10 +15,11 @@
 -- WHAT THIS DOES, rows only:
 --   1. lease_domains gains PARTIES, as 026 added CARTON_STOCK.
 --   2. domain_leases gains its row, HELD BY NOBODY. Nothing is granted, released or taken over here: until the owner
---      grants PARTIES (docs/51), no computer may write a party, and every computer still reads them.
+--      grants PARTIES TO PC1 (docs/55), no computer may write a party, and every computer still reads them. Grant it
+--      straight after this runs, in the same sitting, so PC1 is not without party writes for longer than that.
 --   3. Its barrier starts at the last party or party group revision already in the log, so the computer that is
---      granted PARTIES refuses its own party writes until it has pulled every party the office computer wrote under
---      MASTER_DATA (011's catch-up rule, which a new domain would otherwise start at 0).
+--      granted PARTIES refuses its own party writes until it has pulled every party written under MASTER_DATA (011's
+--      catch-up rule, which a new domain would otherwise start at 0). PC1 wrote those itself, so it is caught up.
 --   4. leased_record_types moves the two types to PARTIES. push_leased_record reads it on every push, so its revision
 --      rules, its lease check, its log trigger and its doorbell are 013's and 016's, unchanged. Stored records keep
 --      their rows. The next revision of one is accepted from the PARTIES holder at its epoch (013 compares revisions,
@@ -34,7 +39,7 @@
 begin;
 
 insert into public.lease_domains (domain, note) values
-  ('PARTIES', 'Parties and party groups (035, docs/51): written on the store computer, which adds the supplier or contractor in front of it.')
+  ('PARTIES', 'Parties and party groups (035, docs/51, docs/55): written on the accounts computer (PC1), which manages every customer, supplier and contractor.')
 on conflict (domain) do nothing;
 
 insert into public.domain_leases (domain, barrier_seq)

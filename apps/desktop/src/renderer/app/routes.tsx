@@ -74,6 +74,8 @@ export const APP_ROUTES = [
   "supplier-ledger",
   "supplier-balance",
   "contractor-ledger",
+  // Claims (docs/55): the store's requests, priced and posted by Accounts.
+  "party-claims",
   "cash-voucher-list",
   "cash-voucher-form",
   "profile",

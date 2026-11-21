@@ -13,6 +13,7 @@ import {
   subtractMoney,
   toPaisa,
   toPaisaOrNull,
+  typedRupeesToPaisa,
 } from "./money.js";
 
 test("paisa conversion is exact and round-trips", () => {
@@ -67,3 +68,12 @@ test("saleLineTotal and discountPerPairFromTotal are the inverse of calculateSal
   assert.equal(discountPerPairFromTotal({ dozens: 3, totalDiscount: line.totalDiscount }), 35);
   assert.equal(discountPerPairFromTotal({ dozens: 0, totalDiscount: 100 }), 0);
 });
+
+test("typed rupees become exact paisa, and anything else is not money", () => {
+  assert.equal(typedRupeesToPaisa("50"), 5_000);
+  assert.equal(typedRupeesToPaisa(" 45.5 "), 4_550);
+  assert.equal(typedRupeesToPaisa("1.005".slice(0, 4)), 100);
+  assert.equal(typedRupeesToPaisa("12.75"), 1_275);
+  for (const typed of ["", "abc", "1.234", "-5", "1,000", "5."]) assert.equal(typedRupeesToPaisa(typed), null, typed);
+});
+

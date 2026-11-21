@@ -25,9 +25,13 @@
 import crypto from "node:crypto";
 import {
   LEDGER_ARCHIVE_SIDE,
+  LEGACY_REPORT_BALANCE_RULE,
   archiveRowIdentity,
+  checkLegacyPrintedTotals,
   isLedgerArchiveSide,
+  legacyReportProblems,
   readArchiveFile,
+  type LegacyReportInfo,
   type ArchiveBalanceRule,
   type LedgerArchiveSide,
   type LedgerArchiveRow,
@@ -62,6 +66,12 @@ export interface LedgerArchiveStatementInput {
   readonly partyId?: string;
   readonly rows: readonly LedgerArchiveRowInput[];
   readonly sourceDocument?: LedgerArchiveSourceDocument | null;
+  /** Whose ledger this one statement is. The batch's side when absent: one session may hold both (docs/53). */
+  readonly side?: LedgerArchiveSide;
+  /** The file this statement came from, when an import holds several. The batch's file when absent. */
+  readonly sourceFile?: { readonly name: string; readonly hash: string } | null;
+  /** Set when the statement was read from the previous software's ledger report: checked again here, in full. */
+  readonly report?: LegacyReportInfo | null;
 }
 
 export interface LedgerArchiveImportInput {
@@ -94,6 +104,10 @@ export interface LedgerArchiveImportedFile {
 }
 
 export interface LedgerArchiveStatementPreview {
+  readonly side: LedgerArchiveSide;
+  /** This statement's own file was already imported (and is still in force). */
+  readonly fileAlreadyImported: LedgerArchiveImportedFile | null;
+  // Tracked per statement (docs/53): in a file naming several parties, importing some leaves the rest importable.
   readonly partyCode: string;
   readonly customerName: string;
   readonly match: LedgerArchiveMatch | null;
@@ -134,6 +148,10 @@ export interface LedgerArchiveStatementSummary {
   readonly sourceDocumentHash: string | null;
   readonly importedBy: string;
   readonly importedAt: string;
+  /** Set once the batch was withdrawn: kept for the record, left out of everything else. */
+  readonly withdrawnAt: string | null;
+  readonly withdrawnBy: string | null;
+  readonly withdrawalReason: string | null;
 }
 
 /** One archived row, as stored. */
@@ -174,13 +192,34 @@ export class LedgerArchiveRefused extends Error {
   }
 }
 
-/** A statement's rows read again here: exactly one party's, with no problem, or the problems. */
+/**
+ * A statement's rows read again here: exactly one party's, with no problem, or the problems. One read from the previous
+ * software's report is read with that software's known balance rule, and must add up to the report's own Total line.
+ */
 function readStatement(input: LedgerArchiveStatementInput, side: LedgerArchiveSide): { draft: LedgerArchiveStatementDraft; problems: [] } | { draft: null; problems: string[] } {
-  const file = readArchiveFile(input.rows, side);
-  const problems = [...file.rowProblems, ...(file.statements[0]?.problems ?? [])].map((problem) => problem.message);
-  if (file.statements.length !== 1) problems.push("A statement must hold one party's rows, and at least one row.");
-  return problems.length === 0 ? { draft: file.statements[0], problems: [] } : { draft: null, problems };
+  const { draft, problems } = readWithProblems(input, side);
+  return problems.length === 0 && draft ? { draft, problems: [] } : { draft: null, problems };
 }
+
+function readWithProblems(input: LedgerArchiveStatementInput, side: LedgerArchiveSide): { draft: LedgerArchiveStatementDraft | undefined; problems: string[] } {
+  const report = input.report ?? null;
+  const file = readArchiveFile(input.rows, side, report ? LEGACY_REPORT_BALANCE_RULE : undefined);
+  const draft = file.statements[0];
+  const problems = [...file.rowProblems, ...(draft?.problems ?? [])].map((problem) => problem.message);
+  if (file.statements.length !== 1) problems.push("A statement must hold one party's rows, and at least one row.");
+  if (report) {
+    problems.push(...legacyReportProblems(report, side));
+    if (draft && draft.partyCode !== report.partyCode) problems.push(`The rows name ${draft.partyCode}, but the report is for ${report.partyCode}.`);
+    if (draft && problems.length === 0) problems.push(...checkLegacyPrintedTotals(draft.totals, report.printedTotals));
+  }
+  return { draft, problems };
+}
+
+/** The file a statement came from: its own when the import holds several, else the batch's. */
+const fileOf = (statement: LedgerArchiveStatementInput, input: { fileName: string; fileHash: string }): { name: string; hash: string } => {
+  const own = statement.sourceFile;
+  return own && SHA256.test(text(own.hash)) && text(own.name).trim() ? { name: text(own.name).trim().slice(0, FILE_NAME_MAX), hash: text(own.hash) } : { name: input.fileName.trim(), hash: input.fileHash };
+};
 
 const rowHash = (row: LedgerArchiveRow): string => sha256(archiveRowIdentity(row));
 const contentHash = (rows: readonly LedgerArchiveRow[]): string => sha256(rows.map((row) => `${String(row.sequence)}\u001e${archiveRowIdentity(row)}`).join("\u001d"));
@@ -208,6 +247,9 @@ function summaryOf(row: Row): LedgerArchiveStatementSummary {
     sourceDocumentHash: textOrNull(row.source_document_hash),
     importedBy: text(row.imported_by),
     importedAt: text(row.imported_at),
+    withdrawnAt: textOrNull(row.withdrawn_at),
+    withdrawnBy: textOrNull(row.withdrawn_by),
+    withdrawalReason: textOrNull(row.withdrawal_reason),
   };
 }
 
@@ -254,37 +296,40 @@ export const ledgerArchiveMethods = {
   /** What an import of this file would do, without writing anything. */
   previewLedgerArchiveImport(this: SqliteDatabase, input: { fileHash: string; statements: readonly LedgerArchiveStatementInput[]; side?: LedgerArchiveSide }): LedgerArchivePreview {
     const side = sideOf(input.side);
-    const alreadyImported = SHA256.test(text(input.fileHash))
-      ? importedFileOf(this.db.prepare("SELECT batch_id, source_file_name, imported_at, imported_by FROM ledger_archive_statements WHERE source_file_hash = ? LIMIT 1").get(input.fileHash) as Row | undefined)
-      : null;
-    const statements = input.statements.map((statement) => this.previewArchiveStatement(statement, side));
-    return { alreadyImported, statements };
+    const batchHash = SHA256.test(text(input.fileHash)) ? input.fileHash : null;
+    const statements = input.statements.map((statement) => this.previewArchiveStatement(statement, sideOf(statement.side ?? side), batchHash));
+    // The file is "already imported" only when every party in it is: a partly imported file still offers the rest.
+    const whole = statements.length > 0 && statements.every((statement) => statement.fileAlreadyImported !== null);
+    return { alreadyImported: whole && batchHash ? statements[0]?.fileAlreadyImported ?? null : null, statements };
   },
 
   /** Every statement and its rows, in one transaction: all of them, or none. */
   importLedgerArchive(this: SqliteDatabase, input: LedgerArchiveImportInput): LedgerArchiveImportResult {
     checkedHeader(input);
-    const side = sideOf(input.side);
+    const batchSide = sideOf(input.side);
     const prepared = input.statements.map((statement) => {
+      const side = sideOf(statement.side ?? batchSide);
       const read = readStatement(statement, side);
       if (read.draft === null) throw new LedgerArchiveRefused(`A statement has problems, so nothing was saved: ${read.problems.slice(0, 3).join(" ")}`);
-      return { statement, draft: read.draft, source: checkedSource(statement.sourceDocument) };
+      return { statement, side, draft: read.draft, source: checkedSource(statement.sourceDocument), file: fileOf(statement, input) };
     });
     return this.inArchiveTransaction(() => {
       const earlier = this.archiveBatch(input.batchId);
       if (earlier.length > 0) return { batchId: input.batchId, duplicate: true, statements: earlier };
-      const file = importedFileOf(this.db.prepare("SELECT batch_id, source_file_name, imported_at, imported_by FROM ledger_archive_statements WHERE source_file_hash = ? LIMIT 1").get(input.fileHash) as Row | undefined);
-      if (file) throw new LedgerArchiveRefused(`This file was already imported (${file.fileName}, by ${file.importedBy}). Nothing was saved.`);
+      for (const { side, draft, file } of prepared) {
+        const earlier = this.importedFromFile(file.hash, side, draft.partyCode, draft.customerName);
+        if (earlier) throw new LedgerArchiveRefused(`${draft.customerName || draft.partyCode} in this file was already imported (${earlier.fileName}, by ${earlier.importedBy}). Nothing was saved.`);
+      }
       const parties = new Set<string>();
       const nowIso = new Date().toISOString();
-      for (const { statement, draft, source } of prepared) {
+      for (const { statement, side, draft, source, file } of prepared) {
         const partyId = this.archiveParty(text(statement.partyId), side);
-        if (parties.has(partyId)) throw new LedgerArchiveRefused(`Two parties in this file are matched to the same ERP ${SIDE_WORD[side]}. Nothing was saved.`);
+        if (parties.has(partyId)) throw new LedgerArchiveRefused(`Two statements in this import are matched to the same ERP ${SIDE_WORD[side]}. Nothing was saved.`);
         parties.add(partyId);
-        this.writeArchiveStatement({ input, partyId, draft, source, nowIso });
+        this.writeArchiveStatement({ input, partyId, draft, source, file, nowIso });
       }
       const written = this.archiveBatch(input.batchId);
-      this.auditArchiveImport(input, side, written, nowIso);
+      this.auditArchiveImport(input, batchSide, written, nowIso);
       return { batchId: input.batchId, duplicate: false, statements: written };
     });
   },
@@ -294,12 +339,12 @@ export const ledgerArchiveMethods = {
     const fromDate = query.fromDate ?? "0000-01-01";
     const toDate = query.toDate ?? "9999-12-31";
     const statements = (this.db
-      .prepare("SELECT * FROM ledger_archive_statements WHERE party_id = ? ORDER BY period_from, imported_at, id")
+      .prepare("SELECT * FROM ledger_archive_statements WHERE party_id = ? AND withdrawn_at IS NULL ORDER BY period_from, imported_at, id")
       .all(text(partyId)) as Row[]).map(summaryOf);
     const entries = (this.db
       .prepare(
         `SELECT e.* FROM ledger_archive_entries e JOIN ledger_archive_statements s ON s.id = e.statement_id
-          WHERE s.party_id = ? AND e.entry_date >= ? AND e.entry_date <= ?
+          WHERE s.party_id = ? AND s.withdrawn_at IS NULL AND e.entry_date >= ? AND e.entry_date <= ?
           ORDER BY e.entry_date, s.period_from, s.imported_at, s.id, e.sequence`
       )
       .all(text(partyId), fromDate, toDate) as Row[]).map(entryOf);
@@ -307,16 +352,16 @@ export const ledgerArchiveMethods = {
   },
 
   /** @internal One statement of a preview: its customer here, and what is already stored. */
-  previewArchiveStatement(this: SqliteDatabase, statement: LedgerArchiveStatementInput, side: LedgerArchiveSide = LEDGER_ARCHIVE_SIDE.CUSTOMER): LedgerArchiveStatementPreview {
-    const file = readArchiveFile(statement.rows, side);
-    const draft = file.statements[0];
-    const problems = [...file.rowProblems, ...(draft?.problems ?? [])].map((problem) => problem.message);
-    if (file.statements.length !== 1) problems.push("A statement must hold one party's rows, and at least one row.");
+  previewArchiveStatement(this: SqliteDatabase, statement: LedgerArchiveStatementInput, side: LedgerArchiveSide = LEDGER_ARCHIVE_SIDE.CUSTOMER, batchHash: string | null = null): LedgerArchiveStatementPreview {
+    const { draft, problems } = readWithProblems(statement, side);
+    const ownHash = statement.sourceFile && SHA256.test(text(statement.sourceFile.hash)) ? statement.sourceFile.hash : batchHash;
     const partyCode = draft?.partyCode ?? text(statement.rows[0]?.partyCode).trim();
     const customerName = draft?.customerName ?? text(statement.rows[0]?.customerName).trim();
     const match = statement.partyId ? this.archiveMatchById(statement.partyId, side) : this.archiveMatch(partyCode, customerName, side);
     const stored = match && draft && problems.length === 0 ? this.storedArchive(match.partyId, draft.rows) : { alreadyStored: null, repeatedRows: 0 };
     return {
+      side,
+      fileAlreadyImported: ownHash ? this.importedFromFile(ownHash, side, partyCode, customerName) : null,
       partyCode,
       customerName,
       match,
@@ -334,7 +379,7 @@ export const ledgerArchiveMethods = {
       const earlier = this.db
         .prepare(
           `SELECT p.id, p.party_name, p.party_code FROM ledger_archive_statements s JOIN parties p ON p.id = s.party_id
-            WHERE s.original_party_code = ? AND s.ledger_side = ? AND p.deleted_at IS NULL AND p.party_type = ? ORDER BY s.imported_at DESC LIMIT 1`
+            WHERE s.original_party_code = ? AND s.ledger_side = ? AND s.withdrawn_at IS NULL AND p.deleted_at IS NULL AND p.party_type = ? ORDER BY s.imported_at DESC LIMIT 1`
         )
         .get(partyCode, side, side) as Row | undefined;
       if (earlier) return { partyId: text(earlier.id), partyName: text(earlier.party_name), partyCode: text(earlier.party_code), how: "EARLIER_IMPORT" };
@@ -358,10 +403,10 @@ export const ledgerArchiveMethods = {
   /** @internal Whether this statement, or any of its rows, is already archived for the customer. */
   storedArchive(this: SqliteDatabase, partyId: string, rows: readonly LedgerArchiveRow[]): { alreadyStored: LedgerArchiveImportedFile | null; repeatedRows: number } {
     const alreadyStored = importedFileOf(
-      this.db.prepare("SELECT batch_id, source_file_name, imported_at, imported_by FROM ledger_archive_statements WHERE party_id = ? AND content_hash = ?").get(partyId, contentHash(rows)) as Row | undefined
+      this.db.prepare("SELECT batch_id, source_file_name, imported_at, imported_by FROM ledger_archive_statements WHERE party_id = ? AND content_hash = ? AND withdrawn_at IS NULL").get(partyId, contentHash(rows)) as Row | undefined
     );
     const held = new Set(
-      (this.db.prepare("SELECT e.row_hash FROM ledger_archive_entries e JOIN ledger_archive_statements s ON s.id = e.statement_id WHERE s.party_id = ?").all(partyId) as Row[]).map((row) => text(row.row_hash))
+      (this.db.prepare("SELECT e.row_hash FROM ledger_archive_entries e JOIN ledger_archive_statements s ON s.id = e.statement_id WHERE s.party_id = ? AND s.withdrawn_at IS NULL").all(partyId) as Row[]).map((row) => text(row.row_hash))
     );
     return { alreadyStored, repeatedRows: rows.filter((row) => held.has(rowHash(row))).length };
   },
@@ -373,6 +418,22 @@ export const ledgerArchiveMethods = {
     if (!party) throw new LedgerArchiveRefused(`A statement is not matched to an ERP ${word}. Choose the ${word} for every statement. Nothing was saved.`);
     if (party.partyType !== side) throw new LedgerArchiveRefused(`${party.partyName} is not a ${word}. Nothing was saved.`);
     return party.id;
+  },
+
+  /**
+   * @internal The import still in force that stored THIS party's statement from this file, or null. Each statement of a
+   * file is tracked on its own, by the file, its ledger and the party as the file names it (code and name), so importing
+   * some parties of a file leaves the others importable. A withdrawn import does not count.
+   */
+  importedFromFile(this: SqliteDatabase, fileHash: string, side: LedgerArchiveSide, partyCode: string, partyName: string): LedgerArchiveImportedFile | null {
+    return importedFileOf(
+      this.db
+        .prepare(
+          `SELECT batch_id, source_file_name, imported_at, imported_by FROM ledger_archive_statements
+            WHERE source_file_hash = ? AND ledger_side = ? AND original_party_code = ? AND original_party_name = ? AND withdrawn_at IS NULL LIMIT 1`
+        )
+        .get(fileHash, side, partyCode.trim(), partyName.trim()) as Row | undefined
+    );
   },
 
   /** @internal This computer's own audit trail of an import, beside the statements that travel. */
@@ -392,9 +453,9 @@ export const ledgerArchiveMethods = {
   /** @internal Writes one statement and its rows. Call ONLY inside BEGIN IMMEDIATE. */
   writeArchiveStatement(
     this: SqliteDatabase,
-    args: { input: LedgerArchiveImportInput; partyId: string; draft: LedgerArchiveStatementDraft; source: LedgerArchiveSourceDocument | null; nowIso: string }
+    args: { input: LedgerArchiveImportInput; partyId: string; draft: LedgerArchiveStatementDraft; source: LedgerArchiveSourceDocument | null; file: { name: string; hash: string }; nowIso: string }
   ): void {
-    const { input, partyId, draft, source, nowIso } = args;
+    const { input, partyId, draft, source, file, nowIso } = args;
     const stored = this.storedArchive(partyId, draft.rows);
     if (stored.alreadyStored) throw new LedgerArchiveRefused(`${draft.customerName || draft.partyCode}'s statement is already archived (${stored.alreadyStored.fileName}). Nothing was saved.`);
     if (stored.repeatedRows > 0) throw new LedgerArchiveRefused(`${String(stored.repeatedRows)} of ${draft.customerName || draft.partyCode}'s rows are already archived for this party. Nothing was saved.`);
@@ -412,7 +473,7 @@ export const ledgerArchiveMethods = {
       .run(
         statementId, input.batchId, partyId, draft.partyCode, draft.customerName, totals.periodFrom, totals.periodTo, totals.rowCount,
         totals.openingBalancePaisa, totals.closingBalancePaisa, totals.totalDebitPaisa, totals.totalCreditPaisa, totals.totalQuantity, contentHash(draft.rows),
-        input.fileName.trim(), input.fileHash, source?.name ?? null, source?.hash ?? null, source?.bytes ?? null, input.actor, nowIso, textOrNull(device?.v),
+        file.name, file.hash, source?.name ?? null, source?.hash ?? null, source?.bytes ?? null, input.actor, nowIso, textOrNull(device?.v),
         draft.side, draft.balanceRule
       );
     const insert = this.db.prepare(

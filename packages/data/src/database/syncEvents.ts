@@ -104,6 +104,20 @@ export const SYNC_AGGREGATE = {
   /** A customer's or supplier's opening balance carried in from the previous accounting software, with every posting
    * and reversal that led to it (local 113, cloud 037, docs/53). Counts in the party's live balance, and nothing else. */
   PARTY_OPENING_BALANCE: "PARTY_OPENING_BALANCE",
+  /** A supplier's purchase bill with its lines (local 115, cloud 038, docs/54). Read only by the supplier ledger and
+   * balances: it moves no stock, cash or production anywhere. */
+  PURCHASE_VOUCHER: "PURCHASE_VOUCHER",
+  /** What the store asks to be claimed when a program closes short: pairs, material, party, reason, and the program's
+   * code (local 116, cloud 039, docs/55). It carries no money and moves no balance, stock or cash anywhere. */
+  PARTY_CLAIM_REQUEST: "PARTY_CLAIM_REQUEST",
+  /** A claim Accounts priced and posted, or reversed (local 116, cloud 039, docs/55). A POSTED one is a deduction on
+   * the party's ledger. It moves no stock, cash or production anywhere. */
+  PARTY_CLAIM: "PARTY_CLAIM",
+  /** Accounts' answer that nothing is claimed for a request, with why (local 116, cloud 039, docs/55). */
+  PARTY_CLAIM_REJECTION: "PARTY_CLAIM_REJECTION",
+  /** One carton a customer sent back, credited at its own bill line's rate (local 116, cloud 040, docs/55). Read by the
+   * customer's ledger and balance only: the carton itself is received by the store as before. */
+  SALE_RETURN: "SALE_RETURN",
   /** A customer order with its lines (local 112, cloud 036, docs/52). It moves no stock, money or ledger. */
   CUSTOMER_ORDER: "CUSTOMER_ORDER",
   /** What one gatepass was counted against on customer orders, with its lines (local 112, cloud 036, docs/52). Written
@@ -144,8 +158,8 @@ export { LEASE_DOMAIN, type LeaseDomain };
 export const LEASED_AGGREGATE_DOMAIN: Readonly<Partial<Record<SyncAggregateType, LeaseDomain>>> = {
   [SYNC_AGGREGATE.RAW_MATERIAL_QR_BATCH]: LEASE_DOMAIN.RAW_MATERIAL_STORE,
   [SYNC_AGGREGATE.RAW_MATERIAL_QR]: LEASE_DOMAIN.RAW_MATERIAL_STORE,
-  // Parties and their groups have their own lease, held by the store computer (cloud 035, docs/51): it adds the supplier or
-  // contractor in front of it, while products, sizes, machines and colours stay with MASTER_DATA on the office computer.
+  // Parties and their groups have their own lease (cloud 035, docs/51, docs/55), held by the accounts computer (PC1),
+  // which manages every customer, supplier and contractor. Products, sizes, machines and colours stay with MASTER_DATA.
   [SYNC_AGGREGATE.PARTY_GROUP]: LEASE_DOMAIN.PARTIES,
   [SYNC_AGGREGATE.PARTY]: LEASE_DOMAIN.PARTIES,
   // The raw-material taxonomy travels with the stock it describes, under the store's lease (cloud 031, docs/47): the
@@ -179,6 +193,15 @@ export const LEASED_AGGREGATE_DOMAIN: Readonly<Partial<Record<SyncAggregateType,
   [SYNC_AGGREGATE.LEDGER_ARCHIVE_STATEMENT]: LEASE_DOMAIN.ACCOUNTS,
   // Posted where cash vouchers are written: it is the accounts' starting position for a party.
   [SYNC_AGGREGATE.PARTY_OPENING_BALANCE]: LEASE_DOMAIN.ACCOUNTS,
+  // Written where cash vouchers are, so the supplier balances there hold every bill and every payment (docs/54).
+  [SYNC_AGGREGATE.PURCHASE_VOUCHER]: LEASE_DOMAIN.ACCOUNTS,
+  // A claim request is written by closing a program, on the store computer, under the store's lease (docs/55).
+  [SYNC_AGGREGATE.PARTY_CLAIM_REQUEST]: LEASE_DOMAIN.RAW_MATERIAL_STORE,
+  // Pricing, posting, reversing and rejecting claims is accounts work, on the accounts computer (docs/55).
+  [SYNC_AGGREGATE.PARTY_CLAIM]: LEASE_DOMAIN.ACCOUNTS,
+  [SYNC_AGGREGATE.PARTY_CLAIM_REJECTION]: LEASE_DOMAIN.ACCOUNTS,
+  // A return credits the customer: recorded where bills are, under the sales lease (docs/55).
+  [SYNC_AGGREGATE.SALE_RETURN]: LEASE_DOMAIN.SALES_DISPATCH,
 };
 
 /** The lease an event type is written under, or null when it is not leased. */

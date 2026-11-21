@@ -57,6 +57,8 @@ import { ACCOUNTS_MODE, readAccountsMode } from "./database/accountsMode.js";
 import { productVariantSeedMethods, type ProductVariantSeedMethods } from "./database/productVariantSeed.js";
 import { machineProgramUpperReconciliationMethods, type MachineProgramUpperReconciliationMethods } from "./database/machineProgramUpperReconciliation.js";
 import { partyClaimsMethods, type PartyClaimsMethods } from "./database/partyClaims.js";
+import { partyClaimRequestsMethods, type PartyClaimRequestsMethods } from "./database/partyClaimRequests.js";
+import { partyClaimPostingMethods, type PartyClaimPostingMethods } from "./database/partyClaimPosting.js";
 import { cartonProgramMethods, type CartonProgramMethods } from "./database/cartonProgram.js";
 import { productionReceiptsMethods, type ProductionReceiptsMethods } from "./database/productionReceipts.js";
 import { upperMoveOutMethods, type UpperMoveOutMethods } from "./database/upperMoveOut.js";
@@ -72,6 +74,8 @@ import { handVoucherMethods, type HandVoucherMethods } from "./database/handVouc
 import { ledgerArchiveMethods, type LedgerArchiveMethods } from "./database/ledgerArchive.js";
 import { partyOpeningBalanceMethods, type PartyOpeningBalanceMethods } from "./database/partyOpeningBalances.js";
 import { partyLedgerReconciliationMethods, type PartyLedgerReconciliationMethods } from "./database/partyLedgerReconciliation.js";
+import { ledgerArchiveWithdrawalMethods, type LedgerArchiveWithdrawalMethods } from "./database/ledgerArchiveWithdrawal.js";
+import { bulkOpeningBalanceMethods, type BulkOpeningBalanceMethods } from "./database/bulkOpeningBalances.js";
 import { customerOrderMethods, type CustomerOrderMethods } from "./database/customerOrders.js";
 import { orderAllocationMethods, type OrderAllocationMethods } from "./database/orderAllocation.js";
 import { pendingOrderMethods, type PendingOrderMethods } from "./database/pendingOrders.js";
@@ -226,6 +230,10 @@ export {
   type ReverseOpeningBalanceInput,
 } from "./database/partyOpeningBalances.js";
 export type { PartyReconciliationReport, PartyReconciliationRow } from "./database/partyLedgerReconciliation.js";
+export type { ClaimPostingView, ClaimRequestFilter, ClaimRequestPage, ClaimRequestView } from "./database/partyClaimRequests.js";
+export type { PostClaimInput } from "./database/partyClaimPosting.js";
+export type { WithdrawArchiveBatchInput, WithdrawArchiveBatchResult } from "./database/ledgerArchiveWithdrawal.js";
+export { bulkPartyRequestId, type BulkOpeningPostInput, type BulkOpeningPostResult, type BulkOpeningPreview, type BulkOpeningProposal } from "./database/bulkOpeningBalances.js";
 export type { CartonReconciliation, CartonReconciliationRow } from "./database/cartonStockReconciliation.js";
 export { RequestConflictError, isRequestId, requestFingerprint } from "./database/requestFingerprint.js";
 export type { CashVoucherInput, CashVoucherSaved } from "./database/cash.js";
@@ -1713,6 +1721,8 @@ export interface SqliteDatabase
     ProductVariantSeedMethods,
     MachineProgramUpperReconciliationMethods,
     PartyClaimsMethods,
+    PartyClaimRequestsMethods,
+    PartyClaimPostingMethods,
     CartonProgramMethods,
     ProductionReceiptsMethods,
     UpperMoveOutMethods,
@@ -1728,6 +1738,8 @@ export interface SqliteDatabase
     LedgerArchiveMethods,
     PartyOpeningBalanceMethods,
     PartyLedgerReconciliationMethods,
+    LedgerArchiveWithdrawalMethods,
+    BulkOpeningBalanceMethods,
     CustomerOrderMethods,
     OrderAllocationMethods,
     PendingOrderMethods,
@@ -1772,6 +1784,8 @@ Object.assign(
   productVariantSeedMethods,
   machineProgramUpperReconciliationMethods,
   partyClaimsMethods,
+  partyClaimRequestsMethods,
+  partyClaimPostingMethods,
   cartonProgramMethods,
   productionReceiptsMethods,
   upperMoveOutMethods,
@@ -1787,6 +1801,8 @@ Object.assign(
   ledgerArchiveMethods,
   partyOpeningBalanceMethods,
   partyLedgerReconciliationMethods,
+  ledgerArchiveWithdrawalMethods,
+  bulkOpeningBalanceMethods,
   customerOrderMethods,
   orderAllocationMethods,
   pendingOrderMethods,

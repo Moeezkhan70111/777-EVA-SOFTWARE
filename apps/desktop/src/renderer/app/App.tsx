@@ -59,6 +59,7 @@ import { PurchaseVoucherFormPage } from "../pages/PurchaseVoucherFormPage";
 import { PurchaseVoucherListPage } from "../pages/PurchaseVoucherListPage";
 import { SupplierLedgerPage } from "../pages/SupplierLedgerPage";
 import { ContractorLedgerPage } from "../features/contractorLedger/ContractorLedgerPage";
+import { ClaimsPage } from "../features/claims/ClaimsPage";
 import { SupplierBalancePage } from "../pages/SupplierBalancePage";
 import { CashVoucherFormPage } from "../pages/CashVoucherFormPage";
 import { CashVoucherListPage } from "../pages/CashVoucherListPage";
@@ -686,6 +687,8 @@ export const App = () => {
         return <SupplierBalancePage onNavigate={setRoute} />;
       case "contractor-ledger":
         return <ContractorLedgerPage onNavigate={navigateTo} />;
+      case "party-claims":
+        return <ClaimsPage canPost={session.role === USER_ROLE.ADMIN} />;
       case "settings":
         return <SettingsPage isAdmin={session.role === USER_ROLE.ADMIN} />;
       case "health":

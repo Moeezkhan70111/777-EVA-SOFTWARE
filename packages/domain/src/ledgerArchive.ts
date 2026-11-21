@@ -447,7 +447,13 @@ function chosenRule(rows: readonly LedgerArchiveRow[], side: LedgerArchiveSide):
 }
 
 /** One statement's rows, put in order and checked as a whole. */
-export function checkArchiveStatement(key: string, rows: readonly LedgerArchiveRow[], side: LedgerArchiveSide = LEDGER_ARCHIVE_SIDE.CUSTOMER): LedgerArchiveStatementDraft {
+export function checkArchiveStatement(
+  key: string,
+  rows: readonly LedgerArchiveRow[],
+  side: LedgerArchiveSide = LEDGER_ARCHIVE_SIDE.CUSTOMER,
+  /** The rule the source is KNOWN to print (a recognised report): used as it is, never detected. */
+  knownRule?: ArchiveBalanceRule
+): LedgerArchiveStatementDraft {
   const ordered = [...rows].sort((a, b) => a.sequence - b.sequence);
   const problems: LedgerArchiveProblem[] = [];
   const sequences = new Set<number>();
@@ -460,7 +466,7 @@ export function checkArchiveStatement(key: string, rows: readonly LedgerArchiveR
   }
   const names = new Set(ordered.map((row) => row.customerName).filter(Boolean));
   if (names.size > 1) problems.push({ rowNumber: null, message: `The same party code is given different names: ${[...names].join(", ")}.` });
-  const balances = chosenRule(ordered, side);
+  const balances = knownRule ? { rule: knownRule, problems: balanceProblems(ordered, knownRule), warnings: [] } : chosenRule(ordered, side);
   problems.push(...balances.problems);
   return {
     side,
@@ -503,7 +509,7 @@ export interface LedgerArchiveFileDraft {
  * Reads every row and groups them by customer. A row that cannot be read is listed, and the statement it would have
  * belonged to is held back too: a statement with a missing row would have a gap in its balances.
  */
-export function readArchiveFile(inputs: readonly LedgerArchiveRowInput[], side: LedgerArchiveSide = LEDGER_ARCHIVE_SIDE.CUSTOMER): LedgerArchiveFileDraft {
+export function readArchiveFile(inputs: readonly LedgerArchiveRowInput[], side: LedgerArchiveSide = LEDGER_ARCHIVE_SIDE.CUSTOMER, knownRule?: ArchiveBalanceRule): LedgerArchiveFileDraft {
   if (inputs.length > LEDGER_ARCHIVE_LIMITS.MAX_ROWS) {
     return { statements: [], rowProblems: [{ rowNumber: null, message: `The file has more than ${String(LEDGER_ARCHIVE_LIMITS.MAX_ROWS)} rows. Split it into smaller files.` }], rowCount: inputs.length };
   }
@@ -521,7 +527,7 @@ export function readArchiveFile(inputs: readonly LedgerArchiveRowInput[], side: 
     groups.set(key, [...(groups.get(key) ?? []), row]);
   });
   const statements = [...groups.entries()].map(([key, rows]) => {
-    const draft = checkArchiveStatement(key, rows, side);
+    const draft = checkArchiveStatement(key, rows, side, knownRule);
     const broken = brokenKeys.get(key) ?? [];
     return broken.length === 0 ? draft : { ...draft, problems: [{ rowNumber: null, message: `${String(broken.length)} of this party's rows could not be read (listed above).` }, ...draft.problems] };
   });

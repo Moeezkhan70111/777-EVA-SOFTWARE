@@ -27,6 +27,13 @@ export const toPaisa = (rupees: number): number => {
 export const fromPaisa = (paisa: number): number => paisa / PAISA_PER_RUPEE;
 
 /**
+ * Rupees as a person typed them ("50", "45.5", "12.75") → integer paisa, or null when the text is not a sum of money:
+ * digits, then at most two decimals. Never a partly-read figure.
+ */
+export const typedRupeesToPaisa = (typed: string): number | null =>
+  /^\d{1,9}(\.\d{1,2})?$/.test(typed.trim()) ? toPaisa(Number(typed.trim())) : null;
+
+/**
  * Nullable-safe `toPaisa`, for dual-writing an optional/nullable rupee column (e.g. a
  * discount, a cost price, a party's balance limit) into its `*_paisa` sibling column
  * without inventing a value where the source was absent.

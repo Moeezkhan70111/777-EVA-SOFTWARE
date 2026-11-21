@@ -24,12 +24,12 @@ import {
   NOTIFICATION_SEVERITY,
   cartonsExpectedFromUppers,
   cartonsToPairs,
-  claimAmountPaisa,
-  fromPaisa,
+  claimRequestStatus,
   shortfallUppers,
   upperReconciliationProblem,
   type ClaimPartyRole,
   type MachineProgramCloseOutcome,
+  type PartyClaimRequestStatus,
   type UpperReconciliation,
 } from "@erp/domain";
 import { CUT_SIZE_KIND } from "./machineProgramUpperReconciliation.js";
@@ -44,15 +44,66 @@ export interface ReconciliationParty {
   name: string;
 }
 
-/** A claim as the closed program shows it. Legacy claims (before priced claims) carry no number or amount. */
+/**
+ * A claim as the closed program shows it (docs/55):
+ *   a claim REQUEST from this release on: its CR- number and where Accounts has it. A claim number and an amount once posted.
+ *   a claim the store posted itself before this release: its CL- number and amount, no request.
+ *   wastage or loss recorded before priced claims: no number, no amount.
+ */
 export interface SavedReconciliationClaim {
+  /** The posted claim's CL- number, or null while nothing is posted for it. */
   claimNumber: string | null;
+  /** The request's CR- number, or null for a claim recorded before requests. */
+  requestNumber: string | null;
+  /** Where the request stands with Accounts, or null for a claim recorded before requests. */
+  status: PartyClaimRequestStatus | null;
   role: ClaimPartyRole;
   partyName: string;
   pairs: number;
+  /** The posted amount in paisa, or null while nothing is posted. */
   amountPaisa: number | null;
   reason: string;
 }
+
+// The claims recorded for one upper line: requests with their posted claim if any, then claims the store posted itself
+// before requests existed (request_id NULL). Reversed claims are history, not on the program's card.
+const LINE_REQUESTS_SQL = `
+  SELECT r.request_number, r.party_role, p.party_name, r.quantity_pairs, r.reason,
+         (SELECT COUNT(*) FROM party_claim_rejections j WHERE j.request_id = r.id) AS rejected,
+         c.claim_number, c.amount_paisa
+    FROM party_claim_requests r
+    JOIN parties p ON p.id = r.party_id
+    LEFT JOIN party_claims c ON c.request_id = r.id AND c.status = 'POSTED'
+   WHERE r.program_id = ? AND r.upper_line_id = ?
+   ORDER BY ${orderByCode("claimRequest", "r.request_number")}`;
+
+const LINE_DIRECT_CLAIMS_SQL = `
+  SELECT c.claim_number, c.party_role, p.party_name, c.quantity_pairs, c.amount_paisa, c.reason
+    FROM party_claims c JOIN parties p ON p.id = c.party_id
+   WHERE c.program_id = ? AND c.upper_line_id = ? AND c.request_id IS NULL AND c.status = 'POSTED'
+   ORDER BY ${orderByCode("partyClaim", "c.claim_number")}`;
+
+const requestedClaim = (row: Record<string, unknown>): SavedReconciliationClaim => ({
+  claimNumber: row.claim_number == null ? null : text(row.claim_number),
+  requestNumber: text(row.request_number),
+  status: claimRequestStatus({ rejected: Number(row.rejected ?? 0) > 0, postedClaims: row.claim_number == null ? 0 : 1 }),
+  role: text(row.party_role) as ClaimPartyRole,
+  partyName: text(row.party_name),
+  pairs: Number(row.quantity_pairs ?? 0),
+  amountPaisa: row.amount_paisa == null ? null : Number(row.amount_paisa),
+  reason: text(row.reason),
+});
+
+const directClaim = (row: Record<string, unknown>): SavedReconciliationClaim => ({
+  claimNumber: text(row.claim_number),
+  requestNumber: null,
+  status: null,
+  role: text(row.party_role) as ClaimPartyRole,
+  partyName: text(row.party_name),
+  pairs: Number(row.quantity_pairs ?? 0),
+  amountPaisa: Number(row.amount_paisa ?? 0),
+  reason: text(row.reason),
+});
 
 /** What was recorded for one upper line when the program closed. */
 export interface SavedUpperReconciliation {
@@ -231,21 +282,21 @@ const closureOf = (row: Record<string, unknown> | undefined): MachineProgramClos
 const legacyClaims = (row: Record<string, unknown>): SavedReconciliationClaim[] => {
   const claims: SavedReconciliationClaim[] = [];
   if (Number(row.wastage_uppers ?? 0) > 0) {
-    claims.push({ claimNumber: null, role: CLAIM_PARTY_ROLE.SUPPLIER, partyName: text(row.wastage_party_name), pairs: Number(row.wastage_uppers), amountPaisa: null, reason: text(row.wastage_reason) });
+    claims.push({ claimNumber: null, requestNumber: null, status: null, role: CLAIM_PARTY_ROLE.SUPPLIER, partyName: text(row.wastage_party_name), pairs: Number(row.wastage_uppers), amountPaisa: null, reason: text(row.wastage_reason) });
   }
   if (Number(row.lost_uppers ?? 0) > 0) {
     const role = text(row.lost_role) === CLAIM_PARTY_ROLE.PACKING ? CLAIM_PARTY_ROLE.PACKING : CLAIM_PARTY_ROLE.MACHINE;
-    claims.push({ claimNumber: null, role, partyName: text(row.lost_party_name), pairs: Number(row.lost_uppers), amountPaisa: null, reason: text(row.lost_reason) });
+    claims.push({ claimNumber: null, requestNumber: null, status: null, role, partyName: text(row.lost_party_name), pairs: Number(row.lost_uppers), amountPaisa: null, reason: text(row.lost_reason) });
   }
   return claims;
 };
 
-/** The claims a reconciliation made, in one sentence for the administrators. */
+/** The claim requests a reconciliation made, in one sentence for the administrators. Accounts prices them later. */
 const claimSummary = (lines: ReconciliationLine[], entries: Map<string, ReconciliationInputEntry>, partyName: (role: ClaimPartyRole, supplierId: string | null) => string): string =>
   lines
     .flatMap((line) =>
       (entries.get(line.lineId)?.claims ?? []).map(
-        (claim) => `${claim.pairs} pair${claim.pairs === 1 ? "" : "s"} of ${upperName(line)} claimed to ${partyName(claim.role, claim.supplierPartyId)} for Rs ${fromPaisa(claimAmountPaisa(claim)).toFixed(2)} — "${claim.reason.trim()}"`
+        (claim) => `${claim.pairs} pair${claim.pairs === 1 ? "" : "s"} of ${upperName(line)} to be claimed from ${partyName(claim.role, claim.supplierPartyId)} — "${claim.reason.trim()}"`
       )
     )
     .join("; ");
@@ -352,21 +403,9 @@ export const machineProgramReconciliationMethods = {
       )
       .get(programId, lineId) as Record<string, unknown> | undefined;
     if (!row) return null;
-    const claims = (this.db
-      .prepare(
-        `SELECT c.claim_number, c.party_role, p.party_name, c.quantity_pairs, c.amount_paisa, c.reason
-           FROM party_claims c JOIN parties p ON p.id = c.party_id
-          WHERE c.program_id = ? AND c.upper_line_id = ? AND c.status = 'POSTED'
-          ORDER BY ${orderByCode("partyClaim", "c.claim_number")}`
-      )
-      .all(programId, lineId) as Array<Record<string, unknown>>).map((claim) => ({
-      claimNumber: text(claim.claim_number),
-      role: text(claim.party_role) as ClaimPartyRole,
-      partyName: text(claim.party_name),
-      pairs: Number(claim.quantity_pairs ?? 0),
-      amountPaisa: Number(claim.amount_paisa ?? 0),
-      reason: text(claim.reason),
-    }));
+    const requested = (this.db.prepare(LINE_REQUESTS_SQL).all(programId, lineId) as Array<Record<string, unknown>>).map(requestedClaim);
+    const direct = (this.db.prepare(LINE_DIRECT_CLAIMS_SQL).all(programId, lineId) as Array<Record<string, unknown>>).map(directClaim);
+    const claims = [...direct, ...requested];
     return {
       cutSizeUppers: Number(row.cut_size_uppers ?? 0),
       cutSizePairs: Number(row.cut_size_pairs ?? 0),
@@ -381,7 +420,7 @@ export const machineProgramReconciliationMethods = {
    * with every remaining pair accounted for as cut size upper, cut size pairs or a claim.
    *
    * One transaction: the closure and its lines; the cut size put back in the store; every claim
-   * posted to its party's ledger; every original label still not back voided; the program's status
+   * REQUEST recorded for Accounts (no money, no ledger, docs/55); every original label still not back voided; the program's status
    * (COMPLETED — nothing planned and never issued stays reserved); and, when anything is claimed, a
    * notice to every administrator. The shortfall is worked out HERE; what the screen sends is only
    * what the store says became of it. Throws with the operator's sentence, having written nothing.
@@ -433,7 +472,7 @@ export const machineProgramReconciliationMethods = {
           kind: NOTIFICATION_KIND.MACHINE_PROGRAM_RECONCILED,
           severity: NOTIFICATION_SEVERITY.WARNING,
           entityId: view.programId,
-          title: `Uppers claimed on ${view.code}`,
+          title: `Claims requested on ${view.code}`,
           message: `${view.code} (${program.machineName}) closed ${view.cartonsBack} of ${view.cartonsDue} cartons back by ${closedBy}: ${claims}.`,
         });
       }
@@ -470,7 +509,7 @@ export const machineProgramReconciliationMethods = {
     }
   },
 
-  /** @internal Writes one short line's reconciliation: its row, its cut size stock and its claims. */
+  /** @internal Writes one short line's reconciliation: its row, its cut size stock and its claim requests. */
   writeUpperReconciliation(this: SqliteDatabase, view: MachineProgramReconciliation, line: ReconciliationLine, entry: ReconciliationInputEntry, actor: string, now: string): void {
     const claimedPairs = entry.claims.reduce((total, claim) => total + claim.pairs, 0);
     const returnedPairs = cartonsToPairs(line.returnedUpperCartons ?? 0);
@@ -488,9 +527,9 @@ export const machineProgramReconciliationMethods = {
 
     for (const claim of entry.claims) {
       const against = this.claimPartyOf(view, claim.role, claim.supplierPartyId)!;
-      this.postPartyClaim({
-        partyId: against.partyId, role: claim.role, programId: view.programId, lineId: line.lineId, itemId: line.itemId,
-        pairs: claim.pairs, ratePaisa: claim.ratePaisa, reason: claim.reason, actor,
+      this.recordClaimRequest({
+        partyId: against.partyId, role: claim.role, programId: view.programId, programCode: view.code, lineId: line.lineId, itemId: line.itemId,
+        pairs: claim.pairs, reason: claim.reason, actor,
       });
     }
     if (entry.cutSizeUppers > 0) {

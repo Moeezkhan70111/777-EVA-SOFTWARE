@@ -454,12 +454,22 @@ contextBridge.exposeInMainWorld("desktop", {
     getLedgerArchive: (partyId: string, query?: Record<string, unknown>) => ipcRenderer.invoke(IPC.getLedgerArchive, partyId, query),
     attachLedgerArchiveSource: (input: { name: string; dataUrl: string }) => ipcRenderer.invoke(IPC.attachLedgerArchiveSource, input),
     openLedgerArchiveSource: (hash: string) => ipcRenderer.invoke(IPC.openLedgerArchiveSource, hash),
+    getLedgerArchiveBatch: (batchId: string) => ipcRenderer.invoke(IPC.getLedgerArchiveBatch, batchId),
+    withdrawLedgerArchiveBatch: (input: Record<string, unknown>) => ipcRenderer.invoke(IPC.withdrawLedgerArchiveBatch, input),
     // Opening balances and the ledger reconciliation (docs/53)
     getPartyOpeningBalance: (partyId: string) => ipcRenderer.invoke(IPC.getPartyOpeningBalance, partyId),
     postPartyOpeningBalance: (input: Record<string, unknown>) => ipcRenderer.invoke(IPC.postPartyOpeningBalance, input),
     reversePartyOpeningBalance: (input: Record<string, unknown>) => ipcRenderer.invoke(IPC.reversePartyOpeningBalance, input),
     correctPartyOpeningBalance: (input: Record<string, unknown>) => ipcRenderer.invoke(IPC.correctPartyOpeningBalance, input),
     getLedgerReconciliation: (side: string) => ipcRenderer.invoke(IPC.getLedgerReconciliation, side),
+    previewBulkOpeningBalances: (side: string, cutoverDate: string) => ipcRenderer.invoke(IPC.previewBulkOpeningBalances, side, cutoverDate),
+    postBulkOpeningBalances: (input: Record<string, unknown>) => ipcRenderer.invoke(IPC.postBulkOpeningBalances, input),
+    // Claims (docs/55)
+    listPartyClaimRequests: (query: Record<string, unknown>) => ipcRenderer.invoke(IPC.listPartyClaimRequests, query),
+    getPartyClaimRequest: (requestId: string) => ipcRenderer.invoke(IPC.getPartyClaimRequest, requestId),
+    postPartyClaim: (input: Record<string, unknown>) => ipcRenderer.invoke(IPC.postPartyClaim, input),
+    rejectPartyClaimRequest: (input: Record<string, unknown>) => ipcRenderer.invoke(IPC.rejectPartyClaimRequest, input),
+    reversePartyClaim: (input: Record<string, unknown>) => ipcRenderer.invoke(IPC.reversePartyClaim, input),
     // Purchase Voucher Management (supplier bills)
     getNextPurchaseVoucherNumber: () => ipcRenderer.invoke(IPC.getNextPurchaseVoucherNumber),
     createPurchaseVoucher: (input: Record<string, unknown>) => ipcRenderer.invoke(IPC.createPurchaseVoucher, input),

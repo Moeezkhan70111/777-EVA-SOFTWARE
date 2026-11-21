@@ -53,14 +53,14 @@ export const partyLedgerReconciliationMethods = {
         `SELECT p.id, p.party_name, p.party_code
            FROM parties p
           WHERE p.deleted_at IS NULL AND p.party_type = ?1
-            AND (EXISTS (SELECT 1 FROM ledger_archive_statements s WHERE s.party_id = p.id AND s.ledger_side = ?1)
-                 OR EXISTS (SELECT 1 FROM party_opening_balances ob WHERE ob.party_id = p.id AND ob.ledger_side = ?1))
+            AND (EXISTS (SELECT 1 FROM ledger_archive_statements s WHERE s.party_id = p.id AND s.ledger_side = ?1 AND s.withdrawn_at IS NULL)
+                 OR EXISTS (SELECT 1 FROM party_opening_balances ob WHERE ob.party_id = p.id AND ob.ledger_side = ?1 AND ob.status = 'POSTED'))
           ORDER BY p.party_name, p.id`
       )
       .all(side) as Row[];
     const broken = this.brokenArchiveRows(side);
     const live = liveBalances(this, side);
-    const statements = this.db.prepare("SELECT * FROM ledger_archive_statements WHERE ledger_side = ? ORDER BY party_id, period_from, imported_at").all(side) as Row[];
+    const statements = this.db.prepare("SELECT * FROM ledger_archive_statements WHERE ledger_side = ? AND withdrawn_at IS NULL ORDER BY party_id, period_from, imported_at").all(side) as Row[];
     const openings = this.db.prepare("SELECT * FROM party_opening_balances WHERE ledger_side = ? AND status = ?").all(side, OPENING_BALANCE_STATUS.POSTED) as Row[];
     const rows = parties.map((party) => {
       const id = text(party.id);

@@ -2,6 +2,8 @@ import { leaseRefusalText } from "../shared/leaseRefusal";
 import type { IpcMainInvokeEvent } from "electron";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { SqliteDatabase } from "@erp/data";
+import { ACCESS_STATUS, PERMISSION, USER_ROLE } from "@erp/domain";
+import { Authorizer, type SessionUser } from "./authorize";
 import { IPC } from "../shared/ipcChannels";
 
 // THE GATE IN FRONT OF LEASED CHANNELS (leaseGuard.ts).
@@ -204,5 +206,92 @@ describe("the leases this computer holds (party ledgers show only on the Account
   it("holds nothing before the gate is installed", async () => {
     const { heldLeaseDomains } = await loadGuard();
     expect(await heldLeaseDomains(["ACCOUNTS"])).toEqual([]);
+  });
+});
+
+// CLAIMS ARE POSTED ON THE ACCOUNTS COMPUTER ONLY (docs/55). The real handlers, registered through the real gate, called
+// the way a renderer would call them, screen or no screen: on the store and the boss computers the data layer is never
+// reached, whatever is sent; on the accounts holder the post runs.
+describe("claims through the gate", () => {
+  // The real Authorizer, so who may post is what the handlers really check: an administrator (owner, 21 Nov 2026).
+  const admin: SessionUser = { id: "u1", username: "clerk", role: USER_ROLE.ADMIN, accessStatus: ACCESS_STATUS.APPROVED, permissions: [] };
+  const viewer: SessionUser = { ...admin, id: "u2", username: "viewer", role: USER_ROLE.USER, permissions: [PERMISSION.PARTY_CLAIMS] };
+  const signedIn = { token: "t" };
+  const claimsDb = () => ({
+    db: {},
+    postClaimFromRequest: vi.fn(() => ({ requestNumber: "CR-000001", status: "POSTED", posted: { claimNumber: "CL-000001", amountPaisa: 10_000 } })),
+    rejectClaimRequest: vi.fn(() => ({ requestNumber: "CR-000001", status: "REJECTED" })),
+    reversePartyClaim: vi.fn(() => ({ claimNumber: "CL-000001", requestId: "r1" })),
+    listPartyClaimRequests: vi.fn(() => ({ rows: [], total: 0, pending: 0 })),
+    getPartyClaimRequest: vi.fn(() => null),
+  });
+
+  async function claimsOn(computer: string, accounts: Decision, user: SessionUser = admin) {
+    const { installLeaseGate } = await loadGuard();
+    const data = claimsDb();
+    installLeaseGate({ db: data as unknown as SqliteDatabase, deviceId: computer, dataRoot: "C:/erp" });
+    decisions.ACCOUNTS = accounts;
+    const { registerPartyClaimHandlers } = await import("./ipc/partyClaims");
+    registerPartyClaimHandlers({
+      db: data as never,
+      logger: { log: vi.fn() } as never,
+      authorizer: new Authorizer((token) => (token === "t" ? user : null)),
+      deviceId: computer,
+    });
+    return data;
+  }
+
+  const held = { allowed: true, domain: "ACCOUNTS", epoch: 3 } as const;
+  const elsewhere = { allowed: false, domain: "ACCOUNTS", reason: "HELD_ELSEWHERE", holderLabel: "PC1 - ACCOUNTS" } as const;
+
+  it("refuses posting, rejecting and reversing on the store and the boss computers, before the data layer runs", async () => {
+    for (const computer of ["store-pc2", "boss-pc3"]) {
+      const data = await claimsOn(computer, elsewhere);
+      for (const [channel, input] of [
+        [IPC.postPartyClaim, { claimId: "c1", requestId: "r1", ratePaisa: 5_000 }],
+        [IPC.rejectPartyClaimRequest, { requestId: "r1", reason: "x" }],
+        [IPC.reversePartyClaim, { claimId: "c1", reason: "x" }],
+      ] as const) {
+        const refusal = registered.get(channel)?.(event, input, signedIn) as Promise<unknown>;
+        await expect(refusal).rejects.toMatchObject({ code: "LEASE_REQUIRED", reason: "HELD_ELSEWHERE" });
+        await refusal.catch((error: unknown) => expect(leaseRefusalText(error)).toMatch(/PC1 - ACCOUNTS/));
+      }
+      expect(data.postClaimFromRequest).not.toHaveBeenCalled();
+      expect(data.rejectClaimRequest).not.toHaveBeenCalled();
+      expect(data.reversePartyClaim).not.toHaveBeenCalled();
+    }
+  });
+
+  it("lets every computer read the claims, and the accounts holder post them", async () => {
+    const reader = await claimsOn("boss-pc3", elsewhere);
+    await expect(Promise.resolve(registered.get(IPC.listPartyClaimRequests)?.(event, { filter: "ALL" }, signedIn))).resolves.toMatchObject({ accepted: true });
+    expect(reader.listPartyClaimRequests).toHaveBeenCalled();
+
+    const accounts = await claimsOn("accounts-pc1", held);
+    await expect(registered.get(IPC.postPartyClaim)?.(event, { claimId: "c1", requestId: "r1", ratePaisa: 5_000 }, signedIn)).resolves.toMatchObject({ accepted: true });
+    expect(accounts.postClaimFromRequest).toHaveBeenCalledWith({ claimId: "c1", requestId: "r1", ratePaisa: 5_000, actor: "clerk" });
+  });
+
+  it("on the accounts computer, someone who is not an administrator can read the claims but not post, reject or reverse", async () => {
+    const data = await claimsOn("accounts-pc1", held, viewer);
+    await expect(Promise.resolve(registered.get(IPC.listPartyClaimRequests)?.(event, { filter: "ALL" }, signedIn))).resolves.toMatchObject({ accepted: true });
+    for (const [channel, input] of [
+      [IPC.postPartyClaim, { claimId: "c1", requestId: "r1", ratePaisa: 5_000 }],
+      [IPC.rejectPartyClaimRequest, { requestId: "r1", reason: "x" }],
+      [IPC.reversePartyClaim, { claimId: "c1", reason: "x" }],
+    ] as const) {
+      await expect(Promise.resolve(registered.get(channel)?.(event, input, signedIn))).resolves.toEqual({ accepted: false, reason: "Administrator access required" });
+    }
+    expect(data.postClaimFromRequest).not.toHaveBeenCalled();
+    expect(data.rejectClaimRequest).not.toHaveBeenCalled();
+    expect(data.reversePartyClaim).not.toHaveBeenCalled();
+  });
+
+  it("refuses every claim call with no signed-in session, reads included", async () => {
+    const data = await claimsOn("accounts-pc1", held);
+    await expect(Promise.resolve(registered.get(IPC.listPartyClaimRequests)?.(event, { filter: "ALL" }, { token: "forged" }))).resolves.toMatchObject({ accepted: false });
+    await expect(Promise.resolve(registered.get(IPC.postPartyClaim)?.(event, { claimId: "c1", requestId: "r1", ratePaisa: 5_000 }, { token: "forged" }))).resolves.toMatchObject({ accepted: false });
+    expect(data.listPartyClaimRequests).not.toHaveBeenCalled();
+    expect(data.postClaimFromRequest).not.toHaveBeenCalled();
   });
 });

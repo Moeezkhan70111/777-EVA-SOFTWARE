@@ -45,12 +45,11 @@ const NOT_MASTER: Readonly<Record<string, readonly string[]>> = {
   "Carton stock: leased EVENTS that move the carton figure (docs/42), captured as events, never replaced whole": [
     "carton_stock_events",
   ],
-  "Delivery photos, QR returns and pricing rules: not yet travelling (docs/43)": [
+  "Delivery photos and pricing rules: not yet travelling (docs/43)": [
     "gatepass_delivery_proofs",
-    "sale_returns", "party_article_discounts", "party_article_series_discounts", "party_price_range_discounts",
+    "party_article_discounts", "party_article_series_discounts", "party_price_range_discounts",
     "party_product_group_discounts",
   ],
-  "Purchase documents: Milestone 2": ["purchase_vouchers", "purchase_voucher_line_items"],
   "Machine programs: Milestone 2": [
     "machine_programs", "machine_program_article_rates", "machine_program_b_conversions", "machine_program_carton_labels",
     "machine_program_closures", "machine_program_fix_carton_labels", "machine_program_issue_batches",
@@ -58,7 +57,7 @@ const NOT_MASTER: Readonly<Record<string, readonly string[]>> = {
     "machine_program_upper_b_labels", "machine_program_upper_lines",
   ],
   "Approvals: transitions, Milestone 2": [
-    "access_requests", "permission_requests", "party_claims", "removal_requests", "stock_correction_requests",
+    "access_requests", "permission_requests", "removal_requests", "stock_correction_requests",
   ],
   "People and access: cloud-authoritative under docs/41, never replicated as records": [
     "app_users", "roles", "role_permissions", "user_role_assignments", "user_additional_permissions",

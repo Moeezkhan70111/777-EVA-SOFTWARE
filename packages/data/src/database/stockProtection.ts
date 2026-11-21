@@ -46,12 +46,16 @@ const STOCK_TABLES = {
   [SYNC_AGGREGATE.SALE_VOUCHER]: "sale_vouchers",
   [SYNC_AGGREGATE.CASH_VOUCHER]: "cash_vouchers",
   [SYNC_AGGREGATE.CARTON_STOCK_EVENT]: "carton_stock_events",
+  // A carton return's credit travels from this release (docs/55), as a document that follows from cartons: like a bill,
+  // only after activation, and never one recorded before it. LAST, so the cutoff's table list keeps its order.
+  [SYNC_AGGREGATE.SALE_RETURN]: "sale_returns",
 } as const satisfies Record<string, string>;
 /**
- * Every table the cutoff covers: the stock tables, and sale returns -- a financial document that is not sent by this
- * release but must still be told apart from test data in customer balances (see "Test financial documents" below).
+ * Every table the cutoff covers: the stock tables, and sale returns, which the cutoff always covered so that test returns
+ * are told apart from real ones in customer balances (see "Test financial documents" below). Now a stock table too: the
+ * list is unchanged, in the same order, so every activation already made stays valid.
  */
-const TABLE_NAMES: readonly string[] = [...Object.values(STOCK_TABLES), "sale_returns"];
+const TABLE_NAMES: readonly string[] = [...new Set([...Object.values(STOCK_TABLES), "sale_returns"])];
 
 /**
  * A Stock Adjustment document (docs/46) is stock too, but it is NOT a cutoff table: adding a table to TABLE_NAMES would

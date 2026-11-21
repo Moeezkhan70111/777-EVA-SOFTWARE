@@ -3,6 +3,8 @@
 // Only the SHAPE is checked here: every count arrives as a number or as NaN, every claim names a
 // role this ERP knows. Whether the counts add up, and whether a claim's party may be claimed
 // against, is the domain's rule and the data layer's check, applied inside the write lock.
+//
+// A claim carries NO amount (docs/55): the store asks, Accounts prices. An amount sent by the renderer is not read.
 
 import { CLAIM_PARTY_ROLE, asOptionalString, asString, isRecord, optionalOneOf, type ClaimPartyRole, type UpperClaim, type UpperReconciliation } from "@erp/domain";
 
@@ -18,7 +20,6 @@ const claimOf = (value: Record<string, unknown>): UpperClaim | string => {
     role,
     supplierPartyId: role === CLAIM_PARTY_ROLE.SUPPLIER ? asOptionalString(value.supplierPartyId) ?? null : null,
     pairs: count(value.pairs),
-    ratePaisa: count(value.ratePaisa),
     reason: asString(value.reason),
   };
 };

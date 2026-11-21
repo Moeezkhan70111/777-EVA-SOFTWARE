@@ -91,6 +91,9 @@ export const PERMISSION = {
   CONTRACTOR_LEDGER: "contractor-ledger",
   CASH_VOUCHER_FORM: "cash-voucher-form",
   CASH_VOUCHER_LIST: "cash-voucher-list",
+  /** The Claims screen: the store's claim requests and what Accounts did with them (docs/55). Read-only. Pricing,
+   *  posting, rejecting and reversing are for administrators only, on the accounts computer (owner, 21 Nov 2026). */
+  PARTY_CLAIMS: "party-claims",
   SETTINGS: "settings",
   HEALTH: "health",
   LOGS: "logs",

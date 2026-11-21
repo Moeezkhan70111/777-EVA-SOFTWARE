@@ -1,17 +1,24 @@
-# 51 — Parties on their own lease, held by the store computer
+# 51 — Parties on their own lease, held by the accounts computer (PC1)
 
-Owner's request, 16 Nov 2026: give PC2's store operator the ability to add a new party. Owner's decision: **Option C**,
-a dedicated lease for parties, held by PC2. PC1 keeps MASTER_DATA for everything else.
+> **REVISED 21 Nov 2026 (docs/55).** The owner has fixed the computers' roles: **PC1 creates and edits every party, and
+> PC2 must never hold PARTIES.** The lease, its mechanism and cloud 035 are unchanged (035 was never applied, and its
+> text says PC1). Every step below names PC1. The first decision (16 Nov, PARTIES on PC2) is kept only as history in
+> the next paragraph.
+
+History, 16 Nov 2026: the owner first asked for PC2's store operator to add new parties (Option C, PARTIES on PC2).
+That was replaced on 21 Nov by docs/55 before anything was applied: PARTIES is PC1's.
 
 ## The rule now
 
 | Lease | Holder | Writes |
 |---|---|---|
-| MASTER_DATA | PC1 (office) | products and their grouping, article sizes, machines, work sections, colours |
-| **PARTIES** (new) | **PC2 (store)** | **parties and party groups** |
-| RAW_MATERIAL_STORE | PC2 (store) | units, ladders, categories, materials, their stock, labels and packets |
+| MASTER_DATA | PC1 (`fd435526…`) | products and their grouping, article sizes, machines, work sections, colours |
+| **PARTIES** (new) | **PC1 (`fd435526…`)** | **parties and party groups** (customers, suppliers, contractors) |
+| RAW_MATERIAL_STORE | PC2 (`47c0dace…`, store) | units, ladders, categories, materials, their stock, labels and packets |
 
-Every computer still reads every party: PC1 and PC3 receive PC2's parties and party groups as before. A computer
+PC2 must never be granted PARTIES (or ACCOUNTS). Its store screens choose from the parties PC1 sends.
+
+Every computer still reads every party: PC2 and PC3 receive PC1's parties and party groups as before. A computer
 writes parties only when it holds PARTIES, is caught up past its barrier, and the person signed in has the
 **Party Form** permission (`party-form`), exactly as before.
 
@@ -44,19 +51,21 @@ ledger, voucher or log row changes. `push_leased_record` reads a type's domain o
 the new lease with no new function.
 
 **Why the barrier.** A new domain would start at barrier 0. Parties were written by PC1 under MASTER_DATA, so the
-holder of PARTIES must not write a party until it has pulled all of them (011's catch-up rule). The barrier makes PC2
-refuse its own party writes, showing "catching up", until its pull passes PC1's last party revision.
+holder of PARTIES must not write a party until it has pulled all of them (011's catch-up rule). The barrier makes the
+holder refuse its own party writes, showing "catching up", until its pull passes the last party revision. PC1 wrote
+every party since 10 Nov itself (production log read 21 Nov: last party seq 31599, from PC1), so it is caught up.
 
 ## Safety
 
 - **Retries and duplicates:** a party revision is idempotent in the cloud (013: same revision and body = DUPLICATE),
   and a second delivery to a receiver is ignored (tested).
-- **Offline:** PC2 writes parties offline as the PARTIES holder; they queue with the PARTIES epoch and go when it
+- **Offline:** PC1 writes parties offline as the PARTIES holder; they queue with the PARTIES epoch and go when it
   reconnects. Nothing else changes.
 - **Conflicts:** one writer. A party written on a computer without PARTIES is refused locally by the write gate, and,
   if it was written on an old release, refused by the cloud NOT_LEASE_HOLDER and parked in that computer's dead
   letters. It never reaches another computer (tested).
-- **Stale holder:** if PARTIES moves away from PC2, PC2's later party writes are refused by epoch (tested).
+- **Stale holder:** if PARTIES ever moves away from its holder, that computer's later party writes are refused by
+  epoch (tested).
 - **Older releases:** a release that does not know PARTIES skips it in `current_leases()` and still applies parties,
   whoever wrote them.
 
@@ -77,26 +86,30 @@ refuse its own party writes, showing "catching up", until its pull passes PC1's 
    ```
 
    Expected after: both types PARTIES; MASTER_DATA unchanged; PARTIES holder null, epoch 0, barrier = last party seq.
-4. **Grant PARTIES to PC2** (production, owner only, the established procedure of docs/36 7.6 and 011):
+4. **Grant PARTIES to PC1** (production, owner only, the established procedure of docs/36 7.6 and 011), in the same
+   sitting as step 3 and right after PC1 is on the release (docs/55 section 2: until then PC1's party writes are
+   refused `NO_LEASE_INFO`):
 
    ```sql
    select public.grant_domain_lease(
      'PARTIES',
-     '47c0dace-fe68-42cb-989c-e94f69c62c0f',   -- PC2, DESKTOP-R1V8 (read 7 Nov 2026: confirm before running)
-     'PC2 store'
+     'fd435526-69ba-45f9-bfa0-c1f5933433cd',   -- PC1, "PC1 - writer (MOEEZKHAN)" (read 21 Nov 2026: confirm before running)
+     'PC1 accounts -- parties'
    );
    ```
 
-   Confirm PC2's device id first:
+   Confirm PC1's device id first. It must be the computer that already holds ACCOUNTS and MASTER_DATA:
 
    ```sql
-   select device_id, device_name, is_active, revoked_at, workstation_id from public.device_accounts where device_name ilike '%R1V8%';
+   select device_id, label, is_active, revoked_at, workstation_id from public.device_accounts where device_id = 'fd435526-69ba-45f9-bfa0-c1f5933433cd';
+   select domain, holder_device_id from public.domain_leases where domain in ('ACCOUNTS', 'MASTER_DATA');
    ```
 
    Expected answer: `{"accepted": true, "epoch": 1, "barrierSeq": <the last party seq>, "tookOverFrom": null}`.
-5. **On PC2**, sync once. Party List and Party Form stop showing read-only once PC2 has pulled past the barrier.
-6. **Permission**: an administrator gives the store operator's account **Party Form** (Users → the operator →
-   screens/extras) if it does not have it. Party List (`party-list`) lets them see the list too.
+   **Never grant PARTIES to PC2** (`47c0dace…`, DESKTOP-R1V8).
+5. **On PC1**, sync once. Party List and Party Form stop showing read-only once PC1 has pulled past the barrier. A
+   party saved on PC1 then appears on PC2 and PC3.
+6. **Permission**: unchanged. Whoever already edits parties on PC1 keeps **Party Form** (`party-form`).
 
 **Rollback:** before step 4, `035_parties_lease.down.sql` returns both types to MASTER_DATA and removes the unheld
 domain. After a grant it is refused (the grant is history in `domain_lease_events`, by design); moving parties back
@@ -105,8 +118,7 @@ then means granting MASTER_DATA's holder PARTIES as well, not deleting rows.
 ## Known limits
 
 - **Send again** (Sync health, admin) is gated on MASTER_DATA at the channel, as before. For a party, only a computer
-  holding both MASTER_DATA and PARTIES can use it. Re-sending a party from PC2 needs that gate made per record type.
-  The data layer already picks the right lease.
+  holding both MASTER_DATA and PARTIES can use it. PC1 holds both, so it can.
 - **The backfill** still needs MASTER_DATA and the store lease. It marks parties only on a computer holding PARTIES.
   PC2's backfill was done before this change, so nothing is lost.
-- Customers are parties: after the grant, **customers are added on PC2 too** (owner's choice, Option C).
+- Customers, suppliers and contractors are all added on PC1. PC2 picks from what PC1 sends.

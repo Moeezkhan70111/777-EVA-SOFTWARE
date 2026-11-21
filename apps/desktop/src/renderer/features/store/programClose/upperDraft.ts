@@ -1,19 +1,21 @@
-import { CLAIM_PARTY_ROLE, accountedPairs, claimAmountPaisa, toPaisa, upperReconciliationProblem, type ClaimPartyRole, type UpperClaim, type UpperReconciliation } from "@erp/domain";
+import { CLAIM_PARTY_ROLE, accountedPairs, upperReconciliationProblem, type ClaimPartyRole, type UpperClaim, type UpperReconciliation } from "@erp/domain";
 import type { ReconciliationEntryInput, ReconciliationLine } from "../../../types/desktopApi";
 
 // What the store types for one short upper on the reconciliation, and how it becomes what is sent.
 //
-// The rule it must meet — every remaining pair given exactly one fate, every claim with its party,
-// amount and reason — is the domain's (upperReconciliationProblem), the same one the close applies
-// inside the write lock. The screen uses it only to show the balance and say what is still missing.
+// The rule it must meet — every remaining pair given exactly one fate, every claim with its party and reason — is the
+// domain's (upperReconciliationProblem), the same one the close applies inside the write lock. The screen uses it only
+// to show the balance and say what is still missing.
+//
+// A claim here is a REQUEST: who, how many pairs, and why. The store never types an amount. Accounts prices and posts
+// it on the accounts computer (Claims screen, docs/55).
 
-/** One claim's boxes, as typed. The amount is rupees as typed; it is turned into paisa once, here. */
+/** One claim request's boxes, as typed. */
 export interface ClaimDraft {
   key: string;
   role: ClaimPartyRole;
   supplierPartyId: string | null;
   pairs: string;
-  rate: string;
   reason: string;
 }
 
@@ -28,36 +30,24 @@ export const emptyUpperDraft = (): UpperDraft => ({ cutSizeUppers: "", cutSizePa
 
 let nextKey = 0;
 
-/** A new claim. With one supplier behind the upper, it already names them. */
+/** A new claim request. With one supplier behind the upper, it already names them. */
 export const newClaim = (line: ReconciliationLine): ClaimDraft => ({
   key: `claim-${(nextKey += 1)}`,
   role: CLAIM_PARTY_ROLE.SUPPLIER,
   supplierPartyId: line.suppliers.length === 1 ? line.suppliers[0].partyId : null,
   pairs: "",
-  rate: "",
   reason: "",
 });
 
 /** Digits only: pairs are counted whole. */
 export const cleanCount = (typed: string): string => typed.replace(/[^0-9]/g, "");
 
-/** Rupees with at most two decimals, as a person types them. */
-export const cleanRupees = (typed: string): string => {
-  const kept = typed.replace(/[^0-9.]/g, "");
-  const [whole, ...rest] = kept.split(".");
-  return rest.length === 0 ? whole : `${whole}.${rest.join("").slice(0, 2)}`;
-};
-
 const count = (typed: string): number => (typed.trim() === "" ? 0 : Number(typed));
-
-/** The amount a pair in paisa, or NaN when the box is not a sum of money — which the rule refuses. */
-export const ratePaisaOf = (typed: string): number => (/^\d+(\.\d{1,2})?$/.test(typed.trim()) ? toPaisa(Number(typed)) : Number.NaN);
 
 const claimOf = (draft: ClaimDraft): UpperClaim => ({
   role: draft.role,
   supplierPartyId: draft.role === CLAIM_PARTY_ROLE.SUPPLIER ? draft.supplierPartyId : null,
   pairs: count(draft.pairs),
-  ratePaisa: ratePaisaOf(draft.rate),
   reason: draft.reason,
 });
 
@@ -68,12 +58,6 @@ export const toReconciliation = (draft: UpperDraft): UpperReconciliation => ({
 });
 
 export const toEntry = (lineId: string, draft: UpperDraft): ReconciliationEntryInput => ({ lineId, ...toReconciliation(draft) });
-
-/** What one claim deducts, in paisa — 0 until both boxes are filled in. */
-export const claimTotalPaisa = (draft: ClaimDraft): number => {
-  const claim = claimOf(draft);
-  return Number.isFinite(claim.ratePaisa) && Number.isInteger(claim.pairs) ? claimAmountPaisa(claim) : 0;
-};
 
 /** The line's balance, live: what each way accounts for and what is still unresolved. */
 export const upperBalance = (line: ReconciliationLine, draft: UpperDraft) => {

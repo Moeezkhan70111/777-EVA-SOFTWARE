@@ -19,6 +19,7 @@ import { formatQuantity, materialLabelAttributes, packName, type InventoryItemRo
 import { MaterialPickerTable } from "./MaterialPickerTable";
 import { SelectedRunsTable } from "./SelectedRunsTable";
 import { LabelRunHistory } from "./LabelRunHistory";
+import { useLabelRunHistory } from "./useLabelRunHistory";
 import { LabelRunResult } from "./LabelRunResult";
 import { StockUnitPicker } from "./StockUnitPicker";
 import { labelRunTotals, newLabelRun, runFigures, runIsReady, type LabelRun } from "./labelRuns";
@@ -40,7 +41,6 @@ import { leaseRefusalText } from "../../../shared/leaseRefusal";
 // figure per row: the same material arrives 5 DOZEN to a packet one day and 3 the next, and
 // each label's scans move exactly what its own packet holds.
 
-const RECENT_HISTORY_LIMIT = 10;
 const REQUESTED_BY_MAX = 120;
 
 /** A print waiting for confirmation: the runs on the form, or an earlier run printed again. */
@@ -83,9 +83,8 @@ export const LabelsTab: React.FC<LabelsTabProps> = ({ username, configByItem, pr
 
   const [generating, setGenerating] = useState(false);
   const [registered, setRegistered] = useState<RegisteredRun[]>([]);
-  const [history, setHistory] = useState<RawMaterialQrBatchRow[]>([]);
-  const [loadingHistory, setLoadingHistory] = useState(true);
-  const [historyError, setHistoryError] = useState<string | null>(null);
+  const runHistory = useLabelRunHistory();
+  const loadHistory = runHistory.reload;
   const [confirming, setConfirming] = useState<PrintRequest | null>(null);
   const [erasing, setErasing] = useState<RawMaterialQrBatchRow | null>(null);
 
@@ -99,22 +98,9 @@ export const LabelsTab: React.FC<LabelsTabProps> = ({ username, configByItem, pr
     }
   }, [api, push]);
 
-  const loadHistory = useCallback(async () => {
-    setLoadingHistory(true);
-    setHistoryError(null);
-    try {
-      setHistory(await api.listRawMaterialQrBatches({ limit: RECENT_HISTORY_LIMIT }));
-    } catch (error) {
-      setHistoryError(error instanceof Error ? error.message : copy.states.loadFailedBody);
-    } finally {
-      setLoadingHistory(false);
-    }
-  }, [api]);
-
   useEffect(() => {
     void loadLookups();
-    void loadHistory();
-  }, [loadLookups, loadHistory]);
+  }, [loadLookups]);
 
   const addRun = useCallback(
     (item: InventoryItemRow, perPacket?: number | null) => {
@@ -440,10 +426,14 @@ export const LabelsTab: React.FC<LabelsTabProps> = ({ username, configByItem, pr
       ))}
 
       <LabelRunHistory
-        history={history}
-        loading={loadingHistory}
-        error={historyError}
+        history={runHistory.history}
+        loading={runHistory.loading}
+        error={runHistory.error}
         onReload={() => void loadHistory()}
+        todayCount={runHistory.todayCount}
+        hasMoreToday={runHistory.hasMoreToday}
+        showingToday={runHistory.showingToday}
+        onShowAllToday={runHistory.setShowAllToday}
         configByItem={configByItem}
         unitCodeOf={unitCodeOf}
         identityAt={identityAt}

@@ -61,6 +61,7 @@ export const PAGE_TITLES: Record<AppRoute, string> = {
   "supplier-ledger": "Supplier Ledger",
   "supplier-balance": "Supplier Balance",
   "contractor-ledger": "Contractor Ledger",
+  "party-claims": copy.nav.items.partyClaims.label,
   "cash-voucher-form": "Cash Voucher",
   "cash-voucher-list": "Cash Vouchers",
   profile: "Profile",

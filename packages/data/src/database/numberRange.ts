@@ -193,7 +193,7 @@ export interface NumberSite {
 export const NUMBER_SITES = {
   cashVoucher: { table: "cash_vouchers", column: "voucher_number", parse: { kind: "INT" }, noun: "cash voucher numbers", origin: "origin_device_id", travelsAs: "CASH_VOUCHER" },
   saleVoucher: { table: "sale_vouchers", column: "voucher_number", parse: { kind: "INT" }, noun: "sale voucher numbers", external: true, origin: "origin_device_id", travelsAs: "SALE_VOUCHER" },
-  purchaseVoucher: { table: "purchase_vouchers", column: "voucher_number", parse: { kind: "INT" }, noun: "purchase voucher numbers", external: true, origin: "origin_device_id" },
+  purchaseVoucher: { table: "purchase_vouchers", column: "voucher_number", parse: { kind: "INT" }, noun: "purchase voucher numbers", external: true, origin: "origin_device_id", travelsAs: "PURCHASE_VOUCHER" },
   gatepass: { table: "gatepasses", column: "gatepass_number", parse: { kind: "INT" }, noun: "gatepass numbers", origin: "origin_device_id", travelsAs: "GATEPASS" },
   machineProgram: { table: "machine_programs", column: "program_number", parse: { kind: "INT" }, noun: "machine program numbers", origin: "origin_device_id" },
   manualProduction: { table: "manual_production_entries", column: "entry_number", parse: { kind: "INT" }, noun: "manual production numbers", origin: "origin_device_id", travelsAs: "MANUAL_PRODUCTION_ENTRY" },
@@ -207,7 +207,8 @@ export const NUMBER_SITES = {
   rmIssueSession: { table: "raw_material_issue_sessions", column: "session_number", parse: { kind: "INT" }, noun: "raw material issue numbers", origin: "device_id" },
   storeReceivingSession: { table: "store_receiving_sessions", column: "session_number", parse: { kind: "INT" }, noun: "store receiving numbers", origin: "device_id" },
   storeMoveOutSession: { table: "store_move_out_sessions", column: "session_number", parse: { kind: "INT" }, noun: "store move out numbers", origin: "device_id" },
-  partyClaim: { table: "party_claims", column: "claim_number", parse: { kind: "SUFFIX", from: 4 }, noun: "claim numbers", origin: "origin_device_id" },
+  partyClaim: { table: "party_claims", column: "claim_number", parse: { kind: "SUFFIX", from: 4 }, noun: "claim numbers", origin: "origin_device_id", travelsAs: "PARTY_CLAIM" },
+  claimRequest: { table: "party_claim_requests", column: "request_number", parse: { kind: "SUFFIX", from: 4 }, noun: "claim request numbers", origin: "origin_device_id", travelsAs: "PARTY_CLAIM_REQUEST" },
   removalRequest: { table: "removal_requests", column: "request_code", parse: { kind: "SUFFIX", from: 5 }, where: "request_code LIKE 'DEL-%'", noun: "removal request numbers", origin: "origin_device_id" },
   stockCorrection: { table: "stock_correction_requests", column: "request_code", parse: { kind: "SUFFIX", from: 5 }, where: "request_code LIKE 'SCR-%'", noun: "stock correction numbers", origin: "origin_device_id" },
   machineCode: { table: "machines", column: "machine_code", parse: { kind: "SUFFIX", from: 3 }, where: "machine_code LIKE 'M-%'", noun: "machine codes", origin: "origin_device_id", travelsAs: "MACHINE" },

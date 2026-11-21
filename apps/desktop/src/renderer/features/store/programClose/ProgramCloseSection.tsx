@@ -5,7 +5,7 @@ import { formatMoney } from "../../../app/format";
 import { ConfirmDialog } from "../../../components/shared/ConfirmDialog";
 import { StateView } from "../../../components/shared/StateView";
 import { formatDateTime } from "../../../utils/dates";
-import type { MachineProgramReconciliation, ReconciliationLine } from "../../../types/desktopApi";
+import type { MachineProgramReconciliation, ReconciliationLine, SavedReconciliationClaim } from "../../../types/desktopApi";
 import { FixShortfall } from "./FixShortfall";
 import { FixReconciliation, fixRunsToReconcile } from "./FixReconciliation";
 import { UpperReconciliation, upperLinesToReconcile } from "./UpperReconciliation";
@@ -62,14 +62,25 @@ const SavedLine: React.FC<{ line: ReconciliationLine }> = ({ line }) => {
         {saved.cutSizeUppers > 0 ? <li>{text.summaryCutUpper(saved.cutSizeUppers)}</li> : null}
         {saved.cutSizePairs > 0 ? <li>{text.summaryCutPairs(saved.cutSizePairs)}</li> : null}
         {saved.claims.map((claim, index) => (
-          <li key={claim.claimNumber ?? `legacy-${index}`}>
-            {text.summaryClaim(claim.pairs, claim.partyName, claim.amountPaisa == null ? null : formatMoney(fromPaisa(claim.amountPaisa)), claim.reason, claim.claimNumber)}
-          </li>
+          <li key={claim.requestNumber ?? claim.claimNumber ?? `legacy-${index}`}>{claimSummary(claim)}</li>
         ))}
       </ul>
     </li>
   );
 };
+
+/** Where Accounts has a claim request, in words. */
+const requestStanding = (claim: SavedReconciliationClaim): string => {
+  if (claim.status === "REJECTED") return text.requestRejected;
+  if (claim.status === "POSTED" && claim.claimNumber && claim.amountPaisa != null) return text.requestPosted(claim.claimNumber, formatMoney(fromPaisa(claim.amountPaisa)));
+  return text.requestPending;
+};
+
+/** One claim on a closed program: a request with its standing (docs/55), or a claim posted before requests existed. */
+const claimSummary = (claim: SavedReconciliationClaim): string =>
+  claim.requestNumber
+    ? text.summaryClaimRequest(claim.pairs, claim.partyName, claim.reason, claim.requestNumber, requestStanding(claim))
+    : text.summaryClaim(claim.pairs, claim.partyName, claim.amountPaisa == null ? null : formatMoney(fromPaisa(claim.amountPaisa)), claim.reason, claim.claimNumber);
 
 /** How a closed program was closed, and — when reconciled — what became of every missing pair. */
 const ClosedSummary: React.FC<{ view: MachineProgramReconciliation }> = ({ view }) => {

@@ -6,7 +6,7 @@ import { parseReconciliationEntries } from "./reconciliationInput";
 // Whether the counts add up is the domain's rule, applied by the data layer.
 
 describe("parseReconciliationEntries", () => {
-  it("takes what the screen sends, and keeps a supplier only on a supplier claim", () => {
+  it("takes what the screen sends, keeps a supplier only on a supplier claim, and never an amount (docs/55)", () => {
     const parsed = parseReconciliationEntries([
       {
         lineId: "line-1", cutSizeUppers: 2, cutSizePairs: 3,
@@ -20,8 +20,8 @@ describe("parseReconciliationEntries", () => {
       {
         lineId: "line-1", cutSizeUppers: 2, cutSizePairs: 3,
         claims: [
-          { role: "SUPPLIER", supplierPartyId: "s-1", pairs: 1, ratePaisa: 5000, reason: "torn" },
-          { role: "PACKING", supplierPartyId: null, pairs: 1, ratePaisa: 4000, reason: "lost" },
+          { role: "SUPPLIER", supplierPartyId: "s-1", pairs: 1, reason: "torn" },
+          { role: "PACKING", supplierPartyId: null, pairs: 1, reason: "lost" },
         ],
       },
     ]);
@@ -34,7 +34,7 @@ describe("parseReconciliationEntries", () => {
     expect(parsed[0].cutSizeUppers).toBeNaN();
     expect(parsed[0].cutSizePairs).toBeNaN();
     expect(parsed[0].claims[0].pairs).toBeNaN();
-    expect(parsed[0].claims[0].ratePaisa).toBeNaN();
+    expect(parsed[0].claims[0]).not.toHaveProperty("ratePaisa");
   });
 
   it("refuses a claim against a party this ERP does not know", () => {

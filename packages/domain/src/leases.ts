@@ -22,8 +22,9 @@ export const LEASE_DOMAIN = {
    */
   CARTON_STOCK: "CARTON_STOCK",
   /**
-   * Parties and party groups (docs/51, cloud 035): held by the store computer (PC2), so it can add the supplier or
-   * contractor in front of it. Taken out of MASTER_DATA, which keeps products, sizes, machines, groups and colours.
+   * Parties and party groups (docs/51, cloud 035, docs/55): held by the accounts computer (PC1), which manages every
+   * customer, supplier and contractor. The store computer never holds it. Taken out of MASTER_DATA, which keeps
+   * products, sizes, machines, groups and colours.
    */
   PARTIES: "PARTIES",
 } as const;

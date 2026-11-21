@@ -10,7 +10,7 @@ import { desktopApi } from "../hooks/useDesktopApi";
 import { leaseRefusalText } from "../../shared/leaseRefusal";
 
 /** Parties and machines are master data: written on one computer, read on the others (docs/37 section W). */
-/** Parties are written under their own lease, held by the store computer (docs/51). */
+/** Parties are written under their own lease, held by the accounts computer, PC1 (docs/51, docs/55). */
 const PARTIES_ONLY = [LEASE_DOMAIN.PARTIES] as const;
 
 const MAJOR_PAKISTAN_CITIES = [

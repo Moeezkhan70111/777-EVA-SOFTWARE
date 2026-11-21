@@ -23,7 +23,7 @@ import { IPC } from "../shared/ipcChannels";
 
 const STORE: readonly LeaseDomain[] = [LEASE_DOMAIN.RAW_MATERIAL_STORE];
 const MASTER: readonly LeaseDomain[] = [LEASE_DOMAIN.MASTER_DATA];
-/** Parties and party groups: their own lease, held by the store computer (cloud 035, docs/51). */
+/** Parties and party groups: their own lease, held by the accounts computer, PC1 (cloud 035, docs/51, docs/55). */
 const PARTIES: readonly LeaseDomain[] = [LEASE_DOMAIN.PARTIES];
 const BOTH: readonly LeaseDomain[] = [LEASE_DOMAIN.MASTER_DATA, LEASE_DOMAIN.RAW_MATERIAL_STORE];
 const CARTONS: readonly LeaseDomain[] = [LEASE_DOMAIN.CARTON_STOCK];
@@ -83,7 +83,7 @@ export const LEASED_CHANNELS: Readonly<Record<string, readonly LeaseDomain[]>> =
   [IPC.removeInventoryCategory]: STORE,
   [IPC.setInventoryItemUnit]: STORE,
   [IPC.updateInventoryItemPrice]: STORE,
-  // Parties are written where the store is: their own lease, not MASTER_DATA (cloud 035, docs/51).
+  // Parties are written on the accounts computer, PC1: their own lease, not MASTER_DATA (cloud 035, docs/51, docs/55).
   [IPC.createPartyGroup]: PARTIES,
   [IPC.createParty]: PARTIES,
   [IPC.updateParty]: PARTIES,
@@ -173,6 +173,18 @@ export const LEASED_CHANNELS: Readonly<Record<string, readonly LeaseDomain[]>> =
   [IPC.postPartyOpeningBalance]: ACCOUNTS,
   [IPC.reversePartyOpeningBalance]: ACCOUNTS,
   [IPC.correctPartyOpeningBalance]: ACCOUNTS,
+  // The previous software's ledgers moved in (docs/53): every party's opening balance at once, and an import withdrawn.
+  [IPC.postBulkOpeningBalances]: ACCOUNTS,
+  [IPC.withdrawLedgerArchiveBatch]: ACCOUNTS,
+  // A purchase bill is written where the supplier balances are, and travels from there (docs/54).
+  [IPC.createPurchaseVoucher]: ACCOUNTS,
+  [IPC.updatePurchaseVoucher]: ACCOUNTS,
+  [IPC.deletePurchaseVoucher]: ACCOUNTS,
+  // Claims are priced, posted, reversed and rejected by Accounts, on the accounts computer (docs/55). The store only asks,
+  // inside closing a program (completeMachineProgramProduction, STORE above): it can never post one.
+  [IPC.postPartyClaim]: ACCOUNTS,
+  [IPC.rejectPartyClaimRequest]: ACCOUNTS,
+  [IPC.reversePartyClaim]: ACCOUNTS,
 };
 
 /**

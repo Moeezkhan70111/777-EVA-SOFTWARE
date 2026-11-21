@@ -214,16 +214,26 @@ export const partyOpeningBalanceMethods = {
     checkedRequest(input.requestId, input.actor);
     const posting = checkedPosting(input);
     return this.inOpeningBalanceTransaction(input.partyId, input.requestId, (side, root) => {
-      if (positionOf(root)) {
-        throw new OpeningBalanceRefused("This party already has an opening balance. Correct or reverse it instead. Nothing was saved.");
-      }
-      this.checkArchiveLink(input.partyId, side, posting.archiveStatementId);
-      const id = root ? text(root.id) : this.createOpeningBalanceRoot(input.partyId, side, input.actor);
-      const version = (root ? Number(root.current_version) : 0) + 1;
-      this.writeOpeningBalanceEntry(id, version, OPENING_BALANCE_ACTION.POST, posting, { note: posting.note, reason: null, requestId: input.requestId, actor: input.actor });
-      this.setOpeningPosition(id, version, posting);
-      this.auditOpeningBalance("PARTY_OPENING_BALANCE_POSTED", input.partyId, input.actor, { version, ...posting });
+      this.postOpeningWithin({ partyId: input.partyId, side, root, posting, requestId: input.requestId, actor: input.actor });
     });
+  },
+
+  /**
+   * @internal Posts one party's opening balance. Call ONLY inside BEGIN IMMEDIATE, with the party's current record row.
+   * The one way an opening balance is posted: by the dialog for one party, and by the bulk posting for many.
+   */
+  postOpeningWithin(
+    this: SqliteDatabase,
+    args: { partyId: string; side: LedgerSide; root: Row | undefined; posting: PartyOpeningPosition & { note: string | null }; requestId: string; actor: string }
+  ): void {
+    const { partyId, side, root, posting, requestId, actor } = args;
+    if (positionOf(root)) throw new OpeningBalanceRefused("This party already has an opening balance. Correct or reverse it instead. Nothing was saved.");
+    this.checkArchiveLink(partyId, side, posting.archiveStatementId);
+    const id = root ? text(root.id) : this.createOpeningBalanceRoot(partyId, side, actor);
+    const version = (root ? Number(root.current_version) : 0) + 1;
+    this.writeOpeningBalanceEntry(id, version, OPENING_BALANCE_ACTION.POST, posting, { note: posting.note, reason: null, requestId, actor });
+    this.setOpeningPosition(id, version, posting);
+    this.auditOpeningBalance("PARTY_OPENING_BALANCE_POSTED", partyId, actor, { version, ...posting });
   },
 
   /** Takes a posted opening balance out of the live balance. The history keeps what it was, who, when and why. */
@@ -312,8 +322,8 @@ export const partyOpeningBalanceMethods = {
   /** @internal An archived statement named as the source must be this party's, on this side. */
   checkArchiveLink(this: SqliteDatabase, partyId: string, side: LedgerSide, statementId: string | null): void {
     if (statementId === null) return;
-    const row = this.db.prepare("SELECT party_id, ledger_side FROM ledger_archive_statements WHERE id = ?").get(statementId) as Row | undefined;
-    if (!row || text(row.party_id) !== partyId || text(row.ledger_side) !== side) {
+    const row = this.db.prepare("SELECT party_id, ledger_side, withdrawn_at FROM ledger_archive_statements WHERE id = ?").get(statementId) as Row | undefined;
+    if (!row || text(row.party_id) !== partyId || text(row.ledger_side) !== side || row.withdrawn_at != null) {
       throw new OpeningBalanceRefused("The archived statement named is not this party's. Nothing was saved.");
     }
   },
@@ -402,7 +412,7 @@ export const partyOpeningBalanceMethods = {
       .prepare(
         `SELECT e.statement_id, e.sequence, e.debit_paisa, e.credit_paisa, e.balance_paisa, s.balance_rule
            FROM ledger_archive_entries e JOIN ledger_archive_statements s ON s.id = e.statement_id
-          WHERE s.ledger_side = ? ORDER BY e.statement_id, e.sequence`
+          WHERE s.ledger_side = ? AND s.withdrawn_at IS NULL ORDER BY e.statement_id, e.sequence`
       )
       .all(side) as Row[];
     const byStatement = new Map<string, Row[]>();

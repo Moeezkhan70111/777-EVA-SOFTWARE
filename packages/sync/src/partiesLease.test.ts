@@ -17,6 +17,11 @@ import type { SyncAck, SyncChange, SyncPullTransport, SyncTransport } from "./tr
 // and reads both. Real writers, capture triggers, builders, outbox, drain, pull and appliers; the cloud is a stand-in
 // holding to push_leased_record's rule: a record is accepted only from the holder of ITS TYPE'S lease, at that lease's
 // epoch, read from the same mapping the cloud's leased_record_types holds after 035.
+//
+// THE MECHANISM, NOT THE FACTORY'S ASSIGNMENT. These tests give PARTIES to a computer other than MASTER_DATA's holder,
+// because that is the hard case: the lease is told apart from MASTER_DATA, the barrier, a takeover. In the factory the
+// owner grants PARTIES to PC1, which also holds MASTER_DATA and ACCOUNTS, and the store computer never holds it
+// (docs/55). "PC2" below is only the name of the second writer.
 
 const SCHEMA = path.resolve(import.meta.dirname, "../../data/src/local-schema.sql");
 const PROJECT = "https://test.supabase.co";
