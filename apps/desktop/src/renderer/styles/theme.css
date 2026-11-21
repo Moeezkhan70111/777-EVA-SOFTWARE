@@ -2664,6 +2664,9 @@ select:focus, textarea:focus, .form-input:focus { border-color: var(--primary-bl
   white-space: nowrap;
 }
 
+.qr-history-more { display: flex; justify-content: center; padding: 12px 0 4px; }
+.qr-history-more .btn { min-height: 44px; }
+
 .qr-history-table th:last-child,
 .qr-history-table td:last-child { width: 100; white-space: nowrap; }
 

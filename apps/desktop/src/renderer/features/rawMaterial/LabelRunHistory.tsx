@@ -18,6 +18,11 @@ interface LabelRunHistoryProps {
   loading: boolean;
   error: string | null;
   onReload: () => void;
+  /** How many runs were registered today, and whether some of them are not in the short list. */
+  todayCount: number;
+  hasMoreToday: boolean;
+  showingToday: boolean;
+  onShowAllToday: (showAll: boolean) => void;
   configByItem: Map<string, RawMaterialMovementConfigRow>;
   /** The stock unit a material is counted in — for "PACKET of 5 DOZEN". */
   unitCodeOf: (itemId: string) => string;
@@ -35,6 +40,10 @@ export const LabelRunHistory: React.FC<LabelRunHistoryProps> = ({
   loading,
   error,
   onReload,
+  todayCount,
+  hasMoreToday,
+  showingToday,
+  onShowAllToday,
   configByItem,
   unitCodeOf,
   identityAt,
@@ -48,7 +57,7 @@ export const LabelRunHistory: React.FC<LabelRunHistoryProps> = ({
       <h2 className="card-title">Recent generations</h2>
       <div className="qr-history-header-side">
         <span className="qr-history-count">
-          {history.length === 0 ? "No batches yet" : `Last ${history.length.toLocaleString()} ${history.length === 1 ? "batch" : "batches"}`}
+          {historyCountText(history.length, showingToday)}
         </span>
         {history.length > 0 ? (
           <button
@@ -145,5 +154,18 @@ export const LabelRunHistory: React.FC<LabelRunHistoryProps> = ({
         </table>
       </div>
     )}
+
+    {!loading && !error && hasMoreToday ? (
+      <div className="qr-history-more">
+        <button type="button" className="btn btn-secondary btn-sm" onClick={() => onShowAllToday(!showingToday)}>
+          {showingToday ? copy.labelPrint.historyShowRecent : copy.labelPrint.historySeeAllToday(todayCount)}
+        </button>
+      </div>
+    ) : null}
   </div>
 );
+
+const historyCountText = (count: number, showingToday: boolean): string => {
+  if (count === 0) return copy.labelPrint.historyNone;
+  return showingToday ? copy.labelPrint.historyTodayCount(count) : copy.labelPrint.historyLastCount(count);
+};

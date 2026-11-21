@@ -374,3 +374,38 @@ describe("LabelsTab — erasing a run", () => {
     expect(screen.getByRole("dialog")).toBeInTheDocument();
   });
 });
+
+// Recent generations shows the last 10 runs; a busy day's earlier runs are one press away.
+describe("LabelsTab — seeing all of today's runs", () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  const runs = (count: number): RawMaterialQrBatchRow[] =>
+    Array.from({ length: count }, (_, index) => ({ ...BATCH_1, id: `batch-${index + 1}`, startSequence: index + 1, endSequence: index + 1, quantity: 1 }));
+
+  it("offers every run registered today when there are more than the short list holds", async () => {
+    const api = installApi();
+    api.listRawMaterialQrBatches.mockImplementation(async (input?: { limit?: number; sinceIso?: string }) =>
+      input?.sinceIso ? runs(14) : runs(10)
+    );
+    renderTab();
+
+    expect(await screen.findByText("Last 10 batches")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "See all 14 batches from today" }));
+    expect(screen.getByText("All 14 batches today")).toBeInTheDocument();
+    expect(screen.getAllByTitle("Erase this run")).toHaveLength(14);
+
+    await userEvent.click(screen.getByRole("button", { name: "Show only the latest batches" }));
+    expect(screen.getAllByTitle("Erase this run")).toHaveLength(10);
+  });
+
+  it("offers nothing more when today's runs already fit in the short list", async () => {
+    const api = installApi();
+    api.listRawMaterialQrBatches.mockImplementation(async (input?: { limit?: number; sinceIso?: string }) =>
+      input?.sinceIso ? runs(3) : runs(10)
+    );
+    renderTab();
+
+    expect(await screen.findByText("Last 10 batches")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /batches from today/ })).not.toBeInTheDocument();
+  });
+});

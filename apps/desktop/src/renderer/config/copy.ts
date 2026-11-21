@@ -1173,6 +1173,13 @@ export const copy = {
     cardTitle: "Print labels",
     flowHint: "Supplier → Materials → How many → Print",
 
+    // Recent generations: the last few runs, or on "See all" every run registered today.
+    historyNone: "No batches yet",
+    historyLastCount: (count: number) => `Last ${count.toLocaleString()} ${count === 1 ? "batch" : "batches"}`,
+    historyTodayCount: (count: number) => `All ${count.toLocaleString()} ${count === 1 ? "batch" : "batches"} today`,
+    historySeeAllToday: (count: number) => `See all ${count.toLocaleString()} batches from today`,
+    historyShowRecent: "Show only the latest batches",
+
     // Step 2: picking the materials this run covers
     stepSupplier: "Select Supplier",
     stepMaterials: "Select Material",
