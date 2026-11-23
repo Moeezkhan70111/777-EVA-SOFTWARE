@@ -10555,3 +10555,20 @@ tr.has-error .gp-qty-stepper input { color: var(--err); }
 .claims-field .form-input { min-height: 44px; font-variant-numeric: tabular-nums; }
 .claims-preview { font-size: 1.15rem; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--primary); }
 .claims-problem { color: var(--danger-strong); font-size: 0.85rem; }
+
+/* ─── Gatepass edit, history and delete (local migration 118) ────────────────
+ * Plain cards on the existing tokens. The edit bar says what is being edited and asks
+ * for the reason; the history lists earlier versions; the delete panel asks for a reason. */
+.gp-note { margin: var(--space-2) 0 0; font-size: 0.85rem; color: var(--text-2); }
+.gp-edit-bar { display: flex; flex-direction: column; gap: var(--space-2); border-left: 3px solid var(--warning); }
+.gp-edit-note { margin: 0; font-size: 0.875rem; color: var(--text-2); }
+.gp-edit-reason { display: flex; flex-direction: column; gap: var(--space-1); font-size: 0.8rem; font-weight: 600; color: var(--text-2); }
+.gp-edit-reason .form-input { min-height: 44px; }
+.gp-cancel-panel { display: flex; flex-direction: column; gap: var(--space-3); }
+.gp-history { display: flex; flex-direction: column; gap: var(--space-2); }
+.gp-history-list { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: var(--space-3); }
+.gp-history-item { padding: var(--space-3); border: 1px solid var(--line); border-radius: var(--radius-md); }
+.gp-history-head { display: flex; justify-content: space-between; gap: var(--space-3); font-variant-numeric: tabular-nums; }
+.gp-history-lines { margin: var(--space-1) 0 0; padding-left: var(--space-4); font-size: 0.85rem; color: var(--text-2); }
+.gp-link { min-height: 32px; padding: 0; border: 0; background: none; color: var(--primary); font: inherit; font-weight: 600; cursor: pointer; text-decoration: underline; }
+.gp-link:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; border-radius: var(--radius-sm); }

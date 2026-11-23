@@ -2,7 +2,7 @@ import React from "react";
 import { ColorSwatch } from "../../components/shared/ColorSwatch";
 import { copy } from "../../config/copy";
 import { articleWithGroup } from "../../utils/gatepassGrid";
-import type { DraftArticle, DraftColour } from "./gatepassDraft";
+import { dozensText, type DraftArticle, type DraftColour } from "./gatepassDraft";
 
 // One colour of an article + size on the Gatepass card.
 //
@@ -42,7 +42,7 @@ const OutstandingCell: React.FC<{ progress: LineProgress; quantity: number }> = 
     return <span className="badge badge-ok">{copy.gatepass.issuedDirectly}</span>;
   }
   if (progress.outstanding <= 0) return <span className="badge badge-ok">{copy.gatepass.allMovedOut}</span>;
-  return <>{progress.outstanding}</>;
+  return <>{dozensText(progress.outstanding)}</>;
 };
 
 /**
@@ -56,16 +56,16 @@ const DocumentRow: React.FC<{ article: DraftArticle; colour: DraftColour }> = ({
     <tr className={done ? "is-done" : undefined}>
       <ColourCell colour={colour.colour} />
       <td className="num gp-colour-avail" data-testid={testId("available", article, colour)}>
-        {colour.currentStock}
+        {dozensText(colour.currentStock)}
       </td>
       <td className="num gp-colour-qty">
         <strong className="gp-qty-value" data-testid={testId("qty", article, colour)}>
-          {colour.check.value}
+          {dozensText(colour.check.value ?? 0)}
         </strong>
       </td>
       <td className="num" data-testid={testId("moved-out", article, colour)}>
-        {progress.dispatchedFromStore}
-        {progress.issuedDirectly > 0 ? ` · ${copy.gatepass.issuedDirectlyNote(progress.issuedDirectly)}` : null}
+        {dozensText(progress.dispatchedFromStore)}
+        {progress.issuedDirectly > 0 ? ` · ${copy.gatepass.issuedDirectlyNote(dozensText(progress.issuedDirectly))}` : null}
       </td>
       <td className="num" data-testid={testId("outstanding", article, colour)}>
         <OutstandingCell progress={progress} quantity={colour.check.value ?? 0} />
@@ -94,13 +94,13 @@ export const ColourRow: React.FC<ColourRowProps> = ({ article, colour, inputRef,
     <tr className={rowClass || undefined}>
       <ColourCell colour={colour.colour} />
       <td className="num gp-colour-avail" data-testid={testId("current", article, colour)}>
-        {colour.currentStock}
+        {dozensText(colour.currentStock)}
       </td>
       <td className="num gp-colour-reserved" data-testid={testId("reserved", article, colour)}>
-        {colour.reserved}
+        {dozensText(colour.reserved)}
       </td>
       <td className="num gp-colour-reflected" data-testid={testId("available", article, colour)}>
-        <strong>{colour.reflected}</strong>
+        <strong>{dozensText(colour.reflected)}</strong>
         {fullyReserved && <span className="gp-reserved-note">{copy.gatepass.fullyReserved}</span>}
       </td>
       <td className="gp-colour-qty">
@@ -112,7 +112,7 @@ export const ColourRow: React.FC<ColourRowProps> = ({ article, colour, inputRef,
             <input
               ref={inputRef}
               type="text"
-              inputMode="numeric"
+              inputMode="decimal"
               placeholder="0"
               aria-label={copy.gatepass.quantityFor(label)}
               aria-invalid={Boolean(colour.check.error)}
@@ -142,7 +142,7 @@ export const ColourRow: React.FC<ColourRowProps> = ({ article, colour, inputRef,
         )}
         {goesBelowZero && !colour.check.error && (
           <div id={warningId} className="gp-qty-warning" data-testid={testId("below-zero", article, colour)}>
-            ⚠ {copy.gatepass.goesBelowZero(colour.after)}
+            ⚠ {copy.gatepass.goesBelowZero(dozensText(colour.after))}
           </div>
         )}
       </td>

@@ -1,4 +1,4 @@
-import { stockAfterGatepass } from "@erp/domain";
+import { cartonsToDozens, dozensToCartons, stockAfterGatepass } from "@erp/domain";
 import type { Gatepass, GatepassLineInput } from "../../types/desktopApi";
 import { articleWithGroup, compareNatural, rowKeyOf, type StockGrid, type StockGridRow } from "../../utils/gatepassGrid";
 import { copy } from "../../config/copy";
@@ -8,7 +8,7 @@ import { copy } from "../../config/copy";
 // The clerk adds an article + size ("SK6 · 7/10"), sees every colour the store holds for
 // it with its three figures — Current Stock (physically In Store), Reserved (owed to other
 // outstanding Gatepasses) and Reflected Stock (what this document may take) — and types how
-// many cartons go on the Gatepass. More than Reflected Stock is allowed (owner, 12 Nov 2026): the
+// many dozens go on the Gatepass (stored as cartons, below). More than Reflected Stock is allowed (owner, 12 Nov 2026): the
 // store goes below zero until Manual Production makes it up, and the line says so. This module turns those
 // typed texts into checked quantities, per-article totals and the lines that are sent to
 // CreateGatepassUseCase. No React, no I/O — the page and the summary panel both read from
@@ -17,10 +17,17 @@ import { copy } from "../../config/copy";
 // Nothing here moves stock: the use case re-reads all three figures inside its transaction.
 
 // ─── Quantity validation ─────────────────────────────────────────────────────
-// Empty and "0" both mean "this colour is not on the Gatepass".
+// The desk types DOZENS (owner, 23 Nov 2026: "make every calculation in dozen"). The gatepass is stored in CARTONS,
+// because one QR is one carton and stock, scanning and dispatch all count cartons (@erp/domain units.ts: 1 dozen =
+// 2 cartons). So a typed 5 is 10 cartons, and 2.5 is 5. Half a dozen is one carton, the smallest amount there is:
+// 2.25 is refused rather than rounded. Empty and "0" both mean "this colour is not on the Gatepass".
+// Every figure in this model stays in cartons; screens show it in dozens through dozensText.
+
+/** Cartons as the dozens the desk reads and types: 10 → "5", 5 → "2.5". */
+export const dozensText = (cartons: number): string => String(cartonsToDozens(cartons));
 
 export interface QuantityCheck {
-  /** Parsed cartons; 0 when the box is empty; null when the text is not usable. */
+  /** The typed dozens, in cartons; 0 when the box is empty; null when the text is not usable. */
   value: number | null;
   error: string | null;
 }
@@ -29,16 +36,17 @@ export const checkQuantity = (text: string): QuantityCheck => {
   const trimmed = text.trim();
   if (trimmed === "") return { value: 0, error: null };
   if (!/^-?\d+(\.\d+)?$/.test(trimmed)) return { value: null, error: copy.gatepass.qtyNotWhole };
-  const value = Number(trimmed);
-  if (value < 0) return { value: null, error: copy.gatepass.qtyNegative };
-  if (!Number.isInteger(value)) return { value: null, error: copy.gatepass.qtyFraction };
-  return { value, error: null };
+  const dozens = Number(trimmed);
+  if (dozens < 0) return { value: null, error: copy.gatepass.qtyNegative };
+  const cartons = dozensToCartons(dozens);
+  if (Math.abs(cartons - Math.round(cartons)) > 1e-9) return { value: null, error: copy.gatepass.qtyFraction };
+  return { value: Math.round(cartons), error: null };
 };
 
-/** The − / + buttons: one carton up or down from what is typed, never below 0. Above Reflected Stock is allowed. */
+/** The − / + buttons: one dozen up or down from what is typed, never below 0. Above Reflected Stock is allowed. */
 export const stepQuantity = (text: string, delta: 1 | -1): number => {
   const parsed = Number(text.trim());
-  const current = Number.isInteger(parsed) ? parsed : 0;
+  const current = Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
   return Math.max(0, current + delta);
 };
 
@@ -173,7 +181,7 @@ export const buildDraftFromDocument = (document: Pick<Gatepass, "lines">): Gatep
       reflected: line.storeQuantityAtCreation,
       available: line.storeQuantityAtCreation,
       after: stockAfterGatepass(line.storeQuantityAtCreation, line.quantity),
-      text: String(line.quantity),
+      text: dozensText(line.quantity),
       check: { value: line.quantity, error: null },
       progress: { dispatchedFromStore: line.dispatchedFromStoreQuantity, issuedDirectly: line.issuedDirectlyQuantity, outstanding: line.outstandingQuantity },
     });

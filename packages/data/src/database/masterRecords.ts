@@ -213,7 +213,12 @@ export const MASTER_RECORDS: Readonly<Record<MasterRecordType, RecordTableSpec>>
     table: "gatepasses",
     localColumns: ["request_id", "request_fingerprint"],
     references: [partyRef("party_id")],
-    children: [{ table: "gatepass_lines", parentColumn: "gatepass_id", references: [variantRef] }],
+    // Its versions (local migration 118) travel with it, so its edit history reads the same on every computer. A
+    // receiver on an older build has no such table and writes only the children it knows: the gatepass still lands.
+    children: [
+      { table: "gatepass_lines", parentColumn: "gatepass_id", references: [variantRef] },
+      { table: "gatepass_versions", parentColumn: "gatepass_id" },
+    ],
   },
   [SYNC_AGGREGATE.SALE_VOUCHER]: {
     table: "sale_vouchers",

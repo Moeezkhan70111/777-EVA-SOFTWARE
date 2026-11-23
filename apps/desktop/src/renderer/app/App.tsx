@@ -140,6 +140,11 @@ export const App = () => {
   React.useEffect(() => {
     if (route !== "qr-generator") setReconcileProgramId(null);
   }, [route]);
+  /** The gatepass the Gatepass screen opens straight into an edit (Edit on Gatepass List). For that one visit. */
+  const [gatepassToEdit, setGatepassToEdit] = useState<string | undefined>(undefined);
+  React.useEffect(() => {
+    if (route !== "gatepass") setGatepassToEdit(undefined);
+  }, [route]);
   const [appVersion, setAppVersion] = useState("");
 
   const auth = useAuthSession({ api, push, route, setRoute });
@@ -211,6 +216,11 @@ export const App = () => {
     setSelectedProductId(undefined);
     setSaleVoucherGatepassId(gatepassId);
     setRoute("sale-voucher-form");
+  }, []);
+  /** Edit on Gatepass List: the Gatepass screen, opened on that gatepass's edit. */
+  const editGatepass = useCallback((gatepassId: string) => {
+    setGatepassToEdit(gatepassId);
+    setRoute("gatepass");
   }, []);
   /** Every other gatepass notice opens the document itself, where its journey is shown. */
   const openGatepassDocument = useCallback((gatepassId: string) => {
@@ -548,6 +558,10 @@ export const App = () => {
             token={sessionToken ?? ""}
             username={session.username}
             onNavigate={navigateTo}
+            // Make Bill only for someone who may open Sale Voucher, on a computer that offers it.
+            onMakeBill={canOpenRoute(session, "sale-voucher-form") && !hiddenRoutes.has("sale-voucher-form") ? openSaleVoucherForGatepass : undefined}
+            canEdit={hasPermission(session, PERMISSION.GATEPASS_EDIT)}
+            editGatepassId={gatepassToEdit}
           />
         );
       case "gatepass-list":
@@ -556,6 +570,8 @@ export const App = () => {
             token={sessionToken ?? ""}
             username={session.username}
             canCancel={hasPermission(session, PERMISSION.GATEPASS_CANCEL)}
+            canDelete={hasPermission(session, PERMISSION.GATEPASS_DELETE)}
+            onEdit={hasPermission(session, PERMISSION.GATEPASS_EDIT) ? editGatepass : undefined}
             permissions={session.permissions ?? []}
             isAdmin={session.role === "ADMIN"}
             initialGatepassId={selectedProductId}
@@ -722,6 +738,9 @@ export const App = () => {
     leavePartyForm,
     navigateTo,
     navigateToParty,
+    openSaleVoucherForGatepass,
+    editGatepass,
+    gatepassToEdit,
     requestStatus,
     route,
     saleVoucherGatepassId,

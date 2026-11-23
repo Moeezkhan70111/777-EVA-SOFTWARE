@@ -347,6 +347,8 @@ contextBridge.exposeInMainWorld("desktop", {
       ipcRenderer.invoke(IPC.getGatepassDeliveryProof, gatepassId, opts),
     listGatepasses: (query?: Record<string, unknown>, opts?: { token?: string }) => ipcRenderer.invoke(IPC.listGatepasses, query, opts),
     cancelGatepass: (input: Record<string, unknown>, opts?: { token?: string }) => ipcRenderer.invoke(IPC.cancelGatepass, input, opts),
+    editGatepass: (input: Record<string, unknown>, opts?: { token?: string }) => ipcRenderer.invoke(IPC.editGatepass, input, opts),
+    deleteGatepass: (input: Record<string, unknown>, opts?: { token?: string }) => ipcRenderer.invoke(IPC.deleteGatepass, input, opts),
     getItemStatus: (qrId: string) => ipcRenderer.invoke(IPC.getItemStatus, qrId),
     // This computer's document-number range. The status is read-only; adopt takes no block
     // number — it records block 1 for the installation that already holds the numbered

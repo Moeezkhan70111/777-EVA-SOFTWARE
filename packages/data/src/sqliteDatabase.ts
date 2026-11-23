@@ -68,6 +68,7 @@ import { manualProductionVoidMethods, type ManualProductionVoidMethods } from ".
 import { manualProductionEditMethods, type ManualProductionEditMethods } from "./database/manualProductionEdit.js";
 import { productionDayMethods, type ProductionDayMethods } from "./database/productionDays.js";
 import { gatepassCartonsMethods, type GatepassCartonsMethods } from "./database/gatepassCartons.js";
+import { gatepassEditMethods, type GatepassEditMethods } from "./database/gatepassEdit.js";
 import { cartonStockAdjustMethods, type CartonStockAdjustMethods } from "./database/cartonStockAdjust.js";
 import { cartonStockDocumentMethods, type CartonStockDocumentMethods } from "./database/cartonStockDocuments.js";
 import { handVoucherMethods, type HandVoucherMethods } from "./database/handVouchers.js";
@@ -1732,6 +1733,7 @@ export interface SqliteDatabase
     ManualProductionEditMethods,
     ProductionDayMethods,
     GatepassCartonsMethods,
+    GatepassEditMethods,
     CartonStockAdjustMethods,
     CartonStockDocumentMethods,
     HandVoucherMethods,
@@ -1795,6 +1797,7 @@ Object.assign(
   manualProductionEditMethods,
   productionDayMethods,
   gatepassCartonsMethods,
+  gatepassEditMethods,
   cartonStockAdjustMethods,
   cartonStockDocumentMethods,
   handVoucherMethods,

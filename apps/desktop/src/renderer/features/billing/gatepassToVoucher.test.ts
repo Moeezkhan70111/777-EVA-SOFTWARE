@@ -6,7 +6,7 @@ import { notificationTarget } from "../users/notificationTarget";
 const gatepass: Gatepass = {
   id: "gp-7", code: "GP-000007", gatepassNumber: 7, partyId: "p-abc", partyName: "ABC Traders", partyCode: "P-0001", partyCity: "Lahore",
   gatepassDate: "2026-09-18", status: "CREATED", biltyNumber: "B-4471", transportVia: null, remarks: null, totalQuantity: 27, dispatchedFromStoreQuantity: 0, issuedDirectlyQuantity: 0, outstandingQuantity: 27, lineCount: 4,
-  createdBy: "clerk", createdAt: "", updatedAt: "", cancelledAt: null, cancelledBy: null, cancelReason: null,
+  createdBy: "clerk", createdAt: "", updatedAt: "", cancelledAt: null, cancelledBy: null, cancelReason: null, revisionNo: 1, editedAt: null, editedBy: null, deletedAt: null, deletedBy: null, deleteReason: null, versions: [],
   lines: [
     { id: "l1", lineNo: 1, productVariantId: "v-blue", groupName: null, article: "SK6", color: "BLUE", size: "7/10", quantity: 20, storeQuantityAtCreation: 120, dispatchedFromStoreQuantity: 0, issuedDirectlyQuantity: 0, outstandingQuantity: 20 },
     { id: "l2", lineNo: 2, productVariantId: "v-black-l", groupName: null, article: "SK9", color: "BLACK", size: "11/13", quantity: 3, storeQuantityAtCreation: 40, dispatchedFromStoreQuantity: 0, issuedDirectlyQuantity: 0, outstandingQuantity: 3 },

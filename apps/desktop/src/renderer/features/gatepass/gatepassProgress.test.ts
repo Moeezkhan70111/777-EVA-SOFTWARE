@@ -7,8 +7,10 @@ import { deskDoneMessage, deskIdleMessage, describeStoreProgress, gateHasQrPart,
 const figures = (total: number, issuedDirectly: number, scanned: number, remaining: number) => ({ total, issuedDirectly, scanned, remaining });
 
 describe("describeStoreProgress", () => {
-  it("a QR-only gatepass keeps its familiar words", () => {
-    expect(describeStoreProgress(figures(5, 0, 2, 3))).toBe("2 of 5 moved out");
+  it("a QR-only gatepass keeps its familiar words, in dozens (owner, 23 Nov 2026)", () => {
+    // 4 of 10 cartons: 2 of 5 dozen.
+    expect(describeStoreProgress(figures(10, 0, 4, 6))).toBe("2 of 5 DZN moved out");
+    expect(describeStoreProgress(figures(5, 0, 1, 4))).toBe("0.5 of 2.5 DZN moved out");
     expect(describeStoreProgress(figures(5, 0, 5, 0))).toBe("All moved out");
   });
 

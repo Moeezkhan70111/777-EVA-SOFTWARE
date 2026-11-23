@@ -5,6 +5,7 @@ import { formatGatepassDate, formatGatepassDateTime } from "../../utils/gatepass
 import { PartyCard } from "../parties/PartyCard";
 import type { PartyBalanceState } from "../parties/usePartyBalance";
 import { describeStoreProgress, type CartonFigures } from "./gatepassProgress";
+import { dozensText } from "./gatepassDraft";
 
 // The top of a stored Gatepass, read-only: the party (with today's balance), the book's
 // header facts, how much of it Store Move Out has taken so far, and — when it was
@@ -39,7 +40,7 @@ export const GatepassDocumentHead: React.FC<GatepassDocumentHeadProps> = ({ docu
   // Only a gatepass that issued cartons directly gets the breakdown: a QR-only one reads as it always did.
   if (document.issuedDirectlyQuantity > 0) {
     facts.push(
-      [copy.gatepass.totalCartons, String(document.totalQuantity)],
+      [copy.gatepass.totalCartons, dozensText(document.totalQuantity)],
       [copy.gatepass.issuedDirectly, String(document.issuedDirectlyQuantity)],
       [copy.gatepass.scannedOut, String(document.dispatchedFromStoreQuantity)],
       [copy.gatepass.remainingToScan, String(document.outstandingQuantity)]

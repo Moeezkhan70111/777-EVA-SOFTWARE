@@ -2,7 +2,7 @@ import React, { useRef } from "react";
 import { copy } from "../../config/copy";
 import { ProductThumb } from "./ProductThumb";
 import { ColourRow } from "./ColourRow";
-import { articleLabel, articleSlug, type DraftArticle } from "./gatepassDraft";
+import { articleLabel, articleSlug, dozensText, type DraftArticle } from "./gatepassDraft";
 
 // One article + size on the Gatepass. Open: a row per colour — Current Stock, Reserved and
 // Reflected Stock beside a box for the cartons being cut (never more than Reflected Stock).
@@ -37,7 +37,7 @@ const TrashIcon = () => (
 const collapsedMeta = (article: DraftArticle): string => {
   if (article.errorCount > 0) return `⚠ ${copy.gatepass.needsAttention(article.errorCount)}`;
   if (article.selectedCount === 0) return copy.gatepass.noQuantityYet;
-  return `${copy.gatepass.colorsSelected(article.selectedCount)} · ${copy.gatepass.totalQty(article.total)}`;
+  return `${copy.gatepass.colorsSelected(article.selectedCount)} · ${copy.gatepass.totalQty(dozensText(article.total))}`;
 };
 
 /** Column headings: the three live figures when writing; the creation snapshot and move-out progress when reading. */
@@ -47,17 +47,17 @@ const TableHead: React.FC<{ readOnly?: boolean }> = ({ readOnly }) => (
       <th scope="col">{copy.columns.color}</th>
       {readOnly ? (
         <>
-          <th scope="col" className="num">{copy.gatepass.stockAtCreation}</th>
-          <th scope="col" className="num">{copy.gatepass.gatepassQty}</th>
-          <th scope="col" className="num">{copy.gatepass.movedOut}</th>
-          <th scope="col" className="num">{copy.gatepass.outstanding}</th>
+          <th scope="col" className="num">{copy.gatepass.inDozens(copy.gatepass.stockAtCreation)}</th>
+          <th scope="col" className="num">{copy.gatepass.inDozens(copy.gatepass.gatepassQty)}</th>
+          <th scope="col" className="num">{copy.gatepass.inDozens(copy.gatepass.movedOut)}</th>
+          <th scope="col" className="num">{copy.gatepass.inDozens(copy.gatepass.outstanding)}</th>
         </>
       ) : (
         <>
-          <th scope="col" className="num">{copy.gatepass.currentStock}</th>
-          <th scope="col" className="num">{copy.gatepass.reserved}</th>
-          <th scope="col" className="num gp-th-reflected">{copy.gatepass.reflectedStock}</th>
-          <th scope="col">{copy.gatepass.gatepassQty}</th>
+          <th scope="col" className="num">{copy.gatepass.inDozens(copy.gatepass.currentStock)}</th>
+          <th scope="col" className="num">{copy.gatepass.inDozens(copy.gatepass.reserved)}</th>
+          <th scope="col" className="num gp-th-reflected">{copy.gatepass.inDozens(copy.gatepass.reflectedStock)}</th>
+          <th scope="col">{copy.gatepass.inDozens(copy.gatepass.gatepassQty)}</th>
         </>
       )}
     </tr>

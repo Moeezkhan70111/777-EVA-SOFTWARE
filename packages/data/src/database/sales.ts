@@ -70,7 +70,7 @@ const manualVoucherFingerprint = (input: ManualSaleVoucherInput): string =>
 const DISCOUNT_SOURCES = new Set<string>(Object.values(DISCOUNT_SOURCE));
 
 /** One key for an article + size, however the two were typed. */
-const articleSizeKey = (article: string, size: string): string =>
+export const articleSizeKey = (article: string, size: string): string =>
   `${String(article ?? "").trim().toUpperCase()}|||${String(size ?? "").trim().toUpperCase()}`;
 
 /** A stored discount_source, or NONE for anything the column should never hold. */

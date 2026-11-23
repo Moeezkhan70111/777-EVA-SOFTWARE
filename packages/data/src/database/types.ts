@@ -603,7 +603,32 @@ export interface GatepassRecord {
   cancelledAt: string | null;
   cancelledBy: string | null;
   cancelReason: string | null;
+  /** 1 as made; each edit adds one (local migration 118). */
+  revisionNo: number;
+  editedAt: string | null;
+  editedBy: string | null;
+  /** A cancelled gatepass deleted from the lists. Kept, never erased. */
+  deletedAt: string | null;
+  deletedBy: string | null;
+  deleteReason: string | null;
+  /** What it was before each edit, oldest first. */
+  versions: GatepassVersionRecord[];
   lines: GatepassLineRecord[];
+}
+
+/** One earlier version of an edited gatepass, as it was before an edit replaced it. */
+export interface GatepassVersionRecord {
+  versionNo: number;
+  partyId: string;
+  partyName: string;
+  biltyNumber: string | null;
+  transportVia: string | null;
+  remarks: string | null;
+  totalQuantity: number;
+  lines: Array<{ productVariantId: string; article: string; color: string; size: string; quantity: number; issuedDirectlyQuantity: number }>;
+  replacedAt: string;
+  replacedBy: string;
+  reason: string;
 }
 
 export interface GatepassListRow {
@@ -623,6 +648,10 @@ export interface GatepassListRow {
   articles: string[];
   createdBy: string | null;
   createdAt: string;
+  /** Only on the deleted gatepasses' log. */
+  deletedAt?: string | null;
+  deletedBy?: string | null;
+  deleteReason?: string | null;
 }
 
 /**
@@ -708,6 +737,8 @@ export interface GatepassListQuery {
   fromDate?: string;
   toDate?: string;
   status?: GatepassStatus | "ALL";
+  /** True for the deleted gatepasses' log only. Otherwise a deleted gatepass is never listed. */
+  deleted?: boolean;
   page?: number;
   pageSize?: number;
 }

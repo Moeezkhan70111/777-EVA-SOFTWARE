@@ -1,3 +1,4 @@
+import { cartonsToDozens } from "@erp/domain";
 import type { Gatepass } from "../types/desktopApi";
 import { buildDocumentGrid } from "./gatepassGrid";
 import { escapeHtml } from "./html";
@@ -92,6 +93,9 @@ const PRINT_STYLES = `
   }
 `;
 
+/** A printed quantity: the gatepass holds cartons, the paper says dozens (owner, 23 Nov 2026). 10 → "5", 5 → "2.5". */
+const inDozens = (cartons: number): string => String(cartonsToDozens(cartons));
+
 /** Empty rows keep the printed grid the height of a book page, with room to add by hand. */
 const MIN_GRID_ROWS = 8;
 
@@ -111,15 +115,15 @@ export const renderGatepassPrintHtml = (gatepass: Gatepass, options: GatepassPri
       (row) => `<tr>
         <th scope="row">${escapeHtml(row.article)}${row.groupName ? `<small>${escapeHtml(row.groupName)}</small>` : ""}</th>
         <td class="size">${escapeHtml(row.size)}</td>
-        ${grid.colours.map((colour) => `<td>${row.quantities[colour] ? escapeHtml(row.quantities[colour]) : ""}</td>`).join("")}
-        <td class="total">${escapeHtml(row.total)}</td>
+        ${grid.colours.map((colour) => `<td>${row.quantities[colour] ? escapeHtml(inDozens(row.quantities[colour])) : ""}</td>`).join("")}
+        <td class="total">${escapeHtml(inDozens(row.total))}</td>
       </tr>`
     )
     .join("");
   const blankRows = Array.from({ length: Math.max(0, MIN_GRID_ROWS - grid.rows.length) })
     .map(() => `<tr class="blank"><th></th><td class="size"></td>${grid.colours.map(() => "<td></td>").join("") || "<td></td>"}<td class="total"></td></tr>`)
     .join("");
-  const footCells = grid.colours.map((colour) => `<td>${grid.columnTotals[colour] ? escapeHtml(grid.columnTotals[colour]) : ""}</td>`).join("") || "<td></td>";
+  const footCells = grid.colours.map((colour) => `<td>${grid.columnTotals[colour] ? escapeHtml(inDozens(grid.columnTotals[colour])) : ""}</td>`).join("") || "<td></td>";
 
   const field = (label: string, value: string | null | undefined, extraClass = "") =>
     `<div class="field"><label>${escapeHtml(label)}</label><span class="val ${value ? "" : "blank"} ${extraClass}">${escapeHtml(value ?? "")}</span></div>`;
@@ -166,11 +170,11 @@ export const renderGatepassPrintHtml = (gatepass: Gatepass, options: GatepassPri
         <col style="width:11%" />
       </colgroup>
       <thead>
-        <tr><th class="article">Article</th><th class="size">Size</th>${headerCells || "<th></th>"}<th class="total">Total</th></tr>
+        <tr><th class="article">Article</th><th class="size">Size</th>${headerCells || "<th></th>"}<th class="total">Total (DZN)</th></tr>
       </thead>
       <tbody>${bodyRows}${blankRows}</tbody>
       <tfoot>
-        <tr><th colspan="2">Total cartons</th>${footCells}<td class="total">${escapeHtml(grid.total)}</td></tr>
+        <tr><th colspan="2">Total (DZN)</th>${footCells}<td class="total">${escapeHtml(inDozens(grid.total))}</td></tr>
       </tfoot>
     </table>
 

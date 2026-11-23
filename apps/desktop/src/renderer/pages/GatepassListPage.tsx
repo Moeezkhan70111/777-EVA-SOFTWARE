@@ -12,6 +12,11 @@ import { copy } from "../config/copy";
 import { GatepassStatusBadge as StatusBadge } from "../features/gatepass/GatepassStatusBadge";
 import { describeMoveOutProgress } from "../features/gatepass/GatepassDocumentHead";
 import { gateHasQrPart, storeOwesScan } from "../features/gatepass/gatepassProgress";
+import { dozensText } from "../features/gatepass/gatepassDraft";
+import { canEditGatepass } from "../features/gatepass/gatepassEdit";
+import { GatepassEditHistory } from "../features/gatepass/GatepassEditHistory";
+import { DeletedGatepassBanner, GatepassDeletePanel } from "../features/gatepass/GatepassDeletePanel";
+import { DeletedGatepassLog } from "../features/gatepass/DeletedGatepassLog";
 import { StateView } from "../components/shared/StateView";
 import { useDataChanged } from "../hooks/useDataChanged";
 import { DATA_KIND } from "../../shared/dataChange";
@@ -74,12 +79,16 @@ interface GatepassListPageProps {
   username: string;
   /** Whether the signed-in user may cancel (admin or the gatepass-cancel permission). */
   canCancel: boolean;
+  /** Whether the signed-in user may delete a cancelled gatepass (admin or gatepass-delete). */
+  canDelete?: boolean;
+  /** Opens the gatepass on the Gatepass screen to edit it. Absent for someone who may not edit. */
+  onEdit?: (gatepassId: string) => void;
   /** Open this document straight away (e.g. right after creating it). */
   initialGatepassId?: string;
   onNavigate: (route: AppRoute, id?: string) => void;
 }
 
-export const GatepassListPage: React.FC<GatepassListPageProps> = ({ token, username, canCancel, permissions = [], isAdmin = false, initialGatepassId, onNavigate }) => {
+export const GatepassListPage: React.FC<GatepassListPageProps> = ({ token, username, canCancel, canDelete = false, onEdit, permissions = [], isAdmin = false, initialGatepassId, onNavigate }) => {
   const api = useDesktopApi();
   const { push } = useNotifications();
 
@@ -114,6 +123,9 @@ export const GatepassListPage: React.FC<GatepassListPageProps> = ({ token, usern
   const [cancelReason, setCancelReason] = useState("");
   const [cancelling, setCancelling] = useState(false);
   const [cancelError, setCancelError] = useState<string | null>(null);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  /** The deleted gatepasses' log in place of the list (local migration 118). */
+  const [showDeleted, setShowDeleted] = useState(false);
 
   // Debounced search text so typing does not fire a query per keystroke.
   const [searchTerm, setSearchTerm] = useState("");
@@ -253,6 +265,7 @@ export const GatepassListPage: React.FC<GatepassListPageProps> = ({ token, usern
 
   const openDetail = (id: string) => {
     setSelectedId(id);
+    setDeleteOpen(false);
     setCancelOpen(false);
     setCancelReason("");
     setCancelError(null);
@@ -262,6 +275,13 @@ export const GatepassListPage: React.FC<GatepassListPageProps> = ({ token, usern
     setSelectedId(undefined);
     setDetail(null);
     setCancelOpen(false);
+    setDeleteOpen(false);
+  };
+
+  const afterDelete = () => {
+    setDeleteOpen(false);
+    setDetailVersion((version) => version + 1);
+    void load();
   };
 
   const print = () => {
@@ -288,9 +308,9 @@ export const GatepassListPage: React.FC<GatepassListPageProps> = ({ token, usern
       push(
         "success",
         `Gatepass ${result.code ?? detail.code} cancelled`,
-        `by ${username} · ${result.releasedQuantity ?? 0} reserved cartons released` +
-          (result.returnedToStockQuantity ? ` · ${copy.gatepass.issuedBackInStock(result.returnedToStockQuantity)}` : "") +
-          (result.dispatchedFromStoreQuantity ? ` · ${result.dispatchedFromStoreQuantity} already moved out stay moved out` : "")
+        `by ${username} · ${dozensText(result.releasedQuantity ?? 0)} DZN reserved released` +
+          (result.returnedToStockQuantity ? ` · ${copy.gatepass.issuedBackInStock(dozensText(result.returnedToStockQuantity))}` : "") +
+          (result.dispatchedFromStoreQuantity ? ` · ${dozensText(result.dispatchedFromStoreQuantity)} DZN already moved out stay moved out` : "")
       );
       setCancelOpen(false);
       setCancelReason("");
@@ -362,11 +382,21 @@ export const GatepassListPage: React.FC<GatepassListPageProps> = ({ token, usern
                   Scan for Dispatch →
                 </button>
               ) : null}
-              {canCancel && detail.status === "CREATED" && (
+              {onEdit && canEditGatepass(detail) ? (
+                <button type="button" className="btn btn-secondary" onClick={() => onEdit(detail.id)} data-testid="gatepass-list-edit">
+                  {copy.gatepass.edit}
+                </button>
+              ) : null}
+              {canCancel && detail.status === "CREATED" && !detail.deletedAt && (
                 <button type="button" className="btn btn-danger" onClick={() => setCancelOpen(true)} data-testid="gatepass-cancel-open">
                   Cancel Gatepass
                 </button>
               )}
+              {canDelete && detail.status === "CANCELLED" && !detail.deletedAt ? (
+                <button type="button" className="btn btn-danger" onClick={() => setDeleteOpen(true)} data-testid="gatepass-delete-open">
+                  {copy.gatepass.deletePermanently}
+                </button>
+              ) : null}
               <button type="button" className="btn btn-primary" onClick={() => onNavigate("gatepass")}>
                 + New Gatepass
               </button>
@@ -380,12 +410,18 @@ export const GatepassListPage: React.FC<GatepassListPageProps> = ({ token, usern
           <div className="empty-state">This Gatepass could not be found.</div>
         ) : (
           <>
+            <DeletedGatepassBanner document={detail} />
+            {deleteOpen && !detail.deletedAt ? (
+              <GatepassDeletePanel document={detail} token={token} onClose={() => setDeleteOpen(false)} onDeleted={afterDelete} />
+            ) : null}
             {detail.status === "CANCELLED" && (
               <div className="gp-alert gp-alert--warn" role="status" data-testid="gatepass-cancelled-banner">
                 <strong>Cancelled</strong> {formatGatepassDateTime(detail.cancelledAt)} by {detail.cancelledBy ?? "—"}
                 {detail.cancelReason ? ` — ${detail.cancelReason}` : ""}. The lines below are kept for history.
               </div>
             )}
+
+            <GatepassEditHistory document={detail} />
 
             <section className="card gp-card gp-journey-card" aria-label="Gatepass journey">
               <span className="card-eyebrow">Journey</span>
@@ -428,7 +464,7 @@ export const GatepassListPage: React.FC<GatepassListPageProps> = ({ token, usern
                 </div>
                 <div>
                   <span className="card-eyebrow">Total quantity</span>
-                  <strong data-testid="gatepass-detail-total">{detail.totalQuantity} cartons</strong>
+                  <strong data-testid="gatepass-detail-total">{dozensText(detail.totalQuantity)} DZN</strong>
                   <span className="gp-party-meta">
                     {detail.lineCount} {detail.lineCount === 1 ? "line" : "lines"}
                   </span>
@@ -438,8 +474,8 @@ export const GatepassListPage: React.FC<GatepassListPageProps> = ({ token, usern
                   <strong data-testid="gatepass-detail-moved-out">{describeMoveOutProgress(detail)}</strong>
                   <span className="gp-party-meta" data-testid="gatepass-detail-figures">
                     {detail.issuedDirectlyQuantity > 0
-                      ? `${copy.gatepass.issuedDirectly}: ${detail.issuedDirectlyQuantity} · ${copy.gatepass.scannedOut}: ${detail.dispatchedFromStoreQuantity} · ${copy.gatepass.remainingToScan}: ${detail.outstandingQuantity}`
-                      : `${copy.gatepass.outstanding}: ${detail.outstandingQuantity}`}
+                      ? `${copy.gatepass.issuedDirectly}: ${dozensText(detail.issuedDirectlyQuantity)} · ${copy.gatepass.scannedOut}: ${dozensText(detail.dispatchedFromStoreQuantity)} · ${copy.gatepass.remainingToScan}: ${dozensText(detail.outstandingQuantity)} DZN`
+                      : `${copy.gatepass.outstanding}: ${dozensText(detail.outstandingQuantity)} DZN`}
                   </span>
                 </div>
                 <div>
@@ -470,7 +506,7 @@ export const GatepassListPage: React.FC<GatepassListPageProps> = ({ token, usern
                             {colour}
                           </th>
                         ))}
-                        <th className="num gp-grid-total">{copy.columns.total}</th>
+                        <th className="num gp-grid-total">{copy.gatepass.inDozens(copy.columns.total)}</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -483,10 +519,10 @@ export const GatepassListPage: React.FC<GatepassListPageProps> = ({ token, usern
                           <td className="gp-grid-size">{row.size}</td>
                           {detailGrid.colours.map((colour) => (
                             <td key={colour} className={`gp-cell num${row.quantities[colour] ? " is-selected" : " gp-cell--none"}`}>
-                              {row.quantities[colour] ?? ""}
+                              {row.quantities[colour] ? dozensText(row.quantities[colour]) : ""}
                             </td>
                           ))}
-                          <td className="num gp-grid-total gp-cell-strong">{row.total}</td>
+                          <td className="num gp-grid-total gp-cell-strong">{dozensText(row.total)}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -495,10 +531,10 @@ export const GatepassListPage: React.FC<GatepassListPageProps> = ({ token, usern
                         <td colSpan={2}>{copy.columns.total}</td>
                         {detailGrid.colours.map((colour) => (
                           <td key={colour} className="gp-cell num">
-                            {detailGrid.columnTotals[colour] ?? ""}
+                            {detailGrid.columnTotals[colour] ? dozensText(detailGrid.columnTotals[colour]) : ""}
                           </td>
                         ))}
-                        <td className="num gp-grid-total">{detailGrid.total}</td>
+                        <td className="num gp-grid-total">{dozensText(detailGrid.total)}</td>
                       </tr>
                     </tfoot>
                   </table>
@@ -514,12 +550,12 @@ export const GatepassListPage: React.FC<GatepassListPageProps> = ({ token, usern
                       <th>{copy.columns.article}</th>
                       <th>Colour</th>
                       <th>{copy.columns.size}</th>
-                      <th className="num">Qty (cartons)</th>
+                      <th className="num">{copy.gatepass.inDozens(copy.columns.qty)}</th>
                       {/* A gatepass that issued cartons directly says so in its own column; a QR-only one reads as before. */}
                       {detail.issuedDirectlyQuantity > 0 ? <th className="num">{copy.gatepass.issuedDirectly}</th> : null}
                       <th className="num">{detail.issuedDirectlyQuantity > 0 ? copy.gatepass.scannedOut : copy.gatepass.movedOut}</th>
                       <th className="num">{detail.issuedDirectlyQuantity > 0 ? copy.gatepass.remainingToScan : copy.gatepass.outstanding}</th>
-                      <th className="num text-muted">In Store when cut</th>
+                      <th className="num text-muted">In Store when cut (DZN)</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -529,11 +565,11 @@ export const GatepassListPage: React.FC<GatepassListPageProps> = ({ token, usern
                         <td className="gp-cell-strong">{line.article}{line.groupName && <span className="gp-grid-group">{line.groupName}</span>}</td>
                         <td>{line.color}</td>
                         <td>{line.size}</td>
-                        <td className="num">{line.quantity}</td>
-                        {detail.issuedDirectlyQuantity > 0 ? <td className="num">{line.issuedDirectlyQuantity}</td> : null}
-                        <td className="num">{line.dispatchedFromStoreQuantity}</td>
-                        <td className="num">{line.outstandingQuantity}</td>
-                        <td className="num text-muted">{line.storeQuantityAtCreation}</td>
+                        <td className="num">{dozensText(line.quantity)}</td>
+                        {detail.issuedDirectlyQuantity > 0 ? <td className="num">{dozensText(line.issuedDirectlyQuantity)}</td> : null}
+                        <td className="num">{dozensText(line.dispatchedFromStoreQuantity)}</td>
+                        <td className="num">{dozensText(line.outstandingQuantity)}</td>
+                        <td className="num text-muted">{dozensText(line.storeQuantityAtCreation)}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -606,12 +642,19 @@ export const GatepassListPage: React.FC<GatepassListPageProps> = ({ token, usern
           <p className="page-sub">Quantities cut from store stock for parties. Open a gatepass to view, print or cancel it.</p>
         </div>
         <div className="gp-header-side">
+          <button type="button" className="btn btn-secondary" onClick={() => setShowDeleted((shown) => !shown)} aria-pressed={showDeleted} data-testid="gatepass-deleted-toggle">
+            {showDeleted ? copy.gatepass.liveList : copy.gatepass.deletedLog}
+          </button>
           <button type="button" className="btn btn-primary" onClick={() => onNavigate("gatepass")}>
             + New Gatepass
           </button>
         </div>
       </header>
 
+      {showDeleted ? <DeletedGatepassLog token={token} onOpen={openDetail} /> : null}
+
+      {showDeleted ? null : (
+        <>
       <nav className="gp-stages" aria-label="Gatepass stages">
         {STAGE_TABS.map((tab) => (
           <button
@@ -681,8 +724,8 @@ export const GatepassListPage: React.FC<GatepassListPageProps> = ({ token, usern
               <th>{copy.columns.party}</th>
               <th>Articles</th>
               <th className="num">{copy.columns.items}</th>
-              <th className="num">{copy.columns.qty}</th>
-              <th className="num">{copy.gatepass.movedOut}</th>
+              <th className="num">{copy.gatepass.inDozens(copy.columns.qty)}</th>
+              <th className="num">{copy.gatepass.inDozens(copy.gatepass.movedOut)}</th>
               <th>{copy.columns.status}</th>
               <th>Created by</th>
             </tr>
@@ -724,10 +767,10 @@ export const GatepassListPage: React.FC<GatepassListPageProps> = ({ token, usern
                   <td className="gp-cell-strong">{row.partyName}</td>
                   <td>{row.articles.join(", ")}</td>
                   <td className="num">{row.lineCount}</td>
-                  <td className="num gp-cell-strong">{row.totalQuantity}</td>
+                  <td className="num gp-cell-strong">{dozensText(row.totalQuantity)}</td>
                   <td className="num" data-testid={`gatepass-row-moved-out-${row.code}`}>
-                    {row.dispatchedFromStoreQuantity}
-                    {row.issuedDirectlyQuantity > 0 ? ` · ${copy.gatepass.issuedDirectlyNote(row.issuedDirectlyQuantity)}` : null}
+                    {dozensText(row.dispatchedFromStoreQuantity)}
+                    {row.issuedDirectlyQuantity > 0 ? ` · ${copy.gatepass.issuedDirectlyNote(dozensText(row.issuedDirectlyQuantity))}` : null}
                   </td>
                   <td>
                     <StatusBadge status={row.status} />
@@ -757,6 +800,8 @@ export const GatepassListPage: React.FC<GatepassListPageProps> = ({ token, usern
           </div>
         </div>
       </section>
+        </>
+      )}
     </div>
   );
 };

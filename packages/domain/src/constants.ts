@@ -46,6 +46,9 @@ export const PERMISSION = {
   MUNSHI: "munshi",
   GATEPASS: "gatepass",
   GATEPASS_CANCEL: "gatepass-cancel",
+  /** Editing a gatepass until a carton is scanned out, and deleting a cancelled one (owner, 23 Nov 2026). Admins hold both. */
+  GATEPASS_EDIT: "gatepass-edit",
+  GATEPASS_DELETE: "gatepass-delete",
   /**
    * Customer orders (docs/52). Three codes, none given to anyone by a migration: an administrator holds them, and a
    * role or person is given them in Users. Viewing the Pending Orders screen; entering and editing orders; cancelling one.

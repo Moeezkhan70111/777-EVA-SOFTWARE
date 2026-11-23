@@ -128,6 +128,9 @@ export const LEASED_CHANNELS: Readonly<Record<string, readonly LeaseDomain[]>> =
   [IPC.addArticleColor]: MASTER,
   [IPC.createGatepass]: CARTONS_AND_SALES,
   [IPC.cancelGatepass]: CARTONS_AND_SALES,
+  // An edit puts back and takes cartons and changes the bill; a delete changes only the gatepass record.
+  [IPC.editGatepass]: CARTONS_AND_SALES,
+  [IPC.deleteGatepass]: SALES,
 
   // ── Product master: products, their colours and prices, and how they are grouped (docs/43) ──
   [IPC.createProduct]: MASTER,

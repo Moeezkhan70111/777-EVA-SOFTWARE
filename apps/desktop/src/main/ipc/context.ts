@@ -1,5 +1,7 @@
 import type {
   CancelGatepassUseCase,
+  DeleteGatepassUseCase,
+  EditGatepassUseCase,
   CreateGatepassUseCase,
   AssignMachineContractorUseCase,
   AddMachineUseCase,
@@ -58,6 +60,8 @@ export interface UseCases {
   storeExitScanUseCase: StoreExitScanUseCase;
   createGatepassUseCase: CreateGatepassUseCase;
   cancelGatepassUseCase: CancelGatepassUseCase;
+  editGatepassUseCase: EditGatepassUseCase;
+  deleteGatepassUseCase: DeleteGatepassUseCase;
   machineProgram: {
     assignContractor: AssignMachineContractorUseCase;
     /** The Machine Program's + Add Machine: a machine with both of its contractors, in one step. */

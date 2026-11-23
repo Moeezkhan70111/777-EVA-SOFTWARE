@@ -23,9 +23,11 @@ interface PartySectionProps {
   transport: TransportFields;
   onPartyChange: (id: string) => void;
   onTransportChange: (patch: Partial<TransportFields>) => void;
+  /** Editing a billed gatepass: the party is the bill's and cannot change. */
+  partyLocked?: boolean;
 }
 
-export const PartySection: React.FC<PartySectionProps> = ({ parties, loading, partyId, party, balance, transport, onPartyChange, onTransportChange }) => {
+export const PartySection: React.FC<PartySectionProps> = ({ parties, loading, partyId, party, balance, transport, onPartyChange, onTransportChange, partyLocked = false }) => {
   const options = useMemo<SelectOption[]>(
     () => parties.map((p) => ({ id: p.id, label: p.partyName, sub: [p.partyCode, p.city].filter(Boolean).join(" · ") })),
     [parties]
@@ -43,10 +45,12 @@ export const PartySection: React.FC<PartySectionProps> = ({ parties, loading, pa
         value={partyId}
         onChange={onPartyChange}
         loading={loading}
+        disabled={partyLocked}
         emptyText={parties.length === 0 ? copy.gatepass.partyEmpty : copy.gatepass.partyNoMatch}
         autoFocus
       />
 
+      {partyLocked ? <p className="gp-note" data-testid="gatepass-party-locked">{copy.gatepass.partyLockedNote}</p> : null}
       {party && <PartyCard party={party} balance={balance} />}
 
       <div className="gp-transport">

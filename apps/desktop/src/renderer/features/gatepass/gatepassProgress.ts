@@ -1,3 +1,4 @@
+import { cartonsToDozens } from "@erp/domain";
 import { copy } from "../../config/copy";
 
 // WHAT A GATEPASS'S CARTONS HAVE DONE, in one sentence, for every screen that shows it (docs/42 §10.2).
@@ -55,7 +56,7 @@ export const deskIdleMessage = (figures: CartonFigures): string =>
 /** The store side of a gatepass, as one sentence. */
 export const describeStoreProgress = (figures: CartonFigures): string => {
   if (figures.issuedDirectly <= 0) {
-    return figures.remaining <= 0 && figures.total > 0 ? copy.gatepass.allMovedOut : copy.gatepass.movedOutOf(figures.scanned, figures.total);
+    return figures.remaining <= 0 && figures.total > 0 ? copy.gatepass.allMovedOut : copy.gatepass.movedOutOf(String(cartonsToDozens(figures.scanned)), String(cartonsToDozens(figures.total)));
   }
   if (isIssuedWhole(figures)) return copy.gatepass.noStoreScanRequired;
   if (figures.remaining > 0) return copy.gatepass.issuedThenScan(figures.issuedDirectly, figures.remaining);

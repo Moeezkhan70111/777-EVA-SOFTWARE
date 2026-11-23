@@ -23,7 +23,7 @@ function describeCreate(result: { outcome: string; code?: string; totalQuantity?
 
 export function registerGatepassHandlers(ctx: IpcContext): void {
   const { db, logger, deviceId, paths, useCases, scanContext } = ctx;
-  const { createGatepassUseCase, cancelGatepassUseCase } = useCases;
+  const { createGatepassUseCase, cancelGatepassUseCase, editGatepassUseCase, deleteGatepassUseCase } = useCases;
 
   // Token-authorised like the store station. "gatepass" covers viewing, creating and
   // printing; "gatepass-cancel" is separate so a clerk cannot undo a document. The use
@@ -31,10 +31,12 @@ export function registerGatepassHandlers(ctx: IpcContext): void {
   const GATEPASS_PERMISSION = "gatepass";
 
   const GATEPASS_CANCEL_PERMISSION = "gatepass-cancel";
+  const GATEPASS_EDIT_PERMISSION = "gatepass-edit";
+  const GATEPASS_DELETE_PERMISSION = "gatepass-delete";
 
   const resolveGatepassUser = (
     token?: string,
-    need: "view" | "cancel" = "view"
+    need: "view" | "cancel" | "edit" | "delete" = "view"
   ): { ok: true; userId: string; username: string } | { ok: false; reason: string } => {
     const sessionToken = typeof token === "string" ? token.trim() : "";
     const user = sessionToken ? db.getUserBySessionToken(sessionToken) : null;
@@ -47,6 +49,12 @@ export function registerGatepassHandlers(ctx: IpcContext): void {
       }
       if (need === "cancel" && !user.permissions.includes(GATEPASS_CANCEL_PERMISSION)) {
         return { ok: false, reason: "Your account cannot cancel a Gatepass. Ask an administrator." };
+      }
+      if (need === "edit" && !user.permissions.includes(GATEPASS_EDIT_PERMISSION)) {
+        return { ok: false, reason: "Your account cannot edit a Gatepass. Ask an administrator." };
+      }
+      if (need === "delete" && !user.permissions.includes(GATEPASS_DELETE_PERMISSION)) {
+        return { ok: false, reason: "Your account cannot delete a Gatepass. Ask an administrator." };
       }
     }
     return { ok: true, userId: user.id, username: user.username };
@@ -300,6 +308,7 @@ export function registerGatepassHandlers(ctx: IpcContext): void {
         fromDate: typeof query?.fromDate === "string" && query.fromDate ? query.fromDate : undefined,
         toDate: typeof query?.toDate === "string" && query.toDate ? query.toDate : undefined,
         status: typeof query?.status === "string" && query.status in GATEPASS_STATUS ? (query.status as keyof typeof GATEPASS_STATUS) : "ALL",
+        deleted: query?.deleted === true,
         page: Number.isFinite(query?.page) ? Number(query?.page) : 1,
         pageSize: Number.isFinite(query?.pageSize) ? Number(query?.pageSize) : 25,
       });
@@ -346,4 +355,68 @@ export function registerGatepassHandlers(ctx: IpcContext): void {
       return { accepted: false, outcome: "ERROR", reason: "The Gatepass could not be cancelled. Nothing was changed — try again." };
     }
   });
+
+  registerGatepassEditHandlers();
+
+  /** Edit and Delete (local migration 118). The use cases own every rule; nothing here touches stock or bills. */
+  function registerGatepassEditHandlers(): void {
+    ipcMain.handle(IPC.editGatepass, async (_event, input?: Record<string, unknown>, opts?: { token?: string }) => {
+      const auth = resolveGatepassUser(opts?.token, "edit");
+      if (!auth.ok) return { accepted: false, outcome: "NOT_AUTHORIZED", reason: auth.reason };
+      try {
+        const result = await editGatepassUseCase.execute({ ...editInput(input), actor: auth.username, actorUserId: auth.userId, deviceId, storeLocationId: scanContext.factoryId });
+        logOutcome("edit-gatepass", auth.userId, result.accepted, result.accepted ? `Gatepass edited: ${result.code} by ${auth.username}` : JSON.stringify({ outcome: result.outcome, reason: result.reason ?? null }));
+        return result;
+      } catch (error) {
+        // A rule the bill enforces (its balance limit, its discount ceiling) refuses the whole edit: say which.
+        logOutcome("edit-gatepass-error", auth.userId, false, error instanceof Error ? error.message : String(error));
+        return { accepted: false, outcome: "ERROR", reason: `The Gatepass was not edited. Nothing was changed. ${error instanceof Error ? error.message : ""}`.trim() };
+      }
+    });
+
+    ipcMain.handle(IPC.deleteGatepass, async (_event, input?: Record<string, unknown>, opts?: { token?: string }) => {
+      const auth = resolveGatepassUser(opts?.token, "delete");
+      if (!auth.ok) return { accepted: false, outcome: "NOT_AUTHORIZED", reason: auth.reason };
+      try {
+        const result = await deleteGatepassUseCase.execute({
+          gatepassId: typeof input?.gatepassId === "string" ? input.gatepassId : "",
+          reason: typeof input?.reason === "string" ? input.reason : "",
+          actor: auth.username,
+          actorUserId: auth.userId,
+          deviceId,
+        });
+        logOutcome("delete-gatepass", auth.userId, result.accepted, result.accepted ? `Gatepass deleted: ${result.code} by ${auth.username}` : JSON.stringify({ outcome: result.outcome, reason: result.reason ?? null }));
+        return result;
+      } catch (error) {
+        logOutcome("delete-gatepass-error", auth.userId, false, error instanceof Error ? error.message : String(error));
+        return { accepted: false, outcome: "ERROR", reason: "The Gatepass could not be deleted. Nothing was changed — try again." };
+      }
+    });
+  }
+
+  function logOutcome(operation: string, userId: string, accepted: boolean, message: string): void {
+    logger.log({ module: "gatepass", severity: accepted ? "INFO" : "WARNING", operation, deviceId, userId, message });
+  }
+}
+
+/** The edit as the screen sent it, checked for shape. The use case checks the rest. */
+function editInput(input: Record<string, unknown> | undefined) {
+  const textOrNull = (value: unknown) => (typeof value === "string" ? value : null);
+  const lines = Array.isArray(input?.lines) ? input.lines : [];
+  return {
+    gatepassId: typeof input?.gatepassId === "string" ? input.gatepassId : "",
+    revisionNo: Number.isInteger(input?.revisionNo) ? Number(input?.revisionNo) : 0,
+    partyId: typeof input?.partyId === "string" ? input.partyId : "",
+    reason: typeof input?.reason === "string" ? input.reason : "",
+    biltyNumber: textOrNull(input?.biltyNumber),
+    transportVia: textOrNull(input?.transportVia),
+    remarks: textOrNull(input?.remarks),
+    lines: lines
+      .filter((line): line is Record<string, unknown> => typeof line === "object" && line !== null)
+      .map((line) => ({
+        productVariantId: typeof line.productVariantId === "string" ? line.productVariantId : "",
+        quantity: Number(line.quantity),
+        reflectedStockSeen: typeof line.reflectedStockSeen === "number" ? line.reflectedStockSeen : undefined,
+      })),
+  };
 }

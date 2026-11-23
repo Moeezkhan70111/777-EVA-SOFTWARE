@@ -884,6 +884,7 @@ export const gatepassMethods = {
       .prepare(
         `SELECT g.id, g.gatepass_number, g.party_id, g.gatepass_date, g.status, g.bilty_number, g.transport_via, g.remarks, g.total_quantity,
                 g.created_by, g.created_at, g.updated_at, g.cancelled_at, g.cancelled_by, g.cancel_reason,
+                g.revision_no, g.edited_at, g.edited_by, g.deleted_at, g.deleted_by, g.delete_reason,
                 p.party_name, p.party_code, p.city
          FROM gatepasses g
          JOIN parties p ON p.id = g.party_id
@@ -922,6 +923,13 @@ export const gatepassMethods = {
       cancelledAt: row.cancelled_at ? String(row.cancelled_at) : null,
       cancelledBy: row.cancelled_by ? String(row.cancelled_by) : null,
       cancelReason: row.cancel_reason ? String(row.cancel_reason) : null,
+      revisionNo: Number(row.revision_no ?? 1),
+      editedAt: row.edited_at ? String(row.edited_at) : null,
+      editedBy: row.edited_by ? String(row.edited_by) : null,
+      deletedAt: row.deleted_at ? String(row.deleted_at) : null,
+      deletedBy: row.deleted_by ? String(row.deleted_by) : null,
+      deleteReason: row.delete_reason ? String(row.delete_reason) : null,
+      versions: this.listGatepassVersions(String(row.id)),
       lines,
     };
   },
@@ -938,7 +946,8 @@ export const gatepassMethods = {
     const pageSize = Math.max(1, Math.min(Number(query.pageSize ?? 25), 200));
     const offset = (page - 1) * pageSize;
 
-    const where: string[] = ["1 = 1"];
+    // A deleted gatepass (local migration 118) is on its own log and on no other list.
+    const where: string[] = [query.deleted === true ? "g.deleted_at IS NOT NULL" : "g.deleted_at IS NULL"];
     const values: Array<string | number> = [];
 
     const search = String(query.search ?? "").trim();
@@ -985,7 +994,7 @@ export const gatepassMethods = {
     const rows = this.db
       .prepare(
         `SELECT g.id, g.gatepass_number, g.party_id, g.gatepass_date, g.status, g.total_quantity, g.created_by, g.created_at,
-                p.party_name,
+                g.deleted_at, g.deleted_by, g.delete_reason, p.party_name,
                 (SELECT COUNT(1) FROM gatepass_lines gl WHERE gl.gatepass_id = g.id) AS line_count,
                 (SELECT COALESCE(SUM(${LINE_DISPATCHED_SQL}), 0) FROM gatepass_lines gl WHERE gl.gatepass_id = g.id) AS dispatched_from_store,
                 (SELECT COALESCE(SUM(${LINE_ISSUED_SQL}), 0) FROM gatepass_lines gl WHERE gl.gatepass_id = g.id) AS issued_directly,
@@ -994,7 +1003,7 @@ export const gatepassMethods = {
                  )) AS articles
          ${from}
          WHERE ${whereClause}
-         ORDER BY g.gatepass_number DESC
+         ORDER BY ${query.deleted === true ? "g.deleted_at DESC," : ""} g.gatepass_number DESC
          LIMIT ? OFFSET ?`
       )
       .all(...values, pageSize, offset) as Array<Record<string, unknown>>;
@@ -1021,6 +1030,9 @@ export const gatepassMethods = {
           articles: row.articles ? String(row.articles).split("|").filter(Boolean) : [],
           createdBy: row.created_by ? String(row.created_by) : null,
           createdAt: String(row.created_at ?? ""),
+          ...(query.deleted === true
+            ? { deletedAt: row.deleted_at ? String(row.deleted_at) : null, deletedBy: row.deleted_by ? String(row.deleted_by) : null, deleteReason: row.delete_reason ? String(row.delete_reason) : null }
+            : {}),
         };
       }),
       total,

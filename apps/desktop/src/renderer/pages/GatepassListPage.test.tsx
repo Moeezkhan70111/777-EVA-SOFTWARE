@@ -34,6 +34,7 @@ const DOC: Gatepass = {
   cancelledAt: null,
   cancelledBy: null,
   cancelReason: null,
+  revisionNo: 1, editedAt: null, editedBy: null, deletedAt: null, deletedBy: null, deleteReason: null, versions: [],
   lines: [
     { id: "l1", lineNo: 1, productVariantId: "v1", groupName: null, article: "SK6", color: "RED", size: "7/10", quantity: 50, storeQuantityAtCreation: 120, dispatchedFromStoreQuantity: 0, issuedDirectlyQuantity: 0, outstandingQuantity: 50 },
     { id: "l2", lineNo: 2, productVariantId: "v2", groupName: null, article: "SK6", color: "BLUE", size: "7/10", quantity: 20, storeQuantityAtCreation: 80, dispatchedFromStoreQuantity: 0, issuedDirectlyQuantity: 0, outstandingQuantity: 20 },
@@ -53,7 +54,13 @@ function createFakeBackend() {
     listParties: vi.fn(async () => ({ rows: [{ id: "p-abc", partyCode: "P-0001", partyName: "ABC TRADERS", partyType: "CUSTOMER", status: "ACTIVE", createdAt: "" }], total: 1, page: 1, pageSize: 1000 })),
     listUniqueArticles: vi.fn(async () => ["SK6", "SK8", "SK12"]),
     listGatepasses: vi.fn(async (query: any) => {
-      let rows = ROWS;
+      // The deleted log lists only deleted gatepasses (local migration 118); the list never does.
+      const deleted = [...docs.values()].filter((d) => d.deletedAt);
+      if (query.deleted === true) {
+        const log = deleted.map((d) => ({ ...ROWS[0], id: d.id, code: d.code, status: d.status, deletedAt: d.deletedAt, deletedBy: d.deletedBy, deleteReason: d.deleteReason }));
+        return { rows: log, total: log.length, page: 1, pageSize: 25 };
+      }
+      let rows = ROWS.filter((r) => !deleted.some((d) => d.id === r.id));
       if (query.status && query.status !== "ALL") rows = rows.filter((r) => r.status === query.status);
       if (query.search) rows = rows.filter((r) => r.code.includes(query.search) || r.partyName.toLowerCase().includes(String(query.search).toLowerCase()));
       return { rows, total: rows.length, page: 1, pageSize: 25 };
@@ -65,6 +72,12 @@ function createFakeBackend() {
       if (doc.status === "CANCELLED") return { accepted: false, outcome: "ALREADY_CANCELLED", reason: `${doc.code} has already been cancelled.` };
       docs.set(input.gatepassId, { ...doc, status: "CANCELLED", cancelledAt: "2026-09-16T12:00:00.000Z", cancelledBy: "manager", cancelReason: input.reason });
       return { accepted: true, outcome: "CANCELLED", gatepassId: input.gatepassId, code: doc.code, cancelledAt: "2026-09-16T12:00:00.000Z" };
+    }),
+    deleteGatepass: vi.fn(async (input: { gatepassId: string; reason: string }) => {
+      const doc = docs.get(input.gatepassId)!;
+      if (doc.status !== "CANCELLED") return { accepted: false, outcome: "NOT_CANCELLED", reason: `${doc.code} is not cancelled.` };
+      docs.set(input.gatepassId, { ...doc, deletedAt: "2026-09-17T09:00:00.000Z", deletedBy: "manager", deleteReason: input.reason });
+      return { accepted: true, outcome: "DELETED", gatepassId: input.gatepassId, code: doc.code };
     }),
   };
   Object.defineProperty(window, "desktop", {
@@ -96,9 +109,10 @@ describe("GatepassListPage", () => {
     await waitFor(() => expect(within(table).getAllByRole("row")).toHaveLength(4));
     const rows = within(table).getAllByRole("row").slice(1);
     expect(rows.map((r) => within(r).getAllByRole("cell").map((c) => c.textContent))).toEqual([
-      ["GP-000123", d16, "ABC TRADERS", "SK6", "3", "80", "0", "Gatepass Issued", "clerk"],
-      ["GP-000122", d16, "XYZ TRADERS", "SK12, SK8", "2", "45", "0", "Gatepass Issued", "clerk"],
-      ["GP-000121", d15, "ABC TRADERS", "SK6", "4", "90", "0", "Cancelled", "clerk"],
+      // Quantities in dozens (owner, 23 Nov 2026): 80 cartons is 40 dozen, 45 is 22.5.
+      ["GP-000123", d16, "ABC TRADERS", "SK6", "3", "40", "0", "Gatepass Issued", "clerk"],
+      ["GP-000122", d16, "XYZ TRADERS", "SK12, SK8", "2", "22.5", "0", "Gatepass Issued", "clerk"],
+      ["GP-000121", d15, "ABC TRADERS", "SK6", "4", "45", "0", "Cancelled", "clerk"],
     ]);
     expect(table.textContent).not.toMatch(/amount|rate|discount/i);
   });
@@ -138,28 +152,28 @@ describe("GatepassListPage", () => {
     expect(screen.getByText("Gatepass GP-000123")).toBeInTheDocument();
     expect(within(detail).getByText("ABC TRADERS")).toBeInTheDocument();
     expect(within(detail).getByText("clerk")).toBeInTheDocument();
-    expect(screen.getByTestId("gatepass-detail-total")).toHaveTextContent("80 cartons");
+    expect(screen.getByTestId("gatepass-detail-total")).toHaveTextContent("40 DZN");
     expect(screen.getByTestId("gatepass-detail-bilty")).toHaveTextContent("B-4471");
     expect(screen.getByTestId("gatepass-detail-via")).toHaveTextContent("Daewoo Cargo");
 
     // Article + size rows, colour columns, totals — the same shape as the paper book.
     const grid = screen.getByTestId("gatepass-detail-grid");
-    expect(within(grid).getAllByRole("columnheader").map((h) => h.textContent)).toEqual(["Article", "Size", "BLUE", "RED", "Total"]);
+    expect(within(grid).getAllByRole("columnheader").map((h) => h.textContent)).toEqual(["Article", "Size", "BLUE", "RED", "Total (DZN)"]);
     const bodyRows = within(grid).getAllByRole("row").slice(1, 3);
     expect(bodyRows.map((r) => [within(r).getByRole("rowheader").textContent, ...within(r).getAllByRole("cell").map((c) => c.textContent)])).toEqual([
-      ["SK6", "4/6", "", "10", "10"],
-      ["SK6", "7/10", "20", "50", "70"],
+      ["SK6", "4/6", "", "5", "5"],
+      ["SK6", "7/10", "10", "25", "35"],
     ]);
     const foot = within(grid).getAllByRole("row").at(-1)!;
-    expect(within(foot).getAllByRole("cell").map((c) => c.textContent)).toEqual(["Total", "20", "60", "80"]);
+    expect(within(foot).getAllByRole("cell").map((c) => c.textContent)).toEqual(["Total", "10", "30", "40"]);
     // The store's progress on the document, and the line-by-line detail (moved out /
     // outstanding per line, In Store when cut) one level down.
-    expect(screen.getByTestId("gatepass-detail-moved-out")).toHaveTextContent("0 of 80 moved out");
+    expect(screen.getByTestId("gatepass-detail-moved-out")).toHaveTextContent("0 of 40 DZN moved out");
     const lines = within(detail).getAllByRole("row").filter((r) => within(r).queryAllByRole("cell").length === 8);
     expect(lines.map((r) => within(r).getAllByRole("cell").slice(1, 8).map((c) => c.textContent))).toEqual([
-      ["SK6", "RED", "7/10", "50", "0", "50", "120"],
-      ["SK6", "BLUE", "7/10", "20", "0", "20", "80"],
-      ["SK6", "RED", "4/6", "10", "0", "10", "50"],
+      ["SK6", "RED", "7/10", "25", "0", "25", "60"],
+      ["SK6", "BLUE", "7/10", "10", "0", "10", "40"],
+      ["SK6", "RED", "4/6", "5", "0", "5", "25"],
     ]);
     expect(detail.textContent).not.toMatch(/rate|discount|amount|balance|scanned/i);
 
@@ -176,10 +190,11 @@ describe("GatepassListPage", () => {
     expect(written).toContain("B-4471");
     expect(written).toContain("Daewoo Cargo");
     expect(written).toContain("16/09/2026");
-    // The printed grid: colour columns, one row per article + size, row and colour totals.
+    // The printed grid: colour columns, one row per article + size, row and colour totals, in dozens.
     expect(written).toMatch(/<th scope="col">BLUE<\/th>\s*<th scope="col">RED<\/th>/);
-    expect(written).toMatch(/<th scope="row">SK6<\/th>\s*<td class="size">7\/10<\/td>\s*<td>20<\/td>\s*<td>50<\/td>\s*<td class="total">70<\/td>/);
-    expect(written).toContain("Total cartons");
+    expect(written).toMatch(/<th scope="row">SK6<\/th>\s*<td class="size">7\/10<\/td>\s*<td>10<\/td>\s*<td>25<\/td>\s*<td class="total">35<\/td>/);
+    expect(written).toContain("Total (DZN)");
+    expect(written).not.toContain("cartons");
     expect(written).not.toMatch(/rate|discount|amount|subtotal|grand total|balance|payment|invoice/i);
 
     // Cancel: a reason is required, then the document is marked and its lines kept.
@@ -259,7 +274,7 @@ describe("a gatepass that issued cartons directly", () => {
     docs.set("gp-manual", doc("gp-manual", "BILLED", 4, 4, 0));
     renderPage({ initialGatepassId: "gp-manual" });
     expect(await screen.findByTestId("gatepass-detail-moved-out")).toHaveTextContent("All cartons issued — No Store Scan Required");
-    expect(screen.getByTestId("gatepass-detail-figures")).toHaveTextContent("Issued directly: 4 · Scanned out: 0 · Remaining to scan: 0");
+    expect(screen.getByTestId("gatepass-detail-figures")).toHaveTextContent("Issued directly: 2 · Scanned out: 0 · Remaining to scan: 0 DZN");
     expect(screen.queryByTestId("gatepass-open-store-scan")).not.toBeInTheDocument();
     expect(screen.queryByTestId("gatepass-open-dispatch-scan")).not.toBeInTheDocument();
   });
@@ -269,7 +284,7 @@ describe("a gatepass that issued cartons directly", () => {
     docs.set("gp-mixed", doc("gp-mixed", "BILLED", 5, 2, 1));
     renderPage({ initialGatepassId: "gp-mixed" });
     expect(await screen.findByTestId("gatepass-detail-moved-out")).toHaveTextContent("2 cartons issued directly. Scan the remaining 2 QR cartons.");
-    expect(screen.getByTestId("gatepass-detail-figures")).toHaveTextContent("Issued directly: 2 · Scanned out: 1 · Remaining to scan: 2");
+    expect(screen.getByTestId("gatepass-detail-figures")).toHaveTextContent("Issued directly: 1 · Scanned out: 0.5 · Remaining to scan: 1 DZN");
     expect(screen.getByTestId("gatepass-open-store-scan")).toBeInTheDocument();
 
     const lines = document.querySelector(".gp-lines-table") as HTMLTableElement;
@@ -277,7 +292,8 @@ describe("a gatepass that issued cartons directly", () => {
     expect(headers).toEqual(expect.arrayContaining(["Issued directly", "Scanned out", "Remaining to scan"]));
     expect(headers).not.toContain("Moved out");
     const cells = within(within(lines).getAllByRole("row")[1]!).getAllByRole("cell").map((c) => c.textContent);
-    expect(cells.slice(4, 8)).toEqual(["5", "2", "1", "2"]);
+    // 5, 2, 1 and 2 cartons, in dozens.
+    expect(cells.slice(4, 8)).toEqual(["2.5", "1", "0.5", "1"]);
   });
 
   it("the list row shows what was scanned out apart from what was issued", async () => {
@@ -287,6 +303,60 @@ describe("a gatepass that issued cartons directly", () => {
       total: 1, page: 1, pageSize: 25,
     });
     renderPage();
-    expect(await screen.findByTestId("gatepass-row-moved-out-GP-000200")).toHaveTextContent("1 · 2 issued directly");
+    expect(await screen.findByTestId("gatepass-row-moved-out-GP-000200")).toHaveTextContent("0.5 · 1 DZN issued directly");
+  });
+});
+
+// EDIT AND DELETE on the list (local migration 118): Edit hands the gatepass to the Gatepass screen; a cancelled
+// gatepass may be deleted with a reason, leaves the list, and is read on the Deleted gatepasses log.
+describe("GatepassListPage edit and delete", () => {
+  const openGp1 = async () => {
+    fireEvent.click(await screen.findByTestId("gatepass-row-GP-000123"));
+    await screen.findByTestId("gatepass-detail");
+  };
+
+  it("offers Edit to someone who may edit, and hands the gatepass to the Gatepass screen", async () => {
+    createFakeBackend();
+    const onEdit = vi.fn();
+    renderPage({ onEdit });
+    await openGp1();
+    fireEvent.click(screen.getByTestId("gatepass-list-edit"));
+    expect(onEdit).toHaveBeenCalledWith("gp-1");
+  });
+
+  it("offers no Edit or Delete without the permissions", async () => {
+    createFakeBackend();
+    renderPage();
+    await openGp1();
+    expect(screen.queryByTestId("gatepass-list-edit")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("gatepass-delete-open")).not.toBeInTheDocument();
+  });
+
+  it("deletes a cancelled gatepass with a reason; it leaves the list and is read on the deleted log", async () => {
+    const { api, docs } = createFakeBackend();
+    docs.set("gp-1", { ...docs.get("gp-1")!, status: "CANCELLED", cancelledAt: "2026-09-16T12:00:00.000Z", cancelledBy: "manager", cancelReason: "wrong party" });
+    renderPage({ canDelete: true });
+    await openGp1();
+
+    fireEvent.click(screen.getByTestId("gatepass-delete-open"));
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("gatepass-delete-confirm"));
+    });
+    expect(within(screen.getByTestId("gatepass-delete-panel")).getByRole("alert")).toHaveTextContent("Say why it is being deleted.");
+    expect(api.deleteGatepass).not.toHaveBeenCalled();
+
+    await act(async () => {
+      fireEvent.change(within(screen.getByTestId("gatepass-delete-panel")).getByLabelText("Reason"), { target: { value: "made in error" } });
+      fireEvent.click(screen.getByTestId("gatepass-delete-confirm"));
+    });
+    await waitFor(() => expect(api.deleteGatepass).toHaveBeenCalledWith({ gatepassId: "gp-1", reason: "made in error" }, { token: "token-1" }));
+    expect(await screen.findByTestId("gatepass-deleted-banner")).toHaveTextContent("Deleted by manager");
+    expect(screen.queryByTestId("gatepass-delete-open")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByText("← Gatepass List"));
+    await waitFor(() => expect(screen.queryByTestId("gatepass-row-GP-000123")).not.toBeInTheDocument());
+    fireEvent.click(screen.getByTestId("gatepass-deleted-toggle"));
+    const log = await screen.findByTestId("gatepass-deleted-log");
+    expect(within(log).getByTestId("gatepass-deleted-GP-000123")).toHaveTextContent("made in error");
   });
 });

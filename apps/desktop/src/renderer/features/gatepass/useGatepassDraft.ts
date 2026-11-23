@@ -19,6 +19,8 @@ export interface GatepassDraftApi {
   setQuantity: (productVariantId: string, text: string) => void;
   stepQuantityBy: (productVariantId: string, delta: 1 | -1) => void;
   clear: () => void;
+  /** Puts a stored gatepass's cards and quantities on the draft, to edit it. Replaces whatever was there. */
+  load: (keys: string[], inputs: Record<string, string>) => void;
 }
 
 export const useGatepassDraft = (grid: StockGrid): GatepassDraftApi => {
@@ -70,7 +72,13 @@ export const useGatepassDraft = (grid: StockGrid): GatepassDraftApi => {
     setInputs({});
   }, []);
 
+  const load = useCallback((keys: string[], loaded: Record<string, string>) => {
+    setAddedKeys(keys);
+    setInputs(loaded);
+    setExpandedKey(keys[0] ?? null);
+  }, []);
+
   const isDirty = addedKeys.length > 0 || Object.values(inputs).some((text) => text.trim() !== "");
 
-  return { draft, expandedKey, isDirty, addArticle, removeArticle, toggleExpanded, expand, setQuantity, stepQuantityBy, clear };
+  return { draft, expandedKey, isDirty, addArticle, removeArticle, toggleExpanded, expand, setQuantity, stepQuantityBy, clear, load };
 };

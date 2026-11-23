@@ -1283,7 +1283,32 @@ export interface Gatepass {
   cancelledAt: string | null;
   cancelledBy: string | null;
   cancelReason: string | null;
+  /** 1 as made; each edit adds one (local migration 118). */
+  revisionNo: number;
+  editedAt: string | null;
+  editedBy: string | null;
+  /** A cancelled gatepass deleted from the lists: kept, read-only. */
+  deletedAt: string | null;
+  deletedBy: string | null;
+  deleteReason: string | null;
+  /** What it was before each edit, oldest first. */
+  versions: GatepassVersion[];
   lines: GatepassLine[];
+}
+
+/** One earlier version of an edited gatepass: what it carried before an edit replaced it. Quantities in cartons. */
+export interface GatepassVersion {
+  versionNo: number;
+  partyId: string;
+  partyName: string;
+  biltyNumber: string | null;
+  transportVia: string | null;
+  remarks: string | null;
+  totalQuantity: number;
+  lines: Array<{ productVariantId: string; article: string; color: string; size: string; quantity: number; issuedDirectlyQuantity: number }>;
+  replacedAt: string;
+  replacedBy: string;
+  reason: string;
 }
 
 export interface GatepassListRow {
@@ -1302,6 +1327,10 @@ export interface GatepassListRow {
   articles: string[];
   createdBy: string | null;
   createdAt: string;
+  /** Only on the deleted gatepasses' log. */
+  deletedAt?: string | null;
+  deletedBy?: string | null;
+  deleteReason?: string | null;
 }
 
 
@@ -1312,8 +1341,52 @@ export interface GatepassListQuery {
   fromDate?: string;
   toDate?: string;
   status?: GatepassStatus | "ALL";
+  /** True for the deleted gatepasses' log only. */
+  deleted?: boolean;
   page?: number;
   pageSize?: number;
+}
+
+export type EditGatepassOutcome =
+  | "EDITED" | "NOT_FOUND" | "REASON_REQUIRED" | "EDITED_ELSEWHERE" | "CANCELLED" | "DELETED" | "MOVED_ON" | "ALREADY_MOVED"
+  | "BEFORE_GO_LIVE" | "PARTY_LOCKED" | "NEW_LINE_ON_BILL" | "NO_PARTY" | "PARTY_NOT_FOUND" | "PARTY_INACTIVE" | "NO_LINES"
+  | "INVALID_QUANTITY" | "DUPLICATE_LINE" | "VARIANT_NOT_FOUND" | "INSUFFICIENT_STOCK" | "STOCK_CHANGED" | "NOT_AUTHORIZED" | "ERROR";
+
+export interface EditGatepassInput {
+  gatepassId: string;
+  /** The revision the editor opened. */
+  revisionNo: number;
+  partyId: string;
+  /** Cartons per colour, as Create sends them. */
+  lines: GatepassLineInput[];
+  biltyNumber?: string | null;
+  transportVia?: string | null;
+  remarks?: string | null;
+  reason: string;
+}
+
+export interface EditGatepassResult {
+  accepted: boolean;
+  outcome: EditGatepassOutcome;
+  reason?: string;
+  gatepassId?: string;
+  code?: string;
+  revisionNo?: number;
+  totalQuantity?: number;
+  billNumber?: string;
+  shortages?: GatepassShortage[];
+  productVariantId?: string;
+}
+
+export type DeleteGatepassOutcome = "DELETED" | "NOT_FOUND" | "REASON_REQUIRED" | "NOT_CANCELLED" | "ALREADY_DELETED" | "NOT_AUTHORIZED" | "ERROR";
+
+export interface DeleteGatepassResult {
+  accepted: boolean;
+  outcome: DeleteGatepassOutcome;
+  reason?: string;
+  gatepassId?: string;
+  code?: string;
+  deletedAt?: string;
 }
 
 export type CancelGatepassOutcome = "CANCELLED" | "NOT_FOUND" | "ALREADY_CANCELLED" | "REASON_REQUIRED" | "NOT_AUTHORIZED" | "ERROR";
@@ -2484,6 +2557,8 @@ export interface DesktopApi {
   getGatepassDeliveryProof(gatepassId: string, opts?: { token?: string }): Promise<GatepassDeliveryProof | null>;
   getGatepassJourney(gatepassId: string, opts?: { token?: string }): Promise<GatepassJourneyStep[] | null>;
   cancelGatepass(input: { gatepassId: string; reason: string }, opts?: { token?: string }): Promise<CancelGatepassResult>;
+  editGatepass(input: EditGatepassInput, opts?: { token?: string }): Promise<EditGatepassResult>;
+  deleteGatepass(input: { gatepassId: string; reason: string }, opts?: { token?: string }): Promise<DeleteGatepassResult>;
   getItemStatus(qrId: string): Promise<{ qrId: string; wasDispatched: boolean; wasReturned: boolean }>;
   /**
    * Cloud sync. Status is read-only. A pass runs only when an administrator asks for one --

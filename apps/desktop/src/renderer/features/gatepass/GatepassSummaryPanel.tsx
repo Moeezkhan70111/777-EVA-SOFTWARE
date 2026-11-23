@@ -3,6 +3,7 @@ import { ColorSwatch } from "../../components/shared/ColorSwatch";
 import { copy } from "../../config/copy";
 import { partyLine, type PartyFacts } from "../parties/PartyCard";
 import { ProductThumb } from "./ProductThumb";
+import { dozensText } from "./gatepassDraft";
 import type { ArticleImageMap } from "./useArticleImages";
 import { articleLabel, articleSlug, type GatepassDraft } from "./gatepassDraft";
 
@@ -44,7 +45,7 @@ export const GatepassSummaryPanel: React.FC<GatepassSummaryPanelProps> = ({ part
                   <ProductThumb article={article.article} src={images[article.article]} small />
                   <span className="gp-summary-article-name">{articleLabel(article)}</span>
                   <span className="gp-summary-article-total">
-                    <span className="gp-party-meta">{copy.columns.total}</span> <strong>{article.total}</strong>
+                    <span className="gp-party-meta">{copy.columns.total}</span> <strong>{dozensText(article.total)}</strong>
                   </span>
                 </div>
                 <ul className="gp-summary-colours">
@@ -56,7 +57,7 @@ export const GatepassSummaryPanel: React.FC<GatepassSummaryPanelProps> = ({ part
                           <ColorSwatch color={colour.colour} />
                           {colour.colour}
                         </span>
-                        <span className="num">{colour.check.value}</span>
+                        <span className="num">{dozensText(colour.check.value ?? 0)}</span>
                       </li>
                     ))}
                 </ul>
@@ -75,7 +76,7 @@ export const GatepassSummaryPanel: React.FC<GatepassSummaryPanelProps> = ({ part
         </div>
         <div className="gp-summary-grand">
           <span className="gp-summary-foot-label">{copy.gatepass.grandTotalLabel}</span>
-          <strong data-testid="gatepass-summary-total">{draft.total}</strong>
+          <strong data-testid="gatepass-summary-total">{dozensText(draft.total)}</strong>
         </div>
       </div>
       {blocker && (

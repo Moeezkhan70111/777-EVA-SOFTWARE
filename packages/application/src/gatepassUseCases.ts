@@ -511,71 +511,94 @@ export class CreateGatepassUseCase {
    * the same, so the audit records what the store held and by how much each line went short.
    */
   private async reserveLines(lines: GatepassLineInput[], tx: TransactionContext) {
-    const variantIds = lines.map((line) => String(line.productVariantId).trim());
-    const stockRows = await this.deps.repo.getStoreStockForVariants(variantIds, tx);
-    const stockById = new Map(stockRows.map((row) => [row.productVariantId, row]));
-
-    const mayGoBelowZero = this.deps.repo.gatepassMayGoBelowZero?.call(this.deps.repo) ?? false;
-    const shortages: GatepassShortage[] = [];
-    const linePayloads: GatepassLinePayload[] = [];
-    const auditLines: Array<Record<string, unknown>> = [];
-    for (const [index, line] of lines.entries()) {
-      const variantId = String(line.productVariantId).trim();
-      const stock = stockById.get(variantId);
-      if (!stock) {
-        throw new GatepassRejectedError(
-          "VARIANT_NOT_FOUND",
-          "One of the selected products is no longer active in Product Master. Refresh the stock and try again.",
-          { productVariantId: variantId }
-        );
-      }
-      const requested = line.quantity;
-      const reflected = reflectedStock(stock.storeQuantity, stock.reservedQuantity);
-      // More than is free for a new gatepass: refused, unless a gatepass may go below zero.
-      if (requested > maxNewGatepassQuantity(stock.storeQuantity, stock.reservedQuantity) && !mayGoBelowZero) {
-        shortages.push({
-          productVariantId: variantId,
-          article: stock.article,
-          color: stock.color,
-          size: stock.size,
-          requested,
-          currentStock: stock.storeQuantity,
-          reserved: stock.reservedQuantity,
-          reflected,
-          seen: typeof line.reflectedStockSeen === "number" && Number.isFinite(line.reflectedStockSeen) ? line.reflectedStockSeen : null,
-        });
-        continue;
-      }
-      linePayloads.push({
-        id: this.deps.idGenerator.nextId(),
-        gatepassId: "", // filled once the header id is known
-        lineNo: index + 1,
-        productVariantId: variantId,
-        article: stock.article,
-        color: stock.color,
-        size: stock.size,
-        quantity: requested,
-        storeQuantityAtCreation: stock.storeQuantity,
-        createdAt: tx.nowIso,
-      });
-      auditLines.push({
-        productVariantId: variantId,
-        article: stock.article,
-        color: stock.color,
-        size: stock.size,
-        quantity: requested,
-        storeQuantityAtCreation: stock.storeQuantity,
-        reservedAtCreation: stock.reservedQuantity,
-        reflectedStockAtCreation: reflected,
-        // How far this line takes the In Store figure below zero: what production now owes for it. 0 when it fits.
-        shortBy: gatepassShortBy(stock.storeQuantity, requested),
-      });
-    }
-
-    if (shortages.length > 0) throw shortageRejection(shortages);
-    return { linePayloads, auditLines };
+    return prepareGatepassLines(this.deps.repo, this.deps.idGenerator, lines, tx);
   }
 }
+
+/** What preparing a gatepass's lines needs: the live store figures, and whether the store may go below zero. */
+export interface GatepassLineStockRepo {
+  getStoreStockForVariants(productVariantIds: string[], tx: TransactionContext): Promise<GatepassVariantStock[]>;
+  gatepassMayGoBelowZero?(): boolean;
+}
+
+/**
+ * Checks a gatepass's lines against the store and makes their payloads (CreateGatepassUseCase.reserveLines). One
+ * function for Create and Edit, so an edited gatepass meets exactly the rule a new one does. An edit calls it after
+ * the gatepass's own old lines are gone, so their reservation is not counted against the new ones.
+ */
+export async function prepareGatepassLines(
+  repo: GatepassLineStockRepo,
+  idGenerator: { nextId(): string },
+  lines: GatepassLineInput[],
+  tx: TransactionContext
+): Promise<{ linePayloads: GatepassLinePayload[]; auditLines: Array<Record<string, unknown>> }> {
+  const variantIds = lines.map((line) => String(line.productVariantId).trim());
+  const stockRows = await repo.getStoreStockForVariants(variantIds, tx);
+  const stockById = new Map(stockRows.map((row) => [row.productVariantId, row]));
+
+  const mayGoBelowZero = repo.gatepassMayGoBelowZero?.call(repo) ?? false;
+  const shortages: GatepassShortage[] = [];
+  const linePayloads: GatepassLinePayload[] = [];
+  const auditLines: Array<Record<string, unknown>> = [];
+  for (const [index, line] of lines.entries()) {
+    const variantId = String(line.productVariantId).trim();
+    const stock = stockById.get(variantId);
+    if (!stock) {
+      throw new GatepassRejectedError(
+        "VARIANT_NOT_FOUND",
+        "One of the selected products is no longer active in Product Master. Refresh the stock and try again.",
+        { productVariantId: variantId }
+      );
+    }
+    const requested = line.quantity;
+    const reflected = reflectedStock(stock.storeQuantity, stock.reservedQuantity);
+    // More than is free for a new gatepass: refused, unless a gatepass may go below zero.
+    if (requested > maxNewGatepassQuantity(stock.storeQuantity, stock.reservedQuantity) && !mayGoBelowZero) {
+      shortages.push({
+        productVariantId: variantId,
+        article: stock.article,
+        color: stock.color,
+        size: stock.size,
+        requested,
+        currentStock: stock.storeQuantity,
+        reserved: stock.reservedQuantity,
+        reflected,
+        seen: typeof line.reflectedStockSeen === "number" && Number.isFinite(line.reflectedStockSeen) ? line.reflectedStockSeen : null,
+      });
+      continue;
+    }
+    linePayloads.push({
+      id: idGenerator.nextId(),
+      gatepassId: "", // filled once the header id is known
+      lineNo: index + 1,
+      productVariantId: variantId,
+      article: stock.article,
+      color: stock.color,
+      size: stock.size,
+      quantity: requested,
+      storeQuantityAtCreation: stock.storeQuantity,
+      createdAt: tx.nowIso,
+    });
+    auditLines.push({
+      productVariantId: variantId,
+      article: stock.article,
+      color: stock.color,
+      size: stock.size,
+      quantity: requested,
+      storeQuantityAtCreation: stock.storeQuantity,
+      reservedAtCreation: stock.reservedQuantity,
+      reflectedStockAtCreation: reflected,
+      // How far this line takes the In Store figure below zero: what production now owes for it. 0 when it fits.
+      shortBy: gatepassShortBy(stock.storeQuantity, requested),
+    });
+  }
+
+  if (shortages.length > 0) throw shortageRejection(shortages);
+  return { linePayloads, auditLines };
+}
+
+/** Exported for the edit use case: the same shape checks a new gatepass's lines meet. */
+export const checkGatepassLineShapes = (lines: GatepassLineInput[]): CreateGatepassResult | null => checkLineShapes(lines);
 
 // ─── Cancellation ──────────────────────────────────────────────────────────────
 // A gatepass is never deleted. Cancelling marks the document, keeps every line, and records

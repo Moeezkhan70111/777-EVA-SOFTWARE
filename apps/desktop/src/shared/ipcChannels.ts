@@ -342,6 +342,8 @@ export const IPC = {
   saveGatepassDeliveryProof: "erp:save-gatepass-delivery-proof",
   getGatepassDeliveryProof: "erp:get-gatepass-delivery-proof",
   cancelGatepass: "erp:cancel-gatepass",
+  editGatepass: "erp:edit-gatepass",
+  deleteGatepass: "erp:delete-gatepass",
 
   // Cloud sync: read-only status, and one manual pass. No background loop exists.
   getCloudSyncStatus: "erp:get-cloud-sync-status",

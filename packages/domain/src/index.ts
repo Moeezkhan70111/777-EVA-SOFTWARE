@@ -26,6 +26,7 @@ export * from "./codes.js";
 export * from "./cartonStock.js";
 export * from "./cartonAdjustment.js";
 export * from "./colorTranslation.js";
+export * from "./productColor.js";
 export * from "./productionDay.js";
 export * from "./handVoucher.js";
 export * from "./delimitedText.js";

@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { CancelGatepassUseCase, CreateGatepassUseCase } from "@erp/application";
+import { CancelGatepassUseCase, CreateGatepassUseCase, DeleteGatepassUseCase, EditGatepassUseCase } from "@erp/application";
 import { SqliteDatabase, buildCartonStockEvents } from "@erp/data";
 import { CARTON_QR_ON_HOLD, LEASE_DOMAIN, PENDING_ORDER_FILTER, type LeaseDomain } from "@erp/domain";
 import type { SyncEnvelope } from "./contract.js";
@@ -172,7 +172,7 @@ test("PC1 enters an order and makes two gatepasses; PC2 and PC3 read exactly the
     await passAll(cloud, pcs);
     for (const pc of pcs) {
       assert.deepEqual(pendingOn(pc, party), { BLUE: [6, 6, 0], RED: [10, 10, 0] }, `${pc.name}: the 1 over-dispatched RED stays unallocated`);
-      assert.equal(parkedSummary(pc.db.db).count, 0, `${pc.name} has nothing parked`);
+      assert.equal(parkedSummary(pc.db.db).count, 0, `${pc.name} has nothing parked: ${JSON.stringify(parkedSummary(pc.db.db).oldest)}`);
     }
   });
 });
@@ -224,5 +224,53 @@ test("before cloud 036 the order and allocation wait as UNKNOWN_RECORD_TYPE whil
     clock.ms += 3_600_000;
     await passAll(cloud, pcs);
     assert.deepEqual(pendingOn(pc2, party), { RED: [10, 4, 6] }, "then PC2 reads the same figures");
+  });
+});
+
+// A GATEPASS EDIT ACROSS THE OFFICE (local migration 118). The edit replaces the gatepass's lines and its order allocation
+// in one transaction on PC1, but the others receive the two records one at a time. Neither may wait for the other:
+// every computer ends with the new lines, the kept version and the reallocated pending figures, and nothing parked.
+test("PC1 edits a gatepass counted against an order; every computer gets the new lines, its history and the new pending figures", async () => {
+  await withOffice(async ({ cloud, pcs, party, red, blue }) => {
+    const [pc1] = pcs;
+    pc1.db.saveCustomerOrder({ requestId: crypto.randomUUID(), partyId: party, lines: [{ productVariantId: red, quantity: 10 }, { productVariantId: blue, quantity: 6 }], actor: "clerk" });
+    const gatepassId = await makeGatepass(pc1, party, [[red, 4]]);
+    await passAll(cloud, pcs);
+    for (const pc of pcs) assert.deepEqual(pendingOn(pc, party), { BLUE: [6, 0, 6], RED: [10, 4, 6] }, pc.name);
+
+    const edited = await new EditGatepassUseCase({ txManager: pc1.db, repo: pc1.db, idGenerator: ids() }).execute({
+      gatepassId, revisionNo: 1, partyId: party, reason: "typed cartons, meant dozens", actor: "owner", storeLocationId: STORE,
+      lines: [{ productVariantId: red, quantity: 8 }, { productVariantId: blue, quantity: 2 }],
+    });
+    assert.equal(edited.accepted, true, edited.reason);
+    await passAll(cloud, pcs);
+
+    for (const pc of pcs) {
+      const gatepass = pc.db.getGatepass(gatepassId)!;
+      assert.deepEqual(gatepass.lines.map((line) => [line.color, line.quantity]).sort(), [["BLUE", 2], ["RED", 8]], `${pc.name}: the new lines`);
+      assert.deepEqual([gatepass.revisionNo, gatepass.versions.map((v) => v.totalQuantity)], [2, [4]], `${pc.name}: the kept version`);
+      assert.deepEqual(pendingOn(pc, party), { BLUE: [6, 2, 4], RED: [10, 8, 2] }, `${pc.name}: reallocated`);
+      // The old lines' cartons came back and the new ones' went out, on every computer alike.
+      const stock = Object.fromEntries(pc.db.listStoreStockByArticle("SK6").map((row) => [row.color, row.storeQuantity]));
+      assert.deepEqual(stock, { BLUE: -2, RED: -8 }, `${pc.name}: stock`);
+      assert.equal(parkedSummary(pc.db.db).count, 0, `${pc.name} has nothing parked: ${JSON.stringify(parkedSummary(pc.db.db).oldest)}`);
+    }
+  });
+});
+
+test("PC1 cancels and deletes a gatepass; it leaves every computer's list and is kept on each", async () => {
+  await withOffice(async ({ cloud, pcs, party, red }) => {
+    const [pc1] = pcs;
+    const gatepassId = await makeGatepass(pc1, party, [[red, 3]]);
+    await passAll(cloud, pcs);
+    assert.equal((await new CancelGatepassUseCase({ txManager: pc1.db, repo: pc1.db, idGenerator: ids() }).execute({ gatepassId, reason: "wrong party", actor: "owner" })).accepted, true);
+    const deleted = await new DeleteGatepassUseCase({ txManager: pc1.db, repo: pc1.db, idGenerator: ids() }).execute({ gatepassId, reason: "made in error", actor: "owner" });
+    assert.equal(deleted.accepted, true, deleted.reason);
+    await passAll(cloud, pcs);
+    for (const pc of pcs) {
+      assert.equal(pc.db.listGatepasses({}).rows.some((row) => row.id === gatepassId), false, `${pc.name}: off the list`);
+      assert.deepEqual(pc.db.listGatepasses({ deleted: true }).rows.map((row) => [row.id, row.deletedBy]), [[gatepassId, "owner"]], `${pc.name}: on the log`);
+      assert.equal(parkedSummary(pc.db.db).count, 0, `${pc.name} has nothing parked: ${JSON.stringify(parkedSummary(pc.db.db).oldest)}`);
+    }
   });
 });

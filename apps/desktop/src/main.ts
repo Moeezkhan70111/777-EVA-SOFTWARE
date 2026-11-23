@@ -692,6 +692,8 @@ function composeUseCases(db: SqliteDatabase, dataModule: DataModule, application
     // but it touches none of the QR / event / stock tables the scanners above own.
     createGatepassUseCase: new applicationModule.CreateGatepassUseCase({ txManager: db, repo: db, idGenerator: idGenerator() }),
     cancelGatepassUseCase: new applicationModule.CancelGatepassUseCase({ txManager: db, repo: db, idGenerator: idGenerator() }),
+    editGatepassUseCase: new applicationModule.EditGatepassUseCase({ txManager: db, repo: db, idGenerator: idGenerator() }),
+    deleteGatepassUseCase: new applicationModule.DeleteGatepassUseCase({ txManager: db, repo: db, idGenerator: idGenerator() }),
     // Machine Program: a reservation against raw material store stock, for one machine on one
     // date. Like the Gatepass above it writes only its own tables — the uppers leave the store
     // through the Raw Material Output scanner, which is where the reservation is consumed.

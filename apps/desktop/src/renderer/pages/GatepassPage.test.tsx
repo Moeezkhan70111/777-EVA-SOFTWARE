@@ -54,7 +54,7 @@ const makeDocument = (gatepassNumber: number, input: any, stock: GatepassStockRo
     gatepassDate: "2026-09-16", status, biltyNumber: input.biltyNumber ?? null, transportVia: input.transportVia ?? null, remarks: input.remarks ?? null,
     totalQuantity: lines.reduce((s: number, l: any) => s + l.quantity, 0), dispatchedFromStoreQuantity: 0, issuedDirectlyQuantity: 0, outstandingQuantity: lines.reduce((s: number, l: any) => s + l.quantity, 0), lineCount: lines.length,
     createdBy: "clerk", createdAt: "2026-09-16T10:00:00.000Z", updatedAt: "2026-09-16T10:00:00.000Z",
-    cancelledAt: status === "CANCELLED" ? "2026-09-17T08:00:00.000Z" : null, cancelledBy: status === "CANCELLED" ? "owner" : null, cancelReason: status === "CANCELLED" ? "Wrong party" : null, lines,
+    cancelledAt: status === "CANCELLED" ? "2026-09-17T08:00:00.000Z" : null, cancelledBy: status === "CANCELLED" ? "owner" : null, cancelReason: status === "CANCELLED" ? "Wrong party" : null, revisionNo: 1, editedAt: null, editedBy: null, deletedAt: null, deletedBy: null, deleteReason: null, versions: [], lines,
   };
 };
 
@@ -81,6 +81,13 @@ function createFakeBackend(opts: { stock?: GatepassStockRow[]; createResult?: (i
     getHeldLeases: vi.fn(async () => ["ACCOUNTS"]),
     getProductImage: vi.fn(async (article: string) => (article === "SK6" ? SK6_IMAGE : null)),
     createGatepass,
+    // An edit replaces the stored document's lines under the same number, at the next revision (local migration 118).
+    editGatepass: vi.fn(async (input: any) => {
+      const current = [...documents.values()].find((d) => d.id === input.gatepassId)!;
+      const next = { ...makeDocument(current.gatepassNumber, { ...input, partyId: input.partyId }, stock, current.status), id: current.id, revisionNo: current.revisionNo + 1 };
+      documents.set(current.gatepassNumber, next);
+      return { accepted: true, outcome: "EDITED", gatepassId: current.id, code: current.code, revisionNo: next.revisionNo, totalQuantity: next.totalQuantity };
+    }),
     // Was the press of Create a previous session never heard back from recorded? Nothing left over by default.
     findGatepassByRequest: vi.fn(async (_requestId: string) => ({ accepted: true, saved: null as { id: string; label: string } | null })),
     getGatepass: vi.fn(async (id: string): Promise<Gatepass | null> => [...documents.values()].find((d) => d.id === id) ?? null),
@@ -100,10 +107,10 @@ function createFakeBackend(opts: { stock?: GatepassStockRow[]; createResult?: (i
   return { api, created, setStock: (next: GatepassStockRow[]) => { stock = next; } };
 }
 
-const renderPage = (onNavigate = vi.fn()) => {
+const renderPage = (onNavigate = vi.fn(), onMakeBill?: (gatepassId: string) => void, canEdit = false) => {
   const utils = render(
     <NotificationsProvider>
-      <GatepassPage token="token-1" username="clerk" onNavigate={onNavigate} />
+      <GatepassPage token="token-1" username="clerk" onNavigate={onNavigate} onMakeBill={onMakeBill} canEdit={canEdit} />
       <NotificationCenter />
     </NotificationsProvider>
   );
@@ -183,6 +190,13 @@ describe("GatepassPage", () => {
     expect(screen.getByTestId("gatepass-add-article")).toBeDisabled();
   });
 
+  it("offers no Make Bill to someone who may not open Sale Voucher", async () => {
+    createFakeBackend();
+    renderPage();
+    await screen.findByTestId("gatepass-articles-section");
+    expect(screen.queryByTestId("gatepass-make-bill")).not.toBeInTheDocument();
+  });
+
   it("shows the chosen party with its city and current balance", async () => {
     const { api } = createFakeBackend();
     renderPage();
@@ -211,11 +225,11 @@ describe("GatepassPage", () => {
     await addArticle("sk6 7/10");
     const sk6 = card("SK6-7/10");
     expect(isExpanded("SK6-7/10")).toBe(true);
-    // Colours in natural order with their In Store cartons; a colour the article does not come in is absent.
+    // Colours in natural order with what is In Store, in dozens (80 and 120 cartons); a colour the article does not come in is absent.
     const rows = within(sk6).getAllByRole("row").slice(1);
     expect(rows.map((r) => within(r).getAllByRole("cell").slice(0, 2).map((c) => c.textContent))).toEqual([
-      ["BLUE", "80"],
-      ["RED", "120"],
+      ["BLUE", "40"],
+      ["RED", "60"],
     ]);
     expect(screen.queryByLabelText("Quantity for SK6 EVR GENTS NAVY 7/10")).not.toBeInTheDocument();
 
@@ -272,7 +286,7 @@ describe("GatepassPage", () => {
     expect(card("SK12-4/6")).toBeInTheDocument();
   });
 
-  it("steps one carton at a time with − / +, stops at 0, and goes on past what the store holds with a warning", async () => {
+  it("steps one dozen at a time with − / +, stops at 0, and goes on past what the store holds with a warning", async () => {
     createFakeBackend();
     renderPage();
     await screen.findByTestId("gatepass-articles-section");
@@ -287,19 +301,20 @@ describe("GatepassPage", () => {
     expect(qty("SK6", "NAVY", "4/6").value).toBe("1");
     expect(minus).toBeEnabled();
 
-    await typeQty("SK6", "NAVY", "4/6", "14");
+    // NAVY 4/6 holds 15 cartons, 7.5 dozen. 7 dozen fits; 8 dozen is one carton more than the store holds.
+    await typeQty("SK6", "NAVY", "4/6", "6");
     await act(async () => {
       fireEvent.click(plus);
     });
-    expect(qty("SK6", "NAVY", "4/6").value).toBe("15");
+    expect(qty("SK6", "NAVY", "4/6").value).toBe("7");
     expect(screen.queryByTestId("below-zero-SK6-NAVY-4/6")).not.toBeInTheDocument();
     // Owner, 12 Nov 2026: past what the store holds is allowed; the row says where the figure goes.
     expect(plus).toBeEnabled();
     await act(async () => {
       fireEvent.click(plus);
     });
-    expect(qty("SK6", "NAVY", "4/6").value).toBe("16");
-    expect(screen.getByTestId("below-zero-SK6-NAVY-4/6")).toHaveTextContent("⚠ Stock goes to -1. Add the production later to balance it.");
+    expect(qty("SK6", "NAVY", "4/6").value).toBe("8");
+    expect(screen.getByTestId("below-zero-SK6-NAVY-4/6")).toHaveTextContent("⚠ Stock goes to -0.5 DZN. Add the production later to balance it.");
 
     await act(async () => {
       fireEvent.click(minus);
@@ -307,9 +322,9 @@ describe("GatepassPage", () => {
     await act(async () => {
       fireEvent.click(minus);
     });
-    expect(qty("SK6", "NAVY", "4/6").value).toBe("14");
+    expect(qty("SK6", "NAVY", "4/6").value).toBe("6");
     expect(screen.queryByTestId("below-zero-SK6-NAVY-4/6")).not.toBeInTheDocument();
-    expect(screen.getByTestId("gatepass-summary-total")).toHaveTextContent("14");
+    expect(screen.getByTestId("gatepass-summary-total")).toHaveTextContent("6");
   });
 
   it("shows In Store, Reserved and Available per colour, warns past Available, and sends the line and the Reflected figure it showed", async () => {
@@ -323,21 +338,23 @@ describe("GatepassPage", () => {
     await addArticle("sk6 7/10");
 
     const cardEl = card("SK6-7/10");
-    expect(within(cardEl).getAllByRole("columnheader").map((h) => h.textContent)).toEqual(["Color", "In Store", "Reserved", "Available", "Gatepass Qty"]);
-    expect(screen.getByTestId("current-SK6-RED-7/10")).toHaveTextContent("5");
-    expect(screen.getByTestId("reserved-SK6-RED-7/10")).toHaveTextContent("4");
-    expect(screen.getByTestId("available-SK6-RED-7/10")).toHaveTextContent("1");
+    // Every figure in dozens, and every heading says so: 5 cartons is 2.5 dozen.
+    expect(within(cardEl).getAllByRole("columnheader").map((h) => h.textContent)).toEqual(["Color", "In Store (DZN)", "Reserved (DZN)", "Available (DZN)", "Gatepass Qty (DZN)"]);
+    expect(screen.getByTestId("current-SK6-RED-7/10")).toHaveTextContent("2.5");
+    expect(screen.getByTestId("reserved-SK6-RED-7/10")).toHaveTextContent("2");
+    expect(screen.getByTestId("available-SK6-RED-7/10")).toHaveTextContent("0.5");
     // A fully reserved colour stays visible and says so. It can still go on the gatepass (owner, 12 Nov 2026).
     expect(screen.getByTestId("available-SK6-BLUE-7/10")).toHaveTextContent("0Fully reserved");
     expect(screen.getByRole("button", { name: "Increase SK6 EVR GENTS BLUE 7/10" })).toBeEnabled();
 
     // Up to the 5 In Store: no warning. 6 is more than the store holds: no error, a warning that In Store
     // goes to -1 (the figure Carton Stock will show), and Create stays open.
-    await typeQty("SK6", "RED", "7/10", "5");
+    await typeQty("SK6", "RED", "7/10", "2.5");
     expect(screen.queryByTestId("below-zero-SK6-RED-7/10")).not.toBeInTheDocument();
-    await typeQty("SK6", "RED", "7/10", "6");
+    // 3 dozen is 6 cartons, one more than the 5 In Store.
+    await typeQty("SK6", "RED", "7/10", "3");
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
-    expect(screen.getByTestId("below-zero-SK6-RED-7/10")).toHaveTextContent("Stock goes to -1");
+    expect(screen.getByTestId("below-zero-SK6-RED-7/10")).toHaveTextContent("Stock goes to -0.5 DZN");
     expect(qty("SK6", "RED", "7/10")).toHaveAttribute("aria-invalid", "false");
     expect(screen.getByTestId("gatepass-create")).toBeEnabled();
 
@@ -361,13 +378,14 @@ describe("GatepassPage", () => {
     await screen.findByTestId("gatepass-articles-section");
     const figures = (key: string) =>
       within(card(key)).getAllByRole("row").slice(1).map((row) => within(row).getAllByRole("cell").slice(0, 4).map((cell) => cell.textContent));
-    const SK6_FIGURES = [["BLUE", "14", "2", "12"], ["RED", "6", "0", "6"]];
+    // The cartons above, in dozens.
+    const SK6_FIGURES = [["BLUE", "7", "1", "6"], ["RED", "3", "0", "3"]];
 
     await addArticle("sk6 7/10");
     expect(figures("SK6-7/10")).toEqual(SK6_FIGURES);
 
     await addArticle("sk12");
-    expect(figures("SK12-4/6")).toEqual([["BLACK", "8", "3", "5"], ["GREY", "3", "3", "0Fully reserved"]]);
+    expect(figures("SK12-4/6")).toEqual([["BLACK", "4", "1.5", "2.5"], ["GREY", "1.5", "1.5", "0Fully reserved"]]);
     expect(within(card("SK6-7/10")).queryByRole("row")).not.toBeInTheDocument();
 
     await act(async () => {
@@ -385,11 +403,12 @@ describe("GatepassPage", () => {
     await addArticle("sk6 7/10");
 
     // Owner, 12 Nov 2026: more than the store holds goes on the gatepass, and the row says by how much.
-    await typeQty("SK6", "RED", "7/10", "130");
+    // 65 dozen is 130 cartons against the 120 In Store: 10 cartons, 5 dozen, short.
+    await typeQty("SK6", "RED", "7/10", "65");
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
-    expect(screen.getByTestId("below-zero-SK6-RED-7/10")).toHaveTextContent("Stock goes to -10");
+    expect(screen.getByTestId("below-zero-SK6-RED-7/10")).toHaveTextContent("Stock goes to -5 DZN");
     expect(qty("SK6", "RED", "7/10")).toHaveAttribute("aria-describedby", "gp-qty-warning-v-sk6-red-710");
-    expect(screen.getByTestId("gatepass-summary-total")).toHaveTextContent("130");
+    expect(screen.getByTestId("gatepass-summary-total")).toHaveTextContent("65");
     expect(screen.getByTestId("gatepass-create")).toBeEnabled();
 
     await typeQty("SK6", "RED", "7/10", "-5");
@@ -399,8 +418,9 @@ describe("GatepassPage", () => {
     expect(screen.getByTestId("gatepass-blocker")).toHaveTextContent("Fix the highlighted quantities first.");
     // A bad line never counts towards the document.
     expect(screen.getByTestId("gatepass-summary-total")).toHaveTextContent("0");
-    await typeQty("SK6", "RED", "7/10", "2.5");
-    expect(screen.getByRole("alert")).toHaveTextContent("Enter whole cartons only.");
+    // Smaller than half a dozen is not a whole carton.
+    await typeQty("SK6", "RED", "7/10", "2.25");
+    expect(screen.getByRole("alert")).toHaveTextContent("Dozens go in halves: 0.5 dozen is one carton.");
 
     // A closed card with a problem says so on its one line.
     await addArticle("sk12");
@@ -409,9 +429,9 @@ describe("GatepassPage", () => {
     await act(async () => {
       fireEvent.click(within(card("SK6-7/10")).getByRole("button", { expanded: false }));
     });
-    await typeQty("SK6", "RED", "7/10", "120");
+    await typeQty("SK6", "RED", "7/10", "60");
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
-    expect(screen.getByTestId("gatepass-summary-total")).toHaveTextContent("120");
+    expect(screen.getByTestId("gatepass-summary-total")).toHaveTextContent("60");
     expect(screen.getByTestId("gatepass-create")).toBeEnabled();
   });
 
@@ -454,15 +474,17 @@ describe("GatepassPage", () => {
 
   it("creates the document with every line in document order, bilty, via and remarks; no rate, discount or amount is ever sent", async () => {
     const { api, created } = createFakeBackend();
-    const { onNavigate } = renderPage();
+    const onMakeBill = vi.fn();
+    const { onNavigate } = renderPage(vi.fn(), onMakeBill);
     await screen.findByTestId("gatepass-articles-section");
     await chooseParty("abc");
 
     await addArticle("sk12");
-    await typeQty("SK12", "BLACK", "4/6", "30");
+    // Typed in dozens; the backend is sent the cartons (15 dozen = 30 cartons).
+    await typeQty("SK12", "BLACK", "4/6", "15");
     await addArticle("sk6 7/10");
-    await typeQty("SK6", "RED", "7/10", "50");
-    await typeQty("SK6", "BLUE", "7/10", "20");
+    await typeQty("SK6", "RED", "7/10", "25");
+    await typeQty("SK6", "BLUE", "7/10", "10");
     await act(async () => {
       fireEvent.change(screen.getByLabelText("Bilty No."), { target: { value: " B-4471 " } });
       fireEvent.change(screen.getByLabelText("Via"), { target: { value: "Daewoo Cargo" } });
@@ -504,13 +526,13 @@ describe("GatepassPage", () => {
     expect(facts).toHaveTextContent("Vehicle LEA-1234");
     // Cards in document order, the first open with its quantities and no way to change them.
     expect(screen.getAllByTestId(/^gatepass-article-SK/).map((el) => el.getAttribute("data-testid"))).toEqual(["gatepass-article-SK6-7/10", "gatepass-article-SK12-4/6"]);
-    expect(screen.getByTestId("qty-SK6-BLUE-7/10")).toHaveTextContent("20");
-    expect(screen.getByTestId("qty-SK6-RED-7/10")).toHaveTextContent("50");
-    expect(screen.getByTestId("available-SK6-RED-7/10")).toHaveTextContent("120");
+    expect(screen.getByTestId("qty-SK6-BLUE-7/10")).toHaveTextContent("10");
+    expect(screen.getByTestId("qty-SK6-RED-7/10")).toHaveTextContent("25");
+    expect(screen.getByTestId("available-SK6-RED-7/10")).toHaveTextContent("60");
     expect(screen.queryByLabelText(/^Quantity for/)).not.toBeInTheDocument();
     expect(screen.queryByLabelText(/^Remove/)).not.toBeInTheDocument();
-    expect(screen.getByTestId("gatepass-article-meta-SK12-4/6")).toHaveTextContent("1 color selected · Total Qty: 30");
-    expect(screen.getByTestId("gatepass-summary-total")).toHaveTextContent("100");
+    expect(screen.getByTestId("gatepass-article-meta-SK12-4/6")).toHaveTextContent("1 color selected · Total Qty: 15 DZN");
+    expect(screen.getByTestId("gatepass-summary-total")).toHaveTextContent("50");
     expect(screen.getByTestId("gatepass-summary-counts")).toHaveTextContent("2 Articles · 3 Colors");
     expect(screen.getByTestId("gatepass-summary-party")).toHaveTextContent("ABC TRADERS · Lahore");
     expect((screen.getByTestId("gatepass-number-input") as HTMLInputElement).value).toBe("1");
@@ -521,6 +543,12 @@ describe("GatepassPage", () => {
       fireEvent.click(screen.getByText("Open in list"));
     });
     expect(onNavigate).toHaveBeenCalledWith("gatepass-list", "gp-1");
+
+    // Make Bill: straight from the new gatepass into Sale Voucher, for this gatepass.
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Make Bill" }));
+    });
+    expect(onMakeBill).toHaveBeenCalledWith("gp-1");
 
     // New Gatepass: a clean page, stock re-read from the store.
     const stockCalls = api.listGatepassStoreStock.mock.calls.length;
@@ -565,7 +593,8 @@ describe("GatepassPage", () => {
     expect(screen.getByTestId("gatepass-cancelled-banner")).toHaveTextContent("owner");
     expect(screen.getByTestId("gatepass-cancelled-banner")).toHaveTextContent("Wrong party");
     expect(screen.getByTestId("gatepass-summary-party")).toHaveTextContent("XYZ TRADERS · Karachi");
-    expect(screen.getByTestId("gatepass-summary-total")).toHaveTextContent("7");
+    // The stored 7 cartons, in dozens.
+    expect(screen.getByTestId("gatepass-summary-total")).toHaveTextContent("3.5");
 
     // ‹ again: the one before; at #1 there is nothing earlier.
     await act(async () => {
@@ -573,7 +602,7 @@ describe("GatepassPage", () => {
     });
     await waitFor(() => expect(screen.getByTestId("gatepass-title")).toHaveTextContent("Gatepass GP-000001"));
     expect(screen.getByTestId("gatepass-prev")).toBeDisabled();
-    expect(screen.getByTestId("qty-SK6-RED-7/10")).toHaveTextContent("5");
+    expect(screen.getByTestId("qty-SK6-RED-7/10")).toHaveTextContent("2.5");
 
     // Load by typed number.
     await act(async () => {
@@ -677,7 +706,8 @@ describe("GatepassPage", () => {
     await screen.findByTestId("gatepass-articles-section");
     await chooseParty("abc");
     await addArticle("sk6 7/10");
-    await typeQty("SK6", "RED", "7/10", "100");
+    // 50 dozen: the 100 cartons the backend reports as requested.
+    await typeQty("SK6", "RED", "7/10", "50");
     await addArticle("sk12");
     await typeQty("SK12", "BLACK", "4/6", "10");
     const stockCallsBefore = backend.api.listGatepassStoreStock.mock.calls.length;
@@ -688,7 +718,7 @@ describe("GatepassPage", () => {
 
     const alert = await screen.findByTestId("gatepass-submit-error");
     expect(alert).toHaveTextContent("Available stock changed before the Gatepass could be created.");
-    expect(alert).toHaveTextContent("SK6 / RED / 7/10 — In Store 120, Reserved 40, Available 80, Requested 100 (you saw 120)");
+    expect(alert).toHaveTextContent("SK6 / RED / 7/10 — In Store 60, Reserved 20, Available 40, Requested 50 (DZN) (you saw 60)");
     expect(alert).not.toHaveTextContent("Reflected");
     expect(calls).toBe(1);
     expect(screen.queryByTestId("gatepass-document")).not.toBeInTheDocument();
@@ -697,11 +727,11 @@ describe("GatepassPage", () => {
     await waitFor(() => expect(backend.api.listGatepassStoreStock.mock.calls.length).toBe(stockCallsBefore + 1));
     expect(isExpanded("SK6-7/10")).toBe(true);
     expect(screen.queryByTestId("below-zero-SK6-RED-7/10")).not.toBeInTheDocument();
-    expect(screen.getByTestId("current-SK6-RED-7/10")).toHaveTextContent("120");
-    expect(screen.getByTestId("reserved-SK6-RED-7/10")).toHaveTextContent("40");
-    expect(screen.getByTestId("available-SK6-RED-7/10")).toHaveTextContent("80");
-    expect(qty("SK6", "RED", "7/10").value).toBe("100");
-    expect(screen.getByTestId("gatepass-article-meta-SK12-4/6")).toHaveTextContent("Total Qty: 10");
+    expect(screen.getByTestId("current-SK6-RED-7/10")).toHaveTextContent("60");
+    expect(screen.getByTestId("reserved-SK6-RED-7/10")).toHaveTextContent("20");
+    expect(screen.getByTestId("available-SK6-RED-7/10")).toHaveTextContent("40");
+    expect(qty("SK6", "RED", "7/10").value).toBe("50");
+    expect(screen.getByTestId("gatepass-article-meta-SK12-4/6")).toHaveTextContent("Total Qty: 10 DZN");
   });
 
   it("surfaces an authorisation refusal without pretending anything was created", async () => {
@@ -827,5 +857,78 @@ describe("one press of Create is one gatepass, however the answer is lost (migra
     await pressCreate();
     await waitFor(() => expect(api.createGatepass).toHaveBeenCalledTimes(1));
     expect(window.localStorage.getItem(REQUEST_STORAGE_KEY.GATEPASS)).toBe(requestIdOf(api, 0));
+  });
+});
+
+// EDIT (local migration 118): a stored gatepass goes onto the draft in dozens, with the store shown as the edit counts
+// it; Save changes needs a reason and sends the cartons with the revision it opened; the document comes back.
+describe("GatepassPage edit", () => {
+  const createOne = async () => {
+    await screen.findByTestId("gatepass-articles-section");
+    await chooseParty("abc");
+    await addArticle("sk6 7/10");
+    // 5 dozen: 10 cartons.
+    await typeQty("SK6", "RED", "7/10", "5");
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("gatepass-create"));
+    });
+    await screen.findByTestId("gatepass-document");
+  };
+
+  it("offers no Edit to someone who may not edit", async () => {
+    createFakeBackend();
+    renderPage();
+    await createOne();
+    expect(screen.queryByTestId("gatepass-edit")).not.toBeInTheDocument();
+  });
+
+  it("edits a stored gatepass in dozens, needs a reason, and saves the cartons with the revision it opened", async () => {
+    const { api } = createFakeBackend();
+    renderPage(vi.fn(), undefined, true);
+    await createOne();
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("gatepass-edit"));
+    });
+    expect(screen.getByTestId("gatepass-title")).toHaveTextContent("Edit GP-000001");
+    expect(screen.getByTestId("gatepass-edit-bar")).toHaveTextContent("Its number stays the same");
+    // The stored 10 cartons read back as the 5 dozen they are.
+    expect(qty("SK6", "RED", "7/10").value).toBe("5");
+
+    await typeQty("SK6", "RED", "7/10", "7");
+    expect(screen.getByTestId("gatepass-edit-save")).toBeDisabled();
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText("Reason for the edit"), { target: { value: "typed cartons, meant dozens" } });
+    });
+    expect(screen.getByTestId("gatepass-edit-save")).toBeEnabled();
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("gatepass-edit-save"));
+    });
+
+    await waitFor(() => expect(api.editGatepass).toHaveBeenCalledTimes(1));
+    expect(api.editGatepass.mock.calls[0][0]).toEqual({
+      gatepassId: "gp-1", revisionNo: 1, partyId: "p-abc", reason: "typed cartons, meant dozens",
+      lines: [{ productVariantId: "v-sk6-red-710", quantity: 14, reflectedStockSeen: 120 }],
+      biltyNumber: null, transportVia: null, remarks: null,
+    });
+    // The edited document is shown again, read-only, under the same number.
+    await screen.findByTestId("gatepass-document");
+    expect(screen.getByTestId("gatepass-title")).toHaveTextContent("Gatepass GP-000001");
+    expect(screen.getByTestId("qty-SK6-RED-7/10")).toHaveTextContent("7");
+  });
+
+  it("cancels an edit back to the stored gatepass, unchanged", async () => {
+    const { api } = createFakeBackend();
+    renderPage(vi.fn(), undefined, true);
+    await createOne();
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("gatepass-edit"));
+    });
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("gatepass-edit-cancel"));
+    });
+    expect(screen.getByTestId("gatepass-title")).toHaveTextContent("Gatepass GP-000001");
+    expect(api.editGatepass).not.toHaveBeenCalled();
   });
 });

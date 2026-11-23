@@ -55,6 +55,8 @@ export const NAV_PERMISSION_MODULES = [
     children: [
       ["gatepass", "Gatepass (view / create / print)"],
       ["gatepass-cancel", "Cancel Gatepass"],
+      ["gatepass-edit", "Edit Gatepass"],
+      ["gatepass-delete", "Delete cancelled Gatepass"],
     ],
   },
   {

@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
+import { cartonsToDozens } from "@erp/domain";
 import { buildStockGrid, rowKeyOf } from "../../utils/gatepassGrid";
 import type { GatepassStockRow } from "../../types/desktopApi";
-import { buildDraft, buildDraftFromDocument, checkQuantity, createBlocker, listArticleOptions, stepQuantity } from "./gatepassDraft";
+import { buildDraft, buildDraftFromDocument, checkQuantity, createBlocker, dozensText, listArticleOptions, stepQuantity } from "./gatepassDraft";
 
 // SK6 in two sizes and three colours, SK12 in one size, one colour — out of order on
 // purpose, so the draft's own ordering is what is asserted. RED 7/10 carries a reservation
@@ -32,21 +33,48 @@ const SK6_46 = rowKeyOf("SK6", "4/6");
 const SK12_46 = rowKeyOf("SK12", "4/6");
 
 describe("checkQuantity", () => {
-  it("treats empty and zero as not selected, rejects text, negatives and fractions, and allows more than the store holds", () => {
+  // Owner, 23 Nov 2026: the desk types DOZENS; the value is the cartons that are stored (1 dozen = 2 cartons).
+  // A gatepass of SK46 11/13 BLACKGREY 5 is 5 dozen: 10 cartons, billed as 5 dozen.
+  it("reads dozens and gives cartons: 5 is 10 cartons, a half dozen is one carton", () => {
     expect(checkQuantity("")).toEqual({ value: 0, error: null });
     expect(checkQuantity("0")).toEqual({ value: 0, error: null });
-    expect(checkQuantity(" 7 ")).toEqual({ value: 7, error: null });
-    expect(checkQuantity("10")).toEqual({ value: 10, error: null });
-    expect(checkQuantity("abc").error).toMatch(/whole number/i);
+    expect(checkQuantity("5")).toEqual({ value: 10, error: null });
+    expect(checkQuantity(" 7 ")).toEqual({ value: 14, error: null });
+    expect(checkQuantity("2.5")).toEqual({ value: 5, error: null });
+    expect(checkQuantity("0.5")).toEqual({ value: 1, error: null });
+  });
+
+  it("refuses text, negatives and anything smaller than half a dozen, and allows more than the store holds", () => {
+    expect(checkQuantity("abc").error).toMatch(/in dozens/i);
     expect(checkQuantity("-1").error).toMatch(/negative/i);
-    expect(checkQuantity("1.5").error).toMatch(/whole cartons/i);
+    expect(checkQuantity("2.25").error).toMatch(/halves/i);
+    expect(checkQuantity("0.3").error).toMatch(/halves/i);
     // Owner, 12 Nov 2026: a gatepass may take more than the store holds; production makes it up later.
-    expect(checkQuantity("11")).toEqual({ value: 11, error: null });
+    expect(checkQuantity("11")).toEqual({ value: 22, error: null });
+  });
+
+  it("writes cartons back as the dozens they are", () => {
+    expect([dozensText(10), dozensText(5), dozensText(1), dozensText(0)]).toEqual(["5", "2.5", "0.5", "0"]);
+    expect(checkQuantity(dozensText(7)).value).toBe(7);
+  });
+});
+
+describe("the owner's case, 23 Nov 2026", () => {
+  it("a gatepass of SK46 11/13 BLACKGREY 5 is 5 dozen: 10 cartons leave stock and the bill says 5 dozen", () => {
+    const sk46 = buildStockGrid([stockRow("v-sk46-bg-1113", "SK46", "BLACKGREY", "11/13", 0)]);
+    const draft = buildDraft(sk46, [rowKeyOf("SK46", "11/13")], { "v-sk46-bg-1113": "5" });
+    // What is stored and leaves stock: 10 cartons, so In Store goes to -10 cartons, which is -5 dozen.
+    expect(draft.lines).toEqual([{ productVariantId: "v-sk46-bg-1113", quantity: 10, reflectedStockSeen: 0 }]);
+    expect(draft.articles[0].colours[0].after).toBe(-10);
+    expect(cartonsToDozens(draft.articles[0].colours[0].after)).toBe(-5);
+    // The bill folds the gatepass's cartons into dozens the same way (sales.ts gatepassBillQuantities).
+    expect(cartonsToDozens(draft.lines[0].quantity)).toBe(5);
+    expect(dozensText(draft.total)).toBe("5");
   });
 });
 
 describe("stepQuantity", () => {
-  it("moves one carton at a time, never below 0, and past what the store holds", () => {
+  it("moves one dozen at a time, never below 0, and past what the store holds", () => {
     expect(stepQuantity("", 1)).toBe(1);
     expect(stepQuantity("4", 1)).toBe(5);
     expect(stepQuantity("5", 1)).toBe(6);
@@ -55,6 +83,8 @@ describe("stepQuantity", () => {
     // Unusable text starts again from 0.
     expect(stepQuantity("abc", 1)).toBe(1);
     expect(stepQuantity("9", -1)).toBe(8);
+    // A half dozen typed stays a half: 2.5 + 1 is 3.5.
+    expect(stepQuantity("2.5", 1)).toBe(3.5);
   });
 });
 
@@ -87,9 +117,10 @@ describe("buildDraft", () => {
 
   it("adds up per article and overall, counts only colours with cartons, and sends lines in document order with the Reflected Stock seen", () => {
     const draft = buildDraft(grid, [SK12_46, SK6_710, SK6_46], {
-      "v-sk6-red-710": "50",
-      "v-sk6-blue-710": "20",
-      "v-sk12-black-46": "5",
+      // Typed in dozens; every figure below is the cartons stored.
+      "v-sk6-red-710": "25",
+      "v-sk6-blue-710": "10",
+      "v-sk12-black-46": "2.5",
       "v-sk6-red-46": "0",
     });
     const sk6 = draft.articles.find((a) => a.key === SK6_710)!;
@@ -111,7 +142,7 @@ describe("buildDraft", () => {
   it("allows more than the store holds, sends it, and says what the In Store figure will be (owner, 12 Nov 2026)", () => {
     // RED 7/10: 120 In Store (20 of them reserved). 121 goes on the gatepass and takes In Store to -1,
     // the figure Carton Stock will show.
-    const draft = buildDraft(grid, [SK6_710], { "v-sk6-red-710": "121", "v-sk6-blue-710": "10" });
+    const draft = buildDraft(grid, [SK6_710], { "v-sk6-red-710": "60.5", "v-sk6-blue-710": "5" });
     const red = draft.articles[0].colours.find((c) => c.colour === "RED")!;
     expect(red.check).toEqual({ value: 121, error: null });
     expect(red.after).toBe(-1);
@@ -123,12 +154,12 @@ describe("buildDraft", () => {
       { productVariantId: "v-sk6-red-710", quantity: 121, reflectedStockSeen: 100 },
     ]);
     // Exactly what is In Store leaves it at 0.
-    expect(buildDraft(grid, [SK6_710], { "v-sk6-red-710": "120" }).articles[0].colours.find((c) => c.colour === "RED")!.after).toBe(0);
+    expect(buildDraft(grid, [SK6_710], { "v-sk6-red-710": "60" }).articles[0].colours.find((c) => c.colour === "RED")!.after).toBe(0);
     // A fully reserved colour can take cartons too, and goes below zero past what it holds.
-    const navy = buildDraft(grid, [SK6_46], { "v-sk6-navy-46": "16" }).articles[0].colours.find((c) => c.colour === "NAVY")!;
+    const navy = buildDraft(grid, [SK6_46], { "v-sk6-navy-46": "8" }).articles[0].colours.find((c) => c.colour === "NAVY")!;
     expect([navy.check.error, navy.after]).toEqual([null, -1]);
     // A colour with nothing In Store goes below zero by every carton.
-    expect(buildDraft(grid, [SK6_710], { "v-sk6-green-710": "3" }).articles[0].colours.find((c) => c.colour === "GREEN")!.after).toBe(-3);
+    expect(buildDraft(grid, [SK6_710], { "v-sk6-green-710": "1.5" }).articles[0].colours.find((c) => c.colour === "GREEN")!.after).toBe(-3);
   });
 
   it("ignores an added key the store no longer holds", () => {
@@ -142,7 +173,7 @@ describe("createBlocker", () => {
     const empty = buildDraft(grid, [SK6_710], {});
     expect(createBlocker(empty, "")).toBe("Select a party first.");
     expect(createBlocker(empty, "p-1")).toBe("Add an article and enter at least one quantity.");
-    const bad = buildDraft(grid, [SK6_710], { "v-sk6-red-710": "1.5" });
+    const bad = buildDraft(grid, [SK6_710], { "v-sk6-red-710": "1.25" });
     expect(createBlocker(bad, "p-1")).toBe("Fix the highlighted quantities first.");
     // More than the store holds is not an error: it blocks nothing (owner, 12 Nov 2026).
     expect(createBlocker(buildDraft(grid, [SK6_710], { "v-sk6-red-710": "999" }), "p-1")).toBeNull();
@@ -175,8 +206,9 @@ describe("buildDraftFromDocument", () => {
       [SK12_46, 30, 1],
     ]);
     expect(draft.articles[0].colours.map((c) => [c.colour, c.currentStock, c.text, c.check, c.progress])).toEqual([
-      ["BLUE", 80, "20", { value: 20, error: null }, { dispatchedFromStore: 5, issuedDirectly: 0, outstanding: 15 }],
-      ["RED", 120, "50", { value: 50, error: null }, { dispatchedFromStore: 50, issuedDirectly: 0, outstanding: 0 }],
+      // The stored 20 cartons read as the 10 dozen they are.
+      ["BLUE", 80, "10", { value: 20, error: null }, { dispatchedFromStore: 5, issuedDirectly: 0, outstanding: 15 }],
+      ["RED", 120, "25", { value: 50, error: null }, { dispatchedFromStore: 50, issuedDirectly: 0, outstanding: 0 }],
     ]);
     expect(draft.total).toBe(100);
     expect(draft.articleCount).toBe(2);

@@ -1,11 +1,11 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import type { AppRoute } from "../app/routes";
 import { useDesktopApi } from "../hooks/useDesktopApi";
 import { REQUEST_STORAGE_KEY, useLeftoverRequest, useRequestId } from "../hooks/useRequestId";
 import { useNotifications } from "../state/NotificationsContext";
 import { StateView } from "../components/shared/StateView";
-import type { GatepassShortage } from "../types/desktopApi";
-import { rowKeyOf } from "../utils/gatepassGrid";
+import type { Gatepass, GatepassShortage } from "../types/desktopApi";
+import { buildStockGrid, rowKeyOf } from "../utils/gatepassGrid";
 import { openGatepassPrintWindow } from "../utils/gatepassPrint";
 import { copy } from "../config/copy";
 import { ArticleCard } from "../features/gatepass/ArticleCard";
@@ -16,13 +16,17 @@ import { GatepassStatusBadge } from "../features/gatepass/GatepassStatusBadge";
 import { GatepassSteps } from "../features/gatepass/GatepassSteps";
 import { GatepassSummaryPanel } from "../features/gatepass/GatepassSummaryPanel";
 import { PartySection, type TransportFields } from "../features/gatepass/PartySection";
-import { buildDraftFromDocument, createBlocker, listArticleOptions } from "../features/gatepass/gatepassDraft";
+import { buildDraftFromDocument, createBlocker, dozensText, listArticleOptions } from "../features/gatepass/gatepassDraft";
 import { useArticleImages } from "../features/gatepass/useArticleImages";
 import { useGatepassData } from "../features/gatepass/useGatepassData";
 import { useGatepassDraft } from "../features/gatepass/useGatepassDraft";
 import { useGatepassNavigation } from "../features/gatepass/useGatepassNavigation";
 import { usePartyBalance } from "../features/parties/usePartyBalance";
 import { CartonCloudOffNotice } from "../features/sync/CartonCloudOffNotice";
+import { EditingActions, ViewingActions } from "../features/gatepass/GatepassActions";
+import { GatepassEditBar } from "../features/gatepass/GatepassEditBar";
+import { canEditGatepass, draftFromDocument, partyIsLocked, stockForEdit } from "../features/gatepass/gatepassEdit";
+import { useGatepassEdit } from "../features/gatepass/useGatepassEdit";
 
 // Gatepass — one screen, two columns.
 //
@@ -35,6 +39,8 @@ import { CartonCloudOffNotice } from "../features/sync/CartonCloudOffNotice";
 //   Then:   Create → GP-000123, shown in the same two columns, read-only, with Print.
 //   ‹ › Load in the header walks through stored Gatepasses by number the same way; the
 //   draft being written is kept underneath and › past the latest document returns to it.
+//   Edit (local migration 118): a stored gatepass's lines, party and transport go onto the draft, the store shown
+//   with the gatepass's own cartons given back, and Save changes replaces it under the same number.
 //
 // Nothing here moves stock: the document reserves cartons for the party; the cartons that
 // actually leave are recorded later by the Store Move Out scanner (against this Gatepass)
@@ -47,6 +53,12 @@ interface GatepassPageProps {
   token: string;
   username: string;
   onNavigate: (route: AppRoute, id?: string) => void;
+  /** Open the gatepass in Sale Voucher to bill it. Absent for someone who may not open Sale Voucher here. */
+  onMakeBill?: (gatepassId: string) => void;
+  /** Whether this user may edit a gatepass (admin or the gatepass-edit permission). */
+  canEdit?: boolean;
+  /** Open this gatepass straight into an edit (from Gatepass List). */
+  editGatepassId?: string;
 }
 
 interface SubmitError {
@@ -56,11 +68,14 @@ interface SubmitError {
 
 const EMPTY_TRANSPORT: TransportFields = { biltyNumber: "", transportVia: "", remarks: "" };
 
-export const GatepassPage: React.FC<GatepassPageProps> = ({ token, onNavigate }) => {
+export const GatepassPage: React.FC<GatepassPageProps> = ({ token, onNavigate, onMakeBill, canEdit = false, editGatepassId }) => {
   const api = useDesktopApi();
   const { push } = useNotifications();
   const { parties, partiesLoading, stock, grid, reloadStock, applyShortages } = useGatepassData(token);
-  const { draft, expandedKey, isDirty, addArticle, removeArticle, toggleExpanded, expand, setQuantity, stepQuantityBy, clear } = useGatepassDraft(grid);
+  const edit = useGatepassEdit(token);
+  // While editing, the store is shown with the gatepass's own cartons given back, as the edit counts them.
+  const draftGrid = useMemo(() => (edit.editing ? buildStockGrid(stockForEdit(stock.rows, edit.editing)) : grid), [edit.editing, stock.rows, grid]);
+  const { draft, expandedKey, isDirty, addArticle, removeArticle, toggleExpanded, expand, setQuantity, stepQuantityBy, clear, load } = useGatepassDraft(draftGrid);
   const nav = useGatepassNavigation(token);
 
   const [partyId, setPartyId] = useState("");
@@ -80,7 +95,7 @@ export const GatepassPage: React.FC<GatepassPageProps> = ({ token, onNavigate })
   const documentDraft = useMemo(() => (nav.viewing ? buildDraftFromDocument(nav.viewing) : null), [nav.viewing]);
   const shownDraft = documentDraft ?? draft;
   const images = useArticleImages(shownDraft.articles.map((a) => a.article));
-  const articleOptions = useMemo(() => listArticleOptions(grid), [grid]);
+  const articleOptions = useMemo(() => listArticleOptions(draftGrid), [draftGrid]);
   const blocker = createBlocker(draft, partyId);
   const articlesReady = draft.lines.length > 0 && draft.errorCount === 0;
 
@@ -94,12 +109,67 @@ export const GatepassPage: React.FC<GatepassPageProps> = ({ token, onNavigate })
     void reloadStock();
   };
 
+  const draftHasContent = () => isDirty || Boolean(partyId) || Object.values(transport).some((text) => text.trim() !== "");
+
   const startNew = () => {
-    const dirty = isDirty || Boolean(partyId) || Object.values(transport).some((text) => text.trim() !== "");
-    if (dirty && !window.confirm(copy.gatepass.discardDraft)) return;
+    if (draftHasContent() && !window.confirm(copy.gatepass.discardDraft)) return;
     resetDraft();
     nav.close();
   };
+
+  // ── Edit (local migration 118) ────────────────────────────────────────────
+  const startEdit = (document: Gatepass) => {
+    if (!edit.editing && draftHasContent() && !window.confirm(copy.gatepass.finishDraftFirst)) return;
+    resetDraft();
+    const { keys, inputs } = draftFromDocument(document);
+    load(keys, inputs);
+    setPartyId(document.partyId);
+    setTransport({ biltyNumber: document.biltyNumber ?? "", transportVia: document.transportVia ?? "", remarks: document.remarks ?? "" });
+    edit.start(document);
+    nav.close();
+  };
+
+  const cancelEdit = () => {
+    const document = edit.editing;
+    if (!window.confirm(copy.gatepass.discardEdit)) return;
+    resetDraft();
+    edit.stop();
+    if (document) nav.show(document);
+  };
+
+  const saveEdit = async () => {
+    const document = edit.editing;
+    if (!document || blocker || edit.saving) return;
+    if (!edit.reason.trim()) {
+      setSubmitError({ message: copy.gatepass.reasonNeeded });
+      return;
+    }
+    setSubmitError(null);
+    const result = await edit.save({ partyId, lines: draft.lines, ...transport });
+    if (!result.accepted) {
+      const message = result.reason ?? copy.gatepass.editFailed;
+      setSubmitError({ message, shortages: result.shortages?.length ? result.shortages : undefined });
+      push("error", copy.toast.failed, message);
+      return;
+    }
+    push("success", copy.gatepass.editedToast(document.code), copy.gatepass.editedToastBody(dozensText(result.totalQuantity ?? 0), result.billNumber));
+    const saved = await api.getGatepass(document.id, { token });
+    resetDraft();
+    edit.stop();
+    if (saved) nav.show(saved);
+  };
+
+  // Opened from Gatepass List to edit: once the store is read, the gatepass goes onto the draft.
+  const openedForEdit = useRef<string | null>(null);
+  useEffect(() => {
+    if (!editGatepassId || !canEdit || stock.loading || openedForEdit.current === editGatepassId) return;
+    openedForEdit.current = editGatepassId;
+    void api.getGatepass(editGatepassId, { token }).then((document) => {
+      if (document && canEditGatepass(document)) startEdit(document);
+      else if (document) nav.show(document);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once per gatepass asked for, after the store is read
+  }, [editGatepassId, canEdit, stock.loading]);
 
   const pickArticle = (key: string) => {
     addArticle(key);
@@ -131,7 +201,7 @@ export const GatepassPage: React.FC<GatepassPageProps> = ({ token, onNavigate })
       if (result.accepted) {
         const code = result.code ?? "";
         if (result.outcome === "ALREADY_SAVED") push("success", copy.requests.alreadySavedTitle, copy.requests.gatepassAlreadySaved(code));
-        else push("success", copy.gatepass.createdToast(code), copy.gatepass.createdToastBody(result.totalQuantity ?? 0, party?.partyName ?? ""));
+        else push("success", copy.gatepass.createdToast(code), copy.gatepass.createdToastBody(dozensText(result.totalQuantity ?? 0), party?.partyName ?? ""));
         // The stored document replaces the draft on screen; the print-out is built from it.
         const document = result.gatepassId ? await api.getGatepass(result.gatepassId, { token }) : null;
         resetDraft();
@@ -191,6 +261,7 @@ export const GatepassPage: React.FC<GatepassPageProps> = ({ token, onNavigate })
 
   const renderDraft = () => (
     <div className="gp-work">
+      {edit.editing ? <GatepassEditBar document={edit.editing} reason={edit.reason} onReason={edit.setReason} /> : null}
       {submitError && (
         <div className="gp-alert gp-alert--error" role="alert" data-testid="gatepass-submit-error">
           <strong>{submitError.message}</strong>
@@ -198,8 +269,8 @@ export const GatepassPage: React.FC<GatepassPageProps> = ({ token, onNavigate })
             <ul className="gp-alert-list">
               {submitError.shortages.map((s) => (
                 <li key={s.productVariantId}>
-                  {s.article} / {s.color} / {s.size} — {copy.gatepass.shortageLine(s)}
-                  {s.seen !== null && s.seen !== s.reflected ? ` ${copy.gatepass.youSaw(s.seen)}` : ""}
+                  {s.article} / {s.color} / {s.size} — {copy.gatepass.shortageLine({ currentStock: dozensText(s.currentStock), reserved: dozensText(s.reserved), reflected: dozensText(s.reflected), requested: dozensText(s.requested) })}
+                  {s.seen !== null && s.seen !== s.reflected ? ` ${copy.gatepass.youSaw(dozensText(s.seen))}` : ""}
                 </li>
               ))}
             </ul>
@@ -219,6 +290,7 @@ export const GatepassPage: React.FC<GatepassPageProps> = ({ token, onNavigate })
           setSubmitError(null);
         }}
         onTransportChange={(patch) => setTransport((prev) => ({ ...prev, ...patch }))}
+        partyLocked={edit.editing ? partyIsLocked(edit.editing) : false}
       />
 
       <section className="card gp-card gp-section gp-articles" data-testid="gatepass-articles-section">
@@ -233,7 +305,9 @@ export const GatepassPage: React.FC<GatepassPageProps> = ({ token, onNavigate })
   );
 
   const viewing = nav.viewing;
+  const editing = edit.editing;
   const summaryParty = viewing ? { partyName: viewing.partyName, partyCode: viewing.partyCode, city: viewing.partyCity } : party;
+  const pageTitle = viewing ? `${copy.gatepass.title} ${viewing.code}` : editing ? copy.gatepass.editTitle(editing.code) : copy.gatepass.title;
 
   return (
     <div className="page gatepass-page gp-compose">
@@ -241,28 +315,35 @@ export const GatepassPage: React.FC<GatepassPageProps> = ({ token, onNavigate })
       <header className="gp-topbar">
         <div className="gp-topbar-main">
           <h1 className={`page-title${viewing ? " page-detail-title" : ""}`} data-testid="gatepass-title">
-            {viewing ? `${copy.gatepass.title} ${viewing.code}` : copy.gatepass.title}
+            {pageTitle}
           </h1>
-          {viewing ? <GatepassStatusBadge status={viewing.status} /> : <GatepassSteps partyDone={Boolean(partyId)} articlesDone={articlesReady} />}
+          {viewing ? <GatepassStatusBadge status={viewing.status} /> : null}
+          {editing ? <span className="badge badge-warn" data-testid="gatepass-editing-badge">{copy.gatepass.editingBadge}</span> : null}
+          {!viewing && !editing ? <GatepassSteps partyDone={Boolean(partyId)} articlesDone={articlesReady} /> : null}
         </div>
         <div className="gp-topbar-actions">
-          <GatepassNavigator current={viewing?.gatepassNumber ?? null} latest={nav.latest} busy={nav.busy} onGo={(n) => void nav.goTo(n)} onNew={nav.close} />
-          <button type="button" className="btn btn-secondary" onClick={startNew} data-testid="gatepass-new">
-            + New Gatepass
-          </button>
-          {viewing ? (
-            <>
-              <button type="button" className="btn btn-secondary" onClick={() => onNavigate("gatepass-list", viewing.id)}>
-                {copy.gatepass.openInList}
-              </button>
-              <button type="button" className="btn btn-primary" onClick={printViewing} data-testid="gatepass-print">
-                🖨 {copy.gatepass.printGatepass}
-              </button>
-            </>
+          {editing ? (
+            <EditingActions saving={edit.saving} blocked={Boolean(blocker) || !edit.reason.trim()} onCancel={cancelEdit} onSave={() => void saveEdit()} />
           ) : (
-            <button type="button" className="btn btn-primary" onClick={() => void create()} disabled={Boolean(blocker) || submitting} data-testid="gatepass-create">
-              {submitting ? copy.gatepass.creating : copy.gatepass.createGatepass}
-            </button>
+            <>
+              <GatepassNavigator current={viewing?.gatepassNumber ?? null} latest={nav.latest} busy={nav.busy} onGo={(n) => void nav.goTo(n)} onNew={nav.close} />
+              <button type="button" className="btn btn-secondary" onClick={startNew} data-testid="gatepass-new">
+                + New Gatepass
+              </button>
+              {viewing ? (
+                <ViewingActions
+                  document={viewing}
+                  onOpenInList={() => onNavigate("gatepass-list", viewing.id)}
+                  onPrint={printViewing}
+                  onEdit={canEdit ? () => startEdit(viewing) : undefined}
+                  onMakeBill={onMakeBill ? () => onMakeBill(viewing.id) : undefined}
+                />
+              ) : (
+                <button type="button" className="btn btn-primary" onClick={() => void create()} disabled={Boolean(blocker) || submitting} data-testid="gatepass-create">
+                  {submitting ? copy.gatepass.creating : copy.gatepass.createGatepass}
+                </button>
+              )}
+            </>
           )}
         </div>
       </header>

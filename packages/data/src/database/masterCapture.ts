@@ -82,6 +82,8 @@ export const MASTER_CAPTURE: readonly MasterTableCapture[] = [
   { table: "manual_production_entries", record: SYNC_AGGREGATE.MANUAL_PRODUCTION_ENTRY, recordId: `${ROW}.id` },
   { table: "gatepasses", record: SYNC_AGGREGATE.GATEPASS, recordId: `${ROW}.id` },
   { table: "gatepass_lines", record: SYNC_AGGREGATE.GATEPASS, recordId: `${ROW}.gatepass_id` },
+  // What an edited gatepass was before each edit (local migration 118): part of the gatepass record.
+  { table: "gatepass_versions", record: SYNC_AGGREGATE.GATEPASS, recordId: `${ROW}.gatepass_id` },
   { table: "sale_vouchers", record: SYNC_AGGREGATE.SALE_VOUCHER, recordId: `${ROW}.id` },
   { table: "sale_voucher_line_items", record: SYNC_AGGREGATE.SALE_VOUCHER, recordId: `${ROW}.voucher_id` },
   { table: "dispatch_sessions", record: SYNC_AGGREGATE.SALE_VOUCHER, recordId: `${ROW}.voucher_id` },
