@@ -26,6 +26,8 @@ import crypto from "node:crypto";
 import {
   LEDGER_ARCHIVE_SIDE,
   LEGACY_REPORT_BALANCE_RULE,
+  ledgerArchivePageId,
+  ledgerArchivePageNumber,
   archiveRowIdentity,
   checkLegacyPrintedTotals,
   isLedgerArchiveSide,
@@ -45,6 +47,14 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const SHA256 = /^[0-9a-f]{64}$/;
 const FILE_NAME_MAX = 200;
 const SIDE_WORD: Readonly<Record<LedgerArchiveSide, string>> = { CUSTOMER: "customer", SUPPLIER: "supplier" };
+
+/**
+ * The statements this computer shows, as SQL over the alias given: not withdrawn, and EVERY ROW OF IT HERE. A statement
+ * travels as its header and its rows in pages (local 117): on another computer the header can arrive before its last
+ * page, and half a ledger must never be shown as the ledger. On the importing computer every statement is whole.
+ */
+export const archiveStatementShownSql = (alias: string): string =>
+  `${alias}.withdrawn_at IS NULL AND ${alias}.row_count = (SELECT COUNT(*) FROM ledger_archive_entries shown_rows WHERE shown_rows.statement_id = ${alias}.id)`;
 
 /** The side an import or preview is for: customers unless it says suppliers. */
 const sideOf = (value: unknown): LedgerArchiveSide => (isLedgerArchiveSide(value) ? value : LEDGER_ARCHIVE_SIDE.CUSTOMER);
@@ -339,12 +349,12 @@ export const ledgerArchiveMethods = {
     const fromDate = query.fromDate ?? "0000-01-01";
     const toDate = query.toDate ?? "9999-12-31";
     const statements = (this.db
-      .prepare("SELECT * FROM ledger_archive_statements WHERE party_id = ? AND withdrawn_at IS NULL ORDER BY period_from, imported_at, id")
+      .prepare(`SELECT * FROM ledger_archive_statements s WHERE s.party_id = ? AND ${archiveStatementShownSql("s")} ORDER BY s.period_from, s.imported_at, s.id`)
       .all(text(partyId)) as Row[]).map(summaryOf);
     const entries = (this.db
       .prepare(
         `SELECT e.* FROM ledger_archive_entries e JOIN ledger_archive_statements s ON s.id = e.statement_id
-          WHERE s.party_id = ? AND s.withdrawn_at IS NULL AND e.entry_date >= ? AND e.entry_date <= ?
+          WHERE s.party_id = ? AND ${archiveStatementShownSql("s")} AND e.entry_date >= ? AND e.entry_date <= ?
           ORDER BY e.entry_date, s.period_from, s.imported_at, s.id, e.sequence`
       )
       .all(text(partyId), fromDate, toDate) as Row[]).map(entryOf);
@@ -476,16 +486,35 @@ export const ledgerArchiveMethods = {
         file.name, file.hash, source?.name ?? null, source?.hash ?? null, source?.bytes ?? null, input.actor, nowIso, textOrNull(device?.v),
         draft.side, draft.balanceRule
       );
-    const insert = this.db.prepare(
-      `INSERT INTO ledger_archive_entries (id, statement_id, sequence, entry_date, original_date_text, voucher_number, transaction_type, bill_number,
-         description, quantity_text, quantity, debit_paisa, credit_paisa, balance_paisa, debit_text, credit_text, balance_text, row_hash)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    this.writeArchiveRowsInPages(statementId, draft.rows);
+  },
+
+  /**
+   * @internal A statement's rows, in pages of LEDGER_ARCHIVE_PAGE_ROWS by their order in the statement (local 117):
+   * each page is the record its rows travel in. The page ids follow ledgerArchivePageId, as migration 117 does for rows
+   * stored before pages. Call ONLY inside the statement's transaction.
+   */
+  writeArchiveRowsInPages(this: SqliteDatabase, statementId: string, rows: readonly LedgerArchiveRow[]): void {
+    const ordered = [...rows].sort((a, b) => a.sequence - b.sequence);
+    const page = this.db.prepare(
+      "INSERT INTO ledger_archive_entry_pages (id, statement_id, page_number, first_sequence, last_sequence, row_count) VALUES (?, ?, ?, ?, ?, ?)"
     );
-    for (const row of draft.rows) {
-      insert.run(
-        crypto.randomUUID(), statementId, row.sequence, row.entryDate, row.dateText, row.voucherNumber, row.transactionType, row.billNumber,
-        row.description, row.quantityText, row.quantity, row.debitPaisa, row.creditPaisa, row.balancePaisa, row.debitText, row.creditText, row.balanceText, rowHash(row)
-      );
+    const insert = this.db.prepare(
+      `INSERT INTO ledger_archive_entries (id, statement_id, page_id, sequence, entry_date, original_date_text, voucher_number, transaction_type, bill_number,
+         description, quantity_text, quantity, debit_paisa, credit_paisa, balance_paisa, debit_text, credit_text, balance_text, row_hash)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    );
+    const pageCount = ordered.length === 0 ? 0 : ledgerArchivePageNumber(ordered.length - 1);
+    for (let number = 1; number <= pageCount; number += 1) {
+      const pageRows = ordered.filter((_, position) => ledgerArchivePageNumber(position) === number);
+      const pageId = ledgerArchivePageId(statementId, number);
+      page.run(pageId, statementId, number, pageRows[0].sequence, pageRows[pageRows.length - 1].sequence, pageRows.length);
+      for (const row of pageRows) {
+        insert.run(
+          crypto.randomUUID(), statementId, pageId, row.sequence, row.entryDate, row.dateText, row.voucherNumber, row.transactionType, row.billNumber,
+          row.description, row.quantityText, row.quantity, row.debitPaisa, row.creditPaisa, row.balancePaisa, row.debitText, row.creditText, row.balanceText, rowHash(row)
+        );
+      }
     }
   },
 

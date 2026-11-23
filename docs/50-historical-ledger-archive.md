@@ -112,11 +112,31 @@ rows are marked ARCHIVED, live and archived totals are separate lines, and the p
 2"). **Download Excel** writes the same rows through the one CSV writer, with a **Source** column (Live / Archived).
 Amounts stay numbers and dates are YYYY-MM-DD.
 
-## Sync (cloud migration 034)
+## Sync (cloud migrations 034 and 041)
 
-A statement travels as the leased record **LEDGER_ARCHIVE_STATEMENT** under **ACCOUNTS**, whole, with its rows
-(`masterRecords.ts`), by the existing leased-record path. Nothing new is added to the transport. Duplicate delivery is
-the existing revision rule. A computer that receives it shows it on its Customer Ledger.
+**In pages, from local 117.** A statement travels as the leased record **LEDGER_ARCHIVE_STATEMENT** under
+**ACCOUNTS**, as its header alone, and its rows as **LEDGER_ARCHIVE_ENTRY_PAGE** records of up to 50 rows each
+(`LEDGER_ARCHIVE_PAGE_ROWS`, `masterRecords.ts`), by the existing leased-record path. Nothing new is added to the
+transport.
+- **Why.** Before 117 a statement went as one record holding every row. The cloud refuses a record over 256 KB
+  (`RECORD_TOO_LARGE`, about 480 rows), and the import accepts 5,000. On 22 Nov 2026 a long ledger imported on PC1 was
+  refused that way and never reached PC3.
+- **Size.** The longest statement the import accepts (5,000 rows, every row at its longest, with a 1,000-character
+  Urdu description) is 100 pages. Its largest page is 137 KB as the cloud measures it, about half the limit
+  (`ledgerArchivePagesSync.test.ts`).
+- **Page ids** are the statement's id and the page number (`<id>:p<n>`, `ledgerArchivePageId`), the same on every
+  computer.
+- **Shown only when whole.** A receiver shows a statement, in its ledger and in the reconciliation, only once every
+  row is here (`row_count`, `archiveStatementShownSql`). A page that arrives before its statement waits for it.
+- **A withdrawal** is the header alone: no page is sent again.
+- **The upgrade (local 117).** Every stored row is given its page, on every computer, with the same ids. On the
+  computer holding ACCOUNTS the statement and its pages are marked to be sent again. A statement revision built the old
+  way and never delivered (the RECORD_TOO_LARGE dead letter) is retired: kept, marked SYNCED, with a note saying why.
+- **Order.** Apply cloud 041, then install the release on **every other computer first**, and on the accounts
+  computer last. A build without 117 refuses a page as an unknown type, permanently, and moves past it: it would never
+  show those rows, even after upgrading.
+
+Duplicate delivery is the existing revision rule. A computer that receives it shows it on its Customer Ledger.
 
 **Apply cloud 034 before the release carrying local 111 reaches the accounts computer.** Until then an imported
 statement waits as `UNKNOWN_RECORD_TYPE`, and nothing else is held up. **034 is prepared, not applied** to either

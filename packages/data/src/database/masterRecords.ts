@@ -40,6 +40,7 @@ export type MasterRecordType =
   | typeof SYNC_AGGREGATE.PRODUCTION_DAY
   | typeof SYNC_AGGREGATE.STORE_HAND_VOUCHER
   | typeof SYNC_AGGREGATE.LEDGER_ARCHIVE_STATEMENT
+  | typeof SYNC_AGGREGATE.LEDGER_ARCHIVE_ENTRY_PAGE
   | typeof SYNC_AGGREGATE.PARTY_OPENING_BALANCE
   | typeof SYNC_AGGREGATE.PURCHASE_VOUCHER
   | typeof SYNC_AGGREGATE.PARTY_CLAIM_REQUEST
@@ -112,6 +113,8 @@ export const MASTER_RECORD_TYPES: readonly MasterRecordType[] = [
   SYNC_AGGREGATE.PRODUCTION_DAY,
   SYNC_AGGREGATE.STORE_HAND_VOUCHER,
   SYNC_AGGREGATE.LEDGER_ARCHIVE_STATEMENT,
+  // After its statement: a page names the statement it belongs to.
+  SYNC_AGGREGATE.LEDGER_ARCHIVE_ENTRY_PAGE,
   SYNC_AGGREGATE.PARTY_OPENING_BALANCE,
   // After PARTY and INVENTORY_ITEM: a bill names its supplier, each line its material.
   SYNC_AGGREGATE.PURCHASE_VOUCHER,
@@ -240,11 +243,19 @@ export const MASTER_RECORDS: Readonly<Record<MasterRecordType, RecordTableSpec>>
     references: [partyRef("party_id")],
     children: [{ table: "store_hand_voucher_lines", parentColumn: "voucher_id", references: [{ column: "item_id", table: "inventory_items", record: SYNC_AGGREGATE.INVENTORY_ITEM }] }],
   },
-  // A customer's archived statement from the old software (docs/50): its customer, and its rows. Never accounting.
+  // A party's archived statement from the old software (docs/50): its header only, naming its party. Never accounting.
+  // Its rows travel as pages (below): the whole statement in one record could be over the cloud's 256 KB a record,
+  // and was refused RECORD_TOO_LARGE before local 117.
   [SYNC_AGGREGATE.LEDGER_ARCHIVE_STATEMENT]: {
     table: "ledger_archive_statements",
     references: [partyRef("party_id")],
-    children: [{ table: "ledger_archive_entries", parentColumn: "statement_id" }],
+  },
+  // Up to LEDGER_ARCHIVE_PAGE_ROWS of a statement's rows (local 117). Its id is the statement's id and its number,
+  // the same on every computer. A statement shows only once all its rows are here (ARCHIVE_STATEMENT_COMPLETE_SQL).
+  [SYNC_AGGREGATE.LEDGER_ARCHIVE_ENTRY_PAGE]: {
+    table: "ledger_archive_entry_pages",
+    references: [{ column: "statement_id", table: "ledger_archive_statements", record: SYNC_AGGREGATE.LEDGER_ARCHIVE_STATEMENT }],
+    children: [{ table: "ledger_archive_entries", parentColumn: "page_id" }],
   },
   // A supplier's purchase bill (docs/54). A replaced line stays, marked deleted, so the bill's history travels with it.
   [SYNC_AGGREGATE.PURCHASE_VOUCHER]: {

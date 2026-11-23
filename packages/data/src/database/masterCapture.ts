@@ -95,9 +95,11 @@ export const MASTER_CAPTURE: readonly MasterTableCapture[] = [
   // A store hand voucher (Move In SIV-, Move Out SOV-) and its lines (docs/49): edited or deleted on its own day, as a new revision.
   { table: "store_hand_vouchers", record: SYNC_AGGREGATE.STORE_HAND_VOUCHER, recordId: `${ROW}.id` },
   { table: "store_hand_voucher_lines", record: SYNC_AGGREGATE.STORE_HAND_VOUCHER, recordId: `${ROW}.voucher_id` },
-  // A customer's archived statement and its rows (docs/50): written once, by the import, never changed.
+  // A party's archived statement (docs/50): written once by the import, then only withdrawn. Its rows belong to their
+  // PAGE (local 117), so a statement's header and each page of its rows are separate records.
   { table: "ledger_archive_statements", record: SYNC_AGGREGATE.LEDGER_ARCHIVE_STATEMENT, recordId: `${ROW}.id` },
-  { table: "ledger_archive_entries", record: SYNC_AGGREGATE.LEDGER_ARCHIVE_STATEMENT, recordId: `${ROW}.statement_id` },
+  { table: "ledger_archive_entry_pages", record: SYNC_AGGREGATE.LEDGER_ARCHIVE_ENTRY_PAGE, recordId: `${ROW}.id` },
+  { table: "ledger_archive_entries", record: SYNC_AGGREGATE.LEDGER_ARCHIVE_ENTRY_PAGE, recordId: `${ROW}.page_id` },
   // A party's opening balance and its history (docs/53): a posting or reversal is a new revision of the one record.
   { table: "party_opening_balances", record: SYNC_AGGREGATE.PARTY_OPENING_BALANCE, recordId: `${ROW}.id` },
   { table: "party_opening_balance_entries", record: SYNC_AGGREGATE.PARTY_OPENING_BALANCE, recordId: `${ROW}.opening_balance_id` },

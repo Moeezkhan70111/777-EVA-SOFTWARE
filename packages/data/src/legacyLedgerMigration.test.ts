@@ -28,7 +28,8 @@ function createFixture() {
   const db = new SqliteDatabase({ dbPath: path.join(dir, "a.db"), schemaPath: path.resolve(process.cwd(), "src/local-schema.sql") });
   db.setNumberBlock(1, "test");
   const party = (name: string, type: "CUSTOMER" | "SUPPLIER") => db.createParty({ partyName: name, partyType: type, status: "ACTIVE" });
-  return { db, party, cleanup: () => { db.close(); fs.rmSync(dir, { recursive: true, force: true }); } };
+  const count = (sql: string): number => Number((db.db.prepare(sql).get() as { n: number }).n);
+  return { db, party, count, cleanup: () => { db.close(); fs.rmSync(dir, { recursive: true, force: true }); } };
 }
 type Fixture = ReturnType<typeof createFixture>;
 
@@ -110,7 +111,9 @@ test("WITHDRAWAL: needs a reason, keeps every row, travels as a revision of the 
     assert.deepEqual(marks.map((m) => m.record_id), [statementId]);
     const body = snapshotRecord(f.db.db, "LEDGER_ARCHIVE_STATEMENT", statementId);
     assert.equal(body?.row.withdrawal_reason, "Exported the wrong period");
-    assert.equal(body?.children.ledger_archive_entries?.length, 2, "every row still travels with it");
+    assert.deepEqual(body?.children, {}, "the withdrawal is the header alone (local 117): its pages are not sent again");
+    assert.equal(f.count(`SELECT COUNT(*) AS n FROM ledger_archive_entries WHERE statement_id = '${statementId}'`), 2, "every row is kept");
+    assert.equal(f.count("SELECT COUNT(*) AS n FROM sync_dirty_records WHERE aggregate_type = 'LEDGER_ARCHIVE_ENTRY_PAGE'"), 0, "and no page is marked");
     assert.ok(readLeasedRecordPayload("LEDGER_ARCHIVE_STATEMENT", { recordId: statementId, revision: 2, deleted: false, body }));
     assert.throws(() => f.db.withdrawLedgerArchiveBatch({ requestId: crypto.randomUUID(), batchId: imported.batchId, reason: "again", actor: "owner" }), /already withdrawn by owner/);
     assert.equal(f.db.getLedgerArchiveBatch(imported.batchId)[0]?.withdrawnBy, "owner");

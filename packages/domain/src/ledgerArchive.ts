@@ -64,6 +64,23 @@ export const LEDGER_ARCHIVE_LIMITS = {
   NAME_MAX: 160,
 } as const;
 
+/**
+ * A statement travels as its header and its rows in PAGES of this many (docs/50, local migration 117, cloud 041). The
+ * cloud refuses one record over 256 KB, and a whole statement of 5,000 rows is far over that; one page of 50 rows is
+ * under it even when every row is at its longest (a 1,000-character Urdu description, every short text full).
+ */
+export const LEDGER_ARCHIVE_PAGE_ROWS = 50;
+
+/** Which page a row is on, from its position in the statement (0 for the first row). Pages count from 1. */
+export const ledgerArchivePageNumber = (position: number): number => Math.floor(position / LEDGER_ARCHIVE_PAGE_ROWS) + 1;
+
+/**
+ * A page's id, the same on every computer: the writer makes it on import, and migration 117 makes it for rows already
+ * stored, on the writer and on every computer that received the statement before pages existed. They must agree, or a
+ * receiver would hold its rows under a page the writer never sends. Migration 117 spells the same rule in SQL.
+ */
+export const ledgerArchivePageId = (statementId: string, pageNumber: number): string => `${statementId}:p${String(pageNumber)}`;
+
 /** What the old software's type codes mean, for the screen. A code not here is shown as it is. */
 export const LEDGER_ARCHIVE_TYPE_LABEL: Readonly<Record<string, string>> = {
   SL: "Sale",

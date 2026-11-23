@@ -101,6 +101,10 @@ export const SYNC_AGGREGATE = {
   /** A customer's statement from the previous accounting software, with its rows, kept as printed (local 111, cloud 034,
    * docs/50). An archive, never accounting: no balance, cash book, stock figure or report is worked out from it. */
   LEDGER_ARCHIVE_STATEMENT: "LEDGER_ARCHIVE_STATEMENT",
+  /** One page of an archived statement's rows, up to LEDGER_ARCHIVE_PAGE_ROWS of them (local 117, cloud 041, docs/50).
+   * The statement travels as its header alone, its rows as pages: one whole statement could be over the cloud's
+   * 256 KB a record. A receiver shows a statement only once every page of it has arrived. */
+  LEDGER_ARCHIVE_ENTRY_PAGE: "LEDGER_ARCHIVE_ENTRY_PAGE",
   /** A customer's or supplier's opening balance carried in from the previous accounting software, with every posting
    * and reversal that led to it (local 113, cloud 037, docs/53). Counts in the party's live balance, and nothing else. */
   PARTY_OPENING_BALANCE: "PARTY_OPENING_BALANCE",
@@ -191,6 +195,7 @@ export const LEASED_AGGREGATE_DOMAIN: Readonly<Partial<Record<SyncAggregateType,
   [SYNC_AGGREGATE.CASH_VOUCHER]: LEASE_DOMAIN.ACCOUNTS,
   // Imported on the computer that writes cash vouchers: the archive belongs to the accounts, not to master data.
   [SYNC_AGGREGATE.LEDGER_ARCHIVE_STATEMENT]: LEASE_DOMAIN.ACCOUNTS,
+  [SYNC_AGGREGATE.LEDGER_ARCHIVE_ENTRY_PAGE]: LEASE_DOMAIN.ACCOUNTS,
   // Posted where cash vouchers are written: it is the accounts' starting position for a party.
   [SYNC_AGGREGATE.PARTY_OPENING_BALANCE]: LEASE_DOMAIN.ACCOUNTS,
   // Written where cash vouchers are, so the supplier balances there hold every bill and every payment (docs/54).

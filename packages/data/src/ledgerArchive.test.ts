@@ -46,7 +46,7 @@ const importReference = (f: Fixture, batchId: string = crypto.randomUUID()) => {
 function everyOtherTable(f: Fixture): Record<string, number> {
   const tables = (f.db.db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name").all() as Array<{ name: string }>).map((row) => row.name);
   // audit_log: the import's own audit row (docs/53), which is not accounting. Checked on its own below.
-  const skip = new Set(["ledger_archive_statements", "ledger_archive_entries", "sync_dirty_records", "audit_log"]);
+  const skip = new Set(["ledger_archive_statements", "ledger_archive_entry_pages", "ledger_archive_entries", "sync_dirty_records", "audit_log"]);
   return Object.fromEntries(tables.filter((table) => !skip.has(table)).map((table) => [table, f.count(`SELECT COUNT(*) AS n FROM "${table}"`)]));
 }
 
@@ -249,19 +249,27 @@ test("INVALID DATA: a broken running balance, a bad date or a bad amount is refu
   }
 });
 
-test("SYNC: a statement is marked to travel whole as LEDGER_ARCHIVE_STATEMENT, and reads back off the wire", () => {
+test("SYNC: a statement is marked to travel as its header and its rows in pages of 50, and each reads back off the wire", () => {
   const f = createFixture();
   try {
     const [statement] = importReference(f).statements;
-    const marks = f.db.db.prepare("SELECT aggregate_type, record_id FROM sync_dirty_records WHERE aggregate_type = 'LEDGER_ARCHIVE_STATEMENT'").all() as Array<{ record_id: string }>;
-    assert.deepEqual(marks.map((mark) => mark.record_id), [statement.id], "one mark for the statement and all its rows");
-    const otherMarks = f.count("SELECT COUNT(*) AS n FROM sync_dirty_records WHERE aggregate_type NOT IN ('LEDGER_ARCHIVE_STATEMENT', 'PARTY')");
+    const marks = f.db.db.prepare("SELECT record_id FROM sync_dirty_records WHERE aggregate_type = 'LEDGER_ARCHIVE_STATEMENT'").all() as Array<{ record_id: string }>;
+    assert.deepEqual(marks.map((mark) => mark.record_id), [statement.id], "one mark for the statement's header");
+    const pages = f.db.db.prepare("SELECT record_id FROM sync_dirty_records WHERE aggregate_type = 'LEDGER_ARCHIVE_ENTRY_PAGE' ORDER BY record_id").all() as Array<{ record_id: string }>;
+    assert.deepEqual(pages.map((mark) => mark.record_id), [`${statement.id}:p1`], "45 rows are one page, named by the statement and its number");
+    const otherMarks = f.count("SELECT COUNT(*) AS n FROM sync_dirty_records WHERE aggregate_type NOT IN ('LEDGER_ARCHIVE_STATEMENT', 'LEDGER_ARCHIVE_ENTRY_PAGE', 'PARTY')");
     assert.equal(otherMarks, 0, "nothing else is marked to travel");
 
-    const body = snapshotRecord(f.db.db, "LEDGER_ARCHIVE_STATEMENT", statement.id);
-    assert.equal(body?.children.ledger_archive_entries?.length, 45);
-    const read = readLeasedRecordPayload("LEDGER_ARCHIVE_STATEMENT", { recordId: statement.id, revision: 1, deleted: false, body });
-    assert.ok(read, "the revision a receiver gets is valid against the record's spec");
+    const header = snapshotRecord(f.db.db, "LEDGER_ARCHIVE_STATEMENT", statement.id);
+    assert.deepEqual(header?.children, {}, "the header carries no rows");
+    assert.ok(readLeasedRecordPayload("LEDGER_ARCHIVE_STATEMENT", { recordId: statement.id, revision: 1, deleted: false, body: header }));
+    const page = snapshotRecord(f.db.db, "LEDGER_ARCHIVE_ENTRY_PAGE", `${statement.id}:p1`);
+    assert.equal(page?.children.ledger_archive_entries?.length, 45);
+    assert.deepEqual([page?.row.first_sequence, page?.row.last_sequence, page?.row.row_count], [1, 45, 45]);
+    const read = readLeasedRecordPayload("LEDGER_ARCHIVE_ENTRY_PAGE", { recordId: `${statement.id}:p1`, revision: 1, deleted: false, body: page });
+    assert.ok(read, "the page a receiver gets is valid against its spec");
+    const whole = { row: header?.row ?? {}, children: { ledger_archive_entries: page?.children.ledger_archive_entries ?? [] } };
+    assert.equal(readLeasedRecordPayload("LEDGER_ARCHIVE_STATEMENT", { recordId: statement.id, revision: 1, deleted: false, body: whole }), null, "a statement sent whole, the old way, is refused");
   } finally {
     f.cleanup();
   }

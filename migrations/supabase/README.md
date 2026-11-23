@@ -13,7 +13,7 @@
 
 Apply in this order, in the Supabase SQL editor, on an **empty** project, one file at a time:
 
-`schema.sql` → `002` → `003` → … → `019` → `020` → `021` → `022` → `023` → `024` → `025` → `026` → `027` → `028` → `029` → `030` → `031` → `032` → `033` → `034` → `035` → `036` → `037` → `038` → `039` → `040` (file order. The order to apply them to production is in docs/55)
+`schema.sql` → `002` → `003` → … → `019` → `020` → `021` → `022` → `023` → `024` → `025` → `026` → `027` → `028` → `029` → `030` → `031` → `032` → `033` → `034` → `035` → `036` → `037` → `038` → `039` → `040` → `041` (file order. The order to apply them to production is in docs/55)
 
 After each one, run `verify_applied_state.sql`. Its header lists exactly which checks a project
 one migration behind fails, so a half-applied project is diagnosed rather than guessed at. The
@@ -107,7 +107,9 @@ changes would have to discard data to succeed, and they are written to fail inst
 
 `040_sale_return_records.up.sql` follows `039` (it needs `013` and `028`): a customer's carton return credit becomes `SALE_RETURN` under SALES_DISPATCH, a stock document sent only after Carton Cloud activation (docs/55, local migration 116). Rows only. **Applied to PRODUCTION on 21 Nov 2026 (history 20261121085654) and to TEST on 21 Nov 2026 (history 20261121111224).** Apply before the release carrying local `116` reaches the sales computer, and before the carton QR hold is lifted.
 
-**Reverse in the opposite order: `040` → `039` → `038` → `037` → `036` → `035` → `034` → `033` → `032` → `031` → `030` → `029` → `028` → `027` → `026` → `025` → `024` → `023` → `022` → `021` → `020` → `019` → `018` → … → `003` → `002`.** Each down file's header
+`041_ledger_archive_page_records.up.sql` follows `040` (it needs `013`, `011` and `034`): an archived statement's rows travel as `LEDGER_ARCHIVE_ENTRY_PAGE`, pages of 50 under ACCOUNTS, and the statement as its header alone (docs/50, local migration 117). A whole statement was one record, and the cloud refuses a record over 256 KB (`RECORD_TOO_LARGE`, about 480 rows), so a long ledger imported on PC1 on 22 Nov 2026 never left it. Rows only. **Applied to PRODUCTION on 23 Nov 2026 (history 20261123075736), on the owner's instruction; NOT applied to TEST** (its connection needed signing in again). Apply it before the release carrying local `117` reaches the accounts computer, and install that release on every other computer FIRST: a build without 117 refuses a page as permanent and moves past it for good.
+
+**Reverse in the opposite order: `041` → `040` → `039` → `038` → `037` → `036` → `035` → `034` → `033` → `032` → `031` → `030` → `029` → `028` → `027` → `026` → `025` → `024` → `023` → `022` → `021` → `020` → `019` → `018` → … → `003` → `002`.** Each down file's header
 says what reversing it costs: `018`'s re-opens the PC2/PC3 failure, for example. Reversing `005`
 re-opens the cross-factory read, and reversing `006` re-opens unbound access, re-enables any
 device revoked before the rollback and discards the claim audit. Both headers say so. `004_rls_policies.down.sql` revokes a

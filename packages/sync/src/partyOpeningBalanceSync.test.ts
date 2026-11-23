@@ -86,7 +86,7 @@ test("an archive and an opening balance arrive whole, and both computers show th
       sourceReference: "Old ledger 1301139", archiveStatementId: statement.id, actor: "admin",
     });
     const first = sent(accounts);
-    assert.deepEqual(first.map((envelope) => envelope.aggregateType), ["PARTY", "LEDGER_ARCHIVE_STATEMENT", "PARTY_OPENING_BALANCE"], "the party, its archive, then the balance that names them");
+    assert.deepEqual(first.map((envelope) => envelope.aggregateType), ["PARTY", "LEDGER_ARCHIVE_STATEMENT", "LEDGER_ARCHIVE_ENTRY_PAGE", "PARTY_OPENING_BALANCE"], "the party, its archive header and its one page of rows, then the balance that names them");
     deliver(reader, first);
     assert.deepEqual(balances(reader, customer), balances(accounts, customer));
     assert.equal(reader.db.getCurrentPartyBalance(customer), 350_000);

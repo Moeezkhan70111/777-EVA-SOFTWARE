@@ -112,6 +112,8 @@ const KIND_OF_TYPE: Readonly<Record<string, DataKind>> = {
   CASH_VOUCHER: DATA_KIND.CASH,
   // An old ledger imported on another computer: the Customer Ledger screen shows it (docs/50). Never a balance.
   LEDGER_ARCHIVE_STATEMENT: DATA_KIND.BILLING,
+  // Its rows, a page at a time: the statement shows once its last page is here (docs/50).
+  LEDGER_ARCHIVE_ENTRY_PAGE: DATA_KIND.BILLING,
   // An opening balance posted, corrected or reversed on the accounts computer: a party balance moved (docs/53).
   PARTY_OPENING_BALANCE: DATA_KIND.CASH,
   // A purchase bill written on the accounts computer: a supplier balance moved (docs/54).
