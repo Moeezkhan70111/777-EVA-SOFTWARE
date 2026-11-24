@@ -4011,7 +4011,10 @@ export interface CustomerOrderLine {
   article: string;
   color: string;
   size: string;
+  /** What the line orders: never below what was dispatched (24 Nov 2026). */
   quantity: number;
+  /** As last typed; below quantity only when a reduction crossed a gatepass on another computer. */
+  requested?: number;
   dispatched: number;
   pending: number;
 }

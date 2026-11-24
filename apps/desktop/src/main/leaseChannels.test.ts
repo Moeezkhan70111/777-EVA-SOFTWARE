@@ -184,7 +184,7 @@ describe("lease classification", () => {
 
   it("the domains that replicate are enforced, and the two that do not yet are not", () => {
     const domains = new Set(Object.values(LEASED_CHANNELS).flat());
-    expect([...domains].sort()).toEqual([LEASE_DOMAIN.ACCOUNTS, LEASE_DOMAIN.CARTON_STOCK, LEASE_DOMAIN.MASTER_DATA, LEASE_DOMAIN.PARTIES, LEASE_DOMAIN.RAW_MATERIAL_STORE, LEASE_DOMAIN.SALES_DISPATCH]);
+    expect([...domains].sort()).toEqual([LEASE_DOMAIN.ACCOUNTS, LEASE_DOMAIN.CARTON_STOCK, LEASE_DOMAIN.MASTER_DATA, LEASE_DOMAIN.ORDERS, LEASE_DOMAIN.PARTIES, LEASE_DOMAIN.RAW_MATERIAL_STORE, LEASE_DOMAIN.SALES_DISPATCH]);
   });
 
   it("a claim is posted, rejected and reversed only by the accounts holder, and the store can only ask, in closing a program (docs/55)", () => {
@@ -192,6 +192,15 @@ describe("lease classification", () => {
       expect(leasesFor(channel)).toEqual([LEASE_DOMAIN.ACCOUNTS]);
     }
     expect(leasesFor(IPC.completeMachineProgramProduction)).toEqual([LEASE_DOMAIN.RAW_MATERIAL_STORE]);
+  });
+
+  // Owner, 24 Nov 2026 (cloud 042): orders are entered on the boss's computer, PC3, under their own lease; gatepasses,
+  // which allocate against them, stay under carton stock and sales on PC1.
+  it("customer orders are written under their own lease, apart from gatepasses (cloud 042)", () => {
+    for (const channel of [IPC.saveCustomerOrder, IPC.editCustomerOrder, IPC.cancelCustomerOrder]) {
+      expect(leasesFor(channel)).toEqual([LEASE_DOMAIN.ORDERS]);
+    }
+    expect(leasesFor(IPC.createGatepass)).not.toContain(LEASE_DOMAIN.ORDERS);
   });
 
   it("parties are written under their own lease, and gatepasses under carton stock and sales together (docs/55)", () => {

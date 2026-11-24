@@ -1,9 +1,10 @@
-// Reading one customer order (docs/52): its header and its ACTIVE lines, each with what gatepasses dispatched against
-// it (ORDER_LINE_DISPATCHED_SQL, the one definition) and what it still owes. Read only.
+// Reading one customer order (docs/52): its header and its lines — active, or dispatched against — each with what
+// gatepasses dispatched against it (ORDER_LINE_DISPATCHED_SQL, the one definition), what it orders (never below that,
+// ORDER_LINE_EFFECTIVE_SQL) and what it still owes. Read only.
 
 import { CUSTOMER_ORDER_STATUS, formatCustomerOrderCode, pendingOrderQuantity, type CustomerOrderStatus } from "@erp/domain";
 import type { MutableTransactionContext } from "./shared.js";
-import { ORDER_LINE_DISPATCHED_SQL } from "./orderAllocation.js";
+import { ORDER_LINE_COUNTS_SQL, ORDER_LINE_DISPATCHED_SQL, ORDER_LINE_EFFECTIVE_SQL } from "./orderAllocation.js";
 
 type Row = Record<string, unknown>;
 type Db = MutableTransactionContext["db"];
@@ -17,7 +18,13 @@ export interface CustomerOrderLine {
   readonly article: string;
   readonly color: string;
   readonly size: string;
+  /** What the line orders: never below what was dispatched against it (orderAllocation.ts, 24 Nov 2026). */
   readonly quantity: number;
+  /**
+   * The quantity as it was last typed; 0 for a line taken off. Below `quantity` only when a reduction crossed a gatepass
+   * on another computer: shown, never hidden.
+   */
+  readonly requested: number;
   /** Cartons gatepasses were allocated against this line, not reversed. */
   readonly dispatched: number;
   /** quantity − dispatched, never below zero. 0 on a cancelled order. */
@@ -60,12 +67,13 @@ const totalsOf = (lines: readonly CustomerOrderLine[]): OrderTotals => ({
 function readLines(db: Db, orderId: string, cancelled: boolean): CustomerOrderLine[] {
   const rows = db
     .prepare(
-      `SELECT ol.*, ${ORDER_LINE_DISPATCHED_SQL} AS dispatched FROM customer_order_lines ol
-        WHERE ol.order_id = ? AND ol.status = 'ACTIVE' ORDER BY ol.line_no`
+      `SELECT ol.*, ${ORDER_LINE_DISPATCHED_SQL} AS dispatched, ${ORDER_LINE_EFFECTIVE_SQL} AS effective FROM customer_order_lines ol
+        WHERE ol.order_id = ? AND ${ORDER_LINE_COUNTS_SQL} ORDER BY ol.line_no`
     )
     .all(orderId) as Row[];
   return rows.map((row) => {
-    const quantity = Number(row.quantity);
+    const quantity = Number(row.effective);
+    const requested = text(row.status) === "ACTIVE" ? Number(row.quantity) : 0;
     const dispatched = Number(row.dispatched ?? 0);
     return {
       id: text(row.id),
@@ -75,6 +83,7 @@ function readLines(db: Db, orderId: string, cancelled: boolean): CustomerOrderLi
       color: text(row.color_snapshot),
       size: text(row.size_snapshot),
       quantity,
+      requested,
       dispatched,
       pending: cancelled ? 0 : pendingOrderQuantity(quantity, dispatched),
     };

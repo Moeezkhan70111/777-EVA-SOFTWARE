@@ -562,6 +562,7 @@ export const App = () => {
             onMakeBill={canOpenRoute(session, "sale-voucher-form") && !hiddenRoutes.has("sale-voucher-form") ? openSaleVoucherForGatepass : undefined}
             canEdit={hasPermission(session, PERMISSION.GATEPASS_EDIT)}
             editGatepassId={gatepassToEdit}
+            isAdmin={session.role === USER_ROLE.ADMIN}
           />
         );
       case "gatepass-list":

@@ -9,7 +9,7 @@ balances) and docs/54 (purchase bills). The architecture is the owner's, fixed o
 |---|---|---|
 | **PC1**, "PC1 - MOEEZKHAN" | Central accounts and production | All accounting: sale bills, gatepasses, orders, purchase bills, cash vouchers, opening balances, ledger imports, **claims** (price, post, reject, reverse). Parties. Manual Production, production days, stock adjustments. Products and master data. |
 | **PC2**, "DESKTOP-R1V8" | Store only | Raw material store: receipts, issues, labels, Move In/Out vouchers, machine-program store steps, **closing a program** (cut size, and **claim requests**: no money). |
-| **PC3**, "DESKTOP-SQL0" (inferred: the only other registered computer) | Boss, viewing | Nothing. Receives everything that travels and shows it read-only. |
+| **PC3**, "PC3 - boss (DESKTOP-SQL0)" (device d223d895…) | Boss: customer orders, otherwise viewing | Customer orders only (ORDERS, cloud 042, 24 Nov 2026): enter, edit and cancel. Everything else read-only. |
 
 The workstation names are as the production cloud lists them (read 21 Nov 2026). PC3's name is inferred: it is the third
 registered computer, and it holds no lease.
@@ -33,14 +33,15 @@ registered computer, and it holds no lease.
 | Domain | Owner | Writes it protects | Records it travels |
 |---|---|---|---|
 | ACCOUNTS | PC1 | cash vouchers, opening balances (single and bulk), ledger import and withdrawal, purchase bills, **claim post/reject/reverse** | CASH_VOUCHER, LEDGER_ARCHIVE_STATEMENT, PARTY_OPENING_BALANCE, PURCHASE_VOUCHER, **PARTY_CLAIM, PARTY_CLAIM_REJECTION** |
-| SALES_DISPATCH | PC1 | sale bills and their lines, gatepass bills, delivery proof, orders, sale return scan (on the QR hold) | SALE_VOUCHER, GATEPASS, CUSTOMER_ORDER, GATEPASS_ORDER_ALLOCATION, **SALE_RETURN** |
+| SALES_DISPATCH | PC1 | sale bills and their lines, gatepass bills, delivery proof, gatepass allocations against orders, sale return scan (on the QR hold) | SALE_VOUCHER, GATEPASS, GATEPASS_ORDER_ALLOCATION, **SALE_RETURN** |
+| ORDERS | **PC3** (24 Nov 2026, cloud 042) | enter, edit and cancel customer orders | CUSTOMER_ORDER |
 | CARTON_STOCK | PC1 | Manual Production (record, save, edit, void), Complete today's production, carton stock adjustments, **gatepass create/cancel (with SALES_DISPATCH)** | MANUAL_PRODUCTION_ENTRY, PRODUCTION_DAY, CARTON_STOCK_ADJUSTMENT, CARTON_STOCK_EVENT |
 | PARTIES | PC1 | create/edit/delete parties and party groups | PARTY, PARTY_GROUP |
 | MASTER_DATA | PC1 | products, colours, machines, work sections, colour list | the product and machine records |
 | RAW_MATERIAL_STORE | PC2 | everything in the store, materials and units, **closing a machine program** | INVENTORY_*, STOCK_EVENT, STORE_HAND_VOUCHER, raw-material QR, **PARTY_CLAIM_REQUEST** |
 
 Every CARTON_STOCK workflow is PC1's work (Manual Production and gatepasses are on PC1), so CARTON_STOCK stays on PC1
-whole. No lease is split. PC3 holds nothing, so the gate refuses every leased write there.
+whole. No lease is split. PC3 holds ORDERS only (from cloud 042), so the gate refuses every other leased write there.
 
 ### Changes needed in production
 

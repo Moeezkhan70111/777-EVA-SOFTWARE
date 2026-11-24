@@ -59,7 +59,7 @@ export const OrderDetails: React.FC<OrderDetailsProps> = ({ order, busy, canEdit
       {!open && order.cancelledBy ? <p className="ord-cancelled" role="note">{words.cancelledBy(order.cancelledBy, order.cancelReason ?? "")}</p> : null}
       <OrderLinesTable
         label={words.linesTitle}
-        rows={order.lines.map((line) => ({ key: line.id, article: line.article, color: line.color, size: line.size, ordered: line.quantity, dispatched: line.dispatched, pending: line.pending }))}
+        rows={order.lines.map((line) => ({ key: line.id, article: line.article, color: line.color, size: line.size, ordered: line.quantity, requested: line.requested, dispatched: line.dispatched, pending: line.pending }))}
       />
     </div>
   );

@@ -27,6 +27,10 @@ import { EditingActions, ViewingActions } from "../features/gatepass/GatepassAct
 import { GatepassEditBar } from "../features/gatepass/GatepassEditBar";
 import { canEditGatepass, draftFromDocument, partyIsLocked, stockForEdit } from "../features/gatepass/gatepassEdit";
 import { useGatepassEdit } from "../features/gatepass/useGatepassEdit";
+import { MissingColours } from "../features/gatepass/MissingColours";
+import { missingColoursOf, sizesMissingColour } from "../features/gatepass/colourGaps";
+import { useWriteLease } from "../features/sync/useWriteLease";
+import { LEASE_DOMAIN } from "@erp/domain";
 
 // Gatepass — one screen, two columns.
 //
@@ -59,6 +63,8 @@ interface GatepassPageProps {
   canEdit?: boolean;
   /** Open this gatepass straight into an edit (from Gatepass List). */
   editGatepassId?: string;
+  /** An administrator: may add a colour to a size it is not made in, where Product Master is written (24 Nov 2026). */
+  isAdmin?: boolean;
 }
 
 interface SubmitError {
@@ -68,7 +74,7 @@ interface SubmitError {
 
 const EMPTY_TRANSPORT: TransportFields = { biltyNumber: "", transportVia: "", remarks: "" };
 
-export const GatepassPage: React.FC<GatepassPageProps> = ({ token, onNavigate, onMakeBill, canEdit = false, editGatepassId }) => {
+export const GatepassPage: React.FC<GatepassPageProps> = ({ token, onNavigate, onMakeBill, canEdit = false, editGatepassId, isAdmin = false }) => {
   const api = useDesktopApi();
   const { push } = useNotifications();
   const { parties, partiesLoading, stock, grid, reloadStock, applyShortages } = useGatepassData(token);
@@ -77,6 +83,9 @@ export const GatepassPage: React.FC<GatepassPageProps> = ({ token, onNavigate, o
   const draftGrid = useMemo(() => (edit.editing ? buildStockGrid(stockForEdit(stock.rows, edit.editing)) : grid), [edit.editing, stock.rows, grid]);
   const { draft, expandedKey, isDirty, addArticle, removeArticle, toggleExpanded, expand, setQuantity, stepQuantityBy, clear, load } = useGatepassDraft(draftGrid);
   const nav = useGatepassNavigation(token);
+  // Product Master is written where MASTER_DATA is held, by an administrator (as "+ New colour" on Enter Orders).
+  const masterData = useWriteLease(LEASE_DOMAIN.MASTER_DATA);
+  const canAddColour = isAdmin && masterData.canWrite;
 
   const [partyId, setPartyId] = useState("");
   const [transport, setTransport] = useState<TransportFields>(EMPTY_TRANSPORT);
@@ -255,6 +264,10 @@ export const GatepassPage: React.FC<GatepassPageProps> = ({ token, onNavigate, o
               setSubmitError(null);
             }}
             onStep={stepQuantityBy}
+            missing={
+              <MissingColours article={article.article} size={article.size} colours={missingColoursOf(draftGrid, article.article, article.size)}
+                sizesMissing={(colour) => sizesMissingColour(draftGrid, article.article, colour)} canAdd={canAddColour} onAdded={() => void reloadStock()} />
+            }
           />
         ))}
       </div>

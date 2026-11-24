@@ -17,6 +17,8 @@ export interface OrderLinesRow {
   readonly ordered: number;
   readonly dispatched: number;
   readonly pending: number;
+  /** As last typed on the order, when a gatepass on another computer had already sent more (24 Nov 2026). */
+  readonly requested?: number;
   readonly progress?: OrderProgress;
   readonly orderCodes?: readonly string[];
 }
@@ -52,7 +54,12 @@ export const OrderLinesTable: React.FC<OrderLinesTableProps> = ({ label, rows, s
             <td className="ord-article">{row.article}</td>
             <td><span className="ord-colour"><ColorSwatch color={row.color} /><ColourName colour={row.color} /></span></td>
             <td>{row.size}</td>
-            <td className="ord-num">{figure(row.ordered)}</td>
+            <td className="ord-num">
+              {figure(row.ordered)}
+              {row.requested !== undefined && row.requested < row.ordered ? (
+                <span className="ord-asked" title={words.askedTitle}>{words.asked(figure(row.requested))}</span>
+              ) : null}
+            </td>
             <td className="ord-num">{figure(row.dispatched)}</td>
             <td className="ord-num ord-pending">{figure(row.pending)}</td>
             <td><OrderProgressBadge progress={row.progress ?? orderProgressOf(row.ordered, row.dispatched)} /></td>

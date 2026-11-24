@@ -20,6 +20,8 @@ interface ArticleCardProps {
   onRemove?: () => void;
   onQuantityChange?: (productVariantId: string, text: string) => void;
   onStep?: (productVariantId: string, delta: 1 | -1) => void;
+  /** Under the colours, when open: the article's colours this size is not made in (MissingColours, 24 Nov 2026). */
+  missing?: React.ReactNode;
 }
 
 const ChevronIcon = () => (
@@ -64,7 +66,7 @@ const TableHead: React.FC<{ readOnly?: boolean }> = ({ readOnly }) => (
   </thead>
 );
 
-export const ArticleCard: React.FC<ArticleCardProps> = ({ article, expanded, image, onToggle, readOnly, onRemove, onQuantityChange, onStep }) => {
+export const ArticleCard: React.FC<ArticleCardProps> = ({ article, expanded, image, onToggle, readOnly, onRemove, onQuantityChange, onStep, missing }) => {
   const name = articleLabel(article);
   const slug = articleSlug(article);
   const bodyId = `gp-article-body-${slug}`;
@@ -124,6 +126,7 @@ export const ArticleCard: React.FC<ArticleCardProps> = ({ article, expanded, ima
               ))}
             </tbody>
           </table>
+          {missing}
         </div>
       )}
     </section>

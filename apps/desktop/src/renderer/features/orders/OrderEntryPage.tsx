@@ -18,8 +18,8 @@ import { orderDozens } from "./orderUnits";
 //   ‹ [ ORD- 14  of 14 ] ›  [ + New order ]      the compact pager (Hick's law, owner, 24 Nov 2026)
 //   ── the order being written, or the stored one with what was dispatched, Edit and Cancel ──
 //
-// Orders are written on the computer that makes gatepasses (SALES_DISPATCH), so a gatepass allocates against every
-// order there is. Elsewhere the page says so and writes nothing. Every refusal is the main process's.
+// Orders are written on the computer that holds ORDERS, the boss's PC3 (cloud 042, 24 Nov 2026); gatepasses stay on PC1
+// (SALES_DISPATCH) and allocate against the orders that have reached it. Elsewhere the page says so and writes nothing. Every refusal is the main process's.
 
 const words = copy.orders;
 
@@ -113,7 +113,7 @@ const OrderEntry: React.FC<OrderEntryPageProps> = ({ token, canCancel, isAdmin }
 };
 
 export const OrderEntryPage: React.FC<OrderEntryPageProps> = (props) => (
-  <LeasedStation domain={LEASE_DOMAIN.SALES_DISPATCH}>
+  <LeasedStation domain={LEASE_DOMAIN.ORDERS}>
     <OrderEntry {...props} />
   </LeasedStation>
 );

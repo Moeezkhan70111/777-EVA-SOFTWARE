@@ -11253,3 +11253,25 @@ tr.has-error .gp-qty-stepper input { color: var(--err); }
 }
 /* The article's name on its band: white. Specific enough to beat the Orders tone's navy title (.app-main[data-page-tone]). */
 .ord-pending .ord-matrix-head .ord-matrix-title { color: var(--white); }
+
+/* Under an article + size on the Gatepass: the article's colours this size is not made in (24 Nov 2026). Quiet and
+   dashed, a box that is not there yet; "+ Add" only for an administrator where Product Master is written. */
+.doc-themed .gp-missing { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-top: 10px; padding: 10px 12px; border: 1px dashed var(--sp-line); border-radius: var(--sp-radius-control); background: var(--sp-ground); }
+.doc-themed .gp-missing-title { color: var(--sp-muted); font-size: 0.8rem; font-weight: 700; }
+.doc-themed .gp-missing-list { display: flex; flex-wrap: wrap; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.doc-themed .gp-missing-colour, .doc-themed .gp-missing-add {
+  display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 0 12px; border-radius: 999px;
+  color: var(--sp-navy); font: inherit; font-size: 0.82rem; font-weight: 600;
+}
+.doc-themed .gp-missing-colour { border: 1px solid var(--sp-line); background: var(--white); }
+.doc-themed .gp-missing-add {
+  min-height: 44px; border: 1.5px dashed color-mix(in oklch, var(--sp-mode-on-start) 45%, var(--sp-line)); background: var(--white); cursor: pointer;
+  transition: background-color 140ms ease, border-color 140ms ease;
+}
+.doc-themed .gp-missing-add:hover:not(:disabled) { border-style: solid; background: color-mix(in oklch, var(--sp-blue-soft) 70%, var(--white)); }
+.doc-themed .gp-missing-add:focus-visible { outline: 2px solid var(--sp-mode-on-start); outline-offset: 2px; }
+.doc-themed .gp-missing-add:disabled { cursor: progress; opacity: 0.7; }
+.doc-themed .gp-missing-hint { flex-basis: 100%; color: var(--sp-muted); font-size: 0.78rem; text-wrap: pretty; }
+@media (prefers-reduced-motion: reduce) { .doc-themed .gp-missing-add { transition: none; } }
+/* A line lowered after a gatepass had already sent more (24 Nov 2026): what was asked, quietly, under what counts. */
+.ord-page .ord-asked { display: block; color: var(--sp-muted); font-size: 0.75rem; font-weight: 600; }

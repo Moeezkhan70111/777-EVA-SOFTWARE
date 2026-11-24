@@ -189,8 +189,9 @@ export const LEASED_AGGREGATE_DOMAIN: Readonly<Partial<Record<SyncAggregateType,
   [SYNC_AGGREGATE.STORE_HAND_VOUCHER]: LEASE_DOMAIN.RAW_MATERIAL_STORE,
   [SYNC_AGGREGATE.GATEPASS]: LEASE_DOMAIN.SALES_DISPATCH,
   [SYNC_AGGREGATE.SALE_VOUCHER]: LEASE_DOMAIN.SALES_DISPATCH,
-  // Orders are written where gatepasses are, so a gatepass allocates against every order there is (docs/52).
-  [SYNC_AGGREGATE.CUSTOMER_ORDER]: LEASE_DOMAIN.SALES_DISPATCH,
+  // Orders have their own lease since 24 Nov 2026 (cloud 042): entered on the boss's computer, PC3. A gatepass's
+  // allocation against them stays with the gatepass, under SALES_DISPATCH (docs/52).
+  [SYNC_AGGREGATE.CUSTOMER_ORDER]: LEASE_DOMAIN.ORDERS,
   [SYNC_AGGREGATE.GATEPASS_ORDER_ALLOCATION]: LEASE_DOMAIN.SALES_DISPATCH,
   [SYNC_AGGREGATE.CASH_VOUCHER]: LEASE_DOMAIN.ACCOUNTS,
   // Imported on the computer that writes cash vouchers: the archive belongs to the accounts, not to master data.

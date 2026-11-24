@@ -38,6 +38,26 @@ type Db = MutableTransactionContext["db"];
 export const ORDER_LINE_DISPATCHED_SQL = `COALESCE((SELECT SUM(al.quantity) FROM gatepass_order_allocation_lines al
                                                      WHERE al.order_line_id = ol.id AND al.reversed_at IS NULL), 0)`;
 
+/*
+ * ORDERS ARE WRITTEN ON ONE COMPUTER AND DISPATCHED ON ANOTHER (owner, 24 Nov 2026: orders on PC3 under ORDERS,
+ * gatepasses on PC1 under SALES_DISPATCH). Both work offline, so a reduction or cancellation typed on PC3 can cross a
+ * gatepass PC1 has already counted against the same line: neither can refuse what it has not yet received, and the
+ * cloud cannot either while PC1's gatepass is still on PC1. What makes every computer agree, whatever order the two
+ * records arrive in, is read here, from the rows themselves:
+ *
+ *   - a line goes on counting once anything was dispatched against it, even if it was later taken off the order;
+ *   - what it orders is never below what was dispatched: MAX(quantity asked, dispatched), and a line taken off orders
+ *     exactly what was dispatched. The quantity asked is kept as it was typed, and reported beside it (requested);
+ *   - so pending is never below 0, and no dispatch is ever hidden or lost.
+ *
+ * The order's own computer still refuses a reduction below what it knows was dispatched (customerOrders.ts, applied in
+ * its write transaction); this rule is what holds when it could not know.
+ */
+/** Whether an order line is listed: still asked for, or dispatched against. */
+export const ORDER_LINE_COUNTS_SQL = `(ol.status = 'ACTIVE' OR ${ORDER_LINE_DISPATCHED_SQL} > 0)`;
+/** What an order line orders, never below what was dispatched against it; a line taken off orders what was dispatched. */
+export const ORDER_LINE_EFFECTIVE_SQL = `(CASE WHEN ol.status = 'ACTIVE' THEN MAX(ol.quantity, ${ORDER_LINE_DISPATCHED_SQL}) ELSE ${ORDER_LINE_DISPATCHED_SQL} END)`;
+
 /** One gatepass line's place in the plan: what it dispatched, and how that was shared out. */
 interface PlannedLine {
   readonly gatepassLineId: string;

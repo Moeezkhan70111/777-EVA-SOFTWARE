@@ -27,6 +27,13 @@ export const LEASE_DOMAIN = {
    * products, sizes, machines, groups and colours.
    */
   PARTIES: "PARTIES",
+  /**
+   * Customer orders (owner, 24 Nov 2026; cloud 042, docs/52): held by the boss's computer, PC3, so orders are entered
+   * there while gatepasses and bills stay on PC1. Taken out of SALES_DISPATCH. A gatepass's allocation against the
+   * orders stays SALES_DISPATCH, written by the gatepass's own computer: it only ever writes allocation rows, never an
+   * order, so the two computers never write the same record.
+   */
+  ORDERS: "ORDERS",
 } as const;
 
 export type LeaseDomain = (typeof LEASE_DOMAIN)[keyof typeof LEASE_DOMAIN];

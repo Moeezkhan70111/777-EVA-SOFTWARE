@@ -1556,12 +1556,12 @@ const declarationOf = (sql: string, name: string): string => {
 };
 
 test("011: the cloud's lease domains are exactly this computer's", () => {
-  // 011 seeds the first six; 026 adds CARTON_STOCK and 035 PARTIES, each read from its lease_domains insert alone.
+  // 011 seeds the first six; 026 adds CARTON_STOCK, 035 PARTIES and 042 ORDERS, each read from its lease_domains insert alone.
   const insertOf = (sql: string): string => {
     const from = sql.slice(sql.indexOf("insert into public.lease_domains"));
     return from.slice(0, from.indexOf(";"));
   };
-  const seeded = [LEASES, insertOf(CARTON_STOCK_EVENTS), insertOf(PARTIES_LEASE)].flatMap((sql) =>
+  const seeded = [LEASES, insertOf(CARTON_STOCK_EVENTS), insertOf(PARTIES_LEASE), insertOf(ORDERS_LEASE)].flatMap((sql) =>
     [...sql.matchAll(/^\s+\('([A-Z_]+)', '/gm)].map((match) => match[1])
   );
   assert.deepEqual([...seeded].sort(), Object.values(LEASE_DOMAIN).sort());
@@ -1765,6 +1765,7 @@ const SALE_RETURNS = read("migrations/supabase/040_sale_return_records.up.sql");
 const ARCHIVE_PAGES = read("migrations/supabase/041_ledger_archive_page_records.up.sql");
 const PARTIES_LEASE = read("migrations/supabase/035_parties_lease.up.sql");
 const PARTIES_LEASE_DOWN = read("migrations/supabase/035_parties_lease.down.sql");
+const ORDERS_LEASE = read("migrations/supabase/042_orders_lease.up.sql");
 const CUSTOMER_ORDERS = read("migrations/supabase/036_customer_order_records.up.sql");
 const LEASED_RECORDS_DOWN = read("migrations/supabase/013_leased_records.down.sql");
 
@@ -1777,9 +1778,9 @@ const leasedRecordTypes = (): Map<string, string> => {
       types.set(match[1] ?? "", match[2] ?? "");
     }
   }
-  // 031 moves the raw-material taxonomy to the store's lease, 035 parties to their own: applied as the cloud applies
-  // them, in order, after the inserts.
-  for (const [name, migration] of [["031", RAW_MATERIAL_MASTER], ["035", PARTIES_LEASE]] as const) {
+  // 031 moves the raw-material taxonomy to the store's lease, 035 parties to their own, 042 customer orders to theirs:
+  // applied as the cloud applies them, in order, after the inserts.
+  for (const [name, migration] of [["031", RAW_MATERIAL_MASTER], ["035", PARTIES_LEASE], ["042", ORDERS_LEASE]] as const) {
     const moved = /set lease_domain = '([A-Z_]+)'\s+where aggregate_type in \(([^)]*)\)/.exec(migration);
     assert.ok(moved, `${name} says which types move, and to which lease`);
     for (const type of [...(moved[2] ?? "").matchAll(/'([A-Z_]+)'/g)].map((match) => match[1] ?? "")) {

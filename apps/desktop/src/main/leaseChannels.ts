@@ -29,6 +29,8 @@ const BOTH: readonly LeaseDomain[] = [LEASE_DOMAIN.MASTER_DATA, LEASE_DOMAIN.RAW
 const CARTONS: readonly LeaseDomain[] = [LEASE_DOMAIN.CARTON_STOCK];
 const SALES: readonly LeaseDomain[] = [LEASE_DOMAIN.SALES_DISPATCH];
 const ACCOUNTS: readonly LeaseDomain[] = [LEASE_DOMAIN.ACCOUNTS];
+/** Customer orders: their own lease, held by the boss's computer, PC3 (cloud 042, 24 Nov 2026). */
+const ORDERS: readonly LeaseDomain[] = [LEASE_DOMAIN.ORDERS];
 /** A gatepass moves the carton figure and is a sales document, with the bill it makes. */
 const CARTONS_AND_SALES: readonly LeaseDomain[] = [LEASE_DOMAIN.CARTON_STOCK, LEASE_DOMAIN.SALES_DISPATCH];
 
@@ -158,9 +160,9 @@ export const LEASED_CHANNELS: Readonly<Record<string, readonly LeaseDomain[]>> =
   [IPC.saveGatepassDeliveryProof]: SALES,
   // Customer orders travel under the gatepass's lease: written where gatepasses are made, so a gatepass allocates
   // against every order there is (docs/52).
-  [IPC.saveCustomerOrder]: SALES,
-  [IPC.editCustomerOrder]: SALES,
-  [IPC.cancelCustomerOrder]: SALES,
+  [IPC.saveCustomerOrder]: ORDERS,
+  [IPC.editCustomerOrder]: ORDERS,
+  [IPC.cancelCustomerOrder]: ORDERS,
   // A sale return credits the customer and is not sent to the cloud in this release: one computer records them, the
   // one holding the sales lease (owner, 9 Nov 2026; docs/44 §6). Also on the carton QR hold below: refused everywhere
   // while the hold lasts, and only on the sales holder once it is lifted.

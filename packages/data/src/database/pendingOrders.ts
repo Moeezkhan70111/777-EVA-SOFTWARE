@@ -5,7 +5,7 @@
 //   READ   customerOrderArticle    one article's live colours and sizes, the only cells an order may be typed in
 //
 // Every figure comes from the records: an open order's active lines, less what gatepasses were allocated against them
-// (ORDER_LINE_DISPATCHED_SQL). Nothing is cached. A cancelled order owes nothing and is not listed.
+// (ORDER_LINE_DISPATCHED_SQL), each ordering never below what was dispatched (ORDER_LINE_EFFECTIVE_SQL, 24 Nov 2026). Nothing is cached. A cancelled order owes nothing and is not listed.
 //
 // FILTERED BY LINE. OUTSTANDING lists the lines still owed something, DISPATCHED the lines fully dispatched, ALL both;
 // a party's figures are the sum of its listed lines. SEARCH matches the party's name (all its lines) or the article.
@@ -14,7 +14,7 @@
 
 import { PENDING_ORDER_FILTER, formatCustomerOrderCode, orderProgressOf, type OrderProgress, type PendingOrderFilter } from "@erp/domain";
 import type { SqliteDatabase } from "../sqliteDatabase.js";
-import { ORDER_LINE_DISPATCHED_SQL } from "./orderAllocation.js";
+import { ORDER_LINE_COUNTS_SQL, ORDER_LINE_DISPATCHED_SQL, ORDER_LINE_EFFECTIVE_SQL } from "./orderAllocation.js";
 
 type Row = Record<string, unknown>;
 const text = (value: unknown): string => (value == null ? "" : String(value));
@@ -75,11 +75,11 @@ const MAX_PAGE_SIZE = 100;
 const LINES_CTE = (filter: PendingOrderFilter) => `WITH lines AS (
     SELECT o.party_id, p.party_name, o.id AS order_id, o.order_number, o.created_at, ol.product_variant_id,
            ol.article_snapshot AS article, ol.color_snapshot AS color, ol.size_snapshot AS size,
-           ol.quantity AS ordered, MIN(${ORDER_LINE_DISPATCHED_SQL}, ol.quantity) AS dispatched
+           ${ORDER_LINE_EFFECTIVE_SQL} AS ordered, ${ORDER_LINE_DISPATCHED_SQL} AS dispatched
       FROM customer_order_lines ol
       JOIN customer_orders o ON o.id = ol.order_id
       JOIN parties p ON p.id = o.party_id
-     WHERE o.status = 'OPEN' AND ol.status = 'ACTIVE'
+     WHERE o.status = 'OPEN' AND ${ORDER_LINE_COUNTS_SQL}
        AND (?1 IS NULL OR p.party_name LIKE ?1 ESCAPE '\\' OR ol.article_snapshot LIKE ?1 ESCAPE '\\')
   ), listed AS (
     SELECT *, ordered - dispatched AS pending FROM lines

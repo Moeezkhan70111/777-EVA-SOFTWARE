@@ -33,7 +33,7 @@ const DOMAIN_OF: Readonly<Record<string, LeaseDomain>> = {
   CARTON_STOCK_EVENT: LEASE_DOMAIN.CARTON_STOCK,
   GATEPASS: LEASE_DOMAIN.SALES_DISPATCH,
   SALE_VOUCHER: LEASE_DOMAIN.SALES_DISPATCH,
-  CUSTOMER_ORDER: LEASE_DOMAIN.SALES_DISPATCH,
+  CUSTOMER_ORDER: LEASE_DOMAIN.ORDERS,
   GATEPASS_ORDER_ALLOCATION: LEASE_DOMAIN.SALES_DISPATCH,
 };
 
@@ -46,6 +46,8 @@ class Cloud {
     [LEASE_DOMAIN.PARTIES, { holder: "dev-pc1", epoch: 2 }],
     [LEASE_DOMAIN.CARTON_STOCK, { holder: "dev-pc1", epoch: 2 }],
     [LEASE_DOMAIN.SALES_DISPATCH, { holder: "dev-pc1", epoch: 2 }],
+    // Orders have their own lease since cloud 042 (24 Nov 2026); here one computer holds both, as before.
+    [LEASE_DOMAIN.ORDERS, { holder: "dev-pc1", epoch: 2 }],
     [LEASE_DOMAIN.RAW_MATERIAL_STORE, { holder: "dev-pc2", epoch: 1 }],
   ]);
 
@@ -272,5 +274,149 @@ test("PC1 cancels and deletes a gatepass; it leaves every computer's list and is
       assert.deepEqual(pc.db.listGatepasses({ deleted: true }).rows.map((row) => [row.id, row.deletedBy]), [[gatepassId, "owner"]], `${pc.name}: on the log`);
       assert.equal(parkedSummary(pc.db.db).count, 0, `${pc.name} has nothing parked: ${JSON.stringify(parkedSummary(pc.db.db).oldest)}`);
     }
+  });
+});
+
+// ─── ORDERS ON PC3, GATEPASSES ON PC1 (owner, 24 Nov 2026; cloud 042) ───────────────────────────────────────────────
+// The order is written on PC3 under ORDERS, the gatepass and its allocation on PC1 under SALES_DISPATCH. Both work
+// offline, so a reduction, removal or cancellation on PC3 can cross a gatepass PC1 has already counted. Whatever order
+// the two records reach each computer in, every computer must end with the same figures, every dispatch kept, and no
+// line ordering less than was dispatched (orderAllocation.ts, ORDER_LINE_EFFECTIVE_SQL).
+
+/** Moves the ORDERS lease to PC3, as cloud 042 and its grant do, and tells every computer. */
+const ordersOnPc3 = (cloud: Cloud, pcs: readonly Pc[]) => {
+  cloud.leases.set(LEASE_DOMAIN.ORDERS, { holder: "dev-pc3", epoch: 1 });
+  for (const pc of pcs) hearLeases(pc, cloud);
+};
+
+/** One order line as a computer reads it: [ordered, asked, dispatched, pending]. */
+const lineOn = (pc: Pc, orderId: string, color: string) => {
+  const line = pc.db.requireCustomerOrder(orderId).lines.find((each) => each.color === color);
+  return line ? [line.quantity, line.requested, line.dispatched, line.pending] : null;
+};
+
+const saveOn = (pc: Pc, party: string, lines: Array<[string, number]>, requestId: string = crypto.randomUUID()) =>
+  pc.db.saveCustomerOrder({ requestId, partyId: party, lines: lines.map(([productVariantId, quantity]) => ({ productVariantId, quantity })), actor: "boss" });
+
+const editOn = (pc: Pc, orderId: string, party: string, lines: Array<[string, number]>) => {
+  const revision = pc.db.requireCustomerOrder(orderId).revision;
+  return pc.db.editCustomerOrder({ orderId, revision, partyId: party, lines: lines.map(([productVariantId, quantity]) => ({ productVariantId, quantity })), actor: "boss" });
+};
+
+for (const first of ["pc3", "pc1"] as const) {
+  test(`a stale reduction on PC3 crosses a gatepass on PC1, ${first} sending first: every computer counts what was sent`, async () => {
+    await withOffice(async ({ cloud, pcs, party, red }) => {
+      const [pc1, pc2, pc3] = pcs;
+      ordersOnPc3(cloud, pcs);
+      const order = saveOn(pc3, party, [[red, 10]]).order;
+      await passAll(cloud, pcs);
+
+      await makeGatepass(pc1, party, [[red, 6]]);
+      const edited = editOn(pc3, order.id, party, [[red, 4]]);
+      assert.equal(edited.changed, true, "PC3 had not heard of the gatepass, so its own check let 4 through");
+
+      for (const pc of first === "pc3" ? [pc3, pc1] : [pc1, pc3]) await pass(pc, cloud);
+      await passAll(cloud, pcs);
+      for (const pc of [pc1, pc2, pc3]) {
+        assert.deepEqual(lineOn(pc, order.id, "RED"), [6, 4, 6, 0], `${pc.name}: orders what was sent, asked 4 kept, nothing pending`);
+        assert.deepEqual(pendingOn(pc, party), { RED: [6, 6, 0] }, `${pc.name}: the pending list agrees`);
+        assert.equal(count(pc, "SELECT COALESCE(SUM(quantity), 0) AS n FROM gatepass_order_allocation_lines WHERE reversed_at IS NULL"), 6, `${pc.name}: the dispatch is kept`);
+      }
+
+      // Duplicate and out-of-order delivery change nothing.
+      cloud.deliverAgain();
+      for (const pc of [pc2, pc3]) pc.db.db.prepare("DELETE FROM app_settings WHERE setting_key = 'sync.pull.cursor'").run();
+      await passAll(cloud, pcs);
+      for (const pc of [pc1, pc2, pc3]) {
+        assert.deepEqual(lineOn(pc, order.id, "RED"), [6, 4, 6, 0], `${pc.name} after the replay`);
+        assert.equal(count(pc, "SELECT COUNT(*) AS n FROM customer_orders"), 1, `${pc.name}: one order`);
+        assert.equal(count(pc, "SELECT COUNT(*) AS n FROM gatepass_order_allocation_lines"), 1, `${pc.name}: one allocation line`);
+      }
+    });
+  });
+}
+
+test("a stale removal on PC3 crosses a gatepass on PC1: the removed line stays, ordering what was sent", async () => {
+  await withOffice(async ({ cloud, pcs, party, red, blue }) => {
+    const [pc1, pc2, pc3] = pcs;
+    ordersOnPc3(cloud, pcs);
+    const order = saveOn(pc3, party, [[red, 10], [blue, 5]]).order;
+    await passAll(cloud, pcs);
+    await makeGatepass(pc1, party, [[red, 6]]);
+    editOn(pc3, order.id, party, [[blue, 5]]);
+    await passAll(cloud, pcs);
+    for (const pc of [pc1, pc2, pc3]) {
+      assert.deepEqual(lineOn(pc, order.id, "RED"), [6, 0, 6, 0], `${pc.name}: taken off, still showing what was sent`);
+      assert.deepEqual(pendingOn(pc, party), { BLUE: [5, 0, 5], RED: [6, 6, 0] }, pc.name);
+    }
+  });
+});
+
+test("a stale cancellation on PC3 crosses a gatepass on PC1: the order is closed, and what was sent is kept", async () => {
+  await withOffice(async ({ cloud, pcs, party, red }) => {
+    const [pc1, pc2, pc3] = pcs;
+    ordersOnPc3(cloud, pcs);
+    const order = saveOn(pc3, party, [[red, 10]]).order;
+    await passAll(cloud, pcs);
+    await makeGatepass(pc1, party, [[red, 6]]);
+    pc3.db.cancelCustomerOrder({ orderId: order.id, revision: pc3.db.requireCustomerOrder(order.id).revision, reason: "party changed its mind", actor: "boss" });
+    await passAll(cloud, pcs);
+    for (const pc of [pc1, pc2, pc3]) {
+      const seen = pc.db.requireCustomerOrder(order.id);
+      assert.equal(seen.status, "CANCELLED", pc.name);
+      assert.deepEqual([seen.totals.ordered, seen.totals.dispatched, seen.totals.pending], [10, 6, 0], `${pc.name}: closed, the 6 sent kept`);
+    }
+  });
+});
+
+test("with the gatepass already heard, PC3 refuses to lower a line below what was sent", async () => {
+  await withOffice(async ({ cloud, pcs, party, red }) => {
+    const [pc1, , pc3] = pcs;
+    ordersOnPc3(cloud, pcs);
+    const order = saveOn(pc3, party, [[red, 10]]).order;
+    await passAll(cloud, pcs);
+    await makeGatepass(pc1, party, [[red, 6]]);
+    await passAll(cloud, pcs);
+    assert.deepEqual(lineOn(pc3, order.id, "RED"), [10, 10, 6, 4], "PC3 has heard of the 6 sent");
+    assert.throws(() => editOn(pc3, order.id, party, [[red, 4]]), /cannot be lowered below/);
+  });
+});
+
+test("several edits on PC3 before a sync, and a retried Save, arrive as one order at its last revision", async () => {
+  await withOffice(async ({ cloud, pcs, party, red }) => {
+    const [pc1, pc2, pc3] = pcs;
+    ordersOnPc3(cloud, pcs);
+    const requestId = crypto.randomUUID();
+    const order = saveOn(pc3, party, [[red, 10]], requestId).order;
+    assert.equal(saveOn(pc3, party, [[red, 10]], requestId).duplicate, true, "the retried Save is the same order");
+    editOn(pc3, order.id, party, [[red, 8]]);
+    editOn(pc3, order.id, party, [[red, 7]]);
+    await passAll(cloud, pcs);
+    for (const pc of [pc1, pc2, pc3]) {
+      assert.equal(count(pc, "SELECT COUNT(*) AS n FROM customer_orders"), 1, `${pc.name}: one order`);
+      assert.deepEqual(lineOn(pc, order.id, "RED"), [7, 7, 0, 7], `${pc.name}: the last edit`);
+      assert.equal(pc.db.requireCustomerOrder(order.id).revision, 3, `${pc.name}: at its last revision`);
+    }
+  });
+});
+
+test("once ORDERS is PC3's, PC1's gatepass writes only its allocation, and an order written on PC1 never reaches the cloud", async () => {
+  await withOffice(async ({ cloud, pcs, party, red }) => {
+    const [pc1, pc2, pc3] = pcs;
+    ordersOnPc3(cloud, pcs);
+    const order = saveOn(pc3, party, [[red, 10]]).order;
+    await passAll(cloud, pcs);
+    await makeGatepass(pc1, party, [[red, 6]]);
+    await passAll(cloud, pcs);
+    const orderRevisions = cloud.log.filter((change) => change.envelope.aggregateType === "CUSTOMER_ORDER");
+    assert.ok(orderRevisions.length > 0 && orderRevisions.every((change) => change.envelope.originDeviceId === "dev-pc3"), "every order revision is PC3's: the gatepass did not rewrite the order");
+    assert.ok(cloud.log.some((change) => change.envelope.aggregateType === "GATEPASS_ORDER_ALLOCATION" && change.envelope.originDeviceId === "dev-pc1"), "the allocation is PC1's");
+
+    // If PC1 wrote an order anyway (the screen and the IPC guard refuse it first), the cloud does not take it.
+    saveOn(pc1, party, [[red, 3]]);
+    await passAll(cloud, pcs);
+    assert.ok(cloud.log.every((change) => change.envelope.aggregateType !== "CUSTOMER_ORDER" || change.envelope.originDeviceId === "dev-pc3"), "nothing from PC1 under ORDERS");
+    for (const pc of [pc2, pc3]) assert.equal(count(pc, "SELECT COUNT(*) AS n FROM customer_orders"), 1, `${pc.name} never receives it`);
+    assert.deepEqual(lineOn(pc3, order.id, "RED"), [10, 10, 6, 4]);
   });
 });

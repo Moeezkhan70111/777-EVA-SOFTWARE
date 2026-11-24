@@ -164,6 +164,13 @@ export const copy = {
   },
 
   gatepass: {
+    // Colours the article has in other sizes but not this one (owner, 24 Nov 2026: SK46 7/10 had no BLACKRED).
+    missingTitle: (size: string) => `Not made in ${size} in Product Master`,
+    missingHint: "Ask an administrator to add a colour to this size; it can then go on the gatepass.",
+    addMissingLabel: (colour: string, size: string) => `Add ${colour} in size ${size} to Product Master`,
+    addMissingTitle: (colour: string, sizes: string) => `Adds ${colour} to Product Master in every size it is missing: ${sizes}`,
+    addingMissing: "Adding…",
+    addMissingFailed: "The colour could not be added. Nothing was changed.",
     emptyTitle: "No gatepasses yet",
     emptyHint: "Create a gatepass from the Gatepass screen; it will be listed here.",
     noMatch: "No gatepasses match these filters.",
@@ -2436,6 +2443,7 @@ export const copy = {
       APPROVALS: "approvals",
       CARTON_STOCK: "carton stock (Manual Production and gatepasses)",
       PARTIES: "parties",
+      ORDERS: "customer orders",
     },
     heldElsewhere: (what: string, holder: string | null) =>
       `${what.charAt(0).toUpperCase()}${what.slice(1)} is written on ${holder ?? "another computer"} only. You can look things up here, but not change them.`,
@@ -2893,6 +2901,9 @@ export const copy = {
     enterOrders: "Enter an order",
     dispatchedOf: (dispatched: string, ordered: string) => `${dispatched} of ${ordered} dispatched`,
     dozensPending: "dozen pending",
+    // A reduction that crossed a gatepass on another computer (24 Nov 2026): the line counts what was sent, and says so.
+    asked: (dozens: string) => `asked ${dozens}`,
+    askedTitle: "Lowered on the order after a gatepass had already sent more. It counts as what was sent; nothing sent is lost.",
     pendingShort: "pending",
     total: "Total",
     matrixLabel: (article: string) => `${article} pending dozens by size and colour`,
