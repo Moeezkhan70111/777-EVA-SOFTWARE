@@ -1,8 +1,10 @@
 import React from "react";
 import { orderProgressOf, type OrderProgress } from "@erp/domain";
+import { ColourName } from "../colorTranslation/ColourName";
 import { ColorSwatch } from "../../components/shared/ColorSwatch";
 import { copy } from "../../config/copy";
 import { OrderProgressBadge } from "./OrderProgressBadge";
+import { orderDozens } from "./orderUnits";
 
 // Ordered, dispatched and pending, one row per product: a party's products on Pending Orders, an order's lines on
 // Enter Orders (R1). Pending is the figure that matters, so it is the strongest. Every figure is the main process's.
@@ -27,7 +29,7 @@ interface OrderLinesTableProps {
 }
 
 const words = copy.pendingOrders;
-const figure = (value: number) => value.toLocaleString("en-US");
+const figure = orderDozens;
 
 export const OrderLinesTable: React.FC<OrderLinesTableProps> = ({ label, rows, showOrders = false }) => (
   <div className="ord-table-wrap">
@@ -48,7 +50,7 @@ export const OrderLinesTable: React.FC<OrderLinesTableProps> = ({ label, rows, s
         {rows.map((row) => (
           <tr key={row.key}>
             <td className="ord-article">{row.article}</td>
-            <td><span className="ord-colour"><ColorSwatch color={row.color} />{row.color}</span></td>
+            <td><span className="ord-colour"><ColorSwatch color={row.color} /><ColourName colour={row.color} /></span></td>
             <td>{row.size}</td>
             <td className="ord-num">{figure(row.ordered)}</td>
             <td className="ord-num">{figure(row.dispatched)}</td>

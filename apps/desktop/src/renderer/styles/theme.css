@@ -637,7 +637,7 @@ html, body { margin: 0; height: 100%; overflow-x: hidden; background: var(--bg);
 }
 /* The same inset as the Store page's header, so the header does not shift between screens. */
 .app-head { flex-shrink: 0; padding: var(--page-head-top) 28px 0; }
-.app-head + .page-content:not(.page-content--fullscreen) { padding: 14px 28px 28px; }
+.app-head + .page-content:not(.page-content--fullscreen) { padding: 24px 28px 28px; }
 /* A full-screen station paints a flat ground of its own, which would end the header in a hard band:
    beside the sidebar it shows the shell's instead. Only this outermost layer, which never changes:
    a scan's success and error colours live on the cards inside it. !important because one station
@@ -9962,18 +9962,36 @@ tr.has-error .gp-qty-stepper input { color: var(--err); }
    In the Store page's palette: white cards on the sky, navy text, the blue of Move in for the main action, green only
    for a finished day. */
 
-/* The way back to the Dashboard, beside the logo on every page but the Dashboard (PageHeader). */
-.page-head-start { justify-self: start; display: flex; align-items: center; gap: var(--space-3); min-width: 0; }
+/* The way back to the Dashboard, beside the logo on every page but the Dashboard (PageHeader). The logo and the
+   button are set apart by a thin rule (on the logo, so it steps aside with it). A container, so the button drops its
+   words for the arrow alone when the left column gets narrow, whatever the window and the sidebar are doing. */
+.page-head-start {
+  justify-self: stretch; display: flex; align-items: center; gap: var(--space-4); min-width: 0;
+  container-type: inline-size; container-name: page-head-start;
+}
+.page-head-start > .page-head-logo:not(:only-child) { padding-right: var(--space-4); border-right: 1px solid var(--sp-line); }
 .page-head-home {
-  display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 16px 0 8px;
+  display: inline-flex; align-items: center; gap: 10px; min-height: 48px; padding: 0 18px 0 6px; flex-shrink: 0;
   border: 1px solid var(--sp-line); border-radius: 999px; background: var(--white); box-shadow: var(--sp-card-shadow);
-  color: var(--sp-navy-2); font: inherit; font-size: 14px; font-weight: 700; cursor: pointer; white-space: nowrap;
+  color: var(--sp-navy-2); font: inherit; text-align: left; cursor: pointer; white-space: nowrap;
   transition: border-color 120ms ease, box-shadow 120ms ease, transform 120ms ease;
 }
 .page-head-home:hover { border-color: var(--sp-blue-line); box-shadow: var(--sp-mode-shadow); transform: translateY(-1px); }
 .page-head-home:focus-visible { outline: 3px solid var(--sp-blue); outline-offset: 2px; }
-.page-head-home-icon { display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; border-radius: 999px; background: var(--sp-blue-soft); color: var(--sp-blue); }
-.page-head-home-icon svg { width: 17px; height: 17px; }
+.page-head-home-icon {
+  display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; border-radius: 999px;
+  background: var(--sp-blue); color: var(--white); transition: transform 120ms ease;
+}
+.page-head-home-icon svg { width: 18px; height: 18px; }
+.page-head-home:hover .page-head-home-icon { transform: translateX(-2px); }
+.page-head-home-text { display: flex; flex-direction: column; line-height: 1.15; }
+.page-head-home-lead { font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--sp-muted); }
+.page-head-home-target { font-size: 15px; font-weight: 700; color: var(--sp-navy-2); }
+@container page-head-start (max-width: 340px) {
+  .page-head-home { padding: 0 5px; }
+  .page-head-home-text { display: none; }
+}
+@media (prefers-reduced-motion: reduce) { .page-head-home, .page-head-home-icon { transition: none; } .page-head-home:hover .page-head-home-icon { transform: none; } }
 
 /* Today's production: a quiet one-line pill, grey until the day is completed, then green text. Said in words and
    with ○ / ✓ too. It is there to check, not to catch the eye (owner, 15 Nov 2026). */
@@ -10133,9 +10151,6 @@ tr.has-error .gp-qty-stepper input { color: var(--err); }
 .pd-panel { display: flex; flex-direction: column; gap: 14px; }
 
 @media (max-width: 760px) {
-  .page-head-home { padding: 0 8px; }
-  .page-head-home { font-size: 0; gap: 0; }
-  .page-head-home-icon { width: 30px; height: 30px; }
   .mnp-complete { align-items: stretch; flex: 1 1 100%; }
   .mnp-complete .mnp-note { text-align: left; max-width: none; }
   .mnp-article-pick { flex: 1 1 100%; }
@@ -10243,9 +10258,6 @@ tr.has-error .gp-qty-stepper input { color: var(--err); }
       --app-ground-top is mixed from --sp-sky-top at :root, so each tone mixes it again. Carton Stock keeps the
       store blue the tokens already hold. ── */
 .page-head-mid { justify-self: center; display: flex; align-items: center; gap: 16px; min-width: 0; }
-.page-head-art { display: block; height: 64px; width: auto; max-width: 132px; object-fit: contain; filter: drop-shadow(0 6px 10px rgba(12, 27, 56, 0.14)); }
-@media (max-width: 900px) { .page-head-art { height: 44px; max-width: 88px; } }
-@media (max-width: 640px) { .page-head-art { display: none; } }
 
 .app-main[data-page-tone] { --app-ground-top: color-mix(in srgb, var(--sp-sky-top) 55%, var(--sp-ground)); }
 .app-main[data-page-tone] .data-table thead tr { background: var(--us-head); }
@@ -10572,3 +10584,672 @@ tr.has-error .gp-qty-stepper input { color: var(--err); }
 .gp-history-lines { margin: var(--space-1) 0 0; padding-left: var(--space-4); font-size: 0.85rem; color: var(--text-2); }
 .gp-link { min-height: 32px; padding: 0; border: 0; background: none; color: var(--primary); font: inherit; font-weight: 600; cursor: pointer; text-decoration: underline; }
 .gp-link:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; border-radius: var(--radius-sm); }
+
+/* ════════════════════════════ CREATE GATEPASS IN THE CARD PAGES' LOOK (owner, 23 Nov 2026) ════════════════════════════
+   "Use our theme: the Dashboard and the pages its cards open (Carton Stock, Upper Stock)." The same parts, from the same
+   tokens: white rounded cards on the sky, each article headed by a navy / blue band (as Upper Stock), tinted table
+   heads, the Store blue for the main action and the total (as Carton Stock's hero card). Create Gatepass and Sale Voucher
+   (24 Nov 2026) carry .doc-themed; Gatepass List and the Store's voucher pager share the .gp-* classes and keep their look. */
+.doc-themed { font-family: var(--sp-font); color: var(--sp-navy); }
+
+/* Buttons: the main action in the Store blue, the rest white on the sky. */
+.doc-themed .btn { min-height: 44px; border-radius: var(--sp-radius-control); font-weight: 700; }
+.doc-themed .btn-primary {
+  border-color: transparent; background: linear-gradient(135deg, var(--sp-mode-on-start), var(--sp-mode-on-end));
+  box-shadow: var(--sp-mode-on-shadow); color: var(--white);
+}
+.doc-themed .btn-primary:hover:not(:disabled) { filter: brightness(1.06); box-shadow: var(--sp-mode-shadow); }
+.doc-themed .btn-primary:disabled { background: var(--sp-line); box-shadow: none; color: var(--sp-muted); opacity: 1; }
+.doc-themed .btn-secondary { border: 1px solid var(--sp-line); background: var(--white); box-shadow: var(--sp-card-shadow); color: var(--sp-navy-2); }
+.doc-themed .btn-secondary:hover:not(:disabled) { border-color: var(--sp-blue-line); background: var(--sp-blue-soft); color: var(--sp-navy); }
+.doc-themed .btn:focus-visible { outline: 3px solid var(--sp-blue); outline-offset: 2px; }
+
+/* The title row: the steps on the left, the pager and actions on the right. */
+.doc-themed .gp-topbar { padding: 4px 2px; }
+/* !important only to meet the shared heading rule ("Consistent page-level heading hierarchy"), which sets its colour so. */
+.doc-themed .gp-topbar .page-title.page-detail-title { color: var(--sp-navy) !important; font-size: 1.7rem; font-weight: 800; }
+.doc-themed .gp-step { color: var(--sp-muted); font-size: 0.86rem; font-weight: 600; }
+.doc-themed .gp-step + .gp-step::before { width: 36px; height: 2px; border-radius: 2px; background: var(--sp-line); }
+.doc-themed .gp-step-no { width: 30px; height: 30px; border-color: var(--sp-line); background: var(--white); color: var(--sp-muted); font-size: 0.8rem; }
+.doc-themed .gp-step.is-current { color: var(--sp-navy); font-weight: 700; }
+.doc-themed .gp-step.is-current .gp-step-no {
+  border-color: transparent; background: linear-gradient(135deg, var(--sp-mode-on-start), var(--sp-mode-on-end));
+  box-shadow: var(--sp-mode-on-shadow); color: var(--white);
+}
+.doc-themed .gp-step.is-done { color: var(--sp-navy-2); }
+.doc-themed .gp-step.is-done .gp-step-no { border-color: var(--sp-blue-line); background: var(--sp-blue-soft); color: var(--sp-blue); }
+
+/* The pager: one white field between white arrow buttons; Load in the sidebar's navy. */
+.doc-themed .gp-nav { gap: 8px; padding: 0; overflow: visible; border-radius: 0; box-shadow: none; }
+.doc-themed .gp-nav > * { border-radius: var(--sp-radius-control); }
+.doc-themed .gp-nav-btn {
+  width: auto; min-height: 44px; padding: 0 16px; border: 1px solid var(--sp-line); background: var(--white);
+  box-shadow: var(--sp-card-shadow); color: var(--sp-navy-2); font-size: 0.86rem;
+}
+.doc-themed .gp-nav-btn:hover:not(:disabled) { border-color: var(--sp-blue-line); background: var(--sp-blue-soft); color: var(--sp-navy); }
+.doc-themed .gp-nav-btn:disabled { border-color: var(--sp-line); background: transparent; box-shadow: none; color: var(--sp-muted); opacity: 0.6; }
+.doc-themed .gp-nav-field { height: 44px; border: 1px solid var(--sp-line); background: var(--white); box-shadow: var(--sp-card-shadow); }
+.doc-themed .gp-nav-field:focus-within { border-color: var(--sp-mode-on-start); background: var(--white); box-shadow: 0 0 0 3px var(--sp-blue-soft); }
+.doc-themed .gp-nav-field .gp-nav-input { width: 6rem; color: var(--sp-navy); }
+.doc-themed .gp-nav-prefix, .doc-themed .gp-nav-field .gp-nav-total { color: var(--sp-muted); }
+.doc-themed .gp-nav-load { min-height: 44px; border: 0; background: var(--sp-navy-2); color: var(--white); }
+.doc-themed .gp-nav-load:hover:not(:disabled) { border: 0; background: var(--sp-navy); color: var(--white); }
+.doc-themed .gp-nav-load:disabled { border: 0; background: var(--sp-line); color: var(--sp-muted); }
+
+/* The cards: white, rounded, on the sky, as Carton Stock's panel. */
+.doc-themed .gp-workspace { gap: 20px; }
+.doc-themed .gp-work { gap: 16px; }
+.doc-themed .card.gp-card {
+  padding: 20px 22px; border: 1px solid var(--sp-line); border-radius: var(--dash-card-radius);
+  background: var(--white); box-shadow: var(--sp-card-shadow);
+}
+.doc-themed .gp-section-title { margin: 0 0 12px; color: var(--sp-navy); font-size: 1.15rem; font-weight: 800; letter-spacing: -0.01em; }
+.doc-themed .gp-section-head-row { margin: 0 0 14px; }
+.doc-themed .gp-section-head-row .gp-section-title { margin: 0; }
+
+/* Party: the search as the card pages' search field, the chosen party in a soft blue block. */
+.doc-themed .gp-select .form-input {
+  height: 52px; padding: 0 18px; border: 1px solid var(--us-field-line); border-radius: var(--sp-radius-control);
+  background: var(--white); box-shadow: var(--us-field-shadow); color: var(--sp-navy); font-size: 1rem;
+}
+.doc-themed .gp-select .form-input:focus { outline: none; border-color: var(--sp-mode-on-start); box-shadow: 0 0 0 3px var(--sp-blue-soft); }
+.doc-themed .gp-select-clear { top: 14px; right: 12px; }
+.doc-themed .gp-select-list { border-color: var(--sp-line); border-radius: var(--sp-radius-control); }
+.doc-themed .gp-select-option.is-cursor { background: var(--sp-blue-soft); }
+.doc-themed .gp-select-option.is-selected .gp-select-option-label { color: var(--sp-blue); }
+.doc-themed .gp-party-card { margin-top: 12px; padding: 12px 16px; border: 1px solid var(--sp-blue-line); border-radius: 14px; background: var(--sp-blue-soft); }
+.doc-themed .gp-party-icon { border: 0; border-radius: 10px; background: var(--white); color: var(--sp-blue); box-shadow: var(--sp-card-shadow); }
+.doc-themed .gp-party-name { color: var(--sp-navy); font-size: 1.1rem; }
+.doc-themed .gp-party-meta { color: var(--sp-muted); }
+.doc-themed .gp-transport { gap: 10px; margin-top: 14px; }
+.doc-themed .gp-transport .form-input { height: 44px; border-color: var(--sp-line); border-radius: var(--sp-radius-control); font-size: 0.9rem; }
+.doc-themed .gp-transport .form-input:focus { border-color: var(--sp-mode-on-start); box-shadow: 0 0 0 3px var(--sp-blue-soft); }
+.doc-themed .gp-transport-label { color: var(--sp-muted); font-size: 0.78rem; }
+.doc-themed .gp-doc-facts dt { color: var(--sp-muted); }
+.doc-themed .gp-doc-facts dd { color: var(--sp-navy); }
+
+/* Add Article: the main action of its card, in the Store blue. */
+.doc-themed .gp-picker .gp-picker-btn {
+  min-height: 44px; padding: 0 18px; border: 0; border-radius: var(--sp-radius-control);
+  background: linear-gradient(135deg, var(--sp-mode-on-start), var(--sp-mode-on-end)); box-shadow: var(--sp-mode-on-shadow);
+  color: var(--white); font-size: 0.9rem;
+}
+.doc-themed .gp-picker-pop { border-color: var(--sp-line); border-radius: 14px; }
+
+/* One article: a white card headed by Upper Stock's band, navy and blue in turn. */
+.doc-themed .gp-article-list { gap: 14px; }
+.doc-themed .gp-article { padding: 10px; border: 1px solid var(--sp-line); border-radius: var(--dash-card-radius); background: var(--white); box-shadow: var(--sp-card-shadow); }
+.doc-themed .gp-article.has-error { border-color: var(--danger-line); box-shadow: 0 0 0 2px var(--danger-soft); }
+.doc-themed .gp-article-head {
+  gap: 8px; min-height: 62px; padding: 6px 10px 6px 8px; border-radius: 12px;
+  background: var(--us-band-sheen), var(--us-band-navy); color: var(--white);
+}
+.doc-themed .gp-article:nth-child(even) .gp-article-head { background: var(--us-band-sheen), var(--us-band-blue); }
+.doc-themed .gp-article-toggle { gap: 14px; padding: 4px 6px; border-radius: 10px; color: var(--white); }
+.doc-themed .gp-article-toggle:hover { background: rgba(255, 255, 255, 0.08); }
+.doc-themed .gp-article-toggle:focus-visible { outline: 2px solid var(--white); }
+.doc-themed .gp-article-head .gp-thumb { border: 0; border-radius: 10px; background: var(--white); }
+.doc-themed .gp-article-title strong { color: var(--white); font-size: 1.35rem; letter-spacing: -0.01em; }
+.doc-themed .gp-article-group { color: rgba(255, 255, 255, 0.78); }
+.doc-themed .gp-article-title > span:last-child:not(.gp-article-name) {
+  align-self: flex-start; padding: 1px 10px; border-radius: 999px; background: rgba(255, 255, 255, 0.18);
+  color: var(--white); font-size: 0.8rem; font-weight: 700;
+}
+.doc-themed .gp-article-meta { padding: 6px 12px; border-radius: 10px; background: var(--white); color: var(--sp-navy-2); font-size: 0.84rem; font-weight: 700; }
+.doc-themed .gp-article.has-error .gp-article-meta { color: var(--err); }
+.doc-themed .gp-chevron {
+  box-sizing: content-box; width: 20px; height: 20px; padding: 10px; border-radius: 10px;
+  background: rgba(255, 255, 255, 0.16); color: var(--white);
+}
+.doc-themed .gp-article-head .gp-icon-btn { width: 40px; height: 40px; border-radius: 10px; background: rgba(255, 255, 255, 0.16); color: var(--white); }
+.doc-themed .gp-article-head .gp-icon-btn:hover { background: var(--danger-soft); color: var(--err); }
+.doc-themed .gp-article-head .gp-icon-btn:focus-visible { outline: 2px solid var(--white); }
+.doc-themed .gp-article-body { padding: 12px 0 0; border-top: 0; }
+
+/* The colour table: Upper Stock's ruled matrix, tinted head, the free figure and the chosen rows in the blue. */
+.doc-themed .gp-colour-table { border-collapse: separate; border-spacing: 0; overflow: hidden; border: 1px solid var(--sp-line); border-radius: var(--sp-radius-control); font-size: 0.95rem; }
+.doc-themed .gp-colour-table th { height: 44px; padding: 0 14px; border-bottom: 1px solid var(--sp-line); background: var(--us-head); color: var(--sp-navy); font-size: 0.74rem; letter-spacing: 0.04em; }
+.doc-themed .gp-colour-table th.gp-th-reflected { color: var(--sp-blue); }
+.doc-themed .gp-colour-table td { height: 52px; padding: 4px 14px; border-bottom: 1px solid var(--sp-line); color: var(--sp-navy); }
+.doc-themed .gp-colour-table tbody tr:hover td { background: var(--sp-ground); }
+.doc-themed .gp-colour-name { color: var(--sp-navy); font-weight: 700; }
+.doc-themed .gp-colour-table td.gp-colour-avail { color: var(--sp-navy); }
+.doc-themed .gp-colour-table td.gp-colour-reserved { color: var(--sp-muted); }
+.doc-themed .gp-colour-table td.gp-colour-reflected { color: var(--sp-blue); }
+.doc-themed .gp-colour-table td.gp-colour-reflected strong { font-size: 1.02rem; font-weight: 800; }
+.doc-themed .gp-colour-table tr.is-selected td { background: var(--us-total); }
+.doc-themed .gp-colour-table tr.is-short td { background: var(--warning-soft); }
+.doc-themed .gp-colour-table tr.has-error td { background: var(--danger-soft); }
+.doc-themed .gp-qty-stepper { height: 40px; border-color: var(--sp-line); border-radius: var(--sp-radius-control); }
+.doc-themed .gp-qty-stepper button { width: 40px; background: var(--sp-blue-soft); color: var(--sp-blue); font-size: 1.15rem; }
+.doc-themed .gp-qty-stepper button:hover:not(:disabled) { background: var(--sp-blue-line); color: var(--sp-navy); }
+.doc-themed .gp-qty-stepper button:disabled { background: var(--sp-ground); color: var(--sp-line); }
+.doc-themed .gp-qty-stepper input { width: 72px; border-color: var(--sp-line); color: var(--sp-navy); font-size: 1rem; }
+.doc-themed .gp-qty-stepper input:focus { outline: none; box-shadow: inset 0 0 0 2px var(--sp-mode-on-start); }
+.doc-themed tr.is-selected .gp-qty-stepper { border-color: var(--sp-blue-line); }
+.doc-themed tr.is-selected .gp-qty-stepper input { color: var(--sp-blue); }
+.doc-themed .gp-qty-value { color: var(--sp-blue); }
+
+/* The summary: a white card, each article a soft block, the total as Carton Stock's hero card. */
+.doc-themed .gp-summary { gap: 14px; }
+.doc-themed .gp-summary-party { color: var(--sp-muted); font-size: 0.84rem; }
+.doc-themed .gp-summary-empty { padding: 28px 12px; border: 1px dashed var(--sp-line); border-radius: 14px; background: var(--sp-ground); color: var(--sp-muted); }
+.doc-themed .gp-summary-article { padding: 12px 14px; border: 1px solid var(--sp-line); border-radius: 14px; background: var(--sp-ground); }
+.doc-themed .gp-summary-article-name { color: var(--sp-navy); }
+.doc-themed .gp-summary-article-total { padding: 2px 10px; border-radius: 8px; background: var(--white); }
+.doc-themed .gp-summary-article-total strong { color: var(--sp-navy-2); }
+.doc-themed .gp-summary-colours li { color: var(--sp-navy); }
+.doc-themed .gp-summary-foot {
+  padding: 16px 18px; border-radius: 14px; background: linear-gradient(135deg, var(--sp-mode-on-start), var(--sp-mode-on-end));
+  box-shadow: var(--sp-mode-on-shadow);
+}
+.doc-themed .gp-summary-foot-label, .doc-themed .gp-summary-foot-meta { white-space: nowrap; }
+.doc-themed .gp-summary-foot-label { font-size: 0.74rem; letter-spacing: 0.06em; text-transform: uppercase; opacity: 0.9; }
+.doc-themed .gp-summary-foot-meta { color: rgba(255, 255, 255, 0.88); }
+.doc-themed .gp-summary-grand strong { font-size: 2.2rem; }
+.doc-themed .gp-summary-hint { color: var(--sp-muted); }
+
+@media (prefers-reduced-motion: reduce) { .doc-themed .btn-primary:hover:not(:disabled) { filter: none; } }
+
+/* The toolbar, by Hick's law (owner, 24 Nov 2026): eight equal buttons became two groups. Finding a gatepass (the
+   compact pager and New) on the left; a thin rule; then what to do with this one: More, the bill, and one blue Print. */
+.doc-themed .gp-topbar-actions { gap: 12px; }
+.doc-themed .gp-topbar-group { display: flex; align-items: center; gap: 8px; }
+.doc-themed .gp-topbar-divider { align-self: stretch; width: 1px; margin: 6px 4px; background: var(--sp-line); }
+
+/* The compact pager: ‹ [ GP - 42  of 57 ] ›, one white unit. */
+.doc-themed .gp-nav--compact { gap: 0; overflow: hidden; border: 1px solid var(--sp-line); border-radius: var(--sp-radius-control); background: var(--white); box-shadow: var(--sp-card-shadow); }
+.doc-themed .gp-nav--compact > * { border-radius: 0; box-shadow: none; }
+.doc-themed .gp-nav--compact .gp-nav-btn { width: 44px; padding: 0; border: 0; background: transparent; box-shadow: none; color: var(--sp-navy-2); }
+.doc-themed .gp-nav--compact .gp-nav-btn svg { width: 20px; height: 20px; }
+.doc-themed .gp-nav--compact .gp-nav-btn:hover:not(:disabled) { border: 0; background: var(--sp-blue-soft); color: var(--sp-blue); }
+.doc-themed .gp-nav--compact .gp-nav-btn:disabled { opacity: 0.35; }
+.doc-themed .gp-nav--compact .gp-nav-btn:focus-visible { outline: 2px solid var(--sp-blue); outline-offset: -2px; }
+.doc-themed .gp-nav--compact .gp-nav-field { border: 0; border-left: 1px solid var(--sp-line); border-right: 1px solid var(--sp-line); box-shadow: none; }
+.doc-themed .gp-nav--compact .gp-nav-field:focus-within { box-shadow: inset 0 0 0 2px var(--sp-mode-on-start); }
+.doc-themed .gp-nav--compact .gp-nav-field .gp-nav-input { width: 3.5rem; }
+.doc-themed .gp-nav--compact .gp-nav-input:focus { outline: none; }
+.doc-themed .gp-nav--compact .gp-nav-load { min-height: 0; border-right: 1px solid var(--sp-line); }
+
+/* More: the shared ActionMenu in this page's look. */
+.doc-themed .rm-action-menu-panel { width: 220px; border-color: var(--sp-line); border-radius: 14px; box-shadow: var(--sp-card-shadow), 0 18px 40px rgba(12, 27, 56, 0.12); }
+.doc-themed .rm-action-menu-heading { color: var(--sp-muted); }
+.doc-themed .rm-action-menu-item { min-height: 44px; border-radius: var(--sp-radius-control); }
+.doc-themed .rm-action-menu-item:hover:not(:disabled) { background: var(--sp-blue-soft); }
+.doc-themed .rm-action-menu-item:focus-visible { outline: 2px solid var(--sp-blue); }
+.doc-themed .rm-action-menu-label { color: var(--sp-navy); font-size: 0.9rem; }
+
+/* ── Sale Voucher in the same look (owner, 24 Nov 2026): the parts only a bill has. The cards, buttons, pager, party
+      block and section titles come from the .doc-themed rules above. ── */
+.doc-themed .bill-topbar-no { align-items: center; gap: 8px; }
+.doc-themed .bill-topbar-no .gp-nav-prefix { color: var(--sp-muted); }
+.doc-themed .bill-topbar-no strong { color: var(--sp-navy); font-size: 2rem; }
+.doc-themed .bill-topbar-tag { padding: 3px 10px; border-radius: 999px; background: var(--sp-blue-soft); color: var(--sp-navy-2); font-size: 0.74rem; font-weight: 700; }
+.doc-themed .billing-gatepass-chip { padding: 6px 14px; border: 1px solid var(--sp-blue-line); border-radius: 999px; background: var(--sp-blue-soft); color: var(--sp-blue); font-size: 0.84rem; }
+
+/* The lines: Upper Stock's ruled table, tinted head; rate and less in white boxes with the blue focus. */
+.doc-themed .bill-lines-locked-note { padding: 10px 14px; border: 1px solid var(--sp-blue-line); border-radius: 12px; background: var(--sp-blue-soft); color: var(--sp-navy-2); font-size: 0.82rem; }
+.doc-themed .bill-lines-locked-note strong { color: var(--sp-blue); font-size: 0.84rem; }
+.doc-themed .bill-lines-scroll { margin: 0; padding: 0; border: 1px solid var(--sp-line); border-radius: var(--sp-radius-control); }
+.doc-themed .bill-lines { border-collapse: separate; border-spacing: 0; }
+.doc-themed .bill-lines th { height: 44px; padding: 0 10px; border-top: 0; border-bottom: 1px solid var(--sp-line); background: var(--us-head); color: var(--sp-navy); font-size: 0.72rem; letter-spacing: 0.04em; }
+.doc-themed .bill-lines td { height: 60px; padding: 6px 10px; border-bottom: 1px solid var(--sp-line); color: var(--sp-navy); }
+.doc-themed .bill-lines td:first-child, .doc-themed .bill-lines th:first-child { padding-left: 14px; }
+.doc-themed .bill-lines td:last-child, .doc-themed .bill-lines th:last-child { padding-right: 14px; }
+.doc-themed .bill-lines tbody tr:hover td { background: var(--sp-ground); }
+.doc-themed .bill-line-article { color: var(--sp-navy); font-size: 1rem; }
+.doc-themed .bill-line-size { display: inline-block; margin-top: 2px; padding: 0 8px; border-radius: 6px; background: var(--sp-navy-2); color: var(--white); font-size: 0.74rem; font-weight: 700; }
+.doc-themed .bill-num-input, .doc-themed .bill-type-select { height: 40px; border-color: var(--sp-line); border-radius: var(--sp-radius-control); color: var(--sp-navy); }
+.doc-themed .bill-num-input:focus, .doc-themed .bill-type-select:focus { outline: none; border-color: var(--sp-mode-on-start); box-shadow: 0 0 0 3px var(--sp-blue-soft); }
+.doc-themed .bill-num-input:disabled { background: var(--sp-ground); color: var(--sp-muted); }
+.doc-themed .bill-figure { color: var(--sp-navy); }
+.doc-themed .bill-figure--muted, .doc-themed .bill-line-hint { color: var(--sp-muted); }
+.doc-themed .bill-figure--strong { color: var(--sp-blue); }
+
+/* The details card: the fields as the page's other fields, the totals a soft block ending in the blue Grand Total. */
+.doc-themed .bill-summary { gap: 14px; }
+.doc-themed .bill-fields { gap: 10px 12px; }
+.doc-themed .bill-fields label { color: var(--sp-muted); font-size: 0.76rem; }
+.doc-themed .bill-fields .form-input { height: 44px; border-color: var(--sp-line); border-radius: var(--sp-radius-control); color: var(--sp-navy); font-size: 0.9rem; }
+.doc-themed .bill-fields .form-input:focus { outline: none; border-color: var(--sp-mode-on-start); box-shadow: 0 0 0 3px var(--sp-blue-soft); }
+.doc-themed .bill-credit { border-top-color: var(--sp-line); color: var(--sp-muted); }
+.doc-themed .bill-credit strong { color: var(--sp-navy); }
+.doc-themed .bill-totals { gap: 4px; padding: 12px 14px; border: 1px solid var(--sp-line); border-radius: 14px; background: var(--sp-ground); }
+.doc-themed .bill-totals dt { color: var(--sp-muted); }
+.doc-themed .bill-totals dd { color: var(--sp-navy); }
+.doc-themed .bill-totals-grand {
+  align-items: center; margin: 8px -6px -4px; padding: 14px 16px; border-top: 0; border-radius: 12px;
+  background: linear-gradient(135deg, var(--sp-mode-on-start), var(--sp-mode-on-end)); box-shadow: var(--sp-mode-on-shadow);
+}
+.doc-themed .bill-totals-grand dt { color: var(--white); font-size: 0.74rem; letter-spacing: 0.06em; text-transform: uppercase; opacity: 0.92; }
+.doc-themed .bill-totals-grand dd { color: var(--white); font-size: 1.8rem; }
+.doc-themed .bill-actions { gap: 10px; }
+.doc-themed .bill-actions .btn { height: 48px; }
+.doc-themed .bill-save { font-size: 1rem; }
+.doc-themed .bill-delete { border-color: var(--danger-line); background: var(--white); color: var(--danger-strong); }
+.doc-themed .bill-delete:hover:not(:disabled) { border-color: var(--danger-line); background: var(--danger-soft); color: var(--danger-strong); }
+
+/* No bill yet: the gatepass number box as the page's field, Bill it in the blue. */
+.doc-themed .bill-empty-picker { gap: 8px; }
+.doc-themed .bill-empty-picker .gp-nav-input { width: 8rem; }
+.doc-themed .bill-empty-picker .gp-nav-load:not(:disabled) {
+  background: linear-gradient(135deg, var(--sp-mode-on-start), var(--sp-mode-on-end)); box-shadow: var(--sp-mode-on-shadow);
+}
+
+/* ── Enter Orders in the same look (owner, 24 Nov 2026). Its Dashboard card gives it the Orders tone (navy, amber for
+      what is owed), which the tokens below follow by themselves. The pager, buttons and section titles come from the
+      .doc-themed rules above; these are the parts an order has. ── */
+.doc-themed.ord-page { gap: 16px; }
+.doc-themed .ord-toolbar-row { justify-content: flex-start; }
+.doc-themed .card.ord-head, .doc-themed .card.ord-articles, .doc-themed .card.ord-foot-bar, .doc-themed .card.ord-summary {
+  border: 1px solid var(--sp-line); border-radius: var(--dash-card-radius); background: var(--white); box-shadow: var(--sp-card-shadow);
+}
+.doc-themed .input-label { color: var(--sp-muted); font-size: 0.78rem; font-weight: 700; }
+.doc-themed .ord-head { grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 16px; padding: 18px 22px; }
+.doc-themed .ord-head .form-input, .doc-themed .ord-head .input, .doc-themed .ord-article-pick .form-input {
+  height: 48px; border-color: var(--sp-line); border-radius: var(--sp-radius-control); color: var(--sp-navy); font-size: 0.95rem;
+}
+.doc-themed .ord-head .form-input:focus, .doc-themed .ord-head .input:focus, .doc-themed .ord-article-pick .form-input:focus {
+  outline: none; border-color: var(--sp-mode-on-start); box-shadow: 0 0 0 3px var(--sp-blue-soft);
+}
+
+/* Articles: the picker heads the card; each article below it a white card under a band, as on Upper Stock. */
+.doc-themed .ord-articles { display: flex; flex-direction: column; gap: 14px; padding: 18px 22px 22px; }
+.doc-themed .ord-articles-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+.doc-themed .ord-articles-head .gp-section-title { margin: 0; }
+.doc-themed .ord-article-pick { flex: 0 1 380px; min-width: 240px; }
+.doc-themed .card.ord-block { gap: 12px; padding: 10px 10px 14px; border: 1px solid var(--sp-line); border-radius: var(--dash-card-radius); background: var(--white); box-shadow: var(--sp-card-shadow); }
+.doc-themed .ord-block-head {
+  min-height: 60px; padding: 6px 10px 6px 20px; border-radius: 12px;
+  background: var(--us-band-sheen), var(--us-band-navy); color: var(--white);
+}
+.doc-themed .ord-block:nth-of-type(even) .ord-block-head { background: var(--us-band-sheen), var(--us-band-blue); }
+.doc-themed .ord-block-head .ord-block-title { color: var(--white); font-size: 1.35rem; font-weight: 800; letter-spacing: -0.01em; }
+.doc-themed .ord-block-total { padding: 6px 14px; border-radius: 10px; background: var(--white); color: var(--sp-navy-2); font-size: 0.95rem; font-weight: 800; }
+.doc-themed .ord-block-head .btn-ghost { width: 40px; height: 40px; min-height: 40px; padding: 0; border: 0; border-radius: 10px; background: rgba(255, 255, 255, 0.16); color: var(--white); }
+.doc-themed .ord-block-head .btn-ghost:hover:not(:disabled) { background: var(--danger-soft); color: var(--err); }
+.doc-themed .ord-block-head .btn-ghost:disabled { opacity: 0.45; }
+.doc-themed .ord-block-head .btn-ghost:focus-visible { outline: 2px solid var(--white); outline-offset: 1px; }
+.doc-themed .ord-block > .ord-chips, .doc-themed .ord-block > .ord-hint, .doc-themed .ord-block > .data-table, .doc-themed .ord-block > div { margin: 0 6px; }
+
+/* Colours: pills; a chosen one in the page's soft tint, ticked, so it is read without the colour. */
+.doc-themed .ord-chips { gap: 8px; }
+.doc-themed .ord-chip { min-height: 40px; padding: 0 14px; border-color: var(--sp-line); border-radius: 999px; background: var(--white); color: var(--sp-navy); font-size: 0.82rem; box-shadow: var(--sp-card-shadow); }
+.doc-themed .ord-chip:hover:not(:disabled) { border-color: var(--sp-blue-line); background: var(--sp-ground); }
+.doc-themed .ord-chip.is-on { border-color: var(--sp-blue-line); background: var(--sp-blue-soft); color: var(--sp-navy-2); box-shadow: none; }
+.doc-themed .ord-chip:focus-visible { outline: 2px solid var(--sp-mode-on-start); outline-offset: 2px; }
+.doc-themed .ord-hint { color: var(--sp-muted); }
+
+/* The size × colour grid: tinted head, the totals row in the total tint, white boxes with the page's focus. */
+.doc-themed .ord-block .sa-grid { overflow: hidden; border: 1px solid var(--sp-line); border-radius: var(--sp-radius-control); }
+.doc-themed .ord-block .sa-grid th, .doc-themed .ord-block .sa-grid td { border-bottom-color: var(--sp-line); vertical-align: middle; }
+.doc-themed .ord-block .sa-grid thead th { height: 44px; background: var(--us-head); color: var(--sp-navy); font-size: 0.74rem; letter-spacing: 0.04em; }
+.doc-themed .ord-block .sa-grid .sa-grid-size { border-right-color: var(--sp-line); color: var(--sp-navy-2); }
+.doc-themed .ord-block .sa-grid thead .sa-grid-size { background: var(--us-head); }
+.doc-themed .ord-block .sa-grid-foot th, .doc-themed .ord-block .sa-grid-foot td { background: var(--us-total); color: var(--sp-navy); font-size: 0.95rem; }
+.doc-themed .ord-input { min-height: 40px; border-color: var(--sp-line); border-radius: var(--sp-radius-control); color: var(--sp-navy); font-weight: 700; }
+.doc-themed .ord-input:focus { outline: none; border-color: var(--sp-mode-on-start); box-shadow: 0 0 0 3px var(--sp-blue-soft); }
+.doc-themed .ord-cell--none { color: var(--sp-line); }
+
+/* The total bar: held at the foot of the screen, the figure large, Save the one main button. */
+.doc-themed .ord-foot-bar { gap: 14px; padding: 14px 22px; }
+.doc-themed .ord-total-label { color: var(--sp-muted); font-weight: 700; }
+.doc-themed .ord-total { color: var(--sp-navy); font-size: 1.5rem; font-weight: 800; }
+.doc-themed .ord-foot-bar .btn { min-width: 140px; }
+
+/* A stored order: the same card, its figures as on Pending Orders. */
+.doc-themed .ord-summary { gap: 24px; padding: 18px 22px; }
+.doc-themed .ord-summary .ord-block-title { color: var(--sp-navy); font-size: 1.2rem; font-weight: 800; }
+.doc-themed .ord-figures dt { color: var(--sp-muted); font-weight: 700; }
+.doc-themed .ord-figures dd { color: var(--sp-navy); font-size: 1.15rem; }
+.doc-themed .ord-table-wrap { overflow: hidden; border: 1px solid var(--sp-line); border-radius: var(--dash-card-radius); background: var(--white); box-shadow: var(--sp-card-shadow); }
+
+@media (max-width: 760px) {
+  .doc-themed .ord-head { grid-template-columns: 1fr; }
+  .doc-themed .ord-article-pick { flex-basis: 100%; }
+}
+/* The article picker's search mark, centred in the taller field; the band's ✕ centred in its tile. */
+.doc-themed .ord-article-pick .city-search-icon { top: 50%; transform: translateY(-50%); }
+.doc-themed .ord-block-head .btn-ghost { display: inline-flex; align-items: center; justify-content: center; }
+
+/* ════════════════════════════ ENTER ORDERS: TYPE, TOUCH AND MOTION (owner, 24 Nov 2026) ════════════════════════════
+   Each rule below is one of the owner's list, named where it is applied. Tokens only (R3); tints are mixed in OKLCH,
+   so a tint of the Orders navy and of the amber look equally light. Every movement stops for prefers-reduced-motion. */
+
+/* Kerning, x-height, leading. Inter's kerning and contextual forms on; font-size-adjust keeps a fallback font (an
+   Urdu colour name, a missing weight) at Inter's x-height, so mixed text keeps one size; text at 1.5, headings tight. */
+.ord-page.doc-themed {
+  font-kerning: normal; font-feature-settings: "kern", "calt"; text-rendering: optimizeLegibility;
+  font-size-adjust: from-font; line-height: 1.5;
+}
+.ord-page .ord-block-title, .ord-page .gp-section-title, .ord-page .ord-total { line-height: 1.15; }
+
+/* Tracking: big type drawn tighter, small capitals opened up, everything else as the font sets it. */
+.ord-page .ord-block-head .ord-block-title { letter-spacing: -0.015em; }
+.ord-page .ord-total { letter-spacing: -0.01em; }
+.ord-page .ord-total-label, .ord-page .input-label, .ord-page .ord-block .sa-grid thead th { letter-spacing: 0.06em; }
+.ord-page .input-label { text-transform: none; letter-spacing: 0.01em; }
+
+/* Tabular numbers: every count lines up digit under digit, and a total changing from 9 to 12 does not move its
+   neighbours (no layout shift). */
+.ord-page .ord-input, .ord-page .ord-total, .ord-page .ord-block-total, .ord-page .ord-num, .ord-page .ord-foot,
+.ord-page .sa-grid-foot td, .ord-page .sa-grid-size, .ord-page .gp-nav-input, .ord-page .ord-figures dd { font-variant-numeric: tabular-nums; }
+.ord-page .ord-total { min-width: 7ch; }
+
+/* x-height: nothing on the page below 12px; the sizes (7/10) read at 14px, where their digits are clear. */
+.ord-page .ord-block .sa-grid .sa-grid-size { font-size: 0.875rem; }
+.ord-page .ord-muted, .ord-page .ord-hint { font-size: 0.8125rem; line-height: 1.45; }
+
+/* Widows: titles balanced over their lines, hints wrapped so no word is left alone on the last line. */
+.ord-page .ord-block-title, .ord-page .gp-section-title, .ord-page .state-view-title { text-wrap: balance; }
+.ord-page .ord-hint, .ord-page .state-view-hint, .ord-page .ord-problem, .ord-page .ord-cancelled { text-wrap: pretty; }
+
+/* Layout shift: a steady scrollbar gutter, so the page does not slide sideways when an article makes it scroll. */
+.page-content:has(> .ord-page) { scrollbar-gutter: stable; }
+
+/* Touch targets: 44px or more for everything pressed — colours, boxes, the band's remove, a column's ✕. */
+.ord-page .ord-chip { min-height: 44px; }
+.ord-page .ord-input { min-height: 44px; }
+.ord-page .ord-block-head .btn-ghost { width: 44px; height: 44px; min-height: 44px; }
+.ord-page .ord-colour-off {
+  display: inline-flex; align-items: center; justify-content: center; width: 44px; height: 44px; margin: -12px -10px -12px 0; padding: 0;
+  border-radius: 10px; color: var(--sp-muted);
+}
+.ord-page .ord-colour-off:hover:not(:disabled) { background: color-mix(in oklch, var(--danger-soft) 70%, var(--white)); color: var(--err); }
+.ord-page .ord-colour-off:focus-visible { outline: 2px solid var(--sp-mode-on-start); outline-offset: -2px; }
+
+/* Optical centre: the ✕ and ✓ are SVG on a 24-unit box (OrderIcons.tsx), sized and centred in their tiles. */
+.ord-page .ord-block-head .btn-ghost svg { width: 20px; height: 20px; }
+.ord-page .ord-colour-off svg { width: 16px; height: 16px; }
+.ord-page .ord-block-total { display: inline-flex; align-items: baseline; gap: 4px; line-height: 1; }
+
+/* Affordance. A colour chip is a toggle: its round slot is empty until chosen, then filled and ticked. A box looks
+   like a box: a soft inner shadow, a firmer border on hover. A size and colour that is not made is hatched and says
+   so on hover, not a box that does nothing. */
+.ord-page .ord-chip { gap: 8px; padding: 0 16px 0 10px; }
+.ord-page .ord-chip-mark {
+  display: inline-flex; align-items: center; justify-content: center; flex: none; width: 20px; height: 20px; border-radius: 999px;
+  border: 2px solid var(--sp-line); background: var(--white); color: var(--white);
+  transition: background-color 160ms ease, border-color 160ms ease;
+}
+.ord-page .ord-chip-mark svg { width: 13px; height: 13px; opacity: 0; transform: scale(0.4); transition: opacity 140ms ease, transform 180ms var(--ease-out-expo); }
+.ord-page .ord-chip.is-on .ord-chip-mark { border-color: transparent; background: var(--sp-mode-on-start); }
+.ord-page .ord-chip.is-on .ord-chip-mark svg { opacity: 1; transform: scale(1); }
+.ord-page .ord-input { box-shadow: inset 0 1px 2px color-mix(in oklch, var(--sp-navy) 8%, transparent); transition: border-color 120ms ease, box-shadow 120ms ease; }
+.ord-page .ord-input:hover:not(:disabled):not(:focus) { border-color: color-mix(in oklch, var(--sp-navy-2) 35%, var(--sp-line)); }
+.ord-page .ord-cell--none { background: repeating-linear-gradient(135deg, transparent 0 7px, var(--sp-ground) 7px 8px); cursor: not-allowed; }
+
+/* Progressive disclosure: the optional note waits behind a quiet button in the note's place. */
+.ord-page .ord-note-add {
+  align-self: end; justify-self: start; min-height: 48px; padding: 0 16px; border: 1px dashed var(--sp-line); border-radius: var(--sp-radius-control);
+  background: transparent; color: var(--sp-navy-2); font: inherit; font-size: 0.9rem; font-weight: 600; cursor: pointer;
+  transition: background-color 140ms ease, border-color 140ms ease;
+}
+.ord-page .ord-note-add:hover:not(:disabled) { border-style: solid; border-color: var(--sp-blue-line); background: color-mix(in oklch, var(--sp-blue-soft) 60%, var(--white)); }
+.ord-page .ord-note-add:focus-visible { outline: 2px solid var(--sp-mode-on-start); outline-offset: 2px; }
+
+/* OKLCH: the chip and focus tints, mixed perceptually from the page's own tokens. */
+.ord-page .ord-chip:hover:not(:disabled) { background: color-mix(in oklch, var(--sp-blue-soft) 55%, var(--white)); }
+.ord-page .ord-chip.is-on { background: color-mix(in oklch, var(--sp-blue-soft) 85%, var(--sp-mode-on-start) 6%); }
+.ord-page .ord-input:focus, .ord-page .ord-head .input:focus, .ord-page .ord-article-pick .form-input:focus {
+  box-shadow: 0 0 0 3px color-mix(in oklch, var(--sp-mode-on-start) 22%, transparent);
+}
+
+/* Interruptible: a chip is pressed and chosen by transitions, which turn back from wherever they are when it is
+   pressed again mid-way; a keyframe would finish first. */
+.ord-page .ord-chip { transition: background-color 150ms ease, border-color 150ms ease, color 150ms ease, box-shadow 150ms ease, transform 90ms ease; }
+.ord-page .ord-chip:active:not(:disabled) { transform: scale(0.97); }
+
+/* Origin-aware: a new article's block unfolds from its top, where the picker is; the picker's list grows out of its
+   field (its transform-origin is set by the combobox, down or up). */
+@keyframes ord-unfold { from { opacity: 0; transform: translateY(-6px) scaleY(0.97); } to { opacity: 1; transform: none; } }
+@keyframes ord-pop { from { opacity: 0; transform: scale(0.97); } to { opacity: 1; transform: none; } }
+.ord-page .ord-block { transform-origin: top center; animation: ord-unfold 220ms var(--ease-out-expo) both; }
+.ord-page .pv-item-dropdown { animation: ord-pop 140ms var(--ease-out-expo) both; }
+
+/* Stagger: a block's colours arrive one after another, 30ms apart, so the eye reads them left to right. */
+@keyframes ord-chip-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+.ord-page .ord-chips > .ord-chip { animation: ord-chip-in 200ms var(--ease-out-expo) both; }
+.ord-page .ord-chips > .ord-chip:nth-child(2) { animation-delay: 30ms; }
+.ord-page .ord-chips > .ord-chip:nth-child(3) { animation-delay: 60ms; }
+.ord-page .ord-chips > .ord-chip:nth-child(4) { animation-delay: 90ms; }
+.ord-page .ord-chips > .ord-chip:nth-child(5) { animation-delay: 120ms; }
+.ord-page .ord-chips > .ord-chip:nth-child(6) { animation-delay: 150ms; }
+.ord-page .ord-chips > .ord-chip:nth-child(n + 7) { animation-delay: 180ms; }
+
+/* Optimistic update: the band of an article being read, at its block's height, with quiet placeholder colours. */
+@keyframes ord-shimmer { from { background-position: 100% 0; } to { background-position: 0 0; } }
+.ord-page .ord-skeleton, .ord-page .ord-chip--skeleton {
+  background: linear-gradient(90deg, var(--sp-ground) 25%, color-mix(in oklch, var(--sp-ground) 40%, var(--white)) 50%, var(--sp-ground) 75%);
+  background-size: 300% 100%; animation: ord-shimmer 1.2s linear infinite;
+}
+.ord-page .ord-block-head .ord-skeleton { width: 76px; height: 30px; opacity: 0.35; }
+.ord-page .ord-chip--skeleton { width: 110px; border-color: transparent; box-shadow: none; }
+.ord-page .ord-block--pending .ord-hint { margin: 0 6px; }
+
+/* Shared element: the picker's field and the new article's band share one name, so the View Transition moves one
+   into the other (withViewTransition.ts). */
+.ord-page .ord-vt-article { view-transition-name: ord-article; }
+::view-transition-group(ord-article) { animation-duration: 260ms; animation-timing-function: cubic-bezier(0.2, 0.8, 0.2, 1); }
+
+/* Safe area: the pinned total bar clears a phone's home indicator and rounded corners. */
+.ord-page .ord-foot-bar {
+  padding-bottom: max(14px, env(safe-area-inset-bottom));
+  padding-left: max(22px, env(safe-area-inset-left)); padding-right: max(22px, env(safe-area-inset-right));
+}
+
+/* The compact pager, without layout shift (both pages that use it): Load rises over the count inside the field when
+   a number is typed, instead of widening the control and pushing New along. */
+.doc-themed .gp-nav--compact { position: relative; }
+.doc-themed .gp-nav--compact .gp-nav-field { min-width: 11rem; }
+.doc-themed .gp-nav--compact .gp-nav-total { min-width: 4.5rem; text-align: right; }
+.doc-themed .gp-nav--compact .gp-nav-load {
+  position: absolute; top: 5px; bottom: 5px; right: 50px; min-height: 0; padding: 0 14px; border: 0; border-radius: 8px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ord-page .ord-block, .ord-page .ord-chips > .ord-chip, .ord-page .pv-item-dropdown, .ord-page .ord-skeleton, .ord-page .ord-chip--skeleton { animation: none; }
+  .ord-page .ord-chip, .ord-page .ord-chip-mark, .ord-page .ord-chip-mark svg, .ord-page .ord-input, .ord-page .ord-note-add { transition: none; }
+  .ord-page .ord-chip:active:not(:disabled) { transform: none; }
+}
+
+/* ════════════════════════════ ENTER ORDERS: LAYOUT AND THE LAWS OF UX (owner, 24 Nov 2026) ════════════════════════════ */
+
+/* The total bar never covers the order (owner: "the total carton strip is hiding elements in back"). The order is a
+   column the height of the page: the party and the articles scroll inside it, the total bar sits under them. On a
+   narrow window, where one column scrolls as a whole, the bar goes back into the flow at the end. */
+.ord-page.doc-themed:has(> .ord-form--compose) { height: 100%; min-height: 0; }
+.ord-page .ord-form--compose { flex: 1; min-height: 0; gap: 14px; }
+.ord-page .ord-scroll { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 16px; padding: 2px 4px 4px; margin: -2px -4px 0; scrollbar-gutter: stable; }
+.ord-page .ord-form--compose > .ord-foot-bar { position: static; flex-shrink: 0; }
+@media (max-width: 1100px) {
+  .ord-page.doc-themed:has(> .ord-form--compose) { height: auto; }
+  .ord-page .ord-scroll { overflow: visible; }
+}
+
+/* Law of common region and proximity: the bar's three parts are three regions — where the order stands, its total,
+   the action — spaced apart, each tight inside. */
+.ord-page .ord-foot-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 14px 28px; }
+.ord-page .ord-foot-total { display: inline-flex; align-items: baseline; gap: 10px; margin-left: auto; }
+.ord-page .ord-foot-bar .ord-actions { margin-left: 0; }
+
+/* Zeigarnik and goal-gradient: the three steps, ticked as done, the bar filling toward Save, the next step in words. */
+.ord-page .ord-steps { display: grid; grid-template-columns: auto; gap: 6px; min-width: 0; }
+.ord-page .ord-steps-list { display: flex; align-items: center; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.ord-page .ord-step { display: inline-flex; align-items: center; gap: 6px; color: var(--sp-muted); font-size: 0.82rem; font-weight: 600; white-space: nowrap; }
+.ord-page .ord-step + .ord-step::before { content: ""; width: 18px; height: 2px; margin-right: 2px; border-radius: 2px; background: var(--sp-line); }
+.ord-page .ord-step-mark {
+  display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 999px;
+  border: 2px solid var(--sp-line); color: var(--sp-muted); font-size: 0.72rem; font-weight: 800; font-variant-numeric: tabular-nums;
+  transition: background-color 200ms ease, border-color 200ms ease, color 200ms ease;
+}
+.ord-page .ord-step-mark svg { width: 13px; height: 13px; }
+.ord-page .ord-step.is-done { color: var(--sp-navy); }
+.ord-page .ord-step.is-done .ord-step-mark { border-color: transparent; background: var(--sp-mode-on-start); color: var(--white); }
+.ord-page .ord-steps-bar { position: relative; display: block; height: 4px; overflow: hidden; border-radius: 999px; background: var(--sp-line); }
+.ord-page .ord-steps-bar > span {
+  position: absolute; inset: 0 auto 0 0; border-radius: inherit;
+  background: linear-gradient(90deg, var(--sp-mode-on-start), var(--sp-mode-on-end)); transition: width 320ms var(--ease-out-expo);
+}
+.ord-page .ord-next { color: var(--sp-navy-2); font-size: 0.82rem; font-weight: 600; text-wrap: pretty; }
+
+/* Von Restorff: one thing stands out on the bar, the filled Save; a problem stands out in its own red, with words. */
+.ord-page .ord-foot-bar .btn-primary:not(:disabled) { box-shadow: var(--sp-mode-on-shadow); }
+.ord-page .ord-problem { padding: 6px 12px; border: 1px solid var(--danger-line); border-radius: 10px; background: var(--danger-soft); font-weight: 600; }
+
+/* Peak-end: the end of the task is clear and kind — the saved order says so, in the ready green, with the next step. */
+.ord-page .ord-saved {
+  display: flex; align-items: center; gap: 14px; flex-wrap: wrap; padding: 14px 18px; border-radius: var(--dash-card-radius);
+  border: 1px solid color-mix(in oklch, var(--ok) 35%, var(--white)); background: color-mix(in oklch, var(--ok) 10%, var(--white));
+  animation: ord-unfold 260ms var(--ease-out-expo) both;
+}
+.ord-page .ord-saved-mark { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; border-radius: 999px; background: var(--ok); color: var(--white); }
+.ord-page .ord-saved-mark svg { width: 18px; height: 18px; }
+.ord-page .ord-saved-text { flex: 1 1 18rem; color: var(--sp-navy); font-size: 1rem; text-wrap: pretty; }
+
+/* Law of similarity and uniform connectedness: a colour wears the same swatch in its chip and its column, and its
+   column's ✕ sits beside its name, joined to it, not floating at the far edge. */
+.ord-page .ord-block .sa-grid-colour-name { gap: 8px; }
+
+/* Prägnanz and Occam's razor: one border per region — the article's white card loses its outline inside the
+   Articles card, its band and grid already make the shape. */
+.ord-page .ord-articles .card.ord-block { border-color: transparent; box-shadow: 0 0 0 1px var(--sp-line), var(--sp-card-shadow); }
+
+@media (prefers-reduced-motion: reduce) {
+  .ord-page .ord-saved { animation: none; }
+  .ord-page .ord-steps-bar > span, .ord-page .ord-step-mark { transition: none; }
+}
+/* Alignment (uniform connectedness): a figure's heading sits over its figures, right-aligned with them. */
+.ord-page .ord-table th.ord-num, .ord-page .ord-table td.ord-num { text-align: right; }
+
+/* A size a colour is not in Product Master in (24 Nov 2026). For anyone: said in words, small and quiet, on the hatch.
+   For an administrator where Product Master is written: "+ Add", a dashed box the size of the others, so it reads as
+   "a box that is not there yet". 44px tall, like the boxes. */
+.ord-page .ord-cell--none { text-align: center; }
+.ord-page .ord-missing { display: inline-block; padding: 2px 6px; border-radius: 6px; background: var(--white); color: var(--sp-muted); font-size: 0.75rem; font-weight: 600; line-height: 1.3; white-space: normal; text-wrap: balance; }
+.ord-page .ord-missing-add {
+  width: 100%; min-height: 44px; padding: 0 10px; border: 1.5px dashed color-mix(in oklch, var(--sp-mode-on-start) 45%, var(--sp-line));
+  border-radius: var(--sp-radius-control); background: color-mix(in oklch, var(--white) 85%, transparent);
+  color: var(--sp-navy-2); font: inherit; font-size: 0.82rem; font-weight: 700; cursor: pointer;
+  transition: background-color 140ms ease, border-color 140ms ease;
+}
+.ord-page .ord-missing-add:hover:not(:disabled) { border-style: solid; background: color-mix(in oklch, var(--sp-blue-soft) 70%, var(--white)); }
+.ord-page .ord-missing-add:focus-visible { outline: 2px solid var(--sp-mode-on-start); outline-offset: 2px; }
+.ord-page .ord-missing-add:disabled { cursor: progress; opacity: 0.7; }
+@media (prefers-reduced-motion: reduce) { .ord-page .ord-missing-add { transition: none; } }
+
+/* ════════════════════════════ PENDING ORDERS: THE UI/UX PASS (owner, 24 Nov 2026) ════════════════════════════
+   The same look as Enter Orders (.doc-themed, the Orders tone: navy, amber for what is owed). Typography — kerning,
+   leading, tracking, tabular figures, the 12px floor, balanced titles — comes from the .ord-page rules above. */
+.ord-page.ord-pending { gap: 16px; padding-bottom: env(safe-area-inset-bottom); }
+
+/* Serial position and von Restorff: the total first, the one filled card on the page, the tools beside it. */
+.ord-pending .ord-pending-top { display: flex; flex-wrap: wrap; align-items: stretch; gap: 16px; }
+.ord-pending .kpi-card.ord-pending-hero { flex: 0 0 auto; min-width: 240px; }
+.ord-pending .ord-pending-hero .kpi-value { font-variant-numeric: tabular-nums; letter-spacing: -0.015em; }
+.ord-pending .ord-toolbar { flex: 1 1 480px; align-items: center; align-content: center; gap: 12px; }
+
+/* Search: 48px, the page's field; "/" shown as a key until text is typed, then a clear button in its place. */
+.ord-pending .ord-search { flex: 1 1 18rem; max-width: 30rem; }
+.ord-pending .ord-search .input {
+  min-height: 48px; padding-right: 48px; border-color: var(--sp-line); border-radius: var(--sp-radius-control);
+  background: var(--white); color: var(--sp-navy); box-shadow: var(--sp-card-shadow);
+}
+.ord-pending .ord-search .input:focus { outline: none; border-color: var(--sp-mode-on-start); box-shadow: 0 0 0 3px color-mix(in oklch, var(--sp-mode-on-start) 22%, transparent); }
+.ord-pending .ord-search .input::-webkit-search-cancel-button { display: none; }
+.ord-pending .ord-search-key, .ord-pending .ord-search-clear { position: absolute; top: 50%; right: 8px; transform: translateY(-50%); }
+.ord-pending .ord-search-key {
+  min-width: 24px; padding: 1px 6px; border: 1px solid var(--sp-line); border-radius: 6px; background: var(--sp-ground);
+  color: var(--sp-muted); font: 600 0.75rem/1.4 var(--font-mono); text-align: center;
+}
+.ord-pending .ord-search-clear {
+  display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; padding: 0; border: 0; border-radius: 999px;
+  background: transparent; color: var(--sp-muted); cursor: pointer;
+}
+.ord-pending .ord-search-clear:hover { background: var(--sp-ground); color: var(--sp-navy); }
+.ord-pending .ord-search-clear:focus-visible { outline: 2px solid var(--sp-mode-on-start); }
+.ord-pending .ord-search-clear svg { width: 16px; height: 16px; }
+
+/* Filters: one segmented control, 44px, the chosen one underlined in the amber with its words in the navy. */
+.ord-pending .sa-toggle { overflow: hidden; border: 1px solid var(--sp-line); border-radius: var(--sp-radius-control); background: var(--white); box-shadow: var(--sp-card-shadow); }
+.ord-pending .sa-toggle-btn { min-height: 46px; padding: 0 18px; color: var(--sp-muted); font-weight: 600; transition: color 140ms ease, background-color 140ms ease, box-shadow 160ms ease; }
+.ord-pending .sa-toggle-btn:hover:not(.is-on) { background: color-mix(in oklch, var(--sp-ground) 70%, var(--white)); color: var(--sp-navy); }
+
+/* The parties: one card each (common region), alike (similarity), arriving one after another (stagger). While a new
+   filter is read, the rows on screen stay, dimmed, instead of the page going blank. */
+.ord-pending .ord-parties { gap: 12px; transition: opacity 160ms ease; }
+.ord-pending .ord-parties.is-refreshing { opacity: 0.55; }
+.ord-pending .card.ord-party { border: 1px solid var(--sp-line); border-radius: var(--dash-card-radius); background: var(--white); box-shadow: var(--sp-card-shadow); animation: ord-chip-in 220ms var(--ease-out-expo) both; }
+.ord-pending .ord-parties > .ord-party:nth-child(2) { animation-delay: 30ms; }
+.ord-pending .ord-parties > .ord-party:nth-child(3) { animation-delay: 60ms; }
+.ord-pending .ord-parties > .ord-party:nth-child(4) { animation-delay: 90ms; }
+.ord-pending .ord-parties > .ord-party:nth-child(5) { animation-delay: 120ms; }
+.ord-pending .ord-parties > .ord-party:nth-child(n + 6) { animation-delay: 150ms; }
+::view-transition-group(*) { animation-duration: 240ms; animation-timing-function: cubic-bezier(0.2, 0.8, 0.2, 1); }
+
+/* The row: 64px and more (touch target), the chevron an SVG that turns (interruptible: a transition, not keyframes). */
+.ord-pending .ord-party-head { min-height: 76px; gap: 18px; padding: 12px 22px; color: var(--sp-navy); transition: background-color 140ms ease; }
+.ord-pending .ord-party-head:hover { background: color-mix(in oklch, var(--sp-ground) 60%, var(--white)); }
+.ord-pending .ord-party-head:focus-visible { outline: 3px solid var(--sp-mode-on-start); outline-offset: -3px; }
+.ord-pending .ord-chevron {
+  display: inline-flex; align-items: center; justify-content: center; flex: none; width: 32px; height: 32px; border-radius: 10px;
+  background: var(--sp-ground); color: var(--sp-navy-2); transition: transform 200ms var(--ease-out-expo), background-color 140ms ease;
+}
+.ord-pending .ord-chevron svg { width: 18px; height: 18px; }
+.ord-pending .ord-party.is-open .ord-chevron { transform: rotate(90deg); background: var(--sp-blue-soft); }
+.ord-pending .ord-party-name { color: var(--sp-navy); font-size: 1.1rem; font-weight: 800; letter-spacing: -0.01em; text-wrap: balance; }
+.ord-pending .ord-party-meta { gap: 8px; color: var(--sp-muted); font-size: 0.8125rem; }
+
+/* Goal-gradient: the bar fills toward done and says how far in words; the pending figure is the row's one loud thing. */
+.ord-pending .ord-meter { width: 140px; height: 8px; background: color-mix(in oklch, var(--ord-accent) 14%, var(--white)); }
+.ord-pending .ord-meter > span { background: linear-gradient(90deg, var(--sp-mode-on-start), var(--sp-mode-on-end)); transition: width 320ms var(--ease-out-expo); }
+.ord-pending .ord-share { color: var(--sp-navy-2); font-weight: 700; font-variant-numeric: tabular-nums; }
+.ord-pending .ord-party-pending { font-size: 2rem; letter-spacing: -0.02em; line-height: 1; }
+.ord-pending .ord-pending-label { color: var(--sp-muted); font-size: 0.75rem; }
+
+/* Peak-end: a party with nothing left owed says so, ticked, in the ready green. */
+.ord-pending .ord-done-badge {
+  display: inline-flex; align-items: center; gap: 6px; padding: 2px 10px 2px 6px; border-radius: 999px;
+  background: color-mix(in oklch, var(--ok) 14%, var(--white)); color: color-mix(in oklch, var(--ok) 70%, var(--sp-navy)); font-weight: 700;
+}
+.ord-pending .ord-done-badge svg { width: 14px; height: 14px; padding: 2px; border-radius: 999px; background: var(--ok); color: var(--white); }
+
+/* Opening a party: its panel unfolds from the row (origin-aware), the articles side by side on a soft ground. */
+.ord-pending .ord-party.is-open .ord-party-head { border-bottom-color: var(--sp-line); }
+.ord-pending .ord-party-body { padding: 18px 22px 22px; background: var(--sp-ground); transform-origin: top center; animation: ord-unfold 220ms var(--ease-out-expo) both; }
+.ord-pending .ord-matrices { gap: 16px; }
+
+/* Each article as on Enter Orders and Upper Stock: a white card under a navy band (similarity), the pending in amber. */
+.ord-pending .ord-matrix { padding: 8px; border: 1px solid var(--sp-line); border-radius: var(--dash-card-radius); background: var(--white); box-shadow: var(--sp-card-shadow); }
+.ord-pending .ord-matrix-head { min-height: 52px; margin-bottom: 8px; padding: 6px 14px; border: 0; border-radius: 12px; background: var(--us-band-sheen), var(--us-band-navy); }
+.ord-pending .ord-matrix-title { color: var(--white); font-size: 1.15rem; font-weight: 800; letter-spacing: -0.01em; }
+.ord-pending .ord-matrix-head .ord-codes { color: rgba(255, 255, 255, 0.72); font-size: 0.75rem; }
+.ord-pending .ord-matrix-total { padding: 4px 12px; border-radius: 10px; background: var(--white); color: var(--sp-navy-2); }
+.ord-pending .ord-matrix-total strong { color: var(--ord-accent-deep); font-size: 1.1rem; font-variant-numeric: tabular-nums; }
+.ord-pending .ord-matrix .sa-grid { overflow: hidden; border: 1px solid var(--sp-line); border-radius: var(--sp-radius-control); }
+.ord-pending .ord-matrix .sa-grid thead th { height: 40px; background: var(--us-head); color: var(--sp-navy); font-size: 0.74rem; letter-spacing: 0.06em; }
+.ord-pending .ord-matrix .sa-grid .sa-grid-size { color: var(--sp-navy-2); font-size: 0.875rem; }
+.ord-pending .ord-matrix .sa-grid-foot th, .ord-pending .ord-matrix .sa-grid-foot td { background: var(--us-total); color: var(--sp-navy); }
+.ord-pending .ord-mcell { min-width: 5.5rem; height: 44px; text-align: right; vertical-align: middle; }
+.ord-pending .ord-mcell-pending { color: var(--ord-accent-deep); font-size: 1.02rem; font-weight: 800; font-variant-numeric: tabular-nums; }
+.ord-pending .ord-mcell.is-done .ord-mcell-pending { display: inline-flex; color: var(--ok); }
+.ord-pending .ord-mcell.is-done .ord-mcell-pending svg { width: 18px; height: 18px; }
+.ord-pending .ord-mcell.is-none { background: repeating-linear-gradient(135deg, transparent 0 7px, var(--sp-ground) 7px 8px); }
+
+/* Placeholder grids while a party's products are read: the size of real ones, so nothing jumps when they arrive. */
+.ord-pending .ord-matrix--skeleton {
+  width: 320px; height: 220px; border-color: transparent;
+  background: linear-gradient(90deg, var(--white) 25%, color-mix(in oklch, var(--sp-ground) 50%, var(--white)) 50%, var(--white) 75%);
+  background-size: 300% 100%; animation: ord-shimmer 1.2s linear infinite;
+}
+
+@media (max-width: 760px) {
+  .ord-pending .ord-party-head { padding: 12px 14px; gap: 12px; }
+  .ord-pending .ord-meter { width: 90px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ord-pending .card.ord-party, .ord-pending .ord-party-body, .ord-pending .ord-matrix--skeleton { animation: none; }
+  .ord-pending .ord-chevron, .ord-pending .ord-meter > span, .ord-pending .sa-toggle-btn, .ord-pending .ord-parties { transition: none; }
+}
+/* The article's name on its band: white. Specific enough to beat the Orders tone's navy title (.app-main[data-page-tone]). */
+.ord-pending .ord-matrix-head .ord-matrix-title { color: var(--white); }

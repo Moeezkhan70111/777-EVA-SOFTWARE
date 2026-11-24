@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { copy } from "../../config/copy";
 import { useDesktopApi } from "../../hooks/useDesktopApi";
-import { leaseRefusalText } from "../../../shared/leaseRefusal";
+import { addArticleColor } from "./articleColor";
 
 // "+ New colour" above the grid: a new colour for the chosen article, on every one of its active sizes (main process
 // addColorToArticle). It is product master data, written where MASTER_DATA is held; the page only shows it there.
@@ -13,14 +13,6 @@ interface AddColorControlProps {
   /** Called with the colour as stored (upper-case) once it is on the article. */
   onAdded: (color: string) => void;
 }
-
-type Reply = { ok: true; color: string } | { ok: false; reason: string };
-
-const readReply = (reply: unknown): Reply => {
-  const record = typeof reply === "object" && reply !== null ? (reply as Record<string, unknown>) : {};
-  if (record.accepted === true && typeof record.color === "string") return { ok: true, color: record.color };
-  return { ok: false, reason: typeof record.reason === "string" ? record.reason : text.colorNotAdded };
-};
 
 export const AddColorControl: React.FC<AddColorControlProps> = ({ article, onAdded }) => {
   const api = useDesktopApi();
@@ -35,16 +27,11 @@ export const AddColorControl: React.FC<AddColorControlProps> = ({ article, onAdd
     if (busy || !name.trim()) return;
     setBusy(true);
     setProblem(null);
-    try {
-      const reply = readReply(await api.addArticleColor({ article, color: name }));
-      if (!reply.ok) { setProblem(reply.reason); return; }
-      close();
-      onAdded(reply.color);
-    } catch (error) {
-      setProblem(leaseRefusalText(error) ?? text.colorNotAdded);
-    } finally {
-      setBusy(false);
-    }
+    const reply = await addArticleColor(api, article, name, text.colorNotAdded);
+    setBusy(false);
+    if (!reply.ok) { setProblem(reply.reason); return; }
+    close();
+    onAdded(reply.color);
   };
 
   if (!open) {

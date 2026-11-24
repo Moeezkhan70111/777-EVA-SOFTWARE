@@ -1,3 +1,5 @@
+import { CARTONS_PER_DOZEN, cartonsToDozens, dozensToCartons } from "./units.js";
+
 // CUSTOMER ORDERS AND PENDING ORDERS (docs/52).
 //
 //   ORD-000014 · 17 Nov · BEHRAAM SHOES
@@ -78,6 +80,26 @@ export function orderQuantityProblem(typed: string): string | null {
   if (value > CUSTOMER_ORDER_MAX_QUANTITY) return `Keep a quantity under ${CUSTOMER_ORDER_MAX_QUANTITY.toLocaleString("en-US")} cartons.`;
   return null;
 }
+
+/**
+ * ORDERS ARE TYPED IN DOZENS (owner, 24 Nov 2026: "the order is dozen, not carton"), and STORED in cartons like every
+ * other carton figure (1 dozen = CARTONS_PER_DOZEN cartons, units.ts), so allocation against gatepasses is unchanged.
+ * A box takes whole or half dozens: what becomes a whole number of cartons. Why a typed box cannot be saved, or null.
+ */
+export function orderDozensProblem(typed: string): string | null {
+  const text = typed.trim();
+  if (text === "") return null;
+  const dozens = Number(text);
+  if (!Number.isFinite(dozens) || dozens <= 0) return "Type the dozens, above 0.";
+  if (!Number.isInteger(dozensToCartons(dozens))) return `Type whole or half dozens (1 dozen = ${CARTONS_PER_DOZEN} cartons).`;
+  if (dozensToCartons(dozens) > CUSTOMER_ORDER_MAX_QUANTITY) {
+    return `Keep a quantity under ${cartonsToDozens(CUSTOMER_ORDER_MAX_QUANTITY).toLocaleString("en-US")} dozen.`;
+  }
+  return null;
+}
+
+/** A typed box's dozens as the cartons an order line stores. Only for a box orderDozensProblem accepts. */
+export const orderDozensToCartons = (typed: string): number => dozensToCartons(Number(typed.trim()));
 
 /** One open order line a gatepass line may be allocated to, with what it still owes. */
 export interface AllocationCandidate {

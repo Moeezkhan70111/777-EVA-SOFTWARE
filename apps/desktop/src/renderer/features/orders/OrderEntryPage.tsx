@@ -10,10 +10,12 @@ import { OrderDetails } from "./OrderDetails";
 import { OrderForm } from "./OrderForm";
 import { useOrderChoices } from "./useOrderChoices";
 import { useOrderEntry } from "./useOrderEntry";
+import { orderDozens } from "./orderUnits";
 
-// ENTER ORDERS (docs/52): what a party ordered, by article, colour and size, in cartons.
+// ENTER ORDERS (docs/52): what a party ordered, by article, colour and size, typed and shown in DOZENS and stored in
+// cartons (1 dozen = 2 cartons; owner, 24 Nov 2026).
 //
-//   ◄ Previous  [ ORD- 14  of 14 ]  Load  Next ►                                      [ + New order ]
+//   ‹ [ ORD- 14  of 14 ] ›  [ + New order ]      the compact pager (Hick's law, owner, 24 Nov 2026)
 //   ── the order being written, or the stored one with what was dispatched, Edit and Cancel ──
 //
 // Orders are written on the computer that makes gatepasses (SALES_DISPATCH), so a gatepass allocates against every
@@ -52,31 +54,37 @@ const OrderEntry: React.FC<OrderEntryPageProps> = ({ token, canCancel, isAdmin }
     if (state.loading || choices.parties.loading || choices.articles.loading) return <StateView kind="loading" compact />;
     if (state.loadError) return <StateView kind="error" compact message={state.loadError} onRetry={() => void state.startNew()} />;
     if (mode === "view" && order) {
-      return <OrderDetails order={order} busy={busy} canEdit canCancel={canCancel} onEdit={() => void state.startEdit()} onCancel={() => { setReason(""); setCancelling(true); }} />;
+      return <OrderDetails order={order} busy={busy} canEdit canCancel={canCancel} onEdit={() => void state.startEdit()} onCancel={() => { setReason(""); setCancelling(true); }}
+        justSaved={state.justSaved} onNewOrder={() => void state.startNew()} />;
     }
     return <OrderForm entry={state.entry} choices={choices} busy={busy} editing={mode === "edit"} onSave={() => void (mode === "edit" ? state.saveEdit() : state.save())} onDiscard={state.cancelEdit}
       canAddColor={isAdmin && masterData.canWrite} />;
   })();
 
   return (
-    <div className="ord-page">
-      <div className="siv-toolbar">
-        <DocumentNavigator
-          prefix="ORD -"
-          labels={NAV_LABELS}
-          current={mode === "new" ? null : (order?.orderNumber ?? null)}
-          latest={neighbours.latestNumber}
-          newNumber={null}
-          previousNumber={neighbours.previousNumber}
-          nextNumber={mode === "new" ? null : neighbours.nextNumber}
-          busy={busy || mode === "edit"}
-          onGo={(orderNumber) => void state.goTo(orderNumber)}
-          onNew={() => void state.startNew()}
-          testIdPrefix="customer-order"
-        />
-        {mode === "new" ? null : (
-          <button type="button" className="btn btn-secondary siv-new" disabled={busy || mode === "edit"} onClick={() => void state.startNew()}>+ {words.newOrder}</button>
-        )}
+    // doc-themed: Create Gatepass's look (theme.css), in the Orders colours its Dashboard card gives the page.
+    <div className="ord-page doc-themed">
+      <div className="siv-toolbar ord-toolbar-row">
+        <div className="gp-topbar-group">
+          <DocumentNavigator
+            compact
+            prefix="ORD -"
+            labels={NAV_LABELS}
+            current={mode === "new" ? null : (order?.orderNumber ?? null)}
+            latest={neighbours.latestNumber}
+            newNumber={null}
+            previousNumber={neighbours.previousNumber}
+            nextNumber={mode === "new" ? null : neighbours.nextNumber}
+            busy={busy || mode === "edit"}
+            onGo={(orderNumber) => void state.goTo(orderNumber)}
+            onNew={() => void state.startNew()}
+            testIdPrefix="customer-order"
+          />
+          {/* Hidden while the saved banner offers it, so the next step is one button, not two. */}
+          {mode === "new" || state.justSaved ? null : (
+            <button type="button" className="btn btn-secondary siv-new" disabled={busy || mode === "edit"} onClick={() => void state.startNew()}>+ {words.newOrder}</button>
+          )}
+        </div>
       </div>
       {body}
       {cancelling && order ? (
@@ -84,9 +92,9 @@ const OrderEntry: React.FC<OrderEntryPageProps> = ({ token, canCancel, isAdmin }
           title={words.cancelDialogTitle(order.code)}
           facts={[
             { label: words.factParty, value: order.partyName },
-            { label: words.factOrdered, value: order.totals.ordered.toLocaleString("en-US") },
-            { label: words.factDispatched, value: order.totals.dispatched.toLocaleString("en-US") },
-            { label: words.factPending, value: order.totals.pending.toLocaleString("en-US") },
+            { label: words.factOrdered, value: orderDozens(order.totals.ordered) },
+            { label: words.factDispatched, value: orderDozens(order.totals.dispatched) },
+            { label: words.factPending, value: orderDozens(order.totals.pending) },
           ]}
           explain={words.cancelExplain}
           confirmLabel={words.cancelConfirm}

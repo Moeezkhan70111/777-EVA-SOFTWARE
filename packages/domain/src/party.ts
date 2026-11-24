@@ -26,6 +26,26 @@ export const RAW_MATERIAL_RECEIPT_PARTY_TYPES: readonly PartyType[] = ['SUPPLIER
 
 export const isRawMaterialReceiptPartyType = (partyType: string): boolean =>
   (RAW_MATERIAL_RECEIPT_PARTY_TYPES as readonly string[]).includes(partyType);
+
+/**
+ * Who a Gatepass may be made for: customers only (owner, 24 Nov 2026 — not dealers or distributors either). One
+ * list, read by the screen that offers parties and by the use cases that create and edit a gatepass, which refuse
+ * any other. A gatepass made before this rule keeps its party: an edit may leave it, but not change to another.
+ */
+export const GATEPASS_PARTY_TYPES: readonly PartyType[] = ['CUSTOMER'];
+
+export const isGatepassPartyType = (partyType: string): boolean =>
+  (GATEPASS_PARTY_TYPES as readonly string[]).includes(partyType);
+
+/**
+ * Who a customer order may be written for (owner, 24 Nov 2026): the parties a Gatepass may be made for, since an order
+ * is what a gatepass later dispatches — an order for anyone else could never be sent. The same list, so the two can
+ * never disagree. As with a gatepass, an order made before the rule keeps its party: an edit may leave it.
+ */
+export const CUSTOMER_ORDER_PARTY_TYPES: readonly PartyType[] = GATEPASS_PARTY_TYPES;
+
+export const isCustomerOrderPartyType = (partyType: string): boolean =>
+  (CUSTOMER_ORDER_PARTY_TYPES as readonly string[]).includes(partyType);
 export type PartyStatus = 'ACTIVE' | 'INACTIVE';
 
 export interface PartyGroup {

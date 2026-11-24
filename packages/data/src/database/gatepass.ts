@@ -178,9 +178,9 @@ export const gatepassMethods = {
   async getPartyForGatepass(this: SqliteDatabase, partyId: string, tx: TransactionContext): Promise<GatepassPartyRecord | null> {
     const context = tx as MutableTransactionContext;
     const row = context.db
-      .prepare("SELECT id, party_name, status FROM parties WHERE id = ? AND deleted_at IS NULL LIMIT 1")
-      .get(String(partyId ?? "").trim()) as { id: string; party_name: string; status: string } | undefined;
-    return row ? { id: String(row.id), partyName: String(row.party_name), status: String(row.status ?? "ACTIVE") } : null;
+      .prepare("SELECT id, party_name, status, party_type FROM parties WHERE id = ? AND deleted_at IS NULL LIMIT 1")
+      .get(String(partyId ?? "").trim()) as { id: string; party_name: string; status: string; party_type: string | null } | undefined;
+    return row ? { id: String(row.id), partyName: String(row.party_name), status: String(row.status ?? "ACTIVE"), partyType: String(row.party_type ?? "") } : null;
   },
 
   /**

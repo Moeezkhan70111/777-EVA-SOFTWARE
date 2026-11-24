@@ -1,4 +1,4 @@
-import { gatepassShortBy, maxNewGatepassQuantity, outstandingQuantity, reflectedStock } from "@erp/domain";
+import { gatepassShortBy, isGatepassPartyType, maxNewGatepassQuantity, outstandingQuantity, reflectedStock } from "@erp/domain";
 import type { TransactionContext, TransactionManager } from "./ports.js";
 
 // Gatepass: an operational document that reserves store stock for a party. It sits beside
@@ -78,6 +78,8 @@ export type CreateGatepassOutcome =
   | "NO_PARTY"
   | "PARTY_NOT_FOUND"
   | "PARTY_INACTIVE"
+  /** The party is not a customer (GATEPASS_PARTY_TYPES): a gatepass is made for customers only. */
+  | "PARTY_NOT_CUSTOMER"
   | "NO_LINES"
   | "INVALID_QUANTITY"
   | "DUPLICATE_LINE"
@@ -138,7 +140,25 @@ export interface GatepassPartyRecord {
   id: string;
   partyName: string;
   status: string;
+  partyType: string;
 }
+
+/**
+ * The party a gatepass is being made or re-pointed for: in the Party Master, active, and a customer
+ * (GATEPASS_PARTY_TYPES, owner 24 Nov 2026). One check for Create and Edit, so neither can let another type through.
+ */
+export const requireGatepassParty = (party: GatepassPartyRecord | null): GatepassPartyRecord => {
+  if (!party) {
+    throw new GatepassRejectedError("PARTY_NOT_FOUND", "This party is not in the Party Master. Select a party from the list.");
+  }
+  if (party.status !== "ACTIVE") {
+    throw new GatepassRejectedError("PARTY_INACTIVE", `${party.partyName} is inactive. Only active parties can receive a Gatepass.`);
+  }
+  if (!isGatepassPartyType(party.partyType)) {
+    throw new GatepassRejectedError("PARTY_NOT_CUSTOMER", `${party.partyName} is not a customer. A Gatepass can be made for customers only.`);
+  }
+  return party;
+};
 
 /**
  * One variant's identity plus its two live figures, read inside the transaction:
@@ -488,16 +508,9 @@ export class CreateGatepassUseCase {
     return made;
   }
 
-  /** Party must exist in Party Master and be active. */
+  /** Party must exist in Party Master, be active, and be a customer. */
   private async requireActiveParty(partyId: string, tx: TransactionContext): Promise<GatepassPartyRecord> {
-    const party = await this.deps.repo.getPartyForGatepass(partyId, tx);
-    if (!party) {
-      throw new GatepassRejectedError("PARTY_NOT_FOUND", "This party is not in the Party Master. Select a party from the list.");
-    }
-    if (party.status !== "ACTIVE") {
-      throw new GatepassRejectedError("PARTY_INACTIVE", `${party.partyName} is inactive. Only active parties can receive a Gatepass.`);
-    }
-    return party;
+    return requireGatepassParty(await this.deps.repo.getPartyForGatepass(partyId, tx));
   }
 
   /**

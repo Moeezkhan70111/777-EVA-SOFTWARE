@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { isGatepassPartyType } from "@erp/domain";
 import { useDataChanged } from "../../hooks/useDataChanged";
 import { DATA_KIND } from "../../../shared/dataChange";
 import { useDesktopApi } from "../../hooks/useDesktopApi";
@@ -15,6 +16,14 @@ const STOCK_CHANGES = [DATA_KIND.CARTONS, DATA_KIND.PRODUCTS];
 // snapshot — the use case re-reads them inside the write transaction.
 
 const PARTY_PAGE_SIZE = 1000;
+
+/**
+ * The parties the Gatepass offers: customers only (GATEPASS_PARTY_TYPES, owner 24 Nov 2026). A gatepass being edited
+ * keeps its own party in the list even when it is another type (made before the rule), so its name still shows.
+ * The use cases refuse any other party, so this list is a convenience, not the guard.
+ */
+export const gatepassPartyOptions = (parties: readonly Party[], keepPartyId?: string | null): Party[] =>
+  parties.filter((party) => isGatepassPartyType(party.partyType) || party.id === keepPartyId);
 
 export interface StoreStockState {
   rows: GatepassStockRow[];

@@ -1,12 +1,13 @@
 import React from "react";
 import { GATEPASS_STATUS } from "@erp/domain";
+import { ActionMenu, type ActionMenuItem } from "../../components/shared/ActionMenu";
 import { copy } from "../../config/copy";
 import type { Gatepass } from "../../types/desktopApi";
 import { canEditGatepass } from "./gatepassEdit";
 
 // The Gatepass screen's buttons, for what it is doing: viewing a stored gatepass, editing one, or writing a new one.
 //
-//   viewing   Open in list · Print · Edit (allowed and possible) · Make Bill / Open Bill (not cancelled)
+//   viewing   More (Open in list · Edit, when allowed and possible) · Make Bill / Open Bill (not cancelled) · Print
 //   editing   Cancel edit · Save changes
 //   writing   Create Gatepass
 
@@ -20,27 +21,27 @@ interface ViewingActionsProps {
   onMakeBill?: () => void;
 }
 
-export const ViewingActions: React.FC<ViewingActionsProps> = ({ document, onOpenInList, onPrint, onEdit, onMakeBill }) => (
-  <>
-    <button type="button" className="btn btn-secondary" onClick={onOpenInList}>
-      {copy.gatepass.openInList}
-    </button>
-    <button type="button" className="btn btn-primary" onClick={onPrint} data-testid="gatepass-print">
-      🖨 {copy.gatepass.printGatepass}
-    </button>
-    {onEdit && canEditGatepass(document) ? (
-      <button type="button" className="btn btn-secondary" onClick={onEdit} data-testid="gatepass-edit">
-        {copy.gatepass.edit}
+// Hick's law (owner, 24 Nov 2026: eight equal buttons were too many to choose from). One main action, Print, in the
+// blue; the bill, the next step of the flow, beside it in white; Open in list and Edit, used now and then, under More.
+export const ViewingActions: React.FC<ViewingActionsProps> = ({ document, onOpenInList, onPrint, onEdit, onMakeBill }) => {
+  const moreItems: ActionMenuItem[] = [{ id: "open-in-list", label: copy.gatepass.openInList, onSelect: onOpenInList, testId: "gatepass-open-in-list" }];
+  if (onEdit && canEditGatepass(document)) moreItems.push({ id: "edit", label: copy.gatepass.edit, onSelect: onEdit, testId: "gatepass-edit" });
+  // A cancelled gatepass is never billed. One already billed opens its bill instead (Sale Voucher decides).
+  const billable = Boolean(onMakeBill) && document.status !== GATEPASS_STATUS.CANCELLED && !document.deletedAt;
+  return (
+    <>
+      <ActionMenu label={copy.gatepass.moreActions} groups={[{ label: copy.gatepass.moreActionsGroup, items: moreItems }]} />
+      {billable ? (
+        <button type="button" className="btn btn-secondary" onClick={onMakeBill} data-testid="gatepass-make-bill">
+          {document.status === GATEPASS_STATUS.CREATED ? copy.gatepass.makeBill : copy.gatepass.openBill}
+        </button>
+      ) : null}
+      <button type="button" className="btn btn-primary" onClick={onPrint} data-testid="gatepass-print">
+        {copy.gatepass.printGatepass}
       </button>
-    ) : null}
-    {/* A cancelled gatepass is never billed. One already billed opens its bill instead (Sale Voucher decides). */}
-    {onMakeBill && document.status !== GATEPASS_STATUS.CANCELLED && !document.deletedAt ? (
-      <button type="button" className="btn btn-primary" onClick={onMakeBill} data-testid="gatepass-make-bill">
-        {document.status === GATEPASS_STATUS.CREATED ? copy.gatepass.makeBill : copy.gatepass.openBill}
-      </button>
-    ) : null}
-  </>
-);
+    </>
+  );
+};
 
 interface EditingActionsProps {
   saving: boolean;

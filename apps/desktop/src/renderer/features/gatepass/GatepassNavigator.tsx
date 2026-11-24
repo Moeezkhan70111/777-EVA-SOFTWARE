@@ -32,5 +32,5 @@ interface GatepassNavigatorProps {
 }
 
 export const GatepassNavigator: React.FC<GatepassNavigatorProps> = ({ current, latest, busy, onGo, onNew }) => (
-  <DocumentNavigator prefix="GP -" labels={LABELS} current={current} latest={latest} busy={busy} onGo={onGo} onNew={onNew} testIdPrefix="gatepass" />
+  <DocumentNavigator prefix="GP -" labels={LABELS} current={current} latest={latest} busy={busy} onGo={onGo} onNew={onNew} testIdPrefix="gatepass" compact />
 );

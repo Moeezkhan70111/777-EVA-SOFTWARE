@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { CustomerOrder } from "../../types/desktopApi";
-import { articleGrid, blockLines, blockProblems, blockTotals, cellKey, colourLocked, draftFromOrder, draftReady, newBlock, toggleColour } from "./orderDraft";
+import { articleGrid, blockLines, blockProblems, blockTotals, cellKey, colourLocked, draftFromOrder, draftReady, draftSteps, newBlock, toggleColour } from "./orderDraft";
 
 const PRODUCTS = [
   { productVariantId: "red-6", size: "6", color: "RED" },
@@ -18,18 +18,19 @@ describe("the order draft", () => {
     expect(grid.cells.get(cellKey("6", "RED"))).toBe("red-6");
   });
 
-  it("chooses several colours at once and totals each colour and the article", () => {
+  // Owner, 24 Nov 2026: typed in DOZENS, kept and sent in cartons (1 dozen = 2 cartons).
+  it("chooses several colours at once, takes dozens, and totals and sends them as cartons", () => {
     let block = newBlock("SK6", PRODUCTS);
     block = toggleColour(toggleColour(block, "RED"), "BLUE");
     expect(block.colours).toEqual(["BLUE", "RED"]);
-    block = { ...block, typed: { "red-6": "10", "red-7": "20", "blue-6": "15", "black-7": "99" } };
+    block = { ...block, typed: { "red-6": "10", "red-7": "20.5", "blue-6": "15", "black-7": "99" } };
     const totals = blockTotals(block);
-    expect(Object.fromEntries(totals.byColour)).toEqual({ BLUE: 15, RED: 30 });
-    expect(totals.total).toBe(45);
+    expect(Object.fromEntries(totals.byColour)).toEqual({ BLUE: 30, RED: 61 });
+    expect(totals.total).toBe(91);
     expect(blockLines(block)).toEqual([
-      { productVariantId: "red-6", quantity: 10 },
-      { productVariantId: "red-7", quantity: 20 },
-      { productVariantId: "blue-6", quantity: 15 },
+      { productVariantId: "red-6", quantity: 20 },
+      { productVariantId: "red-7", quantity: 41 },
+      { productVariantId: "blue-6", quantity: 30 },
     ]);
   });
 
@@ -40,11 +41,12 @@ describe("the order draft", () => {
     expect(block.typed).toEqual({ "red-6": "10" });
   });
 
-  it("refuses a quantity that is not a whole number above 0, and one below what was already dispatched", () => {
-    const block = { ...toggleColour(newBlock("SK6", PRODUCTS), "RED"), typed: { "red-6": "2.5", "red-7": "3" }, dispatched: { "red-7": 5 } };
+  it("refuses a quantity that is not whole or half dozens above 0, and one below what was already dispatched", () => {
+    // 2 dozen is 4 cartons, below the 5 cartons (2.5 dozen) already dispatched.
+    const block = { ...toggleColour(newBlock("SK6", PRODUCTS), "RED"), typed: { "red-6": "2.25", "red-7": "2" }, dispatched: { "red-7": 5 } };
     const problems = blockProblems(block);
-    expect(problems.has("red-6")).toBe(true);
-    expect(problems.get("red-7")).toMatch(/already dispatched/);
+    expect(problems.get("red-6")).toMatch(/whole or half dozens/);
+    expect(problems.get("red-7")).toBe("At least 2.5 dozen: already dispatched.");
     expect(colourLocked(block, "RED")).toBe(true);
     expect(draftReady({ partyId: "p", note: "", blocks: [block] })).toBe(false);
   });
@@ -66,10 +68,24 @@ describe("the order draft", () => {
     } as unknown as CustomerOrder;
     const draft = draftFromOrder(order, (article) => (article === "SK6" ? PRODUCTS : []));
     expect(draft.blocks.map((block) => [block.article, block.colours, block.typed])).toEqual([
-      ["SK6", ["RED"], { "red-6": "10" }],
-      ["SK9", ["TAN"], { "x-1": "3" }],
+      ["SK6", ["RED"], { "red-6": "5" }],
+      ["SK9", ["TAN"], { "x-1": "1.5" }],
     ]);
     expect(draft.blocks[0]?.dispatched).toEqual({ "red-6": 4 });
     expect(draft.blocks[1]?.products).toHaveLength(1);
+  });
+
+  it("chooses an article's colour for it when it is made in only one", () => {
+    expect(newBlock("SK9", [{ productVariantId: "tan-8", size: "8", color: "TAN" }, { productVariantId: "tan-9", size: "9", color: "TAN" }]).colours).toEqual(["TAN"]);
+    expect(newBlock("SK6", PRODUCTS).colours).toEqual([]);
+  });
+
+  it("says which of the three steps are done and what to do next", () => {
+    const block = toggleColour(newBlock("SK6", PRODUCTS), "RED");
+    expect(draftSteps({ partyId: "", note: "", blocks: [] })).toEqual({ party: false, articles: false, dozens: false, next: "party" });
+    expect(draftSteps({ partyId: "p", note: "", blocks: [] }).next).toBe("articles");
+    expect(draftSteps({ partyId: "p", note: "", blocks: [block] }).next).toBe("dozens");
+    expect(draftSteps({ partyId: "p", note: "", blocks: [{ ...block, typed: { "red-6": "0.3" } }] }).next).toBe("fix");
+    expect(draftSteps({ partyId: "p", note: "", blocks: [{ ...block, typed: { "red-6": "4" } }] })).toEqual({ party: true, articles: true, dozens: true, next: "ready" });
   });
 });

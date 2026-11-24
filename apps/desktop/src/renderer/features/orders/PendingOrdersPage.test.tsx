@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import { NotificationsProvider } from "../../state/NotificationsContext";
 import { PendingOrdersPage } from "./PendingOrdersPage";
 
-// Pending Orders: one row per party with its pending cartons, opened for its products; filtered and searched by the
+// Pending Orders: one row per party with its pending dozens (figures arrive in cartons, 1 dozen = 2; 24 Nov 2026), opened for its products; filtered and searched by the
 // main process. The figures are the data layer's (customerOrders.test.ts); this proves the screen shows them as sent,
 // says progress in words, and asks again with the filter and search the operator chose.
 
@@ -27,33 +27,52 @@ function createFakeBackend(rows: unknown[] = [PARTY]) {
 const renderPage = (onEnterOrders?: () => void) => render(<NotificationsProvider><PendingOrdersPage token="token-1" onEnterOrders={onEnterOrders} /></NotificationsProvider>);
 
 describe("Pending Orders", () => {
-  it("shows each party's pending cartons, and when opened one matrix per article, sizes down and colours across", async () => {
+  it("shows each party's pending dozens, and when opened one matrix per article, sizes down and colours across", async () => {
     const api = createFakeBackend();
     renderPage();
-    const row = await screen.findByRole("button", { name: "Show BEHRAAM SHOES's products" });
-    expect(within(row).getByText("18")).toBeTruthy();
-    expect(within(row).getByText("27 of 45 dispatched")).toBeTruthy();
-    expect(within(row).getByText("cartons pending")).toBeTruthy();
-    expect(screen.getByText("18 cartons pending")).toBeTruthy();
+    // The only party on the list opens by itself (the default effect, 24 Nov 2026).
+    const row = await screen.findByRole("button", { name: "Hide BEHRAAM SHOES's products" });
+    expect(row).toHaveAttribute("aria-expanded", "true");
+    expect(within(row).getByText("9")).toBeTruthy();
+    expect(within(row).getByText("13.5 of 22.5 dispatched")).toBeTruthy();
+    expect(within(row).getByText("dozen pending")).toBeTruthy();
+    // The total heads the page, alone in the blue (24 Nov 2026).
+    expect(screen.getByText("9 dozen")).toBeTruthy();
+    expect(screen.getByText("13.5 of 22.5 dispatched").parentElement).toHaveTextContent("60% dispatched");
 
-    await act(async () => { fireEvent.click(row); });
     const sk6 = await screen.findByRole("region", { name: "SK6" });
-    expect(within(sk6).getAllByRole("columnheader").map((cell) => cell.textContent)).toEqual(["Size", "BLACK", "BLUE"]);
+    // Colours are named in Urdu from the shared colour list (24 Nov 2026), the English kept as the tooltip.
+    expect(within(sk6).getAllByRole("columnheader").map((cell) => cell.textContent)).toEqual(["Size", "سیاہ", "بلو"]);
+    expect(within(sk6).getByTitle("BLACK")).toHaveAttribute("lang", "ur");
     expect(within(sk6).getAllByRole("rowheader").map((cell) => cell.textContent)).toEqual(["6", "7", "Total"]);
-    const blue6 = within(sk6).getByLabelText("SK6 BLUE 6: 10 pending of 15 ordered, 5 dispatched");
-    expect(blue6.textContent).toBe("10");
-    expect(blue6).toHaveAttribute("title", "Ord 15 · Sent 5");
+    const blue6 = within(sk6).getByLabelText("SK6 BLUE 6: 5 pending of 7.5 ordered, 2.5 dispatched");
+    expect(blue6.textContent).toBe("5");
+    expect(blue6).toHaveAttribute("title", "Ord 7.5 · Sent 2.5");
     expect(within(sk6).getByLabelText("BLUE 7 not ordered").textContent).toBe("");
     expect(within(sk6).getByText("ORD-000001, ORD-000002")).toBeTruthy();
     const sk9 = screen.getByRole("region", { name: "SK9" });
-    expect(within(sk9).getByLabelText("SK9 RED 7/10: 0 pending of 4 ordered, 4 dispatched").textContent).toContain("✓");
+    expect(within(sk9).getByLabelText("SK9 RED 7/10: 0 pending of 2 ordered, 2 dispatched")).toHaveClass("is-done");
     expect(api.listPendingOrderLines).toHaveBeenCalledWith("party-1", { search: "", filter: "OUTSTANDING" }, { token: "token-1" });
+  });
+
+  // The UI/UX pass (24 Nov 2026): '/' goes to the search, and × clears it and keeps the cursor there.
+  it("goes to the search on '/', and clears it with ×", async () => {
+    createFakeBackend();
+    renderPage();
+    await screen.findByRole("button", { name: /BEHRAAM SHOES's products/ });
+    const search = screen.getByRole("searchbox");
+    fireEvent.keyDown(document.body, { key: "/" });
+    expect(search).toHaveFocus();
+    fireEvent.change(search, { target: { value: "SK6" } });
+    fireEvent.click(screen.getByRole("button", { name: "Clear search" }));
+    expect(search).toHaveValue("");
+    expect(search).toHaveFocus();
   });
 
   it("asks again with the filter chosen", async () => {
     const api = createFakeBackend();
     renderPage();
-    await screen.findByRole("button", { name: "Show BEHRAAM SHOES's products" });
+    await screen.findByRole("button", { name: /BEHRAAM SHOES's products/ });
     await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Fully dispatched" })); });
     await waitFor(() => expect(api.listPendingOrderParties).toHaveBeenLastCalledWith({ search: "", filter: "DISPATCHED", page: 1, pageSize: 25 }, { token: "token-1" }));
   });
@@ -73,6 +92,6 @@ describe("Pending Orders", () => {
     renderPage();
     expect(await screen.findByText("Pending orders could not be loaded.")).toBeTruthy();
     await act(async () => { fireEvent.click(screen.getByRole("button", { name: /retry/i })); });
-    expect(await screen.findByRole("button", { name: "Show BEHRAAM SHOES's products" })).toBeTruthy();
+    expect(await screen.findByRole("button", { name: /BEHRAAM SHOES's products/ })).toBeTruthy();
   });
 });

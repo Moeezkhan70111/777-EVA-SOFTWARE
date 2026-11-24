@@ -425,7 +425,8 @@ export const SaleVoucherFormPage: React.FC<SaleVoucherFormPageProps> = ({ vouche
 
   // ─── render ───────────────────────────────────────────────────────────────
   return (
-    <div className="page gatepass-page gp-compose bill-page">
+    // doc-themed: Create Gatepass's look, the card pages' (theme.css), for the next document of the flow.
+    <div className="page gatepass-page gp-compose bill-page doc-themed">
       <CartonCloudOffNotice />
       <header className="gp-topbar">
         <div className="gp-topbar-main">
@@ -441,7 +442,7 @@ export const SaleVoucherFormPage: React.FC<SaleVoucherFormPageProps> = ({ vouche
         <div className="gp-topbar-actions">
           <VoucherNavigator canPrev={curIdx > 0} canNext={hasBill || curIdx < vouchers.ids.length} busy={loading} onPrev={() => void goPrev()} onNext={() => void goNext()} onGo={(number) => void goTo(number)} />
           <button type="button" className="btn btn-secondary" onClick={() => void printVoucher()} disabled={loading || !activeId} data-testid="print-voucher">
-            🖨 {copy.billing.printVoucher}
+            {copy.billing.printVoucher}
           </button>
         </div>
       </header>

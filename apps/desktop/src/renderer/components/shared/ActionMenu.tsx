@@ -3,6 +3,9 @@ import React, { useEffect, useRef, useState } from "react";
 // A small drop-down for the actions that belong on a screen but do not deserve permanent
 // space on it. Exporting and importing are done a few times a month; giving each its own
 // button would put four of them on a toolbar the operator uses every hour.
+//
+// Shared since 24 Nov 2026: Raw Material's Export / Import, and a stored gatepass's More (Open in list, Edit), so
+// that toolbar keeps one main action in view (Hick's law). Its styles keep their first name, .rm-action-menu.
 
 export interface ActionMenuItem {
   id: string;
@@ -11,6 +14,7 @@ export interface ActionMenuItem {
   hint?: string;
   onSelect: () => void;
   disabled?: boolean;
+  testId?: string;
 }
 
 export interface ActionMenuGroup {
@@ -68,6 +72,7 @@ export const ActionMenu: React.FC<{ label: string; groups: ActionMenuGroup[] }> 
                   role="menuitem"
                   className="rm-action-menu-item"
                   disabled={item.disabled}
+                  data-testid={item.testId}
                   onClick={() => {
                     setOpen(false);
                     item.onSelect();

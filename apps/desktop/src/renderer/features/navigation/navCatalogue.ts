@@ -4,6 +4,7 @@ import {
   CREATE_GATEPASS_ARTWORK_URL,
   DAILY_PRODUCTION_ARTWORK_URL,
   DANA_STOCK_ARTWORK_URL,
+  ENTER_ORDERS_ARTWORK_URL,
   GATEPASS_LIST_ARTWORK_URL,
   PENDING_ORDERS_ARTWORK_URL,
   MACHINE_ARTWORK_URL,
@@ -47,7 +48,7 @@ export interface FeatureCardSpec {
   onDashboard?: boolean;
   /**
    * The page's own colour (owner, 15 Nov 2026: "every card page is looking the same"). The page opened from this card
-   * is drawn in it -- title, sky, tables, totals -- with the card's artwork beside its title (pageIdentity.ts). Mapped
+   * is drawn in it -- title, sky, tables, totals (pageIdentity.ts). Mapped
    * to theme tokens in theme.css (R3).
    */
   pageTone?: PageTone;
@@ -201,7 +202,11 @@ export const NAV_SECTIONS: readonly NavSection[] = [
     label: s.orders,
     tone: "warn",
     items: [
-      item("orders-entry", t.ordersEntry, "order"),
+      // A Dashboard card (owner, 24 Nov 2026): writing an order, beside Pending Orders and in its colours.
+      {
+        ...item("orders-entry", t.ordersEntry, "order"),
+        feature: { artwork: ENTER_ORDERS_ARTWORK_URL, theme: "sky", artworkHasScene: true, badge: "order", onDashboard: true, pageTone: "orders" },
+      },
       // A Dashboard card: what each party is still owed, for anyone given Pending Orders. Its page wears amber.
       {
         ...item("pending-orders", t.pendingOrders, "pending"),

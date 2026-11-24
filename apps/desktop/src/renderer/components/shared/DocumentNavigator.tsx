@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { NavArrowIcon } from "./NavArrowIcon";
 
 // The document pager: one control for every numbered document — Gatepass, Move In voucher.
 //
@@ -9,6 +10,10 @@ import React, { useEffect, useState } from "react";
 // written it is the number that document WILL get, when the caller knows it, so a number that does not exist yet is
 // never mistaken for one that does ("new" beside it). Overtype it and press Enter (or Load) to open any other
 // number; ◄ ► step through them one at a time.
+//
+// COMPACT (Gatepass, owner, 24 Nov 2026, Hick's law):   ‹  [ GP- 42   of 57 ]  ›
+// The arrows are icons (their names stay for screen readers), and Load shows only once a different number has been
+// typed, so the pager reads as one control and its toolbar keeps fewer choices. Enter opens the number as always.
 //
 // STEPPING. By default ◄ ► step by one (current - 1, current + 1), which is right for a series with no gaps. A
 // series numbered from each computer's own block (100,000 on the second computer) has gaps, so its caller passes the
@@ -49,10 +54,12 @@ interface DocumentNavigatorProps {
   onNew: () => void;
   /** Prefix for the controls' test ids: "gatepass" gives gatepass-prev, gatepass-next, … */
   testIdPrefix: string;
+  /** Icon arrows, and Load only once another number is typed (see COMPACT above). */
+  compact?: boolean;
 }
 
 export const DocumentNavigator: React.FC<DocumentNavigatorProps> = (props) => {
-  const { prefix, labels, current, latest, busy, onGo, onNew, testIdPrefix } = props;
+  const { prefix, labels, current, latest, busy, onGo, onNew, testIdPrefix, compact = false } = props;
   const newNumber = props.newNumber !== undefined ? props.newNumber : latest === null ? null : latest + 1;
   /** What the box shows: the stored document's number, or the number the new one will get. */
   const shownNumber = current ?? newNumber;
@@ -86,9 +93,11 @@ export const DocumentNavigator: React.FC<DocumentNavigatorProps> = (props) => {
   };
 
   const total = current !== null ? labels.ofLatest(latest ?? current) : newNumber === null ? "" : labels.unsaved;
+  const typedAnother = text.trim() !== (shownNumber === null ? "" : String(shownNumber));
+  const showLoad = !compact || typedAnother;
 
   return (
-    <div className="gp-nav" role="group" aria-label={labels.group}>
+    <div className={`gp-nav${compact ? " gp-nav--compact" : ""}`} role="group" aria-label={labels.group}>
       <button
         type="button"
         className="gp-nav-btn"
@@ -98,7 +107,7 @@ export const DocumentNavigator: React.FC<DocumentNavigatorProps> = (props) => {
         onClick={() => prevTarget !== null && onGo(prevTarget)}
         data-testid={`${testIdPrefix}-prev`}
       >
-        ◄ Previous
+        {compact ? <NavArrowIcon direction="left" /> : "◄ Previous"}
       </button>
 
       {/* Prefix, number and count are one segment, so "GP-42 of 57" reads as a single fact. */}
@@ -126,9 +135,11 @@ export const DocumentNavigator: React.FC<DocumentNavigatorProps> = (props) => {
         />
         <span className="gp-nav-total">{total}</span>
       </span>
-      <button type="button" className="btn btn-secondary gp-nav-load" disabled={busy} onClick={load} data-testid={`${testIdPrefix}-load`}>
-        {labels.load}
-      </button>
+      {showLoad ? (
+        <button type="button" className="btn btn-secondary gp-nav-load" disabled={busy} onClick={load} data-testid={`${testIdPrefix}-load`}>
+          {labels.load}
+        </button>
+      ) : null}
       <button
         type="button"
         className="gp-nav-btn"
@@ -138,7 +149,7 @@ export const DocumentNavigator: React.FC<DocumentNavigatorProps> = (props) => {
         onClick={next}
         data-testid={`${testIdPrefix}-next`}
       >
-        Next ►
+        {compact ? <NavArrowIcon direction="right" /> : "Next ►"}
       </button>
     </div>
   );

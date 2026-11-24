@@ -18,7 +18,7 @@ import { GatepassSummaryPanel } from "../features/gatepass/GatepassSummaryPanel"
 import { PartySection, type TransportFields } from "../features/gatepass/PartySection";
 import { buildDraftFromDocument, createBlocker, dozensText, listArticleOptions } from "../features/gatepass/gatepassDraft";
 import { useArticleImages } from "../features/gatepass/useArticleImages";
-import { useGatepassData } from "../features/gatepass/useGatepassData";
+import { gatepassPartyOptions, useGatepassData } from "../features/gatepass/useGatepassData";
 import { useGatepassDraft } from "../features/gatepass/useGatepassDraft";
 import { useGatepassNavigation } from "../features/gatepass/useGatepassNavigation";
 import { usePartyBalance } from "../features/parties/usePartyBalance";
@@ -90,6 +90,8 @@ export const GatepassPage: React.FC<GatepassPageProps> = ({ token, onNavigate, o
   const [submitError, setSubmitError] = useState<SubmitError | null>(null);
 
   const party = useMemo(() => parties.find((p) => p.id === partyId) ?? null, [parties, partyId]);
+  // Customers only; an edited gatepass keeps its own party in the list.
+  const partyOptions = useMemo(() => gatepassPartyOptions(parties, edit.editing?.partyId), [parties, edit.editing]);
   const draftBalance = usePartyBalance(partyId);
   const documentBalance = usePartyBalance(nav.viewing?.partyId ?? "");
   const documentDraft = useMemo(() => (nav.viewing ? buildDraftFromDocument(nav.viewing) : null), [nav.viewing]);
@@ -279,7 +281,7 @@ export const GatepassPage: React.FC<GatepassPageProps> = ({ token, onNavigate, o
       )}
 
       <PartySection
-        parties={parties}
+        parties={partyOptions}
         loading={partiesLoading}
         partyId={partyId}
         party={party}
@@ -310,7 +312,8 @@ export const GatepassPage: React.FC<GatepassPageProps> = ({ token, onNavigate, o
   const pageTitle = viewing ? `${copy.gatepass.title} ${viewing.code}` : editing ? copy.gatepass.editTitle(editing.code) : copy.gatepass.title;
 
   return (
-    <div className="page gatepass-page gp-compose">
+    // doc-themed: the card pages' look (theme.css, "Create Gatepass in the card pages' look"), shared with Sale Voucher.
+    <div className="page gatepass-page gp-compose doc-themed">
       <CartonCloudOffNotice />
       <header className="gp-topbar">
         <div className="gp-topbar-main">
@@ -326,10 +329,14 @@ export const GatepassPage: React.FC<GatepassPageProps> = ({ token, onNavigate, o
             <EditingActions saving={edit.saving} blocked={Boolean(blocker) || !edit.reason.trim()} onCancel={cancelEdit} onSave={() => void saveEdit()} />
           ) : (
             <>
-              <GatepassNavigator current={viewing?.gatepassNumber ?? null} latest={nav.latest} busy={nav.busy} onGo={(n) => void nav.goTo(n)} onNew={nav.close} />
-              <button type="button" className="btn btn-secondary" onClick={startNew} data-testid="gatepass-new">
-                + New Gatepass
-              </button>
+              {/* Hick's law (owner, 24 Nov 2026): finding a gatepass is one group, acting on this one another. */}
+              <div className="gp-topbar-group">
+                <GatepassNavigator current={viewing?.gatepassNumber ?? null} latest={nav.latest} busy={nav.busy} onGo={(n) => void nav.goTo(n)} onNew={nav.close} />
+                <button type="button" className="btn btn-secondary" onClick={startNew} data-testid="gatepass-new">
+                  + {copy.gatepass.newGatepass}
+                </button>
+              </div>
+              <span className="gp-topbar-divider" aria-hidden="true" />
               {viewing ? (
                 <ViewingActions
                   document={viewing}

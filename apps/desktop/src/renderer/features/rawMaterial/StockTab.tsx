@@ -8,7 +8,7 @@ import { AttributeField } from "./AttributeField";
 import { MaterialDrawer } from "./MaterialDrawer";
 import { NewMaterialModal } from "./NewMaterialModal";
 import { ImportMaterialsModal } from "./ImportMaterialsModal";
-import { ActionMenu } from "./ActionMenu";
+import { ActionMenu } from "../../components/shared/ActionMenu";
 import { useSyncWaiting } from "../sync/useSyncWaiting";
 import { incompleteMaterials } from "../sync/syncWaiting";
 import { IncompleteMaterials } from "../sync/IncompleteMaterials";

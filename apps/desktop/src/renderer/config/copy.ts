@@ -262,6 +262,9 @@ export const copy = {
     preparedBy: "Prepared by",
     printGatepass: "Print Gatepass",
     openInList: "Open in list",
+    /** The menu holding a stored gatepass's less used actions (Open in list, Edit), and its one group's heading. */
+    moreActions: "More",
+    moreActionsGroup: "This gatepass",
     /** Opens this gatepass in Sale Voucher: a new bill made from it, or its bill when it has one. */
     makeBill: "Make Bill",
     openBill: "Open Bill",
@@ -2724,33 +2727,58 @@ export const copy = {
     cancelledBy: (who: string, reason: string) => `Cancelled by ${who}: ${reason}`,
 
     // Adding an article.
+    /** The card the order's articles are added to and written in (24 Nov 2026). */
+    articlesTitle: "Articles",
+    /** The note is optional, so it waits behind this until wanted (progressive disclosure, 24 Nov 2026). */
+    addNote: "Add a note",
+    /** The three steps beside the total, ticked as they are done, and what to do next (24 Nov 2026). */
+    steps: { party: "Party", articles: "Articles", dozens: "Dozens" },
+    stepsLabel: (done: number, total: number) => `${done} of ${total} steps done`,
+    nextStep: {
+      party: "Next: choose the party",
+      articles: "Next: add an article and pick its colours",
+      dozens: "Next: type the dozens",
+      fix: "Fix the highlighted boxes to save",
+      ready: "Ready to save",
+    },
+    /** The end of the task: the saved order says so, and offers the next one. */
+    savedBanner: (code: string, dozens: string, party: string) => `${code} saved — ${dozens} dozen for ${party}`,
     article: "Article",
     articlePlaceholder: "Choose an article",
     colours: "Colours",
-    coloursHint: "Pick every colour this party wants, then type the cartons.",
+    coloursHint: "Pick every colour this party wants, then type the dozens.",
     noColours: "This article has no active colours in Product Master.",
     loadingArticle: "Reading the article…",
     articleFailed: "The article could not be read. Try again.",
     addArticle: "Add article",
     alreadyAdded: (article: string) => `${article} is already on the order. Change it below.`,
-    gridLabel: (article: string) => `${article} cartons by size and colour`,
+    gridLabel: (article: string) => `${article} dozens by size and colour`,
     size: "Size",
-    cellLabel: (article: string, colour: string, size: string) => `${article} ${colour} size ${size}, cartons`,
+    cellLabel: (article: string, colour: string, size: string) => `${article} ${colour} size ${size}, dozens`,
     notMade: (colour: string, size: string) => `${colour} is not made in size ${size}`,
+    // A size a colour is not made in (24 Nov 2026): an administrator adds it to Product Master from here; anyone else
+    // is told who can.
+    notInMaster: "Not in Product Master",
+    notInMasterHint: (colour: string, size: string) => `${colour} is not in Product Master in size ${size}. Ask an administrator to add it.`,
+    addMissing: "+ Add",
+    addMissingLabel: (colour: string, size: string) => `Add ${colour} in size ${size} to Product Master`,
+    addMissingTitle: (colour: string, sizes: string) => `Adds ${colour} to Product Master in every size it is missing: ${sizes}`,
+    addingMissing: "Adding…",
+    addMissingFailed: "The size could not be added. Nothing was changed.",
     removeArticle: (article: string) => `Remove ${article}`,
     removeColour: (article: string, colour: string) => `Remove ${colour} from ${article}`,
     toggleColour: (colour: string) => `Colour ${colour}`,
     colourTotal: "Total",
-    articleTotal: (cartons: number) => `${cartons.toLocaleString("en-US")} ctn`,
-    dispatchedHint: (cartons: number) => `${cartons} dispatched`,
+    /** Order figures in dozens (24 Nov 2026), formatted by orderUnits.ts from the cartons they are stored in. */
+    articleTotal: (dozens: string) => `${dozens} dzn`,
+    dispatchedHint: (dozens: string) => `${dozens} dozen dispatched`,
 
     // The order's lines and totals.
     linesTitle: "Order",
     emptyTitle: "No articles yet",
-    emptyHint: "Choose an article above, pick its colours and type the cartons.",
+    emptyHint: "Choose an article above, pick its colours and type the dozens.",
     totalLabel: "Order total",
-    cartons: (cartons: number) => `${cartons.toLocaleString("en-US")} cartons`,
-    lineCount: (lines: number) => `${lines} line${lines === 1 ? "" : "s"}`,
+    dozens: (dozens: string) => `${dozens} dozen`,
     problemsBlock: "Fix the highlighted quantities before saving.",
 
     // Actions.
@@ -2760,9 +2788,6 @@ export const copy = {
     cancelEdit: "Discard changes",
     edit: "Edit",
     cancelOrder: "Cancel order",
-    savedTitle: (code: string) => `${code} saved`,
-    savedBody: (cartons: number) => `${cartons.toLocaleString("en-US")} cartons ordered.`,
-    editedTitle: (code: string) => `${code} changed`,
     unchangedTitle: "Nothing to change",
     unchangedBody: "The order already says this.",
     cancelledTitle: (code: string) => `${code} cancelled`,
@@ -2836,9 +2861,15 @@ export const copy = {
   pendingOrders: {
     searchLabel: "Search by party or article",
     searchPlaceholder: "Search party or article",
+    // The page's UI/UX pass (owner, 24 Nov 2026).
+    searchClear: "Clear search",
+    searchShortcut: "Press / to search",
+    heroLabel: "Total pending",
+    heroValue: (dozens: string) => `${dozens} dozen`,
+    percentDispatched: (percent: number) => `${percent}% dispatched`,
+    allDispatched: "All dispatched",
     filterLabel: "Show",
     filters: { OUTSTANDING: "Outstanding", DISPATCHED: "Fully dispatched", ALL: "All" },
-    totalPending: (cartons: number) => `${cartons.toLocaleString("en-US")} cartons pending`,
     partyCount: (parties: number) => `${parties} part${parties === 1 ? "y" : "ies"}`,
     expand: (party: string) => `Show ${party}'s products`,
     collapse: (party: string) => `Hide ${party}'s products`,
@@ -2861,13 +2892,13 @@ export const copy = {
     emptySearchHint: "Try another party or article, or show all orders.",
     enterOrders: "Enter an order",
     dispatchedOf: (dispatched: string, ordered: string) => `${dispatched} of ${ordered} dispatched`,
-    cartonsPending: "cartons pending",
+    dozensPending: "dozen pending",
     pendingShort: "pending",
     total: "Total",
-    matrixLabel: (article: string) => `${article} pending cartons by size and colour`,
+    matrixLabel: (article: string) => `${article} pending dozens by size and colour`,
     notOrdered: (colour: string, size: string) => `${colour} ${size} not ordered`,
-    cellFigures: (ordered: number, dispatched: number) => `Ord ${ordered} · Sent ${dispatched}`,
-    cellSummary: (article: string, colour: string, size: string, pending: number, ordered: number, dispatched: number) =>
+    cellFigures: (ordered: string, dispatched: string) => `Ord ${ordered} · Sent ${dispatched}`,
+    cellSummary: (article: string, colour: string, size: string, pending: string, ordered: string, dispatched: string) =>
       `${article} ${colour} ${size}: ${pending} pending of ${ordered} ordered, ${dispatched} dispatched`,
   },
 
@@ -3702,8 +3733,9 @@ export const copy = {
       billing: "Billing",
       system: "System",
     },
-    /** The button beside the logo on every page but the Dashboard (PageHeader). */
-    backToDashboard: "Dashboard",
+    /** The button beside the logo on every page but the Dashboard (PageHeader): a small lead line over the
+        destination, and the whole phrase as the button's name. */
+    backToDashboard: { lead: "Back to", target: "Dashboard", label: "Back to Dashboard" },
     items: {
       dashboard: { label: "Business Overview", line: "KPIs and live activity" },
       workspace: { label: "Workspace", line: "Tasks, messages and activity" },

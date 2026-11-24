@@ -76,6 +76,8 @@ const placeList = (field: HTMLElement, wanted: number, maxHeight: number): React
     width: width / zoom,
     maxHeight: Math.min(maxHeight, ((below ? spaceBelow : spaceAbove) - 8) / zoom),
     zIndex: 9999,
+    // Origin-aware: a page that animates the list opening (Enter Orders) grows it out of its field, down or up.
+    transformOrigin: below ? "top center" : "bottom center",
   };
 };
 

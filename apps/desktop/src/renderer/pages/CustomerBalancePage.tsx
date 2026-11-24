@@ -3,11 +3,13 @@ import type { AppRoute } from "../app/routes";
 import { useDesktopApi } from "../hooks/useDesktopApi";
 import type { PartyGroup } from "../types/desktopApi";
 import { copy } from "../config/copy";
-import { formatDate, toIsoDate } from "../utils/dates";
+import { formatDate } from "../utils/dates";
 import { useDataChanged } from "../hooks/useDataChanged";
+import { useTodayFollowingDate } from "../hooks/useTodayFollowingDate";
 import { DATA_KIND } from "../../shared/dataChange";
 
-const MONEY_CHANGES = [DATA_KIND.BILLING, DATA_KIND.CASH];
+// Party changes too: a customer added or renamed on another computer shows without a refresh (24 Nov 2026).
+const MONEY_CHANGES = [DATA_KIND.BILLING, DATA_KIND.CASH, DATA_KIND.PARTIES];
 
 interface CustomerBalanceRow {
   partyId: string;
@@ -28,7 +30,8 @@ export const CustomerBalancePage: React.FC<{ onNavigate: (route: AppRoute) => vo
 
   const [rows,        setRows]        = useState<CustomerBalanceRow[]>([]);
   const [groups,      setGroups]      = useState<PartyGroup[]>([]);
-  const [asOfDate,    setAsOfDate]    = useState(toIsoDate());
+  // Follows today until another day is picked, so a page left open overnight still shows today (24 Nov 2026).
+  const [asOfDate,    setAsOfDate]    = useTodayFollowingDate();
   const [groupFilter, setGroupFilter] = useState("");   // "" = all
   const [search,      setSearch]      = useState("");
   const [loading,     setLoading]     = useState(false);

@@ -5,7 +5,7 @@ import { useRequestId } from "../../hooks/useRequestId";
 import { useNotifications } from "../../state/NotificationsContext";
 import { leaseRefusalText } from "../../../shared/leaseRefusal";
 import type { CustomerOrder, CustomerOrderArticleProduct, CustomerOrderView } from "../../types/desktopApi";
-import { draftFromOrder, draftLines, draftTotal } from "./orderDraft";
+import { draftFromOrder, draftLines } from "./orderDraft";
 import { parseOrderReply, parseOrderViewReply, type Reply } from "./orderReply";
 import { useOrderDraft } from "./useOrderDraft";
 
@@ -39,6 +39,8 @@ export const useOrderEntry = (token: string) => {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  /** The order just saved here (peak-end rule, 24 Nov 2026): its page opens with a "saved" banner and the next step. */
+  const [savedOrderId, setSavedOrderId] = useState<string | null>(null);
 
   const read = useCallback(
     async (orderNumber: number | null): Promise<CustomerOrderView | null> => {
@@ -54,6 +56,7 @@ export const useOrderEntry = (token: string) => {
   const { reset } = entry;
   const startNew = useCallback(async () => {
     setLoading(true);
+    setSavedOrderId(null);
     request.renew();
     const view = await read(null);
     if (view) setNeighbours({ previousNumber: view.latestNumber, nextNumber: null, latestNumber: view.latestNumber });
@@ -69,6 +72,7 @@ export const useOrderEntry = (token: string) => {
 
   const goTo = async (orderNumber: number) => {
     setBusy(true);
+    setSavedOrderId(null);
     const view = await read(orderNumber);
     setBusy(false);
     if (!view) return;
@@ -79,6 +83,7 @@ export const useOrderEntry = (token: string) => {
   /** The stored order back in the draft, with every article's live colours and sizes read again. */
   const startEdit = async () => {
     if (!order) return;
+    setSavedOrderId(null);
     setBusy(true);
     const articles = [...new Set(order.lines.map((line) => line.article))];
     const products = new Map<string, CustomerOrderArticleProduct[]>();
@@ -106,7 +111,7 @@ export const useOrderEntry = (token: string) => {
     const requestId = request.start();
     if (requestId === null) return;
     const reply = await write(() => api.saveCustomerOrder({ ...body(), requestId }, { token }));
-    if (reply.accepted) { request.settle({ renew: true }); push("success", words.savedTitle(reply.value.code), words.savedBody(draftTotal(entry.draft))); }
+    if (reply.accepted) { request.settle({ renew: true }); setSavedOrderId(reply.value.id); }
     else { request.unanswered(); push("error", copy.toast.saveFailed, reply.reason); }
   };
 
@@ -116,7 +121,8 @@ export const useOrderEntry = (token: string) => {
     const reply = await write(() => api.editCustomerOrder({ ...body(), orderId: order.id, revision: order.revision }, { token }));
     if (!reply.accepted) push("error", copy.toast.saveFailed, reply.reason);
     else if (reply.value.revision === before) push("info", words.unchangedTitle, words.unchangedBody);
-    else push("success", words.editedTitle(reply.value.code), words.savedBody(reply.value.totals.ordered));
+    // Saved: the order's page says so in its banner (OrderDetails), so no toast repeats it.
+    else setSavedOrderId(reply.value.id);
   };
 
   /** Resolves with a reason to keep the dialog open and show it, or null when the order was cancelled. */
@@ -129,7 +135,8 @@ export const useOrderEntry = (token: string) => {
     return null;
   };
 
-  return { mode, order, neighbours, loading, loadError, busy, entry, startNew, goTo, startEdit, cancelEdit: () => setMode("view"), save, saveEdit, cancelOrder };
+  const justSaved = order !== null && order.id === savedOrderId;
+  return { mode, order, neighbours, loading, loadError, busy, justSaved, entry, startNew, goTo, startEdit, cancelEdit: () => setMode("view"), save, saveEdit, cancelOrder };
 };
 
 export type OrderEntryState = ReturnType<typeof useOrderEntry>;

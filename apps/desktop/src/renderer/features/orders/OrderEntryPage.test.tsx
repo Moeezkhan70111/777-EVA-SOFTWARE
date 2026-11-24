@@ -66,15 +66,16 @@ describe("Enter Orders", () => {
     await press(() => screen.findByRole("button", { name: "Colour RED" }));
     await press(() => screen.findByRole("button", { name: "Colour BLUE" }));
 
-    const grid = await screen.findByLabelText("SK6 cartons by size and colour");
-    expect(within(grid).getByLabelText("BLUE is not made in size 7")).toBeTruthy();
-    expect(within(grid).queryByRole("textbox", { name: "SK6 BLUE size 7, cartons" })).toBeNull();
+    const grid = await screen.findByLabelText("SK6 dozens by size and colour");
+    expect(within(grid).getByLabelText("BLUE is not in Product Master in size 7. Ask an administrator to add it.")).toHaveTextContent("Not in Product Master");
+    expect(within(grid).queryByRole("textbox", { name: "SK6 BLUE size 7, dozens" })).toBeNull();
 
-    type("SK6 RED size 6, cartons", "10");
-    type("SK6 RED size 7, cartons", "20");
-    type("SK6 BLUE size 6, cartons", "15");
-    expect(screen.getByText("45 ctn")).toBeTruthy();
-    expect(screen.getByText("45 cartons")).toBeTruthy();
+    // Typed in dozens (24 Nov 2026); sent as cartons, 1 dozen = 2.
+    type("SK6 RED size 6, dozens", "10");
+    type("SK6 RED size 7, dozens", "20.5");
+    type("SK6 BLUE size 6, dozens", "15");
+    expect(screen.getByText("45.5 dzn")).toBeTruthy();
+    expect(screen.getByText("45.5 dozen")).toBeTruthy();
 
     await press(() => screen.findByRole("button", { name: "Save order" }));
     expect(api.saveCustomerOrder).toHaveBeenCalledTimes(1);
@@ -83,20 +84,23 @@ describe("Enter Orders", () => {
     expect(sent.requestId).toMatch(/^[0-9a-f-]{36}$/);
     const byProduct = (a: { productVariantId: string }, b: { productVariantId: string }) => a.productVariantId.localeCompare(b.productVariantId);
     expect([...(sent.lines as Array<{ productVariantId: string }>)].sort(byProduct)).toEqual([
-      { productVariantId: "blue-6", quantity: 15 },
-      { productVariantId: "red-6", quantity: 10 },
-      { productVariantId: "red-7", quantity: 20 },
+      { productVariantId: "blue-6", quantity: 30 },
+      { productVariantId: "red-6", quantity: 20 },
+      { productVariantId: "red-7", quantity: 41 },
     ]);
     expect(await screen.findByText("ORD-000001 · BEHRAAM SHOES")).toBeTruthy();
+    // The end of the task (peak-end, 24 Nov 2026): the order says it was saved, in dozens, and offers the next one once.
+    expect(screen.getByRole("status")).toHaveTextContent("ORD-000001 saved — 45.5 dozen for BEHRAAM SHOES");
+    expect(screen.getAllByRole("button", { name: "+ New order" })).toHaveLength(1);
   });
 
-  it("will not save a quantity that is not a whole number of cartons", async () => {
+  it("will not save a quantity that is not whole or half dozens", async () => {
     const api = createFakeBackend();
     render(<NotificationsProvider><OrderEntryPage token="token-1" canCancel={false} isAdmin={false} /></NotificationsProvider>);
     await pick("Party", /BEHRAAM SHOES/);
     await pick("Article", /SK6/);
     await press(() => screen.findByRole("button", { name: "Colour RED" }));
-    type("SK6 RED size 6, cartons", "2.5");
+    type("SK6 RED size 6, dozens", "2.25");
     expect(screen.getByRole("alert").textContent).toMatch(/Fix the highlighted quantities/);
     expect(screen.getByRole("button", { name: "Save order" })).toBeDisabled();
     expect(api.saveCustomerOrder).not.toHaveBeenCalled();
@@ -118,8 +122,60 @@ it("lets an administrator add a new colour to the article, and chooses it at onc
     const green = await screen.findByRole("button", { name: "Colour GREEN" });
     expect(green).toHaveAttribute("aria-pressed", "true");
     expect(addArticleColor).toHaveBeenCalledWith({ article: "SK6", color: "green" });
-    type("SK6 GREEN size 6, cartons", "7");
-    expect(screen.getByText("7 cartons")).toBeTruthy();
+    type("SK6 GREEN size 6, dozens", "7");
+    expect(screen.getByText("7 dozen")).toBeTruthy();
+  });
+
+  // Owner, 24 Nov 2026 (the page's UI/UX pass): the picker offers only articles not yet on the order, the article just
+  // added hands the focus to its first colour, and the optional note waits behind "+ Add a note".
+  it("hides an added article from the picker, focuses its first colour, and keeps the note behind a button until wanted", async () => {
+    const api = createFakeBackend();
+    Object.assign(api, { listUniqueArticles: vi.fn(async () => ["SK6", "SK9"]) });
+    render(<NotificationsProvider><OrderEntryPage token="token-1" canCancel isAdmin={false} /></NotificationsProvider>);
+    await pick("Party", /BEHRAAM SHOES/);
+
+    expect(screen.queryByRole("textbox", { name: "Note" })).toBeNull();
+    await press(() => screen.findByRole("button", { name: "+ Add a note" }));
+    expect(screen.getByRole("textbox", { name: "Note" })).toHaveFocus();
+
+    await pick("Article", /SK6/);
+    // Colours are listed A to Z, so the first is BLUE.
+    const first = await screen.findByRole("button", { name: "Colour BLUE" });
+    await waitFor(() => expect(first).toHaveFocus());
+
+    await userEvent.click(screen.getByRole("combobox", { name: "Article" }));
+    expect(await screen.findByRole("option", { name: /SK9/ })).toBeTruthy();
+    expect(screen.queryByRole("option", { name: /SK6/ })).toBeNull();
+  });
+
+  // Owner, 24 Nov 2026: orders are for customers only; a supplier is not offered.
+  it("offers customers only in the party list", async () => {
+    const api = createFakeBackend();
+    const supplier = { ...PARTY, id: "party-2", partyName: "AI TRADERS", partyType: "SUPPLIER" };
+    Object.assign(api, { listParties: vi.fn(async () => ({ rows: [PARTY, supplier], total: 2, page: 1, pageSize: 1000 })) });
+    render(<NotificationsProvider><OrderEntryPage token="token-1" canCancel isAdmin={false} /></NotificationsProvider>);
+    await userEvent.click(await screen.findByRole("combobox", { name: "Party" }));
+    expect(await screen.findByRole("option", { name: /BEHRAAM SHOES/ })).toBeTruthy();
+    expect(screen.queryByRole("option", { name: /AI TRADERS/ })).toBeNull();
+  });
+
+  // Owner, 24 Nov 2026: a size a colour is not made in is no dead end — an administrator adds it, and types the dozens.
+  it("lets an administrator add a colour's missing size from its cell, then type its dozens", async () => {
+    const api = createFakeBackend();
+    const withBlue7 = [...PRODUCTS, { productVariantId: "blue-7", size: "7", color: "BLUE" }];
+    const addArticleColor = vi.fn(async (_input: { article: string; color: string }) => ({ accepted: true, color: "BLUE", added: 1, existing: 1 }));
+    Object.assign(api, {
+      addArticleColor,
+      getCustomerOrderArticle: vi.fn().mockResolvedValueOnce({ accepted: true, products: PRODUCTS }).mockResolvedValue({ accepted: true, products: withBlue7 }),
+    });
+    render(<NotificationsProvider><OrderEntryPage token="token-1" canCancel isAdmin /></NotificationsProvider>);
+    await pick("Party", /BEHRAAM SHOES/);
+    await pick("Article", /SK6/);
+    await press(() => screen.findByRole("button", { name: "Colour BLUE" }));
+    await press(() => screen.findByRole("button", { name: "Add BLUE in size 7 to Product Master" }));
+    expect(addArticleColor).toHaveBeenCalledWith({ article: "SK6", color: "BLUE" });
+    const box = await screen.findByRole("textbox", { name: "SK6 BLUE size 7, dozens" });
+    await waitFor(() => expect(box).toHaveFocus());
   });
 
   it("offers no new colour to anyone but an administrator", async () => {

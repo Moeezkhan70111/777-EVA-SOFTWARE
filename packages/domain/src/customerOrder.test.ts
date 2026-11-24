@@ -5,6 +5,8 @@ import {
   allocateFifo,
   formatCustomerOrderCode,
   orderProgressOf,
+  orderDozensProblem,
+  orderDozensToCartons,
   orderQuantityProblem,
   pendingOrderQuantity,
 } from "./customerOrder.js";
@@ -34,6 +36,21 @@ test("a typed quantity must be a whole number of cartons above 0; an empty box i
   assert.ok(orderQuantityProblem("2.5"));
   assert.ok(orderQuantityProblem("abc"));
   assert.ok(orderQuantityProblem("100001"));
+});
+
+// Owner, 24 Nov 2026: orders are typed in dozens and stored in cartons (1 dozen = 2 cartons).
+test("an order box takes whole or half dozens above 0, and stores them as cartons", () => {
+  assert.equal(orderDozensProblem(""), null);
+  assert.equal(orderDozensProblem(" 12 "), null);
+  assert.equal(orderDozensProblem("2.5"), null);
+  assert.equal(orderDozensToCartons("2.5"), 5);
+  assert.equal(orderDozensToCartons(" 12 "), 24);
+  assert.match(orderDozensProblem("2.25") ?? "", /whole or half dozens/);
+  assert.ok(orderDozensProblem("0"));
+  assert.ok(orderDozensProblem("-3"));
+  assert.ok(orderDozensProblem("abc"));
+  assert.equal(orderDozensProblem("50000"), null);
+  assert.match(orderDozensProblem("50000.5") ?? "", /under 50,000 dozen/);
 });
 
 test("FIFO: the oldest order line is covered first, each up to what it still owes", () => {

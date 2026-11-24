@@ -44,3 +44,8 @@ export const DAILY_PRODUCTION_ARTWORK_URL = "./assets/production/daily-productio
  * Daily Production; it carries its own ground, so the card draws no cloud.
  */
 export const PENDING_ORDERS_ARTWORK_URL = "./assets/orders/pending-orders.svg";
+/**
+ * The Enter Orders card (owner, 24 Nov 2026): an order sheet being written line by line, a pen on the line being typed,
+ * two 777 cartons and a blue "+" for a new order. A vector (SVG) drawn like Pending Orders, carrying its own ground.
+ */
+export const ENTER_ORDERS_ARTWORK_URL = "./assets/orders/enter-orders.svg";

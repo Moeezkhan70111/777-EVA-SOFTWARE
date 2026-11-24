@@ -16,29 +16,27 @@ describe("PageHeader", () => {
     expect(parts[2]).toContainElement(within(header).getByRole("button", { name: "Bell" }));
   });
 
-  // Owner, 15 Nov 2026: a Dashboard card's page shows its card's picture beside the title, so it is known at a glance.
-  it("shows a page's picture beside its title when it has one, as decoration, and none otherwise", () => {
-    const { container, unmount } = render(<PageHeader title="Upper Stock" artwork="./assets/stock/upper-stock.png" />);
-    const art = container.querySelector(".page-head-art");
-    expect(art).toHaveAttribute("src", "./assets/stock/upper-stock.png");
-    expect(art).toHaveAttribute("alt", "");
-    expect(screen.queryByRole("img", { name: /upper/i })).not.toBeInTheDocument();
-    unmount();
-    const plain = render(<PageHeader title="Current Stock" />);
-    expect(plain.container.querySelector(".page-head-art")).toBeNull();
+  // Owner, 23 Nov 2026: no picture beside the title (it had been the Dashboard card's, since 15 Nov). The logo is the
+  // header's only image.
+  it("draws no picture beside the title", () => {
+    render(<PageHeader title="Upper Stock" onDashboard={() => undefined} />);
+    expect(within(screen.getByRole("banner")).getAllByRole("img")).toHaveLength(1);
   });
 
   // Owner, 14 Nov 2026: a way back to the Dashboard on every page but the Dashboard itself.
-  it("offers a Dashboard button beside the logo when it is given one, and none otherwise", () => {
+  // Owner, 23 Nov 2026: it must say where it goes — "Back to Dashboard", with a back arrow.
+  it("offers a Back to Dashboard button beside the logo when it is given one, and none otherwise", () => {
     const onDashboard = vi.fn();
     const { unmount } = render(<PageHeader title="Carton Stock" onDashboard={onDashboard} />);
     const header = screen.getByRole("banner");
-    expect(header.children[0]).toContainElement(within(header).getByRole("button", { name: "Dashboard" }));
-    fireEvent.click(within(header).getByRole("button", { name: "Dashboard" }));
+    const back = within(header).getByRole("button", { name: "Back to Dashboard" });
+    expect(header.children[0]).toContainElement(back);
+    expect(back).toHaveTextContent("Back to");
+    fireEvent.click(back);
     expect(onDashboard).toHaveBeenCalledTimes(1);
     unmount();
     render(<PageHeader title="Dashboard" />);
-    expect(screen.queryByRole("button", { name: "Dashboard" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Back to Dashboard" })).toBeNull();
   });
 
   it("keeps the right-hand column when there is nothing to put in it, so the title stays centred", () => {

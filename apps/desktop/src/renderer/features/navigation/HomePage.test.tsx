@@ -151,14 +151,25 @@ describe("HomePage — the Dashboard's own cards", () => {
     expect(screen.getByRole("status")).toHaveTextContent("Your pages are in the sidebar");
   });
 
-  it("shows an administrator Carton Stock first, then both stock cards, Daily Production and Pending Orders, and Carton Stock opens its page", () => {
+  it("shows an administrator Carton Stock first, then both stock cards, Daily Production, Enter Orders and Pending Orders, and Carton Stock opens its page", () => {
     const onNavigate = vi.fn();
     render(<HomePage user={user([], "ADMIN")} onNavigate={onNavigate} />);
-    expect(cardNames()).toEqual(["nav-tile-carton-stock", "nav-tile-upper-stock", "nav-tile-dana-stock", "nav-tile-daily-production", "nav-tile-pending-orders"]);
+    expect(cardNames()).toEqual(["nav-tile-carton-stock", "nav-tile-upper-stock", "nav-tile-dana-stock", "nav-tile-daily-production", "nav-tile-orders-entry", "nav-tile-pending-orders"]);
     const card = screen.getByRole("button", { name: "Carton Stock" });
     expect(card.querySelector("img")).toHaveAttribute("src", "./assets/stock/carton-stock.png");
     fireEvent.click(card);
     expect(onNavigate).toHaveBeenLastCalledWith("carton-stock");
+  });
+
+  // Owner, 24 Nov 2026: Enter Orders is a Dashboard card too, beside Pending Orders.
+  it("shows the Enter Orders card, with its own picture, to someone given Enter Orders, and it opens the page", () => {
+    const onNavigate = vi.fn();
+    render(<HomePage user={user(["orders-enter"])} onNavigate={onNavigate} />);
+    expect(cardNames()).toEqual(["nav-tile-orders-entry"]);
+    const card = screen.getByRole("button", { name: "Enter Orders" });
+    expect(card.querySelector("img")).toHaveAttribute("src", "./assets/orders/enter-orders.svg");
+    fireEvent.click(card);
+    expect(onNavigate).toHaveBeenLastCalledWith("orders-entry");
   });
 
   it("shows the Pending Orders card, with its own picture, to someone given Pending Orders, and it opens the page", () => {

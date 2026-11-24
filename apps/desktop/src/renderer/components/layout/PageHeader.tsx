@@ -15,8 +15,10 @@ import { copy } from "../../config/copy";
 // so the title never moves.
 
 //
-// THE WAY BACK (owner, 14 Nov 2026): every page but the Dashboard has a Dashboard button beside the logo, so the
-// Dashboard is one press away wherever the sidebar is (or is not). It stays when the logo steps aside.
+// THE WAY BACK (owner, 14 Nov 2026): every page but the Dashboard has a "Back to Dashboard" button beside the logo,
+// set apart from it by a thin rule, so the Dashboard is one press away wherever the sidebar is (or is not). It stays
+// when the logo steps aside. A left arrow, not a Dashboard picture, so it reads as "go back" at a glance; narrow
+// screens show the arrow alone and the button keeps its name (owner, 23 Nov 2026).
 
 interface PageHeaderProps {
   title: string;
@@ -24,32 +26,29 @@ interface PageHeaderProps {
   actions?: React.ReactNode;
   /** Goes back to the Dashboard. Absent on the Dashboard itself. */
   onDashboard?: () => void;
-  /** The Dashboard card's picture, beside the title of a page opened from one (pageIdentity.ts). Decorative. */
-  artwork?: string;
 }
 
-const DashboardIcon = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-    <rect x="3.5" y="3.5" width="7" height="7" rx="1.6" />
-    <rect x="13.5" y="3.5" width="7" height="7" rx="1.6" />
-    <rect x="3.5" y="13.5" width="7" height="7" rx="1.6" />
-    <rect x="13.5" y="13.5" width="7" height="7" rx="1.6" />
+const BackArrowIcon = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d="M19 12H5M11 6l-6 6 6 6" />
   </svg>
 );
 
-export const PageHeader: React.FC<PageHeaderProps> = ({ title, actions, onDashboard, artwork }) => (
+export const PageHeader: React.FC<PageHeaderProps> = ({ title, actions, onDashboard }) => (
   <header className="page-head">
     <div className="page-head-start">
       <img className="page-head-logo" src={BRAND_LOGO_URL} alt={copy.app.brandLine} />
       {onDashboard ? (
-        <button type="button" className="page-head-home" onClick={onDashboard}>
-          <span className="page-head-home-icon"><DashboardIcon /></span>
-          {copy.nav.backToDashboard}
+        <button type="button" className="page-head-home" aria-label={copy.nav.backToDashboard.label} onClick={onDashboard}>
+          <span className="page-head-home-icon"><BackArrowIcon /></span>
+          <span className="page-head-home-text" aria-hidden="true">
+            <span className="page-head-home-lead">{copy.nav.backToDashboard.lead}</span>
+            <span className="page-head-home-target">{copy.nav.backToDashboard.target}</span>
+          </span>
         </button>
       ) : null}
     </div>
     <div className="page-head-mid">
-      {artwork ? <img className="page-head-art" src={artwork} alt="" aria-hidden="true" /> : null}
       <h1 className="page-head-title">{title}</h1>
     </div>
     <div className="page-head-actions">{actions}</div>

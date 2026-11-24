@@ -38,9 +38,11 @@ interface SizeColourGridProps {
   renderColourAction?: (colour: string) => React.ReactNode;
   /** A last row under the sizes, e.g. each colour's total (Enter Orders). Its cells are the page's own <td>s. */
   footer?: { label: string; renderCell: (colour: string) => React.ReactNode };
+  /** How a colour's name reads in its heading, e.g. in Urdu (ColourName, the order pages). The stored English by default. */
+  renderColourName?: (colour: string) => React.ReactNode;
 }
 
-export const SizeColourGrid: React.FC<SizeColourGridProps> = ({ label, sizeHeader, sizes, colours, onEnter, renderCell, renderColourAction, footer }) => {
+export const SizeColourGrid: React.FC<SizeColourGridProps> = ({ label, sizeHeader, sizes, colours, onEnter, renderCell, renderColourAction, footer, renderColourName }) => {
   const tableRef = useRef<HTMLTableElement>(null);
 
   const keyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
@@ -60,7 +62,7 @@ export const SizeColourGrid: React.FC<SizeColourGridProps> = ({ label, sizeHeade
             <th scope="col" className="sa-grid-size">{sizeHeader}</th>
             {colours.map((colour) => (
               <th scope="col" key={colour} className="sa-grid-colour">
-                <span className="sa-grid-colour-name"><ColorSwatch color={colour} />{colour}{renderColourAction?.(colour)}</span>
+                <span className="sa-grid-colour-name"><ColorSwatch color={colour} />{renderColourName ? renderColourName(colour) : colour}{renderColourAction?.(colour)}</span>
               </th>
             ))}
           </tr>

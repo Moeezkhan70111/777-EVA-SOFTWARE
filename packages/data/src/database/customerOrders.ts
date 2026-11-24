@@ -22,6 +22,7 @@
 
 import crypto from "node:crypto";
 import {
+  isCustomerOrderPartyType,
   CUSTOMER_ORDER_LINE_STATUS,
   CUSTOMER_ORDER_MAX_LINES,
   CUSTOMER_ORDER_MAX_QUANTITY,
@@ -254,11 +255,17 @@ export const customerOrderMethods = {
     return held;
   },
 
-  /** @internal The party must be in Party Master and active, as a gatepass's must. */
+  /**
+   * @internal The party must be in Party Master, active, and a customer (CUSTOMER_ORDER_PARTY_TYPES, 24 Nov 2026), as a
+   * gatepass's must. Called for a new order and for an edit that changes the party, so an older order keeps its own.
+   */
   requireActiveOrderParty(this: SqliteDatabase, partyId: string): void {
-    const party = this.db.prepare("SELECT party_name, status FROM parties WHERE id = ? AND deleted_at IS NULL").get(partyId) as Row | undefined;
+    const party = this.db.prepare("SELECT party_name, status, party_type FROM parties WHERE id = ? AND deleted_at IS NULL").get(partyId) as Row | undefined;
     if (!party) throw new CustomerOrderRefused("That party is not in the Party Master. Choose a party from the list.");
     if (text(party.status || "ACTIVE") !== "ACTIVE") throw new CustomerOrderRefused(`${text(party.party_name)} is inactive. Only active parties can be given an order.`);
+    if (!isCustomerOrderPartyType(text(party.party_type))) {
+      throw new CustomerOrderRefused(`${text(party.party_name)} is not a customer. An order can be entered for customers only.`);
+    }
   },
 
   /** @internal Every line a live product with a whole number of cartons. Duplicates are refused. */

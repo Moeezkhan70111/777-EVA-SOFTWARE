@@ -1,0 +1,97 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 654 364" font-family="Inter, 'Segoe UI', Arial, sans-serif">
+  <!-- Enter Orders card artwork (24 Nov 2026): a party's order sheet being written, its lines filled in by article, colour
+       and carton count, a pen on the line being typed, two 777 cartons the order is for, and a blue "+" for a new order.
+       Drawn like Pending Orders, in the sky cards' palette; it carries its own soft ground, so the card draws no cloud. -->
+  <defs>
+    <linearGradient id="eo-sheet" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#eef4fc"/>
+    </linearGradient>
+    <linearGradient id="eo-box-top" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#e6edf6"/>
+    </linearGradient>
+    <linearGradient id="eo-blue" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#2f8cf5"/>
+      <stop offset="1" stop-color="#0b6ad8"/>
+    </linearGradient>
+    <linearGradient id="eo-pen" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#1d3769"/>
+      <stop offset="1" stop-color="#2f5aa8"/>
+    </linearGradient>
+    <filter id="eo-shadow" x="-20%" y="-20%" width="140%" height="150%">
+      <feDropShadow dx="0" dy="10" stdDeviation="10" flood-color="#1d3769" flood-opacity="0.16"/>
+    </filter>
+  </defs>
+
+  <!-- Ground -->
+  <ellipse cx="330" cy="330" rx="250" ry="22" fill="#dce9f8"/>
+
+  <!-- The order sheet on its clipboard -->
+  <g filter="url(#eo-shadow)">
+    <rect x="150" y="46" width="230" height="276" rx="18" fill="#1d3769"/>
+    <rect x="162" y="60" width="206" height="252" rx="10" fill="url(#eo-sheet)"/>
+  </g>
+  <rect x="222" y="34" width="86" height="30" rx="9" fill="#2f5aa8"/>
+  <rect x="242" y="26" width="46" height="16" rx="8" fill="#2f5aa8"/>
+  <circle cx="265" cy="34" r="4" fill="#dce9f8"/>
+
+  <!-- Heading: the party, and the order's date -->
+  <rect x="182" y="84" width="118" height="10" rx="5" fill="#1d3769"/>
+  <rect x="182" y="102" width="72" height="7" rx="3.5" fill="#a9bfdc"/>
+
+  <!-- Lines written so far: an article, its colour swatch, the cartons -->
+  <g>
+    <rect x="182" y="133" width="14" height="14" rx="4" fill="#2f5aa8"/>
+    <rect x="206" y="135" width="76" height="9" rx="4.5" fill="#c7d6ea"/>
+    <rect x="312" y="131" width="38" height="17" rx="6" fill="#ffffff" stroke="#c7d6ea" stroke-width="2"/>
+    <rect x="320" y="137" width="22" height="5" rx="2.5" fill="#1d3769"/>
+
+    <rect x="182" y="173" width="14" height="14" rx="4" fill="#c2410c"/>
+    <rect x="206" y="175" width="62" height="9" rx="4.5" fill="#c7d6ea"/>
+    <rect x="312" y="171" width="38" height="17" rx="6" fill="#ffffff" stroke="#c7d6ea" stroke-width="2"/>
+    <rect x="320" y="177" width="16" height="5" rx="2.5" fill="#1d3769"/>
+
+    <!-- The line being typed: its box in the blue -->
+    <rect x="182" y="213" width="14" height="14" rx="4" fill="#111827"/>
+    <rect x="206" y="215" width="84" height="9" rx="4.5" fill="#1d3769"/>
+    <rect x="312" y="209" width="38" height="21" rx="7" fill="#eaf3ff" stroke="#0b6ad8" stroke-width="2.5"/>
+    <rect x="324" y="214" width="3" height="11" rx="1.5" fill="#0b6ad8"/>
+
+    <rect x="182" y="253" width="14" height="14" rx="4" fill="none" stroke="#c7d6ea" stroke-width="2" stroke-dasharray="4 3"/>
+    <rect x="206" y="255" width="70" height="9" rx="4.5" fill="#e3eaf3"/>
+    <rect x="312" y="251" width="38" height="17" rx="6" fill="none" stroke="#c7d6ea" stroke-width="2" stroke-dasharray="4 3"/>
+  </g>
+  <rect x="182" y="290" width="40" height="7" rx="3.5" fill="#a9bfdc"/>
+  <rect x="290" y="290" width="58" height="7" rx="3.5" fill="#1d3769"/>
+
+  <!-- The pen, writing on the line being typed -->
+  <g filter="url(#eo-shadow)" transform="rotate(-38 352 226)">
+    <rect x="356" y="219" width="124" height="16" rx="8" fill="url(#eo-pen)"/>
+    <rect x="452" y="219" width="22" height="16" rx="4" fill="#5fa3fb"/>
+    <path d="M356 219 L336 227 L356 235 Z" fill="#f4d9a8"/>
+    <path d="M343 224.5 L336 227 L343 229.5 Z" fill="#1d3769"/>
+  </g>
+
+  <!-- Two cartons, what the order is for -->
+  <g filter="url(#eo-shadow)">
+    <path d="M412 238 L482 224 L546 238 L476 254 Z" fill="url(#eo-box-top)"/>
+    <path d="M412 238 L476 254 L476 322 L412 306 Z" fill="#f4f7fb"/>
+    <path d="M476 254 L546 238 L546 306 L476 322 Z" fill="#e3eaf3"/>
+    <path d="M444 231 L514 245" stroke="#cdd8e6" stroke-width="5"/>
+    <text x="424" y="296" font-size="24" font-weight="900" font-style="italic" fill="#111827" transform="skewY(14) translate(0 -108)">777</text>
+    <text x="427" y="308" font-size="10" font-weight="800" letter-spacing="1" fill="#1e88e5" transform="skewY(14) translate(0 -108)">SEVEN</text>
+  </g>
+
+  <!-- A new order: the blue plus -->
+  <g filter="url(#eo-shadow)">
+    <circle cx="540" cy="96" r="36" fill="url(#eo-blue)"/>
+    <path d="M540 78 V114 M522 96 H558" stroke="#ffffff" stroke-width="7" stroke-linecap="round"/>
+  </g>
+
+  <!-- Sparks -->
+  <path d="M110 120 L126 98" stroke="#5fa3fb" stroke-width="5" stroke-linecap="round"/>
+  <path d="M100 150 L128 140" stroke="#5fa3fb" stroke-width="5" stroke-linecap="round"/>
+  <circle cx="598" cy="176" r="6" fill="#9cc7ff"/>
+  <circle cx="104" cy="250" r="5" fill="#9cc7ff"/>
+</svg>

@@ -1,8 +1,10 @@
 import React, { useState } from "react";
+import { NavArrowIcon } from "../../components/shared/NavArrowIcon";
 import { copy } from "../../config/copy";
 
-// ‹ Prev · [ Go to # ] Go · Next › — walks the saved bills by number; › past the last one
-// shows the New bill state (where a gatepass number starts the next bill).
+// ‹ [ No. # ] › — walks the saved bills by number; › past the last one shows the New bill state (where a gatepass
+// number starts the next bill). The Gatepass pager's compact look (owner, 24 Nov 2026, Hick's law): icon arrows, and
+// Go only once a number has been typed. Enter goes as always.
 
 interface VoucherNavigatorProps {
   canPrev: boolean;
@@ -24,9 +26,9 @@ export const VoucherNavigator: React.FC<VoucherNavigatorProps> = ({ canPrev, can
   };
 
   return (
-    <div className="gp-nav" role="group" aria-label={copy.billing.title}>
+    <div className="gp-nav gp-nav--compact" role="group" aria-label={copy.billing.title}>
       <button type="button" className="gp-nav-btn" aria-label={copy.billing.previous} title={copy.billing.previous} disabled={busy || !canPrev} onClick={onPrev} data-testid="voucher-prev">
-        ◄ Previous
+        <NavArrowIcon direction="left" />
       </button>
       <span className="gp-nav-field">
         <span className="gp-nav-prefix" aria-hidden="true">No.</span>
@@ -47,11 +49,13 @@ export const VoucherNavigator: React.FC<VoucherNavigatorProps> = ({ canPrev, can
           data-testid="voucher-number-input"
         />
       </span>
+      {text.trim() ? (
+        <button type="button" className="btn btn-secondary gp-nav-load" disabled={busy} onClick={go} data-testid="voucher-go">
+          {copy.billing.go}
+        </button>
+      ) : null}
       <button type="button" className="gp-nav-btn" aria-label={copy.billing.next} title={copy.billing.next} disabled={busy || !canNext} onClick={onNext} data-testid="voucher-next">
-        Next ►
-      </button>
-      <button type="button" className="btn btn-secondary gp-nav-load" disabled={busy || !text.trim()} onClick={go} data-testid="voucher-go">
-        {copy.billing.go}
+        <NavArrowIcon direction="right" />
       </button>
     </div>
   );

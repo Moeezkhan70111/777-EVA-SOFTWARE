@@ -3,10 +3,11 @@ import type { AppRoute } from "../app/routes";
 import { useDesktopApi } from "../hooks/useDesktopApi";
 import type { CashVoucher, Party, SaleVoucher } from "../types/desktopApi";
 import { discountPerPairFromTotal } from "@erp/domain";
-import { formatDate, formatMonth, toIsoDate } from "../utils/dates";
+import { formatDate, formatMonth } from "../utils/dates";
 import { formatWholeMoney } from "../app/format";
 import { copy } from "../config/copy";
 import { useDataChanged } from "../hooks/useDataChanged";
+import { useTodayFollowingDate } from "../hooks/useTodayFollowingDate";
 import { DATA_KIND } from "../../shared/dataChange";
 import { ArchivedLedgerRow, archiveAmount } from "../features/ledgerArchive/ArchivedLedgerRow";
 import { ArchiveStrip } from "../features/ledgerArchive/ArchiveStrip";
@@ -17,6 +18,9 @@ import { useLedgerDownloads } from "../features/ledgerArchive/useLedgerDownloads
 import { archivedMatches, ledgerExportRows, mergeLedgerTimeline, summarizeArchive } from "../features/ledgerArchive/unifiedLedger";
 
 const MONEY_CHANGES = [DATA_KIND.BILLING, DATA_KIND.CASH];
+// A customer added, renamed or given a new balance limit on another computer: the list and the open ledger re-read
+// (owner, 24 Nov 2026: changes showed only after a refresh).
+const PARTY_CHANGES = [DATA_KIND.PARTIES];
 const ARCHIVED_FILTER = "ARCHIVED";
 const archiveText = copy.ledgerArchive;
 
@@ -256,12 +260,14 @@ const StatementsTab: React.FC<StatementsTabProps> = ({ entries, openingBalance, 
 
 export const CustomerLedgerPage: React.FC<CustomerLedgerPageProps> = ({ onNavigate }) => {
   const api = useDesktopApi();
-  const [parties, setParties] = useState<Party[]>([]); const [selectedPartyId, setSelectedPartyId] = useState(""); const [fromDate, setFromDate] = useState("2026-01-01"); const [toDate, setToDate] = useState(toIsoDate());
+  const [parties, setParties] = useState<Party[]>([]); const [selectedPartyId, setSelectedPartyId] = useState(""); const [fromDate, setFromDate] = useState("2026-01-01"); const [toDate, setToDate] = useTodayFollowingDate();
   const [entries, setEntries] = useState<LedgerEntry[]>([]); const [openingBalance, setOpeningBalance] = useState(0); const [closingBalance, setClosingBalance] = useState(0); const [partyName, setPartyName] = useState(""); const [balanceLimit, setBalanceLimit] = useState<number | null>(null); const [loading, setLoading] = useState(false); const [search, setSearch] = useState(""); const [typeFilter, setTypeFilter] = useState("ALL"); const [page, setPage] = useState(1); const [pageSize, setPageSize] = useState(10); const [activeTab, setActiveTab] = useState("Ledger"); const [detailVoucher, setDetailVoucher] = useState<{ voucher: CashVoucher | SaleVoucher; type: LedgerType } | null>(null);
   const [arrivals, setArrivals] = useState(0);
-  useEffect(() => { void api.listParties({ pageSize: 1000 }).then((result) => setParties(result.rows.filter((party) => party.partyType === "CUSTOMER"))); }, [api]);
+  const [partyArrivals, setPartyArrivals] = useState(0);
+  useEffect(() => { void api.listParties({ pageSize: 1000 }).then((result) => setParties(result.rows.filter((party) => party.partyType === "CUSTOMER"))); }, [api, partyArrivals]);
   useEffect(() => { if (!selectedPartyId) { setEntries([]); setPartyName(""); setOpeningBalance(0); setClosingBalance(0); setBalanceLimit(null); return; } setLoading(true); void api.getCustomerLedgerWithCash(selectedPartyId, { fromDate, toDate }).then((result) => { setEntries(result.entries as LedgerEntry[]); setPartyName(result.partyName); setOpeningBalance(result.openingBalance); setClosingBalance(result.closingBalance); setBalanceLimit(result.balanceLimit ?? null); }).catch(() => { setEntries([]); setPartyName(""); setOpeningBalance(0); setClosingBalance(0); setBalanceLimit(null); }).finally(() => setLoading(false)); }, [api, selectedPartyId, fromDate, toDate, arrivals]);
   useDataChanged(MONEY_CHANGES, () => setArrivals((seen) => seen + 1));
+  useDataChanged(PARTY_CHANGES, () => { setPartyArrivals((seen) => seen + 1); setArrivals((seen) => seen + 1); });
   useEffect(() => { setPage(1); }, [search, typeFilter, selectedPartyId, fromDate, toDate]);
   const party = parties.find((item) => item.id === selectedPartyId);
   const archive = useLedgerArchive(selectedPartyId, fromDate, toDate);

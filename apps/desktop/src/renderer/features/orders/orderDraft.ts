@@ -1,4 +1,5 @@
-import { compareSizes, orderQuantityProblem } from "@erp/domain";
+import { cartonsToDozens, compareSizes, orderDozensProblem, orderDozensToCartons } from "@erp/domain";
+import { orderDozens } from "./orderUnits";
 import type { GridSize } from "../../components/shared/SizeColourGrid";
 import type { CustomerOrder, CustomerOrderArticleProduct, CustomerOrderLineInput } from "../../types/desktopApi";
 
@@ -52,7 +53,14 @@ export function articleGrid(products: readonly CustomerOrderArticleProduct[]): A
 }
 
 /** A new block for an article, with no colour chosen yet. */
-export const newBlock = (article: string, products: readonly CustomerOrderArticleProduct[]): ArticleBlock => ({ article, products, colours: [], typed: {}, dispatched: {} });
+/**
+ * A just-added article. The default effect (owner, 24 Nov 2026): an article made in ONE colour has nothing to choose,
+ * so that colour comes chosen; with more, none is, and the operator picks.
+ */
+export const newBlock = (article: string, products: readonly CustomerOrderArticleProduct[]): ArticleBlock => {
+  const colours = [...new Set(products.map((product) => product.color))];
+  return { article, products, colours: colours.length === 1 ? colours : [], typed: {}, dispatched: {} };
+};
 
 /** The block with `colour` chosen or taken off. Taking a colour off drops what was typed in its boxes. */
 export function toggleColour(block: ArticleBlock, colour: string): ArticleBlock {
@@ -87,24 +95,26 @@ const chosenProducts = (block: ArticleBlock) => block.products.filter((product) 
 export function blockProblems(block: ArticleBlock): Map<string, string> {
   const problems = new Map<string, string>();
   for (const product of chosenProducts(block)) {
+    // Typed in dozens; dispatched is in cartons, as stored. Compared in cartons, said in dozens.
     const typed = block.typed[product.productVariantId] ?? "";
-    const problem = orderQuantityProblem(typed);
+    const problem = orderDozensProblem(typed);
     const dispatched = block.dispatched[product.productVariantId] ?? 0;
+    const typedCartons = typed.trim() === "" ? 0 : orderDozensToCartons(typed);
     if (problem) problems.set(product.productVariantId, problem);
-    else if (dispatched > 0 && Number(typed.trim() || 0) < dispatched) problems.set(product.productVariantId, `At least ${dispatched}: already dispatched.`);
+    else if (dispatched > 0 && typedCartons < dispatched) problems.set(product.productVariantId, `At least ${orderDozens(dispatched)} dozen: already dispatched.`);
   }
   return problems;
 }
 
-/** The block's saveable lines: every chosen box with a whole number typed in it. */
+/** The block's saveable lines, in cartons as stored: every chosen box with whole or half dozens typed in it. */
 export function blockLines(block: ArticleBlock): CustomerOrderLineInput[] {
   return chosenProducts(block)
     .map((product) => ({ productVariantId: product.productVariantId, typed: (block.typed[product.productVariantId] ?? "").trim() }))
-    .filter((cell) => cell.typed !== "" && orderQuantityProblem(cell.typed) === null)
-    .map((cell) => ({ productVariantId: cell.productVariantId, quantity: Number(cell.typed) }));
+    .filter((cell) => cell.typed !== "" && orderDozensProblem(cell.typed) === null)
+    .map((cell) => ({ productVariantId: cell.productVariantId, quantity: orderDozensToCartons(cell.typed) }));
 }
 
-/** Cartons typed per chosen colour, and in the whole block. */
+/** Cartons per chosen colour, and in the whole block (shown in dozens, orderUnits.ts). */
 export function blockTotals(block: ArticleBlock): { byColour: Map<string, number>; total: number } {
   const byId = new Map(block.products.map((product) => [product.productVariantId, product.color]));
   const byColour = new Map(block.colours.map((colour) => [colour, 0]));
@@ -140,9 +150,33 @@ export function draftFromOrder(order: CustomerOrder, productsOf: (article: strin
       article,
       products,
       colours,
-      typed: Object.fromEntries(lines.map((line) => [line.productVariantId, String(line.quantity)])),
+      // Stored cartons back as the dozens they were typed in.
+      typed: Object.fromEntries(lines.map((line) => [line.productVariantId, String(cartonsToDozens(line.quantity))])),
       dispatched: Object.fromEntries(lines.map((line) => [line.productVariantId, line.dispatched])),
     };
   });
   return { partyId: order.partyId, note: order.note ?? "", blocks };
+}
+
+/** What is still to do before an order can be saved, the first thing missing first. */
+export type OrderNextStep = "party" | "articles" | "dozens" | "fix" | "ready";
+
+export interface OrderSteps {
+  readonly party: boolean;
+  readonly articles: boolean;
+  readonly dozens: boolean;
+  readonly next: OrderNextStep;
+}
+
+/**
+ * The three steps of an order — a party, an article with its colours, the dozens typed — and the next one to do
+ * (Zeigarnik and goal-gradient, owner, 24 Nov 2026): shown beside the total, so what is unfinished stays in view.
+ */
+export function draftSteps(draft: OrderDraft): OrderSteps {
+  const party = draft.partyId !== "";
+  const articles = draft.blocks.some((block) => block.colours.length > 0);
+  const dozens = draftLines(draft).length > 0;
+  const fix = draftProblemCount(draft) > 0;
+  const next: OrderNextStep = !party ? "party" : !articles ? "articles" : fix ? "fix" : !dozens ? "dozens" : "ready";
+  return { party, articles, dozens, next };
 }

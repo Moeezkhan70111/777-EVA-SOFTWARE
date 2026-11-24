@@ -539,8 +539,10 @@ describe("GatepassPage", () => {
     expect(screen.queryByTestId("gatepass-create")).not.toBeInTheDocument();
     expect(screen.getByTestId("gatepass-print")).toBeInTheDocument();
 
+    // Open in list lives under More (Hick's law, 24 Nov 2026).
+    fireEvent.click(screen.getByRole("button", { name: /More/ }));
     await act(async () => {
-      fireEvent.click(screen.getByText("Open in list"));
+      fireEvent.click(screen.getByTestId("gatepass-open-in-list"));
     });
     expect(onNavigate).toHaveBeenCalledWith("gatepass-list", "gp-1");
 
@@ -646,9 +648,10 @@ describe("GatepassPage", () => {
     await waitFor(() => expect(box().value).toBe("3"));
     expect(field().textContent).toContain("new");
 
-    // Load on the untouched box must not report #3 as missing — it is this document.
+    // The untouched box offers no Load (24 Nov 2026), and Enter on it must not report #3 as missing — it is this document.
+    expect(screen.queryByTestId("gatepass-load")).toBeNull();
     await act(async () => {
-      fireEvent.click(screen.getByTestId("gatepass-load"));
+      fireEvent.keyDown(box(), { key: "Enter" });
     });
     expect(api.getGatepassByNumber).not.toHaveBeenCalled();
     expect(screen.queryByText("Gatepass #3 does not exist")).toBeNull();
@@ -879,6 +882,9 @@ describe("GatepassPage edit", () => {
     createFakeBackend();
     renderPage();
     await createOne();
+    // Edit lives under More: open it, so its absence means something.
+    fireEvent.click(screen.getByRole("button", { name: /More/ }));
+    expect(screen.getByTestId("gatepass-open-in-list")).toBeInTheDocument();
     expect(screen.queryByTestId("gatepass-edit")).not.toBeInTheDocument();
   });
 
@@ -887,6 +893,7 @@ describe("GatepassPage edit", () => {
     renderPage(vi.fn(), undefined, true);
     await createOne();
 
+    fireEvent.click(screen.getByRole("button", { name: /More/ }));
     await act(async () => {
       fireEvent.click(screen.getByTestId("gatepass-edit"));
     });
@@ -921,6 +928,7 @@ describe("GatepassPage edit", () => {
     const { api } = createFakeBackend();
     renderPage(vi.fn(), undefined, true);
     await createOne();
+    fireEvent.click(screen.getByRole("button", { name: /More/ }));
     await act(async () => {
       fireEvent.click(screen.getByTestId("gatepass-edit"));
     });

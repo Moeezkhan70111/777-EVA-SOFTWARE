@@ -297,6 +297,27 @@ test("an order may only name live products of an active party; a retried Save is
   }
 });
 
+// Owner, 24 Nov 2026: orders are for customers only, as gatepasses are. An order written before the rule keeps its
+// party: it may be edited without changing it, but no order may move to, or be made for, a party that is not a customer.
+test("an order is for a customer only; an older order for another party keeps it through an edit", async () => {
+  const f = createFixture();
+  try {
+    const red = f.variant("SK6", "RED", "7");
+    const supplier = f.db.createParty({ partyName: "AI TRADERS", partyType: "SUPPLIER", city: "Lahore", mobileNumber: "0300-3333333", status: "ACTIVE" });
+    assert.throws(() => saveOrder(f, supplier, [[red, 4]]), /AI TRADERS is not a customer/);
+
+    const older = saveOrder(f, f.behraam, [[red, 4]]);
+    f.raw.prepare("UPDATE customer_orders SET party_id = ? WHERE id = ?").run(supplier, older.id);
+    const edit = (revision: number, partyId: string, quantity: number) =>
+      f.db.editCustomerOrder({ orderId: older.id, revision, partyId, lines: [{ productVariantId: red, quantity }], actor: "admin" });
+    assert.equal(edit(1, supplier, 6).changed, true, "its own party is kept through an edit");
+    assert.throws(() => edit(2, f.db.createParty({ partyName: "ROAD CARRIERS", partyType: "TRANSPORTER", city: "Lahore", mobileNumber: "0300-4444444", status: "ACTIVE" }), 6), /not a customer/);
+    assert.equal(edit(2, f.mama, 6).changed, true, "a customer may still take it over");
+  } finally {
+    f.cleanup();
+  }
+});
+
 test("allocating moves no stock, money or voucher beyond what the gatepass itself always did", async () => {
   const f = createFixture();
   try {

@@ -5,6 +5,8 @@ import { formatDate } from "../../utils/dates";
 import type { CustomerOrder } from "../../types/desktopApi";
 import { OrderLinesTable } from "./OrderLinesTable";
 import { OrderProgressBadge } from "./OrderProgressBadge";
+import { OrderCheckIcon } from "./OrderIcons";
+import { orderDozens } from "./orderUnits";
 
 // A STORED ORDER: who for, when, and each product's ordered, dispatched and pending, from the main process. Edit and
 // Cancel are offered while it is open and the operator may; a cancelled order says who cancelled it and why.
@@ -19,13 +21,23 @@ interface OrderDetailsProps {
   canCancel: boolean;
   onEdit: () => void;
   onCancel: () => void;
+  /** Saved here a moment ago: the page says so and offers the next order (the peak-end rule, 24 Nov 2026). */
+  justSaved?: boolean;
+  onNewOrder?: () => void;
 }
 
-export const OrderDetails: React.FC<OrderDetailsProps> = ({ order, busy, canEdit, canCancel, onEdit, onCancel }) => {
+export const OrderDetails: React.FC<OrderDetailsProps> = ({ order, busy, canEdit, canCancel, onEdit, onCancel, justSaved = false, onNewOrder }) => {
   const open = order.status === CUSTOMER_ORDER_STATUS.OPEN;
   const { ordered, dispatched, pending } = order.totals;
   return (
     <div className="ord-form">
+      {justSaved ? (
+        <div className="ord-saved" role="status">
+          <span className="ord-saved-mark" aria-hidden="true"><OrderCheckIcon /></span>
+          <strong className="ord-saved-text">{words.savedBanner(order.code, orderDozens(ordered), order.partyName)}</strong>
+          {onNewOrder ? <button type="button" className="btn btn-primary" disabled={busy} onClick={onNewOrder}>+ {words.newOrder}</button> : null}
+        </div>
+      ) : null}
       <div className="card ord-summary">
         <div className="ord-summary-main">
           <h3 className="ord-block-title">{order.code} · {order.partyName}</h3>
@@ -33,9 +45,9 @@ export const OrderDetails: React.FC<OrderDetailsProps> = ({ order, busy, canEdit
           {open ? <OrderProgressBadge progress={orderProgressOf(ordered, dispatched)} /> : <span className="badge badge-muted">✕ {words.statusCancelled}</span>}
         </div>
         <dl className="ord-figures">
-          <div><dt>{figures.ordered}</dt><dd>{ordered.toLocaleString("en-US")}</dd></div>
-          <div><dt>{figures.dispatched}</dt><dd>{dispatched.toLocaleString("en-US")}</dd></div>
-          <div className="ord-figure-pending"><dt>{figures.pending}</dt><dd>{pending.toLocaleString("en-US")}</dd></div>
+          <div><dt>{figures.ordered}</dt><dd>{orderDozens(ordered)}</dd></div>
+          <div><dt>{figures.dispatched}</dt><dd>{orderDozens(dispatched)}</dd></div>
+          <div className="ord-figure-pending"><dt>{figures.pending}</dt><dd>{orderDozens(pending)}</dd></div>
         </dl>
         {open ? (
           <div className="ord-actions">

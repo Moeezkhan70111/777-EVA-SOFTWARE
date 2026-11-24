@@ -16,7 +16,7 @@ import type { TransactionContext } from "./ports.js";
 const NOW = "2026-09-16T10:00:00.000Z";
 
 interface World {
-  parties: Record<string, { id: string; partyName: string; status: string }>;
+  parties: Record<string, { id: string; partyName: string; status: string; partyType: string }>;
   /** Current Stock per variant (physical In Store). Reserved is derived, never set here. */
   stock: Record<string, Omit<GatepassVariantStock, "reservedQuantity">>;
   nextNumber: number;
@@ -196,7 +196,7 @@ function createWorld(initial: Partial<World> = {}) {
 
 const RED = { productVariantId: "v-red", article: "SK6", color: "RED", size: "7/10", storeQuantity: 120 };
 const BLUE = { productVariantId: "v-blue", article: "SK6", color: "BLUE", size: "7/10", storeQuantity: 80 };
-const ABC = { id: "p-abc", partyName: "ABC TRADERS", status: "ACTIVE" };
+const ABC = { id: "p-abc", partyName: "ABC TRADERS", status: "ACTIVE", partyType: "CUSTOMER" };
 
 test("every line goes to the repository to be split as it is made, in the same transaction, and the cancel asks once for the issued part back (docs/42)", async () => {
   const w = createWorld({ parties: { [ABC.id]: ABC }, stock: { [RED.productVariantId]: RED, [BLUE.productVariantId]: BLUE } });
@@ -376,7 +376,7 @@ test("input checks that need no database are rejected before any transaction sta
 
 test("party and variant checks inside the transaction roll back with nothing written", async () => {
   const w = createWorld({
-    parties: { [ABC.id]: ABC, "p-old": { id: "p-old", partyName: "OLD TRADERS", status: "INACTIVE" } },
+    parties: { [ABC.id]: ABC, "p-old": { id: "p-old", partyName: "OLD TRADERS", status: "INACTIVE", partyType: "CUSTOMER" } },
     stock: { [RED.productVariantId]: RED },
   });
 
@@ -390,6 +390,22 @@ test("party and variant checks inside the transaction roll back with nothing wri
 
   assert.deepEqual(w.counts(), { commits: 0, rollbacks: 3, headers: 0, lines: 0, audit: 0, notices: 0 });
   assert.equal(w.world.nextNumber, 1, "no number was consumed");
+});
+
+// Owner, 24 Nov 2026: a Gatepass is made for customers only. A supplier, contractor, dealer or distributor is refused
+// inside the transaction, whatever the screen offered, and nothing is written or numbered.
+test("a party that is not a customer is refused, with nothing written", async () => {
+  const others = ["SUPPLIER", "CONTRACTOR", "DEALER", "DISTRIBUTOR", "TRANSPORTER"];
+  const parties = Object.fromEntries(others.map((type) => ["p-" + type, { id: "p-" + type, partyName: type + " CO", status: "ACTIVE", partyType: type }]));
+  const w = createWorld({ parties: { ...parties, [ABC.id]: ABC }, stock: { [RED.productVariantId]: RED } });
+  for (const type of others) {
+    const result = await w.creator.execute({ partyId: "p-" + type, lines: [{ productVariantId: "v-red", quantity: 1 }], actor: "clerk" });
+    assert.equal(result.outcome, "PARTY_NOT_CUSTOMER", type);
+    assert.match(result.reason ?? "", /not a customer/);
+  }
+  assert.equal(w.counts().headers, 0);
+  assert.equal(w.world.nextNumber, 1, "no number was consumed");
+  assert.equal((await w.creator.execute({ partyId: ABC.id, lines: [{ productVariantId: "v-red", quantity: 1 }], actor: "clerk" })).outcome, "CREATED");
 });
 
 test("stock is re-read inside the transaction: INSUFFICIENT_STOCK when the clerk saw the same figure, STOCK_CHANGED when it moved", async () => {

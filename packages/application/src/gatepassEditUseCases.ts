@@ -4,6 +4,7 @@ import {
   formatGatepassCode,
   GatepassRejectedError,
   prepareGatepassLines,
+  requireGatepassParty,
   type AuditLogPayload,
   type BillingNoticePayload,
   type CreateGatepassOutcome,
@@ -292,17 +293,17 @@ export class EditGatepassUseCase {
     return { accepted: true, outcome: "EDITED", gatepassId, code, revisionNo: existing.revisionNo + 1, totalQuantity, billNumber: bill?.voucherNumber };
   }
 
-  /** The party the edited gatepass is for: unchanged, or a new active one while its bill is not yet entered. */
+  /**
+   * The party the edited gatepass is for: unchanged (even one made before the customers-only rule), or a new active
+   * customer while its bill is not yet entered.
+   */
   private async partyFor(existing: GatepassForEdit, partyId: string, tx: TransactionContext): Promise<string> {
     if (!partyId || partyId === existing.partyId) return existing.partyId;
     const code = formatGatepassCode(existing.gatepassNumber);
     if (existing.status !== "CREATED" || existing.bill?.entered) {
       throw new EditRefused("PARTY_LOCKED", `${code} has been billed to ${existing.partyName}. The party cannot change now. Delete the bill first to change it.`);
     }
-    const party = await this.deps.repo.getPartyForGatepass(partyId, tx);
-    if (!party) throw new GatepassRejectedError("PARTY_NOT_FOUND", "This party is not in the Party Master. Select a party from the list.");
-    if (party.status !== "ACTIVE") throw new GatepassRejectedError("PARTY_INACTIVE", `${party.partyName} is inactive. Only active parties can receive a Gatepass.`);
-    return party.id;
+    return requireGatepassParty(await this.deps.repo.getPartyForGatepass(partyId, tx)).id;
   }
 
   private async record(existing: GatepassForEdit, header: EditedGatepassHeader, lines: Array<Record<string, unknown>>, reason: string, input: EditGatepassInput, tx: TransactionContext) {

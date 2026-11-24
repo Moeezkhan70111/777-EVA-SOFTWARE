@@ -781,7 +781,7 @@ export const App = () => {
             />
           )}
 
-          {/* A Dashboard card's page wears its card's colour (theme.css [data-page-tone]) and picture (pageIdentity.ts). */}
+          {/* A Dashboard card's page wears its card's colour (theme.css [data-page-tone]) (pageIdentity.ts). */}
           <div className="app-main" data-page-tone={pageIdentity?.tone}>
             {showPageHeader ? (
               <div className="app-head">
@@ -789,7 +789,6 @@ export const App = () => {
                   title={PAGE_TITLES[shownRoute]}
                   actions={headerActions}
                   onDashboard={shownRoute === HOME_ROUTE ? undefined : () => setRoute(HOME_ROUTE)}
-                  artwork={pageIdentity?.artwork}
                 />
               </div>
             ) : null}

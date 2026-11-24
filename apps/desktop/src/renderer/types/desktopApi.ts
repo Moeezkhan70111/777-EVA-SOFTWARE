@@ -1179,6 +1179,8 @@ export type CreateGatepassOutcome =
   | "NO_PARTY"
   | "PARTY_NOT_FOUND"
   | "PARTY_INACTIVE"
+  /** Not a customer: a gatepass is made for customers only. */
+  | "PARTY_NOT_CUSTOMER"
   | "NO_LINES"
   | "INVALID_QUANTITY"
   | "DUPLICATE_LINE"
@@ -1349,7 +1351,7 @@ export interface GatepassListQuery {
 
 export type EditGatepassOutcome =
   | "EDITED" | "NOT_FOUND" | "REASON_REQUIRED" | "EDITED_ELSEWHERE" | "CANCELLED" | "DELETED" | "MOVED_ON" | "ALREADY_MOVED"
-  | "BEFORE_GO_LIVE" | "PARTY_LOCKED" | "NEW_LINE_ON_BILL" | "NO_PARTY" | "PARTY_NOT_FOUND" | "PARTY_INACTIVE" | "NO_LINES"
+  | "BEFORE_GO_LIVE" | "PARTY_LOCKED" | "NEW_LINE_ON_BILL" | "NO_PARTY" | "PARTY_NOT_FOUND" | "PARTY_INACTIVE" | "PARTY_NOT_CUSTOMER" | "NO_LINES"
   | "INVALID_QUANTITY" | "DUPLICATE_LINE" | "VARIANT_NOT_FOUND" | "INSUFFICIENT_STOCK" | "STOCK_CHANGED" | "NOT_AUTHORIZED" | "ERROR";
 
 export interface EditGatepassInput {
