@@ -60,15 +60,14 @@ export const ArticleEntry: React.FC<ArticleEntryProps> = ({ kind, articles, onAd
       ) : null}
       {showGrid ? (
         <QuantityGrid article={article} kind={kind} direction={entry.effective} grid={grid} typed={entry.typed} problems={entry.problems}
-          canAddColor={entry.canAddColor} onType={entry.type} onEnter={() => void entry.add()} />
+          canAddColor={entry.canAddColor} onType={entry.type} onEnter={entry.add} onColourAdded={() => void choices.reload()} />
       ) : null}
       {showGrid ? (
         <div className="sa-actions">
-          {entry.addProblem ? <span className="sa-problem" role="alert">⚠ {entry.addProblem}</span> : null}
           {entry.entries.length > 0 ? (
             <span className="sa-note" role="status">{text.typedSummary(entry.entries.length, dozensText(typedTotals.cartonsIn + typedTotals.cartonsOut))}</span>
           ) : null}
-          <button type="button" className="btn btn-primary" disabled={!entry.canAdd} onClick={() => void entry.add()}>{entry.adding ? text.addingColor : text.addToDocument}</button>
+          <button type="button" className="btn btn-primary" disabled={!entry.canAdd} onClick={entry.add}>{text.addToDocument}</button>
         </div>
       ) : null}
     </section>

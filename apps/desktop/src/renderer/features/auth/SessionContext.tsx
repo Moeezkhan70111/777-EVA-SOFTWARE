@@ -36,6 +36,10 @@ export const SessionProvider = ({
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;
 };
 
+/** The session, or undefined outside a SessionProvider (a screen rendered on its own, as in its tests): for rules
+ * that simply answer "no" without a signed-in user, such as useCanAddColour. */
+export const useOptionalSession = (): SessionValue | undefined => useContext(SessionContext);
+
 export const useSession = (): SessionValue => {
   const context = useContext(SessionContext);
   if (!context) {

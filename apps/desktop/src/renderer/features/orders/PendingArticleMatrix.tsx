@@ -17,8 +17,9 @@ import { orderDozens } from "./orderUnits";
 const words = copy.pendingOrders;
 const figure = orderDozens;
 
-export const PendingArticleMatrix: React.FC<{ group: PendingArticle }> = ({ group }) => (
-  <section className="ord-matrix" aria-label={group.article}>
+/** span: the bento columns this card takes (bentoLayout.ts). */
+export const PendingArticleMatrix: React.FC<{ group: PendingArticle; span: number }> = ({ group, span }) => (
+  <section className="ord-matrix" aria-label={group.article} style={{ gridColumn: `span ${String(span)}` }}>
     <header className="ord-matrix-head">
       <div className="ord-matrix-name">
         <h4 className="ord-matrix-title">{group.article}</h4>

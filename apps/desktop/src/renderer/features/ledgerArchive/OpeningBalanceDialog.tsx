@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect, useRef } from "react";
 import type { LedgerSide, OpeningBalanceDirection } from "@erp/domain";
 import { Modal } from "../../components/shared/Modal";
 import { copy } from "../../config/copy";
@@ -26,6 +26,8 @@ interface Props {
   statements: readonly ArchiveStatement[];
   onDone: () => void;
   onClose: () => void;
+  /** Opened from "Carry it into the balance": start filled from the latest statement (Tesler's law). Still posted only on the button. */
+  prefill?: boolean;
 }
 
 type Change = <K extends keyof OpeningBalanceFields>(key: K, value: OpeningBalanceFields[K]) => void;
@@ -85,9 +87,18 @@ const Posted: React.FC<{ side: LedgerSide; view: OpeningBalanceView | null }> = 
   );
 };
 
-export const OpeningBalanceDialog: React.FC<Props> = ({ side, mode, partyId, partyName, view, statements, onDone, onClose }) => {
+export const OpeningBalanceDialog: React.FC<Props> = ({ side, mode, partyId, partyName, view, statements, onDone, onClose, prefill = false }) => {
   const form = useOpeningBalanceForm({ side, mode, partyId, view, onDone });
   const latest = [...statements].sort((a, b) => a.periodTo.localeCompare(b.periodTo)).at(-1);
+  const { fillFromStatement } = form;
+  const prefillFrom = prefill && mode === "post" ? latest : undefined;
+  // Once only: a statement read again while the dialog is open never overwrites what was typed since.
+  const prefilled = useRef(false);
+  useEffect(() => {
+    if (!prefillFrom || prefilled.current) return;
+    prefilled.current = true;
+    fillFromStatement(prefillFrom);
+  }, [prefillFrom, fillFromStatement]);
   const footer = (
     <>
       <button type="button" className="customer-ledger-print" onClick={onClose}>{text.cancel}</button>

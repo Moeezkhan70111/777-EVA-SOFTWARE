@@ -17,8 +17,9 @@ import type { LedgerExportRow } from "./unifiedLedger";
 //   │ Live total … / Archived total …                                          │
 //   └ Rows marked ARCHIVED are … · Printed 16 Nov 2026, 6:45 PM ── Page 1 of 2 ┘
 //
-// Every figure comes from the screen's data; this only lays it out. Every text from the data is escaped (R9). The
-// live balance and the archived balances are never added together: each row keeps its own.
+// Every figure comes from the screen's data; this only lays it out. Every text from the data is escaped (R9).
+// MERGED (the Customer Ledger, owner 25 Nov 2026: "there is no old and new"): imported rows are part of one ledger, so
+// no row is tagged, there is one total, and the figures are the whole ledger's. The Supplier Ledger keeps the split.
 
 const text = copy.ledgerArchive;
 
@@ -33,6 +34,8 @@ export interface LedgerReportInput {
   liveOpening: number;
   liveClosing: number;
   rows: readonly LedgerExportRow[];
+  /** One ledger: imported rows untagged, one total. */
+  merged?: boolean;
   logoDataUrl: string;
   printedAt: Date;
 }
@@ -82,8 +85,12 @@ function rowHtml(row: LedgerExportRow): string {
   </tr>`;
 }
 
-/** Live rows' and archived rows' totals, each on its own line: they are never one figure. */
-function totalsHtml(rows: readonly LedgerExportRow[]): string {
+/** One ledger: every row as one of its own, untagged. */
+const rowsOf = (input: Pick<LedgerReportInput, "rows" | "merged">): readonly LedgerExportRow[] =>
+  input.merged ? input.rows.map((row) => ({ ...row, archived: false })) : input.rows;
+
+/** Live rows' and archived rows' totals, each on its own line; merged, one line for every row. */
+function totalsHtml(rows: readonly LedgerExportRow[], merged: boolean): string {
   const line = (label: string, picked: readonly LedgerExportRow[]) => {
     const quantity = picked.reduce((sum, row) => sum + Math.round((row.quantity ?? 0) * 100), 0) / 100;
     const debit = picked.reduce((sum, row) => sum + Math.round(row.debit * 100), 0) / 100;
@@ -92,6 +99,7 @@ function totalsHtml(rows: readonly LedgerExportRow[]): string {
   };
   const live = rows.filter((row) => !row.archived);
   const archived = rows.filter((row) => row.archived);
+  if (merged) return line(copy.customerLedger.totalRow(rows.length), rows);
   return [live.length > 0 ? line(text.liveTotals(live.length), live) : "", archived.length > 0 ? line(text.archivedTotals(archived.length), archived) : ""].join("");
 }
 
@@ -104,19 +112,20 @@ export function ledgerReportHtml(input: LedgerReportInput): string {
     <div><b>${escapeHtml(text.reportCode)}</b>${escapeHtml(input.customerCode || "-")}</div>
     <div><b>${escapeHtml(text.reportPeriod)}</b>${escapeHtml(period)}</div>
   </div>`;
-  const live = input.rows.filter((row) => !row.archived);
+  const rows = rowsOf(input);
+  const live = rows.filter((row) => !row.archived);
   const figures = `<div class="figures">
     ${figure(text.reportOpening, `Rs. ${rupees(input.liveOpening)}`)}
     ${figure(text.debit, `Rs. ${rupees(live.reduce((sum, row) => sum + Math.round(row.debit * 100), 0) / 100)}`)}
     ${figure(text.credit, `Rs. ${rupees(live.reduce((sum, row) => sum + Math.round(row.credit * 100), 0) / 100)}`)}
-    ${figure(text.reportLiveBalance, `Rs. ${rupees(input.liveClosing)}`)}
+    ${figure(input.merged ? copy.customerLedger.balance : text.reportLiveBalance, `Rs. ${rupees(input.liveClosing)}`)}
   </div>`;
   const head = ["Date", "No.", "Type", text.billNo, "Description", text.qty, "Debit", "Credit", "Balance"].map((label) => `<th>${escapeHtml(label)}</th>`).join("");
-  const body = input.rows.length === 0 ? `<tr><td colspan="9">${escapeHtml(text.empty)}</td></tr>` : input.rows.map(rowHtml).join("");
-  const note = input.rows.some((row) => row.archived) ? `<p class="note">${escapeHtml(text.reportArchivedNote)}</p>` : "";
+  const body = rows.length === 0 ? `<tr><td colspan="9">${escapeHtml(text.empty)}</td></tr>` : rows.map(rowHtml).join("");
+  const note = rows.some((row) => row.archived) ? `<p class="note">${escapeHtml(text.reportArchivedNote)}</p>` : "";
   return `<!doctype html><html><head><meta charset="utf-8" /><title>${escapeHtml(words.reportTitle)}</title><style>${STYLES}</style></head><body>
     <div class="letterhead">${brand}<h1>${escapeHtml(words.reportTitle)}</h1></div>${facts}${figures}
-    <table><thead><tr>${head}</tr></thead><tbody>${body}</tbody><tfoot>${totalsHtml(input.rows)}</tfoot></table>
+    <table><thead><tr>${head}</tr></thead><tbody>${body}</tbody><tfoot>${totalsHtml(rows, input.merged === true)}</tfoot></table>
     ${note}<p class="foot">${escapeHtml(text.reportPrinted(formatDateTime(input.printedAt)))}</p></body></html>`;
 }
 
@@ -127,11 +136,11 @@ export function ledgerSheet(input: Omit<LedgerReportInput, "logoDataUrl">): CsvS
       text.side[input.side ?? "CUSTOMER"].sheetTitle(input.customerName, input.customerCode),
       text.sheetPeriod(input.fromDate, input.toDate),
       text.sheetPrinted(formatDateTime(input.printedAt)),
-      `${text.reportOpening}: ${String(input.liveOpening)} · ${text.reportLiveBalance}: ${String(input.liveClosing)}`,
+      `${text.reportOpening}: ${String(input.liveOpening)} · ${input.merged ? copy.customerLedger.balance : text.reportLiveBalance}: ${String(input.liveClosing)}`,
     ],
-    headers: ["Source", "Date", "Voucher No.", "Type", text.billNo, "Description", text.qty, "Debit (Rs.)", "Credit (Rs.)", "Balance (Rs.)"],
+    headers: [...(input.merged ? [] : ["Source"]), "Date", "Voucher No.", "Type", text.billNo, "Description", text.qty, "Debit (Rs.)", "Credit (Rs.)", "Balance (Rs.)"],
     rows: input.rows.map((row) => [
-      row.archived ? text.sourceArchived : text.sourceLive,
+      ...(input.merged ? [] : [row.archived ? text.sourceArchived : text.sourceLive]),
       row.date,
       row.voucherNumber,
       row.type,

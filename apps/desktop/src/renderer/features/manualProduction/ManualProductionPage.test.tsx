@@ -10,6 +10,8 @@ import type { MachineRecord, ManualProductionEntry, ManualProductionPage as DayP
 import { toIsoDate } from "../../utils/dates";
 import { buildProductionDay } from "@erp/domain";
 import { ManualProductionPage } from "./ManualProductionPage";
+import { SessionProvider } from "../auth/SessionContext";
+import type { AuthUser } from "../../types/desktopApi";
 
 // MANUAL PRODUCTION, A PAGE OF ITS OWN (docs/48): choose the machine and the article, type every size and colour at
 // once, Add to list, the next article or machine, then Save every line together; then Complete today's production.
@@ -143,10 +145,11 @@ describe("Manual Production page", () => {
     await openPage(baseApi());
     await chooseArticle("SK6");
     const grid = screen.getByRole("region", { name: text.gridLabel("SK6") });
-    expect(within(grid).getAllByRole("rowheader").map((cell) => cell.textContent)).toEqual(["7/10", "4/6"]);
+    expect(within(grid).getAllByRole("rowheader").map((cell) => cell.textContent)).toEqual(["7/10", "4/6", text.colourTotal]);
     expect(within(grid).getAllByRole("columnheader").map((cell) => cell.textContent)).toEqual([text.sizeColumn, "BLACK", "RED"]);
     expect(screen.queryByRole("textbox", { name: text.quantityFor("BLACK", "4/6") })).toBeNull();
-    expect(within(grid).getByText(text.colourNotOnSize)).toBeInTheDocument();
+    // The same cell as every quantity-by-colour page; adding the colour is for an administrator on the Product Master computer.
+    expect(within(grid).getByText(copy.missingSize.notInMaster)).toBeInTheDocument();
     expect(screen.getByText(`⚠ ${text.chooseMachineFirst}`)).toBeInTheDocument();
     await userEvent.type(box("RED", "7/10"), "1.25");
     expect(screen.getByRole("alert")).toHaveTextContent(/whole or half dozens/);
@@ -235,8 +238,9 @@ describe("Manual Production page", () => {
   it("Complete today's production waits for saved production and an empty list, asks first, then shows Production added", async () => {
     const api = baseApi({ listManualProduction: vi.fn().mockResolvedValue({ accepted: true, page: day([entry()]) }) });
     await openPage(api);
-    expect(await screen.findByText(dayText.notAdded)).toBeInTheDocument();
-    const complete = screen.getByRole("button", { name: `✓ ${text.completeButton}` });
+    // Not complete yet: the Complete button stands for that, with no separate "not added" pill (25 Nov 2026).
+    const complete = await screen.findByRole("button", { name: `✓ ${text.completeButton}` });
+    expect(screen.queryByText(dayText.notAdded)).toBeNull();
     await waitFor(() => expect(complete).toBeEnabled());
 
     await chooseMachine("MACHINE 1");
@@ -360,5 +364,81 @@ describe("Manual Production page", () => {
     setupDesktop(baseApi({ listProducts: vi.fn().mockResolvedValue({ rows: [], total: 0, page: 1, pageSize: 1000 }) }));
     show();
     expect(await screen.findByText(copy.manualProduction.noProductsTitle)).toBeInTheDocument();
+  });
+
+  // The UI/UX pass (owner, 25 Nov 2026).
+  it("says how many machines are in today, which are still to add, and on each machine whether it is in", async () => {
+    await openPage(baseApi({ getProductionDay: vi.fn().mockResolvedValue({ accepted: true, day: productionDay(20) }) }));
+    expect(await screen.findByText("1 / 2")).toBeInTheDocument();
+    expect(screen.getByRole("meter", { name: text.progressLabel })).toHaveAttribute("aria-valuetext", text.progressFigure(1, 2));
+    expect(screen.getByText(text.progressMissing("MACHINE 2"))).toBeInTheDocument();
+    expect(screen.getByRole("meter", { name: text.progressLabel })).toHaveAttribute("aria-valuenow", "1");
+    expect(screen.getByRole("radio", { name: /MACHINE 1/ })).toHaveTextContent(text.machineSaved("10"));
+    // A machine not in yet carries no note: the tile at the top names it (no repeating).
+    expect(screen.getByRole("radio", { name: /MACHINE 2/ })).not.toHaveTextContent(/saved today/);
+  });
+
+  it("puts the cursor in the article's first box, totals each colour, and reads 2,5 or 5 dz as dozens", async () => {
+    await openPage(baseApi());
+    await chooseMachine("MACHINE 1");
+    await chooseArticle("SK6");
+    await waitFor(() => expect(box("BLACK", "7/10")).toHaveFocus());
+    await userEvent.type(box("RED", "7/10"), "2,5");
+    await userEvent.type(box("RED", "4/6"), "5 dz");
+    expect(screen.queryByRole("alert")).toBeNull();
+    const grid = screen.getByRole("region", { name: text.gridLabel("SK6") });
+    const totalRow = within(grid).getByRole("rowheader", { name: text.colourTotal }).closest("tr") as HTMLElement;
+    expect(within(totalRow).getAllByRole("cell").map((cell) => cell.textContent)).toEqual(["0", "7.5"]);
+    await userEvent.click(screen.getByRole("button", { name: text.addToList }));
+    expect(within(listRegion()).getByRole("heading", { name: text.listMachine("MACHINE 1", "7.5") })).toBeInTheDocument();
+  });
+
+  it("once a save leaves every machine in, says so and takes the operator to Complete", async () => {
+    const both = buildProductionDay(toIsoDate(), [
+      { machineName: "MACHINE 1", article: "SK6", size: "7/10", color: "RED", cartons: 20, entries: 1 },
+      { machineName: "MACHINE 2", article: "SK6", size: "4/6", color: "RED", cartons: 4, entries: 1 },
+    ], null);
+    await openPage(baseApi({ getProductionDay: vi.fn().mockResolvedValue({ accepted: true, day: both }), listManualProduction: vi.fn().mockResolvedValue({ accepted: true, page: day([entry()]) }) }));
+    await chooseMachine("MACHINE 2");
+    await chooseArticle("SK6");
+    await userEvent.type(box("RED", "4/6"), "2{Enter}");
+    await saveAndConfirm();
+    expect(await screen.findByText(text.allInNext, { exact: false })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: new RegExp(text.goToComplete) }));
+    expect(document.getElementById("mnp-complete-btn")).toHaveFocus();
+  });
+
+  // Owner, 25 Nov 2026: a machine's contractors are changed from its card, by whoever may change them.
+  it("changes a machine's contractors from its card, then reads the machines again; nobody else is offered it", async () => {
+    const contractor = (id: string, name: string) => ({ id, partyCode: id, partyName: name, partyType: "CONTRACTOR", status: "ACTIVE", city: "", createdAt: "2026-01-01" });
+    const listMachines = vi.fn()
+      .mockResolvedValueOnce([machineRecord("m-1", "MACHINE 1"), machineRecord("m-2", "MACHINE 2")])
+      .mockResolvedValue([{ ...machineRecord("m-1", "MACHINE 1"), contractorPartyId: "p-kamran", contractorName: "KAMRAN" }, machineRecord("m-2", "MACHINE 2")]);
+    const assignMachineContractor = vi.fn().mockResolvedValue({ accepted: true, outcome: "ASSIGNED" });
+    const api = baseApi({
+      listMachines,
+      getWriteLeases: vi.fn().mockResolvedValue([{ domain: "MASTER_DATA", canWrite: true, reason: null, holderLabel: null }]),
+      listParties: vi.fn().mockResolvedValue({ rows: [contractor("p-aslam", "ASLAM"), contractor("p-babar", "BABAR"), contractor("p-kamran", "KAMRAN")], total: 3, page: 1, pageSize: 500 }),
+      assignMachineContractor,
+    });
+    setupDesktop(api);
+    const user: AuthUser = { id: "u-1", username: "supervisor", role: "USER", accessStatus: "APPROVED", permissions: ["machine-program"], lastLoginAt: null };
+    render(<SessionProvider user={user} token="t"><NotificationsProvider><ManualProductionPage /><NotificationCenter /></NotificationsProvider></SessionProvider>);
+
+    await userEvent.click(await screen.findByRole("button", { name: copy.cartonProgram.changeContractorsFor("MACHINE 1") }));
+    const dialog = await screen.findByRole("dialog", { name: copy.cartonProgram.editMachineTitle("MACHINE 1") });
+    await userEvent.click(within(dialog).getByRole("combobox", { name: copy.cartonProgram.machineContractor }));
+    await userEvent.click(await screen.findByRole("option", { name: /KAMRAN/ }));
+    await userEvent.click(within(dialog).getByRole("button", { name: copy.cartonProgram.saveContractors(1) }));
+    await waitFor(() => expect(assignMachineContractor).toHaveBeenCalledWith({ machineId: "m-1", role: "MACHINE", contractorPartyId: "p-kamran" }));
+    expect(await screen.findByRole("radio", { name: /MACHINE 1/ })).toHaveTextContent("KAMRAN");
+    // Choosing a machine is still a click on the card, not on its pencil.
+    expect(screen.getByRole("radio", { name: /MACHINE 1/ })).toHaveAttribute("aria-checked", "false");
+  });
+
+  it("offers no pencil without a session that may change contractors", async () => {
+    await openPage(baseApi());
+    await screen.findByRole("radio", { name: /MACHINE 1/ });
+    expect(screen.queryByRole("button", { name: copy.cartonProgram.changeContractorsFor("MACHINE 1") })).toBeNull();
   });
 });

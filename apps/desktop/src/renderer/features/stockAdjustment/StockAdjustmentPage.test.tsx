@@ -5,7 +5,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { copy } from "../../config/copy";
 import { NotificationsProvider } from "../../state/NotificationsContext";
 import { StockAdjustmentPage } from "./StockAdjustmentPage";
-import { coloursToAdd, entryGrid, entryProblem, gridEntries, mergeLines, totalsOf, typedCartons, type DraftLine } from "./stockAdjustmentDraft";
+import { SessionProvider } from "../auth/SessionContext";
+import type { AuthUser } from "../../types/desktopApi";
+import { entryGrid, entryProblem, gridEntries, mergeLines, totalsOf, typedCartons, type DraftLine } from "./stockAdjustmentDraft";
 
 // STOCK ADJUSTMENT as an administrator meets it (docs/46): pick the article, then a box IN DOZENS for every colour and
 // size at once (owner, 13 Nov 2026), each showing the figure now and what it would leave, the lines with totals, a Post
@@ -29,12 +31,15 @@ const posted = {
 
 let api: Record<string, ReturnType<typeof vi.fn>>;
 
+/** Adding a colour is for an administrator on the Product Master computer: the one rule (useCanAddColour). */
+const ADMIN: AuthUser = { id: "u-admin", username: "owner", role: "ADMIN", accessStatus: "APPROVED", permissions: [], lastLoginAt: null };
+
 const show = (canWrite = true, masterData = false) => {
   api.getWriteLeases.mockResolvedValue([
     { domain: "CARTON_STOCK", canWrite, reason: canWrite ? null : "HELD_ELSEWHERE", holderLabel: canWrite ? null : "PC 1 -- Manual Production" },
     { domain: "MASTER_DATA", canWrite: masterData, reason: masterData ? null : "HELD_ELSEWHERE", holderLabel: masterData ? null : "PC 1" },
   ]);
-  render(<NotificationsProvider><StockAdjustmentPage /></NotificationsProvider>);
+  render(<SessionProvider user={ADMIN} token="t"><NotificationsProvider><StockAdjustmentPage /></NotificationsProvider></SessionProvider>);
 };
 
 const pick = async (field: string, option: string) => {
@@ -134,34 +139,20 @@ describe("Stock Adjustment", () => {
     expect(await within(lines).findByText(`⚠ ${text.belowZero}`)).toBeInTheDocument();
   });
 
-  it("a box where the colour is not on that size yet gets the colour added first, once per colour, then the lines", async () => {
-    api.getCartonAdjustmentArticle.mockResolvedValue({ accepted: true, choices: [
-      choice("7/10", 0), choice("10/13", 0, { colorMissing: true }), choice("13/1", 0, { colorMissing: true }),
-      choice("7/10", 0, { color: "BLUE", colorMissing: true }), choice("10/13", 0, { color: "BLUE" }), choice("13/1", 0, { color: "BLUE" }),
-    ] });
+  // One rule and one control on every quantity-by-colour page (25 Nov 2026): a size the colour is not made in has no
+  // box; "+ Add" in it puts the colour on every size it is missing from, and the boxes appear.
+  it("a size the colour is not made in has no box; + Add puts the colour on every missing size, and the boxes appear", async () => {
+    api.getCartonAdjustmentArticle.mockResolvedValue({ accepted: true, choices: [choice("7/10", 0), choice("10/13", 0, { colorMissing: true }), choice("13/1", 0, { colorMissing: true })] });
     show(true, true);
     await pick(text.articleLabel, "SK6");
-    expect(within((await screen.findByRole("textbox", { name: text.quantityFor("RED", "10/13") })).closest("td") as HTMLElement).getByText(text.newOnSize)).toBeInTheDocument();
-    await userEvent.type(box("RED", "10/13"), "4");
-    await userEvent.type(box("RED", "13/1"), "1");
-    await userEvent.type(box("BLUE", "7/10"), "2");
-    await userEvent.click(screen.getByRole("button", { name: text.addToDocument }));
-    await waitFor(() => expect(api.addArticleColor).toHaveBeenCalledTimes(2));
-    expect(api.addArticleColor.mock.calls.map((call) => call[0])).toEqual([{ article: "SK6", color: "BLUE" }, { article: "SK6", color: "RED" }]);
-    const lines = screen.getByRole("region", { name: text.linesTitle });
-    expect(await within(lines).findByRole("row", { name: /^Total \+7 \/ −0 dozen/ })).toBeInTheDocument();
-  });
-
-  it("if a colour cannot be added, nothing goes on the document and the typing stays", async () => {
-    api.getCartonAdjustmentArticle.mockResolvedValue({ accepted: true, choices: [choice("7/10", 0), choice("10/13", 0, { colorMissing: true })] });
-    api.addArticleColor.mockResolvedValue({ accepted: false, reason: "Not now." });
-    show(true, true);
-    await pick(text.articleLabel, "SK6");
-    await userEvent.type(await screen.findByRole("textbox", { name: text.quantityFor("RED", "10/13") }), "4");
-    await userEvent.click(screen.getByRole("button", { name: text.addToDocument }));
-    expect(await screen.findByText("⚠ Not now.")).toBeInTheDocument();
-    expect((box("RED", "10/13") as HTMLInputElement).value).toBe("4");
-    expect(within(screen.getByRole("region", { name: text.linesTitle })).queryByRole("row", { name: /^Total/ })).toBeNull();
+    expect(await screen.findByRole("textbox", { name: text.quantityFor("RED", "7/10") })).toBeInTheDocument();
+    expect(screen.queryByRole("textbox", { name: text.quantityFor("RED", "10/13") })).toBeNull();
+    api.addArticleColor.mockResolvedValue({ accepted: true, color: "RED", added: 2, existing: 1 });
+    api.getCartonAdjustmentArticle.mockResolvedValue({ accepted: true, choices: [choice("7/10", 0), choice("10/13", 0), choice("13/1", 0)] });
+    await userEvent.click(screen.getByRole("button", { name: copy.missingSize.addMissingLabel("RED", "10/13") }));
+    await waitFor(() => expect(api.addArticleColor).toHaveBeenCalledWith({ article: "SK6", color: "RED" }));
+    expect(await screen.findByRole("textbox", { name: text.quantityFor("RED", "10/13") })).toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: text.quantityFor("RED", "13/1") })).toBeInTheDocument();
   });
 
   it("where master data is written elsewhere, a box without the colour says so and takes no quantity", async () => {
@@ -169,7 +160,8 @@ describe("Stock Adjustment", () => {
     show(true, false);
     await pick(text.articleLabel, "SK6");
     const grid = await screen.findByRole("table");
-    expect(within(within(grid).getByRole("rowheader", { name: "10/13" }).closest("tr") as HTMLElement).getByText(text.colorNotOnSize)).toBeInTheDocument();
+    expect(within(within(grid).getByRole("rowheader", { name: "10/13" }).closest("tr") as HTMLElement).getByText(copy.missingSize.notInMaster)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: copy.missingSize.addMissingLabel("RED", "10/13") })).toBeNull();
     expect(screen.queryByRole("textbox", { name: text.quantityFor("RED", "10/13") })).toBeNull();
     expect(screen.queryByRole("button", { name: text.addColorLabel("SK6") })).toBeNull();
   });
@@ -233,7 +225,6 @@ describe("the document being written", () => {
     expect(grid.colours).toEqual(["BLUE", "RED"]);
     const typed = { "b|RED": "2", "a|BLUE": "1.5", "b|BLUE": "1", "a|RED": " " };
     expect(gridEntries("SK6", choices, typed, "IN").map((line) => `${line.color} ${line.size} ${String(line.cartons)}`)).toEqual(["BLUE 7/10 3", "BLUE 10/13 2", "RED 10/13 4"]);
-    expect(coloursToAdd(choices, typed)).toEqual(["BLUE"]);
   });
 
   it("dozens typed are whole cartons: 7.5 dozen is 15 cartons", () => {
@@ -244,13 +235,13 @@ describe("the document being written", () => {
   });
 
   it("checks a quantity the way the main process does, in dozens", () => {
-    expect(entryProblem(row, "ADJUSTMENT", "OUT", "", true)).toBeNull();
-    expect(entryProblem(row, "ADJUSTMENT", "OUT", "5", true)).toBeNull();
-    expect(entryProblem(row, "ADJUSTMENT", "OUT", "5.5", true)).toBeNull(); // below zero is allowed (owner, 12 Nov 2026)
-    expect(entryProblem(row, "ADJUSTMENT", "IN", "2.25", true)).not.toBeNull();
-    expect(entryProblem(row, "ADJUSTMENT", "IN", "0", true)).not.toBeNull();
-    expect(entryProblem({ ...row, hasOpening: true }, "OPENING", "IN", "3", true)).toBe(text.alreadyOpened);
-    expect(entryProblem({ ...row, colorMissing: true }, "OPENING", "IN", "3", false)).toBe(text.colorNotOnSize);
-    expect(entryProblem({ ...row, colorMissing: true }, "OPENING", "IN", "3", true)).toBeNull();
+    expect(entryProblem(row, "ADJUSTMENT", "OUT", "")).toBeNull();
+    expect(entryProblem(row, "ADJUSTMENT", "OUT", "5")).toBeNull();
+    expect(entryProblem(row, "ADJUSTMENT", "OUT", "5.5")).toBeNull(); // below zero is allowed (owner, 12 Nov 2026)
+    expect(entryProblem(row, "ADJUSTMENT", "IN", "2.25")).not.toBeNull();
+    expect(entryProblem(row, "ADJUSTMENT", "IN", "0")).not.toBeNull();
+    expect(entryProblem({ ...row, hasOpening: true }, "OPENING", "IN", "3")).toBe(text.alreadyOpened);
+    // A size the colour is not made in takes nothing: it is added to Product Master first, from its cell.
+    expect(entryProblem({ ...row, colorMissing: true }, "OPENING", "IN", "3")).toBe(text.colorNotOnSize);
   });
 });

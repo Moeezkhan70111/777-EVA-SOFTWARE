@@ -4,6 +4,7 @@ import {
   CREATE_GATEPASS_ARTWORK_URL,
   DAILY_PRODUCTION_ARTWORK_URL,
   DANA_STOCK_ARTWORK_URL,
+  CUSTOMER_BALANCE_ARTWORK_URL,
   ENTER_ORDERS_ARTWORK_URL,
   GATEPASS_LIST_ARTWORK_URL,
   PENDING_ORDERS_ARTWORK_URL,
@@ -241,7 +242,12 @@ export const NAV_SECTIONS: readonly NavSection[] = [
       item("cash-voucher-form", t.cashVoucherForm, "cash"),
       item("cash-voucher-list", t.cashVoucherList, "history"),
       item("customer-ledger", t.customerLedger, "ledger"),
-      item("customer-balance", t.customerBalance, "balance"),
+      // A Dashboard card (owner, 25 Nov 2026): what every customer owes, at a glance. Shown, like every ledger page,
+      // only where the vouchers are (hiddenRoutes) and to whoever may open it.
+      {
+        ...item("customer-balance", t.customerBalance, "balance"),
+        feature: { artwork: CUSTOMER_BALANCE_ARTWORK_URL, theme: "sky", artworkHasScene: true, badge: "balance", onDashboard: true },
+      },
       item("purchase-voucher-form", t.purchaseVoucherForm, "purchase"),
       item("purchase-voucher-list", t.purchaseVoucherList, "history"),
       item("supplier-ledger", t.supplierLedger, "ledger"),

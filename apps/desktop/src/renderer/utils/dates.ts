@@ -161,6 +161,16 @@ export const formatDayMonth = (ymd: string, fallback = EM_DASH): string => {
   return day ? new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "long", timeZone: "UTC" }).format(day) : fallback;
 };
 
+/** `Wed` and `25 Nov`: a calendar day in a small tile (the Daily Production week). */
+export const formatShortWeekday = (ymd: string, fallback = EM_DASH): string => {
+  const day = calendarDay(ymd);
+  return day ? new Intl.DateTimeFormat("en-GB", { weekday: "short", timeZone: "UTC" }).format(day) : fallback;
+};
+export const formatShortDayMonth = (ymd: string, fallback = EM_DASH): string => {
+  const day = calendarDay(ymd);
+  return day ? new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", timeZone: "UTC" }).format(day) : fallback;
+};
+
 /** `October 2026` for the month a `YYYY-MM-DD` falls in — a calendar's heading. */
 export const formatMonthYear = (ymd: string, fallback = EM_DASH): string => {
   const day = calendarDay(ymd);

@@ -4,10 +4,11 @@ import { ColorSwatch } from "../../components/shared/ColorSwatch";
 import { ColourName } from "../colorTranslation/ColourName";
 import { SizeColourGrid, type GridBoxProps, type GridSize } from "../../components/shared/SizeColourGrid";
 import { copy } from "../../config/copy";
-import { MissingSizeCell } from "./MissingSizeCell";
+import { MissingSizeCell } from "../../components/shared/MissingSizeCell";
 import { OrderCheckIcon, OrderCloseIcon } from "./OrderIcons";
 import { articleGrid, blockProblems, blockTotals, cellKey, colourLocked, type ArticleBlock } from "./orderDraft";
 import { orderDozens } from "./orderUnits";
+import { revealBlockSoon } from "../../utils/revealBlock";
 
 // ONE ARTICLE ON THE ORDER: its colours as chips (pick as many as the party wants, at once), then a box for every live
 // colour and size, sizes down and chosen colours across (SizeColourGrid: arrow keys move up and down, Tab across).
@@ -45,15 +46,19 @@ export const ArticleBlockCard: React.FC<ArticleBlockCardProps> = ({ block, disab
     // An article that came with its one colour already chosen goes straight to its first box; otherwise to its colours.
     if (!focusOnMount) return;
     const firstBox = blockRef.current?.querySelector<HTMLInputElement>(".ord-input:not(:disabled)");
-    if (block.colours.length > 0 && firstBox) firstBox.focus();
-    else chipsRef.current?.querySelector<HTMLButtonElement>(".ord-chip:not(:disabled)")?.focus();
+    if (block.colours.length > 0 && firstBox) firstBox.focus({ preventScroll: true });
+    else chipsRef.current?.querySelector<HTMLButtonElement>(".ord-chip:not(:disabled)")?.focus({ preventScroll: true });
+    // The new article is shown whole, its sizes and boxes too: no scrolling down to find them (owner, 24 Nov 2026).
+    revealBlockSoon(blockRef.current);
     // Once, when the block first appears.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
     // The first colour chosen: the dozens are the next thing to type, so the first box takes the focus (default effect).
-    if (colourCount.current === 0 && block.colours.length === 1) blockRef.current?.querySelector<HTMLInputElement>(".ord-input:not(:disabled)")?.focus();
+    if (colourCount.current === 0 && block.colours.length === 1) blockRef.current?.querySelector<HTMLInputElement>(".ord-input:not(:disabled)")?.focus({ preventScroll: true });
+    // A colour added: its column, and the sizes under it, scroll into view (owner, 24 Nov 2026).
+    if (block.colours.length > colourCount.current) revealBlockSoon(blockRef.current);
     colourCount.current = block.colours.length;
   }, [block.colours.length]);
 
@@ -70,7 +75,7 @@ export const ArticleBlockCard: React.FC<ArticleBlockCardProps> = ({ block, disab
     const productId = grid.cells.get(cellKey(size.size, colour));
     if (!productId) {
       return (
-        <MissingSizeCell article={block.article} colour={colour} size={size.size} missingSizes={missingSizes(colour)} canAdd={canAddColor} disabled={disabled}
+        <MissingSizeCell className="ord-cell" article={block.article} colour={colour} size={size.size} missingSizes={missingSizes(colour)} canAdd={canAddColor} disabled={disabled}
           onAdded={(added) => { setFocusLabel(words.cellLabel(block.article, colour, size.size)); onColourAdded(added); }} />
       );
     }

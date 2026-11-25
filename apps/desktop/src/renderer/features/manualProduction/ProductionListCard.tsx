@@ -5,9 +5,13 @@ import { StateView } from "../../components/shared/StateView";
 import { copy } from "../../config/copy";
 import { byMachine, cartonsOf, dozensText, type DraftLine, type MachineGroup } from "./manualProductionDraft";
 import type { SaveOutcome } from "./useProductionList";
+import { COMPLETE_BUTTON_ID } from "./TodayStrip";
 
 // STEP 3, THE LIST: everything added, one block per machine, each line removable, the totals, and "Save production"
 // (asks first: every line is saved together, or none). Kept on this computer until it is saved or cleared.
+//
+// The UI/UX pass (owner, 25 Nov 2026): the table is as wide as its figures, dozens first and in bold, cartons quieter
+// (Pareto); once a save leaves every machine in, the outcome says so and takes the operator to Complete (peak-end).
 
 const text = copy.manualProductionPage;
 
@@ -18,7 +22,17 @@ interface ProductionListCardProps {
   onRemove: (key: string) => void;
   onClear: () => void;
   onSave: () => Promise<string | null>;
+  /** Every machine has production saved today and the day is not complete yet. */
+  allIn: boolean;
 }
+
+/** Back to the top of the page, to "Complete today's production". */
+const goToComplete = () => {
+  const button = document.getElementById(COMPLETE_BUTTON_ID);
+  if (!button) return;
+  if (typeof button.scrollIntoView === "function") button.scrollIntoView({ behavior: "smooth", block: "center" });
+  button.focus({ preventScroll: true });
+};
 
 const lineName = (line: DraftLine): string => `${line.machineName} ${line.article} ${line.size} ${line.color}`;
 
@@ -55,16 +69,21 @@ const MachineBlock: React.FC<{ group: MachineGroup; onRemove: (key: string) => v
   </div>
 );
 
-const Outcome: React.FC<{ outcome: SaveOutcome }> = ({ outcome }) =>
+const Outcome: React.FC<{ outcome: SaveOutcome; allIn: boolean }> = ({ outcome, allIn }) =>
   outcome.kind === "saved" ? (
-    <p className="mpr-outcome is-saved" role="status">
-      {text.saved(outcome.lines, dozensText(outcome.cartons))} {outcome.duplicates > 0 ? text.savedAgain : null}
-    </p>
+    <div className="mpr-outcome is-saved" role="status">
+      <p>✓ {text.saved(outcome.lines, dozensText(outcome.cartons))} {outcome.duplicates > 0 ? text.savedAgain : null}</p>
+      {allIn ? (
+        <p className="mnp-all-in">
+          {text.allInNext} <button type="button" className="btn btn-secondary btn-sm" onClick={goToComplete}>{text.goToComplete} ↑</button>
+        </p>
+      ) : null}
+    </div>
   ) : (
     <p className="mpr-outcome is-refused" role="alert"><strong>{text.notSaved}</strong> {outcome.message}</p>
   );
 
-export const ProductionListCard: React.FC<ProductionListCardProps> = ({ lines, saving, outcome, onRemove, onClear, onSave }) => {
+export const ProductionListCard: React.FC<ProductionListCardProps> = ({ lines, saving, outcome, onRemove, onClear, onSave, allIn }) => {
   const [confirming, setConfirming] = useState(false);
   const groups = byMachine(lines);
   const cartons = cartonsOf(lines);
@@ -81,12 +100,11 @@ export const ProductionListCard: React.FC<ProductionListCardProps> = ({ lines, s
       {groups.map((group) => <MachineBlock key={group.machineId} group={group} onRemove={onRemove} />)}
       {lines.length > 0 ? (
         <div className="mnp-actions">
-          <span className="mnp-note">{text.keptNote}</span>
           <button type="button" className="btn btn-secondary" onClick={onClear} disabled={saving}>{text.clearList}</button>
           <button type="button" className="btn btn-primary mnp-save" onClick={() => setConfirming(true)} disabled={saving}>{saving ? text.saving : text.save}</button>
         </div>
       ) : null}
-      {outcome ? <Outcome outcome={outcome} /> : null}
+      {outcome ? <Outcome outcome={outcome} allIn={allIn} /> : null}
       {confirming ? (
         <ConfirmDialog
           title={text.saveTitle}

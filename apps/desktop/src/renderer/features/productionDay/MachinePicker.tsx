@@ -2,6 +2,7 @@ import React, { useRef } from "react";
 import type { ProductionDayView } from "@erp/domain";
 import { copy } from "../../config/copy";
 import { dozenFigure } from "../cartonStock/CartonMatrix";
+import { shareOf } from "./dayInsights";
 
 // WHICH MACHINE'S PRODUCTION (owner, 15–16 Nov 2026): one card per machine beside the day's total, in place of the
 // Cartons / Machines / Entries cards. Styled like the Store page's In / Out buttons: white cards with an icon tile
@@ -10,6 +11,9 @@ import { dozenFigure } from "../cartonStock/CartonMatrix";
 //   [ TOTAL 15.5 DOZEN ]  [▦ All machines ✓]  [⚙ MACHINE 1]  [⚙ MACHINE 2]   each with its dozens underneath
 //
 // Tabs for a screen reader (the panel below is labelled by the chosen one); ← and → move between them.
+//
+// Each machine says its share of the day (owner, 25 Nov 2026): a thin bar and the percent in words, so the busiest
+// machine is seen at a glance and never by the bar alone.
 
 const text = copy.productionDay;
 export const ALL_MACHINES = "all";
@@ -70,6 +74,12 @@ export const MachinePicker: React.FC<MachinePickerProps> = ({ day, active, onSel
             <span className="pd-machine-text">
               <span className="pd-machine-name">{choice.name}</span>
               <span className="pd-machine-dozens">{text.machineDozens(dozenFigure(choice.cartons))}</span>
+              {choice.id === ALL_MACHINES ? null : (
+                <span className="pd-machine-share">
+                  <span className="pd-machine-share-track" aria-hidden="true"><span style={{ inlineSize: `${String(shareOf(choice.cartons, day.totalCartons))}%` }} /></span>
+                  <span className="pd-machine-share-text">{text.shareOfDay(shareOf(choice.cartons, day.totalCartons))}</span>
+                </span>
+              )}
             </span>
             {selected ? <span className="pd-machine-mark" aria-hidden="true">✓</span> : null}
           </button>

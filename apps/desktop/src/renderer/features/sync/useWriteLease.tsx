@@ -1,6 +1,8 @@
 import React, { createContext, useContext, useEffect, useMemo, useState } from "react";
 import type { LeaseDomain } from "@erp/domain";
+import { useDataChanged } from "../../hooks/useDataChanged";
 import { useDesktopApi } from "../../hooks/useDesktopApi";
+import { DATA_KIND } from "../../../shared/dataChange";
 import type { WriteLeaseStatus } from "../../types/desktopApi";
 
 // Whether this computer may write the leased domains now (docs/37 section W).
@@ -15,6 +17,8 @@ import type { WriteLeaseStatus } from "../../types/desktopApi";
 // Outside the provider (a screen rendered on its own, as in a test) the hook asks for itself.
 
 const REFRESH_MS = 30_000;
+/** A sync pass also reads the leases: a grant or takeover shows within seconds of it, not only on the timer (24 Nov 2026). */
+const LEASE_CHANGES = [DATA_KIND.SYNC] as const;
 
 export interface WriteLeases {
   /** Still asking. */
@@ -28,6 +32,8 @@ const usePolledWriteLeases = (enabled: boolean): WriteLeases => {
   const api = useDesktopApi();
   const [statuses, setStatuses] = useState<readonly WriteLeaseStatus[] | null>(null);
   const [loading, setLoading] = useState(true);
+  const [passes, setPasses] = useState(0);
+  useDataChanged(LEASE_CHANGES, () => setPasses((seen) => seen + 1));
 
   useEffect(() => {
     if (!enabled) return undefined;
@@ -48,7 +54,7 @@ const usePolledWriteLeases = (enabled: boolean): WriteLeases => {
       alive = false;
       clearInterval(timer);
     };
-  }, [api, enabled]);
+  }, [api, enabled, passes]);
 
   // The same object until the answer changes, so the provider does not redraw every screen with it.
   return useMemo(() => ({ loading, statuses }), [loading, statuses]);

@@ -9953,7 +9953,6 @@ tr.has-error .gp-qty-stepper input { color: var(--err); }
 .sa-cell.is-locked { background: var(--surface-2); vertical-align: middle; }
 .sa-cell-figures { display: block; margin-top: 2px; font-size: 0.75rem; color: var(--text-3); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .sa-cell-figures.is-below-zero { color: var(--warning-strong); font-weight: 700; }
-.sa-cell .sa-new-on-size { display: block; margin-top: 2px; }
 .sa-add-color { min-height: 44px; padding: 0 var(--space-3); font-weight: 700; }
 .sa-new-color { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; flex: 1 1 100%; }
 .sa-new-color .form-input { flex: 1 1 10rem; min-height: 40px; }
@@ -10977,7 +10976,7 @@ tr.has-error .gp-qty-stepper input { color: var(--err); }
 .ord-page .ord-chip.is-on .ord-chip-mark svg { opacity: 1; transform: scale(1); }
 .ord-page .ord-input { box-shadow: inset 0 1px 2px color-mix(in oklch, var(--sp-navy) 8%, transparent); transition: border-color 120ms ease, box-shadow 120ms ease; }
 .ord-page .ord-input:hover:not(:disabled):not(:focus) { border-color: color-mix(in oklch, var(--sp-navy-2) 35%, var(--sp-line)); }
-.ord-page .ord-cell--none { background: repeating-linear-gradient(135deg, transparent 0 7px, var(--sp-ground) 7px 8px); cursor: not-allowed; }
+.ord-page .ord-cell--none, .size-missing-cell { background: repeating-linear-gradient(135deg, transparent 0 7px, var(--sp-ground) 7px 8px); cursor: not-allowed; }
 
 /* Progressive disclosure: the optional note waits behind a quiet button in the note's place. */
 .ord-page .ord-note-add {
@@ -11125,18 +11124,18 @@ tr.has-error .gp-qty-stepper input { color: var(--err); }
 /* A size a colour is not in Product Master in (24 Nov 2026). For anyone: said in words, small and quiet, on the hatch.
    For an administrator where Product Master is written: "+ Add", a dashed box the size of the others, so it reads as
    "a box that is not there yet". 44px tall, like the boxes. */
-.ord-page .ord-cell--none { text-align: center; }
-.ord-page .ord-missing { display: inline-block; padding: 2px 6px; border-radius: 6px; background: var(--white); color: var(--sp-muted); font-size: 0.75rem; font-weight: 600; line-height: 1.3; white-space: normal; text-wrap: balance; }
-.ord-page .ord-missing-add {
+.ord-page .ord-cell--none, .size-missing-cell { text-align: center; vertical-align: middle; }
+.size-missing { display: inline-block; padding: 2px 6px; border-radius: 6px; background: var(--white); color: var(--sp-muted); font-size: 0.75rem; font-weight: 600; line-height: 1.3; white-space: normal; text-wrap: balance; }
+.size-missing-add {
   width: 100%; min-height: 44px; padding: 0 10px; border: 1.5px dashed color-mix(in oklch, var(--sp-mode-on-start) 45%, var(--sp-line));
   border-radius: var(--sp-radius-control); background: color-mix(in oklch, var(--white) 85%, transparent);
   color: var(--sp-navy-2); font: inherit; font-size: 0.82rem; font-weight: 700; cursor: pointer;
   transition: background-color 140ms ease, border-color 140ms ease;
 }
-.ord-page .ord-missing-add:hover:not(:disabled) { border-style: solid; background: color-mix(in oklch, var(--sp-blue-soft) 70%, var(--white)); }
-.ord-page .ord-missing-add:focus-visible { outline: 2px solid var(--sp-mode-on-start); outline-offset: 2px; }
-.ord-page .ord-missing-add:disabled { cursor: progress; opacity: 0.7; }
-@media (prefers-reduced-motion: reduce) { .ord-page .ord-missing-add { transition: none; } }
+.size-missing-add:hover:not(:disabled) { border-style: solid; background: color-mix(in oklch, var(--sp-blue-soft) 70%, var(--white)); }
+.size-missing-add:focus-visible { outline: 2px solid var(--sp-mode-on-start); outline-offset: 2px; }
+.size-missing-add:disabled { cursor: progress; opacity: 0.7; }
+@media (prefers-reduced-motion: reduce) { .size-missing-add { transition: none; } }
 
 /* ════════════════════════════ PENDING ORDERS: THE UI/UX PASS (owner, 24 Nov 2026) ════════════════════════════
    The same look as Enter Orders (.doc-themed, the Orders tone: navy, amber for what is owed). Typography — kerning,
@@ -11150,30 +11149,30 @@ tr.has-error .gp-qty-stepper input { color: var(--err); }
 .ord-pending .ord-toolbar { flex: 1 1 480px; align-items: center; align-content: center; gap: 12px; }
 
 /* Search: 48px, the page's field; "/" shown as a key until text is typed, then a clear button in its place. */
-.ord-pending .ord-search { flex: 1 1 18rem; max-width: 30rem; }
-.ord-pending .ord-search .input {
+:is(.ord-pending, .cl-page) .ord-search { flex: 1 1 18rem; max-width: 30rem; }
+:is(.ord-pending, .cl-page) .ord-search .input {
   min-height: 48px; padding-right: 48px; border-color: var(--sp-line); border-radius: var(--sp-radius-control);
   background: var(--white); color: var(--sp-navy); box-shadow: var(--sp-card-shadow);
 }
-.ord-pending .ord-search .input:focus { outline: none; border-color: var(--sp-mode-on-start); box-shadow: 0 0 0 3px color-mix(in oklch, var(--sp-mode-on-start) 22%, transparent); }
-.ord-pending .ord-search .input::-webkit-search-cancel-button { display: none; }
-.ord-pending .ord-search-key, .ord-pending .ord-search-clear { position: absolute; top: 50%; right: 8px; transform: translateY(-50%); }
-.ord-pending .ord-search-key {
+:is(.ord-pending, .cl-page) .ord-search .input:focus { outline: none; border-color: var(--sp-mode-on-start); box-shadow: 0 0 0 3px color-mix(in oklch, var(--sp-mode-on-start) 22%, transparent); }
+:is(.ord-pending, .cl-page) .ord-search .input::-webkit-search-cancel-button { display: none; }
+:is(.ord-pending, .cl-page) .ord-search-key, :is(.ord-pending, .cl-page) .ord-search-clear { position: absolute; top: 50%; right: 8px; transform: translateY(-50%); }
+:is(.ord-pending, .cl-page) .ord-search-key {
   min-width: 24px; padding: 1px 6px; border: 1px solid var(--sp-line); border-radius: 6px; background: var(--sp-ground);
   color: var(--sp-muted); font: 600 0.75rem/1.4 var(--font-mono); text-align: center;
 }
-.ord-pending .ord-search-clear {
+:is(.ord-pending, .cl-page) .ord-search-clear {
   display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; padding: 0; border: 0; border-radius: 999px;
   background: transparent; color: var(--sp-muted); cursor: pointer;
 }
-.ord-pending .ord-search-clear:hover { background: var(--sp-ground); color: var(--sp-navy); }
-.ord-pending .ord-search-clear:focus-visible { outline: 2px solid var(--sp-mode-on-start); }
-.ord-pending .ord-search-clear svg { width: 16px; height: 16px; }
+:is(.ord-pending, .cl-page) .ord-search-clear:hover { background: var(--sp-ground); color: var(--sp-navy); }
+:is(.ord-pending, .cl-page) .ord-search-clear:focus-visible { outline: 2px solid var(--sp-mode-on-start); }
+:is(.ord-pending, .cl-page) .ord-search-clear svg { width: 16px; height: 16px; }
 
 /* Filters: one segmented control, 44px, the chosen one underlined in the amber with its words in the navy. */
-.ord-pending .sa-toggle { overflow: hidden; border: 1px solid var(--sp-line); border-radius: var(--sp-radius-control); background: var(--white); box-shadow: var(--sp-card-shadow); }
-.ord-pending .sa-toggle-btn { min-height: 46px; padding: 0 18px; color: var(--sp-muted); font-weight: 600; transition: color 140ms ease, background-color 140ms ease, box-shadow 160ms ease; }
-.ord-pending .sa-toggle-btn:hover:not(.is-on) { background: color-mix(in oklch, var(--sp-ground) 70%, var(--white)); color: var(--sp-navy); }
+:is(.ord-pending, .cl-page) .sa-toggle { overflow: hidden; border: 1px solid var(--sp-line); border-radius: var(--sp-radius-control); background: var(--white); box-shadow: var(--sp-card-shadow); }
+:is(.ord-pending, .cl-page) .sa-toggle-btn { min-height: 46px; padding: 0 18px; color: var(--sp-muted); font-weight: 600; transition: color 140ms ease, background-color 140ms ease, box-shadow 160ms ease; }
+:is(.ord-pending, .cl-page) .sa-toggle-btn:hover:not(.is-on) { background: color-mix(in oklch, var(--sp-ground) 70%, var(--white)); color: var(--sp-navy); }
 
 /* The parties: one card each (common region), alike (similarity), arriving one after another (stagger). While a new
    filter is read, the rows on screen stay, dimmed, instead of the page going blank. */
@@ -11249,29 +11248,475 @@ tr.has-error .gp-qty-stepper input { color: var(--err); }
 }
 @media (prefers-reduced-motion: reduce) {
   .ord-pending .card.ord-party, .ord-pending .ord-party-body, .ord-pending .ord-matrix--skeleton { animation: none; }
-  .ord-pending .ord-chevron, .ord-pending .ord-meter > span, .ord-pending .sa-toggle-btn, .ord-pending .ord-parties { transition: none; }
+  .ord-pending .ord-chevron, .ord-pending .ord-meter > span, :is(.ord-pending, .cl-page) .sa-toggle-btn, .ord-pending .ord-parties { transition: none; }
 }
 /* The article's name on its band: white. Specific enough to beat the Orders tone's navy title (.app-main[data-page-tone]). */
 .ord-pending .ord-matrix-head .ord-matrix-title { color: var(--white); }
 
 /* Under an article + size on the Gatepass: the article's colours this size is not made in (24 Nov 2026). Quiet and
    dashed, a box that is not there yet; "+ Add" only for an administrator where Product Master is written. */
-.doc-themed .gp-missing { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-top: 10px; padding: 10px 12px; border: 1px dashed var(--sp-line); border-radius: var(--sp-radius-control); background: var(--sp-ground); }
-.doc-themed .gp-missing-title { color: var(--sp-muted); font-size: 0.8rem; font-weight: 700; }
-.doc-themed .gp-missing-list { display: flex; flex-wrap: wrap; gap: 8px; margin: 0; padding: 0; list-style: none; }
-.doc-themed .gp-missing-colour, .doc-themed .gp-missing-add {
-  display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 0 12px; border-radius: 999px;
-  color: var(--sp-navy); font: inherit; font-size: 0.82rem; font-weight: 600;
-}
-.doc-themed .gp-missing-colour { border: 1px solid var(--sp-line); background: var(--white); }
-.doc-themed .gp-missing-add {
-  min-height: 44px; border: 1.5px dashed color-mix(in oklch, var(--sp-mode-on-start) 45%, var(--sp-line)); background: var(--white); cursor: pointer;
-  transition: background-color 140ms ease, border-color 140ms ease;
-}
-.doc-themed .gp-missing-add:hover:not(:disabled) { border-style: solid; background: color-mix(in oklch, var(--sp-blue-soft) 70%, var(--white)); }
-.doc-themed .gp-missing-add:focus-visible { outline: 2px solid var(--sp-mode-on-start); outline-offset: 2px; }
-.doc-themed .gp-missing-add:disabled { cursor: progress; opacity: 0.7; }
-.doc-themed .gp-missing-hint { flex-basis: 100%; color: var(--sp-muted); font-size: 0.78rem; text-wrap: pretty; }
-@media (prefers-reduced-motion: reduce) { .doc-themed .gp-missing-add { transition: none; } }
 /* A line lowered after a gatepass had already sent more (24 Nov 2026): what was asked, quietly, under what counts. */
 .ord-page .ord-asked { display: block; color: var(--sp-muted); font-size: 0.75rem; font-weight: 600; }
+
+/* ── CUSTOMER LEDGER (owner, 24 Nov 2026: the UI/UX pass) ──────────────────────────────────────────────────────────
+   The page in the Dashboard cards' theme (.doc-themed). One figure stands out, the current balance, alone in the blue
+   (von Restorff); the customer and their limit sit beside it (proximity); the period's sum reads left to right as one
+   shape (Prägnanz); every amount in tabular figures with kerning on, so digits line up and never jump (no layout shift).
+   Motion is short, starts from where the thing is, can be interrupted (transitions, not keyframes, on what the
+   pointer touches) and stops for prefers-reduced-motion. Controls are 44px or more. */
+.cl-page {
+  display: grid; gap: 16px; padding-inline: max(4px, env(safe-area-inset-left)) max(4px, env(safe-area-inset-right));
+  padding-bottom: max(16px, env(safe-area-inset-bottom));
+  font-kerning: normal; font-feature-settings: "kern" 1; line-height: 1.45;
+}
+.cl-page h1, .cl-page strong, .cl-page p { text-wrap: pretty; }
+
+/* The header: back, title, the history actions. */
+.cl-head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px 24px; padding-bottom: 12px; border-bottom: 1px solid var(--sp-line); }
+.cl-head-title { display: grid; gap: 6px; }
+.cl-head h1 { margin: 0; color: var(--sp-navy); font-size: clamp(1.5rem, 1.2rem + 1vw, 1.85rem); font-weight: 800; letter-spacing: -0.02em; line-height: 1.1; text-wrap: balance; }
+.cl-page .customer-ledger-back {
+  display: inline-flex; align-items: center; gap: 6px; justify-self: start; min-height: 44px; padding: 0 12px 0 8px; border: 1px solid var(--sp-line);
+  border-radius: 999px; background: var(--white); color: var(--sp-navy-2); font-weight: 700; box-shadow: var(--sp-card-shadow);
+  transition: border-color 140ms ease, background-color 140ms ease;
+}
+.cl-page .customer-ledger-back:hover { border-color: var(--sp-blue-line); background: var(--sp-blue-soft); }
+.cl-page .customer-ledger-back:focus-visible { outline: 3px solid var(--sp-blue); outline-offset: 2px; }
+
+/* Who, and how they stand: the customer card and the balance, side by side; stacked on a phone. */
+.cl-top { display: grid; gap: 16px; grid-template-columns: minmax(0, 1fr); }
+.cl-top.has-party { grid-template-columns: minmax(0, 1.25fr) minmax(280px, 1fr); }
+@media (max-width: 860px) { .cl-top.has-party { grid-template-columns: minmax(0, 1fr); } }
+.cl-customer.card { display: grid; gap: 16px; align-content: start; padding: 18px 20px; border: 1px solid var(--sp-line); border-radius: var(--dash-card-radius); background: var(--white); box-shadow: var(--sp-card-shadow); }
+.cl-customer-field { display: grid; gap: 6px; }
+.cl-customer-field .input-label { color: var(--sp-field-label); font-size: 0.78rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; }
+
+/* The limit: a meter that fills toward it (goal gradient). Over the limit it says so in words, and turns red. */
+.cl-limit { display: grid; grid-template-columns: auto 1fr; align-items: baseline; gap: 6px 12px; }
+.cl-limit-label { color: var(--sp-muted); font-size: 0.78rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; }
+.cl-limit strong { justify-self: end; color: var(--sp-navy); font-variant-numeric: tabular-nums; }
+.cl-limit small { grid-column: 1 / -1; color: var(--sp-muted); font-variant-numeric: tabular-nums; }
+.cl-limit small b { color: var(--sp-navy); }
+.cl-limit-meter { grid-column: 1 / -1; height: 8px; overflow: hidden; border-radius: 999px; background: color-mix(in oklch, var(--sp-line) 70%, var(--white)); }
+.cl-limit-meter > span { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, var(--sp-mode-on-start), var(--sp-mode-on-end)); transition: inline-size 420ms var(--ease-out-expo); }
+.cl-limit[data-over] .cl-limit-meter > span { background: var(--err); }
+.cl-limit[data-over] small b { color: var(--err); }
+
+/* THE CURRENT BALANCE. */
+.cl-hero {
+  display: grid; gap: 6px; align-content: center; padding: 20px 22px; border-radius: var(--dash-card-radius); color: var(--white);
+  background: linear-gradient(135deg, var(--sp-mode-on-start), var(--sp-mode-on-end)); box-shadow: var(--sp-mode-on-shadow);
+  transition: opacity 160ms ease; animation: ord-chip-in 240ms var(--ease-out-expo) both;
+}
+.cl-hero[aria-busy="true"] { opacity: 0.8; }
+.cl-hero-label { font-size: 0.78rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; opacity: 0.92; }
+.cl-hero-label small { font-weight: 600; letter-spacing: 0.02em; text-transform: none; }
+.cl-hero-figure { font-size: clamp(2rem, 1.5rem + 1.6vw, 2.6rem); font-weight: 800; line-height: 1.05; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+.cl-hero-position { display: inline-flex; align-items: center; gap: 6px; font-weight: 700; }
+.cl-hero-position svg { width: 18px; height: 18px; flex: none; }
+.cl-hero-note { margin: 2px 0 0; font-size: 0.85rem; opacity: 0.92; }
+
+/* The one thing left to do: the old software's balance, not yet carried in (Zeigarnik). Amber, with words and a mark. */
+.cl-history-notice {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 20px; padding: 14px 18px;
+  border: 1px solid color-mix(in oklch, var(--warn) 45%, var(--white)); border-inline-start-width: 4px; border-radius: var(--sp-radius-card);
+  background: var(--warn-bg); color: var(--sp-navy); animation: ord-chip-in 240ms var(--ease-out-expo) 60ms both;
+}
+.cl-history-notice > div { display: grid; gap: 4px; flex: 1 1 26rem; }
+.cl-history-notice p { margin: 0; color: var(--sp-navy-2); max-width: 70ch; }
+.cl-history-ask { color: var(--sp-muted); font-weight: 600; }
+
+/* The workspace: tabs and the period in one head (common region), the tab's body under it. */
+.cl-workspace.card { padding: 0; overflow: clip; border: 1px solid var(--sp-line); border-radius: var(--dash-card-radius); background: var(--white); box-shadow: var(--sp-card-shadow); }
+.cl-workspace-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 16px; border-bottom: 1px solid var(--sp-line); background: var(--sp-ground); }
+.cl-tabs { display: inline-flex; gap: 4px; padding: 4px; border-radius: var(--sp-radius-control); background: var(--white); box-shadow: var(--sp-card-shadow); }
+.cl-tab { min-height: 40px; padding: 0 16px; border: 0; border-radius: var(--sp-radius-tab); background: transparent; color: var(--sp-muted); font-weight: 700; cursor: pointer; transition: background-color 140ms ease, color 140ms ease; }
+.cl-tab:hover:not(.is-on) { color: var(--sp-navy); background: color-mix(in oklch, var(--sp-ground) 70%, var(--white)); }
+.cl-tab.is-on { background: var(--sp-blue-soft); color: var(--sp-blue); box-shadow: inset 0 -2px 0 var(--sp-blue); }
+.cl-tab:focus-visible { outline: 3px solid var(--sp-blue); outline-offset: 1px; }
+.cl-tab-body { view-transition-name: cl-tab-body; }
+.cl-period { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.cl-page .cl-period .sa-toggle-btn { min-height: 44px; padding: 0 14px; }
+.cl-period-dates { display: inline-flex; align-items: center; gap: 8px; color: var(--sp-muted); font-weight: 600; }
+.cl-period-dates .input { min-height: 44px; border-color: var(--sp-line); border-radius: var(--sp-radius-control); font-variant-numeric: tabular-nums; }
+
+/* The Ledger tab. */
+.cl-ledger-tab { display: grid; gap: 14px; padding: 16px; }
+.cl-page .ledger-archive-strip { margin: 0; }
+.cl-page .cl-ledger-tab .customer-ledger-table-wrap { margin: 0; max-height: min(70vh, 760px); overflow: auto; border-color: var(--sp-line); box-shadow: none; transition: opacity 160ms ease; }
+.cl-page .customer-ledger-table-wrap.is-refreshing { opacity: 0.55; }
+
+/* Brought forward + debit − credit = balance. */
+.cl-equation { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); border: 1px solid var(--sp-line); border-radius: var(--sp-radius-card); background: var(--white); }
+@media (max-width: 760px) { .cl-equation { grid-auto-flow: row; grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.cl-eq-term { position: relative; display: grid; gap: 2px; padding: 12px 16px 12px 34px; animation: ord-chip-in 220ms var(--ease-out-expo) both; }
+.cl-eq-term + .cl-eq-term { border-inline-start: 1px solid var(--sp-line); }
+.cl-eq-term:nth-child(2) { animation-delay: 30ms; }
+.cl-eq-term:nth-child(3) { animation-delay: 60ms; }
+.cl-eq-term:nth-child(4) { animation-delay: 90ms; }
+.cl-eq-sign { position: absolute; inset-inline-start: 12px; top: 50%; transform: translateY(-50%); color: var(--sp-faint); font-size: 1.2rem; font-weight: 700; }
+.cl-eq-label { color: var(--sp-muted); font-size: 0.72rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; }
+.cl-eq-value { color: var(--sp-navy); font-size: 1.15rem; font-weight: 800; font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
+.cl-eq-term small { color: var(--sp-muted); font-variant-numeric: tabular-nums; }
+.cl-eq-term.is-total { border-radius: 0 var(--sp-radius-card) var(--sp-radius-card) 0; background: var(--sp-blue-wash); }
+.cl-eq-term.is-total .cl-eq-value { color: var(--sp-blue); }
+
+/* Search and what to show. */
+.cl-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 12px; }
+.cl-filters { flex-wrap: wrap; }
+
+/* The table: the head stays while the rows scroll; rows answer the pointer; the voucher number is the button. */
+.cl-page .customer-ledger-table { font-size: 0.8rem; font-variant-numeric: tabular-nums; }
+.cl-page .customer-ledger-table thead th { position: sticky; top: 0; z-index: 1; background: var(--sp-ground); color: var(--sp-muted); }
+.cl-page .customer-ledger-row { cursor: pointer; transition: background-color 120ms ease; }
+.cl-page .customer-ledger-row:hover td { background: color-mix(in oklch, var(--sp-blue-soft) 60%, var(--white)); }
+.cl-page tbody tr { animation: ord-chip-in 200ms var(--ease-out-expo) both; }
+.cl-page tbody tr:nth-child(2) { animation-delay: 20ms; }
+.cl-page tbody tr:nth-child(3) { animation-delay: 40ms; }
+.cl-page tbody tr:nth-child(4) { animation-delay: 60ms; }
+.cl-page tbody tr:nth-child(5) { animation-delay: 80ms; }
+.cl-page tbody tr:nth-child(n + 6) { animation-delay: 100ms; }
+.cl-voucher-open { min-height: 32px; padding: 0 8px; margin-inline-start: -8px; border: 0; border-radius: 8px; background: transparent; font: inherit; font-weight: 800; cursor: pointer; text-decoration: underline; text-decoration-color: color-mix(in oklch, currentColor 35%, transparent); text-underline-offset: 3px; }
+.cl-voucher-open:hover { background: var(--sp-blue-soft); text-decoration-color: currentColor; }
+.cl-voucher-open:focus-visible { outline: 3px solid var(--sp-blue); outline-offset: 1px; }
+
+/* Its pages. */
+.cl-footer { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 16px; padding: 0; }
+.cl-footer-count { color: var(--sp-muted); font-weight: 600; font-variant-numeric: tabular-nums; }
+.cl-page-size.input { width: auto; min-height: 44px; border-color: var(--sp-line); border-radius: var(--sp-radius-control); }
+
+::view-transition-old(cl-tab-body), ::view-transition-new(cl-tab-body) { animation-duration: 180ms; animation-timing-function: var(--ease-out-expo); }
+@media (prefers-reduced-motion: reduce) {
+  .cl-hero, .cl-history-notice, .cl-eq-term, .cl-page tbody tr { animation: none; }
+  .cl-limit-meter > span, .cl-tab, .cl-page .customer-ledger-row, .cl-page .customer-ledger-table-wrap, .cl-page .customer-ledger-back { transition: none; }
+}
+.cl-head-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; }
+.cl-head-actions > * { margin: 0; }
+.cl-page .customer-ledger-table td:first-child, .cl-page .customer-ledger-table th:first-child { white-space: nowrap; }
+/* The header's and strips' buttons in the page's one secondary look, 44px (similarity, touch target). */
+.cl-page .customer-ledger-action, .cl-page .customer-ledger-print {
+  display: inline-flex; align-items: center; gap: 6px; min-height: 44px; padding: 0 14px; border: 1px solid var(--sp-line); border-radius: var(--sp-radius-control);
+  background: var(--white); color: var(--sp-navy-2); font-weight: 700; box-shadow: var(--sp-card-shadow); cursor: pointer; transform: none;
+  transition: border-color 140ms ease, background-color 140ms ease;
+}
+.cl-page .customer-ledger-action:hover:not(:disabled), .cl-page .customer-ledger-print:hover:not(:disabled) { border-color: var(--sp-blue-line); background: var(--sp-blue-soft); color: var(--sp-navy); }
+.cl-page .customer-ledger-action:focus-visible, .cl-page .customer-ledger-print:focus-visible { outline: 3px solid var(--sp-blue); outline-offset: 2px; }
+.cl-page .customer-ledger-action:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* ── Customer Ledger, second pass (24 Nov 2026) ── */
+/* The header's two menus: 44px, the page's secondary look. */
+.cl-page .cl-head-actions .rm-action-menu > .btn { min-height: 44px; }
+.cl-page .rm-action-menu-panel { width: 260px; }
+
+/* The old software's nine columns by default (Jakob, Miller); "More columns" brings Less, Tot. Disc and Reference. */
+.cl-table--simple thead th:is(:nth-child(7), :nth-child(8), :nth-child(12)),
+.cl-table--simple tbody tr > td:is(:nth-child(7), :nth-child(8), :nth-child(12)) { display: none; }
+.cl-columns-toggle[aria-pressed="true"] { border-color: var(--sp-blue-line); background: var(--sp-blue-soft); color: var(--sp-blue); }
+.cl-toolbar .cl-columns-toggle { margin-inline-start: auto; }
+
+/* The table ends on the answer: the closing balance (serial position, peak-end). */
+.cl-page .customer-ledger-table tfoot .cl-closing-row td {
+  padding: 14px 12px; border-top: 2px solid var(--sp-blue-line); background: var(--sp-blue-wash); color: var(--sp-navy);
+  font-size: 0.85rem; font-weight: 800; letter-spacing: 0.02em;
+}
+.cl-page .customer-ledger-table tfoot .cl-closing-row td.balance { color: var(--sp-blue); font-size: 1rem; }
+
+/* The opening balance and the old software, together and folded (proximity, progressive disclosure). */
+.cl-history { border: 1px solid var(--sp-line); border-radius: var(--sp-radius-card); background: var(--white); }
+.cl-history > summary {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; min-height: 48px; padding: 10px 16px; cursor: pointer; list-style: none;
+  border-radius: inherit; transition: background-color 140ms ease;
+}
+.cl-history > summary::-webkit-details-marker { display: none; }
+.cl-history > summary::before { content: "▸"; color: var(--sp-muted); transition: transform 160ms var(--ease-out-expo); }
+.cl-history[open] > summary::before { transform: rotate(90deg); }
+.cl-history > summary:hover { background: var(--sp-ground); }
+.cl-history > summary:focus-visible { outline: 3px solid var(--sp-blue); outline-offset: 2px; }
+.cl-history-title { color: var(--sp-navy); font-weight: 800; }
+.cl-history-status { color: var(--sp-muted); font-weight: 600; font-variant-numeric: tabular-nums; }
+.cl-history-body { display: grid; gap: 10px; padding: 0 12px 12px; }
+
+/* Over the limit: a badge in words on the balance (von Restorff). Carried in: one glow (peak-end). */
+.cl-hero-badge {
+  justify-self: start; padding: 3px 10px; border-radius: 999px; background: var(--white); color: var(--err);
+  font-size: 0.78rem; font-weight: 800; letter-spacing: 0.02em;
+}
+.cl-hero.is-carried { animation: cl-carried 1600ms var(--ease-out-expo) both; }
+@keyframes cl-carried {
+  0% { box-shadow: var(--sp-mode-on-shadow), 0 0 0 0 color-mix(in oklch, var(--sp-mode-on-end) 70%, transparent); }
+  35% { box-shadow: var(--sp-mode-on-shadow), 0 0 0 10px color-mix(in oklch, var(--sp-mode-on-end) 25%, transparent); }
+  100% { box-shadow: var(--sp-mode-on-shadow), 0 0 0 0 transparent; }
+}
+
+/* Skeletons: the shape of the ledger at once (Doherty). */
+.cl-skeleton { display: block; border-radius: 8px; background: linear-gradient(90deg, var(--sp-ground) 0%, color-mix(in oklch, var(--sp-ground) 40%, var(--white)) 50%, var(--sp-ground) 100%); background-size: 200% 100%; animation: cl-shimmer 1.2s linear infinite; }
+.cl-skeleton-hero .cl-skeleton { background: linear-gradient(90deg, color-mix(in oklch, var(--white) 25%, transparent), color-mix(in oklch, var(--white) 45%, transparent), color-mix(in oklch, var(--white) 25%, transparent)); background-size: 200% 100%; }
+.cl-skeleton--label { width: 40%; height: 12px; }
+.cl-skeleton--figure { width: 60%; height: 40px; }
+.cl-skeleton--line { width: 50%; height: 14px; }
+.cl-skeleton--tabs { width: 300px; height: 44px; }
+.cl-skeleton--period { width: 420px; max-width: 50%; height: 44px; }
+.cl-skeleton--equation { height: 84px; }
+.cl-skeleton--row { height: 40px; }
+@keyframes cl-shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+
+/* Fitts: the voucher number is a bigger target. */
+.cl-voucher-open { min-height: 36px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .cl-hero.is-carried, .cl-skeleton { animation: none; }
+  .cl-history > summary::before, .cl-history > summary { transition: none; }
+}
+
+/* Enter Orders: "+ Add article" (24 Nov 2026). A filled button that stands out from the card (it blended in as a
+   field); pressed, the searchable list takes its place where the button was. */
+.doc-themed .ord-article-add { display: inline-flex; align-items: center; gap: 8px; min-height: 48px; padding: 0 22px; font-size: 0.95rem; }
+.doc-themed .ord-article-add svg { width: 18px; height: 18px; flex: none; }
+/* A fade only: a transform here would make the list's fixed position relative to this label and throw it off screen. */
+/* Its list must open over the article cards below it (owner, 25 Nov 2026: it opened under them). The fade keeps no fill
+   (a held animation makes the label its own layer, which trapped the list's z-index inside it), and the label sits a
+   layer above the cards in any case, so the list drawn inside it is on top. */
+.doc-themed .ord-article-pick { position: relative; z-index: 30; animation: ord-pick-in 160ms ease-out; }
+@keyframes ord-pick-in { from { opacity: 0; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .doc-themed .ord-article-pick { animation: none; } }
+
+/* ── Pending Orders: the BENTO GRID (owner, 25 Nov 2026: the tables sat ragged) ──────────────────────────────────────
+   Twelve columns. Each article card's span comes from bentoLayout.ts (as wide as its table needs, every row filled edge
+   to edge, A to Z); its gap is BENTO_GAP_PX there. Cards in one row share one height (common region); each table fills
+   its card's width, its figures centred under their colour (proximity), in tabular figures. Narrow screens: one card
+   per row (bentoLayout gives every card 12). A table wider than its card scrolls inside it, never the page. */
+.ord-pending .ord-matrices { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 16px; align-items: stretch; }
+.ord-pending .ord-matrix { display: flex; flex-direction: column; min-width: 0; max-width: none; overflow-x: auto; }
+.ord-pending .ord-matrix .sa-grid { width: 100%; }
+.ord-pending .ord-matrix .sa-grid .sa-grid-size { width: 88px; min-width: 88px; }
+.ord-pending .ord-matrix .sa-grid-colour, .ord-pending .ord-mcell, .ord-pending .ord-matrix .sa-grid-foot td { text-align: center; }
+.ord-pending .ord-matrix .sa-grid-colour-name { justify-content: center; }
+.ord-pending .ord-mcell { min-width: 4.5rem; }
+.ord-pending .ord-matrix--skeleton { width: auto; min-height: 220px; }
+
+/* ── Gatepass: one article, every size at once (owner, 25 Nov 2026) ──────────────────────────────────────────────────
+   The same grid as Opening Stock, Stock Adjustment and Enter Orders (SizeColourGrid): sizes down, colours across, a
+   44px box in every cell, the current stock under it in tabular figures (owner, 25 Nov 2026: nothing else). A typed
+   box turns blue-washed, a short one amber, a refused one red, each also said in words under the box (R18). */
+.doc-themed .gp-grid-cell { min-width: 8.5rem; padding: 8px 10px; vertical-align: top; }
+.doc-themed .gp-grid-input {
+  width: 100%; min-height: 44px; border-color: var(--sp-line); border-radius: var(--sp-radius-control);
+  text-align: right; font-size: 1rem; font-weight: 700; font-variant-numeric: tabular-nums;
+  transition: border-color 140ms ease, background-color 140ms ease, box-shadow 140ms ease;
+}
+.doc-themed .gp-grid-input:focus { outline: none; border-color: var(--sp-mode-on-start); box-shadow: 0 0 0 3px color-mix(in oklch, var(--sp-mode-on-start) 22%, transparent); }
+.doc-themed .gp-grid-cell.is-selected .gp-grid-input { border-color: var(--sp-blue-line); background: var(--sp-blue-wash); }
+.doc-themed .gp-grid-cell.is-short .gp-grid-input { border-color: var(--warning-strong); }
+.doc-themed .gp-grid-cell.has-error .gp-grid-input { border-color: var(--danger-strong); }
+.doc-themed .gp-grid-figures { display: flex; flex-wrap: wrap; gap: 2px 8px; margin-top: 4px; color: var(--sp-muted); font-size: 0.72rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.doc-themed .gp-grid-figures b { color: var(--sp-navy-2); font-weight: 700; }
+.doc-themed .gp-grid-cell :is(.gp-qty-error, .gp-qty-warning) { display: block; max-width: 12rem; margin-top: 4px; font-size: 0.72rem; white-space: normal; text-wrap: pretty; }
+.doc-themed .gp-grid-total { padding: 8px 10px; color: var(--sp-navy); font-weight: 800; text-align: right; font-variant-numeric: tabular-nums; }
+.doc-themed .gp-article--grid .gp-article-meta { margin-inline-start: auto; }
+@media (prefers-reduced-motion: reduce) { .doc-themed .gp-grid-input { transition: none; } }
+
+/* ── Manual Production: the UI/UX pass (owner, 25 Nov 2026) ─────────────────────────────────────────────────────────
+   Kerning on, figures in tabular numbers, no widows in the notes; the article picker beside its title, next to the
+   grid it fills (proximity); "N of M machines in" with a bar that fills (goal gradient); a hatched cell for a size a
+   colour is not made in, as on Enter Orders and Gatepass (similarity); the list's figures together on the right,
+   dozens first, cartons quieter (Pareto). Motion is short, interruptible (transitions), and stops for prefers-reduced-motion. */
+.mnp-page { font-kerning: normal; line-height: 1.45; padding-bottom: max(16px, env(safe-area-inset-bottom)); }
+.mnp-page :is(h2, h3, p, small) { text-wrap: pretty; }
+.mnp-page .mnp-card:not(.mnp-list-card) > .mnp-card-head { justify-content: flex-start; }
+
+.mnp-progress-meter { height: 8px; overflow: hidden; border-radius: 999px; background: color-mix(in oklch, var(--sp-line) 70%, var(--white)); }
+.mnp-progress-meter > span { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, var(--sp-mode-on-start), var(--sp-mode-on-end)); transition: inline-size 420ms var(--ease-out-expo); }
+.mnp-progress-note { color: var(--sp-muted); font-size: 12px; }
+.mnp-progress-note.is-done { color: var(--success-strong); font-weight: 700; }
+
+.mnp-page .mpk-note { display: block; margin-top: 4px; color: var(--sp-muted); font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.mnp-page .mpk-option { min-height: 64px; }
+
+.mnp-page .sa-cell.size-missing-cell { background: repeating-linear-gradient(135deg, transparent 0 7px, var(--sp-ground) 7px 8px); text-align: center; vertical-align: middle; }
+.mnp-grid-total { padding: 8px 12px; color: var(--sp-navy); font-weight: 800; text-align: right; font-variant-numeric: tabular-nums; }
+
+.mnp-page .mnp-lines { width: 100%; font-variant-numeric: tabular-nums; }
+/* The colour column takes the spare width, so the dozens, cartons and Remove sit together on the right, each heading
+   right-aligned over its figures (proximity). */
+.mnp-page .mnp-lines :is(th, td):nth-child(3) { width: 100%; }
+.mnp-page .mnp-lines :is(th, td):is(:nth-child(1), :nth-child(2), :nth-child(4), :nth-child(5)) { white-space: nowrap; }
+.mnp-page .mnp-lines th.rp-num { text-align: right; }
+.mnp-page .mnp-lines :is(th, td):nth-child(4) { padding-inline-start: 32px; }
+.mnp-page .mnp-lines td.rp-num strong { color: var(--sp-navy); font-size: 15px; }
+.mnp-page .mnp-lines td:nth-child(5) { color: var(--sp-muted); }
+.mnp-page .mnp-lines tbody tr { animation: ord-chip-in 200ms var(--ease-out-expo) both; }
+.mnp-page .mnp-lines tbody tr:nth-child(2) { animation-delay: 25ms; }
+.mnp-page .mnp-lines tbody tr:nth-child(3) { animation-delay: 50ms; }
+.mnp-page .mnp-lines tbody tr:nth-child(n + 4) { animation-delay: 75ms; }
+
+.mnp-page .mpr-outcome p { margin: 0; }
+.mnp-all-in { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-top: 8px !important; font-weight: 700; }
+.mnp-all-in .btn { min-height: 44px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .mnp-progress-meter > span { transition: none; }
+  .mnp-page .mnp-lines tbody tr { animation: none; }
+}
+
+/* ── Manual Production, decluttered (owner, 25 Nov 2026: "too cluttered, not our dashboard theme") ─────────────────
+   Today as three tiles, the same row as Carton Stock: the saved dozens in the blue hero tile, the machines in with
+   their bar, and Complete. A size a colour is not made in offers a small round "+" (shared MissingSizeCell, every page)
+   instead of a dashed "+ Add" box in every gap. */
+.mnp-overview { display: grid; grid-template-columns: minmax(220px, 1fr) minmax(260px, 1.3fr) minmax(260px, 1fr); gap: 16px; align-items: stretch; }
+@media (max-width: 980px) { .mnp-overview { grid-template-columns: minmax(0, 1fr); } }
+.mnp-overview .kpi-card.cs-summary { align-self: stretch; min-width: 0; margin: 0; }
+.mnp-tile { display: flex; flex-direction: column; justify-content: center; gap: 8px; min-width: 0; padding: 14px 20px; border: 1px solid var(--sp-line); border-radius: 14px; background: var(--white); box-shadow: var(--sp-card-shadow); }
+.mnp-tile-label { color: var(--sp-navy-2); font-size: 0.8rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; }
+.mnp-tile-value { color: var(--sp-navy); font-size: 1.8rem; font-weight: 800; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.mnp-complete-tile .mnp-complete-btn.btn { width: 100%; }
+.mnp-complete-tile .mnp-note { flex: none; text-align: left; }
+
+.size-missing-add {
+  display: inline-grid; place-items: center; width: 44px; height: 44px; min-width: 44px; padding: 0; border: 1px dashed var(--sp-blue-line); border-radius: 999px;
+  background: var(--white); color: var(--sp-blue); font-size: 1.1rem; font-weight: 800; line-height: 1; cursor: pointer;
+  transition: background-color 140ms ease, border-color 140ms ease;
+}
+.size-missing-add:hover:not(:disabled) { border-style: solid; background: var(--sp-blue-soft); }
+.size-missing-add:focus-visible { outline: 3px solid var(--sp-blue); outline-offset: 2px; }
+
+/* A machine card with its pencil (owner, 25 Nov 2026): the card chooses the machine, the pencil beside it changes its
+   contractors. Two targets of 44px, never one click doing both. */
+.mpk-option-wrap { position: relative; display: flex; min-width: 0; }
+.mpk-option-wrap > .mpk-option { flex: 1 1 auto; min-width: 0; }
+.mpk-option-wrap.has-edit > .mpk-option { padding-right: 60px; }
+.mpk-edit {
+  position: absolute; top: 50%; right: 8px; transform: translateY(-50%); display: grid; place-items: center; width: 44px; height: 44px;
+  border: 1px solid transparent; border-radius: 10px; background: transparent; color: var(--sp-muted); cursor: pointer;
+  transition: background-color 140ms ease, color 140ms ease, border-color 140ms ease;
+}
+.mpk-edit:hover { border-color: var(--sp-blue-line); background: var(--sp-blue-soft); color: var(--sp-blue); }
+.mpk-edit:focus-visible { outline: 3px solid var(--sp-blue); outline-offset: 1px; }
+.mpk-edit svg { width: 18px; height: 18px; }
+@media (prefers-reduced-motion: reduce) { .mpk-edit { transition: none; } }
+
+/* ── Daily Production: the UI/UX pass (owner, 25 Nov 2026: "too boring") ────────────────────────────────────────────
+   A week strip (seven day-buttons with a bar each), a tile row (total, top article, the machines with their shares)
+   and the articles as a bento grid. One hue for every bar, the page's own tone (the daily tone remaps --sp-mode-*),
+   two steps: the day shown strong, the others lighter; figures always in the ink colours and in words. Bars are thin,
+   rounded at the data end, sitting on the baseline; the bars grow, interruptibly, and stop for reduced motion. */
+.pd-head-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 12px; }
+
+.pd-week { display: grid; gap: 8px; padding: 14px 16px 10px; border: 1px solid var(--sp-line); border-radius: 14px; background: var(--white); box-shadow: var(--sp-card-shadow); }
+.pd-week-title { margin: 0; color: var(--sp-navy-2); font-size: 0.8rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; }
+.pd-week-days { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 8px; }
+.pd-week-day {
+  display: grid; grid-template-rows: auto 72px auto auto; justify-items: center; gap: 4px; min-height: 44px; padding: 8px 4px;
+  border: 1px solid transparent; border-radius: 12px; background: transparent; color: var(--sp-navy); cursor: pointer;
+  font-variant-numeric: tabular-nums; transition: background-color 140ms ease, border-color 140ms ease;
+}
+.pd-week-day:hover { background: var(--sp-blue-soft); }
+.pd-week-day:focus-visible { outline: 3px solid var(--sp-mode-on-start); outline-offset: 1px; }
+.pd-week-day.is-selected { border-color: var(--sp-blue-line); background: var(--sp-blue-soft); }
+.pd-week-figure { font-size: 0.95rem; font-weight: 800; }
+.pd-week-track { display: flex; align-items: flex-end; justify-content: center; width: 100%; height: 72px; border-bottom: 1px solid var(--sp-line); }
+.pd-week-bar { display: block; width: min(28px, 60%); min-height: 2px; border-radius: 4px 4px 0 0; background: var(--sp-mode-on-end); transition: block-size 360ms var(--ease-out-expo); }
+.pd-week-day.is-selected .pd-week-bar { background: var(--sp-mode-on-start); }
+.pd-week-name { color: var(--sp-navy-2); font-size: 0.8rem; font-weight: 700; }
+.pd-week-date { color: var(--sp-muted); font-size: 0.72rem; }
+@media (max-width: 640px) { .pd-week-days { grid-template-columns: repeat(7, minmax(44px, 1fr)); overflow-x: auto; } }
+
+.pd-overview { display: grid; grid-template-columns: minmax(200px, 260px) minmax(180px, 240px) minmax(0, 1fr); gap: 14px; align-items: stretch; }
+@media (max-width: 1100px) { .pd-overview { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } .pd-overview .pd-machines { grid-column: 1 / -1; } }
+@media (max-width: 640px) { .pd-overview { grid-template-columns: minmax(0, 1fr); } }
+.pd-overview .kpi-card.cs-summary { align-self: stretch; min-width: 0; margin: 0; }
+.pd-tile { display: flex; flex-direction: column; justify-content: center; gap: 4px; min-width: 0; padding: 14px 18px; border: 1px solid var(--sp-line); border-radius: 14px; background: var(--white); box-shadow: var(--sp-card-shadow); }
+.pd-tile-label { color: var(--sp-navy-2); font-size: 0.8rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; }
+.pd-tile-value { color: var(--sp-navy); font-size: 1.9rem; font-weight: 800; line-height: 1.1; }
+.pd-tile-sub { color: var(--sp-muted); font-size: 0.85rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+
+.pd-machine-share { display: grid; grid-template-columns: minmax(40px, 1fr) auto; align-items: center; gap: 8px; margin-top: 4px; }
+.pd-machine-share-track { height: 6px; overflow: hidden; border-radius: 999px; background: var(--sp-blue-soft); }
+.pd-machine-share-track > span { display: block; height: 100%; border-radius: inherit; background: var(--sp-mode-on-start); transition: inline-size 360ms var(--ease-out-expo); }
+.pd-machine-share-text { color: var(--sp-muted); font-size: 11px; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.pd-machine.is-selected .pd-machine-share-track { background: rgba(255, 255, 255, 0.25); }
+.pd-machine.is-selected .pd-machine-share-track > span { background: var(--white); }
+.pd-machine.is-selected .pd-machine-share-text { color: rgba(255, 255, 255, 0.9); }
+
+.pd-articles { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 16px; align-items: stretch; }
+.pd-article-cell { min-width: 0; }
+.pd-article-cell .cs-articles { height: 100%; }
+
+@media (prefers-reduced-motion: reduce) { .pd-week-bar, .pd-machine-share-track > span, .pd-week-day { transition: none; } }
+/* The machine tabs in the tile row: never cut a machine's name short (it wraps), each tab wide enough for its share. */
+.pd-overview .pd-machines { grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); align-content: stretch; }
+.pd-overview .pd-machine-name { overflow: visible; white-space: normal; text-overflow: clip; overflow-wrap: anywhere; }
+
+/* ── The contractors dialog (owner, 25 Nov 2026: "does not follow our rules and laws") ───────────────────────────────
+   In the card pages' look (.doc-themed): each field's label, its searchable picker, what it was when changed, and
+   "+ New contractor" right under it; the small form opens in place (progressive disclosure), its fields 44px. */
+.mp-dialog { display: grid; gap: 16px; }
+.mp-contractor-field { display: grid; gap: 6px; margin: 0; }
+.mp-contractor-field .input-label { color: var(--sp-field-label); font-size: 0.8rem; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; }
+.mp-contractor-was { color: var(--sp-muted); font-size: 0.8rem; font-weight: 600; }
+.mp-contractor-was::before { content: "↺ "; }
+.mp-dialog-note { margin: 0; color: var(--sp-muted); font-size: 0.85rem; }
+
+/* The dialog header's own action beside × (Modal headerAction): the contractors dialog's "+ Add Party". */
+.member-modal-header-actions { display: flex; align-items: flex-start; gap: 8px; flex: none; }
+.btn.mp-add-party { min-height: 40px; padding: 0 14px; border-color: var(--sp-blue-line); border-radius: var(--sp-radius-control); color: var(--sp-blue); font-weight: 700; white-space: nowrap; }
+.btn.mp-add-party:hover { background: var(--sp-blue-soft); }
+
+/* "Open Daily Production" on Manual Production's Complete tile (owner, 25 Nov 2026: it looked off): a full-width
+   44px button in the page's look, an icon tile like the machine cards, the arrow nudging on hover. */
+.mnp-daily-link {
+  display: flex; align-items: center; gap: 10px; width: 100%; min-height: 44px; padding: 6px 14px 6px 6px;
+  border: 1px solid var(--sp-line); border-radius: var(--sp-radius-control); background: var(--white); color: var(--sp-navy-2);
+  font: inherit; font-weight: 700; text-align: left; cursor: pointer; box-shadow: var(--sp-card-shadow);
+  transition: border-color 140ms ease, background-color 140ms ease;
+}
+.mnp-daily-link:hover { border-color: var(--sp-blue-line); background: var(--sp-blue-soft); }
+.mnp-daily-link:focus-visible { outline: 3px solid var(--sp-blue); outline-offset: 2px; }
+.mnp-daily-link-icon { display: grid; place-items: center; width: 32px; height: 32px; flex: none; border-radius: 8px; background: var(--sp-blue-soft); color: var(--sp-blue); }
+.mnp-daily-link-icon svg { width: 18px; height: 18px; }
+.mnp-daily-link > span:nth-child(2) { flex: 1 1 auto; }
+.mnp-daily-link-arrow { color: var(--sp-blue); transition: transform 160ms var(--ease-out-expo); }
+.mnp-daily-link:hover .mnp-daily-link-arrow { transform: translateX(3px); }
+@media (prefers-reduced-motion: reduce) { .mnp-daily-link, .mnp-daily-link-arrow { transition: none; } .mnp-daily-link:hover .mnp-daily-link-arrow { transform: none; } }
+
+/* ---- Upper Stock and Carton Stock side by side (features/stockSplit, owner 25 Nov 2026; docs/56) ----
+   Closed: the page alone, with its "Show … beside" button top right. Open: the page area stops scrolling as a
+   whole and each side scrolls on its own, split by the Store page's divider. Opacity only (a transform would trap
+   the pickers' fixed dropdowns); on a narrow screen the two stack. */
+.page-content:has(> .stock-split.is-open) { display: flex; flex-direction: column; overflow: hidden; }
+.stock-split-bar { display: flex; justify-content: flex-end; margin-bottom: 12px; }
+.stock-split-toggle { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; }
+.stock-split-toggle svg { inline-size: 18px; block-size: 18px; }
+.stock-split.is-open {
+  --stock-split-width: clamp(360px, 45%, calc(100% - 360px));
+  flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) 16px var(--stock-split-width);
+}
+.stock-split.is-open > .stock-split-main { min-width: 0; min-height: 0; overflow-y: auto; padding-right: 4px; }
+.stock-split-companion {
+  min-width: 0; min-height: 0; display: flex; flex-direction: column; overflow: hidden;
+  background: var(--white); border: 1px solid var(--sp-line); border-radius: var(--sp-radius-card);
+  animation: stock-split-in 200ms ease-out;
+}
+.stock-split-companion-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-shrink: 0;
+  padding: 10px 10px 10px 18px; border-bottom: 1px solid var(--sp-line);
+}
+.stock-split-companion-head h2 { margin: 0; font-size: 0.8rem; font-weight: 800; letter-spacing: 0.07em; text-transform: uppercase; color: var(--sp-navy); }
+.stock-split-close {
+  inline-size: 44px; block-size: 44px; border: 0; border-radius: var(--sp-radius-tab); background: transparent;
+  color: var(--sp-muted); font-size: 1rem; cursor: pointer;
+}
+.stock-split-close:hover { background: var(--surface-faint); color: var(--sp-navy); }
+.stock-split-close:focus-visible { outline: 2px solid var(--sp-navy); outline-offset: -2px; }
+.stock-split-companion-body { flex: 1; min-height: 0; overflow-y: auto; padding: 16px; }
+@keyframes stock-split-in { from { opacity: 0; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .stock-split-companion { animation: none; } }
+@media (max-width: 900px) {
+  .page-content:has(> .stock-split.is-open) { display: block; overflow-y: auto; }
+  .stock-split.is-open { display: flex; flex-direction: column; gap: 16px; }
+  .stock-split.is-open > .stock-split-main { overflow: visible; padding-right: 0; }
+  .stock-split.is-open > .stock-split-handle { display: none; }
+  .stock-split-companion-body { overflow: visible; }
+}
+/* One frame per region (docs/56, common region): beside, the page's own panel drops its card look. */
+.stock-split-companion-body > .page > .us-panel, .stock-split-companion-body > .page-stack > .cs-panel { border: 0; box-shadow: none; background: transparent; padding: 0; }
+.stock-split-companion-body > .page, .stock-split-companion-body > .page-stack { padding: 0; margin: 0; }

@@ -49,3 +49,9 @@ export const PENDING_ORDERS_ARTWORK_URL = "./assets/orders/pending-orders.svg";
  * two 777 cartons and a blue "+" for a new order. A vector (SVG) drawn like Pending Orders, carrying its own ground.
  */
 export const ENTER_ORDERS_ARTWORK_URL = "./assets/orders/enter-orders.svg";
+/**
+ * The Customer Balance card (owner, 25 Nov 2026): a customer balance sheet with what each owes and the total in
+ * rupees, a balance scale weighing what is owed against what is received, a stack of coins and a blue rupee badge.
+ * A vector (SVG) drawn like Enter Orders and Pending Orders, carrying its own ground.
+ */
+export const CUSTOMER_BALANCE_ARTWORK_URL = "./assets/billing/customer-balance.svg";

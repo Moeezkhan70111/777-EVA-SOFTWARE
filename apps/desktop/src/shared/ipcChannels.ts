@@ -204,6 +204,7 @@ export const IPC = {
   inventoryFieldOptionUsage: "erp:inventory-field-option-usage",
   listInventoryItems: "erp:list-inventory-items",
   listKindStock: "erp:list-kind-stock",
+  listKindStockSheet: "erp:list-kind-stock-sheet",
   listUpperStockMatrix: "erp:list-upper-stock-matrix",
   createInventoryItem: "erp:create-inventory-item",
   adjustInventoryStock: "erp:adjust-inventory-stock",

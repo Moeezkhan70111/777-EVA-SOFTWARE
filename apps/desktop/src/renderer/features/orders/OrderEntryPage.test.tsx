@@ -4,6 +4,11 @@ import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { NotificationsProvider } from "../../state/NotificationsContext";
 import { OrderEntryPage } from "./OrderEntryPage";
+import { SessionProvider } from "../auth/SessionContext";
+import type { AuthUser } from "../../types/desktopApi";
+
+/** Adding a colour is for an administrator on the Product Master computer: the one rule (useCanAddColour). */
+const ADMIN: AuthUser = { id: "u-admin", username: "owner", role: "ADMIN", accessStatus: "APPROVED", permissions: [], lastLoginAt: null };
 
 // Enter Orders: a party, an article with several colours at once, quantities in the size × colour matrix, totals, Save.
 // Every rule is the data layer's (customerOrders.test.ts); this proves the screen offers only made combinations, sends
@@ -29,7 +34,12 @@ const savedOrder = (lines: Array<{ productVariantId: string; quantity: number }>
 
 function createFakeBackend() {
   let stored: ReturnType<typeof savedOrder> | null = null;
+  const listeners: Array<(change: unknown) => void> = [];
   const api = {
+    // The main process's "data changed" announcement after a sync (hooks/useDataChanged.ts).
+    onDataChanged: (listener: (change: unknown) => void) => { listeners.push(listener); return () => undefined; },
+    announce: (kinds: string[]) => { for (const listener of listeners) listener({ kinds, id: "change-1" }); },
+    dispatch: (cartons: number) => { if (stored) stored = { ...stored, totals: { ...stored.totals, dispatched: cartons, pending: stored.totals.ordered - cartons }, lines: stored.lines.map((line, index) => (index === 0 ? { ...line, dispatched: cartons, pending: line.quantity - cartons } : line)) }; },
     listParties: vi.fn(async () => ({ rows: [PARTY], total: 1, page: 1, pageSize: 1000 })),
     listUniqueArticles: vi.fn(async () => ["SK6"]),
     getCustomerOrderArticle: vi.fn(async () => ({ accepted: true, products: PRODUCTS })),
@@ -50,7 +60,9 @@ const press = async (find: () => Promise<HTMLElement>) => {
 };
 
 const pick = async (comboName: string, optionName: RegExp) => {
-  await userEvent.click(await screen.findByRole("combobox", { name: comboName }));
+  // Articles are added from a button that becomes the list, already open (24 Nov 2026).
+  if (comboName === "Article") await userEvent.click(await screen.findByRole("button", { name: "Add article" }));
+  else await userEvent.click(await screen.findByRole("combobox", { name: comboName }));
   await userEvent.click(await screen.findByRole("option", { name: optionName }));
 };
 
@@ -59,7 +71,7 @@ const type = (name: string, value: string) => fireEvent.change(screen.getByRole(
 describe("Enter Orders", () => {
   it("takes several colours of one article at once, offers only made sizes, totals them, and saves exactly what was typed", async () => {
     const api = createFakeBackend();
-    render(<NotificationsProvider><OrderEntryPage token="token-1" canCancel isAdmin={false} /></NotificationsProvider>);
+    render(<NotificationsProvider><OrderEntryPage token="token-1" canCancel /></NotificationsProvider>);
 
     await pick("Party", /BEHRAAM SHOES/);
     await pick("Article", /SK6/);
@@ -96,7 +108,7 @@ describe("Enter Orders", () => {
 
   it("will not save a quantity that is not whole or half dozens", async () => {
     const api = createFakeBackend();
-    render(<NotificationsProvider><OrderEntryPage token="token-1" canCancel={false} isAdmin={false} /></NotificationsProvider>);
+    render(<NotificationsProvider><OrderEntryPage token="token-1" canCancel={false} /></NotificationsProvider>);
     await pick("Party", /BEHRAAM SHOES/);
     await pick("Article", /SK6/);
     await press(() => screen.findByRole("button", { name: "Colour RED" }));
@@ -113,7 +125,7 @@ it("lets an administrator add a new colour to the article, and chooses it at onc
       addArticleColor,
       getCustomerOrderArticle: vi.fn().mockResolvedValueOnce({ accepted: true, products: PRODUCTS }).mockResolvedValue({ accepted: true, products: withGreen }),
     });
-    render(<NotificationsProvider><OrderEntryPage token="token-1" canCancel isAdmin /></NotificationsProvider>);
+    render(<SessionProvider user={ADMIN} token="token-1"><NotificationsProvider><OrderEntryPage token="token-1" canCancel /></NotificationsProvider></SessionProvider>);
     await pick("Party", /BEHRAAM SHOES/);
     await pick("Article", /SK6/);
     await press(() => screen.findByRole("button", { name: "Add a new colour to SK6" }));
@@ -131,7 +143,7 @@ it("lets an administrator add a new colour to the article, and chooses it at onc
   it("hides an added article from the picker, focuses its first colour, and keeps the note behind a button until wanted", async () => {
     const api = createFakeBackend();
     Object.assign(api, { listUniqueArticles: vi.fn(async () => ["SK6", "SK9"]) });
-    render(<NotificationsProvider><OrderEntryPage token="token-1" canCancel isAdmin={false} /></NotificationsProvider>);
+    render(<NotificationsProvider><OrderEntryPage token="token-1" canCancel /></NotificationsProvider>);
     await pick("Party", /BEHRAAM SHOES/);
 
     expect(screen.queryByRole("textbox", { name: "Note" })).toBeNull();
@@ -143,9 +155,14 @@ it("lets an administrator add a new colour to the article, and chooses it at onc
     const first = await screen.findByRole("button", { name: "Colour BLUE" });
     await waitFor(() => expect(first).toHaveFocus());
 
-    await userEvent.click(screen.getByRole("combobox", { name: "Article" }));
+    // Picked, the list went back to being the button.
+    expect(screen.queryByRole("combobox", { name: "Article" })).toBeNull();
+    await userEvent.click(screen.getByRole("button", { name: "Add article" }));
     expect(await screen.findByRole("option", { name: /SK9/ })).toBeTruthy();
     expect(screen.queryByRole("option", { name: /SK6/ })).toBeNull();
+    // Dismissed with Escape, it is the button again, and the page stays.
+    await userEvent.keyboard("{Escape}");
+    expect(await screen.findByRole("button", { name: "Add article" })).toBeInTheDocument();
   });
 
   // Owner, 24 Nov 2026: orders are for customers only; a supplier is not offered.
@@ -153,7 +170,7 @@ it("lets an administrator add a new colour to the article, and chooses it at onc
     const api = createFakeBackend();
     const supplier = { ...PARTY, id: "party-2", partyName: "AI TRADERS", partyType: "SUPPLIER" };
     Object.assign(api, { listParties: vi.fn(async () => ({ rows: [PARTY, supplier], total: 2, page: 1, pageSize: 1000 })) });
-    render(<NotificationsProvider><OrderEntryPage token="token-1" canCancel isAdmin={false} /></NotificationsProvider>);
+    render(<NotificationsProvider><OrderEntryPage token="token-1" canCancel /></NotificationsProvider>);
     await userEvent.click(await screen.findByRole("combobox", { name: "Party" }));
     expect(await screen.findByRole("option", { name: /BEHRAAM SHOES/ })).toBeTruthy();
     expect(screen.queryByRole("option", { name: /AI TRADERS/ })).toBeNull();
@@ -168,7 +185,7 @@ it("lets an administrator add a new colour to the article, and chooses it at onc
       addArticleColor,
       getCustomerOrderArticle: vi.fn().mockResolvedValueOnce({ accepted: true, products: PRODUCTS }).mockResolvedValue({ accepted: true, products: withBlue7 }),
     });
-    render(<NotificationsProvider><OrderEntryPage token="token-1" canCancel isAdmin /></NotificationsProvider>);
+    render(<SessionProvider user={ADMIN} token="token-1"><NotificationsProvider><OrderEntryPage token="token-1" canCancel /></NotificationsProvider></SessionProvider>);
     await pick("Party", /BEHRAAM SHOES/);
     await pick("Article", /SK6/);
     await press(() => screen.findByRole("button", { name: "Colour BLUE" }));
@@ -178,9 +195,27 @@ it("lets an administrator add a new colour to the article, and chooses it at onc
     await waitFor(() => expect(box).toHaveFocus());
   });
 
+  // Owner, 24 Nov 2026: orders are entered on PC3 and dispatched on PC1. What PC1 sent shows on PC3's open order without Ctrl+R.
+  it("reads the order on screen again when a gatepass from another computer arrives", async () => {
+    const api = createFakeBackend();
+    render(<NotificationsProvider><OrderEntryPage token="token-1" canCancel /></NotificationsProvider>);
+    await pick("Party", /BEHRAAM SHOES/);
+    await pick("Article", /SK6/);
+    await press(() => screen.findByRole("button", { name: "Colour RED" }));
+    type("SK6 RED size 6, dozens", "5");
+    await press(() => screen.findByRole("button", { name: "Save order" }));
+    await screen.findByText("ORD-000001 · BEHRAAM SHOES");
+    const pending = () => Array.from(document.querySelectorAll(".ord-figures dd")).map((cell) => cell.textContent);
+    expect(pending()).toEqual(["5", "0", "5"]);
+
+    api.dispatch(4); // PC1's gatepass sent 2 dozen (4 cartons) against it
+    await act(async () => { api.announce(["BILLING", "SYNC"]); });
+    await waitFor(() => expect(pending()).toEqual(["5", "2", "3"]));
+  });
+
   it("offers no new colour to anyone but an administrator", async () => {
     createFakeBackend();
-    render(<NotificationsProvider><OrderEntryPage token="token-1" canCancel isAdmin={false} /></NotificationsProvider>);
+    render(<NotificationsProvider><OrderEntryPage token="token-1" canCancel /></NotificationsProvider>);
     await pick("Party", /BEHRAAM SHOES/);
     await pick("Article", /SK6/);
     await screen.findByRole("button", { name: "Colour RED" });

@@ -131,8 +131,12 @@ const chooseParty = async (text: string) => {
   });
 };
 
-/** Clicks "+ Add Article" once the store has loaded (it is disabled until then), types, and picks the first match. */
+/**
+ * Clicks "+ Add Article" once the store has loaded (it is disabled until then), types the article, and picks it. The
+ * picker lists articles, not article + size (owner, 25 Nov 2026): "sk6 7/10" adds SK6 with every size.
+ */
 const addArticle = async (text: string) => {
+  const article = text.split(" ")[0] ?? text;
   await waitFor(() => expect(screen.getByTestId("gatepass-add-article")).toBeEnabled());
   await act(async () => {
     fireEvent.click(screen.getByTestId("gatepass-add-article"));
@@ -140,7 +144,7 @@ const addArticle = async (text: string) => {
   const picker = await screen.findByTestId("gatepass-article-picker");
   const input = within(picker).getByLabelText("Search article");
   await act(async () => {
-    fireEvent.change(input, { target: { value: text } });
+    fireEvent.change(input, { target: { value: article } });
   });
   const option = within(await within(picker).findByRole("listbox")).getAllByRole("option")[0];
   await act(async () => {
@@ -175,7 +179,7 @@ describe("GatepassPage", () => {
     await screen.findByTestId("gatepass-articles-section");
     await waitFor(() => expect(api.listGatepassStoreStock).toHaveBeenCalledWith({ token: "token-1" }));
     expect(await screen.findByText("No articles added")).toBeInTheDocument();
-    expect(screen.getByText("Add an article to see its In Store, Reserved and Available figures by color and enter the Gatepass quantity.")).toBeInTheDocument();
+    expect(screen.getByText("Add an article to see every size and color with its current stock, and enter the Gatepass quantity.")).toBeInTheDocument();
     expect(screen.getByTestId("gatepass-summary-total")).toHaveTextContent("0");
     expect(screen.getByTestId("gatepass-summary-counts")).toHaveTextContent("0 Articles · 0 Colors");
     expect(screen.getByTestId("gatepass-summary-party")).toHaveTextContent("No party selected");
@@ -217,41 +221,47 @@ describe("GatepassPage", () => {
     await waitFor(() => expect(screen.getByTestId("party-balance")).toHaveTextContent("Rs 2,500 Cr"));
   });
 
-  it("adds an article + size as an open card with every colour in store, keeps one card open at a time, and never adds the same one twice", async () => {
+  // Owner, 25 Nov 2026: as Opening Stock and Stock Adjustment, an article comes on with every size at once.
+  it("adds an article with every size at once, sizes down and colours across, one card open at a time, never twice", async () => {
     createFakeBackend();
     renderPage();
     await screen.findByTestId("gatepass-articles-section");
 
-    await addArticle("sk6 7/10");
-    const sk6 = card("SK6-7/10");
-    expect(isExpanded("SK6-7/10")).toBe(true);
-    // Colours in natural order with what is In Store, in dozens (80 and 120 cartons); a colour the article does not come in is absent.
-    const rows = within(sk6).getAllByRole("row").slice(1);
-    expect(rows.map((r) => within(r).getAllByRole("cell").slice(0, 2).map((c) => c.textContent))).toEqual([
-      ["BLUE", "40"],
-      ["RED", "60"],
-    ]);
+    await addArticle("sk6");
+    const sk6 = card("SK6");
+    expect(isExpanded("SK6")).toBe(true);
+    const table = within(sk6).getByRole("table");
+    // Every colour of any size across, natural order; every size down, natural order.
+    expect(within(table).getAllByRole("columnheader").map((h) => h.textContent)).toEqual(["Size", "BLUE", "NAVY", "RED"]);
+    expect(within(table).getAllByRole("rowheader").map((h) => h.textContent)).toEqual(["4/6", "7/10", "Total"]);
+    // A box for every colour the size is made in, with what is In Store in dozens (80 and 120 cartons).
+    expect(qty("SK6", "BLUE", "7/10")).toBeInTheDocument();
+    expect(qty("SK6", "NAVY", "4/6")).toBeInTheDocument();
+    expect(screen.getByTestId("current-SK6-BLUE-7/10")).toHaveTextContent("40");
+    expect(screen.getByTestId("current-SK6-RED-7/10")).toHaveTextContent("60");
+    // A colour the size is not made in has no box, and says so in words.
     expect(screen.queryByLabelText("Quantity for SK6 EVR GENTS NAVY 7/10")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("NAVY is not in Product Master in size 7/10. Ask an administrator to add it.")).toBeInTheDocument();
 
     // The second article opens and the first closes into one line.
     await addArticle("sk12");
-    expect(isExpanded("SK12-4/6")).toBe(true);
-    expect(within(card("SK6-7/10")).getByRole("button", { expanded: false })).toBeInTheDocument();
-    expect(screen.getByTestId("gatepass-article-meta-SK6-7/10")).toHaveTextContent("No quantity entered");
+    expect(isExpanded("SK12")).toBe(true);
+    expect(within(card("SK6")).getByRole("button", { expanded: false })).toBeInTheDocument();
+    expect(screen.getByTestId("gatepass-article-meta-SK6")).toHaveTextContent("No quantity entered");
     expect(screen.queryByLabelText("Quantity for SK6 EVR GENTS RED 7/10")).not.toBeInTheDocument();
 
-    // Adding SK6 · 7/10 again just re-opens it.
-    await addArticle("sk6 7/10");
+    // Adding SK6 again just re-opens it.
+    await addArticle("sk6");
     expect(screen.getAllByTestId(/^gatepass-article-SK/)).toHaveLength(2);
-    expect(isExpanded("SK6-7/10")).toBe(true);
-    expect(within(card("SK12-4/6")).getByRole("button", { expanded: false })).toBeInTheDocument();
+    expect(isExpanded("SK6")).toBe(true);
+    expect(within(card("SK12")).getByRole("button", { expanded: false })).toBeInTheDocument();
 
     // Clicking a closed card opens it and closes the other.
     await act(async () => {
-      fireEvent.click(within(card("SK12-4/6")).getByRole("button", { expanded: false }));
+      fireEvent.click(within(card("SK12")).getByRole("button", { expanded: false }));
     });
-    expect(isExpanded("SK12-4/6")).toBe(true);
-    expect(within(card("SK6-7/10")).getByRole("button", { expanded: false })).toBeInTheDocument();
+    expect(isExpanded("SK12")).toBe(true);
+    expect(within(card("SK6")).getByRole("button", { expanded: false })).toBeInTheDocument();
   });
 
   it("adds up per article, per colour and overall as quantities are typed, live in the summary", async () => {
@@ -266,7 +276,7 @@ describe("GatepassPage", () => {
     await addArticle("sk12");
     await typeQty("SK12", "BLACK", "4/6", "5");
 
-    expect(screen.getByTestId("gatepass-article-meta-SK6-7/10")).toHaveTextContent("2 colors selected · Total Qty: 70");
+    expect(screen.getByTestId("gatepass-article-meta-SK6")).toHaveTextContent("2 colors selected · Total Qty: 70");
     const summary = screen.getByTestId("gatepass-summary");
     const sk6Summary = within(summary).getByTestId("gatepass-summary-SK6-7/10");
     expect(sk6Summary).toHaveTextContent("SK6 EVR GENTS · 7/10");
@@ -283,48 +293,30 @@ describe("GatepassPage", () => {
     expect(within(summary).queryByTestId("gatepass-summary-SK12-4/6")).not.toBeInTheDocument();
     expect(screen.getByTestId("gatepass-summary-counts")).toHaveTextContent("1 Article · 2 Colors");
     expect(screen.getByTestId("gatepass-summary-total")).toHaveTextContent("70");
-    expect(card("SK12-4/6")).toBeInTheDocument();
+    expect(card("SK12")).toBeInTheDocument();
   });
 
-  it("steps one dozen at a time with − / +, stops at 0, and goes on past what the store holds with a warning", async () => {
+  it("types any size of the article in one go, totals each colour under its column, and goes past what the store holds with a warning", async () => {
     createFakeBackend();
     renderPage();
     await screen.findByTestId("gatepass-articles-section");
-    await addArticle("sk6 4/6");
+    await addArticle("sk6");
 
-    const minus = screen.getByLabelText("Decrease SK6 EVR GENTS NAVY 4/6");
-    const plus = screen.getByLabelText("Increase SK6 EVR GENTS NAVY 4/6");
-    expect(minus).toBeDisabled();
-    await act(async () => {
-      fireEvent.click(plus);
-    });
-    expect(qty("SK6", "NAVY", "4/6").value).toBe("1");
-    expect(minus).toBeEnabled();
+    // Both sizes typed without leaving the card: RED 4/6 and RED 7/10 add up under RED.
+    await typeQty("SK6", "RED", "4/6", "5");
+    await typeQty("SK6", "RED", "7/10", "10");
+    const table = within(card("SK6")).getByRole("table");
+    const totalRow = within(table).getByRole("rowheader", { name: "Total" }).closest("tr") as HTMLElement;
+    expect(within(totalRow).getAllByRole("cell").map((c) => c.textContent)).toEqual(["0", "0", "15"]);
+    expect(screen.getByTestId("gatepass-summary-total")).toHaveTextContent("15");
 
     // NAVY 4/6 holds 15 cartons, 7.5 dozen. 7 dozen fits; 8 dozen is one carton more than the store holds.
-    await typeQty("SK6", "NAVY", "4/6", "6");
-    await act(async () => {
-      fireEvent.click(plus);
-    });
-    expect(qty("SK6", "NAVY", "4/6").value).toBe("7");
+    await typeQty("SK6", "NAVY", "4/6", "7");
     expect(screen.queryByTestId("below-zero-SK6-NAVY-4/6")).not.toBeInTheDocument();
-    // Owner, 12 Nov 2026: past what the store holds is allowed; the row says where the figure goes.
-    expect(plus).toBeEnabled();
-    await act(async () => {
-      fireEvent.click(plus);
-    });
-    expect(qty("SK6", "NAVY", "4/6").value).toBe("8");
+    // Owner, 12 Nov 2026: past what the store holds is allowed; the box says where the figure goes.
+    await typeQty("SK6", "NAVY", "4/6", "8");
     expect(screen.getByTestId("below-zero-SK6-NAVY-4/6")).toHaveTextContent("⚠ Stock goes to -0.5 DZN. Add the production later to balance it.");
-
-    await act(async () => {
-      fireEvent.click(minus);
-    });
-    await act(async () => {
-      fireEvent.click(minus);
-    });
-    expect(qty("SK6", "NAVY", "4/6").value).toBe("6");
-    expect(screen.queryByTestId("below-zero-SK6-NAVY-4/6")).not.toBeInTheDocument();
-    expect(screen.getByTestId("gatepass-summary-total")).toHaveTextContent("6");
+    expect(screen.getByTestId("gatepass-summary-total")).toHaveTextContent("23");
   });
 
   it("shows In Store, Reserved and Available per colour, warns past Available, and sends the line and the Reflected figure it showed", async () => {
@@ -337,15 +329,11 @@ describe("GatepassPage", () => {
     await chooseParty("abc");
     await addArticle("sk6 7/10");
 
-    const cardEl = card("SK6-7/10");
-    // Every figure in dozens, and every heading says so: 5 cartons is 2.5 dozen.
-    expect(within(cardEl).getAllByRole("columnheader").map((h) => h.textContent)).toEqual(["Color", "In Store (DZN)", "Reserved (DZN)", "Available (DZN)", "Gatepass Qty (DZN)"]);
+    // Only the current stock under the box, in dozens: 5 cartons is 2.5 dozen (owner, 25 Nov 2026: no reserved figures).
     expect(screen.getByTestId("current-SK6-RED-7/10")).toHaveTextContent("2.5");
-    expect(screen.getByTestId("reserved-SK6-RED-7/10")).toHaveTextContent("2");
-    expect(screen.getByTestId("available-SK6-RED-7/10")).toHaveTextContent("0.5");
-    // A fully reserved colour stays visible and says so. It can still go on the gatepass (owner, 12 Nov 2026).
-    expect(screen.getByTestId("available-SK6-BLUE-7/10")).toHaveTextContent("0Fully reserved");
-    expect(screen.getByRole("button", { name: "Increase SK6 EVR GENTS BLUE 7/10" })).toBeEnabled();
+    expect(qty("SK6", "RED", "7/10").closest("td")?.textContent).not.toMatch(/Res|Free|reserved/i);
+    // A colour all promised to other gatepasses can still go on this one (owner, 12 Nov 2026).
+    expect(qty("SK6", "BLUE", "7/10")).toBeEnabled();
 
     // Up to the 5 In Store: no warning. 6 is more than the store holds: no error, a warning that In Store
     // goes to -1 (the figure Carton Stock will show), and Create stays open.
@@ -365,7 +353,7 @@ describe("GatepassPage", () => {
     expect(created[0].lines).toEqual([{ productVariantId: "v-sk6-red-710", quantity: 6, reflectedStockSeen: 1 }]);
   });
 
-  it("shows every colour's own In Store, Reserved and Available, and they follow the article that is open", async () => {
+  it("shows every colour's own current stock, and it follows the article that is open", async () => {
     createFakeBackend({
       stock: [
         stockRow("v-sk6-blue-710", "SK6", "BLUE", "7/10", 14, 2),
@@ -376,23 +364,23 @@ describe("GatepassPage", () => {
     });
     renderPage();
     await screen.findByTestId("gatepass-articles-section");
-    const figures = (key: string) =>
-      within(card(key)).getAllByRole("row").slice(1).map((row) => within(row).getAllByRole("cell").slice(0, 4).map((cell) => cell.textContent));
-    // The cartons above, in dozens.
-    const SK6_FIGURES = [["BLUE", "7", "1", "6"], ["RED", "3", "0", "3"]];
+    // The current stock under each box, in dozens.
+    const inStock = (article: string, colour: string, size: string) => screen.getByTestId(`current-${article}-${colour}-${size}`).textContent;
 
-    await addArticle("sk6 7/10");
-    expect(figures("SK6-7/10")).toEqual(SK6_FIGURES);
+    await addArticle("sk6");
+    expect(inStock("SK6", "BLUE", "7/10")).toBe("7");
+    expect(inStock("SK6", "RED", "7/10")).toBe("3");
 
     await addArticle("sk12");
-    expect(figures("SK12-4/6")).toEqual([["BLACK", "4", "1.5", "2.5"], ["GREY", "1.5", "1.5", "0Fully reserved"]]);
-    expect(within(card("SK6-7/10")).queryByRole("row")).not.toBeInTheDocument();
+    expect(inStock("SK12", "BLACK", "4/6")).toBe("4");
+    expect(inStock("SK12", "GREY", "4/6")).toBe("1.5");
+    expect(within(card("SK6")).queryByRole("table")).not.toBeInTheDocument();
 
     await act(async () => {
-      fireEvent.click(within(card("SK6-7/10")).getByRole("button", { expanded: false }));
+      fireEvent.click(within(card("SK6")).getByRole("button", { expanded: false }));
     });
-    expect(figures("SK6-7/10")).toEqual(SK6_FIGURES);
-    expect(within(card("SK12-4/6")).queryByRole("row")).not.toBeInTheDocument();
+    expect(inStock("SK6", "BLUE", "7/10")).toBe("7");
+    expect(within(card("SK12")).queryByRole("table")).not.toBeInTheDocument();
   });
 
   it("lets more than Available through with a warning, refuses a bad quantity inline, and blocks Create only for the bad one", async () => {
@@ -424,10 +412,10 @@ describe("GatepassPage", () => {
 
     // A closed card with a problem says so on its one line.
     await addArticle("sk12");
-    expect(screen.getByTestId("gatepass-article-meta-SK6-7/10")).toHaveTextContent("1 quantity needs attention");
+    expect(screen.getByTestId("gatepass-article-meta-SK6")).toHaveTextContent("1 quantity needs attention");
 
     await act(async () => {
-      fireEvent.click(within(card("SK6-7/10")).getByRole("button", { expanded: false }));
+      fireEvent.click(within(card("SK6")).getByRole("button", { expanded: false }));
     });
     await typeQty("SK6", "RED", "7/10", "60");
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
@@ -446,9 +434,9 @@ describe("GatepassPage", () => {
     expect(screen.getByTestId("gatepass-summary-total")).toHaveTextContent("13");
 
     await act(async () => {
-      fireEvent.click(screen.getByLabelText("Remove SK6 EVR GENTS · 7/10"));
+      fireEvent.click(screen.getByLabelText("Remove SK6 EVR GENTS"));
     });
-    expect(screen.queryByTestId("gatepass-article-SK6-7/10")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("gatepass-article-SK6")).not.toBeInTheDocument();
     expect(screen.queryByTestId("gatepass-summary-SK6-7/10")).not.toBeInTheDocument();
     expect(screen.getByTestId("gatepass-summary-total")).toHaveTextContent("3");
 
@@ -465,11 +453,11 @@ describe("GatepassPage", () => {
     await addArticle("sk12");
 
     await waitFor(() => expect(api.getProductImage).toHaveBeenCalledWith("SK6"));
-    const image = await within(card("SK6-7/10")).findByRole("img");
+    const image = await within(card("SK6")).findByRole("img");
     expect(image).toHaveAttribute("src", SK6_IMAGE);
     expect(image).toHaveAttribute("alt", "SK6 product");
-    expect(await within(card("SK12-4/6")).findByText("Image not found")).toBeInTheDocument();
-    expect(within(card("SK12-4/6")).queryByRole("img")).not.toBeInTheDocument();
+    expect(await within(card("SK12")).findByText("Image not found")).toBeInTheDocument();
+    expect(within(card("SK12")).queryByRole("img")).not.toBeInTheDocument();
   });
 
   it("creates the document with every line in document order, bilty, via and remarks; no rate, discount or amount is ever sent", async () => {
@@ -686,7 +674,7 @@ describe("GatepassPage", () => {
     await act(async () => {
       fireEvent.click(screen.getByTestId("gatepass-new"));
     });
-    expect(screen.queryByTestId("gatepass-article-SK12-4/6")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("gatepass-article-SK12")).not.toBeInTheDocument();
     expect(await screen.findByText("No articles added")).toBeInTheDocument();
   });
 
@@ -728,13 +716,11 @@ describe("GatepassPage", () => {
     // The store is re-read, the short article is opened, its row shows the live figures, and the other line
     // is untouched. 100 of the 120 In Store leaves 20, so no warning. Pressing Create again is the operator's decision.
     await waitFor(() => expect(backend.api.listGatepassStoreStock.mock.calls.length).toBe(stockCallsBefore + 1));
-    expect(isExpanded("SK6-7/10")).toBe(true);
+    expect(isExpanded("SK6")).toBe(true);
     expect(screen.queryByTestId("below-zero-SK6-RED-7/10")).not.toBeInTheDocument();
     expect(screen.getByTestId("current-SK6-RED-7/10")).toHaveTextContent("60");
-    expect(screen.getByTestId("reserved-SK6-RED-7/10")).toHaveTextContent("20");
-    expect(screen.getByTestId("available-SK6-RED-7/10")).toHaveTextContent("40");
     expect(qty("SK6", "RED", "7/10").value).toBe("50");
-    expect(screen.getByTestId("gatepass-article-meta-SK12-4/6")).toHaveTextContent("Total Qty: 10 DZN");
+    expect(screen.getByTestId("gatepass-article-meta-SK12")).toHaveTextContent("Total Qty: 10 DZN");
   });
 
   it("surfaces an authorisation refusal without pretending anything was created", async () => {

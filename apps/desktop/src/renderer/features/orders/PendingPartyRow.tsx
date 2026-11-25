@@ -3,6 +3,8 @@ import { StateView } from "../../components/shared/StateView";
 import { copy } from "../../config/copy";
 import type { PendingOrderParty } from "../../types/desktopApi";
 import { ORDER_PROGRESS } from "@erp/domain";
+import { useElementWidth } from "../../hooks/useElementWidth";
+import { BENTO_GAP_PX, bentoLayout } from "../../utils/bentoLayout";
 import { OrderCheckIcon } from "./OrderIcons";
 import { PendingArticleMatrix } from "./PendingArticleMatrix";
 import { pendingMatrix } from "./pendingMatrix";
@@ -18,6 +20,9 @@ import { orderDozens } from "./orderUnits";
 // alone); a party with nothing left says "All dispatched" with a tick (peak-end); the row carries its own transition
 // name, so when another opens it moves to its place instead of jumping (PendingOrdersPage); its products load as
 // placeholder grids the size of the real ones (no layout shift).
+//
+// The articles sit in a bento grid (owner, 25 Nov 2026): twelve columns, each card as wide as its table needs, every
+// row filled edge to edge, A to Z (bentoLayout.ts).
 
 const words = copy.pendingOrders;
 const figure = orderDozens;
@@ -44,19 +49,22 @@ const ChevronIcon: React.FC = () => (
 const PartyLines: React.FC<{ token: string; party: PendingOrderParty; query: PendingQuery }> = ({ token, party, query }) => {
   const lines = usePendingLines(token, party.partyId, query);
   const articles = useMemo(() => pendingMatrix(lines.value), [lines.value]);
+  const [gridRef, gridWidth] = useElementWidth<HTMLDivElement>();
+  const spans = useMemo(() => bentoLayout(articles.map((group) => group.colours.length), gridWidth, BENTO_GAP_PX), [articles, gridWidth]);
+  const skeletonSpans = bentoLayout(SKELETON_GRIDS.map(() => 3), gridWidth, BENTO_GAP_PX);
   if (lines.loading && lines.value.length === 0) {
     return (
-      <div className="ord-matrices" aria-busy="true">
+      <div className="ord-matrices" aria-busy="true" ref={gridRef}>
         <p className="sr-only" role="status">{words.loadingLines}</p>
-        {SKELETON_GRIDS.map((index) => <div key={index} className="ord-matrix ord-matrix--skeleton" aria-hidden="true" />)}
+        {SKELETON_GRIDS.map((index, position) => <div key={index} className="ord-matrix ord-matrix--skeleton" aria-hidden="true" style={{ gridColumn: `span ${String(skeletonSpans[position] ?? 12)}` }} />)}
       </div>
     );
   }
   if (lines.error) return <StateView kind="error" compact message={lines.error} onRetry={() => void lines.reload()} />;
   if (lines.value.length === 0) return <StateView kind="empty" compact title={words.emptySearchTitle} />;
   return (
-    <div className="ord-matrices" aria-label={party.partyName}>
-      {articles.map((group) => <PendingArticleMatrix key={group.article} group={group} />)}
+    <div className="ord-matrices" aria-label={party.partyName} ref={gridRef}>
+      {articles.map((group, position) => <PendingArticleMatrix key={group.article} group={group} span={spans[position] ?? 12} />)}
     </div>
   );
 };

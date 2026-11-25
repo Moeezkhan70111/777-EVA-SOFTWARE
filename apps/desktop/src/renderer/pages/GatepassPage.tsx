@@ -5,10 +5,10 @@ import { REQUEST_STORAGE_KEY, useLeftoverRequest, useRequestId } from "../hooks/
 import { useNotifications } from "../state/NotificationsContext";
 import { StateView } from "../components/shared/StateView";
 import type { Gatepass, GatepassShortage } from "../types/desktopApi";
-import { buildStockGrid, rowKeyOf } from "../utils/gatepassGrid";
+import { buildStockGrid } from "../utils/gatepassGrid";
 import { openGatepassPrintWindow } from "../utils/gatepassPrint";
 import { copy } from "../config/copy";
-import { ArticleCard } from "../features/gatepass/ArticleCard";
+import { ArticleGridCard } from "../features/gatepass/ArticleGridCard";
 import { ArticlePicker } from "../features/gatepass/ArticlePicker";
 import { GatepassDocumentView } from "../features/gatepass/GatepassDocumentView";
 import { GatepassNavigator } from "../features/gatepass/GatepassNavigator";
@@ -16,7 +16,7 @@ import { GatepassStatusBadge } from "../features/gatepass/GatepassStatusBadge";
 import { GatepassSteps } from "../features/gatepass/GatepassSteps";
 import { GatepassSummaryPanel } from "../features/gatepass/GatepassSummaryPanel";
 import { PartySection, type TransportFields } from "../features/gatepass/PartySection";
-import { buildDraftFromDocument, createBlocker, dozensText, listArticleOptions } from "../features/gatepass/gatepassDraft";
+import { buildDraftFromDocument, createBlocker, dozensText, groupArticles, listArticleOptions } from "../features/gatepass/gatepassDraft";
 import { useArticleImages } from "../features/gatepass/useArticleImages";
 import { gatepassPartyOptions, useGatepassData } from "../features/gatepass/useGatepassData";
 import { useGatepassDraft } from "../features/gatepass/useGatepassDraft";
@@ -27,17 +27,14 @@ import { EditingActions, ViewingActions } from "../features/gatepass/GatepassAct
 import { GatepassEditBar } from "../features/gatepass/GatepassEditBar";
 import { canEditGatepass, draftFromDocument, partyIsLocked, stockForEdit } from "../features/gatepass/gatepassEdit";
 import { useGatepassEdit } from "../features/gatepass/useGatepassEdit";
-import { MissingColours } from "../features/gatepass/MissingColours";
-import { missingColoursOf, sizesMissingColour } from "../features/gatepass/colourGaps";
-import { useWriteLease } from "../features/sync/useWriteLease";
-import { LEASE_DOMAIN } from "@erp/domain";
+import { useCanAddColour } from "../hooks/useCanAddColour";
 
 // Gatepass — one screen, two columns.
 //
-//   Left:   Party, then the articles being cut. Each article + size is a card: open, it
-//           lists every colour the store holds with its In Store cartons and a box for the
-//           cartons going out; closed, it is one line. One card is open at a time, so ten
-//           articles still fit on a screen.
+//   Left:   Party, then the articles being cut. Each ARTICLE is a card with every size the store holds
+//           (owner, 25 Nov 2026, as Opening Stock and Stock Adjustment): open, sizes down and colours
+//           across, a box in every cell with In / Reserved / Free under it; closed, it is one line. One
+//           card is open at a time, so ten articles still fit on a screen.
 //   Right:  the Gatepass as it will be created — every article, colour and quantity, with
 //           article totals and the grand total. Stays in view while the left side scrolls.
 //   Then:   Create → GP-000123, shown in the same two columns, read-only, with Print.
@@ -63,8 +60,6 @@ interface GatepassPageProps {
   canEdit?: boolean;
   /** Open this gatepass straight into an edit (from Gatepass List). */
   editGatepassId?: string;
-  /** An administrator: may add a colour to a size it is not made in, where Product Master is written (24 Nov 2026). */
-  isAdmin?: boolean;
 }
 
 interface SubmitError {
@@ -74,18 +69,18 @@ interface SubmitError {
 
 const EMPTY_TRANSPORT: TransportFields = { biltyNumber: "", transportVia: "", remarks: "" };
 
-export const GatepassPage: React.FC<GatepassPageProps> = ({ token, onNavigate, onMakeBill, canEdit = false, editGatepassId, isAdmin = false }) => {
+export const GatepassPage: React.FC<GatepassPageProps> = ({ token, onNavigate, onMakeBill, canEdit = false, editGatepassId }) => {
   const api = useDesktopApi();
   const { push } = useNotifications();
   const { parties, partiesLoading, stock, grid, reloadStock, applyShortages } = useGatepassData(token);
   const edit = useGatepassEdit(token);
   // While editing, the store is shown with the gatepass's own cartons given back, as the edit counts them.
   const draftGrid = useMemo(() => (edit.editing ? buildStockGrid(stockForEdit(stock.rows, edit.editing)) : grid), [edit.editing, stock.rows, grid]);
-  const { draft, expandedKey, isDirty, addArticle, removeArticle, toggleExpanded, expand, setQuantity, stepQuantityBy, clear, load } = useGatepassDraft(draftGrid);
+  const { draft, expandedArticle, isDirty, addArticle, removeArticle, toggleExpanded, expand, setQuantity, clear, load } = useGatepassDraft(draftGrid);
+  const articleGroups = useMemo(() => groupArticles(draft.articles), [draft.articles]);
   const nav = useGatepassNavigation(token);
-  // Product Master is written where MASTER_DATA is held, by an administrator (as "+ New colour" on Enter Orders).
-  const masterData = useWriteLease(LEASE_DOMAIN.MASTER_DATA);
-  const canAddColour = isAdmin && masterData.canWrite;
+  // Adding a colour to an article: the one rule every quantity-by-colour page asks (useCanAddColour).
+  const canAddColour = useCanAddColour();
 
   const [partyId, setPartyId] = useState("");
   const [transport, setTransport] = useState<TransportFields>(EMPTY_TRANSPORT);
@@ -132,8 +127,8 @@ export const GatepassPage: React.FC<GatepassPageProps> = ({ token, onNavigate, o
   const startEdit = (document: Gatepass) => {
     if (!edit.editing && draftHasContent() && !window.confirm(copy.gatepass.finishDraftFirst)) return;
     resetDraft();
-    const { keys, inputs } = draftFromDocument(document);
-    load(keys, inputs);
+    const { articles, inputs } = draftFromDocument(document);
+    load(articles, inputs);
     setPartyId(document.partyId);
     setTransport({ biltyNumber: document.biltyNumber ?? "", transportVia: document.transportVia ?? "", remarks: document.remarks ?? "" });
     edit.start(document);
@@ -182,8 +177,8 @@ export const GatepassPage: React.FC<GatepassPageProps> = ({ token, onNavigate, o
     // eslint-disable-next-line react-hooks/exhaustive-deps -- once per gatepass asked for, after the store is read
   }, [editGatepassId, canEdit, stock.loading]);
 
-  const pickArticle = (key: string) => {
-    addArticle(key);
+  const pickArticle = (article: string) => {
+    addArticle(article);
     setSubmitError(null);
   };
 
@@ -225,7 +220,7 @@ export const GatepassPage: React.FC<GatepassPageProps> = ({ token, onNavigate, o
       // gets the live figure at once (so its box validates against it) and its card opens.
       const shortages = result.shortages ?? [];
       applyShortages(shortages);
-      if (shortages[0]) expand(rowKeyOf(shortages[0].article, shortages[0].size));
+      if (shortages[0]) expand(shortages[0].article);
       const message = result.reason ?? copy.gatepass.createFailed;
       setSubmitError({ message, shortages: shortages.length ? shortages : undefined });
       push("error", copy.toast.failed, message);
@@ -251,23 +246,21 @@ export const GatepassPage: React.FC<GatepassPageProps> = ({ token, onNavigate, o
     if (draft.articles.length === 0) return <StateView kind="empty" compact title={copy.gatepass.noArticlesTitle} hint={copy.gatepass.noArticlesHint} />;
     return (
       <div className="gp-article-list" data-testid="gatepass-articles">
-        {draft.articles.map((article) => (
-          <ArticleCard
-            key={article.key}
-            article={article}
-            expanded={expandedKey === article.key}
-            image={images[article.article]}
-            onToggle={() => toggleExpanded(article.key)}
-            onRemove={() => removeArticle(article.key)}
+        {articleGroups.map((group) => (
+          <ArticleGridCard
+            key={group.article}
+            group={group}
+            grid={draftGrid}
+            expanded={expandedArticle === group.article}
+            image={images[group.article]}
+            canAddColour={canAddColour}
+            onToggle={() => toggleExpanded(group.article)}
+            onRemove={() => removeArticle(group.article)}
             onQuantityChange={(variantId, text) => {
               setQuantity(variantId, text);
               setSubmitError(null);
             }}
-            onStep={stepQuantityBy}
-            missing={
-              <MissingColours article={article.article} size={article.size} colours={missingColoursOf(draftGrid, article.article, article.size)}
-                sizesMissing={(colour) => sizesMissingColour(draftGrid, article.article, colour)} canAdd={canAddColour} onAdded={() => void reloadStock()} />
-            }
+            onColourAdded={() => void reloadStock()}
           />
         ))}
       </div>

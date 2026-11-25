@@ -23,6 +23,7 @@ vi.mock("electron", () => ({
 const event = { sender: { id: 1 } } as unknown as IpcMainInvokeEvent;
 const listKindStock = vi.fn(() => ({ kind: "UPPER", items: [], itemCount: 0, totalsByUnit: [], page: 1, pages: 1 }));
 const listUpperStockMatrix = vi.fn(() => ({ articles: [], articleCount: 0, page: 1, pages: 1 }));
+const listKindStockSheet = vi.fn(() => ({ kind: "DANA", rows: [] }));
 let signedIn: SessionUser | null = null;
 
 const signIn = (permissions: string[], role: SessionUser["role"] = USER_ROLE.USER, accessStatus: SessionUser["accessStatus"] = ACCESS_STATUS.APPROVED) => {
@@ -35,10 +36,11 @@ beforeEach(() => {
   handlers.clear();
   listKindStock.mockClear();
   listUpperStockMatrix.mockClear();
+  listKindStockSheet.mockClear();
   signedIn = null;
   const authorizer = new Authorizer(() => signedIn);
   authorizer.bind(event, "token-1");
-  registerRawMaterialsHandlers({ db: { listKindStock, listUpperStockMatrix }, authorizer, useCases: {} } as unknown as IpcContext);
+  registerRawMaterialsHandlers({ db: { listKindStock, listUpperStockMatrix, listKindStockSheet }, authorizer, useCases: {} } as unknown as IpcContext);
 });
 
 describe("listKindStock authorisation", () => {
@@ -116,5 +118,19 @@ describe("listUpperStockMatrix authorisation", () => {
 
     matrix({ category: "DANA", sort: "DROP" });
     expect(listUpperStockMatrix).toHaveBeenLastCalledWith({ category: undefined, sort: undefined, search: undefined, page: undefined });
+  });
+});
+
+describe("listKindStockSheet authorisation", () => {
+  const sheet = (kind: unknown) => handlers.get(IPC.listKindStockSheet)?.(event, kind) as { accepted: boolean; code?: string };
+
+  it("prints Dana's sheet only for someone who may open Dana Stock", () => {
+    signIn([PERMISSION.STOCK_UPPER_VIEW]);
+    expect(sheet(RAW_MATERIAL_KIND.DANA)).toMatchObject({ accepted: false, code: "PERMISSION_DENIED" });
+    expect(listKindStockSheet).not.toHaveBeenCalled();
+
+    signIn([PERMISSION.STOCK_DANA_VIEW]);
+    expect(sheet(RAW_MATERIAL_KIND.DANA)).toMatchObject({ accepted: true, rows: [] });
+    expect(sheet("CARTON").accepted).toBe(false);
   });
 });

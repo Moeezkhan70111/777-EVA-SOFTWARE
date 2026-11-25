@@ -1327,6 +1327,27 @@ export interface KindStockRow {
   unitCode: string;
 }
 
+/** One material on a kind's printed stock sheet (the Dana Stock Sheet). */
+export interface KindStockSheetRow {
+  id: string;
+  /** Its categories under the top-level one, outermost first: ["SPECIAL EVA/EVR COMPOUND", "EVA"]. Empty when filed on the top itself. */
+  path: string[];
+  /** Its colour attribute as stored (English), or its other attributes when it has no colour. */
+  colour: string;
+  /** The colour as typed in Urdu on the material, when it was. */
+  colourUrdu: string;
+  /** Every other attribute (the size, 1.65), in the category's field order. */
+  size: string;
+  quantity: number;
+  unitCode: string;
+}
+
+/** Every material of one kind, in store order, for the printed sheet. Not paged: a sheet is the whole store. */
+export interface KindStockSheet {
+  kind: string;
+  rows: KindStockSheetRow[];
+}
+
 /** One page of a kind's materials, with the totals of all of them, not just this page. */
 export interface KindStockPage {
   kind: string;

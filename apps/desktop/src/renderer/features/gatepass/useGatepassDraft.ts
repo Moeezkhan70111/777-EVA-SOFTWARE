@@ -1,84 +1,81 @@
 import { useCallback, useMemo, useState } from "react";
 import type { StockGrid } from "../../utils/gatepassGrid";
-import { buildDraft, stepQuantity, type GatepassDraft } from "./gatepassDraft";
+import { articleRowKeys, buildDraft, type GatepassDraft } from "./gatepassDraft";
 
-// State of the Gatepass being written: which article + size cards are on screen, which
-// one is open, and the text typed in every colour box. Everything derived (checks, totals,
-// lines) comes from buildDraft so the cards and the summary panel never disagree.
+// State of the Gatepass being written: which ARTICLES are on it (each with every size the store holds, owner, 25 Nov
+// 2026: as Opening Stock and Stock Adjustment), which one is open, and the text typed in every box. Everything derived
+// (checks, totals, lines) comes from buildDraft so the cards and the summary panel never disagree. The sizes follow the
+// store: a size Product Master gains while the gatepass is written appears on its article at once.
 
 export interface GatepassDraftApi {
   draft: GatepassDraft;
-  expandedKey: string | null;
+  /** The article whose grid is open. */
+  expandedArticle: string | null;
   /** True once anything has been added or typed — "New Gatepass" asks before discarding. */
   isDirty: boolean;
-  /** Adds the article + size and opens it; an article already on the Gatepass is opened instead. */
-  addArticle: (key: string) => "added" | "existing";
-  removeArticle: (key: string) => void;
-  toggleExpanded: (key: string) => void;
-  expand: (key: string) => void;
+  /** Adds the article with all its sizes and opens it; an article already on the Gatepass is opened instead. */
+  addArticle: (article: string) => "added" | "existing";
+  removeArticle: (article: string) => void;
+  toggleExpanded: (article: string) => void;
+  expand: (article: string) => void;
   setQuantity: (productVariantId: string, text: string) => void;
-  stepQuantityBy: (productVariantId: string, delta: 1 | -1) => void;
   clear: () => void;
-  /** Puts a stored gatepass's cards and quantities on the draft, to edit it. Replaces whatever was there. */
-  load: (keys: string[], inputs: Record<string, string>) => void;
+  /** Puts a stored gatepass's articles and quantities on the draft, to edit it. Replaces whatever was there. */
+  load: (articles: string[], inputs: Record<string, string>) => void;
 }
 
 export const useGatepassDraft = (grid: StockGrid): GatepassDraftApi => {
-  const [addedKeys, setAddedKeys] = useState<string[]>([]);
-  const [expandedKey, setExpandedKey] = useState<string | null>(null);
+  const [articles, setArticles] = useState<string[]>([]);
+  const [expandedArticle, setExpandedArticle] = useState<string | null>(null);
   const [inputs, setInputs] = useState<Record<string, string>>({});
 
-  const draft = useMemo(() => buildDraft(grid, addedKeys, inputs), [grid, addedKeys, inputs]);
+  const keys = useMemo(() => articleRowKeys(grid, articles), [grid, articles]);
+  const draft = useMemo(() => buildDraft(grid, keys, inputs), [grid, keys, inputs]);
 
   const addArticle = useCallback(
-    (key: string): "added" | "existing" => {
-      const existing = addedKeys.includes(key);
-      if (!existing) setAddedKeys((prev) => [...prev, key]);
-      setExpandedKey(key);
+    (article: string): "added" | "existing" => {
+      const existing = articles.includes(article);
+      if (!existing) setArticles((prev) => [...prev, article]);
+      setExpandedArticle(article);
       return existing ? "existing" : "added";
     },
-    [addedKeys]
+    [articles]
   );
 
   const removeArticle = useCallback(
-    (key: string) => {
-      const row = grid.rows.find((r) => r.key === key);
-      setAddedKeys((prev) => prev.filter((k) => k !== key));
-      setExpandedKey((prev) => (prev === key ? null : prev));
-      if (!row) return;
+    (article: string) => {
+      setArticles((prev) => prev.filter((name) => name !== article));
+      setExpandedArticle((prev) => (prev === article ? null : prev));
+      const variants = grid.rows.filter((row) => row.article === article).flatMap((row) => Object.values(row.cells).map((cell) => cell.productVariantId));
       setInputs((prev) => {
         const next = { ...prev };
-        for (const cell of Object.values(row.cells)) delete next[cell.productVariantId];
+        for (const id of variants) delete next[id];
         return next;
       });
     },
     [grid]
   );
 
-  const toggleExpanded = useCallback((key: string) => setExpandedKey((prev) => (prev === key ? null : key)), []);
-  const expand = useCallback((key: string) => setExpandedKey(key), []);
+  const toggleExpanded = useCallback((article: string) => setExpandedArticle((prev) => (prev === article ? null : article)), []);
+  const expand = useCallback((article: string) => setExpandedArticle(article), []);
 
   const setQuantity = useCallback((productVariantId: string, text: string) => {
     setInputs((prev) => ({ ...prev, [productVariantId]: text }));
   }, []);
 
-  const stepQuantityBy = useCallback((productVariantId: string, delta: 1 | -1) => {
-    setInputs((prev) => ({ ...prev, [productVariantId]: String(stepQuantity(prev[productVariantId] ?? "", delta)) }));
-  }, []);
-
   const clear = useCallback(() => {
-    setAddedKeys([]);
-    setExpandedKey(null);
+    setArticles([]);
+    setExpandedArticle(null);
     setInputs({});
   }, []);
 
-  const load = useCallback((keys: string[], loaded: Record<string, string>) => {
-    setAddedKeys(keys);
-    setInputs(loaded);
-    setExpandedKey(keys[0] ?? null);
+  const load = useCallback((loaded: string[], typed: Record<string, string>) => {
+    setArticles(loaded);
+    setInputs(typed);
+    setExpandedArticle(loaded[0] ?? null);
   }, []);
 
-  const isDirty = addedKeys.length > 0 || Object.values(inputs).some((text) => text.trim() !== "");
+  const isDirty = articles.length > 0 || Object.values(inputs).some((text) => text.trim() !== "");
 
-  return { draft, expandedKey, isDirty, addArticle, removeArticle, toggleExpanded, expand, setQuantity, stepQuantityBy, clear, load };
+  return { draft, expandedArticle, isDirty, addArticle, removeArticle, toggleExpanded, expand, setQuantity, clear, load };
 };

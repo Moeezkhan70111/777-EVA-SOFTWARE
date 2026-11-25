@@ -9,12 +9,13 @@ import { draftProblemCount, draftReady, draftSteps, draftTotal } from "./orderDr
 import { orderDozens } from "./orderUnits";
 import { orderPartyOptions, type OrderChoices } from "./useOrderChoices";
 import type { OrderDraftState } from "./useOrderDraft";
-import { withViewTransition } from "./withViewTransition";
+import { withViewTransition } from "../../utils/withViewTransition";
+import { OrderPlusIcon } from "./OrderIcons";
 
 // THE ORDER BEING WRITTEN, new or edited, in DOZENS (stored as cartons, orderDraft.ts):
 //
 //   Party [ BEHRAAM SHOES ▾ ]   [+ Add a note]
-//   ┌ Articles                          [ Choose an article ▾ ] ┐   ← adding one opens its block
+//   ┌ Articles                                  [ + Add article ] ┐   ← a button; pressed, the list; picked, its block
 //   │ ┌ SK6 ─────────────────────────────────── 31 dzn  ✕ ┐     │   ← this part scrolls
 //   │ │ colours (✓)RED (✓)BLUE ( )BLACK                    │     │
 //   │ │ size × colour boxes, each colour's total under it  │     │
@@ -24,6 +25,9 @@ import { withViewTransition } from "./withViewTransition";
 // The total bar sits under the scrolling part, never over it (owner, 24 Nov 2026: it hid what was behind it). The
 // picker offers only articles not yet on the order; the one picked becomes its band at once (PendingArticleBlock), and
 // its first colour takes the focus when its block arrives. The note waits behind "+ Add a note" until wanted.
+//
+// "+ Add article" (owner, 24 Nov 2026: the picker blended into the page): a filled button that says what it does
+// (affordance). Pressed, it becomes the searchable list, already open; picked or dismissed, it is the button again.
 
 const words = copy.orders;
 const SHARED_ELEMENT = "ord-article";
@@ -46,6 +50,8 @@ export const OrderForm: React.FC<OrderFormProps> = ({ entry, choices, busy, edit
   /** The article whose block should take the focus when it appears. */
   const [justAdded, setJustAdded] = useState<string | null>(null);
   const [noteOpen, setNoteOpen] = useState(false);
+  /** The article list is showing, in place of the "+ Add article" button. */
+  const [picking, setPicking] = useState(false);
   const pickerRef = useRef<HTMLLabelElement>(null);
   const onOrder = useMemo(() => new Set(draft.blocks.map((block) => block.article)), [draft.blocks]);
   // Customers only; an order being edited keeps its own party in the list (24 Nov 2026).
@@ -90,10 +96,18 @@ export const OrderForm: React.FC<OrderFormProps> = ({ entry, choices, busy, edit
         <section className="card ord-articles" aria-labelledby="ord-articles-title">
           <div className="ord-articles-head">
             <h2 className="gp-section-title" id="ord-articles-title">{words.articlesTitle}</h2>
-            <label className="mpr-field ord-article-pick" ref={pickerRef}>
-              <span className="sr-only">{words.article}</span>
-              <SearchableCombobox ariaLabel={words.article} placeholder={words.articlePlaceholder} value="" options={articleOptions} onChange={add} />
-            </label>
+            {picking ? (
+              <label className="mpr-field ord-article-pick" ref={pickerRef}>
+                <span className="sr-only">{words.article}</span>
+                <SearchableCombobox ariaLabel={words.article} placeholder={words.articlePlaceholder} value="" options={articleOptions} onChange={add} autoFocus
+                  onOpenChange={(open) => { if (!open) setPicking(false); }} />
+              </label>
+            ) : (
+              <button type="button" className="btn btn-primary ord-article-add" disabled={disabled || articleOptions.length === 0}
+                title={articleOptions.length === 0 ? words.noMoreArticles : undefined} onClick={() => setPicking(true)}>
+                <OrderPlusIcon /> {words.addArticle}
+              </button>
+            )}
           </div>
           {pending ? <PendingArticleBlock article={article} /> : null}
           {draft.blocks.length === 0 && !pending ? <StateView kind="empty" compact title={words.emptyTitle} hint={words.emptyHint} /> : null}

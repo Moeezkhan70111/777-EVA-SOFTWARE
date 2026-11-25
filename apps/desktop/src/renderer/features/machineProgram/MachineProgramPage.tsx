@@ -34,6 +34,8 @@ const text = copy.cartonProgram;
 type Dialog = { kind: "add" } | { kind: "edit"; machine: MachineRecord } | null;
 
 interface MachineProgramPageProps {
+  /** Opens the Add Party page from the machine dialog ("+ Add Party"); absent when this user cannot open it. */
+  onAddParty?: () => void;
   /** Opens the QR Generator from the empty state; absent when this user cannot open it. */
   onOpenQrGenerator?: () => void;
   /** Shown as the QR Generator workspace's first tab: a tab-sized title instead of the page heading. */
@@ -48,7 +50,7 @@ interface MachineProgramPageProps {
   onOpenInStore?: (programId: string, mode: StoreMode) => void;
 }
 
-export const MachineProgramPage: React.FC<MachineProgramPageProps> = ({ onOpenQrGenerator, embedded = false, onMachinesChanged, onStartReconciliation, isAdmin = false, onOpenInStore }) => {
+export const MachineProgramPage: React.FC<MachineProgramPageProps> = ({ onOpenQrGenerator, embedded = false, onMachinesChanged, onStartReconciliation, isAdmin = false, onOpenInStore, onAddParty }) => {
   const { push } = useNotifications();
   const [date, setDate] = useState(toIsoDate());
   const [dialog, setDialog] = useState<Dialog>(null);
@@ -90,7 +92,7 @@ export const MachineProgramPage: React.FC<MachineProgramPageProps> = ({ onOpenQr
       </section>
 
       {dialog ? (
-        <MachineDialog machine={dialog.kind === "edit" ? dialog.machine : undefined} onClose={() => setDialog(null)} onSaved={saved} />
+        <MachineDialog machine={dialog.kind === "edit" ? dialog.machine : undefined} onClose={() => setDialog(null)} onSaved={saved} onAddParty={onAddParty} />
       ) : null}
     </div>
   );

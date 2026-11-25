@@ -41,7 +41,6 @@ export const GatepassDocumentView: React.FC<GatepassDocumentViewProps> = ({ docu
               article={article}
               expanded={expandedKey === article.key}
               image={images[article.article]}
-              readOnly
               onToggle={() => setExpandedKey((prev) => (prev === article.key ? null : article.key))}
             />
           ))}

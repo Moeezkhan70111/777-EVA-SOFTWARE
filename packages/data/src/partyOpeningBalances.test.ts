@@ -4,7 +4,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { ledgerArchiveRowsOf, parseDelimitedText, groupArchiveRows, type LedgerArchiveRowInput } from "@erp/domain";
+import { addMoney, ledgerArchiveRowsOf, parseDelimitedText, groupArchiveRows, type LedgerArchiveRowInput } from "@erp/domain";
 import { SqliteDatabase } from "./sqliteDatabase.js";
 import { readLeasedRecordPayload, snapshotRecord } from "./database/masterRecords.js";
 
@@ -77,8 +77,8 @@ test("Behraam Shoes Karachi: the archive still imports, and its closing 353,880 
     assert.equal(statement.balanceRule, "DEBIT_LESS_CREDIT");
     assert.equal(statement.closingBalancePaisa, 35_388_000);
     const before = f.db.partyLedgerReconciliation("CUSTOMER").rows[0];
-    assert.equal(before.status, "NO_OPENING_BALANCE", "an archive alone does not open the live ledger");
-    assert.equal(before.liveBalancePaisa, 0);
+    assert.equal(before.status, "NO_OPENING_BALANCE", "no opening balance is posted yet");
+    assert.equal(before.liveBalancePaisa, 35_388_000, "old + new: the archive's closing balance is already in the live balance");
 
     post(f, f.behraam, { direction: "DEBIT", amountPaisa: 35_388_000, archiveStatementId: statement.id });
     const [row] = f.db.partyLedgerReconciliation("CUSTOMER").rows;
@@ -164,6 +164,45 @@ test("CUSTOMER: the opening balance is in the Current Balance, the balance list,
     const after = f.db.getCustomerLedgerWithCash(f.behraam, { fromDate: "2026-11-15", toDate: "2026-11-30" });
     assert.equal(after.openingBalance, 353_880, "carried into the opening figure of a later range");
     assert.equal(after.closingBalance, 303_880);
+  } finally {
+    f.cleanup();
+  }
+});
+
+// THE OWNER'S RULE (25 Nov 2026): "old closing + new makes the correct ledger; treat the old ledger's values as
+// real". The archive alone carries the customer's balance into the ERP: nothing has to be posted.
+test("CUSTOMER: the old ledger's closing plus every ERP entry is the balance, with no opening balance posted", () => {
+  const f = createFixture();
+  try {
+    importBehraam(f);
+    // A payment to the customer is a debit, like a bill: 353,880 old + 5,000 new = 358,880.
+    f.db.createCashVoucher({ requestId: crypto.randomUUID(), partyId: f.behraam, voucherDate: "2026-11-20", description: "Paid", paymentAmount: 5_000, lines: [{ partyId: f.behraam, description: "paid", modeOfTransfer: "Cash", receiptAmount: 0, paymentAmount: 5_000 }] });
+    assert.equal(f.db.getCurrentPartyBalance(f.behraam), 358_880, "the balance-limit check and the Cash Voucher screen");
+    const listed = f.db.listCustomerBalances({ asOfDate: "2026-11-30" }).rows.find((row) => row.partyId === f.behraam);
+    assert.equal(listed?.balance, 358_880, "the Customer Balance page");
+    assert.equal(listed?.openingBalance, 353_880, "the old ledger, shown as what was brought in");
+    assert.equal(f.db.listCustomerBalances({ asOfDate: "2026-09-01" }).rows.find((row) => row.partyId === f.behraam)?.balance, 0, "before the old ledger begins, nothing");
+
+    const oldOn31Oct = (f.db.ledgerArchiveForParty(f.behraam).entries.filter((e) => e.entryDate < "2026-11-01").at(-1)?.balancePaisa ?? 0) / 100;
+    const ledger = f.db.getCustomerLedgerWithCash(f.behraam, { fromDate: "2026-11-01", toDate: "2026-11-30" });
+    assert.equal(ledger.openingBalance, oldOn31Oct, "brought forward: the old ledger as printed before the range");
+    assert.deepEqual(ledger.entries.map((e) => [e.voucherType, e.debitAmount, e.balance]), [["CASH_PAYMENT", 5_000, 358_880]], "the new entry runs on from the old closing");
+    assert.equal(ledger.oldLedgerBalance, 353_880);
+    assert.equal(addMoney(addMoney(ledger.openingBalance, ledger.oldLedgerInPeriod), 5_000), ledger.closingBalance, "brought forward + the old ledger in the period + debit = closing");
+    assert.equal(ledger.closingBalance, 358_880);
+  } finally {
+    f.cleanup();
+  }
+});
+
+test("CUSTOMER: a posted opening balance already carries the old ledger, so the archive is never counted twice", () => {
+  const f = createFixture();
+  try {
+    importBehraam(f);
+    post(f, f.behraam, { direction: "DEBIT", amountPaisa: 35_388_000 });
+    assert.equal(f.db.getCurrentPartyBalance(f.behraam), 353_880);
+    assert.equal(f.db.listCustomerBalances({ asOfDate: "2026-11-30" }).rows.find((row) => row.partyId === f.behraam)?.balance, 353_880);
+    assert.equal(f.db.getCustomerLedgerWithCash(f.behraam, { fromDate: "2026-11-01", toDate: "2026-11-30" }).closingBalance, 353_880);
   } finally {
     f.cleanup();
   }

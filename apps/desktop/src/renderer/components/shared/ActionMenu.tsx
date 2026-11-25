@@ -31,8 +31,12 @@ export const ActionMenu: React.FC<{ label: string; groups: ActionMenuGroup[] }> 
     const close = (event: MouseEvent) => {
       if (wrapRef.current && !wrapRef.current.contains(event.target as Node)) setOpen(false);
     };
+    // Escape closes the menu and nothing else: it must not also reach the app's "Escape goes back" (useRouteKeyboard,
+    // on the window, after this listener on the document), which took the page away with the menu (24 Nov 2026).
     const escape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setOpen(false);
+      if (event.key !== "Escape") return;
+      event.stopPropagation();
+      setOpen(false);
     };
     document.addEventListener("mousedown", close);
     document.addEventListener("keydown", escape);

@@ -40,10 +40,10 @@ describe("stockForEdit", () => {
 });
 
 describe("draftFromDocument", () => {
-  it("puts each article + size card on once, in order, and each colour's cartons as the dozens typed", () => {
+  it("puts each article on once, in order (with all its sizes), and each colour's cartons as the dozens typed", () => {
     const document = { lines: [line("v-bg", "SK46", "BLACKGREY", "11/13", 10), line("v-navy", "SK46", "NAVY", "11/13", 5), line("v-red", "SK6", "RED", "7/10", 1)] };
     expect(draftFromDocument(document)).toEqual({
-      keys: ["SK46\u000011/13", "SK6\u00007/10"],
+      articles: ["SK46", "SK6"],
       inputs: { "v-bg": "5", "v-navy": "2.5", "v-red": "0.5" },
     });
   });

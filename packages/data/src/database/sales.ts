@@ -11,7 +11,7 @@ import { formatGatepassCode } from "@erp/application";
 import { BillDoesNotMatchGatepassError, DiscountExceedsAllowedError, GatepassBillingError, PartyBalanceLimitExceededError } from "./types.js";
 import type { DeleteSaleVoucherResult, PagedResult, SaleVoucherListRow, SaleVoucherRecord } from "./types.js";
 import { allocateNumberInRange } from "./numberRange.js";
-import { openingBalancePaisaSql } from "./partyOpeningBalances.js";
+import { customerOldLedgerPaisaSql, openingBalancePaisaSql } from "./partyOpeningBalances.js";
 import { RequestConflictError, fingerprintText, isRequestId, requestFingerprint } from "./requestFingerprint.js";
 
 /** One line of a bill as the desk typed it. `lineId` is the screen's id for that line, so a repeated add is one line. */
@@ -82,6 +82,8 @@ const SALES_PAISA_SQL = `(SELECT COALESCE(SUM(sv.total_amount_paisa), 0) FROM li
   WHERE sv.party_id = p.id AND sv.deleted_at IS NULL AND sv.voucher_date <= ?1)`;
 /** The customer's posted opening balance (docs/53), taking effect on or before the date (?1). */
 const OPENING_PAISA_SQL = openingBalancePaisaSql("CUSTOMER", "p.id", "ob.effective_date <= ?1");
+/** The customer's old ledger (owner, 25 Nov 2026: old + new): its printed balance on the last archived line up to the date (?1). */
+const OLD_LEDGER_PAISA_SQL = customerOldLedgerPaisaSql("p.id", "e.entry_date <= ?1");
 const RETURNS_PAISA_SQL = `(SELECT COALESCE(SUM(sr.total_amount_paisa), 0) FROM live_sale_returns sr
   WHERE sr.party_id = p.id AND sr.deleted_at IS NULL AND sr.status = 'ACTIVE' AND sr.return_date <= ?1)`;
 /**
@@ -401,8 +403,9 @@ export const salesMethods = {
   },
 
   /**
-   * Returns the current outstanding balance for a party (opening balance + sales + cash payments − cash
-   * receipts − sale returns). The opening balance is the customer's posted one, whatever its date (docs/53). Computed entirely in integer paisa (every operand below is a
+   * Returns the current outstanding balance for a party (opening balance + old ledger + sales + cash payments − cash
+   * receipts − sale returns). The opening balance is the customer's posted one, whatever its date (docs/53); the old
+   * ledger is the balance on the customer's last archived line (owner, 25 Nov 2026: old + new is the balance). Computed entirely in integer paisa (every operand below is a
    * `*_paisa` column, so SQLite does exact integer arithmetic, not floating point) and
    * converted back to rupees once, at the end — this is the balance-limit check's own safety
    * net (createSaleVoucher), so it must never drift from the ledger screens.
@@ -418,9 +421,10 @@ export const salesMethods = {
            - COALESCE((SELECT SUM(cvl.receipt_amount_paisa) FROM cash_voucher_lines cvl JOIN live_cash_vouchers cv ON cv.id = cvl.voucher_id WHERE cvl.party_id = ? AND cv.deleted_at IS NULL AND cv.status = 'ACTIVE'), 0)
            - COALESCE((SELECT SUM(sr.total_amount_paisa) FROM live_sale_returns sr WHERE sr.party_id = ? AND sr.deleted_at IS NULL AND sr.status = 'ACTIVE'), 0)
            + ${openingBalancePaisaSql("CUSTOMER", "?")}
+           + ${customerOldLedgerPaisaSql("?")}
            AS balance_paisa`
       )
-         .get(partyId, partyId, partyId, partyId, partyId, partyId, partyId) as { balance_paisa: number };
+         .get(partyId, partyId, partyId, partyId, partyId, partyId, partyId, partyId, partyId) as { balance_paisa: number };
     return fromPaisa(Number(row?.balance_paisa ?? 0));
   },
 
@@ -1557,8 +1561,8 @@ export const salesMethods = {
            ${cashPaisaSql("receipt_amount_paisa")} AS total_receipts_paisa,
            ${cashPaisaSql("payment_amount_paisa")} AS total_payments_paisa,
            ${RETURNS_PAISA_SQL} AS total_returns_paisa,
-           ${OPENING_PAISA_SQL} AS opening_paisa,
-           ${OPENING_PAISA_SQL} + ${SALES_PAISA_SQL} +${cashPaisaSql("payment_amount_paisa")} - ${cashPaisaSql("receipt_amount_paisa")} - ${RETURNS_PAISA_SQL} AS balance_paisa,
+           ${OPENING_PAISA_SQL} + ${OLD_LEDGER_PAISA_SQL} AS opening_paisa,
+           ${OPENING_PAISA_SQL} + ${OLD_LEDGER_PAISA_SQL} + ${SALES_PAISA_SQL} +${cashPaisaSql("payment_amount_paisa")} - ${cashPaisaSql("receipt_amount_paisa")} - ${RETURNS_PAISA_SQL} AS balance_paisa,
            (
              SELECT MAX(dt)
              FROM (

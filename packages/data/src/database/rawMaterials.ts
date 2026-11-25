@@ -9,7 +9,7 @@ import { EFFECTIVE_PACK_NAME_SQL, normalizeInventoryText, normalizePackName } fr
 import type { DatabaseSync } from "node:sqlite";
 import { KIND_STOCK_MAX_PAGE_SIZE, KIND_STOCK_PAGE_SIZE, STOCK_EVENT_NOTE, fromPaisaOrNull, packetsInStore as countPacketsInStore, toPaisaOrNull } from "@erp/domain";
 import type { StockKind } from "@erp/domain";
-import type { InventoryStockEventRow, KindStockPage, KindStockTotal, RawMaterialHop, RawMaterialMovementConfigRow, RawMaterialSetupTemplate, WorkSection } from "./types.js";
+import type { InventoryStockEventRow, KindStockPage, KindStockSheet, KindStockSheetRow, KindStockTotal, RawMaterialHop, RawMaterialMovementConfigRow, RawMaterialSetupTemplate, WorkSection } from "./types.js";
 import { allocateNumberInRange, orderByCode } from "./numberRange.js";
 
 function readWorkSectionByName(db: DatabaseSync, name: string): WorkSection | undefined {
@@ -37,6 +37,27 @@ function stockTotalsByUnit(items: Array<Record<string, unknown>>): KindStockTota
     totals.set(unitId, entry);
   }
   return Array.from(totals.values());
+}
+
+/** The colour attribute of a raw material: the one the Machine Program and the labels read too. */
+const COLOUR_FIELD_KEY = "color";
+
+/** One material as the printed stock sheet lays it out: colour in one column, the rest (the size) in the next. */
+function sheetRowOf(item: Record<string, unknown>, path: string[]): KindStockSheetRow {
+  const values = (Array.isArray(item.values) ? item.values : []) as Array<Record<string, unknown>>;
+  const shown = values.filter((value) => String(value.field_type) !== "UNIT");
+  const textOf = (value: Record<string, unknown>) => String(value.text_value ?? value.number_value ?? "").trim();
+  const colourValue = shown.find((value) => value.field_key === COLOUR_FIELD_KEY);
+  const others = shown.filter((value) => value !== colourValue).map(textOf).filter(Boolean);
+  return {
+    id: String(item.id),
+    path,
+    colour: colourValue ? textOf(colourValue) : others.join(" "),
+    colourUrdu: colourValue ? String(colourValue.text_value_urdu ?? "").trim() : "",
+    size: colourValue ? others.join(" ") : "",
+    quantity: Number(item.quantity_on_hand ?? 0),
+    unitCode: String(item.unit_code ?? ""),
+  };
 }
 
 export const rawMaterialsMethods = {
@@ -447,6 +468,32 @@ export const rawMaterialsMethods = {
       page,
       pages,
     };
+  },
+
+  /**
+   * The whole of one kind, for its printed stock sheet (Dana Stock Sheet): every active material
+   * with the categories it sits in under the top one, its colour and its other attributes. Read
+   * through listInventoryItems, so the figure printed is the balance every screen shows.
+   */
+  listKindStockSheet(this: SqliteDatabase, kind: StockKind): KindStockSheet {
+    const category = this.db
+      .prepare("SELECT id FROM inventory_categories WHERE parent_id IS NULL AND status = 'ACTIVE' AND UPPER(name) = ?")
+      .get(kind) as { id: string } | undefined;
+    if (!category) return { kind, rows: [] };
+    const categories = new Map(
+      (this.db.prepare("SELECT id, name, parent_id FROM inventory_categories").all() as Array<{ id: string; name: string; parent_id: string | null }>).map((row) => [row.id, row])
+    );
+    const pathBelowTop = (categoryId: string): string[] => {
+      const names: string[] = [];
+      let current = categories.get(categoryId);
+      while (current?.parent_id) {
+        names.unshift(current.name);
+        current = categories.get(current.parent_id);
+      }
+      return names;
+    };
+    const rows = this.listInventoryItems({ categoryId: category.id }).map((item) => sheetRowOf(item, pathBelowTop(String(item.category_id))));
+    return { kind, rows };
   },
 
   /** Filters items exactly like listInventoryItems, then aggregates their stock per unit and (optionally) converts to a target unit. */

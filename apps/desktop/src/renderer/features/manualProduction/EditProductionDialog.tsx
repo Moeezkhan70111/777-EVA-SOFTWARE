@@ -1,10 +1,12 @@
 import React, { useMemo, useRef, useState } from "react";
 import { ConfirmDialog } from "../../components/shared/ConfirmDialog";
+import { MissingSizeCell } from "../../components/shared/MissingSizeCell";
 import { Modal } from "../../components/shared/Modal";
 import { SizeColourGrid, type GridBoxProps, type GridSize } from "../../components/shared/SizeColourGrid";
 import { StateView } from "../../components/shared/StateView";
 import { copy } from "../../config/copy";
-import { cellKey, dozensText, productionGrid, type ProductionGrid } from "./manualProductionDraft";
+import { cellKey, dozensText, productionGrid, sizesNotMadeIn, type ProductionGrid } from "./manualProductionDraft";
+import { useCanAddColour } from "../../hooks/useCanAddColour";
 import type { ProductChoice } from "./productChoices";
 import { boxCartons, editChanges, editProblems, savedByCell, type EditChange } from "./productionEdit";
 import { useEditProduction } from "./useEditProduction";
@@ -21,7 +23,6 @@ import { useEditProduction } from "./useEditProduction";
 // again, so store stock and the Contractor Ledger follow (database/manualProductionEdit.ts).
 
 const text = copy.productionEdit;
-const entryText = copy.manualProductionPage;
 
 interface EditProductionDialogProps {
   machineName: string;
@@ -30,6 +31,8 @@ interface EditProductionDialogProps {
   /** Saved: how many figures changed. */
   onSaved: (changed: number) => void;
   onClose: () => void;
+  /** A colour was added to Product Master from a cell: the products are read again, so its box appears. */
+  onColourAdded: () => void;
 }
 
 type Edit = ReturnType<typeof useEditProduction>;
@@ -39,8 +42,14 @@ const cellClass = (problem: string | undefined, changed: boolean): string => {
   return changed ? "sa-cell is-typed" : "sa-cell";
 };
 
-const Cell: React.FC<{ size: GridSize; colour: string; box: GridBoxProps; grid: ProductionGrid; edit: Edit; saved: number; problem?: string }> = ({ size, colour, box, grid, edit, saved, problem }) => {
-  if (!grid.made.get(size.id)?.has(colour)) return <td className="sa-cell is-locked"><span className="sa-note">{entryText.colourNotOnSize}</span></td>;
+interface CellProps { size: GridSize; colour: string; box: GridBoxProps; grid: ProductionGrid; edit: Edit; saved: number; problem?: string; article: string; canAddColour: boolean; onColourAdded: () => void }
+
+const Cell: React.FC<CellProps> = ({ size, colour, box, grid, edit, saved, problem, article, canAddColour, onColourAdded }) => {
+  // A size not made in this colour: the shared cell, as on every quantity-by-colour page (useCanAddColour).
+  if (!grid.made.get(size.id)?.has(colour)) {
+    return <MissingSizeCell className="sa-cell" article={article} colour={colour} size={size.size} missingSizes={sizesNotMadeIn(grid, colour)}
+      canAdd={canAddColour} disabled={false} onAdded={onColourAdded} />;
+  }
   const key = cellKey(size.id, colour);
   const typed = edit.typed[key] ?? "";
   const now = boxCartons(typed);
@@ -72,7 +81,8 @@ const ChangeList: React.FC<{ changes: readonly EditChange[] }> = ({ changes }) =
   </div>
 );
 
-export const EditProductionDialog: React.FC<EditProductionDialogProps> = ({ machineName, article, products, onSaved, onClose }) => {
+export const EditProductionDialog: React.FC<EditProductionDialogProps> = ({ machineName, article, products, onSaved, onClose, onColourAdded }) => {
+  const canAddColour = useCanAddColour();
   const edit = useEditProduction(machineName, article);
   const grid = useMemo(() => productionGrid(products, article), [products, article]);
   const saved = useMemo(() => (edit.today?.ok ? savedByCell(edit.today.value) : new Map<string, number>()), [edit.today]);
@@ -109,7 +119,7 @@ export const EditProductionDialog: React.FC<EditProductionDialogProps> = ({ mach
         <SizeColourGrid label={text.gridLabel(article)} sizeHeader={text.sizeHeader} sizes={grid.sizes} colours={grid.colours}
           onEnter={() => { if (changes.length > 0 && problems.size === 0) setReviewing(true); }}
           renderCell={(size, colour, box) => (
-            <Cell size={size} colour={colour} box={box} grid={grid} edit={edit}
+            <Cell size={size} colour={colour} box={box} grid={grid} edit={edit} article={article} canAddColour={canAddColour} onColourAdded={onColourAdded}
               saved={saved.get(cellKey(size.id, colour)) ?? 0} problem={problems.get(cellKey(size.id, colour))} />
           )} />
         <ChangeList changes={changes} />

@@ -126,10 +126,14 @@ test("ACCOUNTING ISOLATION: importing changes no live ledger, balance, cash book
 
     importReference(f);
 
-    assert.deepEqual(f.db.getCustomerLedgerWithCash(f.behraam, { fromDate: "2026-01-01", toDate: "2026-12-31" }), ledgerBefore, "the live ledger is exactly as it was");
+    // OLD + NEW (owner, 25 Nov 2026): the imported ledger's balance is real, so the balance becomes old + ERP; but the
+    // ERP's own entries are exactly as they were and no archived row became one of them.
+    const inYear = f.db.getCustomerLedgerWithCash(f.behraam, { fromDate: "2026-01-01", toDate: "2026-12-31" });
+    assert.deepEqual(inYear.entries.map((e) => e.voucherId), ledgerBefore.entries.map((e) => e.voucherId), "the ERP's entries are exactly as they were");
     const allTime = f.db.getCustomerLedgerWithCash(f.behraam);
-    assert.deepEqual(allTime, allTimeBefore);
-    assert.equal(allTime.closingBalance, -50_000, "the live balance is the ERP's own receipt only: the archived 353,880 is not in it");
+    assert.equal(allTimeBefore.closingBalance, -50_000);
+    assert.equal(allTime.closingBalance, 303_880, "old closing 353,880 + the ERP's receipt of 50,000");
+    assert.equal(allTime.oldLedgerBalance, 353_880);
     assert.equal(allTime.entries.length, 1, "no archived row became a live entry");
     assert.deepEqual(everyOtherTable(f), tablesBefore, "no voucher, stock movement, party, balance or outbox row was written");
     assert.equal(f.count("SELECT COUNT(*) AS n FROM ledger_archive_entries"), 45);

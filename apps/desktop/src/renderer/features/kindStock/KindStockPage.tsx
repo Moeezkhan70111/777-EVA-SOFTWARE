@@ -1,16 +1,17 @@
 import React, { useCallback } from "react";
-import type { StockKind } from "@erp/domain";
+import { RAW_MATERIAL_KIND, type StockKind } from "@erp/domain";
 import { Pager } from "../../components/shared/Pager";
 import { useDesktopApi } from "../../hooks/useDesktopApi";
 import { StateView } from "../../components/shared/StateView";
 import { copy } from "../../config/copy";
 import { KIND_STOCK_TEXT, parseKindStockReply, quantityLabel, type KindStockPage as StockPage } from "./kindStock";
 import { useStockList, type StockRead } from "./useStockList";
+import { usePrintStockSheet } from "./usePrintStockSheet";
 
 // DANA STOCK: what is in the store of one kind of raw material, as a plain table. Read-only: moving
 // stock stays on the Store page, where every movement is scanned. The main process decides who may
 // read this (STOCK_KIND_PERMISSION). Uppers have sizes and colours, so theirs is a matrix instead
-// (features/upperStock).
+// (features/upperStock). Dana also prints as the store's paper Dana Stock Sheet (stockSheetPrint.ts).
 
 const Summary: React.FC<{ data: StockPage }> = ({ data }) => (
   <div className="kpi-grid">
@@ -58,6 +59,8 @@ export const KindStockPage: React.FC<{ kind: StockKind }> = ({ kind }) => {
   const read = useCallback<StockRead<StockPage>>(async (query) => parseKindStockReply(await api.listKindStock(kind, query)), [api, kind]);
   const stock = useStockList(read);
   const { data } = stock;
+  const sheet = usePrintStockSheet(kind);
+  const printsSheet = kind === RAW_MATERIAL_KIND.DANA;
 
   const body = () => {
     if (stock.error) return <StateView kind="error" title={copy.kindStock.failedTitle} message={stock.error} onRetry={stock.retry} />;
@@ -96,7 +99,17 @@ export const KindStockPage: React.FC<{ kind: StockKind }> = ({ kind }) => {
             onChange={(event) => stock.setSearch(event.target.value)}
           />
         </div>
+        {printsSheet ? (
+          <button type="button" className="btn btn-secondary" onClick={sheet.print}>
+            {copy.kindStock.printSheet}
+          </button>
+        ) : null}
       </div>
+      {sheet.blockedMessage ? (
+        <p className="error-message" role="alert">
+          {sheet.blockedMessage}
+        </p>
+      ) : null}
       {body()}
     </div>
   );

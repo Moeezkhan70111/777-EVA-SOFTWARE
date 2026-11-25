@@ -5,7 +5,7 @@ import { DocumentNavigator, type DocumentNavigatorLabels } from "../../component
 import { StateView } from "../../components/shared/StateView";
 import { copy } from "../../config/copy";
 import { LeasedStation } from "../store/LeasedStation";
-import { useWriteLease } from "../sync/useWriteLease";
+import { useCanAddColour } from "../../hooks/useCanAddColour";
 import { OrderDetails } from "./OrderDetails";
 import { OrderForm } from "./OrderForm";
 import { useOrderChoices } from "./useOrderChoices";
@@ -37,15 +37,13 @@ const NAV_LABELS: DocumentNavigatorLabels = {
 interface OrderEntryPageProps {
   token: string;
   canCancel: boolean;
-  /** An administrator: may add a new colour to an article, where Product Master is written here. */
-  isAdmin: boolean;
 }
 
-const OrderEntry: React.FC<OrderEntryPageProps> = ({ token, canCancel, isAdmin }) => {
+const OrderEntry: React.FC<OrderEntryPageProps> = ({ token, canCancel }) => {
   const state = useOrderEntry(token);
   const choices = useOrderChoices();
-  // A new colour is Product Master: an administrator, where MASTER_DATA is written (as on Stock Adjustment).
-  const masterData = useWriteLease(LEASE_DOMAIN.MASTER_DATA);
+  // A new colour is Product Master: the one rule every quantity-by-colour page asks (useCanAddColour).
+  const canAddColour = useCanAddColour();
   const [cancelling, setCancelling] = useState(false);
   const [reason, setReason] = useState("");
   const { mode, order, neighbours, busy } = state;
@@ -58,7 +56,7 @@ const OrderEntry: React.FC<OrderEntryPageProps> = ({ token, canCancel, isAdmin }
         justSaved={state.justSaved} onNewOrder={() => void state.startNew()} />;
     }
     return <OrderForm entry={state.entry} choices={choices} busy={busy} editing={mode === "edit"} onSave={() => void (mode === "edit" ? state.saveEdit() : state.save())} onDiscard={state.cancelEdit}
-      canAddColor={isAdmin && masterData.canWrite} />;
+      canAddColor={canAddColour} />;
   })();
 
   return (

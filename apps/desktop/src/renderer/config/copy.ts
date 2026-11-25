@@ -164,13 +164,13 @@ export const copy = {
   },
 
   gatepass: {
-    // Colours the article has in other sizes but not this one (owner, 24 Nov 2026: SK46 7/10 had no BLACKRED).
-    missingTitle: (size: string) => `Not made in ${size} in Product Master`,
-    missingHint: "Ask an administrator to add a colour to this size; it can then go on the gatepass.",
-    addMissingLabel: (colour: string, size: string) => `Add ${colour} in size ${size} to Product Master`,
-    addMissingTitle: (colour: string, sizes: string) => `Adds ${colour} to Product Master in every size it is missing: ${sizes}`,
-    addingMissing: "Adding…",
-    addMissingFailed: "The colour could not be added. Nothing was changed.",
+    // One article, every size at once (owner, 25 Nov 2026, as Opening Stock and Stock Adjustment): sizes down, colours
+    // across, a box in every cell; under each box the current stock (owner, 25 Nov 2026: no reserved figures here).
+    gridLabel: (article: string) => `${article} gatepass quantities, dozens`,
+    sizeHeader: "Size",
+    colourTotal: "Total",
+    cellInStore: "In stock",
+    sizesOnCard: (count: number) => `${count} ${count === 1 ? "size" : "sizes"}`,
     emptyTitle: "No gatepasses yet",
     emptyHint: "Create a gatepass from the Gatepass screen; it will be listed here.",
     noMatch: "No gatepasses match these filters.",
@@ -194,19 +194,18 @@ export const copy = {
     articlesSection: "Articles",
     addArticle: "Add Article",
     addArticleLabel: "Search article",
-    articlePlaceholder: "Search article or size…",
+    articlePlaceholder: "Search article…",
     articleNoMatch: "No article in store matches.",
     noStockTitle: "The store holds no stock right now",
     noStockHint: "Cartons appear here once they are received by Store Move In.",
     noArticlesTitle: "No articles added",
-    noArticlesHint: "Add an article to see its In Store, Reserved and Available figures by color and enter the Gatepass quantity.",
+    noArticlesHint: "Add an article to see every size and color with its current stock, and enter the Gatepass quantity.",
     // The three stock figures, in the operator's words (owner, 2026-11-04). Inside the system they
     // stay Current Stock and Reflected Stock: Reflected Stock is what a NEW gatepass may take, and
     // it is never labelled plain "Stock" so it cannot be mistaken for what is physically there.
     currentStock: "In Store",
     reserved: "Reserved",
     reflectedStock: "Available",
-    fullyReserved: "Fully reserved",
     stockAtCreation: "In Store at creation",
     gatepassQty: "Gatepass Qty",
     movedOut: "Moved out",
@@ -241,8 +240,6 @@ export const copy = {
     totalQty: (dozens: string) => `Total Qty: ${dozens} DZN`,
     needsAttention: (count: number) => `${count} ${count === 1 ? "quantity needs" : "quantities need"} attention`,
     removeArticle: (name: string) => `Remove ${name}`,
-    decrease: (name: string) => `Decrease ${name}`,
-    increase: (name: string) => `Increase ${name}`,
     quantityFor: (name: string) => `Quantity for ${name}`,
     summaryTitle: "Gatepass Summary",
     summaryEmpty: "Nothing added yet. Quantities you enter appear here.",
@@ -1711,6 +1708,13 @@ export const copy = {
     contractorsSaved: "Contractors changed",
     contractorsSavedBody: (machine: string) => `${machine}'s next program uses them.`,
     notSaved: "Not saved",
+    // The contractors dialog, the UI/UX pass (owner, 25 Nov 2026)
+    contractorSearch: "Search contractors by name or city",
+    wasContractor: (name: string) => `was ${name}`,
+    nothingChanged: "Choose a different contractor to save a change.",
+    saveContractors: (count: number) => (count === 0 ? "Save" : count === 1 ? "Save 1 change" : `Save ${count.toLocaleString()} changes`),
+    addParty: "+ Add Party",
+    addPartyLabel: "Add a party: opens the Add Party page in Party Master",
     // The day's programs
     programsTitle: "Programs",
     programsLoading: "Loading the day's programs…",
@@ -1878,6 +1882,15 @@ export const copy = {
   // The Manual Production page (docs/48): machine, article, every size and colour at once, a list to save, and
   // "Complete today's production".
   manualProductionPage: {
+    // The UI/UX pass (owner, 25 Nov 2026)
+    machineSaved: (dozens: string) => `✓ ${dozens} dozen saved today`,
+    progressLabel: "Machines in today",
+    progressFigure: (done: number, total: number) => `${done.toLocaleString()} of ${total.toLocaleString()} machines in`,
+    progressMissing: (names: string) => `Still to add: ${names}`,
+    progressAllIn: "✓ Every machine is in",
+    allInNext: "Every machine is in. Complete today's production when the day is done.",
+    goToComplete: "Go to Complete today's production",
+    colourTotal: "Typed",
     machineStep: "Machine",
     machineHint: "Production you add goes on this machine's program for today.",
     articleStep: "Article",
@@ -1892,14 +1905,12 @@ export const copy = {
     gridHint: "Type dozens in any box: every size and colour of the article at once. ↑ ↓ move along a colour, Enter adds.",
     sizeColumn: "Size",
     quantityFor: (color: string, size: string) => `Dozens for ${color}, size ${size}`,
-    colourNotOnSize: "Not made in this size",
     noColoursTitle: "This article has no colours yet",
     noColoursHint: "Add its colours in Product Master, then record its production here.",
     savedToday: (dozens: string) => `Saved today ${dozens}`,
     inList: (dozens: string) => `In list ${dozens}`,
     typedSummary: (boxes: number, dozens: string) => `${String(boxes)} ${boxes === 1 ? "box" : "boxes"} typed · ${dozens} dozen`,
     addToList: "Add to list",
-    addHint: "The same machine, size and colour added again replaces the line already in the list.",
     clearTyping: "Clear",
     // The list waiting to be saved
     listTitle: "Production to save",
@@ -1927,7 +1938,6 @@ export const copy = {
     savedAgain: "Already saved: nothing was added twice.",
     notSaved: "⚠ Not saved",
     unreachable: "The production could not be saved: the connection failed. Press Save again; nothing will be added twice.",
-    keptNote: "This list is kept on this computer until it is saved or cleared.",
     // Complete today's production
     completeButton: "Complete today's production",
     completing: "Completing…",
@@ -1941,6 +1951,10 @@ export const copy = {
     completeUnreachable: "The day could not be completed: the connection failed. Try again.",
     // Today's strip
     todayLabel: "Today",
+    // The tile row (owner, 25 Nov 2026: in the Dashboard cards' look, as Carton Stock)
+    savedTodayLabel: (date: string) => `Saved today${date ? ` · ${date}` : ""}`,
+    savedTodayValue: (dozens: string) => `${dozens} dozen`,
+    savedTodayEntries: (entries: number) => `${entries.toLocaleString()} ${entries === 1 ? "entry" : "entries"}`,
     todaySaved: (dozens: string, entries: number) => `${dozens} dozen saved · ${entries.toLocaleString()} ${entries === 1 ? "entry" : "entries"}`,
     openDaily: "Open Daily Production",
     machinesCount: (count: number) => `${String(count)} ${count === 1 ? "machine" : "machines"}`,
@@ -1973,6 +1987,16 @@ export const copy = {
     emptyHintToday: "Production appears here as it is saved on the Manual Production page.",
     emptyHintPast: "Nothing was saved for this day. Choose another day.",
     recordProduction: "Record production",
+    // The UI/UX pass (owner, 25 Nov 2026: "too boring")
+    weekLabel: "The last 7 days",
+    weekDay: (day: string, dozens: string, complete: boolean) => `${day}: ${dozens} dozen${complete ? ", production added" : ""}`,
+    weekLoading: "Reading the week…",
+    vsDay: (change: string, day: string) => `${change} dozen on ${day}`,
+    sameAsDay: (day: string) => `Same as ${day}`,
+    dayFacts: (articles: number, machines: number) => `${articles.toLocaleString()} ${articles === 1 ? "article" : "articles"} · ${machines.toLocaleString()} ${machines === 1 ? "machine" : "machines"}`,
+    topArticle: "Top article",
+    topArticleShare: (share: number) => `${share.toLocaleString()}% of the day`,
+    shareOfDay: (share: number) => `${share.toLocaleString()}% of the day`,
   },
 
   // The production PDF (features/productionDay/productionReport.ts) and its Download buttons.
@@ -2041,9 +2065,87 @@ export const copy = {
   },
 
   // The historical ledger archive on the Customer Ledger screen (docs/50, features/ledgerArchive).
+  // The Customer Ledger (owner, 24 Nov 2026: the UI/UX pass, and the old software's balance said plainly).
+  // A size a colour is not made in, in a size × colour grid (MissingSizeCell, shared by Enter Orders and Gatepass): an
+  // administrator adds it to Product Master from the cell; anyone else is told who can.
+  missingSize: {
+    notInMaster: "Not in Product Master",
+    notInMasterHint: (colour: string, size: string) => `${colour} is not in Product Master in size ${size}. Ask an administrator to add it.`,
+    addMissingLabel: (colour: string, size: string) => `Add ${colour} in size ${size} to Product Master`,
+    addMissingTitle: (colour: string, sizes: string) => `Adds ${colour} to Product Master in every size it is missing: ${sizes}`,
+    addMissingFailed: "The size could not be added. Nothing was changed.",
+  },
+  customerLedger: {
+    title: "Customer Ledger",
+    back: "Customer balances",
+    customer: "Customer",
+    customerPlaceholder: "Choose a customer",
+    customerSearch: "Search by name, city or phone",
+    noCustomers: "No customers found",
+    inactive: "Inactive",
+    chooseTitle: "Choose a customer to open their ledger",
+    chooseHint: "Bills, receipts, payments and the old software's history, in one ledger.",
+    partiesFailed: "The customer list could not be loaded.",
+    loading: "Loading the ledger…",
+    failed: "The ledger could not be loaded.",
+    // The current balance, and what it is made of
+    balanceLabel: "Current balance",
+    asOf: (date: string) => `as of ${date}`,
+    position: { RECEIVABLE: "Receivable", ADVANCE: "Advance", SETTLED: "Settled" },
+    positionHint: { RECEIVABLE: "The customer owes us", ADVANCE: "We owe the customer", SETTLED: "Nothing owed either way" },
+    // The balance limit
+    limit: "Balance limit",
+    noLimit: "No limit set",
+    limitUsed: (percent: number) => `${percent.toLocaleString("en-US")}% used`,
+    limitLeft: (amount: string) => `Rs. ${amount} left`,
+    limitOver: (amount: string) => `Rs. ${amount} over the limit`,
+    // The period
+    tabsLabel: "Ledger views",
+    tabs: { LEDGER: "Ledger", SUMMARY: "Summary", STATEMENT: "Statement" },
+    periodLabel: "Period",
+    periods: { MONTH: "This month", QUARTER: "3 months", YEAR: "This year", ALL: "All time" },
+    to: "to",
+    // How the balance is made: brought forward + debit − credit = balance
+    equationLabel: "How the period's balance is made",
+    broughtForward: "Brought forward",
+    debit: "Debit",
+    credit: "Credit",
+    balance: "Balance",
+    entryCount: (count: number) => `${count.toLocaleString("en-US")} ${count === 1 ? "entry" : "entries"}`,
+    // Search and filter
+    searchLabel: "Search transactions",
+    searchPlaceholder: "Search voucher, article or note",
+    searchClear: "Clear search",
+    searchShortcut: "Press / to search",
+    showLabel: "Show",
+    filters: { ALL: "All", SALE: "Sales", SALE_RETURN: "Returns", CASH_RECEIPT: "Receipts", CASH_PAYMENT: "Payments" },
+    types: { SALE: "Sale Voucher", SALE_RETURN: "Sale return", CASH_RECEIPT: "Receipt", CASH_PAYMENT: "Payment" },
+    openVoucher: (number: string) => `Open ${number}`,
+    broughtForwardRow: "Balance brought forward",
+    showing: (first: number, last: number, total: number) => `${first.toLocaleString("en-US")}–${last.toLocaleString("en-US")} of ${total.toLocaleString("en-US")}`,
+    rowsPerPage: "Rows per page",
+    perPage: (size: number) => `${size} / page`,
+    returnsRow: "Total Returns (Credit)",
+    // The second UI/UX pass (24 Nov 2026)
+    downloadMenu: "Download",
+    downloadGroup: "This ledger, as shown",
+    historyMenu: "Old ledgers",
+    historyGroup: "Old software ledgers",
+    moreColumns: "More columns",
+    fewerColumns: "Fewer columns",
+    moreColumnsHint: "Show Less, Tot. Disc and Reference",
+    closingRow: (date: string) => `Closing balance on ${date}`,
+    totalRow: (count: number) => `Total (${count.toLocaleString("en-US")} ${count === 1 ? "entry" : "entries"})`,
+    historyTitle: "Imported ledgers",
+    historyStatus: (count: number) => `${count.toLocaleString("en-US")} ${count === 1 ? "file" : "files"} · counted in the balance`,
+    historyNone: "None imported",
+    historyNote: "Its rows are part of this ledger and its balance.",
+    overLimit: "Over limit",
+    loadingLabel: "Loading the ledger",
+  },
   ledgerArchive: {
     archived: "Archived",
-    archivedTitle: "From the previous software. Kept as printed, not part of the live balance.",
+    archivedTitle: "From the previous software, kept as printed.",
     billNo: "Bill No.",
     qty: "Qty",
     filterArchived: "Archived",
@@ -2753,6 +2855,7 @@ export const copy = {
     savedBanner: (code: string, dozens: string, party: string) => `${code} saved — ${dozens} dozen for ${party}`,
     article: "Article",
     articlePlaceholder: "Choose an article",
+    noMoreArticles: "Every article is on the order",
     colours: "Colours",
     coloursHint: "Pick every colour this party wants, then type the dozens.",
     noColours: "This article has no active colours in Product Master.",
@@ -2764,15 +2867,6 @@ export const copy = {
     size: "Size",
     cellLabel: (article: string, colour: string, size: string) => `${article} ${colour} size ${size}, dozens`,
     notMade: (colour: string, size: string) => `${colour} is not made in size ${size}`,
-    // A size a colour is not made in (24 Nov 2026): an administrator adds it to Product Master from here; anyone else
-    // is told who can.
-    notInMaster: "Not in Product Master",
-    notInMasterHint: (colour: string, size: string) => `${colour} is not in Product Master in size ${size}. Ask an administrator to add it.`,
-    addMissing: "+ Add",
-    addMissingLabel: (colour: string, size: string) => `Add ${colour} in size ${size} to Product Master`,
-    addMissingTitle: (colour: string, sizes: string) => `Adds ${colour} to Product Master in every size it is missing: ${sizes}`,
-    addingMissing: "Adding…",
-    addMissingFailed: "The size could not be added. Nothing was changed.",
     removeArticle: (article: string) => `Remove ${article}`,
     removeColour: (article: string, colour: string) => `Remove ${colour} from ${article}`,
     toggleColour: (colour: string) => `Colour ${colour}`,
@@ -2784,7 +2878,7 @@ export const copy = {
     // The order's lines and totals.
     linesTitle: "Order",
     emptyTitle: "No articles yet",
-    emptyHint: "Choose an article above, pick its colours and type the dozens.",
+    emptyHint: "Press Add article, pick its colours and type the dozens.",
     totalLabel: "Order total",
     dozens: (dozens: string) => `${dozens} dozen`,
     problemsBlock: "Fix the highlighted quantities before saving.",
@@ -3494,9 +3588,26 @@ export const copy = {
     upperEmptyHint: "Uppers appear here once they are set up under UPPER in Raw Material and received into the store.",
     danaEmptyTitle: "No dana in the store yet",
     danaEmptyHint: "Dana appears here once it is set up under DANA in Raw Material and received into the store.",
+    // The printed Dana Stock Sheet (features/kindStock/stockSheetPrint.ts): headed in English like the paper
+    // sheet, with its columns in Urdu.
+    printSheet: "Print stock sheet",
+    printBlocked: "The print window could not open. Allow pop-ups for the ERP and try again.",
+    sheetTitle: "DANA STOCK SHEET",
+    sheetDate: "DATE",
+    sheetColour: "رنگ",
+    sheetSize: "سائز",
+    sheetQuantity: "تعداد",
+    sheetTotal: "ٹوٹل",
+    sheetEmpty: "No dana is set up in the store yet.",
   },
 
   // The Carton Stock page (features/cartonStock, docs/42).
+  stockSplit: {
+    // Upper Stock and Carton Stock side by side (features/stockSplit, owner 25 Nov 2026).
+    show: (page: string) => `Show ${page} beside`,
+    hide: (page: string) => `Close ${page}`,
+    resize: "Resize the two stock views",
+  },
   cartonStock: {
     // The Carton Stock page (features/cartonStock): cartons in store, one matrix per article.
     searchLabel: "Search articles",
@@ -3567,7 +3678,6 @@ export const copy = {
     newColorButton: "+ New colour",
     alreadyOpened: "Already has opening stock.",
     colorNotOnSize: "Colour not on this size",
-    newOnSize: "New on this size",
     noColorsHintAdd: "Add its first colour with + New colour.",
     addToDocument: "Add to document",
     linesTitle: "Lines",

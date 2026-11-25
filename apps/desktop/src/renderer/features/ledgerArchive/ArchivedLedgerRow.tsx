@@ -43,8 +43,9 @@ const CompactArchivedRow: React.FC<{ entry: ArchiveEntry }> = ({ entry }) => (
   </tr>
 );
 
-export const ArchivedLedgerRow: React.FC<{ entry: ArchiveEntry; compact?: boolean }> = ({ entry, compact = false }) => compact ? <CompactArchivedRow entry={entry} /> : (
-  <tr className="customer-ledger-row ledger-archived-row" aria-label={`${text.archived}: ${entry.description}`}>
+/** merged: the Customer Ledger, where imported rows are part of one ledger (owner, 25 Nov 2026) and carry no tag. */
+export const ArchivedLedgerRow: React.FC<{ entry: ArchiveEntry; compact?: boolean; merged?: boolean }> = ({ entry, compact = false, merged = false }) => compact ? <CompactArchivedRow entry={entry} /> : (
+  <tr className={merged ? "customer-ledger-row ledger-archived-row is-merged" : "customer-ledger-row ledger-archived-row"} aria-label={merged ? undefined : `${text.archived}: ${entry.description}`}>
     <td>{formatDate(entry.entryDate, entry.originalDateText)}</td>
     <td>{entry.voucherNumber || "-"}</td>
     <td>
@@ -60,11 +61,11 @@ export const ArchivedLedgerRow: React.FC<{ entry: ArchiveEntry; compact?: boolea
     <td className="amount">-</td>
     <td className="amount debit">{orDash(entry.debitPaisa)}</td>
     <td className="amount credit">{orDash(entry.creditPaisa)}</td>
-    <td className="amount balance ledger-archived-balance" title={text.archivedBalanceNote}>
+    <td className={merged ? "amount balance" : "amount balance ledger-archived-balance"} title={merged ? undefined : text.archivedBalanceNote}>
       {archiveAmount(entry.balancePaisa)}
     </td>
     <td>
-      <ArchivedTag />
+      {merged ? "-" : <ArchivedTag />}
     </td>
   </tr>
 );

@@ -56,19 +56,18 @@ export const typedCartons = (typed: string): number | null => {
 
 /**
  * Why one typed quantity cannot be added, or null. Empty is not a problem: the size is simply left out. A size the
- * colour is not on yet can only take a quantity where the colour can be added (master data).
+ * colour is not made in takes no quantity at all (it has no box): it is added to Product Master first, from its cell.
  */
 export function entryProblem(
   choice: AdjustmentChoice,
   kind: CartonAdjustmentKind,
   direction: CartonAdjustmentDirection,
-  typed: string,
-  canAddColor: boolean
+  typed: string
 ): string | null {
   if (typed.trim() === "") return null;
   const quantity = cartonAdjustmentDozens(typed);
   if (!quantity.ok) return quantity.reason;
-  if (choice.colorMissing && !canAddColor) return text.colorNotOnSize;
+  if (choice.colorMissing) return text.colorNotOnSize;
   if (kind === CARTON_ADJUSTMENT_KIND.OPENING && choice.hasOpening) return text.alreadyOpened;
   return null;
 }
@@ -103,12 +102,11 @@ export function gridProblems(
   choices: readonly AdjustmentChoice[],
   kind: CartonAdjustmentKind,
   direction: CartonAdjustmentDirection,
-  typed: Readonly<Record<string, string>>,
-  canAddColor: boolean
+  typed: Readonly<Record<string, string>>
 ): Map<string, string> {
   const problems = new Map<string, string>();
   for (const choice of choices) {
-    const problem = entryProblem(choice, kind, direction, typedIn(typed, choice), canAddColor);
+    const problem = entryProblem(choice, kind, direction, typedIn(typed, choice));
     if (problem) problems.set(lineKey(choice.articleSizeId, choice.color), problem);
   }
   return problems;
@@ -135,10 +133,6 @@ export function gridEntries(
       inStore: choice.inStore,
     }));
 }
-
-/** The colours that must first be added to a size they are not on yet, because a quantity was typed there. */
-export const coloursToAdd = (choices: readonly AdjustmentChoice[], typed: Readonly<Record<string, string>>): string[] =>
-  [...new Set(choices.filter((choice) => choice.colorMissing && typedCartons(typedIn(typed, choice)) !== null).map((choice) => choice.color))].sort();
 
 /** New lines replace the same colour and size already on the document, in place; the rest go at the end. */
 export function mergeLines(lines: readonly DraftLine[], added: readonly DraftLine[]): DraftLine[] {

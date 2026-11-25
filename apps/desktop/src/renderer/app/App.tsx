@@ -11,6 +11,7 @@ import { KindStockPage } from "../features/kindStock/KindStockPage";
 import { CartonStockPage } from "../features/cartonStock/CartonStockPage";
 import { StockAdjustmentPage } from "../features/stockAdjustment/StockAdjustmentPage";
 import { UpperStockPage } from "../features/upperStock/UpperStockPage";
+import { StockSplitView } from "../features/stockSplit/StockSplitView";
 import { RawMaterialInputPage } from "../pages/RawMaterialInputPage";
 import { RawMaterialOutputPage } from "../pages/RawMaterialOutputPage";
 import { RawMaterialWorkspace } from "../features/rawMaterial/RawMaterialWorkspace";
@@ -354,6 +355,8 @@ export const App = () => {
     if (!canOpenRoute(session, route) || hiddenRoutes.has(route)) return home;
 
     const canOpenRawMaterial = canOpenRoute(session, "raw-material");
+    /** Another page this user may open from this one (a page beside it, a button to it). */
+    const mayOpen = (target: AppRoute) => canOpenRoute(session, target) && !hiddenRoutes.has(target) && isRouteActive(target);
 
     if (!isRouteActive(route)) {
       return <HiddenSection />;
@@ -396,12 +399,19 @@ export const App = () => {
       case "stock":
         return <StockPage />;
       // Two pages, two permissions (routePermission above decided whether we got here at all).
+      // Each stock page can open the other beside it, when this user may open the other (owner, 25 Nov 2026).
       case "upper-stock":
-        return <UpperStockPage />;
+        return (
+          <StockSplitView storageKey="stock-split.upper" main={<UpperStockPage />} companionLabel={PAGE_TITLES["carton-stock"]}
+            companion={mayOpen("carton-stock") ? <CartonStockPage /> : null} />
+        );
       case "dana-stock":
         return <KindStockPage kind={RAW_MATERIAL_KIND.DANA} />;
       case "carton-stock":
-        return <CartonStockPage />;
+        return (
+          <StockSplitView storageKey="stock-split.carton" main={<CartonStockPage />} companionLabel={PAGE_TITLES["upper-stock"]}
+            companion={mayOpen("upper-stock") ? <UpperStockPage showTitle={false} /> : null} />
+        );
       case "stock-adjustment":
         return <StockAdjustmentPage />;
       // One workspace, three doors. The two deep-link routes keep the permission their old
@@ -447,6 +457,7 @@ export const App = () => {
         return (
           <MachineProgramPage
             isAdmin={session.role === USER_ROLE.ADMIN}
+            onAddParty={canOpenRoute(session, "party-form") ? () => navigateToParty("party-form") : undefined}
             // Open programs can be taken to the Store page by whoever works it (0.3.9).
             onOpenInStore={canOpenRoute(session, "store-receiving") ? openStoreForProgram : undefined}
             onOpenQrGenerator={canOpenRoute(session, "qr-generator") ? () => setRoute("qr-generator") : undefined}
@@ -473,6 +484,7 @@ export const App = () => {
           <ManualProductionPage
             onOpenDaily={canOpenRoute(session, "daily-production") ? () => setRoute("daily-production") : undefined}
             onSetUpMachines={canOpenRoute(session, "machine-program") ? () => setRoute("machine-program") : undefined}
+            onAddParty={canOpenRoute(session, "party-form") ? () => navigateToParty("party-form") : undefined}
           />
         );
       case "daily-dispatch":
@@ -562,7 +574,6 @@ export const App = () => {
             onMakeBill={canOpenRoute(session, "sale-voucher-form") && !hiddenRoutes.has("sale-voucher-form") ? openSaleVoucherForGatepass : undefined}
             canEdit={hasPermission(session, PERMISSION.GATEPASS_EDIT)}
             editGatepassId={gatepassToEdit}
-            isAdmin={session.role === USER_ROLE.ADMIN}
           />
         );
       case "gatepass-list":
@@ -593,7 +604,7 @@ export const App = () => {
           />
         );
       case "orders-entry":
-        return <OrderEntryPage token={sessionToken ?? ""} canCancel={hasPermission(session, PERMISSION.ORDERS_CANCEL)} isAdmin={session.role === USER_ROLE.ADMIN} />;
+        return <OrderEntryPage token={sessionToken ?? ""} canCancel={hasPermission(session, PERMISSION.ORDERS_CANCEL)} />;
       case "pending-orders":
         return <PendingOrdersPage token={sessionToken ?? ""} onEnterOrders={canOpenRoute(session, "orders-entry") ? () => setRoute("orders-entry") : undefined} />;
       case "party-list":

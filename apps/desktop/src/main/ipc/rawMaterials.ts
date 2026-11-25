@@ -286,6 +286,17 @@ export function registerRawMaterialsHandlers(ctx: IpcContext): void {
     }
   });
 
+  // The same kind's printed stock sheet (Dana Stock Sheet): the whole store, behind the same page permission.
+  ipcMain.handle(IPC.listKindStockSheet, (event, kind?: unknown) => {
+    try {
+      if (!isStockKind(kind)) return { accepted: false, reason: "That stock page does not exist." };
+      authorizer.requirePermission(event, STOCK_KIND_PERMISSION[kind]);
+      return { accepted: true, ...db.listKindStockSheet(kind) };
+    } catch (error) {
+      return rejection(error, "Could not read this stock");
+    }
+  });
+
   // The Upper Stock page's matrix, behind that page's permission. An unknown category or sort falls
   // back to the default rather than failing, like every other optional filter here.
   ipcMain.handle(IPC.listUpperStockMatrix, (event, query?: Record<string, unknown>) => {

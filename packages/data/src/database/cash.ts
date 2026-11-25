@@ -8,7 +8,7 @@ import { refuseTestFinancialDocument } from "./stockProtection.js";
 import type { PagedResult, SaleVoucherLineRecord } from "./types.js";
 import { addMoney, fromPaisa, subtractMoney, toPaisa } from "@erp/domain";
 import { allocateNumberInRange } from "./numberRange.js";
-import { OPENING_BALANCE_ENTRY_NUMBER } from "./partyOpeningBalances.js";
+import { OPENING_BALANCE_ENTRY_NUMBER, customerOldLedgerPaisaSql, openingBalancePaisaSql } from "./partyOpeningBalances.js";
 import { RequestConflictError, fingerprintText, isRequestId, requestFingerprint } from "./requestFingerprint.js";
 
 type CashVoucherLineInput = { partyId: string; description: string; modeOfTransfer: string; bankAccountTitle?: string; chequeNumber?: string; chequeDate?: string; onlineFrom?: string; onlineTo?: string; referenceNo?: string; receiptAmount: number; paymentAmount: number };
@@ -417,6 +417,10 @@ export const cashMethods = {
     balanceLimit: number | null;
     openingBalance: number;
     closingBalance: number;
+    /** What of closingBalance is the old software's ledger: its balance on its last line up to toDate (0 with none). */
+    oldLedgerBalance: number;
+    /** How much the old software's ledger moved inside the period: brought forward + this + debit − credit = closing. */
+    oldLedgerInPeriod: number;
     entries: Array<{
       voucherId: string;
       voucherNumber: string;
@@ -448,7 +452,7 @@ export const cashMethods = {
     }>;
   } {
     const party = this.getParty(partyId);
-    if (!party) return { partyId, partyName: "", balanceLimit: null, openingBalance: 0, closingBalance: 0, entries: [] };
+    if (!party) return { partyId, partyName: "", balanceLimit: null, openingBalance: 0, closingBalance: 0, oldLedgerBalance: 0, oldLedgerInPeriod: 0, entries: [] };
 
     const fromDate = query.fromDate ?? "1900-01-01";
     const toDate = query.toDate ?? "2999-12-31";
@@ -481,7 +485,15 @@ export const cashMethods = {
     // The customer's posted opening balance (docs/53): before the range it is part of the opening figure, inside it
     // it is a row of its own. Never a voucher: it moves this balance and nothing else.
     const posted = this.openingBalanceForLedger(partyId, "CUSTOMER", fromDate, toDate);
-    const openingBalance = fromPaisa(posted.beforePaisa + openingSales.total - openingReceipts.total + openingPayments.total - openingReturns.total);
+    // The old ledger (owner, 25 Nov 2026: old + new is the ledger): its balance on any day is the one the old software
+    // printed on the customer's last archived line up to then (customerOldLedgerPaisaSql). The ERP's own figures run
+    // as before (newOpening, runningBalance); every balance shown adds the old one as of that row's date.
+    const oldBefore = this.db.prepare(`SELECT ${customerOldLedgerPaisaSql("?1", "e.entry_date < ?2")} AS paisa`);
+    const oldUpTo = this.db.prepare(`SELECT ${customerOldLedgerPaisaSql("?1", "e.entry_date <= ?2")} AS paisa`);
+    const oldAt = (date: string): number => fromPaisa(Number((oldUpTo.get(partyId, date) as { paisa?: number } | undefined)?.paisa ?? 0));
+    const newOpening = fromPaisa(posted.beforePaisa + openingSales.total - openingReceipts.total + openingPayments.total - openingReturns.total);
+    const oldBeforePaisa = Number((oldBefore.get(partyId, fromDate) as { paisa?: number } | undefined)?.paisa ?? 0);
+    const openingBalance = addMoney(newOpening, fromPaisa(oldBeforePaisa));
 
     // Get all transactions in date range
     const transactions: Array<{
@@ -641,8 +653,8 @@ export const cashMethods = {
       return typeOrder[a.type] - typeOrder[b.type];
     });
 
-    // Build ledger entries with running balance
-    let runningBalance = openingBalance;
+    // Build ledger entries with running balance: the ERP's own, to which each row adds the old ledger as of its date.
+    let runningBalance = newOpening;
     const entries = transactions.map((tx) => {
       let debitAmount = 0;
       let creditAmount = 0;
@@ -712,7 +724,7 @@ export const cashMethods = {
         modeOfTransfer: tx.modeOfTransfer,
         debitAmount,
         creditAmount,
-        balance: runningBalance,
+        balance: addMoney(runningBalance, oldAt(tx.date)),
         lineItems: lineItems.length > 0 ? lineItems : undefined,
       };
     });
@@ -722,7 +734,11 @@ export const cashMethods = {
       partyName: party.partyName,
       balanceLimit: party.balanceLimit ?? null,
       openingBalance,
-      closingBalance: runningBalance,
+      closingBalance: addMoney(runningBalance, oldAt(toDate)),
+      oldLedgerInPeriod: addMoney(oldAt(toDate), -fromPaisa(oldBeforePaisa)),
+      // What of the closing balance came from the old software (its archive, or the opening balance posted for it), so
+      // the Current Balance can say "old + ERP" in the main process's own figures.
+      oldLedgerBalance: addMoney(oldAt(toDate), fromPaisa(Number((this.db.prepare(`SELECT ${openingBalancePaisaSql("CUSTOMER", "?", "ob.effective_date <= ?")} AS paisa`).get(partyId, toDate) as { paisa?: number } | undefined)?.paisa ?? 0))),
       entries,
     };
   },

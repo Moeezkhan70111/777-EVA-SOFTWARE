@@ -110,7 +110,7 @@ test("an archive and an opening balance arrive whole, and both computers show th
     accounts.db.reversePartyOpeningBalance({ requestId: crypto.randomUUID(), partyId: customer, expectedVersion: now?.version ?? 0, reason: "Settled outside", actor: "admin" });
     deliver(reader, sent(accounts));
     assert.deepEqual(balances(reader, customer), balances(accounts, customer));
-    assert.equal(reader.db.getCurrentPartyBalance(customer), 0);
+    assert.equal(reader.db.getCurrentPartyBalance(customer), 353_880, "reversed: the old ledger's own closing balance counts again (owner, 25 Nov 2026), counted once");
     assert.equal(reader.db.ledgerArchiveForParty(customer).entries.length, 45, "the archive is untouched by any of it");
   } finally {
     accounts.close();

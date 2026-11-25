@@ -3,13 +3,12 @@ import { PENDING_ORDER_FILTER, type PendingOrderFilter } from "@erp/domain";
 import { KpiCard } from "../../components/dashboard/KpiCard";
 import { Pager } from "../../components/shared/Pager";
 import { StateView } from "../../components/shared/StateView";
-import { RAIL_ICONS } from "../navigation/NavIcons";
+import { SearchField } from "../../components/shared/SearchField";
 import { copy } from "../../config/copy";
-import { OrderCloseIcon } from "./OrderIcons";
 import { PendingPartyRow } from "./PendingPartyRow";
 import { DEFAULT_PENDING_QUERY, usePendingParties, type PendingQuery } from "./usePendingOrders";
 import { orderDozens } from "./orderUnits";
-import { withViewTransition } from "./withViewTransition";
+import { withViewTransition } from "../../utils/withViewTransition";
 
 // PENDING ORDERS (docs/52): what each party is still owed, from its open orders less what gatepasses dispatched.
 //
@@ -36,21 +35,6 @@ interface PendingOrdersPageProps {
   onEnterOrders?: () => void;
 }
 
-/** "/" anywhere but a text field goes to the search, as on most search pages (the paradox of the active user). */
-const useSlashToSearch = (input: React.RefObject<HTMLInputElement | null>) => {
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      const target = event.target instanceof HTMLElement ? event.target : null;
-      const typing = target?.closest("input, textarea, select, [contenteditable='true']");
-      if (event.key !== "/" || typing || event.ctrlKey || event.metaKey || event.altKey) return;
-      event.preventDefault();
-      input.current?.focus();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [input]);
-};
-
 export const PendingOrdersPage: React.FC<PendingOrdersPageProps> = ({ token, onEnterOrders }) => {
   const [typed, setTyped] = useState("");
   const [query, setQuery] = useState<PendingQuery>(DEFAULT_PENDING_QUERY);
@@ -58,7 +42,6 @@ export const PendingOrdersPage: React.FC<PendingOrdersPageProps> = ({ token, onE
   const searchRef = useRef<HTMLInputElement>(null);
   const parties = usePendingParties(token, query);
   const { setPage } = parties;
-  useSlashToSearch(searchRef);
 
   // A search is sent once typing pauses, and starts again from the first page.
   useEffect(() => {
@@ -98,17 +81,8 @@ export const PendingOrdersPage: React.FC<PendingOrdersPageProps> = ({ token, onE
       <div className="ord-pending-top">
         <KpiCard className="cs-summary cs-summary--hero ord-pending-hero" label={words.heroLabel} value={words.heroValue(orderDozens(totalPending))} sub={words.partyCount(total)} />
         <div className="ord-toolbar">
-          <label className="ord-search">
-            <span className="sr-only">{words.searchLabel}</span>
-            <span className="ord-search-icon" aria-hidden="true">{RAIL_ICONS.search}</span>
-            <input ref={searchRef} className="input" type="search" value={typed} placeholder={words.searchPlaceholder} aria-keyshortcuts="/" title={words.searchShortcut}
-              onChange={(event) => setTyped(event.target.value)} />
-            {typed ? (
-              <button type="button" className="ord-search-clear" aria-label={words.searchClear} title={words.searchClear} onClick={() => { setTyped(""); searchRef.current?.focus(); }}>
-                <OrderCloseIcon />
-              </button>
-            ) : <kbd className="ord-search-key" aria-hidden="true">/</kbd>}
-          </label>
+          <SearchField value={typed} onChange={setTyped} label={words.searchLabel} placeholder={words.searchPlaceholder} clearLabel={words.searchClear}
+            shortcutHint={words.searchShortcut} inputRef={searchRef} />
           <div className="sa-toggle" role="group" aria-label={words.filterLabel}>
             {FILTERS.map((filter) => (
               <button key={filter} type="button" className={filter === query.filter ? "sa-toggle-btn is-on" : "sa-toggle-btn"} aria-pressed={filter === query.filter} onClick={() => chooseFilter(filter)}>

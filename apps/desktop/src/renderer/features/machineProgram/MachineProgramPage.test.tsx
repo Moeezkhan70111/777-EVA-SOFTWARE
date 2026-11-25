@@ -4,6 +4,8 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { MachineProgramPage } from "./MachineProgramPage";
 import { NotificationsProvider } from "../../state/NotificationsContext";
+import { SessionProvider } from "../auth/SessionContext";
+import type { AuthUser } from "../../types/desktopApi";
 import type { CartonProgramBatch, CartonProgramLine, MachineDayProgram, MachineRecord } from "../../types/desktopApi";
 
 // MACHINE PROGRAM — the machines with their two contractors, and each machine's program for a
@@ -253,10 +255,47 @@ describe("MachineProgramPage", () => {
     await userEvent.click(await screen.findByRole("button", { name: "Change contractors of MACHINE 1" }));
     const dialog = await screen.findByRole("dialog", { name: "Contractors of MACHINE 1" });
     await pickContractor("Packing contractor", "KHAN");
-    await userEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+    await userEvent.click(within(dialog).getByRole("button", { name: "Save 1 change" }));
 
     await waitFor(() => expect(api.assignMachineContractor).toHaveBeenCalledTimes(1));
     expect(api.assignMachineContractor).toHaveBeenCalledWith({ machineId: "m-1", role: "PACKING", contractorPartyId: "p-khan" });
+  });
+
+  // Owner, 25 Nov 2026: "+ Add Party" at the top right of the dialog opens the Add Party page, for whoever may add parties here.
+  describe("+ Add Party", () => {
+    const user: AuthUser = { id: "u-1", username: "office", role: "USER", accessStatus: "APPROVED", permissions: ["machine-program", "party-form"], lastLoginAt: null };
+    const leases = vi.fn().mockResolvedValue([{ domain: "PARTIES", canWrite: true, reason: null, holderLabel: null }, { domain: "MASTER_DATA", canWrite: true, reason: null, holderLabel: null }]);
+    const openDialog = async () => {
+      await userEvent.click(await screen.findByRole("button", { name: "Change contractors of MACHINE 1" }));
+      return screen.findByRole("dialog", { name: "Contractors of MACHINE 1" });
+    };
+
+    it("closes the dialog and opens the Add Party page; Save stays off while nothing changed", async () => {
+      setupDesktop(baseApi({ getWriteLeases: leases }));
+      const onAddParty = vi.fn();
+      render(<SessionProvider user={user} token="t"><NotificationsProvider><MachineProgramPage onAddParty={onAddParty} /></NotificationsProvider></SessionProvider>);
+      const dialog = await openDialog();
+      expect(within(dialog).getByRole("button", { name: "Save" })).toBeDisabled();
+      await userEvent.click(await within(dialog).findByRole("button", { name: "Add a party: opens the Add Party page in Party Master" }));
+      expect(onAddParty).toHaveBeenCalledTimes(1);
+      await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    });
+
+    it("is not offered without the right to add parties here, or without the way to the page", async () => {
+      setupDesktop(baseApi({ getWriteLeases: leases }));
+      render(<SessionProvider user={user} token="t"><NotificationsProvider><MachineProgramPage /></NotificationsProvider></SessionProvider>);
+      const dialog = await openDialog();
+      await within(dialog).findByRole("combobox", { name: "Machine contractor" });
+      expect(within(dialog).queryByRole("button", { name: /Add a party/ })).toBeNull();
+    });
+
+    it("is not offered to someone who may not add parties", async () => {
+      setupDesktop(baseApi());
+      renderPage({ onAddParty: vi.fn() });
+      const dialog = await openDialog();
+      await within(dialog).findByRole("combobox", { name: "Machine contractor" });
+      expect(within(dialog).queryByRole("button", { name: /Add a party/ })).toBeNull();
+    });
   });
 
   it("G: none of the retired planning workflow is on the page", async () => {

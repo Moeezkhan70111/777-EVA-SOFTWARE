@@ -40,11 +40,12 @@ const SourceLink: React.FC<{ statement: ArchiveStatement }> = ({ statement }) =>
   );
 };
 
-export const ArchiveStrip: React.FC<{ state: ArchiveState; summary: ArchiveSummary; statements: readonly ArchiveStatement[]; onRetry: () => void }> = ({
+export const ArchiveStrip: React.FC<{ state: ArchiveState; summary: ArchiveSummary; statements: readonly ArchiveStatement[]; onRetry: () => void; /** What the old figures mean for this ledger's balance. */ note?: string }> = ({
   state,
   summary,
   statements,
   onRetry,
+  note,
 }) => {
   if (state.status === "loading") return <p className="ledger-archive-strip ledger-archive-note" role="status">{text.loading}</p>;
   if (state.status === "error") {
@@ -56,7 +57,7 @@ export const ArchiveStrip: React.FC<{ state: ArchiveState; summary: ArchiveSumma
     );
   }
   if (statements.length === 0) return null;
-  return <ArchiveFigures summary={summary} statements={statements} onWithdrawn={onRetry} />;
+  return <ArchiveFigures summary={summary} statements={statements} onWithdrawn={onRetry} note={note ?? text.stripNote} />;
 };
 
 /** One button per import the shown statements came from: an import is withdrawn whole. */
@@ -78,12 +79,12 @@ const WithdrawButtons: React.FC<{ statements: readonly ArchiveStatement[]; onWit
   );
 };
 
-const ArchiveFigures: React.FC<{ summary: ArchiveSummary; statements: readonly ArchiveStatement[]; onWithdrawn: () => void }> = ({ summary, statements, onWithdrawn }) => {
+const ArchiveFigures: React.FC<{ summary: ArchiveSummary; statements: readonly ArchiveStatement[]; onWithdrawn: () => void; note: string }> = ({ summary, statements, onWithdrawn, note }) => {
   return (
     <section className="ledger-archive-strip" aria-label={text.stripTitle}>
       <div className="ledger-archive-heading">
         <strong>{text.stripTitle}</strong>
-        <span>{text.statementCount(statements.length)} · {text.stripNote}</span>
+        <span>{text.statementCount(statements.length)} · {note}</span>
       </div>
       <div className="ledger-archive-figures">
         <Figure label={text.debit} value={`Rs. ${archiveAmount(summary.debitPaisa)}`} />

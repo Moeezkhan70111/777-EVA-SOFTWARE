@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { cartonsToDozens } from "@erp/domain";
 import { buildStockGrid, rowKeyOf } from "../../utils/gatepassGrid";
 import type { GatepassStockRow } from "../../types/desktopApi";
-import { buildDraft, buildDraftFromDocument, checkQuantity, createBlocker, dozensText, listArticleOptions, stepQuantity } from "./gatepassDraft";
+import { articleRowKeys, buildDraft, buildDraftFromDocument, checkQuantity, createBlocker, dozensText, groupArticles, listArticleOptions } from "./gatepassDraft";
 
 // SK6 in two sizes and three colours, SK12 in one size, one colour — out of order on
 // purpose, so the draft's own ordering is what is asserted. RED 7/10 carries a reservation
@@ -70,21 +70,6 @@ describe("the owner's case, 23 Nov 2026", () => {
     // The bill folds the gatepass's cartons into dozens the same way (sales.ts gatepassBillQuantities).
     expect(cartonsToDozens(draft.lines[0].quantity)).toBe(5);
     expect(dozensText(draft.total)).toBe("5");
-  });
-});
-
-describe("stepQuantity", () => {
-  it("moves one dozen at a time, never below 0, and past what the store holds", () => {
-    expect(stepQuantity("", 1)).toBe(1);
-    expect(stepQuantity("4", 1)).toBe(5);
-    expect(stepQuantity("5", 1)).toBe(6);
-    expect(stepQuantity("1", -1)).toBe(0);
-    expect(stepQuantity("0", -1)).toBe(0);
-    // Unusable text starts again from 0.
-    expect(stepQuantity("abc", 1)).toBe(1);
-    expect(stepQuantity("9", -1)).toBe(8);
-    // A half dozen typed stays a half: 2.5 + 1 is 3.5.
-    expect(stepQuantity("2.5", 1)).toBe(3.5);
   });
 });
 
@@ -182,13 +167,26 @@ describe("createBlocker", () => {
   });
 });
 
-describe("listArticleOptions", () => {
-  it("offers every article + size in store — name and size only", () => {
+describe("one article, every size at once (owner, 25 Nov 2026)", () => {
+  it("offers each article once, not each article + size", () => {
     expect(listArticleOptions(grid)).toEqual([
-      { id: SK6_46, label: "SK6 · 4/6" },
-      { id: SK6_710, label: "SK6 · 7/10" },
-      { id: SK12_46, label: "SK12 · 4/6" },
+      { id: "SK6", label: "SK6" },
+      { id: "SK12", label: "SK12" },
     ]);
+  });
+
+  it("puts every size of a picked article on the draft, article by article", () => {
+    expect(articleRowKeys(grid, ["SK12", "SK6"])).toEqual([SK12_46, SK6_46, SK6_710]);
+  });
+
+  it("gathers the sizes back into one card per article: sizes in order, every colour of any size, its totals", () => {
+    const draft = buildDraft(grid, articleRowKeys(grid, ["SK6"]), { "v-sk6-red-710": "5", "v-sk6-navy-46": "1" });
+    const [sk6] = groupArticles(draft.articles);
+    expect(sk6?.article).toBe("SK6");
+    expect(sk6?.sizes.map((entry) => entry.size)).toEqual(["4/6", "7/10"]);
+    // NAVY is made only in 4/6, BLUE and GREEN only in 7/10: all are columns; a size without one shows no box there.
+    expect(sk6?.colours).toEqual(["BLUE", "GREEN", "NAVY", "RED"]);
+    expect([sk6?.selectedCount, sk6?.total]).toEqual([2, 12]);
   });
 });
 

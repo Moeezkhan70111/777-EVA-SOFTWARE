@@ -2288,6 +2288,7 @@ export interface DesktopApi {
   listInventoryItems(query?: Record<string, unknown>): Promise<Array<Record<string, unknown>>>;
   /** One kind of raw material (UPPER, DANA) for its own page. Refused without that page's permission. */
   listKindStock(kind: string, query?: Record<string, unknown>): Promise<unknown>;
+  listKindStockSheet(kind: string): Promise<unknown>;
   /** The Upper Stock page's matrix. Refused without stock.upper.view. */
   listUpperStockMatrix(query?: Record<string, unknown>): Promise<unknown>;
   createInventoryItem(input: Record<string, unknown>): Promise<{ accepted: boolean; id?: string; code?: string; displayName?: string; duplicate?: boolean; reenabled?: boolean; reason?: string }>;
@@ -2730,6 +2731,9 @@ export interface DesktopApi {
     balanceLimit: number | null;
     openingBalance: number;
     closingBalance: number;
+    /** What of the closing balance came from the old software (owner, 25 Nov 2026: old + new is the balance). */
+    oldLedgerBalance?: number;
+    oldLedgerInPeriod?: number;
     entries: Array<{
       voucherId: string;
       voucherNumber: string;

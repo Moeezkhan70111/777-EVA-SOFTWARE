@@ -33,6 +33,10 @@ export interface ProductionGrid {
 }
 
 export const cellKey = (articleSizeId: string, color: string): string => `${articleSizeId}|${color}`;
+
+/** Every size of the grid's article not made in a colour: what "+ Add" adds the colour to (MissingSizeCell). */
+export const sizesNotMadeIn = (grid: ProductionGrid, colour: string): string[] =>
+  grid.sizes.filter((size) => !grid.made.get(size.id)?.has(colour)).map((size) => size.size);
 export const lineKey = (machineId: string, articleSizeId: string, color: string): string => `${machineId}|${cellKey(articleSizeId, color)}`;
 
 /** Cartons as the screen shows them: dozens, a half shown as .5. */
@@ -47,10 +51,22 @@ export function productionGrid(choices: readonly ProductChoice[], article: strin
   };
 }
 
+/**
+ * What the operator typed, read the way they meant it (Postel's law, owner, 25 Nov 2026): "5 dz", "5 dozen", "2,5"
+ * (a decimal comma) and "1,200" (a thousands comma) all become plain numbers. Only the writing is tidied: the
+ * quantity rule itself is still the domain's (manualProductionCartons), and the main process applies it again.
+ */
+export const normalizeDozensText = (typed: string): string => {
+  const text = typed.trim().toLowerCase().replace(/\s*(dozens?|dzn|doz|dz)\.?$/, "").trim();
+  if (/^\d+,\d{1,2}$/.test(text)) return text.replace(",", ".");
+  if (/^\d{1,3}(,\d{3})+(\.\d+)?$/.test(text)) return text.replace(/,/g, "");
+  return text;
+};
+
 /** Typed dozens as whole cartons, or null while the box is empty or not yet a quantity. */
 export const typedCartons = (typed: string): number | null => {
   if (typed.trim() === "") return null;
-  const quantity = manualProductionCartons(typed);
+  const quantity = manualProductionCartons(normalizeDozensText(typed));
   return quantity.ok ? quantity.cartons : null;
 };
 
@@ -59,7 +75,7 @@ export function gridProblems(typed: Readonly<Record<string, string>>): Map<strin
   const problems = new Map<string, string>();
   for (const [key, value] of Object.entries(typed)) {
     if (value.trim() === "") continue;
-    const quantity = manualProductionCartons(value);
+    const quantity = manualProductionCartons(normalizeDozensText(value));
     if (!quantity.ok) problems.set(key, quantity.reason);
   }
   return problems;

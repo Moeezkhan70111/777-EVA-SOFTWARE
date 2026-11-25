@@ -1,5 +1,5 @@
 import React from "react";
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { PERMISSION } from "@erp/domain";
 import { SessionProvider } from "../features/auth/SessionContext";
@@ -36,8 +36,8 @@ const ARCHIVE = {
 };
 
 const LIVE = {
-  partyId: "p1", partyName: "Behraam Shoes Karachi", balanceLimit: null, openingBalance: 0, closingBalance: -50_000,
-  entries: [{ voucherId: "cv1", voucherNumber: "RV-00001", voucherDate: "2026-10-12", voucherType: "CASH_RECEIPT", description: "Received on account", modeOfTransfer: "Cash", debitAmount: 0, creditAmount: 50_000, balance: -50_000 }],
+  partyId: "p1", partyName: "Behraam Shoes Karachi", balanceLimit: null, openingBalance: 0, closingBalance: -49_520, oldLedgerBalance: 480,
+  entries: [{ voucherId: "cv1", voucherNumber: "RV-00001", voucherDate: "2026-10-12", voucherType: "CASH_RECEIPT", description: "Received on account", modeOfTransfer: "Cash", debitAmount: 0, creditAmount: 50_000, balance: -27_804 }],
 };
 
 const user = (permissions: string[], role: "USER" | "ADMIN" = "USER"): AuthUser => ({ id: "u1", username: "accounts", role, accessStatus: "APPROVED", permissions, lastLoginAt: null });
@@ -72,140 +72,183 @@ function renderPage(permissions: string[] = [PERMISSION.CUSTOMER_LEDGER], role: 
   return { api, view };
 }
 
-async function chooseBehraam(view: ReturnType<typeof render>) {
-  await waitFor(() => expect(view.container.querySelector(".cl-customer-select-box")).not.toBeNull());
-  fireEvent.click(view.container.querySelector(".cl-customer-select-box") as Element);
+async function pickBehraam(api: ReturnType<typeof renderPage>["api"]) {
+  await waitFor(() => expect(api.listParties).toHaveBeenCalled());
+  fireEvent.click(await screen.findByRole("combobox", { name: "Customer" }));
   fireEvent.click(await screen.findByRole("option", { name: /Behraam Shoes Karachi/ }));
+}
+
+async function chooseBehraam(view: ReturnType<typeof render>, api: ReturnType<typeof renderPage>["api"]) {
+  await pickBehraam(api);
   await screen.findByText("RV-00001");
   await screen.findByText(/4 Dzn HR-1/);
+  expect(view.container).toBeTruthy();
 }
+
+const show = (name: string) => fireEvent.click(screen.getByRole("button", { name }));
 
 const bodyRows = (view: ReturnType<typeof render>) => Array.from(view.container.querySelectorAll(".customer-ledger-table tbody tr"));
 
 describe("CustomerLedgerPage with an archived ledger", () => {
   beforeEach(() => {
     downloads.sheets.length = 0;
+    window.localStorage.clear();
   });
 
-  it("shows archived and live entries in ONE table, by date, the archived ones marked in words", async () => {
-    const { view } = renderPage();
-    await chooseBehraam(view);
+  it("shows imported and ERP entries as ONE ledger, by date, with no old/new tags (owner, 25 Nov 2026)", async () => {
+    const { view, api } = renderPage();
+    await chooseBehraam(view, api);
     const rows = bodyRows(view);
     expect(rows.map((row) => row.querySelectorAll("td")[1]?.textContent)).toEqual(["0", "11802", "RV-00001", "3181"]);
     expect(rows.filter((row) => row.classList.contains("ledger-archived-row"))).toHaveLength(3);
-    for (const row of rows.filter((item) => item.classList.contains("ledger-archived-row"))) expect(within(row as HTMLElement).getByText("Archived")).toBeInTheDocument();
+    expect(within(view.container.querySelector(".customer-ledger-table") as HTMLElement).queryByText("Archived")).toBeNull();
     expect(view.container.querySelectorAll(".customer-ledger-table")).toHaveLength(1);
     expect(screen.queryByRole("button", { name: /Historical|Live Ledger/i })).toBeNull();
     expect(screen.getByText(/meezan/).textContent).toBe("received khawaja talal hassan\nmeezan");
   });
 
-  it("keeps the live balance the live ledger's; the archive's printed balance is shown apart", async () => {
-    const { view } = renderPage();
-    await chooseBehraam(view);
-    const highlight = view.container.querySelector(".customer-ledger-highlight") as HTMLElement;
-    expect(highlight.textContent).toContain("Rs. 50,000");
+  it("one balance (owner, 25 Nov 2026): the imported ledger's 480 and the ERP's −50,000 as one figure, one sum, one total", async () => {
+    const { view, api } = renderPage([PERMISSION.CUSTOMER_LEDGER], "ADMIN");
+    await chooseBehraam(view, api);
+    const hero = screen.getByRole("region", { name: "Current balance" });
+    expect(hero.textContent).toContain("Rs. 49,520");
+    expect(hero.textContent).toContain("Advance");
+    expect(within(hero).queryByText(/Old software|ERP entries/)).toBeNull();
+    // Brought forward 202,200 (the imported ledger's opening line) + 30,240 − 281,960 = −49,520.
+    const sum = screen.getByRole("region", { name: "How the period's balance is made" });
+    expect(sum.textContent).toContain("202,200");
+    expect(sum.textContent).toContain("30,240");
+    expect(sum.textContent).toContain("281,960");
+    expect(screen.queryByText(/not in this figure yet/)).toBeNull();
+    expect(screen.queryByRole("button", { name: /Carry it into the balance|Set opening balance/ })).toBeNull();
     const strip = screen.getByRole("region", { name: "Previous software" });
     expect(strip.textContent).toContain("Rs. 480");
-    expect(strip.textContent).toContain("Not included in the live balance.");
+    expect(strip.textContent).toContain("Its rows are part of this ledger and its balance.");
     const totals = Array.from(view.container.querySelectorAll("tfoot tr")).map((row) => row.textContent ?? "");
-    expect(totals[0]).toContain("Live total (1 entries)");
-    expect(totals[1]).toContain("Archived total (3 rows)");
+    expect(totals[0]).toContain("Total (4 entries)");
+    expect(totals[0]).toContain("30,240");
+    expect(totals[0]).toContain("281,960");
+    expect(totals.join(" ")).not.toMatch(/Live total|Archived total/);
   });
 
-  it("filters to the archived rows, and searches across both", async () => {
-    const { view } = renderPage();
-    await chooseBehraam(view);
-    fireEvent.change(screen.getByRole("combobox", { name: "Filter transactions" }), { target: { value: "ARCHIVED" } });
-    expect(bodyRows(view).every((row) => row.classList.contains("ledger-archived-row"))).toBe(true);
-    fireEvent.change(screen.getByRole("combobox", { name: "Filter transactions" }), { target: { value: "ALL" } });
-    fireEvent.change(screen.getByRole("textbox", { name: "Search transactions" }), { target: { value: "meezan" } });
+  it("filters imported and ERP rows by the same choices, and searches across both", async () => {
+    const { view, api } = renderPage();
+    await chooseBehraam(view, api);
+    expect(screen.queryByRole("button", { name: "Old software" })).toBeNull();
+    show("Receipts");
+    expect(bodyRows(view).map((row) => row.querySelectorAll("td")[1]?.textContent)).toEqual(["RV-00001", "3181"]);
+    show("Sales");
+    expect(bodyRows(view).map((row) => row.querySelectorAll("td")[1]?.textContent)).toEqual(["11802"]);
+    show("All");
+    fireEvent.change(screen.getByRole("searchbox", { name: "Search transactions" }), { target: { value: "meezan" } });
     expect(bodyRows(view).map((row) => row.querySelectorAll("td")[1]?.textContent)).toEqual(["3181"]);
-    fireEvent.change(screen.getByRole("textbox", { name: "Search transactions" }), { target: { value: "RV-00001" } });
+    fireEvent.change(screen.getByRole("searchbox", { name: "Search transactions" }), { target: { value: "RV-00001" } });
     expect(bodyRows(view).map((row) => row.querySelectorAll("td")[1]?.textContent)).toEqual(["RV-00001"]);
   });
 
   it("offers the import only to accounts users", async () => {
     renderPage();
-    expect(screen.queryByRole("button", { name: "Import old ledger" })).toBeNull();
+    // Hick's law: the old-ledger actions sit in one menu.
+    fireEvent.click(screen.getByRole("button", { name: /Old ledgers/ }));
+    expect(screen.queryByRole("menuitem", { name: "Import old ledger" })).toBeNull();
+    expect(screen.getByRole("menuitem", { name: "Reconciliation" })).toBeInTheDocument();
+    cleanup();
     renderPage([PERMISSION.CUSTOMER_LEDGER, PERMISSION.CASH_VOUCHER_FORM]);
-    expect(await screen.findByRole("button", { name: "Import old ledger" })).toBeInTheDocument();
+    fireEvent.click(await screen.findByRole("button", { name: /Old ledgers/ }));
+    expect(await screen.findByRole("menuitem", { name: "Import old ledger" })).toBeInTheDocument();
+    cleanup();
+    // Nothing to post: the imported ledger is already in the balance.
+    renderPage([PERMISSION.CUSTOMER_LEDGER], "ADMIN");
+    fireEvent.click(await screen.findByRole("button", { name: /Old ledgers/ }));
+    expect(screen.queryByRole("menuitem", { name: /opening balance/i })).toBeNull();
   });
 
-  it("downloads Excel and PDF with both sources in them", async () => {
+  it("downloads Excel and PDF as one ledger: every row, no source column or tags, one total", async () => {
     const { view, api } = renderPage();
-    await chooseBehraam(view);
-    fireEvent.click(screen.getByRole("button", { name: /Download Excel/ }));
+    await chooseBehraam(view, api);
+    fireEvent.click(screen.getByRole("button", { name: /^Download/ }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Download Excel" }));
     const sheet = downloads.sheets[0];
-    expect(sheet?.rows.map((row) => [row[0], row[2]])).toEqual([["Archived", "0"], ["Archived", "11802"], ["Live", "RV-00001"], ["Archived", "3181"]]);
-    fireEvent.click(screen.getByRole("button", { name: /Download PDF/ }));
+    expect(sheet?.headers[0]).toBe("Date");
+    expect(sheet?.rows.map((row) => row[1])).toEqual(["0", "11802", "RV-00001", "3181"]);
+    fireEvent.click(screen.getByRole("button", { name: /^Download/ }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Download PDF" }));
     await waitFor(() => expect(api.savePdfDocument).toHaveBeenCalled());
     const payload = api.savePdfDocument.mock.calls[0]?.[0] as { html: string; pageNumbers: boolean; landscape: boolean };
     expect(payload.pageNumbers).toBe(true);
     expect(payload.html).toContain("RV-00001");
-    expect(payload.html.match(/<tr class="archived">/g)).toHaveLength(3);
+    expect(payload.html).not.toContain('<tr class="archived">');
+    expect(payload.html).toContain("Total (4 entries)");
+    expect(payload.html).not.toMatch(/Live total|Archived total/);
   });
 
-  it("shows that no opening balance is posted, and offers to set one only to an administrator", async () => {
-    const { view } = renderPage();
-    await chooseBehraam(view);
-    const strip = await screen.findByRole("region", { name: "Opening balance" });
-    expect(strip.textContent).toContain("No opening balance posted");
-    expect(screen.queryByRole("button", { name: "Set opening balance" })).toBeNull();
-  });
-
-  it("an administrator posts the archive's closing balance as the opening balance, and the ledger reloads", async () => {
-    const { view, api } = renderPage([PERMISSION.CUSTOMER_LEDGER], "ADMIN");
-    await chooseBehraam(view);
-    fireEvent.click(await screen.findByRole("button", { name: "Set opening balance" }));
-    const dialog = await screen.findByRole("dialog");
-    fireEvent.click(within(dialog).getByRole("button", { name: "Use the archive's closing balance" }));
-    expect((within(dialog).getByLabelText("Amount (Rs.)") as HTMLInputElement).value).toBe("480");
-    expect((within(dialog).getByLabelText("Takes effect on") as HTMLInputElement).value).toBe("2026-11-14");
-    fireEvent.change(within(dialog).getByLabelText("Amount (Rs.)"), { target: { value: "353,880" } });
-    const loads = api.getCustomerLedgerWithCash.mock.calls.length;
-    fireEvent.click(within(dialog).getByRole("button", { name: "Post opening balance" }));
-    await waitFor(() => expect(api.postPartyOpeningBalance).toHaveBeenCalled());
-    expect(api.postPartyOpeningBalance.mock.calls[0]?.[0]).toMatchObject({ partyId: "p1", direction: "DEBIT", amountPaisa: 35_388_000, effectiveDate: "2026-11-14", archiveStatementId: "s1" });
-    await waitFor(() => expect(api.getCustomerLedgerWithCash.mock.calls.length).toBeGreaterThan(loads));
-  });
-
-  it("refuses to post without a source, saying what is missing, and sends nothing", async () => {
-    const { view, api } = renderPage([PERMISSION.CUSTOMER_LEDGER], "ADMIN");
-    await chooseBehraam(view);
-    fireEvent.click(await screen.findByRole("button", { name: "Set opening balance" }));
-    const dialog = await screen.findByRole("dialog");
-    fireEvent.change(within(dialog).getByLabelText("Amount (Rs.)"), { target: { value: "1,000" } });
-    fireEvent.click(within(dialog).getByRole("button", { name: "Post opening balance" }));
-    expect(await within(dialog).findByText(/Say where the figure comes from/)).toBeInTheDocument();
-    expect(api.postPartyOpeningBalance).not.toHaveBeenCalled();
-  });
-
-  it("a live opening balance row is labelled, in the live totals, and opens no voucher", async () => {
+  it("a posted opening balance row is labelled, counted once, and opens no voucher", async () => {
     const { view, api } = renderPage();
     api.getPartyOpeningBalance.mockResolvedValue(POSTED_OPENING);
     api.getCustomerLedgerWithCash.mockResolvedValue({
-      ...LIVE, closingBalance: 303_880,
+      ...LIVE, closingBalance: 303_880, oldLedgerBalance: 353_880,
       entries: [{ voucherId: "ob1", voucherNumber: "OB", voucherDate: "2026-11-14", voucherType: "OPENING_BALANCE", description: "Old ledger 1301139", debitAmount: 353_880, creditAmount: 0, balance: 353_880 }, { ...LIVE.entries[0], voucherDate: "2026-11-15", balance: 303_880 }],
     });
-    await waitFor(() => expect(view.container.querySelector(".cl-customer-select-box")).not.toBeNull());
-    fireEvent.click(view.container.querySelector(".cl-customer-select-box") as Element);
-    fireEvent.click(await screen.findByRole("option", { name: /Behraam Shoes Karachi/ }));
+    await pickBehraam(api);
     const row = (await screen.findByText("OB")).closest("tr") as HTMLElement;
     expect(within(row).getAllByText("Opening balance").length).toBeGreaterThan(0);
     fireEvent.click(row);
     expect(api.getCashVoucher).not.toHaveBeenCalled();
-    expect((await screen.findByRole("region", { name: "Opening balance" })).textContent).toContain("Included in the live balance.");
+    // An opening balance posted before is counted once: the balance is the main process's 303,880.
+    expect(screen.getByRole("region", { name: "Current balance" }).textContent).toContain("Rs. 303,880");
+    expect(view.container).toBeTruthy();
   });
 
   it("asks for the archive with the screen's dates, and shows an empty period plainly", async () => {
     const { view, api } = renderPage();
     api.getLedgerArchive.mockResolvedValue({ accepted: true, view: { statements: [], entries: [] } });
     api.getCustomerLedgerWithCash.mockResolvedValue({ ...LIVE, entries: [], closingBalance: 0 });
-    await waitFor(() => expect(view.container.querySelector(".cl-customer-select-box")).not.toBeNull());
-    fireEvent.click(view.container.querySelector(".cl-customer-select-box") as Element);
-    fireEvent.click(await screen.findByRole("option", { name: /Behraam Shoes Karachi/ }));
+    await pickBehraam(api);
     expect(await screen.findByText("No transactions in this period.")).toBeInTheDocument();
-    expect(api.getLedgerArchive).toHaveBeenCalledWith("p1", expect.objectContaining({ fromDate: "2026-01-01" }));
+    // The ledger opens on All time: the old software's history is part of it.
+    expect(api.getLedgerArchive).toHaveBeenCalledWith("p1", expect.objectContaining({ fromDate: "2000-01-01" }));
+    expect(view.container).toBeTruthy();
     expect(screen.queryByRole("region", { name: "Previous software" })).toBeNull();
+  });
+
+  it("says when the ledger could not be read, and reads it again on Retry", async () => {
+    const { api } = renderPage();
+    api.getCustomerLedgerWithCash.mockRejectedValueOnce(new Error("disk"));
+    await pickBehraam(api);
+    fireEvent.click(await screen.findByRole("button", { name: /Retry/ }));
+    expect(await screen.findByText("RV-00001")).toBeInTheDocument();
+  });
+
+  it("opens a voucher from its number, a button with a name", async () => {
+    const { view, api } = renderPage();
+    await chooseBehraam(view, api);
+    fireEvent.click(screen.getByRole("button", { name: "Open RV-00001" }));
+    await waitFor(() => expect(api.getCashVoucher).toHaveBeenCalledWith("cv1"));
+  });
+
+  it("finds a voucher typed loosely, and Escape clears the search", async () => {
+    const { view, api } = renderPage();
+    await chooseBehraam(view, api);
+    const search = screen.getByRole("searchbox", { name: "Search transactions" });
+    fireEvent.change(search, { target: { value: "rv1" } });
+    expect(bodyRows(view).map((row) => row.querySelectorAll("td")[1]?.textContent)).toEqual(["RV-00001"]);
+    fireEvent.change(search, { target: { value: "50,000" } });
+    expect(bodyRows(view).map((row) => row.querySelectorAll("td")[1]?.textContent)).toEqual(["RV-00001"]);
+    fireEvent.keyDown(search, { key: "Escape" });
+    expect((search as HTMLInputElement).value).toBe("");
+  });
+
+  it("shows the old software's columns by default, the rest on request, and ends on the closing balance", async () => {
+    const { view, api } = renderPage();
+    await chooseBehraam(view, api);
+    const table = view.container.querySelector(".customer-ledger-table") as HTMLElement;
+    expect(table.classList.contains("cl-table--simple")).toBe(true);
+    const closing = view.container.querySelector(".cl-closing-row") as HTMLElement;
+    expect(closing.textContent).toContain("Closing balance on");
+    expect(closing.textContent).toContain("Advance");
+    expect(closing.textContent).toContain("49,520");
+    fireEvent.click(screen.getByRole("button", { name: "More columns" }));
+    expect(table.classList.contains("cl-table--simple")).toBe(false);
+    expect(screen.getByRole("button", { name: "Fewer columns" })).toHaveAttribute("aria-pressed", "true");
   });
 });

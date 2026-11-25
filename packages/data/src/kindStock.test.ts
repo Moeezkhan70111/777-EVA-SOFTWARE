@@ -164,3 +164,32 @@ test("the upper matrix reads the same balances as Upper Move Out, per sub-catego
     cleanup();
   }
 });
+
+test("the stock sheet holds every material with its categories under the top, its colour and its size", () => {
+  const { db, kg, cleanup } = createFixture();
+  try {
+    const dana = db.createInventoryCategory({ name: "DANA" });
+    db.addInventoryCategoryField({ categoryId: dana, fieldKey: "color", label: "Colour", fieldType: "TEXT", required: true });
+    db.addInventoryCategoryField({ categoryId: dana, fieldKey: "size", label: "Size", fieldType: "TEXT", required: false });
+    const special = db.createInventoryCategory({ name: "SPECIAL EVA/EVR COMPOUND", parentId: dana });
+    const eva = db.createInventoryCategory({ name: "EVA", parentId: special });
+    const lasting = db.createInventoryCategory({ name: "LASTING", parentId: dana });
+    db.createInventoryItem({ categoryId: eva, values: { color: "BLACK", size: "1.65" }, valuesUrdu: { color: "سیاہ" }, unitId: kg, stockQuantity: 40, createdBy: "test" });
+    db.createInventoryItem({ categoryId: lasting, values: { color: "NAVY", size: "1.65" }, unitId: kg, stockQuantity: 0, createdBy: "test" });
+    db.createInventoryItem({ categoryId: dana, values: { color: "MIX" }, unitId: kg, stockQuantity: 3, createdBy: "test" });
+
+    const sheet = db.listKindStockSheet(RAW_MATERIAL_KIND.DANA);
+    const byColour = new Map(sheet.rows.map((row) => [row.colour, row]));
+    assert.equal(sheet.rows.length, 3, "an empty material is still on the sheet");
+    assert.deepEqual(byColour.get("BLACK"), { ...byColour.get("BLACK"), path: ["SPECIAL EVA/EVR COMPOUND", "EVA"], colourUrdu: "سیاہ", size: "1.65", quantity: 40, unitCode: "KG" });
+    assert.deepEqual(byColour.get("NAVY")?.path, ["LASTING"]);
+    assert.deepEqual(byColour.get("MIX")?.path, []);
+    assert.equal(byColour.get("MIX")?.size, "");
+
+    const total = sheet.rows.reduce((sum, row) => sum + row.quantity, 0);
+    assert.equal(total, db.listKindStock(RAW_MATERIAL_KIND.DANA).totalsByUnit[0]?.quantity);
+    assert.deepEqual(db.listKindStockSheet(RAW_MATERIAL_KIND.UPPER), { kind: "UPPER", rows: [] });
+  } finally {
+    cleanup();
+  }
+});

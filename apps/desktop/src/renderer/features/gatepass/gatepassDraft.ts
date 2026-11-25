@@ -43,13 +43,6 @@ export const checkQuantity = (text: string): QuantityCheck => {
   return { value: Math.round(cartons), error: null };
 };
 
-/** The − / + buttons: one dozen up or down from what is typed, never below 0. Above Reflected Stock is allowed. */
-export const stepQuantity = (text: string, delta: 1 | -1): number => {
-  const parsed = Number(text.trim());
-  const current = Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
-  return Math.max(0, current + delta);
-};
-
 // ─── Draft model ─────────────────────────────────────────────────────────────
 
 export interface DraftColour {
@@ -221,6 +214,48 @@ export interface ArticleOption {
   label: string;
 }
 
-/** Every article + size the store holds, for the Add Article search — just the name and size. */
-export const listArticleOptions = (grid: StockGrid): ArticleOption[] =>
-  grid.rows.map((row) => ({ id: row.key, label: articleLabel(row) }));
+// ─── One article, every size at once (owner, 25 Nov 2026) ────────────────────
+// As Opening Stock and Stock Adjustment: the clerk picks an ARTICLE, and every size the store holds of it comes on the
+// gatepass together, sizes down and colours across. The draft itself stays one entry per article + size (the summary,
+// the lines and the stored document are unchanged); these group it back by article for the screen.
+
+/** Every article the store holds, once each, with its group: "SK6 EVR GENTS". */
+export const listArticleOptions = (grid: StockGrid): ArticleOption[] => {
+  const seen = new Map<string, ArticleOption>();
+  for (const row of grid.rows) if (!seen.has(row.article)) seen.set(row.article, { id: row.article, label: articleWithGroup(row.article, row.groupName) });
+  return [...seen.values()];
+};
+
+/** The grid keys of every size of these articles, article by article in the order given, sizes in store order. */
+export const articleRowKeys = (grid: StockGrid, articles: readonly string[]): string[] =>
+  articles.flatMap((article) => grid.rows.filter((row) => row.article === article).map((row) => row.key));
+
+export interface DraftArticleGroup {
+  article: string;
+  groupName: string | null;
+  /** Its sizes, in natural order. */
+  sizes: DraftArticle[];
+  /** Every colour of any of its sizes, in natural order: the grid's columns. */
+  colours: string[];
+  selectedCount: number;
+  total: number;
+  errorCount: number;
+}
+
+/** The draft's article + size entries gathered into one card per article, in the order the articles were added. */
+export const groupArticles = (articles: readonly DraftArticle[]): DraftArticleGroup[] => {
+  const byArticle = new Map<string, DraftArticle[]>();
+  for (const entry of articles) byArticle.set(entry.article, [...(byArticle.get(entry.article) ?? []), entry]);
+  return [...byArticle.entries()].map(([article, entries]) => {
+    const sizes = [...entries].sort((a, b) => compareNatural(a.size, b.size));
+    return {
+      article,
+      groupName: sizes.find((entry) => entry.groupName)?.groupName ?? null,
+      sizes,
+      colours: [...new Set(sizes.flatMap((entry) => entry.colours.map((colour) => colour.colour)))].sort(compareNatural),
+      selectedCount: sizes.reduce((sum, entry) => sum + entry.selectedCount, 0),
+      total: sizes.reduce((sum, entry) => sum + entry.total, 0),
+      errorCount: sizes.reduce((sum, entry) => sum + entry.errorCount, 0),
+    };
+  });
+};

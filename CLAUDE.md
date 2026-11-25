@@ -1,5 +1,9 @@
 # 777 ERP — Claude Development Rules
 
+> **UI/UX work: read [docs/56-ui-ux-principles.md](docs/56-ui-ux-principles.md) before designing or changing any
+> screen, dialog, card, table, form or animation.** Every UI change follows it, and its review checklist runs before
+> the change is reported done (owner, 25 Nov 2026).
+
 ## 1. Software Purpose
 
 This is the ERP system for **777**, a company operating a slippers manufacturing and distribution business.

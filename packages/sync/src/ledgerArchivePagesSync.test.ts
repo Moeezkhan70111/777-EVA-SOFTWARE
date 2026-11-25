@@ -146,6 +146,7 @@ test("the reader shows a long statement only once its last page is here, then ex
 
     deliver(reader, pages.slice(0, -1));
     assert.deepEqual(shown(reader, customer), { statements: [], rows: [] }, "24 of 25 pages: still nothing, never half a ledger");
+    assert.equal(reader.db.getCurrentPartyBalance(customer), balanceBefore, "half a ledger moves no balance");
 
     deliver(reader, pages.slice(-1));
     assert.deepEqual(shown(reader, customer), shown(accounts, customer), "the last page: the whole statement, exactly as on the accounts computer");
@@ -154,8 +155,10 @@ test("the reader shows a long statement only once its last page is here, then ex
     deliver(reader, queued);
     assert.deepEqual(shown(reader, customer), shown(accounts, customer), "delivered again: nothing changes");
     assert.equal(Number((reader.db.db.prepare("SELECT COUNT(*) AS n FROM sync_dirty_records").get() as { n: number }).n), 0, "the reader marks nothing as its own");
-    assert.equal(reader.db.getCurrentPartyBalance(customer), balanceBefore, "an archive moves no balance");
-    assert.equal(accounts.db.getCurrentPartyBalance(customer), 0);
+    // Owner, 25 Nov 2026: an imported old ledger is real. Its closing balance is the customer's balance until ERP
+    // entries add to it, on every computer alike.
+    assert.notEqual(accounts.db.getCurrentPartyBalance(customer), 0, "the old ledger's closing balance counts");
+    assert.equal(reader.db.getCurrentPartyBalance(customer), accounts.db.getCurrentPartyBalance(customer), "both computers show the same balance");
   } finally {
     accounts.close();
     reader.close();

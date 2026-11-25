@@ -30,7 +30,7 @@ describe("Daily Production", () => {
     show();
     expect(await screen.findByText(text.kpiDozens)).toBeInTheDocument();
     expect(api.getProductionDay).toHaveBeenCalledWith({ date: toIsoDate() });
-    const figures = document.querySelector(".pd-kpis") as HTMLElement;
+    const figures = document.querySelector(".pd-overview") as HTMLElement;
     expect(figures).toHaveTextContent(`${text.kpiDozens}15.5`);
     // Beside the total, one button per machine in place of the Cartons / Machines / Entries cards (owner, 15 Nov 2026).
     const tabs = within(figures).getAllByRole("tab");
@@ -41,6 +41,20 @@ describe("Daily Production", () => {
     const sk6 = screen.getByRole("region", { name: text.tableLabel("SK6") });
     expect(within(sk6).getByRole("row", { name: "7/10 - 10 10" })).toBeInTheDocument();
     expect(within(sk6).getByRole("row", { name: "Total 2.5 10 12.5" })).toBeInTheDocument();
+  });
+
+  // Owner, 25 Nov 2026: the page was "too boring": the week, the top article, and each machine's share of the day.
+  it("shows the last seven days as buttons, the top article, and each machine's share in words", async () => {
+    show();
+    const week = await screen.findByRole("region", { name: text.weekLabel });
+    const days = within(week).getAllByRole("button");
+    expect(days).toHaveLength(7);
+    expect(days[6]).toHaveAttribute("aria-pressed", "true");
+    await waitFor(() => expect(days[6]).toHaveAccessibleName(/15.5 dozen/));
+    expect(screen.getByText(text.topArticle).closest(".pd-tile")).toHaveTextContent(`SK6${text.machineDozens("12.5")} · ${text.topArticleShare(81)}`);
+    expect(screen.getByRole("tab", { name: /MACHINE 1/ })).toHaveTextContent(text.shareOfDay(81));
+    await userEvent.click(days[5] as HTMLElement);
+    await waitFor(() => expect(api.getProductionDay).toHaveBeenCalledWith({ date: shiftIsoDate(toIsoDate(), -1) }));
   });
 
   it("one machine at a time, with what it made", async () => {
@@ -61,10 +75,10 @@ describe("Daily Production", () => {
     await screen.findByText(text.kpiDozens);
     expect(screen.getByRole("button", { name: text.nextDay })).toBeDisabled();
     await userEvent.click(screen.getByRole("button", { name: text.previousDay }));
-    await waitFor(() => expect(api.getProductionDay).toHaveBeenLastCalledWith({ date: shiftIsoDate(toIsoDate(), -1) }));
+    await waitFor(() => expect(api.getProductionDay).toHaveBeenCalledWith({ date: shiftIsoDate(toIsoDate(), -1) }));
     expect(screen.getByRole("button", { name: text.nextDay })).toBeEnabled();
     await userEvent.click(screen.getByRole("button", { name: text.today }));
-    await waitFor(() => expect(api.getProductionDay).toHaveBeenLastCalledWith({ date: toIsoDate() }));
+    await waitFor(() => expect(api.getProductionDay).toHaveBeenCalledWith({ date: toIsoDate() }));
   });
 
   it("an empty day says so, and today offers the way to record production", async () => {

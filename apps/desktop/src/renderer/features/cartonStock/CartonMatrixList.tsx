@@ -2,7 +2,7 @@ import React from "react";
 import type { CartonMatrixArticle } from "@erp/domain";
 import { CartonMatrix } from "./CartonMatrix";
 import { CARTON_LAYOUT, cartonLayout } from "./cartonMatrixLayout";
-import { useElementWidth } from "./useElementWidth";
+import { useElementWidth } from "../../hooks/useElementWidth";
 
 // A list of article cards, each a Size x Colour matrix with its totals (CartonMatrix). One list for Carton Stock and
 // the Daily Production page, which draws a day's production the same way (R1). The list is measured once: every

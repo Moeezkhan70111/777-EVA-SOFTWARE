@@ -31,6 +31,8 @@ interface TodayProductionProps {
   products: readonly ProductChoice[];
   /** A change was saved: the page reads its figures again. */
   onEdited: () => void;
+  /** A colour was added to Product Master from the Edit grid: the products are read again. */
+  onColourAdded: () => void;
 }
 
 const MachineSection: React.FC<{ day: ProductionDayView; index: number; pdf: ReturnType<typeof useProductionPdf>; onEdit: (machine: string, article: string) => void }> = ({ day, index, pdf, onEdit }) => {
@@ -53,7 +55,7 @@ const MachineSection: React.FC<{ day: ProductionDayView; index: number; pdf: Ret
   );
 };
 
-export const TodayProduction: React.FC<TodayProductionProps> = ({ production, products, onEdited }) => {
+export const TodayProduction: React.FC<TodayProductionProps> = ({ production, products, onEdited, onColourAdded }) => {
   const pdf = useProductionPdf();
   const notices = useOptionalNotifications();
   const [editing, setEditing] = useState<{ machine: string; article: string } | null>(null);
@@ -78,7 +80,7 @@ export const TodayProduction: React.FC<TodayProductionProps> = ({ production, pr
         <MachineSection key={machine.machineName} day={day} index={index} pdf={pdf} onEdit={(name, article) => setEditing({ machine: name, article })} />
       ))}
       {editing ? (
-        <EditProductionDialog machineName={editing.machine} article={editing.article} products={products} onSaved={saved} onClose={() => setEditing(null)} />
+        <EditProductionDialog machineName={editing.machine} article={editing.article} products={products} onSaved={saved} onClose={() => setEditing(null)} onColourAdded={onColourAdded} />
       ) : null}
     </div>
   );

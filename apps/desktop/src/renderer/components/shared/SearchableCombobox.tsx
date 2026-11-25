@@ -113,7 +113,11 @@ export const SearchableCombobox: React.FC<{
   icon?: React.ReactNode;
   /** Opens the list as a panel with its own search box, saying this. Implies `dropdown`. */
   searchPlaceholder?: string;
-}> = ({ value, options, placeholder, emptyLabel = "No results found", ariaLabel, onChange, onEnter, dropdown = false, icon, searchPlaceholder }) => {
+  /** Takes the focus, and so opens its list, as soon as it appears (Enter Orders' "+ Add article", 24 Nov 2026). */
+  autoFocus?: boolean;
+  /** Told each time the list opens or closes: a picker shown only while choosing goes back to its button on close. */
+  onOpenChange?: (open: boolean) => void;
+}> = ({ value, options, placeholder, emptyLabel = "No results found", ariaLabel, onChange, onEnter, dropdown = false, icon, searchPlaceholder, autoFocus = false, onOpenChange }) => {
   const panel = searchPlaceholder !== undefined;
   const isDropdown = dropdown || panel;
   const listId = useId();
@@ -161,6 +165,20 @@ export const SearchableCombobox: React.FC<{
       observer?.disconnect();
     };
   }, [open, panel]);
+
+  // Focusing the field opens its list (onFocus below), so autoFocus shows the choices at once.
+  useEffect(() => {
+    if (autoFocus) inputRef.current?.focus();
+    // Once, when it appears.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const openSeen = useRef(open);
+  useEffect(() => {
+    if (openSeen.current === open) return;
+    openSeen.current = open;
+    onOpenChange?.(open);
+  }, [open, onOpenChange]);
 
   // close on outside click
   useEffect(() => {

@@ -106,13 +106,16 @@ describe("six reports in the previous software's layout", () => {
     }
   });
 
-  it("history stays history: no voucher, bill, cash, stock or balance moves", async () => {
+  it("history stays history: no voucher, bill, cash or stock moves; a customer's balance becomes old + new", async () => {
     const live = [...parties.values()].map((id) => db.getCurrentPartyBalance(id));
+    expect(live.every((balance) => balance === 0)).toBe(true);
     const counts = () => ["sale_vouchers", "cash_vouchers", "purchase_vouchers", "party_claims", "carton_stock_events", "gatepasses", "manual_production_entries"].map((t) => Number((db.db.prepare(`SELECT COUNT(*) AS n FROM ${t}`).get() as { n: number }).n));
     const before = counts();
     importAll(await readAll());
     expect(counts()).toEqual(before);
-    expect([...parties.values()].map((id) => db.getCurrentPartyBalance(id))).toEqual(live);
+    // OLD + NEW (owner, 25 Nov 2026): a customer's imported ledger is real, so its closing is now the balance; the
+    // supplier side is unchanged.
+    expect(SIX.map((item) => db.getCurrentPartyBalance(parties.get(item.code) ?? ""))).toEqual(SIX.map((item) => (item.side === "CUSTOMER" ? item.closing / 100 : 0)));
     expect(db.listSupplierBalances({ asOfDate: "2026-12-31" }).rows.every((row) => row.balance === 0)).toBe(true);
   });
 

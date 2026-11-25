@@ -151,14 +151,28 @@ describe("HomePage — the Dashboard's own cards", () => {
     expect(screen.getByRole("status")).toHaveTextContent("Your pages are in the sidebar");
   });
 
-  it("shows an administrator Carton Stock first, then both stock cards, Daily Production, Enter Orders and Pending Orders, and Carton Stock opens its page", () => {
+  it("shows an administrator Carton Stock first, then both stock cards, Daily Production, Enter Orders, Pending Orders and Customer Balance, and Carton Stock opens its page", () => {
     const onNavigate = vi.fn();
     render(<HomePage user={user([], "ADMIN")} onNavigate={onNavigate} />);
-    expect(cardNames()).toEqual(["nav-tile-carton-stock", "nav-tile-upper-stock", "nav-tile-dana-stock", "nav-tile-daily-production", "nav-tile-orders-entry", "nav-tile-pending-orders"]);
+    expect(cardNames()).toEqual(["nav-tile-carton-stock", "nav-tile-upper-stock", "nav-tile-dana-stock", "nav-tile-daily-production", "nav-tile-orders-entry", "nav-tile-pending-orders", "nav-tile-customer-balance"]);
     const card = screen.getByRole("button", { name: "Carton Stock" });
     expect(card.querySelector("img")).toHaveAttribute("src", "./assets/stock/carton-stock.png");
     fireEvent.click(card);
     expect(onNavigate).toHaveBeenLastCalledWith("carton-stock");
+  });
+
+  // Owner, 25 Nov 2026: Customer Balance is a Dashboard card, for whoever may see it, where the ledgers are offered.
+  it("shows the Customer Balance card, with its own picture, and it opens the page; not where the ledgers are hidden", () => {
+    const onNavigate = vi.fn();
+    const view = render(<HomePage user={user(["customer-balance"])} onNavigate={onNavigate} />);
+    expect(cardNames()).toEqual(["nav-tile-customer-balance"]);
+    const card = screen.getByRole("button", { name: "Customer Balance" });
+    expect(card.querySelector("img")).toHaveAttribute("src", "./assets/billing/customer-balance.svg");
+    fireEvent.click(card);
+    expect(onNavigate).toHaveBeenLastCalledWith("customer-balance");
+    view.unmount();
+    render(<HomePage user={user(["customer-balance"])} onNavigate={onNavigate} hiddenRoutes={new Set(["customer-balance"])} />);
+    expect(cardNames()).toEqual([]);
   });
 
   // Owner, 24 Nov 2026: Enter Orders is a Dashboard card too, beside Pending Orders.

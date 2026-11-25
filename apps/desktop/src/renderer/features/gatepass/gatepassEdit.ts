@@ -1,6 +1,5 @@
 import { GATEPASS_STATUS } from "@erp/domain";
 import type { Gatepass, GatepassStockRow } from "../../types/desktopApi";
-import { rowKeyOf } from "../../utils/gatepassGrid";
 import { dozensText } from "./gatepassDraft";
 
 // EDITING A GATEPASS on the Gatepass screen (local migration 118): the pure rules the screen needs. Whether an edit is
@@ -31,14 +30,13 @@ export const stockForEdit = (rows: readonly GatepassStockRow[], document: Pick<G
   });
 };
 
-/** The document's lines as the draft holds them: its article + size cards in order, and the dozens per colour. */
-export const draftFromDocument = (document: Pick<Gatepass, "lines">): { keys: string[]; inputs: Record<string, string> } => {
-  const keys: string[] = [];
+/** The document's lines as the draft holds them: its articles in order (each with all its sizes), and the dozens per colour. */
+export const draftFromDocument = (document: Pick<Gatepass, "lines">): { articles: string[]; inputs: Record<string, string> } => {
+  const articles: string[] = [];
   const inputs: Record<string, string> = {};
   for (const line of document.lines) {
-    const key = rowKeyOf(line.article, line.size);
-    if (!keys.includes(key)) keys.push(key);
+    if (!articles.includes(line.article)) articles.push(line.article);
     inputs[line.productVariantId] = dozensText(line.quantity);
   }
-  return { keys, inputs };
+  return { articles, inputs };
 };

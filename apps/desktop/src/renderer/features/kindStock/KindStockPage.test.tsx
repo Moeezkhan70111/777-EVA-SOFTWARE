@@ -10,8 +10,11 @@ import { parseKindStockReply, quantityLabel } from "./kindStock";
 
 const listKindStock = vi.fn();
 
-const api = { listKindStock };
+const listKindStockSheet = vi.fn();
+const openPrintDocumentAsync = vi.fn((html: Promise<string>) => { void html; return true; });
+const api = { listKindStock, listKindStockSheet };
 vi.mock("../../hooks/useDesktopApi", () => ({ useDesktopApi: () => api }));
+vi.mock("../../platform/print", () => ({ openPrintDocumentAsync: (html: Promise<string>) => openPrintDocumentAsync(html), loadLogoDataUrl: async () => "" }));
 
 const reply = (overrides: Record<string, unknown> = {}) => ({
   accepted: true,
@@ -86,5 +89,25 @@ describe("quantityLabel", () => {
   it("keeps the unit, and drops a trailing nothing", () => {
     expect(quantityLabel(1200.5, "KG")).toBe("1,200.5 KG");
     expect(quantityLabel(0, "")).toBe("0");
+  });
+});
+
+describe("the Dana Stock Sheet", () => {
+  it("prints the whole store from Dana Stock, read at the moment of printing", async () => {
+    listKindStock.mockResolvedValue(reply());
+    listKindStockSheet.mockResolvedValue({ accepted: true, kind: "DANA", rows: [{ id: "d", path: ["SPECIAL", "EVA"], colour: "BLACK", colourUrdu: "", size: "1.65", quantity: 40, unitCode: "BAG" }] });
+    render(<KindStockPage kind={RAW_MATERIAL_KIND.DANA} />);
+    await userEvent.click(screen.getByRole("button", { name: "Print stock sheet" }));
+    expect(listKindStockSheet).toHaveBeenCalledWith("DANA");
+    const html = await openPrintDocumentAsync.mock.calls[0]?.[0];
+    expect(html).toContain("DANA STOCK SHEET");
+    expect(html).toContain(">40<");
+  });
+
+  it("is not offered on Upper Stock", async () => {
+    listKindStock.mockResolvedValue(reply());
+    render(<KindStockPage kind={RAW_MATERIAL_KIND.UPPER} />);
+    await screen.findByRole("table");
+    expect(screen.queryByRole("button", { name: "Print stock sheet" })).not.toBeInTheDocument();
   });
 });

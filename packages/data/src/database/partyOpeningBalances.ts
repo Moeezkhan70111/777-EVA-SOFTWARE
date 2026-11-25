@@ -35,6 +35,7 @@ import {
   type OpeningBalanceStatus,
 } from "@erp/domain";
 import type { SqliteDatabase } from "../sqliteDatabase.js";
+import { archiveStatementShownSql } from "./ledgerArchive.js";
 
 type Row = Record<string, unknown>;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -53,6 +54,30 @@ export const openingBalancePaisaSql = (side: LedgerSide, party: string, dateCond
   const when = dateCondition ? ` AND ${dateCondition}` : "";
   return `(SELECT COALESCE(SUM(CASE WHEN ob.direction = '${plus}' THEN ob.amount_paisa ELSE -ob.amount_paisa END), 0)
     FROM party_opening_balances ob WHERE ob.party_id = ${party} AND ob.ledger_side = '${side}' AND ob.status = 'POSTED'${when})`;
+};
+
+/**
+ * THE OLD LEDGER IN A CUSTOMER'S BALANCE (owner, 25 Nov 2026: "old closing + new makes the correct ledger; treat the
+ * old ledger's values as real"). A customer's balance on any day is what the old software printed on their last
+ * archived line dated up to then, plus every ERP entry up to then: an old closing of 35,000 and a new bill of 5,000
+ * is 40,000. No opening balance has to be posted for it.
+ *
+ * As a SQL expression in paisa, in the customer's convention (receivable positive: debit less credit; a statement
+ * printed the other way round is turned). `party` names the customer's id in SQL; `dateCondition` is an optional
+ * condition on e.entry_date ("e.entry_date <= ?1"). Only statements shown on this computer count: not withdrawn,
+ * and every row of it here (archiveStatementShownSql), so half a synced ledger never moves a balance.
+ *
+ * A customer with a posted opening balance (docs/53) has the old ledger in it already: the archive then counts for
+ * nothing, so the old balance is never counted twice. Every customer balance adds this beside openingBalancePaisaSql.
+ */
+export const customerOldLedgerPaisaSql = (party: string, dateCondition = ""): string => {
+  const when = dateCondition ? ` AND ${dateCondition}` : "";
+  return `(CASE WHEN EXISTS (SELECT 1 FROM party_opening_balances pob WHERE pob.party_id = ${party} AND pob.ledger_side = 'CUSTOMER' AND pob.status = 'POSTED')
+    THEN 0 ELSE COALESCE((
+      SELECT CASE WHEN s.balance_rule = 'CREDIT_LESS_DEBIT' THEN -e.balance_paisa ELSE e.balance_paisa END
+      FROM ledger_archive_entries e JOIN ledger_archive_statements s ON s.id = e.statement_id
+      WHERE s.party_id = ${party} AND s.ledger_side = 'CUSTOMER' AND ${archiveStatementShownSql("s")}${when}
+      ORDER BY e.entry_date DESC, s.period_from DESC, s.imported_at DESC, e.sequence DESC LIMIT 1), 0) END)`;
 };
 
 /** One step of a party's opening balance history, as stored. */

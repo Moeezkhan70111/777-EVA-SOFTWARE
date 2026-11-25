@@ -27,7 +27,8 @@ const Matrices: React.FC<{ data: UpperStockMatrix; onPage: (page: number) => voi
   </>
 );
 
-export const UpperStockPage: React.FC = () => {
+/** showTitle: false beside Carton Stock, where the split pane names it. */
+export const UpperStockPage: React.FC<{ showTitle?: boolean }> = ({ showTitle = true }) => {
   const api = useDesktopApi();
   const [category, setCategory] = useState<UpperStockCategory>(UPPER_STOCK_CATEGORY.ALL);
   const [sort, setSort] = useState<UpperStockSort>(UPPER_STOCK_SORT.NAME_ASC);
@@ -60,7 +61,7 @@ export const UpperStockPage: React.FC = () => {
 
   return (
     <div className="page upper-stock-page">
-      <h1 className="page-title">{copy.nav.items.upperStock.label}</h1>
+      {showTitle ? <h1 className="page-title">{copy.nav.items.upperStock.label}</h1> : null}
       <div className="us-panel">
         <TabStrip className="us-tabs" items={TABS} active={category} onSelect={chooseCategory} label={copy.upperStock.categoriesLabel} />
         <div className="us-toolbar">

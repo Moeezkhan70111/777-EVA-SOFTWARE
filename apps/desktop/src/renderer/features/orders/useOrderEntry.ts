@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
 import { copy } from "../../config/copy";
+import { useDataChanged } from "../../hooks/useDataChanged";
 import { useDesktopApi } from "../../hooks/useDesktopApi";
 import { useRequestId } from "../../hooks/useRequestId";
+import { DATA_KIND } from "../../../shared/dataChange";
 import { useNotifications } from "../../state/NotificationsContext";
 import { leaseRefusalText } from "../../../shared/leaseRefusal";
 import type { CustomerOrder, CustomerOrderArticleProduct, CustomerOrderView } from "../../types/desktopApi";
@@ -24,6 +26,8 @@ const REQUEST_KEY = "orders.pending-request";
 const words = copy.orders;
 type Neighbours = Omit<CustomerOrderView, "order">;
 const NO_NEIGHBOURS: Neighbours = { previousNumber: null, nextNumber: null, latestNumber: null };
+/** Orders and what gatepasses allocate against them travel as BILLING (shared/dataChange.ts). */
+const ORDER_CHANGES = [DATA_KIND.BILLING] as const;
 
 /** An answer that never came (thrown) is read as a refusal the screen can show. */
 const refusedBy = (error: unknown) => ({ accepted: false, reason: leaseRefusalText(error) ?? (error instanceof Error ? error.message : words.loadFailed) });
@@ -69,6 +73,19 @@ export const useOrderEntry = (token: string) => {
   useEffect(() => { void startNew(); }, [startNew]);
 
   const show = (stored: CustomerOrder) => { setOrder(stored); setMode("view"); };
+
+  // ANOTHER COMPUTER'S ORDER OR GATEPASS ARRIVES (owner, 24 Nov 2026: no Ctrl+R). Orders are written on PC3 and dispatched
+  // on PC1, so what was sent against the order on screen, or the next order number, can change underneath it. A stored
+  // order is read again in place; a new one only learns the newest number. An order being EDITED is left alone: the
+  // operator's typing is never replaced, and Save refuses a revision someone else has moved on from.
+  useDataChanged(ORDER_CHANGES, () => {
+    if (busy) return;
+    if (mode === "view" && order) {
+      void read(order.orderNumber).then((view) => { if (view?.order && view.order.id === order.id) setOrder(view.order); });
+    } else if (mode === "new") {
+      void read(null).then((view) => { if (view) setNeighbours({ previousNumber: view.latestNumber, nextNumber: null, latestNumber: view.latestNumber }); });
+    }
+  });
 
   const goTo = async (orderNumber: number) => {
     setBusy(true);

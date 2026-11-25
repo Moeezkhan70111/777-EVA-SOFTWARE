@@ -21,10 +21,12 @@ interface ModalProps {
   wide?: boolean | "xl";
   /** Extra class on the dialog, so a page can match its own dialogs (e.g. the narrower product ones). */
   className?: string;
+  /** A control at the top right, beside ×: a way out to a related page (the contractors dialog's "+ Add Party"). */
+  headerAction?: React.ReactNode;
   children: React.ReactNode;
 }
 
-export const Modal: React.FC<ModalProps> = ({ title, subtitle, onClose, footer, wide = false, className, children }) => {
+export const Modal: React.FC<ModalProps> = ({ title, subtitle, onClose, footer, wide = false, className, headerAction, children }) => {
   const titleId = useId();
   const widthClass = (wide === "xl" ? " rm-modal--xl" : wide ? " rm-modal--wide" : "") + (className ? ` ${className}` : "");
 
@@ -58,9 +60,12 @@ export const Modal: React.FC<ModalProps> = ({ title, subtitle, onClose, footer, 
             <h2 id={titleId}>{title}</h2>
             {subtitle ? <p className="rm-modal-sub">{subtitle}</p> : null}
           </div>
-          <button type="button" className="member-modal-close" aria-label={copy.common.close} onClick={onClose}>
-            ×
-          </button>
+          <div className="member-modal-header-actions">
+            {headerAction}
+            <button type="button" className="member-modal-close" aria-label={copy.common.close} onClick={onClose}>
+              ×
+            </button>
+          </div>
         </div>
 
         <div className="rm-modal-body">{children}</div>

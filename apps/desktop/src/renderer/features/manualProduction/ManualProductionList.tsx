@@ -104,9 +104,10 @@ interface ManualProductionListProps {
   production: PolledRead<ProductionDayView>;
   products: readonly ProductChoice[];
   onEdited: () => void;
+  onColourAdded: () => void;
 }
 
-export const ManualProductionList: React.FC<ManualProductionListProps> = ({ day, onVoid, production, products, onEdited }) => {
+export const ManualProductionList: React.FC<ManualProductionListProps> = ({ day, onVoid, production, products, onEdited, onColourAdded }) => {
   const [section, setSection] = useState<Section>("production");
   const page = day.page;
   const entries = () => {
@@ -120,7 +121,6 @@ export const ManualProductionList: React.FC<ManualProductionListProps> = ({ day,
     <section className="card rp-activity" aria-labelledby="mpr-activity-title">
       <div className="rp-activity-head">
         <h2 id="mpr-activity-title" className="card-title">{text.activityTitle}</h2>
-        <span className="rp-activity-note">{text.activityNote}</span>
       </div>
       <TabStrip
         items={[
@@ -133,7 +133,7 @@ export const ManualProductionList: React.FC<ManualProductionListProps> = ({ day,
       />
       {day.stale ? <p className="rp-stale" role="status">⚠ {text.offline}</p> : null}
       <div role="tabpanel" aria-labelledby={`tab-${section}`} className="rp-section">
-        {section === "production" ? <TodayProduction production={production} products={products} onEdited={onEdited} /> : entries()}
+        {section === "production" ? <TodayProduction production={production} products={products} onEdited={onEdited} onColourAdded={onColourAdded} /> : entries()}
       </div>
     </section>
   );
