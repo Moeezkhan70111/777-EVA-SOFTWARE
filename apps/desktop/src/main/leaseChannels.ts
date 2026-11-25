@@ -88,6 +88,7 @@ export const LEASED_CHANNELS: Readonly<Record<string, readonly LeaseDomain[]>> =
   // Parties are written on the accounts computer, PC1: their own lease, not MASTER_DATA (cloud 035, docs/51, docs/55).
   [IPC.createPartyGroup]: PARTIES,
   [IPC.createParty]: PARTIES,
+  [IPC.addPartiesFromList]: PARTIES,
   [IPC.updateParty]: PARTIES,
   [IPC.deleteParty]: PARTIES,
   [IPC.createMachine]: MASTER,

@@ -6,7 +6,7 @@ import { ORDER_PROGRESS } from "@erp/domain";
 import { useElementWidth } from "../../hooks/useElementWidth";
 import { BENTO_GAP_PX, bentoLayout } from "../../utils/bentoLayout";
 import { OrderCheckIcon } from "./OrderIcons";
-import { PendingArticleMatrix } from "./PendingArticleMatrix";
+import { PendingArticleGrids } from "./PendingArticleGrids";
 import { pendingMatrix } from "./pendingMatrix";
 import { usePendingLines, type PendingQuery } from "./usePendingOrders";
 import { orderDozens } from "./orderUnits";
@@ -50,7 +50,6 @@ const PartyLines: React.FC<{ token: string; party: PendingOrderParty; query: Pen
   const lines = usePendingLines(token, party.partyId, query);
   const articles = useMemo(() => pendingMatrix(lines.value), [lines.value]);
   const [gridRef, gridWidth] = useElementWidth<HTMLDivElement>();
-  const spans = useMemo(() => bentoLayout(articles.map((group) => group.colours.length), gridWidth, BENTO_GAP_PX), [articles, gridWidth]);
   const skeletonSpans = bentoLayout(SKELETON_GRIDS.map(() => 3), gridWidth, BENTO_GAP_PX);
   if (lines.loading && lines.value.length === 0) {
     return (
@@ -62,11 +61,7 @@ const PartyLines: React.FC<{ token: string; party: PendingOrderParty; query: Pen
   }
   if (lines.error) return <StateView kind="error" compact message={lines.error} onRetry={() => void lines.reload()} />;
   if (lines.value.length === 0) return <StateView kind="empty" compact title={words.emptySearchTitle} />;
-  return (
-    <div className="ord-matrices" aria-label={party.partyName} ref={gridRef}>
-      {articles.map((group, position) => <PendingArticleMatrix key={group.article} group={group} span={spans[position] ?? 12} />)}
-    </div>
-  );
+  return <PendingArticleGrids label={party.partyName} articles={articles} />;
 };
 
 const PartyProgress: React.FC<{ party: PendingOrderParty }> = ({ party }) => {

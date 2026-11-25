@@ -163,6 +163,29 @@ export const copy = {
     typeBadgeName: (label: string) => `Party type: ${label}`,
   },
 
+  // Several parties of one city and group at once, pasted (owner, 25 Nov 2026).
+  partiesFromList: {
+    open: "Paste parties",
+    title: "Paste parties",
+    subtitle: "Many parties of one city and group at once. Each gets its own code, as if added one by one.",
+    pasteLabel: "Parties",
+    pasteHint: "One party a line: the English name, then the Urdu name (a tab or | between them). A table copied from Excel or a chat works too.",
+    cityLabel: "City",
+    groupLabel: "Party group",
+    groupHint: "Made if it does not exist yet.",
+    typeLabel: "Party type",
+    previewTitle: (count: number) => `${count} ${count === 1 ? "party" : "parties"} to add`,
+    previewEmpty: "Paste the list above; the parties found are shown here before anything is saved.",
+    english: "English name",
+    urdu: "Urdu name",
+    save: (count: number) => `Add ${count} ${count === 1 ? "party" : "parties"}`,
+    saving: "Adding…",
+    needCity: "Type the city these parties are in.",
+    added: (count: number) => `${count} ${count === 1 ? "party" : "parties"} added.`,
+    skipped: (names: string) => `Already on file, not added again: ${names}`,
+    failed: "The parties could not be added.",
+  },
+
   gatepass: {
     // One article, every size at once (owner, 25 Nov 2026, as Opening Stock and Stock Adjustment): sizes down, colours
     // across, a box in every cell; under each box the current stock (owner, 25 Nov 2026: no reserved figures here).

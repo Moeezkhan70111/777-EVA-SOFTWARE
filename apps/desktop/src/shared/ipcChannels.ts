@@ -397,6 +397,7 @@ export const IPC = {
   getNextPartyCode: "erp:get-next-party-code",
   getCurrentPartyBalance: "erp:get-current-party-balance",
   createParty: "erp:create-party",
+  addPartiesFromList: "erp:add-parties-from-list",
   updateParty: "erp:update-party",
   deleteParty: "erp:delete-party",
   listCities: "erp:list-cities",

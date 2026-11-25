@@ -2659,6 +2659,8 @@ export interface DesktopApi {
   getNextProductCode(): Promise<string>;
   getCurrentPartyBalance(partyId: string): Promise<number>;
   createParty(input: Record<string, unknown>): Promise<{ accepted: boolean; partyId?: string; partyCode?: string; reason?: string }>;
+  /** A pasted list of one city and group; checked at the boundary (partiesFromList.ts). */
+  addPartiesFromList(input: { rows: Array<{ partyName: string; partyNameUrdu: string }>; city: string; groupName: string; partyType: string }): Promise<unknown>;
   updateParty(input: Record<string, unknown>): Promise<{ accepted: boolean; reason?: string }>;
   deleteParty(partyId: string): Promise<{ accepted: boolean; reason?: string }>;
   getCustomerLedger(partyId: string, query?: Record<string, unknown>): Promise<{

@@ -1,14 +1,16 @@
-import React from "react";
+import React, { useMemo } from "react";
 import { CUSTOMER_ORDER_STATUS, orderProgressOf } from "@erp/domain";
 import { copy } from "../../config/copy";
 import { formatDate } from "../../utils/dates";
 import type { CustomerOrder } from "../../types/desktopApi";
-import { OrderLinesTable } from "./OrderLinesTable";
+import { PendingArticleGrids } from "./PendingArticleGrids";
+import { orderAsPendingLines, pendingMatrix } from "./pendingMatrix";
 import { OrderProgressBadge } from "./OrderProgressBadge";
 import { OrderCheckIcon } from "./OrderIcons";
 import { orderDozens } from "./orderUnits";
 
-// A STORED ORDER: who for, when, and each product's ordered, dispatched and pending, from the main process. Edit and
+// A STORED ORDER: who for, when, and what is still pending, an article at a time with sizes down and colours across
+// (the same grids as Pending Orders; ordered and dispatched on hover), from the main process. Edit and
 // Cancel are offered while it is open and the operator may; a cancelled order says who cancelled it and why.
 
 const words = copy.orders;
@@ -29,6 +31,7 @@ interface OrderDetailsProps {
 export const OrderDetails: React.FC<OrderDetailsProps> = ({ order, busy, canEdit, canCancel, onEdit, onCancel, justSaved = false, onNewOrder }) => {
   const open = order.status === CUSTOMER_ORDER_STATUS.OPEN;
   const { ordered, dispatched, pending } = order.totals;
+  const articles = useMemo(() => pendingMatrix(orderAsPendingLines(order)), [order]);
   return (
     <div className="ord-form">
       {justSaved ? (
@@ -57,10 +60,7 @@ export const OrderDetails: React.FC<OrderDetailsProps> = ({ order, busy, canEdit
         ) : null}
       </div>
       {!open && order.cancelledBy ? <p className="ord-cancelled" role="note">{words.cancelledBy(order.cancelledBy, order.cancelReason ?? "")}</p> : null}
-      <OrderLinesTable
-        label={words.linesTitle}
-        rows={order.lines.map((line) => ({ key: line.id, article: line.article, color: line.color, size: line.size, ordered: line.quantity, requested: line.requested, dispatched: line.dispatched, pending: line.pending }))}
-      />
+      <PendingArticleGrids label={words.linesTitle} articles={articles} />
     </div>
   );
 };

@@ -7,7 +7,34 @@
 import { ipcMain } from "../leaseGuard";
 import { IPC } from "../../shared/ipcChannels";
 import type { IpcContext } from "./context";
-import { PERMISSION } from "@erp/domain";
+import { PARTY_TYPES, PERMISSION } from "@erp/domain";
+
+/** At most this many parties in one paste: a list, not an import of the whole book. */
+export const MAX_PARTIES_IN_LIST = 200;
+const MAX_NAME_LENGTH = 120;
+
+type PartyList = { rows: Array<{ partyName: string; partyNameUrdu: string }>; city: string; groupName: string; partyType: string };
+
+/** The pasted list as the renderer sent it, checked; a string is why it was refused. */
+export function partyListOf(input: Record<string, unknown> | undefined): PartyList | string {
+  const rawRows = input?.rows;
+  if (!Array.isArray(rawRows) || rawRows.length === 0) return "Paste at least one party.";
+  if (rawRows.length > MAX_PARTIES_IN_LIST) return `At most ${MAX_PARTIES_IN_LIST} parties at a time.`;
+  const rows: PartyList["rows"] = [];
+  for (const raw of rawRows as unknown[]) {
+    const record = typeof raw === "object" && raw !== null ? (raw as Record<string, unknown>) : {};
+    const partyName = typeof record.partyName === "string" ? record.partyName.trim() : "";
+    const partyNameUrdu = typeof record.partyNameUrdu === "string" ? record.partyNameUrdu.trim() : "";
+    if (!partyName) return "Every line needs a party name.";
+    if (partyName.length > MAX_NAME_LENGTH || partyNameUrdu.length > MAX_NAME_LENGTH) return `A name is longer than ${MAX_NAME_LENGTH} letters: ${partyName.slice(0, 40)}`;
+    rows.push({ partyName, partyNameUrdu });
+  }
+  const partyType = typeof input?.partyType === "string" ? input.partyType : "";
+  if (!(PARTY_TYPES as readonly string[]).includes(partyType)) return "Choose whether these are customers or suppliers.";
+  const city = typeof input?.city === "string" ? input.city.trim() : "";
+  const groupName = typeof input?.groupName === "string" ? input.groupName.trim() : "";
+  return { rows, city, groupName, partyType };
+}
 
 export function registerPartiesHandlers(ctx: IpcContext): void {
   const { db, logger, authorizer, deviceId, useCases } = ctx;
@@ -163,6 +190,24 @@ export function registerPartiesHandlers(ctx: IpcContext): void {
         message: error instanceof Error ? error.message : "Failed to create party",
       });
       return { accepted: false, reason: error instanceof Error ? error.message : "Failed to create party" };
+    }
+  });
+
+  // A pasted list of one city and group (owner, 25 Nov 2026). Same permission and lease as Add Party; the data layer
+  // makes each party as Add Party does and skips a name already on file.
+  ipcMain.handle(IPC.addPartiesFromList, (event, input?: Record<string, unknown>) => {
+    try {
+      authorizer.requirePermission(event, PERMISSION.PARTY_FORM);
+      const list = partyListOf(input);
+      if (typeof list === "string") return { accepted: false, reason: list };
+      const result = db.addPartiesFromList(list);
+      logger.log({ module: "party", severity: "INFO", operation: "add-parties-from-list", deviceId,
+        message: `Parties added from a list: ${result.created.length} made, ${result.skipped.length} already on file` });
+      return { accepted: true, ...result };
+    } catch (error) {
+      logger.log({ module: "party", severity: "ERROR", operation: "add-parties-from-list", deviceId,
+        message: error instanceof Error ? error.message : "Failed to add parties" });
+      return { accepted: false, reason: error instanceof Error ? error.message : "Failed to add parties" };
     }
   });
 

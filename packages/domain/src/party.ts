@@ -1,5 +1,8 @@
 export type PartyType = 'CUSTOMER' | 'SUPPLIER' | 'CONTRACTOR' | 'DISTRIBUTOR' | 'DEALER' | 'TRANSPORTER';
 
+/** Every party type, for checking one that arrives from outside. */
+export const PARTY_TYPES: readonly PartyType[] = ['CUSTOMER', 'SUPPLIER', 'CONTRACTOR', 'DISTRIBUTOR', 'DEALER', 'TRANSPORTER'];
+
 /** The party type a machine's two contractors must have (machine contractor, packing contractor). */
 export const CONTRACTOR_PARTY_TYPE: PartyType = 'CONTRACTOR';
 

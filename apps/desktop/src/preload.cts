@@ -400,6 +400,7 @@ contextBridge.exposeInMainWorld("desktop", {
     getNextProductCode: () => ipcRenderer.invoke(IPC.getNextProductCode),
     getCurrentPartyBalance: (partyId: string) => ipcRenderer.invoke(IPC.getCurrentPartyBalance, partyId),
     createParty: (input: Record<string, unknown>) => ipcRenderer.invoke(IPC.createParty, input),
+    addPartiesFromList: (input: Record<string, unknown>) => ipcRenderer.invoke(IPC.addPartiesFromList, input),
     updateParty: (input: Record<string, unknown>) => ipcRenderer.invoke(IPC.updateParty, input),
     deleteParty: (partyId: string) => ipcRenderer.invoke(IPC.deleteParty, partyId),
     getCustomerLedger: (partyId: string, query?: Record<string, unknown>) => ipcRenderer.invoke(IPC.getCustomerLedger, partyId, query),

@@ -10421,8 +10421,6 @@ tr.has-error .gp-qty-stepper input { color: var(--err); }
 .ord-figure-pending dd { font-size: 1.35rem; color: var(--primary); }
 .ord-cancelled { margin: 0; color: var(--text-3); font-size: 0.85rem; }
 
-.ord-table-wrap { overflow-x: auto; }
-.ord-table { width: 100%; }
 .ord-article { font-weight: 600; }
 .ord-colour { display: inline-flex; align-items: center; gap: var(--space-2); }
 .ord-pending { font-weight: 800; font-size: 1.05rem; color: var(--primary); }
@@ -10901,7 +10899,6 @@ tr.has-error .gp-qty-stepper input { color: var(--err); }
 .doc-themed .ord-summary .ord-block-title { color: var(--sp-navy); font-size: 1.2rem; font-weight: 800; }
 .doc-themed .ord-figures dt { color: var(--sp-muted); font-weight: 700; }
 .doc-themed .ord-figures dd { color: var(--sp-navy); font-size: 1.15rem; }
-.doc-themed .ord-table-wrap { overflow: hidden; border: 1px solid var(--sp-line); border-radius: var(--dash-card-radius); background: var(--white); box-shadow: var(--sp-card-shadow); }
 
 @media (max-width: 760px) {
   .doc-themed .ord-head { grid-template-columns: 1fr; }
@@ -11119,7 +11116,6 @@ tr.has-error .gp-qty-stepper input { color: var(--err); }
   .ord-page .ord-steps-bar > span, .ord-page .ord-step-mark { transition: none; }
 }
 /* Alignment (uniform connectedness): a figure's heading sits over its figures, right-aligned with them. */
-.ord-page .ord-table th.ord-num, .ord-page .ord-table td.ord-num { text-align: right; }
 
 /* A size a colour is not in Product Master in (24 Nov 2026). For anyone: said in words, small and quiet, on the hatch.
    For an administrator where Product Master is written: "+ Add", a dashed box the size of the others, so it reads as
@@ -11256,7 +11252,6 @@ tr.has-error .gp-qty-stepper input { color: var(--err); }
 /* Under an article + size on the Gatepass: the article's colours this size is not made in (24 Nov 2026). Quiet and
    dashed, a box that is not there yet; "+ Add" only for an administrator where Product Master is written. */
 /* A line lowered after a gatepass had already sent more (24 Nov 2026): what was asked, quietly, under what counts. */
-.ord-page .ord-asked { display: block; color: var(--sp-muted); font-size: 0.75rem; font-weight: 600; }
 
 /* ── CUSTOMER LEDGER (owner, 24 Nov 2026: the UI/UX pass) ──────────────────────────────────────────────────────────
    The page in the Dashboard cards' theme (.doc-themed). One figure stands out, the current balance, alone in the blue
@@ -11720,3 +11715,9 @@ tr.has-error .gp-qty-stepper input { color: var(--err); }
 /* One frame per region (docs/56, common region): beside, the page's own panel drops its card look. */
 .stock-split-companion-body > .page > .us-panel, .stock-split-companion-body > .page-stack > .cs-panel { border: 0; box-shadow: none; background: transparent; padding: 0; }
 .stock-split-companion-body > .page, .stock-split-companion-body > .page-stack { padding: 0; margin: 0; }
+
+/* Paste parties (owner, 25 Nov 2026): several parties of one city and group at once (PartiesFromListDialog). */
+.page-header-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.parties-list-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 0 var(--space-3); }
+.parties-list-preview-title { margin: var(--space-3) 0 var(--space-2); font-size: .9rem; font-weight: 600; color: var(--text-2); }
+.parties-list-preview { max-height: 260px; overflow-y: auto; }

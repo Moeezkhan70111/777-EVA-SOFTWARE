@@ -176,7 +176,7 @@ describe("lease classification", () => {
     expect([...leasesFor(IPC.runBackfill)].sort()).toEqual([LEASE_DOMAIN.MASTER_DATA, LEASE_DOMAIN.RAW_MATERIAL_STORE]);
     expect(leasesFor(IPC.generateRawMaterialQrBatch)).toEqual([LEASE_DOMAIN.RAW_MATERIAL_STORE]);
     // Cloud 035 (docs/51): parties and their groups are written under their own lease, held by the store computer.
-    for (const channel of [IPC.createParty, IPC.updateParty, IPC.deleteParty, IPC.createPartyGroup]) {
+    for (const channel of [IPC.createParty, IPC.addPartiesFromList, IPC.updateParty, IPC.deleteParty, IPC.createPartyGroup]) {
       expect(leasesFor(channel)).toEqual([LEASE_DOMAIN.PARTIES]);
     }
     expect(leasesFor(IPC.storeEntryScan)).toEqual([]);
@@ -204,7 +204,7 @@ describe("lease classification", () => {
   });
 
   it("parties are written under their own lease, and gatepasses under carton stock and sales together (docs/55)", () => {
-    for (const channel of [IPC.createParty, IPC.updateParty, IPC.deleteParty, IPC.createPartyGroup]) {
+    for (const channel of [IPC.createParty, IPC.addPartiesFromList, IPC.updateParty, IPC.deleteParty, IPC.createPartyGroup]) {
       expect(leasesFor(channel)).toEqual([LEASE_DOMAIN.PARTIES]);
     }
     for (const channel of [IPC.createGatepass, IPC.cancelGatepass]) {

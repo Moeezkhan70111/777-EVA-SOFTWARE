@@ -38,9 +38,10 @@ export const PendingArticleMatrix: React.FC<{ group: PendingArticle; span: numbe
         const line = group.cells.get(cellKey(size.size, colour));
         if (!line) return <td className="ord-mcell is-none" aria-label={words.notOrdered(colour, size.size)} />;
         const done = line.pending === 0;
-        const summary = words.cellSummary(group.article, colour, size.size, figure(line.pending), figure(line.ordered), figure(line.dispatched));
+        const asked = line.requested !== undefined && line.requested < line.ordered ? ` · ${words.asked(figure(line.requested))}` : "";
+        const summary = words.cellSummary(group.article, colour, size.size, figure(line.pending), figure(line.ordered), figure(line.dispatched)) + asked;
         return (
-          <td className={done ? "ord-mcell is-done" : "ord-mcell"} aria-label={summary} title={words.cellFigures(figure(line.ordered), figure(line.dispatched))}>
+          <td className={done ? "ord-mcell is-done" : "ord-mcell"} aria-label={summary} title={words.cellFigures(figure(line.ordered), figure(line.dispatched)) + asked}>
             <span className="ord-mcell-pending">{done ? <OrderCheckIcon /> : figure(line.pending)}</span>
           </td>
         );

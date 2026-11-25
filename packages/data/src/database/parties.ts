@@ -249,6 +249,40 @@ export const partiesMethods = {
     };
   },
 
+  /**
+   * Adds a pasted list of parties of one city and group (owner, 25 Nov 2026: twenty Hyderabad customers at once).
+   * Each goes through createParty, so it takes the next code and travels like one typed by hand. A name already on
+   * file (any capitals), or twice in the list, is skipped rather than made again, so the same list can be saved twice.
+   * The group is found by name, or made when it is not there yet.
+   */
+  addPartiesFromList(this: SqliteDatabase, input: {
+    rows: ReadonlyArray<{ partyName: string; partyNameUrdu: string }>;
+    city: string;
+    groupName: string;
+    partyType: string;
+  }): { created: Array<{ partyName: string; partyCode: string }>; skipped: string[] } {
+    const groupName = input.groupName.trim();
+    const groupId = groupName ? (this.getPartyGroupByName(groupName)?.id ?? this.createPartyGroup({ groupName })) : undefined;
+    const known = new Set(
+      (this.db.prepare(`SELECT party_name FROM parties WHERE deleted_at IS NULL`).all() as Array<{ party_name: string }>)
+        .map((row) => row.party_name.trim().toUpperCase()),
+    );
+    const created: Array<{ partyName: string; partyCode: string }> = [];
+    const skipped: string[] = [];
+    for (const row of input.rows) {
+      const partyName = row.partyName.trim();
+      if (!partyName) continue;
+      if (known.has(partyName.toUpperCase())) {
+        skipped.push(partyName);
+        continue;
+      }
+      known.add(partyName.toUpperCase());
+      const id = this.createParty({ partyName, partyNameUrdu: row.partyNameUrdu, partyType: input.partyType, city: input.city.trim() || undefined, partyGroupId: groupId });
+      created.push({ partyName, partyCode: this.getParty(id)?.partyCode ?? "" });
+    }
+    return { created, skipped };
+  },
+
   getPartyByName(this: SqliteDatabase, partyName: string): { id: string; partyName: string } | null {
     const row = this.db
       .prepare(`SELECT id, party_name FROM parties WHERE party_name = ? AND deleted_at IS NULL LIMIT 1`)

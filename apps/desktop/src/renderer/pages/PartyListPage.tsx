@@ -7,6 +7,10 @@ import { LeaseNotices } from "../features/sync/LeaseNotices";
 import { desktopApi } from "../hooks/useDesktopApi";
 import { leaseRefusalText } from "../../shared/leaseRefusal";
 import { withoutIpcPrefix } from "../utils/ipcError";
+import { PartiesFromListDialog } from "../features/parties/PartiesFromListDialog";
+import type { PartiesFromListOutcome } from "../features/parties/usePartiesFromList";
+import { useCanCreateParty } from "../features/parties/useCanCreateParty";
+import { useOptionalNotifications } from "../state/NotificationsContext";
 
 /** Parties and machines are master data: written on one computer, read on the others (docs/37 section W). */
 /** Parties are written under their own lease, held by the accounts computer, PC1 (docs/51, docs/55). */
@@ -32,6 +36,9 @@ export const PartyListPage: React.FC<PartyListPageProps> = ({ onNavigate }) => {
   // Delete confirmation state
   const [confirmDelete, setConfirmDelete] = useState<{ id: string; name: string } | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [pasteOpen, setPasteOpen] = useState(false);
+  const canCreate = useCanCreateParty();
+  const notices = useOptionalNotifications();
 
   // Filter dropdown open state
   const [filterOpen, setFilterOpen] = useState(false);
@@ -143,6 +150,14 @@ export const PartyListPage: React.FC<PartyListPageProps> = ({ onNavigate }) => {
     }
   };
 
+  // A pasted list was added: say how many, and which names were already on file (owner, 25 Nov 2026).
+  const handlePasteAdded = (outcome: PartiesFromListOutcome) => {
+    setPasteOpen(false);
+    const skipped = outcome.skipped.length > 0 ? copy.partiesFromList.skipped(outcome.skipped.join(", ")) : undefined;
+    notices?.push("success", copy.partiesFromList.added(outcome.added), skipped, skipped ? 0 : undefined);
+    void fetchParties();
+  };
+
   const activeFilterCount = (groupId ? 1 : 0) + (status !== "ALL" ? 1 : 0) + (partyType !== "ALL" ? 1 : 0);
   const selectedGroupName = groups.find((g) => g.id === groupId)?.groupName ?? "";
   const totalPages = Math.ceil(total / pageSize);
@@ -150,6 +165,7 @@ export const PartyListPage: React.FC<PartyListPageProps> = ({ onNavigate }) => {
   return (
     <div className="page party-list-page">
       <LeaseNotices domains={PARTIES_ONLY} />
+      {pasteOpen ? <PartiesFromListDialog onClose={() => setPasteOpen(false)} onAdded={handlePasteAdded} /> : null}
       {/* Delete confirmation modal */}
       {confirmDelete && (
         <div
@@ -182,9 +198,16 @@ export const PartyListPage: React.FC<PartyListPageProps> = ({ onNavigate }) => {
 
       <div className="page-header">
         <h1>Party Management</h1>
-        <button type="button" className="btn btn-primary" onClick={() => onNavigate("party-form")}>
-          Add New Party
-        </button>
+        <div className="page-header-actions">
+          {canCreate ? (
+            <button type="button" className="btn btn-secondary" onClick={() => setPasteOpen(true)}>
+              {copy.partiesFromList.open}
+            </button>
+          ) : null}
+          <button type="button" className="btn btn-primary" onClick={() => onNavigate("party-form")}>
+            Add New Party
+          </button>
+        </div>
       </div>
 
       {/* Search + Filter bar */}
