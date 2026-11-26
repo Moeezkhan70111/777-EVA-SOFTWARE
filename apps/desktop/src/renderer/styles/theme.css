@@ -13,6 +13,9 @@
    Arabic-script subset only: Latin text keeps the app's own font. */
 @import "@fontsource/noto-nastaliq-urdu/arabic-400.css";
 @import "@fontsource/noto-nastaliq-urdu/arabic-700.css";
+/* Notices as a Dynamic Island (dynaura, NotificationCenter.tsx): its no-font sheet, so nothing is fetched from the
+   internet; it takes the app's own font below. */
+@import "dynaura/styles-no-font.css";
 
 /* ─── Tokens ─────────────────────────────────────────── */
 /* Visually hidden but announced — text alternative for colour-only cues (R18). */
@@ -2101,28 +2104,7 @@ select {
 .report-total-value { font-size: 1.65rem; font-weight: 800; color: var(--text); }
 
 /* ════════════════════════════════════════════════════════ NOTIFICATIONS ════════════════════════════════════════════════════════ */
-/* Below the top bar and the Store header, so a toast never sits over the bell or the profile. */
-.notice-wrap { position: fixed; top: calc(var(--app-head-h) + 8px); right: 14px; width: min(360px, calc(100vw - 28px)); display: flex; flex-direction: column; gap: 8px; z-index: 1000; pointer-events: none; }
-.notice {
-  background: var(--chrome-bg); border: 1px solid var(--glass-90);
-  border-left-width: 5px; border-radius: var(--radius-lg);
-  padding: 14px 18px; box-shadow: var(--shadow-xl);
-  pointer-events: all;
-  animation: slide-in .2s ease;
-}
-@keyframes slide-in { from { transform: translateX(20px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
-.notice.success { border-left-color: var(--ok); }
-.notice.error   { border-left-color: var(--err); }
-.notice.warning { border-left-color: var(--warn); }
-.notice.info    { border-left-color: var(--info); }
-.notice-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
-.notice-title  { font-size: 0.85rem; font-weight: 800; color: var(--text); }
-.notice-body   { font-size: 0.8rem; color: var(--text-2); word-break: break-all; }
-.notice-dismiss {
-  background: transparent; border: none; color: var(--text-3);
-  padding: 2px 4px; border-radius: 4px; cursor: pointer; font-size: 1rem; line-height: 1;
-}
-.notice-dismiss:hover { background: white; color: var(--text); }
+/* Notices are drawn by dynaura as a Dynamic Island (NotificationCenter.tsx); their styles come with it, at the top. */
 
 /* ── Sync status indicator (rail) ──────────────────────────────────────────
    Flat fills and a plain 1px border throughout: gradients, drop-shadow and inset shadows each
@@ -2176,10 +2158,6 @@ select {
 .sync-detail-error { margin: 0 0 10px; font-size: 0.78rem; line-height: 1.4; color: var(--err); }
 .sync-detail-actions { display: flex; gap: 8px; }
 .sync-detail-actions .btn { flex: 1; min-height: 40px; }
-/* Layout only, for a notice that asks for something rather than only reporting it
-   (e.g. "Restart Now"). The button itself is the ordinary .btn .btn-primary — a notice is not
-   a reason for a second button style. */
-.notice-actions { display: flex; gap: 8px; margin-top: 10px; }
 
 /* ════════════════════════════════════════════════════════ UTILITY ════════════════════════════════════════════════════════ */
 .stack     { display: flex; flex-direction: column; gap: 16px; }
@@ -3105,7 +3083,6 @@ select:focus, textarea:focus, .form-input:focus { border-color: var(--primary-bl
 .summary-block-title { color: var(--primary-blue); }
 .health-item:hover { transform: none; }
 .log-entry { background: var(--surface-2); border-color: var(--border); border-radius: var(--radius-md); box-shadow: none; }
-.notice { background: var(--surface-1); border-color: var(--border); box-shadow: var(--shadow-lg); border-radius: var(--radius-md); }
 .empty-state, .loading { color: var(--text-3); }
 .status-dot.ok { box-shadow: none; }
 button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 2px solid var(--primary-blue-light); outline-offset: 2px; }
@@ -11677,7 +11654,14 @@ tr.has-error .gp-qty-stepper input { color: var(--err); }
    whole and each side scrolls on its own, split by the Store page's divider. Opacity only (a transform would trap
    the pickers' fixed dropdowns); on a narrow screen the two stack. */
 .page-content:has(> .stock-split.is-open) { display: flex; flex-direction: column; overflow: hidden; }
-.stock-split-toggle { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; }
+/* Closed: tinted in the other page's colour, the two-pane mark, where it goes. Open: plain, with ✕ (26 Nov 2026). */
+.stock-split-toggle-wrap { display: inline-flex; margin-left: auto; }
+.stock-split-toggle { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 16px; border: 1px solid var(--sp-blue-line); border-radius: var(--sp-radius-control); background: var(--sp-blue-soft); color: var(--sp-mode-on-start); font-weight: 800; }
+.stock-split-toggle:hover { border-color: var(--sp-mode-on-start); background: color-mix(in oklch, var(--sp-blue-soft) 70%, var(--sp-blue-line)); }
+.stock-split-toggle:focus-visible { outline: 3px solid var(--sp-mode-on-start); outline-offset: 2px; }
+.stock-split-toggle.is-open { border-color: var(--sp-line); background: var(--white); color: var(--sp-navy); }
+.stock-split-toggle.is-open:hover { border-color: var(--sp-navy-2); background: var(--sp-ground); }
+.stock-split-x { font-size: 0.95rem; line-height: 1; }
 .stock-split-toggle svg { inline-size: 18px; block-size: 18px; }
 .stock-split.is-open {
   --stock-split-width: clamp(360px, 45%, calc(100% - 360px));
@@ -11695,8 +11679,8 @@ tr.has-error .gp-qty-stepper input { color: var(--err); }
 }
 .stock-split-companion-head h2 { margin: 0; font-size: 0.8rem; font-weight: 800; letter-spacing: 0.07em; text-transform: uppercase; color: var(--sp-navy); }
 .stock-split-close {
-  inline-size: 44px; block-size: 44px; border: 0; border-radius: var(--sp-radius-tab); background: transparent;
-  color: var(--sp-muted); font-size: 1rem; cursor: pointer;
+  display: inline-flex; align-items: center; gap: 6px; min-height: 44px; padding: 0 14px; border: 1px solid var(--sp-line); border-radius: var(--sp-radius-control); background: var(--white);
+  color: var(--sp-navy); font-size: 0.9rem; font-weight: 700; cursor: pointer;
 }
 .stock-split-close:hover { background: var(--surface-faint); color: var(--sp-navy); }
 .stock-split-close:focus-visible { outline: 2px solid var(--sp-navy); outline-offset: -2px; }
@@ -11782,7 +11766,7 @@ tr.has-error .gp-qty-stepper input { color: var(--err); }
 }
 .stock-toolbar .ord-search .input:focus { border-color: var(--sp-mode-on-start); box-shadow: 0 0 0 3px color-mix(in oklch, var(--sp-mode-on-start) 18%, transparent); outline: none; }
 .stock-count { color: var(--sp-muted); font-size: 0.85rem; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.stock-toolbar .stock-split-toggle { margin-left: auto; min-height: 48px; }
+.stock-toolbar .stock-split-toggle { min-height: 48px; }
 .stock-results { transition: opacity 160ms ease; }
 .stock-results.is-refreshing { opacity: 0.55; }
 @media (prefers-reduced-motion: reduce) { .stock-results { transition: none; } }
@@ -11821,3 +11805,25 @@ tr.has-error .gp-qty-stepper input { color: var(--err); }
 .sa-page .sa-group-article { vertical-align: top; color: var(--sp-navy); font-weight: 800; background: var(--sp-ground); border-right: 1px solid var(--sp-line); }
 .sa-page .sa-group-size { vertical-align: top; color: var(--sp-navy-2); font-weight: 700; border-right: 1px solid var(--sp-line); }
 .sa-page .sa-article-group + .sa-article-group > tr:first-child > * { border-top: 2px solid var(--sp-line); }
+
+/* THE NOTICE ISLAND, CLEAN LIKE THE IPHONE'S (owner, 27 Nov 2026; dynaura, NotificationCenter.tsx; docs/56): one near-black
+   surface, our navy deepened toward black; white words; no outline, no sheen, no coloured glow. The only colour is the
+   small status mark, in the app's own status colours, always beside its own symbol (never colour alone). The motion is
+   dynaura's own spring morph, given the time a spring needs to stay smooth; reduced motion is honoured by the package.
+   These are the island's tokens; NotificationCenter hands them to dynaura. */
+:root {
+  --island-bg:      color-mix(in oklch, var(--sp-navy) 55%, black);
+  --island-fg:      var(--white);
+  --island-muted:   color-mix(in oklch, var(--white) 70%, transparent);
+  --island-ring:    transparent;
+  --island-button:  color-mix(in oklch, var(--white) 14%, transparent);
+  --island-success: var(--ok);
+  --island-error:   var(--err);
+  --island-warning: var(--warn);
+  --island-info:    var(--sp-mode-on-end);
+  --island-loading: color-mix(in oklch, var(--white) 60%, transparent);
+  --island-shadow:  0 10px 28px -12px rgb(0 0 0 / 0.5);
+}
+.dynaura-root { --dynaura-font: var(--sp-font), var(--font-urdu); --dynaura-duration: 560ms; }
+.dynaura-root .dynaura-island { box-shadow: var(--island-shadow); }
+.dynaura-root .dynaura-title { font-weight: 600; letter-spacing: 0; }

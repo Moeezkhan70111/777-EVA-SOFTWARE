@@ -274,9 +274,10 @@ export const SaleVoucherFormPage: React.FC<SaleVoucherFormPageProps> = ({ vouche
     }
   };
 
-  const printVoucher = async () => {
-    if (!activeId) { push("warning", copy.billing.printVoucher, copy.billing.printNeedsSave); return; }
-    const voucher = await api.getSaleVoucher(activeId).catch(() => null);
+  /** Prints a saved bill: the one on screen, or the one a notice just named (its "Print bill"). */
+  const printVoucher = async (id: string | undefined = activeId) => {
+    if (!id) { push("warning", copy.billing.printVoucher, copy.billing.printNeedsSave); return; }
+    const voucher = await api.getSaleVoucher(id).catch(() => null);
     if (!voucher) { push("error", copy.toast.loadFailed, "Could not load voucher"); return; }
     if (!openSaleVoucherPrintWindow(voucher)) push("error", copy.toast.popupBlocked, copy.common.popupBlocked);
   };
@@ -320,6 +321,9 @@ export const SaleVoucherFormPage: React.FC<SaleVoucherFormPageProps> = ({ vouche
   /** A line not saved yet carries the screen's id for it, so adding it twice is one line. */
   const newLineInput = (line: BillLine) => ({ ...lineInput(line), ...(line.clientId ? { lineId: line.clientId } : {}) });
 
+  /** A saved bill's notice offers to print it (owner, 26 Nov 2026: a relevant action on the island). */
+  const printAction = (id: string) => ({ label: copy.noticeActions.printBill, onClick: () => void printVoucher(id) });
+
   const saveExisting = async (id: string): Promise<boolean> => {
     const header = await api.updateSaleVoucher(id, { bookNo: fields.bookNo, subPartyNameUrdu: fields.subPartyNameUrdu, remarks: fields.remarks });
     if (!header.accepted) { push("error", copy.toast.failed, header.reason ?? "Update failed"); return false; }
@@ -327,7 +331,7 @@ export const SaleVoucherFormPage: React.FC<SaleVoucherFormPageProps> = ({ vouche
       const result = line.id ? await api.updateVoucherLineItem(line.id, lineInput(line)) : await api.addVoucherLineItem(id, newLineInput(line));
       if (!result.accepted) { push("error", copy.toast.failed, result.reason ?? "Update item failed"); return false; }
     }
-    push("success", copy.toast.updated, copy.billing.saved(voucherNumber));
+    push("success", copy.toast.updated, copy.billing.saved(voucherNumber), undefined, printAction(id));
     return true;
   };
 
@@ -362,7 +366,7 @@ export const SaleVoucherFormPage: React.FC<SaleVoucherFormPageProps> = ({ vouche
       return null;
     }
     if (saved.outcome === "ALREADY_SAVED") push("success", copy.requests.alreadySavedTitle, copy.requests.billAlreadySaved(saved.voucherNumber ?? ""));
-    else push("success", copy.toast.created, copy.billing.created(saved.voucherNumber ?? ""));
+    else push("success", copy.toast.created, copy.billing.created(saved.voucherNumber ?? ""), undefined, printAction(saved.id));
     return saved.id;
   };
 
@@ -386,7 +390,7 @@ export const SaleVoucherFormPage: React.FC<SaleVoucherFormPageProps> = ({ vouche
       const result = await api.addVoucherLineItem(created.id, lineInput(line));
       if (!result.accepted) { push("error", copy.toast.failed, result.reason ?? "Add item failed"); return null; }
     }
-    push("success", copy.toast.created, copy.billing.created(created.voucherNumber ?? ""));
+    push("success", copy.toast.created, copy.billing.created(created.voucherNumber ?? ""), undefined, printAction(created.id));
     return created.id;
   };
 
@@ -397,7 +401,7 @@ export const SaleVoucherFormPage: React.FC<SaleVoucherFormPageProps> = ({ vouche
       explainRefusal(entered);
       return false;
     }
-    push("success", copy.toast.created, copy.billing.saved(voucherNumber));
+    push("success", copy.toast.created, copy.billing.saved(voucherNumber), undefined, printAction(id));
     return true;
   };
 

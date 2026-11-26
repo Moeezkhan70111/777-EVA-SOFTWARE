@@ -16,6 +16,13 @@ export const copy = {
     phones: ["+92 320 3033331", "+92 303 0776776", "+92 321 4205286"],
   },
 
+  // The one next step a notice offers on the island (NotificationCenter, 26 Nov 2026).
+  noticeActions: {
+    printBill: "Print bill",
+    makeBill: "Make Bill",
+    printGatepass: "Print",
+  },
+
   common: {
     loading: "Loading…",
     retry: "Retry",
@@ -221,6 +228,24 @@ export const copy = {
     emptyHint: "Add a customer on Party Management; their balance shows here.",
     noMatchTitle: "No customer matches",
     noMatchHint: "Try another name or city, or choose All groups.",
+  },
+
+  // Discounts for many customers at once, pasted (Discount Policy, owner 26 Nov 2026).
+  discountsFromList: {
+    open: "Paste discounts",
+    title: (target: string) => `Paste discounts for ${target}`,
+    subtitle: "One customer a line: the name (English or Urdu), then the discount per pair. Filled into the table to check before you save.",
+    pasteLabel: "Discounts",
+    pasteHint: "A tab or | between the name and the discount. A table copied from Excel or a chat works too.",
+    previewTitle: (count: number) => `${count} ${count === 1 ? "customer" : "customers"} found`,
+    previewEmpty: "Paste the list above; each customer found is shown here before anything is filled in.",
+    customer: "Customer",
+    discount: "Discount / pair (Rs.)",
+    unmatched: (names: string) => `Not a customer, skipped: ${names}`,
+    invalid: (lines: string) => `No usable discount on: ${lines}`,
+    repeated: (names: string) => `Named twice, the last discount is used: ${names}`,
+    fill: (count: number) => `Fill in ${count} ${count === 1 ? "discount" : "discounts"}`,
+    filled: (count: number) => `${count} ${count === 1 ? "discount" : "discounts"} filled in. Check the table, then Save.`,
   },
 
   // Several parties of one city and group at once, pasted (owner, 25 Nov 2026).
@@ -3696,8 +3721,9 @@ export const copy = {
   // The Carton Stock page (features/cartonStock, docs/42).
   stockSplit: {
     // Upper Stock and Carton Stock side by side (features/stockSplit, owner 25 Nov 2026).
-    show: (page: string) => `Show ${page} beside`,
+    show: (page: string) => `Open ${page} side by side`,
     hide: (page: string) => `Close ${page}`,
+    closeShort: "Close",
     resize: "Resize the two stock views",
   },
   cartonStock: {

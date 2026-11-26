@@ -534,9 +534,17 @@ describe("GatepassPage", () => {
     });
     expect(onNavigate).toHaveBeenCalledWith("gatepass-list", "gp-1");
 
-    // Make Bill: straight from the new gatepass into Sale Voucher, for this gatepass.
+    // Make Bill: straight from the new gatepass into Sale Voucher, for this gatepass. The created notice offers it too
+    // (its next step on the island, 26 Nov 2026), so there are two, and both bill this gatepass.
+    const makeBills = screen.getAllByRole("button", { name: "Make Bill" });
+    expect(makeBills).toHaveLength(2);
     await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "Make Bill" }));
+      fireEvent.click(screen.getByTestId("gatepass-make-bill"));
+    });
+    expect(onMakeBill).toHaveBeenCalledWith("gp-1");
+    onMakeBill.mockClear();
+    await act(async () => {
+      fireEvent.click(makeBills.find((button) => button !== screen.getByTestId("gatepass-make-bill")) as HTMLElement);
     });
     expect(onMakeBill).toHaveBeenCalledWith("gp-1");
 

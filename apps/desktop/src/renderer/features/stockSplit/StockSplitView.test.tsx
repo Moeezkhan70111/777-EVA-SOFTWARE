@@ -18,8 +18,8 @@ describe("StockSplitView: the other stock page beside this one", () => {
     renderSplit();
     expect(screen.queryByText("carton matrices")).toBeNull();
     // The button sits in the page's own toolbar, not on a row of its own (docs/56, 26 Nov 2026).
-    expect(screen.getByTestId("page-toolbar")).toContainElement(screen.getByRole("button", { name: "Show Carton Stock beside" }));
-    fireEvent.click(screen.getByRole("button", { name: "Show Carton Stock beside" }));
+    expect(screen.getByTestId("page-toolbar")).toContainElement(screen.getByRole("button", { name: "Open Carton Stock side by side" }));
+    fireEvent.click(screen.getByRole("button", { name: "Open Carton Stock side by side" }));
     const pane = screen.getByRole("region", { name: "Carton Stock" });
     expect(pane.textContent).toContain("carton matrices");
     expect(screen.getByText("upper matrices")).toBeInTheDocument();
@@ -27,13 +27,17 @@ describe("StockSplitView: the other stock page beside this one", () => {
     // Which is which (owner, 26 Nov 2026): both halves named, each in its own page's colour.
     expect(screen.getByRole("heading", { name: "Upper Stock" }).closest("[data-page-tone]")).toHaveAttribute("data-page-tone", "upper");
     expect(screen.getByRole("heading", { name: "Carton Stock" }).closest("[data-page-tone]")).toHaveAttribute("data-page-tone", "carton");
+    // Open, the toolbar button reads Close and looks plain; the pane's own close says so in words (26 Nov 2026).
+    const [toolbarClose, paneClose] = screen.getAllByRole("button", { name: "Close Carton Stock" });
+    expect(toolbarClose).toHaveClass("is-open");
+    expect(paneClose).toHaveTextContent("Close");
     fireEvent.click(screen.getAllByRole("button", { name: "Close Carton Stock" })[1] as HTMLElement);
     expect(screen.queryByRole("region", { name: "Carton Stock" })).toBeNull();
   });
 
   it("remembers that it was open on this computer", () => {
     renderSplit();
-    fireEvent.click(screen.getByRole("button", { name: "Show Carton Stock beside" }));
+    fireEvent.click(screen.getByRole("button", { name: "Open Carton Stock side by side" }));
     cleanup();
     renderSplit();
     expect(screen.getByRole("region", { name: "Carton Stock" })).toBeInTheDocument();

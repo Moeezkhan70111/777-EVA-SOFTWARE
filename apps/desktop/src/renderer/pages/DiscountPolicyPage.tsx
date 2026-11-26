@@ -7,6 +7,8 @@ import { formatDate, toIsoDate } from "../utils/dates";
 import { escapeHtml } from "../utils/html";
 import { copy } from "../config/copy";
 import { downloadCsv } from "../utils/exportFile";
+import { PasteDiscountsDialog } from "../features/discounts/PasteDiscountsDialog";
+import type { MatchedDiscount } from "../features/discounts/discountsFromList";
 
 type DiscountTab      = "PRODUCT_GROUP" | "ARTICLE_SERIES" | "ARTICLE" | "PRICE_RANGE";
 type ReportTypeFilter = "ALL" | "PRODUCT_GROUP" | "ARTICLE_SERIES" | "ARTICLE" | "PRICE_RANGE";
@@ -203,6 +205,8 @@ export const DiscountPolicyPage: React.FC = () => {
 
   // TASK 4: report filter + export
   const [reportTypeFilter, setReportTypeFilter] = useState<ReportTypeFilter>("ALL");
+  // Paste discounts (owner, 26 Nov 2026): which tab's table a pasted list fills, while its dialog is open.
+  const [pasteFor, setPasteFor] = useState<Exclude<DiscountTab, "PRICE_RANGE"> | null>(null);
 
   useEffect(() => { void loadData(); }, []);
 
@@ -357,6 +361,28 @@ export const DiscountPolicyPage: React.FC = () => {
     return rows.filter((r) => r.type === reportTypeFilter);
   }, [partyReport, reportTypeFilter]);
 
+  // ── paste discounts ───────────────────────────────────────────────────────
+  /** What the open paste is for, in words: the chosen product group, article series or article. */
+  const pasteTarget = (): string => {
+    if (pasteFor === "PRODUCT_GROUP") return productGroups.find((g) => g.id === selectedGroupId)?.groupName ?? "";
+    if (pasteFor === "ARTICLE_SERIES") return articleSeries.find((series) => series.id === selectedSeriesId)?.name ?? "";
+    return selectedArticle;
+  };
+
+  /** The pasted matches into the tab's own table, to be checked and saved by its Save as if typed. */
+  const fillPasted = (matched: MatchedDiscount[]) => {
+    const byParty = new Map(matched.map((row) => [row.partyId, String(row.discountPerPair)]));
+    if (pasteFor === "PRODUCT_GROUP") setGroupRules((prev) => prev.map((rule) => (byParty.has(rule.partyId) ? { ...rule, discountPerPair: byParty.get(rule.partyId) ?? "" } : rule)));
+    if (pasteFor === "ARTICLE_SERIES") setSeriesRules((prev) => prev.map((rule) => (byParty.has(rule.partyId) ? { ...rule, discountPerPair: byParty.get(rule.partyId) ?? "" } : rule)));
+    if (pasteFor === "ARTICLE") setArticleRules((prev) => prev.map((rule) => (rule.sizeScope === "ALL_SIZES" && byParty.has(rule.partyId) ? { ...rule, discountPerPair: byParty.get(rule.partyId) ?? "" } : rule)));
+    setPasteFor(null);
+    push("info", copy.discountsFromList.open, copy.discountsFromList.filled(matched.length));
+  };
+
+  const pasteButton = (forTab: Exclude<DiscountTab, "PRICE_RANGE">) => (
+    <button type="button" className="btn btn-secondary" onClick={() => setPasteFor(forTab)}>{copy.discountsFromList.open}</button>
+  );
+
   // ── tab renderers ─────────────────────────────────────────────────────────
   const renderProductGroup = () => (
     <div className="form-card">
@@ -390,6 +416,7 @@ export const DiscountPolicyPage: React.FC = () => {
             </tbody>
           </table>
           <div className="form-actions">
+            {pasteButton("PRODUCT_GROUP")}
             <button type="button" className="btn btn-primary" onClick={() => void saveProductGroup()}>{copy.common.save}</button>
           </div>
         </div>
@@ -429,6 +456,7 @@ export const DiscountPolicyPage: React.FC = () => {
             </tbody>
           </table>
           <div className="form-actions">
+            {pasteButton("ARTICLE_SERIES")}
             <button type="button" className="btn btn-primary" onClick={() => void saveArticleSeries()}>{copy.common.save}</button>
           </div>
         </div>
@@ -524,6 +552,7 @@ export const DiscountPolicyPage: React.FC = () => {
               </div>
             )}
             <div className="form-actions">
+              {articleSizeScope === "ALL_SIZES" ? pasteButton("ARTICLE") : null}
               <button type="button" className="btn btn-primary" onClick={() => void saveArticle()}>{copy.common.save}</button>
             </div>
           </>
@@ -587,6 +616,9 @@ export const DiscountPolicyPage: React.FC = () => {
         <h1>Discount Policy</h1>
       </div>
 
+      {pasteFor ? (
+        <PasteDiscountsDialog target={pasteTarget()} parties={parties} onClose={() => setPasteFor(null)} onFill={fillPasted} />
+      ) : null}
       {/* Tab bar */}
       <div className="form-card" style={{ marginBottom: 16 }}>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>

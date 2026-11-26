@@ -47,11 +47,11 @@ describe("UpperStockPage", () => {
   it("shows the cards' outline first, then how many articles match, and '/' goes to the search", async () => {
     let answer: (value: unknown) => void = () => undefined;
     listUpperStockMatrix.mockReturnValueOnce(new Promise((resolve) => { answer = resolve; }));
-    render(<UpperStockPage toolbarEnd={<button type="button">Show Carton Stock beside</button>} />);
+    render(<UpperStockPage toolbarEnd={<button type="button">Open Carton Stock side by side</button>} />);
     expect(screen.getByRole("status")).toHaveAttribute("aria-busy", "true");
     answer({ accepted: true, ...buildUpperStockMatrix(STOCK, {}) });
     expect(await screen.findByText("3 articles")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Show Carton Stock beside" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Open Carton Stock side by side" })).toBeInTheDocument();
     await userEvent.keyboard("/");
     expect(screen.getByRole("searchbox", { name: /Search uppers/ })).toHaveFocus();
   });

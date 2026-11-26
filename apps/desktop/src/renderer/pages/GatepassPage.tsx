@@ -217,10 +217,12 @@ export const GatepassPage: React.FC<GatepassPageProps> = ({ token, onNavigate, o
       request.settle({ renew: result.outcome !== "REQUEST_CONFLICT" });
       if (result.accepted) {
         const code = result.code ?? "";
-        if (result.outcome === "ALREADY_SAVED") push("success", copy.requests.alreadySavedTitle, copy.requests.gatepassAlreadySaved(code));
-        else push("success", copy.gatepass.createdToast(code), copy.gatepass.createdToastBody(dozensText(result.totalQuantity ?? 0), party?.partyName ?? ""));
         // The stored document replaces the draft on screen; the print-out is built from it.
         const document = result.gatepassId ? await api.getGatepass(result.gatepassId, { token }) : null;
+        // Its notice offers the next step (owner, 26 Nov 2026): bill it, or, for someone who may not bill, print it.
+        const next = document ? createdAction(document) : undefined;
+        if (result.outcome === "ALREADY_SAVED") push("success", copy.requests.alreadySavedTitle, copy.requests.gatepassAlreadySaved(code), undefined, next);
+        else push("success", copy.gatepass.createdToast(code), copy.gatepass.createdToastBody(dozensText(result.totalQuantity ?? 0), party?.partyName ?? ""), undefined, next);
         resetDraft();
         if (document) nav.show(document);
         else push("warning", copy.gatepass.createdToast(code), copy.gatepass.createdNotReloaded);
@@ -244,6 +246,12 @@ export const GatepassPage: React.FC<GatepassPageProps> = ({ token, onNavigate, o
       setSubmitting(false);
     }
   };
+
+  /** A new gatepass's next step: Make Bill when this person may bill, else Print. */
+  const createdAction = (document: Gatepass) =>
+    onMakeBill
+      ? { label: copy.noticeActions.makeBill, onClick: () => onMakeBill(document.id) }
+      : { label: copy.noticeActions.printGatepass, onClick: () => { if (!openGatepassPrintWindow(document)) push("error", copy.toast.popupBlocked, copy.common.popupBlocked); } };
 
   const printViewing = () => {
     if (nav.viewing && !openGatepassPrintWindow(nav.viewing)) push("error", copy.toast.popupBlocked, copy.common.popupBlocked);

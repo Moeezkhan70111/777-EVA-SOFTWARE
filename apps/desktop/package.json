@@ -25,6 +25,7 @@
     "@fontsource/ibm-plex-mono": "5.3.0",
     "@fontsource/jomhuria": "5.3.0",
     "@fontsource/noto-nastaliq-urdu": "5.3.0",
+    "dynaura": "0.2.2",
     "electron-updater": "^6.8.9",
     "qrcode-generator": "^2.0.4",
     "react": "^19.1.0",

@@ -5,6 +5,8 @@ import { onLeaseRefusal } from "./leaseRefusals";
 
 /** How long a lease refusal stays up: long enough to read who writes the domain. */
 const LEASE_REFUSAL_TTL_MS = 8000;
+/** How long a notice stays unless it says otherwise: the island's own four seconds (NotificationCenter, 26 Nov 2026). */
+const NOTICE_TTL_MS = 4000;
 
 export type NoticeKind = "success" | "error" | "warning" | "info";
 
@@ -25,7 +27,8 @@ export interface NoticeItem {
 interface NoticeApi {
   notices: NoticeItem[];
   /** `ttlMs = 0` keeps the notice until it is dismissed — for anything that asks a question. */
-  push: (kind: NoticeKind, title: string, message?: string, ttlMs?: number) => void;
+  /** `action`: the one next step that fits what was just said ("Print bill", "Make Bill"), shown on the island (26 Nov 2026). */
+  push: (kind: NoticeKind, title: string, message?: string, ttlMs?: number, action?: NoticeAction) => void;
   /**
    * A notice carrying a button, kept until dismissed.
    *
@@ -45,11 +48,11 @@ export const NotificationsProvider = ({ children }: { children: React.ReactNode 
     setNotices((prev) => prev.filter((n) => n.id !== id));
   }, []);
 
-  const push = useCallback((kind: NoticeKind, title: string, message?: string, ttlMs = 3800) => {
+  const push = useCallback((kind: NoticeKind, title: string, message?: string, ttlMs = NOTICE_TTL_MS, action?: NoticeAction) => {
     const id = crypto.randomUUID();
     // A message passed straight from a refused IPC call reads as the main process wrote it.
     const body = message === undefined ? undefined : withoutIpcPrefix(message);
-    setNotices((prev) => [{ id, kind, title, message: body }, ...prev].slice(0, 6));
+    setNotices((prev) => [{ id, kind, title, message: body, action }, ...prev].slice(0, 6));
     // 0 means "leave it there": a notice that asks a question must not vanish while the operator
     // is reading it.
     if (ttlMs > 0) window.setTimeout(() => dismiss(id), ttlMs);

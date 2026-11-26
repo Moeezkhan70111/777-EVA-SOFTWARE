@@ -61,10 +61,15 @@ export const StockSplitView: React.FC<StockSplitViewProps> = (props) => {
   const bodyRef = useRef<HTMLDivElement>(null);
   const shown = open && companion !== null;
   const toggle = (next: boolean) => withViewTransition(() => { setOpen(next); saveOpen(openKey, next); });
+  // OPEN AND CLOSE SAID PLAINLY (owner, 26 Nov 2026): closed, the button is drawn in the other page's colour with the
+  // two-pane mark and says where it goes; open, it turns into a plain "✕ Close …", so the two states never look alike.
   const toggleButton = companion === null ? null : (
-    <button type="button" className="btn btn-secondary stock-split-toggle" aria-pressed={shown} onClick={() => toggle(!shown)}>
-      <SplitIcon /> {shown ? text.hide(companionLabel) : text.show(companionLabel)}
-    </button>
+    <span className="stock-split-toggle-wrap" data-page-tone={props.companionTone}>
+      <button type="button" className={shown ? "btn stock-split-toggle is-open" : "btn stock-split-toggle"} aria-pressed={shown} onClick={() => toggle(!shown)}>
+        {shown ? <span className="stock-split-x" aria-hidden="true">✕</span> : <SplitIcon />}
+        {shown ? text.hide(companionLabel) : text.show(companionLabel)}
+      </button>
+    </span>
   );
   const style = fraction === null ? undefined : ({ ["--stock-split-width"]: splitWidth(fraction, SPLIT.minPx, SPLIT.otherMinPx) } as React.CSSProperties);
 
@@ -81,7 +86,9 @@ export const StockSplitView: React.FC<StockSplitViewProps> = (props) => {
           <section className="stock-split-companion stock-pane" aria-label={companionLabel} data-page-tone={props.companionTone}>
             <header className="stock-split-companion-head stock-pane-head">
               <PaneTitle icon={props.companionIcon} label={companionLabel} />
-              <button type="button" className="stock-split-close" aria-label={text.hide(companionLabel)} onClick={() => toggle(false)}>✕</button>
+              <button type="button" className="stock-split-close" aria-label={text.hide(companionLabel)} onClick={() => toggle(false)}>
+                <span aria-hidden="true">✕</span> {text.closeShort}
+              </button>
             </header>
             <div className="stock-split-companion-body">{companion}</div>
           </section>
