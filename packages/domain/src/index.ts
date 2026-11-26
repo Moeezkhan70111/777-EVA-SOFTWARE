@@ -35,3 +35,4 @@ export * from "./partyOpeningBalance.js";
 export * from "./partyClaims.js";
 export * from "./legacyLedgerReport.js";
 export * from "./customerOrder.js";
+export * from "./gatepassQr.js";

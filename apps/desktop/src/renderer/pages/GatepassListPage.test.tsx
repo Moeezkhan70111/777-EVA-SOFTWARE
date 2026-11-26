@@ -229,6 +229,21 @@ describe("GatepassListPage", () => {
     expect(screen.queryByTestId("gatepass-cancel-open")).not.toBeInTheDocument();
   });
 
+  // The QR printed on a sale voucher (owner, 26 Nov 2026): a scanner types it into the search, and its gatepass opens.
+  it("opens the gatepass whose bill QR is scanned into the search, without searching for the code", async () => {
+    const { api } = createFakeBackend();
+    const id = "3f2b9c1e-8a4d-4c55-9e1f-2a7b6c0d9e11";
+    api.getGatepass.mockImplementation(async (asked: string) => (asked === id ? { ...DOC, id } : null));
+    renderPage();
+    await screen.findByTestId("gatepass-row-GP-000123");
+    const search = screen.getByLabelText(/search/i);
+    await act(async () => { fireEvent.change(search, { target: { value: `GPQR_${id}` } }); });
+    expect(await screen.findByTestId("gatepass-detail")).toBeInTheDocument();
+    expect(api.getGatepass).toHaveBeenCalledWith(id, { token: "token-1" });
+    // The code is never sent to the list as a search.
+    expect(api.listGatepasses.mock.calls.some(([query]) => String((query as { search?: string }).search ?? "").includes("GPQR"))).toBe(false);
+  });
+
   it("falls back to the list when the initial id is not a gatepass", async () => {
     createFakeBackend();
     renderPage({ initialGatepassId: "some-product-id" });

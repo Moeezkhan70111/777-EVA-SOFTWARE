@@ -7825,11 +7825,6 @@ tr.has-error .gp-qty-stepper input { color: var(--err); }
 }
 .feature-card--sky .feature-card-go svg { width: 22px; height: 22px; }
 
-/* Upper Stock and Dana Stock: balances line up on the right. */
-.kind-stock-page .data-table th, .kind-stock-page .data-table td { text-align: left; }
-.kind-stock-page .data-table .kind-stock-quantity { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.kind-stock-page .search-wrap input { width: min(26rem, 100%); }
-
 /* With no sidebar (a store operator) the page area is a full-screen one that does not scroll: these
    two pages scroll themselves, and clear the floating profile pill. */
 .page-content--fullscreen > .nav-page,
@@ -10261,7 +10256,7 @@ tr.has-error .gp-qty-stepper input { color: var(--err); }
 .app-main[data-page-tone] { --app-ground-top: color-mix(in srgb, var(--sp-sky-top) 55%, var(--sp-ground)); }
 .app-main[data-page-tone] .data-table thead tr { background: var(--us-head); }
 
-.app-main[data-page-tone="upper"] {
+.app-main[data-page-tone="upper"], .stock-pane[data-page-tone="upper"] {
   --sp-title-top:      #6A2BC8;
   --sp-title-bottom:   #3E1680;
   --sp-title-rule:     #C4A6FA;
@@ -11145,25 +11140,25 @@ tr.has-error .gp-qty-stepper input { color: var(--err); }
 .ord-pending .ord-toolbar { flex: 1 1 480px; align-items: center; align-content: center; gap: 12px; }
 
 /* Search: 48px, the page's field; "/" shown as a key until text is typed, then a clear button in its place. */
-:is(.ord-pending, .cl-page) .ord-search { flex: 1 1 18rem; max-width: 30rem; }
-:is(.ord-pending, .cl-page) .ord-search .input {
+:is(.ord-pending, .cl-page, .stock-toolbar) .ord-search { flex: 1 1 18rem; max-width: 30rem; }
+:is(.ord-pending, .cl-page, .stock-toolbar) .ord-search .input {
   min-height: 48px; padding-right: 48px; border-color: var(--sp-line); border-radius: var(--sp-radius-control);
   background: var(--white); color: var(--sp-navy); box-shadow: var(--sp-card-shadow);
 }
-:is(.ord-pending, .cl-page) .ord-search .input:focus { outline: none; border-color: var(--sp-mode-on-start); box-shadow: 0 0 0 3px color-mix(in oklch, var(--sp-mode-on-start) 22%, transparent); }
-:is(.ord-pending, .cl-page) .ord-search .input::-webkit-search-cancel-button { display: none; }
-:is(.ord-pending, .cl-page) .ord-search-key, :is(.ord-pending, .cl-page) .ord-search-clear { position: absolute; top: 50%; right: 8px; transform: translateY(-50%); }
-:is(.ord-pending, .cl-page) .ord-search-key {
+:is(.ord-pending, .cl-page, .stock-toolbar) .ord-search .input:focus { outline: none; border-color: var(--sp-mode-on-start); box-shadow: 0 0 0 3px color-mix(in oklch, var(--sp-mode-on-start) 22%, transparent); }
+:is(.ord-pending, .cl-page, .stock-toolbar) .ord-search .input::-webkit-search-cancel-button { display: none; }
+:is(.ord-pending, .cl-page, .stock-toolbar) .ord-search-key, :is(.ord-pending, .cl-page, .stock-toolbar) .ord-search-clear { position: absolute; top: 50%; right: 8px; transform: translateY(-50%); }
+:is(.ord-pending, .cl-page, .stock-toolbar) .ord-search-key {
   min-width: 24px; padding: 1px 6px; border: 1px solid var(--sp-line); border-radius: 6px; background: var(--sp-ground);
   color: var(--sp-muted); font: 600 0.75rem/1.4 var(--font-mono); text-align: center;
 }
-:is(.ord-pending, .cl-page) .ord-search-clear {
+:is(.ord-pending, .cl-page, .stock-toolbar) .ord-search-clear {
   display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; padding: 0; border: 0; border-radius: 999px;
   background: transparent; color: var(--sp-muted); cursor: pointer;
 }
-:is(.ord-pending, .cl-page) .ord-search-clear:hover { background: var(--sp-ground); color: var(--sp-navy); }
-:is(.ord-pending, .cl-page) .ord-search-clear:focus-visible { outline: 2px solid var(--sp-mode-on-start); }
-:is(.ord-pending, .cl-page) .ord-search-clear svg { width: 16px; height: 16px; }
+:is(.ord-pending, .cl-page, .stock-toolbar) .ord-search-clear:hover { background: var(--sp-ground); color: var(--sp-navy); }
+:is(.ord-pending, .cl-page, .stock-toolbar) .ord-search-clear:focus-visible { outline: 2px solid var(--sp-mode-on-start); }
+:is(.ord-pending, .cl-page, .stock-toolbar) .ord-search-clear svg { width: 16px; height: 16px; }
 
 /* Filters: one segmented control, 44px, the chosen one underlined in the amber with its words in the navy. */
 :is(.ord-pending, .cl-page) .sa-toggle { overflow: hidden; border: 1px solid var(--sp-line); border-radius: var(--sp-radius-control); background: var(--white); box-shadow: var(--sp-card-shadow); }
@@ -11260,7 +11255,7 @@ tr.has-error .gp-qty-stepper input { color: var(--err); }
    Motion is short, starts from where the thing is, can be interrupted (transitions, not keyframes, on what the
    pointer touches) and stops for prefers-reduced-motion. Controls are 44px or more. */
 .cl-page {
-  display: grid; gap: 16px; padding-inline: max(4px, env(safe-area-inset-left)) max(4px, env(safe-area-inset-right));
+  display: grid; gap: 24px; padding-inline: max(4px, env(safe-area-inset-left)) max(4px, env(safe-area-inset-right));
   padding-bottom: max(16px, env(safe-area-inset-bottom));
   font-kerning: normal; font-feature-settings: "kern" 1; line-height: 1.45;
 }
@@ -11323,7 +11318,9 @@ tr.has-error .gp-qty-stepper input { color: var(--err); }
 
 /* The workspace: tabs and the period in one head (common region), the tab's body under it. */
 .cl-workspace.card { padding: 0; overflow: clip; border: 1px solid var(--sp-line); border-radius: var(--dash-card-radius); background: var(--white); box-shadow: var(--sp-card-shadow); }
-.cl-workspace-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 16px; border-bottom: 1px solid var(--sp-line); background: var(--sp-ground); }
+.cl-workspace-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 20px; padding: 14px 20px; border-bottom: 1px solid var(--sp-line); background: var(--sp-ground); }
+/* A section's name, so each region of the page is named and found at a glance (hierarchy: page h1 > section h2). */
+.cl-section-title { margin: 0; color: var(--sp-navy); font-size: 1.1rem; font-weight: 800; letter-spacing: -0.01em; line-height: 1.2; }
 .cl-tabs { display: inline-flex; gap: 4px; padding: 4px; border-radius: var(--sp-radius-control); background: var(--white); box-shadow: var(--sp-card-shadow); }
 .cl-tab { min-height: 40px; padding: 0 16px; border: 0; border-radius: var(--sp-radius-tab); background: transparent; color: var(--sp-muted); font-weight: 700; cursor: pointer; transition: background-color 140ms ease, color 140ms ease; }
 .cl-tab:hover:not(.is-on) { color: var(--sp-navy); background: color-mix(in oklch, var(--sp-ground) 70%, var(--white)); }
@@ -11336,33 +11333,35 @@ tr.has-error .gp-qty-stepper input { color: var(--err); }
 .cl-period-dates .input { min-height: 44px; border-color: var(--sp-line); border-radius: var(--sp-radius-control); font-variant-numeric: tabular-nums; }
 
 /* The Ledger tab. */
-.cl-ledger-tab { display: grid; gap: 14px; padding: 16px; }
+.cl-ledger-tab { display: grid; gap: 18px; padding: 20px; }
 .cl-page .ledger-archive-strip { margin: 0; }
 .cl-page .cl-ledger-tab .customer-ledger-table-wrap { margin: 0; max-height: min(70vh, 760px); overflow: auto; border-color: var(--sp-line); box-shadow: none; transition: opacity 160ms ease; }
 .cl-page .customer-ledger-table-wrap.is-refreshing { opacity: 0.55; }
 
 /* Brought forward + debit − credit = balance. */
-.cl-equation { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); border: 1px solid var(--sp-line); border-radius: var(--sp-radius-card); background: var(--white); }
+.cl-equation { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); border: 1px solid var(--sp-line); border-radius: var(--sp-radius-card); background: var(--sp-ground); }
 @media (max-width: 760px) { .cl-equation { grid-auto-flow: row; grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-.cl-eq-term { position: relative; display: grid; gap: 2px; padding: 12px 16px 12px 34px; animation: ord-chip-in 220ms var(--ease-out-expo) both; }
+.cl-eq-term { position: relative; display: grid; gap: 4px; padding: 16px 18px 16px 38px; animation: ord-chip-in 220ms var(--ease-out-expo) both; }
 .cl-eq-term + .cl-eq-term { border-inline-start: 1px solid var(--sp-line); }
 .cl-eq-term:nth-child(2) { animation-delay: 30ms; }
 .cl-eq-term:nth-child(3) { animation-delay: 60ms; }
 .cl-eq-term:nth-child(4) { animation-delay: 90ms; }
 .cl-eq-sign { position: absolute; inset-inline-start: 12px; top: 50%; transform: translateY(-50%); color: var(--sp-faint); font-size: 1.2rem; font-weight: 700; }
 .cl-eq-label { color: var(--sp-muted); font-size: 0.72rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; }
-.cl-eq-value { color: var(--sp-navy); font-size: 1.15rem; font-weight: 800; font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
+.cl-eq-value { color: var(--sp-navy); font-size: 1.35rem; font-weight: 800; font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
 .cl-eq-term small { color: var(--sp-muted); font-variant-numeric: tabular-nums; }
-.cl-eq-term.is-total { border-radius: 0 var(--sp-radius-card) var(--sp-radius-card) 0; background: var(--sp-blue-wash); }
-.cl-eq-term.is-total .cl-eq-value { color: var(--sp-blue); }
+.cl-eq-term.is-total { border-radius: 0 var(--sp-radius-card) var(--sp-radius-card) 0; background: var(--white); box-shadow: inset 4px 0 0 var(--sp-blue); }
+.cl-eq-term.is-total .cl-eq-value { color: var(--sp-blue); font-size: 1.6rem; }
+.cl-eq-term.is-total .cl-eq-label { color: var(--sp-navy-2); }
 
 /* Search and what to show. */
-.cl-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 12px; }
+.cl-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 12px; padding-top: 18px; border-top: 1px solid var(--sp-line); }
 .cl-filters { flex-wrap: wrap; }
 
 /* The table: the head stays while the rows scroll; rows answer the pointer; the voucher number is the button. */
-.cl-page .customer-ledger-table { font-size: 0.8rem; font-variant-numeric: tabular-nums; }
-.cl-page .customer-ledger-table thead th { position: sticky; top: 0; z-index: 1; background: var(--sp-ground); color: var(--sp-muted); }
+.cl-page .customer-ledger-table { font-size: 0.9rem; font-variant-numeric: tabular-nums; }
+.cl-page .customer-ledger-table thead th { position: sticky; top: 0; z-index: 1; background: var(--sp-ground); color: var(--sp-navy-2); font-size: 0.75rem; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; border-bottom: 2px solid var(--sp-line); }
+.cl-page :where(.customer-ledger-table tbody tr:nth-child(even)) td { background: color-mix(in oklch, var(--sp-ground) 55%, var(--white)); }
 .cl-page .customer-ledger-row { cursor: pointer; transition: background-color 120ms ease; }
 .cl-page .customer-ledger-row:hover td { background: color-mix(in oklch, var(--sp-blue-soft) 60%, var(--white)); }
 .cl-page tbody tr { animation: ord-chip-in 200ms var(--ease-out-expo) both; }
@@ -11678,7 +11677,6 @@ tr.has-error .gp-qty-stepper input { color: var(--err); }
    whole and each side scrolls on its own, split by the Store page's divider. Opacity only (a transform would trap
    the pickers' fixed dropdowns); on a narrow screen the two stack. */
 .page-content:has(> .stock-split.is-open) { display: flex; flex-direction: column; overflow: hidden; }
-.stock-split-bar { display: flex; justify-content: flex-end; margin-bottom: 12px; }
 .stock-split-toggle { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; }
 .stock-split-toggle svg { inline-size: 18px; block-size: 18px; }
 .stock-split.is-open {
@@ -11721,3 +11719,105 @@ tr.has-error .gp-qty-stepper input { color: var(--err); }
 .parties-list-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 0 var(--space-3); }
 .parties-list-preview-title { margin: var(--space-3) 0 var(--space-2); font-size: .9rem; font-weight: 600; color: var(--text-2); }
 .parties-list-preview { max-height: 260px; overflow-y: auto; }
+
+/* THE THEMED TABLE (doc-table): one card, sticky muted header, figures right and tabular. Customer Balance and Dana
+   Stock (26 Nov 2026, R1). */
+/* CUSTOMER BALANCE (26 Nov 2026, docs/56): the Customer Ledger's look. The total is the hero (cl-hero); the filters
+   share the customer card's region; the table is one card, the balance last and strongest. */
+.cb-filter-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: var(--space-3) var(--space-4); }
+.cb-page .cb-date { min-height: 44px; font-variant-numeric: tabular-nums; }
+.cb-figures { display: flex; flex-wrap: wrap; gap: var(--space-2) var(--space-5); margin: 0; padding-top: var(--space-3); border-top: 1px solid var(--sp-line); }
+.cb-figures div { display: grid; gap: 2px; }
+.cb-figures dt { color: var(--sp-muted); font-size: 0.75rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; }
+.cb-figures dd { margin: 0; color: var(--sp-navy); font-size: 1rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+.cb-page .search-wrap { max-width: 520px; }
+.doc-table-wrap.card { overflow: auto; max-height: min(70vh, 820px); padding: 0; border: 1px solid var(--sp-line); border-radius: var(--dash-card-radius); background: var(--white); box-shadow: var(--sp-card-shadow); transition: opacity 160ms ease; }
+.doc-table-wrap.is-refreshing { opacity: 0.55; }
+.doc-table { width: 100%; font-size: 1rem; line-height: 1.3; font-variant-numeric: tabular-nums; }
+.doc-table thead th { position: sticky; top: 0; z-index: 1; background: var(--sp-ground); color: var(--sp-muted); font-size: 0.8rem; letter-spacing: 0.06em; text-transform: uppercase; }
+.doc-table .doc-num { text-align: right; }
+.doc-row { cursor: pointer; transition: background-color 120ms ease; }
+.doc-row:hover td { background: color-mix(in oklch, var(--sp-blue-soft) 60%, var(--white)); }
+.cb-name { display: block; min-height: 32px; padding: 0; border: 0; background: none; color: var(--sp-navy); font: inherit; font-weight: 700; text-align: left; cursor: pointer; }
+.cb-name:focus-visible { outline: 3px solid var(--sp-blue); outline-offset: 2px; border-radius: 4px; }
+.cb-city { display: block; color: var(--sp-muted); font-size: 0.88rem; }
+.cb-group { display: inline-block; padding: 2px 8px; border: 1px solid var(--sp-blue-line); border-radius: 999px; background: var(--sp-blue-soft); color: var(--sp-navy-2); font-size: 0.85rem; font-weight: 700; }
+.doc-muted { color: var(--sp-muted); }
+/* The balance: the row's largest figure, its standing in the theme's status pill under it (words and a mark, R18). */
+.cb-balance strong { display: block; color: var(--sp-navy); font-size: 1.3rem; font-weight: 800; line-height: 1.2; letter-spacing: -0.01em; }
+.cb-position { margin-top: 4px; white-space: nowrap; font-size: 0.8rem; }
+.cb-position svg { width: 12px; height: 12px; flex: none; vertical-align: -1px; margin-right: 3px; }
+.cb-balance[data-position="ADVANCE"] strong { color: var(--success-strong); }
+.doc-table td { padding-block: 10px; }
+.doc-bone { display: inline-block; width: 64px; height: 12px; }
+.doc-bone--wide { width: 160px; height: 14px; }
+/* Rows arrive staggered, capped at 100 ms (docs/56 Stagger). */
+.doc-table tbody tr:not(.doc-skeleton-row) { animation: ord-chip-in 200ms var(--ease-out-expo) both; }
+.doc-table tbody tr:nth-child(2) { animation-delay: 20ms; }
+.doc-table tbody tr:nth-child(3) { animation-delay: 40ms; }
+.doc-table tbody tr:nth-child(4) { animation-delay: 60ms; }
+.doc-table tbody tr:nth-child(5) { animation-delay: 80ms; }
+.doc-table tbody tr:nth-child(n + 6) { animation-delay: 100ms; }
+/* A phone: name and balance only; the rest is one tap away in the ledger (progressive disclosure, R19). */
+@media (max-width: 720px) { .doc-col-wide { display: none; } }
+@media (prefers-reduced-motion: reduce) { .doc-table tbody tr { animation: none; } .doc-row, .doc-table-wrap.card { transition: none; } }
+
+/* DANA STOCK (26 Nov 2026, docs/56): the total in the blue beside the search, then the themed table (doc-table). */
+.ks-top { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--space-4); }
+.ks-top .cl-hero { flex: 0 1 auto; min-width: 260px; }
+.ks-top .ord-search { flex: 1 1 320px; max-width: 520px; }
+.ks-name { display: block; color: var(--sp-navy); font-weight: 700; }
+.ks-code { display: block; color: var(--sp-muted); font-size: 0.85rem; font-family: var(--font-mono); }
+.ks-type { display: inline-block; padding: 2px 8px; border: 1px solid var(--sp-blue-line); border-radius: 999px; background: var(--sp-blue-soft); color: var(--sp-navy-2); font-size: 0.85rem; font-weight: 700; }
+.ks-quantity strong { color: var(--sp-navy); font-size: 1.2rem; font-weight: 800; white-space: nowrap; letter-spacing: -0.01em; }
+
+/* UPPER AND CARTON STOCK (26 Nov 2026, docs/56): one row of controls each, the shared search drawn as these pages'
+   own field, how many articles match, the side-by-side button at the row's end, and a re-read that dims the cards
+   rather than blanking them. */
+.stock-toolbar { align-items: center; }
+.stock-toolbar .ord-search { flex: 1 1 240px; min-width: 0; max-width: none; }
+.stock-toolbar .ord-search .input {
+  min-height: 48px; border: 1px solid var(--us-field-line); border-radius: var(--sp-radius-control);
+  background: var(--white); box-shadow: var(--us-field-shadow); color: var(--sp-navy); font-size: 15px;
+}
+.stock-toolbar .ord-search .input:focus { border-color: var(--sp-mode-on-start); box-shadow: 0 0 0 3px color-mix(in oklch, var(--sp-mode-on-start) 18%, transparent); outline: none; }
+.stock-count { color: var(--sp-muted); font-size: 0.85rem; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.stock-toolbar .stock-split-toggle { margin-left: auto; min-height: 48px; }
+.stock-results { transition: opacity 160ms ease; }
+.stock-results.is-refreshing { opacity: 0.55; }
+@media (prefers-reduced-motion: reduce) { .stock-results { transition: none; } }
+
+/* STOCK ADJUSTMENT (26 Nov 2026, docs/56): the document pages' look; three numbered steps, each its own card (common
+   region), more space between the cards than inside them (proximity). */
+.sa-page.doc-themed { gap: var(--space-5); }
+.sa-page .sa-card { gap: var(--space-4); padding: 20px 22px; border: 1px solid var(--sp-line); border-radius: var(--dash-card-radius); background: var(--white); box-shadow: var(--sp-card-shadow); }
+.sa-page .sa-card-head { align-items: center; }
+.sa-page .sa-hint, .sa-page .sa-note, .sa-page .sa-number { color: var(--sp-muted); }
+.sa-page .sa-add-remarks { justify-self: start; min-height: 44px; }
+/* Open work said in words, not only a count: what still waits to be posted (Zeigarnik). */
+.sa-pending { padding: 4px 12px; border: 1px solid var(--warning-line); border-radius: 999px; background: var(--warning-soft); color: var(--warning-strong); font-size: 0.8rem; font-weight: 700; }
+.sa-count { color: var(--sp-muted); font-size: 0.85rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+.sa-page .sa-table-wrap { border: 1px solid var(--sp-line); border-radius: var(--sp-radius-card); }
+.sa-page .doc-table thead th { position: static; }
+
+/* UPPER AND CARTON SIDE BY SIDE: WHICH IS WHICH (owner, 26 Nov 2026). Each half carries its own page's colour (the
+   upper set above, applied to the pane as well as the page) and is named over it, icon and name in that colour, with a
+   bar of it across the top. Carton Stock is the app's own blue: restated here so it stays blue beside a purple page. */
+.stock-pane[data-page-tone="carton"] {
+  --sp-title-top: #01529A; --sp-title-bottom: #023382; --sp-title-rule: #54CEE6; --sp-sky-top: #E2EFFD;
+  --sp-mode-on-start: #0877E8; --sp-mode-on-end: #219AF6; --sp-blue-soft: #EAF3FF; --sp-blue-line: #C9DDFB; --sp-navy-2: #1D3769;
+  --us-head: #E8EEF7; --us-chip: #DCE9FB; --us-total: #E6F0FC; --us-bar: #DDE7F5;
+  --us-band-navy: linear-gradient(100deg, #0E2A5E 0%, #124085 60%, #1A5AAE 100%);
+  --us-band-blue: linear-gradient(100deg, #1A5CBB 0%, #2070D0 60%, #2A80DC 100%);
+}
+.stock-pane-head { border-top: 4px solid var(--sp-mode-on-start); }
+.stock-split-main > .stock-pane-head { display: flex; align-items: center; margin-bottom: 14px; padding: 10px 4px 0; border-top-left-radius: 4px; border-top-right-radius: 4px; }
+.stock-pane-title { display: inline-flex; align-items: center; gap: 10px; margin: 0; color: var(--sp-title-top); font-size: 1.05rem; font-weight: 800; letter-spacing: 0.01em; text-transform: none; }
+.stock-split-companion-head .stock-pane-title { font-size: 1.05rem; letter-spacing: 0.01em; text-transform: none; color: var(--sp-title-top); }
+.stock-pane-icon { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; border-radius: 9px; background: var(--sp-blue-soft); color: var(--sp-mode-on-start); }
+.stock-pane-icon svg { width: 18px; height: 18px; }
+/* The document's lines grouped (owner, 26 Nov 2026): the article once over its rows, each size once over its colours,
+   a stronger rule between articles so one article reads as one block (common region, proximity). */
+.sa-page .sa-group-article { vertical-align: top; color: var(--sp-navy); font-weight: 800; background: var(--sp-ground); border-right: 1px solid var(--sp-line); }
+.sa-page .sa-group-size { vertical-align: top; color: var(--sp-navy-2); font-weight: 700; border-right: 1px solid var(--sp-line); }
+.sa-page .sa-article-group + .sa-article-group > tr:first-child > * { border-top: 2px solid var(--sp-line); }

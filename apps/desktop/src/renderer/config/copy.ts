@@ -10,6 +10,10 @@ export const copy = {
     name: "777 ERP",
     brandLine: "777 SEVEN",
     brandSub: "T&T TRADERS",
+    // The company's address and numbers, as printed on its bills (owner, 26 Nov 2026).
+    // One printed line each, so the address reads in short lines (owner, 26 Nov 2026).
+    addressLines: ["Javed Nager, Misra'n wala Sua,", "Near AL-Mashoor Chamma Hotel,", "Sheikhupura."],
+    phones: ["+92 320 3033331", "+92 303 0776776", "+92 321 4205286"],
   },
 
   common: {
@@ -161,6 +165,62 @@ export const copy = {
       TRANSPORTER: "Transporter",
     } as Readonly<Record<string, string>>,
     typeBadgeName: (label: string) => `Party type: ${label}`,
+  },
+
+  // Gatepass List: its search also takes the QR printed on a sale voucher (26 Nov 2026).
+  gatepassList: {
+    searchPlaceholder: "Gatepass number, party, or scan a bill's QR",
+  },
+
+  // The printed Sale Voucher, the bill the party is handed (utils/saleVoucherPrint.ts; 26 Nov 2026 redesign, docs/56).
+  saleVoucherPrint: {
+    docTitle: (number: string) => `Sale Voucher #${number}`,
+    billNo: "Bill No.",
+    addressLabel: "Address",
+    contactLabel: "Contact #",
+    billTo: "Bill to",
+    date: "Date",
+    gatepass: "Gatepass",
+    gatepassQrHint: "Scan to Open Gatepass",
+    subParty: "Sub party",
+    remarks: "Remarks",
+    // In Urdu, right to left, as on the old bill (owner, 26 Nov 2026).
+    columns: { dozens: "تعداد", description: "تفصیل", article: "آرٹیکل", size: "سائز", pairRate: "ریٹ جوڑا", dozenRate: "ریٹ درجن", total: "ٹوٹل" },
+    sign: { prepared: "Prepared by", checked: "Checked by", received: "Received by" },
+    printed: (when: string) => `Printed ${when}`,
+    pageOf: (page: number, pages: number) => `Page ${page} of ${pages}`,
+    /** Under the lines of every page but the last. */
+    pto: "P.T.O →",
+  },
+
+  // Customer Balance (26 Nov 2026 redesign, docs/56): every customer's balance on one day.
+  customerBalance: {
+    title: "Customer Balance",
+    openLedger: "Open Ledger",
+    totalLabel: "Total receivable",
+    totalHint: { RECEIVABLE: "Customers owe us", ADVANCE: "We owe customers", SETTLED: "Nothing owed either way" },
+    asOfLabel: "Balance till",
+    groupLabel: "Group",
+    allGroups: "All groups",
+    groupSearch: "Search groups",
+    noGroups: "No groups yet",
+    searchLabel: "Search customers",
+    searchPlaceholder: "Name, city or amount",
+    searchClear: "Clear search",
+    searchShortcut: "Press / to search",
+    customerCount: (count: number) => `${count.toLocaleString()} ${count === 1 ? "customer" : "customers"}`,
+    salesLabel: "Sales",
+    receiptsLabel: "Cash received",
+    tableLabel: "Customer balances",
+    columns: { customer: "Customer", group: "Group", lastActivity: "Last activity", sales: "Sales", receipts: "Cash received", balance: "Balance" },
+    noActivity: "No activity",
+    openRow: (name: string) => `Open ${name}'s ledger`,
+    loading: "Reading balances…",
+    failed: "The balances could not be read.",
+    emptyTitle: "No customers yet",
+    emptyHint: "Add a customer on Party Management; their balance shows here.",
+    noMatchTitle: "No customer matches",
+    noMatchHint: "Try another name or city, or choose All groups.",
   },
 
   // Several parties of one city and group at once, pasted (owner, 25 Nov 2026).
@@ -352,6 +412,7 @@ export const copy = {
     /** Beside the number a new Gatepass will get, so it is not read as one that exists. */
     unsavedNumber: "new",
     numberNotFound: (gatepassNumber: number) => `Gatepass #${gatepassNumber} does not exist`,
+    scannedNotFound: "The scanned gatepass is not on this computer. It may not have synced here yet.",
     documentLoadFailed: "The Gatepass could not be loaded. Try again.",
     createFailed: "The Gatepass could not be created.",
     saveFailed: "The Gatepass could not be saved. Nothing was changed — review the stock and try again.",
@@ -2123,13 +2184,12 @@ export const copy = {
     limitLeft: (amount: string) => `Rs. ${amount} left`,
     limitOver: (amount: string) => `Rs. ${amount} over the limit`,
     // The period
-    tabsLabel: "Ledger views",
-    tabs: { LEDGER: "Ledger", SUMMARY: "Summary", STATEMENT: "Statement" },
     periodLabel: "Period",
     periods: { MONTH: "This month", QUARTER: "3 months", YEAR: "This year", ALL: "All time" },
     to: "to",
     // How the balance is made: brought forward + debit − credit = balance
     equationLabel: "How the period's balance is made",
+    transactionsTitle: "Transactions",
     broughtForward: "Brought forward",
     debit: "Debit",
     credit: "Credit",
@@ -3598,6 +3658,15 @@ export const copy = {
   // The Upper Stock and Dana Stock pages (features/kindStock).
   kindStock: {
     search: "Search by name, colour, size or code",
+    // The 26 Nov 2026 redesign (docs/56): the total in the blue, "/" to search, one table card.
+    searchLabel: "Search materials",
+    searchClear: "Clear search",
+    searchShortcut: "Press / to search",
+    totalLabel: "In store",
+    materialCount: (count: number) => `${count.toLocaleString()} ${count === 1 ? "material" : "materials"}`,
+    tableLabel: (kind: string) => `${kind}, what is in store`,
+    emptyBadge: "Empty",
+    loading: "Reading the store…",
     materials: "Materials",
     material: "Material",
     type: "Type",
@@ -3673,6 +3742,9 @@ export const copy = {
     reasonPlaceholder: { OPENING: "e.g. Opening count, 11 Nov", ADJUSTMENT: "e.g. Physical count, damaged cartons" } as const,
     remarksLabel: "Remarks (optional)",
     remarksPlaceholder: "Anything else worth keeping with the document",
+    addRemarks: "Add remarks",
+    unposted: (count: number) => `${count} ${count === 1 ? "line" : "lines"} not posted yet`,
+    documentCount: (count: number) => `${count.toLocaleString()} ${count === 1 ? "document" : "documents"}`,
     entryTitle: "Article and quantities",
     articleLabel: "Article",
     articlePlaceholder: "Search article…",
@@ -3804,6 +3876,7 @@ export const copy = {
     },
     searchLabel: "Search uppers",
     searchPlaceholder: "Search upper (e.g. SK6, Slide, Velcro...)",
+    articleCount: (count: number) => `${count.toLocaleString()} ${count === 1 ? "article" : "articles"}`,
     sortBy: "Sort by:",
     sorts: {
       nameAsc: "Item name (A–Z)",

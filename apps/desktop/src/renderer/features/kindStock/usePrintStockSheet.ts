@@ -2,7 +2,7 @@ import { useCallback, useState } from "react";
 import type { StockKind } from "@erp/domain";
 import { copy } from "../../config/copy";
 import { useDesktopApi } from "../../hooks/useDesktopApi";
-import { loadLogoDataUrl, openPrintDocumentAsync } from "../../platform/print";
+import { loadLogoDataUrl, openPrintDocumentAsync, urduFontFaceCss } from "../../platform/print";
 import { currentColorDictionary } from "../colorTranslation/colorDictionaryStore";
 import { buildStockSheet, parseStockSheetReply } from "./stockSheet";
 import { buildStockSheetFailureHtml, buildStockSheetHtml } from "./stockSheetPrint";
@@ -20,7 +20,7 @@ export const usePrintStockSheet = (kind: StockKind) => {
       const [reply, logo] = await Promise.all([api.listKindStockSheet(kind), loadLogoDataUrl()]);
       const parsed = parseStockSheetReply(reply);
       if (!parsed.ok) return buildStockSheetFailureHtml(parsed.reason);
-      return buildStockSheetHtml(buildStockSheet(parsed.rows, kind), currentColorDictionary(), logo, new Date());
+      return buildStockSheetHtml(buildStockSheet(parsed.rows, kind), currentColorDictionary(), logo, new Date(), urduFontFaceCss());
     } catch (failure) {
       return buildStockSheetFailureHtml(failure instanceof Error ? failure.message : copy.kindStock.unreadable);
     }

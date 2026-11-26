@@ -60,3 +60,17 @@ test("saving the same list again makes nothing and reuses the group", () => {
     cleanup();
   }
 });
+
+// Customer Balance filters by group (26 Nov 2026): each balance row says which group its customer is in.
+test("each customer's balance row carries its group", () => {
+  const { db, cleanup } = open();
+  try {
+    db.addPartiesFromList(LIST);
+    db.createParty({ partyName: "No Group Karachi", partyType: "CUSTOMER", city: "Karachi" });
+    const rows = db.listCustomerBalances().rows;
+    assert.equal(rows.find((row) => row.partyName === "ABDUL GHANI HYDERABAD")?.groupName, "Hyderabad");
+    assert.equal(rows.find((row) => row.partyName === "No Group Karachi")?.groupName, null);
+  } finally {
+    cleanup();
+  }
+});

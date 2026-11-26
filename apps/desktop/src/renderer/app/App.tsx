@@ -12,6 +12,7 @@ import { CartonStockPage } from "../features/cartonStock/CartonStockPage";
 import { StockAdjustmentPage } from "../features/stockAdjustment/StockAdjustmentPage";
 import { UpperStockPage } from "../features/upperStock/UpperStockPage";
 import { StockSplitView } from "../features/stockSplit/StockSplitView";
+import { NAV_ICONS } from "../features/navigation/NavIcons";
 import { RawMaterialInputPage } from "../pages/RawMaterialInputPage";
 import { RawMaterialOutputPage } from "../pages/RawMaterialOutputPage";
 import { RawMaterialWorkspace } from "../features/rawMaterial/RawMaterialWorkspace";
@@ -129,6 +130,8 @@ export const App = () => {
   const [workspaceTab] = useState<WorkspaceTab>("tasks");
   const [selectedProductId, setSelectedProductId] = useState<string | undefined>(undefined);
   const [selectedPartyId, setSelectedPartyId] = useState<string | undefined>(undefined);
+  // The customer Customer Balance opened the ledger on (26 Nov 2026); the ledger starts on them.
+  const [ledgerPartyId, setLedgerPartyId] = useState<string | undefined>(undefined);
   /** The gatepass the Sale Voucher screen was opened for (from a notification). */
   const [saleVoucherGatepassId, setSaleVoucherGatepassId] = useState<string | undefined>(undefined);
   /** The raw material the workspace was opened for (from a stock-correction notification). */
@@ -143,8 +146,10 @@ export const App = () => {
   }, [route]);
   /** The gatepass the Gatepass screen opens straight into an edit (Edit on Gatepass List). For that one visit. */
   const [gatepassToEdit, setGatepassToEdit] = useState<string | undefined>(undefined);
+  /** The gatepass the Gatepass screen opens to read: its QR scanned on Sale Voucher (26 Nov 2026). For that one visit. */
+  const [gatepassToView, setGatepassToView] = useState<string | undefined>(undefined);
   React.useEffect(() => {
-    if (route !== "gatepass") setGatepassToEdit(undefined);
+    if (route !== "gatepass") { setGatepassToEdit(undefined); setGatepassToView(undefined); }
   }, [route]);
   const [appVersion, setAppVersion] = useState("");
 
@@ -203,6 +208,10 @@ export const App = () => {
     setSelectedProductId(id);
     setRoute(next);
   }, []);
+  const openCustomerLedger = useCallback((partyId: string) => {
+    setLedgerPartyId(partyId);
+    setRoute("customer-ledger");
+  }, []);
   const navigateToParty = useCallback((next: AppRoute, id?: string) => {
     setSelectedPartyId(id);
     setRoute(next);
@@ -221,6 +230,11 @@ export const App = () => {
   /** Edit on Gatepass List: the Gatepass screen, opened on that gatepass's edit. */
   const editGatepass = useCallback((gatepassId: string) => {
     setGatepassToEdit(gatepassId);
+    setRoute("gatepass");
+  }, []);
+  /** A sale voucher's gatepass QR, scanned on Sale Voucher: that gatepass on the Gatepass screen. */
+  const viewGatepass = useCallback((gatepassId: string) => {
+    setGatepassToView(gatepassId);
     setRoute("gatepass");
   }, []);
   /** Every other gatepass notice opens the document itself, where its journey is shown. */
@@ -402,14 +416,16 @@ export const App = () => {
       // Each stock page can open the other beside it, when this user may open the other (owner, 25 Nov 2026).
       case "upper-stock":
         return (
-          <StockSplitView storageKey="stock-split.upper" main={<UpperStockPage />} companionLabel={PAGE_TITLES["carton-stock"]}
+          <StockSplitView storageKey="stock-split.upper" main={(toggle) => <UpperStockPage toolbarEnd={toggle} />} companionLabel={PAGE_TITLES["carton-stock"]}
+            mainLabel={PAGE_TITLES["upper-stock"]} mainIcon={NAV_ICONS.upper} mainTone="upper" companionIcon={NAV_ICONS.stock} companionTone="carton"
             companion={mayOpen("carton-stock") ? <CartonStockPage /> : null} />
         );
       case "dana-stock":
         return <KindStockPage kind={RAW_MATERIAL_KIND.DANA} />;
       case "carton-stock":
         return (
-          <StockSplitView storageKey="stock-split.carton" main={<CartonStockPage />} companionLabel={PAGE_TITLES["upper-stock"]}
+          <StockSplitView storageKey="stock-split.carton" main={(toggle) => <CartonStockPage toolbarEnd={toggle} />} companionLabel={PAGE_TITLES["upper-stock"]}
+            mainLabel={PAGE_TITLES["carton-stock"]} mainIcon={NAV_ICONS.stock} mainTone="carton" companionIcon={NAV_ICONS.upper} companionTone="upper"
             companion={mayOpen("upper-stock") ? <UpperStockPage showTitle={false} /> : null} />
         );
       case "stock-adjustment":
@@ -574,6 +590,7 @@ export const App = () => {
             onMakeBill={canOpenRoute(session, "sale-voucher-form") && !hiddenRoutes.has("sale-voucher-form") ? openSaleVoucherForGatepass : undefined}
             canEdit={hasPermission(session, PERMISSION.GATEPASS_EDIT)}
             editGatepassId={gatepassToEdit}
+            viewGatepassId={gatepassToView}
           />
         );
       case "gatepass-list":
@@ -623,11 +640,13 @@ export const App = () => {
       case "customer-ledger":
         return (
           <CustomerLedgerPage
+            key={ledgerPartyId ?? ""}
+            initialPartyId={ledgerPartyId}
             onNavigate={navigateTo}
           />
         );
       case "customer-balance":
-        return <CustomerBalancePage onNavigate={setRoute} />;
+        return <CustomerBalancePage onNavigate={setRoute} onOpenLedger={openCustomerLedger} />;
       case "product-list":
         return (
           <ProductListPage
@@ -675,6 +694,7 @@ export const App = () => {
             fromGatepassId={saleVoucherGatepassId}
             token={sessionToken ?? ""}
             onNavigate={leaveForm}
+            onOpenGatepass={canOpenRoute(session, "gatepass") && !hiddenRoutes.has("gatepass") ? viewGatepass : undefined}
           />
         );
       case "sale-voucher-list":
@@ -753,6 +773,8 @@ export const App = () => {
     openSaleVoucherForGatepass,
     editGatepass,
     gatepassToEdit,
+    gatepassToView,
+    viewGatepass,
     requestStatus,
     route,
     saleVoucherGatepassId,

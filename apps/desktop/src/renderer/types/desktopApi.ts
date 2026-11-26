@@ -2689,7 +2689,8 @@ export interface DesktopApi {
       }>;
     }>;
   }>;
-  listCustomerBalances(query?: Record<string, unknown>): Promise<{ rows: Array<{ partyId: string; partyName: string; city: string | null; groupName: string | null; balance: number; lastVoucherDate: string | null; totalSales: number; totalReceipts: number; totalPayments: number; }>; total: number }>;
+  /** Every customer's balance on a day; checked at the boundary (customerBalances.ts). */
+  listCustomerBalances(query?: Record<string, unknown>): Promise<unknown>;
   listCities(): Promise<string[]>;
   getPartyDiscountReport(partyId: string): Promise<Array<{ partyId: string; partyName: string; type: "ARTICLE" | "ARTICLE_SERIES" | "PRICE_RANGE" | "PRODUCT_GROUP"; label: string; discountPerPair: number }>>;
 

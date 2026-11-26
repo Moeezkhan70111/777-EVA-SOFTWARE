@@ -25,6 +25,13 @@ function optionalPackingQuantity(setup: Record<string, unknown> | undefined): nu
  */
 const RAW_MATERIAL_SETUP_ACCESS = [PERMISSION.SETTINGS, PERMISSION.RAW_MATERIAL_SETUP] as const;
 
+/** The most upper articles one read may hold. */
+export const MAX_UPPER_PAGE_SIZE = 2000;
+
+/** A page size the renderer asked for, whole and between 1 and the cap; undefined keeps the default. */
+const upperPageSizeOf = (value: unknown): number | undefined =>
+  typeof value === "number" && Number.isFinite(value) ? Math.min(Math.max(Math.trunc(value), 1), MAX_UPPER_PAGE_SIZE) : undefined;
+
 export function registerRawMaterialsHandlers(ctx: IpcContext): void {
   const { db, authorizer, useCases } = ctx;
   const { processScanUseCase, dispatchScanUseCase, returnScanUseCase, storeEntryScanUseCase, storeExitScanUseCase, createGatepassUseCase, cancelGatepassUseCase } = useCases;
@@ -309,6 +316,9 @@ export function registerRawMaterialsHandlers(ctx: IpcContext): void {
           sort: optionalOneOf(query?.sort, Object.values(UPPER_STOCK_SORT)),
           search: asOptionalString(query?.search),
           page: asOptionalNumber(query?.page),
+          // Upper Stock loads more as it scrolls (owner, 26 Nov 2026): it asks for page 1 holding every article shown so
+          // far. Capped, so no request can ask for an unbounded list.
+          pageSize: upperPageSizeOf(query?.pageSize),
         }),
       };
     } catch (error) {

@@ -29,8 +29,10 @@ interface GatepassNavigatorProps {
   onGo: (gatepassNumber: number) => void;
   /** › past the latest document: back to the new one. */
   onNew: () => void;
+  /** A sale voucher's gatepass QR scanned into the number box. */
+  onScanGatepass?: (gatepassId: string) => void;
 }
 
-export const GatepassNavigator: React.FC<GatepassNavigatorProps> = ({ current, latest, busy, onGo, onNew }) => (
-  <DocumentNavigator prefix="GP -" labels={LABELS} current={current} latest={latest} busy={busy} onGo={onGo} onNew={onNew} testIdPrefix="gatepass" compact />
+export const GatepassNavigator: React.FC<GatepassNavigatorProps> = ({ current, latest, busy, onGo, onNew, onScanGatepass }) => (
+  <DocumentNavigator prefix="GP -" labels={LABELS} current={current} latest={latest} busy={busy} onGo={onGo} onNew={onNew} testIdPrefix="gatepass" compact onScanGatepass={onScanGatepass} />
 );

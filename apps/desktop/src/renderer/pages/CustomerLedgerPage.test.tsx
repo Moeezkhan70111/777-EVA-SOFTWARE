@@ -121,7 +121,12 @@ describe("CustomerLedgerPage with an archived ledger", () => {
     expect(sum.textContent).toContain("281,960");
     expect(screen.queryByText(/not in this figure yet/)).toBeNull();
     expect(screen.queryByRole("button", { name: /Carry it into the balance|Set opening balance/ })).toBeNull();
-    const strip = screen.getByRole("region", { name: "Previous software" });
+    // The imported ledgers' files open from the Old ledgers menu, not a bar on the page (owner, 26 Nov 2026).
+    expect(screen.queryByRole("region", { name: "Previous software" })).toBeNull();
+    expect(screen.queryByRole("tab", { name: /Summary|Statement/ })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /Old ledgers/ }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /Imported ledgers/ }));
+    const strip = within(screen.getByRole("dialog", { name: "Imported ledgers" })).getByRole("region", { name: "Previous software" });
     expect(strip.textContent).toContain("Rs. 480");
     expect(strip.textContent).toContain("Its rows are part of this ledger and its balance.");
     const totals = Array.from(view.container.querySelectorAll("tfoot tr")).map((row) => row.textContent ?? "");

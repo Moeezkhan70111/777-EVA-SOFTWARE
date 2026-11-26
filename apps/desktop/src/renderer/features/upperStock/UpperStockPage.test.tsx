@@ -43,6 +43,19 @@ const matrix = (name: string) => within(screen.getByRole("region", { name: `${na
 afterEach(() => listUpperStockMatrix.mockReset());
 
 describe("UpperStockPage", () => {
+  // docs/56 (26 Nov 2026): the cards' outline before the first figures, how many articles match, "/" to search.
+  it("shows the cards' outline first, then how many articles match, and '/' goes to the search", async () => {
+    let answer: (value: unknown) => void = () => undefined;
+    listUpperStockMatrix.mockReturnValueOnce(new Promise((resolve) => { answer = resolve; }));
+    render(<UpperStockPage toolbarEnd={<button type="button">Show Carton Stock beside</button>} />);
+    expect(screen.getByRole("status")).toHaveAttribute("aria-busy", "true");
+    answer({ accepted: true, ...buildUpperStockMatrix(STOCK, {}) });
+    expect(await screen.findByText("3 articles")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Show Carton Stock beside" })).toBeInTheDocument();
+    await userEvent.keyboard("/");
+    expect(screen.getByRole("searchbox", { name: /Search uppers/ })).toHaveFocus();
+  });
+
   it("opens on All, one matrix per article, each under its name", async () => {
     serve();
     render(<UpperStockPage />);

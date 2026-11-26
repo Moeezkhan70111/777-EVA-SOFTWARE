@@ -23,7 +23,7 @@ export const AdjustmentHistory: React.FC<{ history: ReturnType<typeof useAdjustm
     return (
       <>
         <div className="sa-table-wrap">
-          <table className="data-table sa-table">
+          <table className="data-table sa-table doc-table">
             <thead>
               <tr>
                 <th scope="col">{text.numberColumn}</th>
@@ -52,14 +52,17 @@ export const AdjustmentHistory: React.FC<{ history: ReturnType<typeof useAdjustm
             </tbody>
           </table>
         </div>
-        {history.value.pages > 1 ? <Pager page={history.value.page} pages={history.value.pages} onPage={history.setPage} /> : null}
+        {history.value.pages > 1 ? <Pager page={history.value.page} pages={history.value.pages} onPage={history.setPage} numbered /> : null}
       </>
     );
   };
 
   return (
     <section className="card sa-card" aria-labelledby="sa-history-title">
-      <h3 id="sa-history-title" className="card-title">{text.historyTitle}</h3>
+      <div className="sa-card-head">
+        <h2 id="sa-history-title" className="mnp-card-title">{text.historyTitle}</h2>
+        {history.value.total > 0 ? <span className="sa-count">{text.documentCount(history.value.total)}</span> : null}
+      </div>
       {body()}
     </section>
   );

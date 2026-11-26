@@ -36,11 +36,13 @@ interface SaleVoucherFormPageProps {
   /** Session token for the gatepass read (the main process authorises it). */
   token?: string;
   onNavigate: (route: AppRoute) => void;
+  /** A bill's gatepass QR scanned into the No. box: open that gatepass on the Gatepass page (owner, 26 Nov 2026). */
+  onOpenGatepass?: (gatepassId: string) => void;
 }
 
 const blankFields = (): BillHeaderFields => ({ voucherDate: toIsoDate(), bookNo: "", subPartyNameUrdu: "", remarks: "" });
 
-export const SaleVoucherFormPage: React.FC<SaleVoucherFormPageProps> = ({ voucherId, fromGatepassId, token, onNavigate }) => {
+export const SaleVoucherFormPage: React.FC<SaleVoucherFormPageProps> = ({ voucherId, fromGatepassId, token, onNavigate, onOpenGatepass }) => {
   const api = useDesktopApi();
   const { push } = useNotifications();
   const vouchers = useVoucherList();
@@ -440,7 +442,7 @@ export const SaleVoucherFormPage: React.FC<SaleVoucherFormPageProps> = ({ vouche
           {gatepassLink && gatepassLink.status !== "CANCELLED" && <GatepassLinkBanner link={gatepassLink} saved={Boolean(activeId)} busy={loading} onDelete={() => void deleteVoucher()} />}
         </div>
         <div className="gp-topbar-actions">
-          <VoucherNavigator canPrev={curIdx > 0} canNext={hasBill || curIdx < vouchers.ids.length} busy={loading} onPrev={() => void goPrev()} onNext={() => void goNext()} onGo={(number) => void goTo(number)} />
+          <VoucherNavigator canPrev={curIdx > 0} canNext={hasBill || curIdx < vouchers.ids.length} busy={loading} onPrev={() => void goPrev()} onNext={() => void goNext()} onGo={(number) => void goTo(number)} onScanGatepass={onOpenGatepass} />
           <button type="button" className="btn btn-secondary" onClick={() => void printVoucher()} disabled={loading || !activeId} data-testid="print-voucher">
             {copy.billing.printVoucher}
           </button>

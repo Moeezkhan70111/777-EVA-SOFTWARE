@@ -7,6 +7,7 @@ import { dozensText, totalsOf, type DraftLine } from "./stockAdjustmentDraft";
 import { QuantityGrid } from "./QuantityGrid";
 import { AddColorControl } from "../../components/shared/AddColorControl";
 import { useArticleGrid } from "./useArticleGrid";
+import { StepTitle } from "../manualProduction/StepTitle";
 
 // ARTICLE → EVERY COLOUR AND SIZE AT ONCE, IN DOZENS (owner, 13 Nov 2026). Choosing the article shows its sizes down
 // and its colours across, a box in every cell; type any of them, then "Add to document" puts every typed cell on the
@@ -18,9 +19,11 @@ interface ArticleEntryProps {
   kind: CartonAdjustmentKind;
   articles: readonly string[];
   onAdd: (lines: DraftLine[]) => void;
+  /** Lines on the document so far: the step is done once there is one. */
+  lineCount: number;
 }
 
-export const ArticleEntry: React.FC<ArticleEntryProps> = ({ kind, articles, onAdd }) => {
+export const ArticleEntry: React.FC<ArticleEntryProps> = ({ kind, articles, onAdd, lineCount }) => {
   const entry = useArticleGrid(kind, onAdd);
   const { article, choices, grid } = entry;
   const showGrid = article !== "" && grid.sizes.length > 0 && grid.colours.length > 0;
@@ -28,7 +31,7 @@ export const ArticleEntry: React.FC<ArticleEntryProps> = ({ kind, articles, onAd
 
   return (
     <section className="card sa-card" aria-labelledby="sa-entry-title">
-      <h3 id="sa-entry-title" className="card-title">{text.entryTitle}</h3>
+      <StepTitle id="sa-entry-title" index={2} done={lineCount > 0} title={text.entryTitle} />
       <div className="sa-entry-grid">
         <div className="mpr-field sa-article">
           <span className="input-label" aria-hidden="true">{text.articleLabel}</span>

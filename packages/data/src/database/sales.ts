@@ -1534,6 +1534,8 @@ export const salesMethods = {
       partyId: string;
       partyName: string;
       city: string | null;
+      /** The party's group, for the Customer Balance page's group filter; null when it has none. */
+      groupName: string | null;
       balance: number;
       lastVoucherDate: string | null;
       totalSales: number;
@@ -1557,6 +1559,7 @@ export const salesMethods = {
            p.id AS party_id,
            p.party_name,
            p.city,
+           (SELECT g.group_name FROM party_groups g WHERE g.id = p.party_group_id AND g.deleted_at IS NULL) AS group_name,
            ${SALES_PAISA_SQL} AS total_sales_paisa,
            ${cashPaisaSql("receipt_amount_paisa")} AS total_receipts_paisa,
            ${cashPaisaSql("payment_amount_paisa")} AS total_payments_paisa,
@@ -1591,6 +1594,7 @@ export const salesMethods = {
         partyId:        String(row.party_id   ?? ""),
         partyName:      String(row.party_name ?? ""),
         city:           row.city ? String(row.city) : null,
+        groupName:      row.group_name ? String(row.group_name) : null,
         balance:        fromPaisa(Number(row.balance_paisa ?? 0)),
         lastVoucherDate: row.last_voucher_date ? String(row.last_voucher_date) : null,
         totalSales:     fromPaisa(Number(row.total_sales_paisa    ?? 0)),

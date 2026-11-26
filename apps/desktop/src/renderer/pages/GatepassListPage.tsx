@@ -3,7 +3,7 @@ import type { AppRoute } from "../app/routes";
 import { useDesktopApi } from "../hooks/useDesktopApi";
 import { useNotifications } from "../state/NotificationsContext";
 import type { Gatepass, GatepassJourneyStep, GatepassListRow, GatepassStatus, Party } from "../types/desktopApi";
-import { GATEPASS_STAGES, gatepassStage, PERMISSION } from "@erp/domain";
+import { GATEPASS_STAGES, gatepassStage, parseGatepassQr, PERMISSION } from "@erp/domain";
 import { GatepassJourney } from "../features/gatepass/GatepassJourney";
 import { GatepassDeliveryProof } from "../features/gatepass/GatepassDeliveryProof";
 import { buildDocumentGrid } from "../utils/gatepassGrid";
@@ -116,6 +116,14 @@ export const GatepassListPage: React.FC<GatepassListPageProps> = ({ token, usern
   const [articles, setArticles] = useState<string[]>([]);
 
   const [selectedId, setSelectedId] = useState<string | undefined>(initialGatepassId);
+  // The QR on a printed sale voucher, scanned into the search, opens its gatepass (owner, 26 Nov 2026; gatepassQr.ts).
+  const searchOrScan = (value: string) => {
+    const scanned = parseGatepassQr(value);
+    if (!scanned) { setSearch(value); return; }
+    setSearch("");
+    setStatus("ALL");
+    setSelectedId(scanned.gatepassId);
+  };
   const [detail, setDetail] = useState<Gatepass | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
 
@@ -673,7 +681,7 @@ export const GatepassListPage: React.FC<GatepassListPageProps> = ({ token, usern
       <section className="card gp-card gp-filters">
         <div className="gp-field gp-filter-search">
           <label className="input-label" htmlFor="gp-search">{copy.actions.search}</label>
-          <input id="gp-search" className="form-input" type="search" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Gatepass number or party" />
+          <input id="gp-search" className="form-input" type="search" value={search} onChange={(e) => searchOrScan(e.target.value)} placeholder={copy.gatepassList.searchPlaceholder} />
         </div>
         <div className="gp-field">
           <label className="input-label" htmlFor="gp-filter-party">{copy.columns.party}</label>

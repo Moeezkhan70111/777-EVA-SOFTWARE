@@ -31,9 +31,12 @@ interface Props {
   onImported: () => void;
   /** Two menus instead of five buttons. */
   grouped?: boolean;
+  /** Opens the imported ledgers' files, from the Old ledgers menu (owner, 26 Nov 2026); its hint says how many. */
+  onShowImported?: () => void;
+  importedHint?: string;
 }
 
-export const LedgerHistoryActions: React.FC<Props> = ({ side, parties, noParty, making, onDownloadExcel, onDownloadPdf, onImported, grouped = false }) => {
+export const LedgerHistoryActions: React.FC<Props> = ({ side, parties, noParty, making, onDownloadExcel, onDownloadPdf, onImported, grouped = false, onShowImported, importedHint }) => {
   const { can, isAdmin } = useSession();
   const [bulk, setBulk] = useState(false);
   const [importing, setImporting] = useState(false);
@@ -52,6 +55,7 @@ export const LedgerHistoryActions: React.FC<Props> = ({ side, parties, noParty, 
       { id: "pdf", label: text.downloadPdf, onSelect: onDownloadPdf, disabled: noParty || making },
     ] }];
     const history: ActionMenuGroup[] = [{ label: words.historyGroup, items: [
+      ...(onShowImported ? [{ id: "imported", label: words.historyTitle, hint: importedHint, onSelect: onShowImported, disabled: noParty }] : []),
       ...(can(PERMISSION.CASH_VOUCHER_FORM) ? [{ id: "import", label: text.importOld, onSelect: () => setImporting(true) }] : []),
       { id: "reconcile", label: copy.openingBalance.reconciliation, onSelect: () => setReconciling(true) },
     ] }];

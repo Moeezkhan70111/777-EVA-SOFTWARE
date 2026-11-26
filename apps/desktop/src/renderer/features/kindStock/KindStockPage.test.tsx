@@ -14,7 +14,7 @@ const listKindStockSheet = vi.fn();
 const openPrintDocumentAsync = vi.fn((html: Promise<string>) => { void html; return true; });
 const api = { listKindStock, listKindStockSheet };
 vi.mock("../../hooks/useDesktopApi", () => ({ useDesktopApi: () => api }));
-vi.mock("../../platform/print", () => ({ openPrintDocumentAsync: (html: Promise<string>) => openPrintDocumentAsync(html), loadLogoDataUrl: async () => "" }));
+vi.mock("../../platform/print", () => ({ openPrintDocumentAsync: (html: Promise<string>) => openPrintDocumentAsync(html), loadLogoDataUrl: async () => "", urduFontFaceCss: () => "" }));
 
 const reply = (overrides: Record<string, unknown> = {}) => ({
   accepted: true,
@@ -33,17 +33,18 @@ describe("KindStockPage", () => {
     listKindStock.mockResolvedValue(reply());
     render(<KindStockPage kind={RAW_MATERIAL_KIND.UPPER} />);
 
-    expect(await screen.findByRole("cell", { name: "UPPER — BLACK" })).toBeInTheDocument();
+    expect(await screen.findByText("UPPER — BLACK")).toBeInTheDocument();
+    expect(screen.getByText("RM-000001")).toBeInTheDocument();
     expect(listKindStock).toHaveBeenCalledWith("UPPER", expect.anything());
     expect(screen.getByRole("heading", { level: 1, name: "Upper Stock" })).toBeInTheDocument();
     expect(screen.getAllByText("1,200 DOZEN")).toHaveLength(2);
   });
 
-  it("shows a spinner first, and says so when the store has none", async () => {
+  it("shows the table's outline first, and says so when the store has none", async () => {
     let answer: (value: unknown) => void = () => undefined;
     listKindStock.mockReturnValue(new Promise((resolve) => { answer = resolve; }));
     render(<KindStockPage kind={RAW_MATERIAL_KIND.DANA} />);
-    expect(screen.getByRole("status")).toHaveAttribute("aria-busy", "true");
+    expect(screen.getByRole("status").closest("[aria-busy]")).toHaveAttribute("aria-busy", "true");
 
     answer(reply({ items: [], itemCount: 0, totalsByUnit: [] }));
     expect(await screen.findByText("No dana in the store yet")).toBeInTheDocument();
@@ -73,6 +74,12 @@ describe("KindStockPage", () => {
 });
 
 describe("parseKindStockReply", () => {
+  it("says Empty in words when nothing is in store, never a bare zero", async () => {
+    listKindStock.mockResolvedValue(reply({ items: [{ id: "i-2", code: "RM-000002", name: "EVA — RED", subCategory: "EVA", quantity: 0, unitCode: "KG" }] }));
+    render(<KindStockPage kind={RAW_MATERIAL_KIND.DANA} />);
+    expect(await screen.findByText("Empty")).toHaveClass("badge");
+  });
+
   it("does not believe a malformed reply", () => {
     for (const bad of [null, "yes", {}, reply({ items: "none" }), reply({ items: [{ id: 1 }] }), reply({ itemCount: "1" }), reply({ totalsByUnit: [{ quantity: "9" }] })]) {
       expect(parseKindStockReply(bad).ok).toBe(false);

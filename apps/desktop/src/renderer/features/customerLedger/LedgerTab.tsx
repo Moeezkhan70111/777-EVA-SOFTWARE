@@ -1,7 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Pager } from "../../components/shared/Pager";
 import { copy } from "../../config/copy";
-import { ArchiveStrip } from "../ledgerArchive/ArchiveStrip";
 import type { useLedgerArchive } from "../ledgerArchive/useLedgerArchive";
 import { LedgerEquation } from "./LedgerEquation";
 import { importedSums, ledgerTotals, periodSum } from "./ledgerFigures";
@@ -10,8 +9,8 @@ import { LedgerToolbar } from "./LedgerToolbar";
 import type { CustomerLedgerData, LedgerEntry } from "./ledgerTypes";
 import type { LedgerView } from "./useLedgerView";
 
-// The Ledger tab: the period's sum, the imported ledgers' files in one section that opens on request (progressive
-// disclosure), the search and filter, the one table, and its pages. One ledger (owner, 25 Nov 2026: "there is no old
+// The ledger: the period's sum, the search and filter, the one table, and its pages. The imported ledgers' files open
+// from the header's Old ledgers menu (owner, 26 Nov 2026). One ledger (owner, 25 Nov 2026: "there is no old
 // and new"): every sum and total here counts the imported rows and the ERP's entries together.
 
 const text = copy.customerLedger;
@@ -48,12 +47,6 @@ export const LedgerTab: React.FC<LedgerTabProps> = ({ data, view, archive, fromD
   return (
     <div className="cl-ledger-tab">
       <LedgerEquation sum={sum} closingBalance={data.closingBalance} />
-      <details className="cl-history">
-        <summary><span className="cl-history-title">{text.historyTitle}</span><span className="cl-history-status">{archive.view.statements.length ? text.historyStatus(archive.view.statements.length) : text.historyNone}</span></summary>
-        <div className="cl-history-body">
-          <ArchiveStrip state={archive.state} summary={view.archiveSummary} statements={archive.view.statements} onRetry={archive.reload} note={text.historyNote} />
-        </div>
-      </details>
       <LedgerToolbar search={view.search} onSearch={view.setSearch} filter={view.filter} onFilter={view.setFilter} details={details} onDetails={showDetails} />
       <LedgerTable items={visible} broughtForward={data.openingBalance} fromDate={fromDate} count={view.timeline.length} debit={shown.debit} credit={shown.credit} refreshing={refreshing} details={details}
         closingBalance={data.closingBalance} toDate={toDate} onOpen={onOpen} />

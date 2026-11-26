@@ -155,3 +155,39 @@ export function documentProblem(header: DraftHeader, lines: readonly DraftLine[]
   if (!header.reason.trim()) return text.reasonRequired;
   return null;
 }
+
+/** One size of one article on the document, with its colours' lines. */
+export interface LineSizeGroup {
+  readonly size: string;
+  readonly lines: readonly DraftLine[];
+}
+
+/** One article on the document, its sizes in the store's order. */
+export interface LineArticleGroup {
+  readonly article: string;
+  readonly sizes: readonly LineSizeGroup[];
+  /** How many lines the article has: the rows its name spans. */
+  readonly lineCount: number;
+}
+
+/**
+ * The document's lines as they are looked for (owner, 26 Nov 2026): article, then size, then colour. Articles in
+ * natural order (SK6 before SK12), sizes in the store's order (compareSizes, as on Carton Stock), colours A to Z.
+ * Only the order of the rows changes; every line is kept as it was typed.
+ */
+export const groupLines = (lines: readonly DraftLine[]): LineArticleGroup[] => {
+  const byArticle = new Map<string, Map<string, DraftLine[]>>();
+  for (const line of lines) {
+    const sizes = byArticle.get(line.article) ?? new Map<string, DraftLine[]>();
+    sizes.set(line.size, [...(sizes.get(line.size) ?? []), line]);
+    byArticle.set(line.article, sizes);
+  }
+  return [...byArticle.entries()]
+    .sort(([a], [b]) => a.localeCompare(b, undefined, { numeric: true }))
+    .map(([article, sizes]) => {
+      const sizeGroups = [...sizes.entries()]
+        .sort(([a], [b]) => compareSizes(a, b))
+        .map(([size, own]) => ({ size, lines: [...own].sort((a, b) => a.color.localeCompare(b.color)) }));
+      return { article, sizes: sizeGroups, lineCount: sizeGroups.reduce((sum, group) => sum + group.lines.length, 0) };
+    });
+};

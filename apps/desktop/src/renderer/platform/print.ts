@@ -79,3 +79,28 @@ export const loadLogoDataUrl = async (): Promise<string> => {
     return "";
   }
 };
+
+/** The family the app's Urdu is set in (theme.css --font-urdu, bundled from @fontsource). */
+const URDU_FONT_FAMILY = "Noto Nastaliq Urdu";
+
+/**
+ * The bundled Urdu font, as @font-face rules a print window can use (26 Nov 2026).
+ *
+ * A print-out is its own window: it cannot see the app's stylesheet, so its Urdu fell back to whatever font the
+ * computer had (often Tahoma), not the Nastaliq every screen shows. The app's stylesheet already carries the font
+ * itself (the renderer build inlines it), so its @font-face rules are copied into the print-out as they are: the
+ * same letters on paper as on screen, offline, with nothing downloaded or bundled twice. "" when there are none
+ * (a test, or a stylesheet that cannot be read), and the print-out falls back as before.
+ */
+export const urduFontFaceCss = (): string => {
+  const rules: string[] = [];
+  for (const sheet of Array.from(document.styleSheets)) {
+    let sheetRules: CSSRuleList;
+    try { sheetRules = sheet.cssRules; } catch { continue; }
+    for (const rule of Array.from(sheetRules)) {
+      const css = rule.cssText;
+      if (css.trimStart().startsWith("@font-face") && css.includes(URDU_FONT_FAMILY)) rules.push(css);
+    }
+  }
+  return rules.join("\n");
+};

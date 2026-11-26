@@ -1,116 +1,83 @@
-import React, { useCallback } from "react";
+import React, { useCallback, useRef } from "react";
 import { RAW_MATERIAL_KIND, type StockKind } from "@erp/domain";
 import { Pager } from "../../components/shared/Pager";
-import { useDesktopApi } from "../../hooks/useDesktopApi";
+import { SearchField } from "../../components/shared/SearchField";
 import { StateView } from "../../components/shared/StateView";
 import { copy } from "../../config/copy";
+import { useDesktopApi } from "../../hooks/useDesktopApi";
+import { HeroSkeleton } from "../customerLedger/LedgerSkeleton";
 import { KIND_STOCK_TEXT, parseKindStockReply, quantityLabel, type KindStockPage as StockPage } from "./kindStock";
+import { KindStockSkeleton, KindStockTable } from "./KindStockTable";
 import { useStockList, type StockRead } from "./useStockList";
 import { usePrintStockSheet } from "./usePrintStockSheet";
 
-// DANA STOCK: what is in the store of one kind of raw material, as a plain table. Read-only: moving
-// stock stays on the Store page, where every movement is scanned. The main process decides who may
-// read this (STOCK_KIND_PERMISSION). Uppers have sizes and colours, so theirs is a matrix instead
-// (features/upperStock). Dana also prints as the store's paper Dana Stock Sheet (stockSheetPrint.ts).
+// DANA STOCK: what is in the store of one kind of raw material, in the Customer Ledger's look (docs/56, 26 Nov 2026).
+//
+//   Dana Stock                                             [ Print stock sheet ]
+//   ┌ IN STORE ──────────┐   [ Search materials  / ]
+//   │ 1,250 KG            │
+//   │ 48 materials        │
+//   └─────────────────────┘
+//   Material (code) | Type | In store                       one table card, the figure last and strongest
+//
+// The total is the one figure in the blue (von Restorff); it and every balance are the data layer's (totalsByUnit;
+// units are never added together). Read-only: moving stock stays on the Store page, where every movement is scanned.
+// The main process decides who may read this (STOCK_KIND_PERMISSION). Dana also prints as the store's paper Dana
+// Stock Sheet (stockSheetPrint.ts).
 
-const Summary: React.FC<{ data: StockPage }> = ({ data }) => (
-  <div className="kpi-grid">
-    <div className="kpi-card">
-      <div className="kpi-label">{copy.kindStock.materials}</div>
-      <div className="kpi-value">{data.itemCount.toLocaleString()}</div>
-    </div>
-    {data.totalsByUnit.map((total) => (
-      <div className="kpi-card" key={total.unitId}>
-        <div className="kpi-label">{copy.kindStock.inStore}</div>
-        <div className="kpi-value">{quantityLabel(total.quantity, total.unitCode)}</div>
-      </div>
-    ))}
-  </div>
-);
+const text = copy.kindStock;
 
-const StockTable: React.FC<{ data: StockPage }> = ({ data }) => (
-  <div className="table-wrap">
-    <table className="data-table">
-      <thead>
-        <tr>
-          <th scope="col">{copy.kindStock.material}</th>
-          <th scope="col">{copy.kindStock.type}</th>
-          <th scope="col">{copy.kindStock.code}</th>
-          <th scope="col" className="kind-stock-quantity">{copy.kindStock.inStore}</th>
-        </tr>
-      </thead>
-      <tbody>
-        {data.items.map((row) => (
-          <tr key={row.id}>
-            <td>{row.name}</td>
-            <td>{row.subCategory || "—"}</td>
-            <td className="cell-mono">{row.code}</td>
-            <td className="kind-stock-quantity">{quantityLabel(row.quantity, row.unitCode)}</td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
-  </div>
+const StoreHero: React.FC<{ data: StockPage; refreshing: boolean }> = ({ data, refreshing }) => (
+  <section className="cl-hero ks-hero" aria-label={text.totalLabel} aria-busy={refreshing || undefined}>
+    <span className="cl-hero-label">{text.totalLabel}</span>
+    <strong className="cl-hero-figure">
+      {data.totalsByUnit.length === 0 ? "0" : data.totalsByUnit.map((total) => quantityLabel(total.quantity, total.unitCode)).join(" · ")}
+    </strong>
+    <p className="cl-hero-note">{text.materialCount(data.itemCount)}</p>
+  </section>
 );
 
 export const KindStockPage: React.FC<{ kind: StockKind }> = ({ kind }) => {
-  const text = KIND_STOCK_TEXT[kind];
+  const words = KIND_STOCK_TEXT[kind];
   const api = useDesktopApi();
   const read = useCallback<StockRead<StockPage>>(async (query) => parseKindStockReply(await api.listKindStock(kind, query)), [api, kind]);
   const stock = useStockList(read);
   const { data } = stock;
   const sheet = usePrintStockSheet(kind);
+  const searchRef = useRef<HTMLInputElement>(null);
   const printsSheet = kind === RAW_MATERIAL_KIND.DANA;
+  const refreshing = stock.loading && data !== null;
 
   const body = () => {
-    if (stock.error) return <StateView kind="error" title={copy.kindStock.failedTitle} message={stock.error} onRetry={stock.retry} />;
-    if (stock.loading && !data) return <StateView kind="loading" />;
-    if (!data) return null;
+    if (stock.error && !data) return <StateView kind="error" title={text.failedTitle} message={stock.error} onRetry={stock.retry} />;
+    if (!data) return <KindStockSkeleton />;
     if (data.itemCount === 0) {
-      return stock.searching ? (
-        <StateView kind="empty" title={copy.kindStock.noMatchTitle} hint={copy.kindStock.noMatchHint} />
-      ) : (
-        <StateView kind="empty" title={text.emptyTitle} hint={text.emptyHint} />
-      );
+      return stock.searching
+        ? <StateView kind="empty" title={text.noMatchTitle} hint={text.noMatchHint} />
+        : <StateView kind="empty" title={words.emptyTitle} hint={words.emptyHint} />;
     }
-    return (
-      <>
-        <Summary data={data} />
-        <StockTable data={data} />
-        {data.pages > 1 ? <Pager page={data.page} pages={data.pages} onPage={stock.setPage} /> : null}
-      </>
-    );
+    return <KindStockTable label={text.tableLabel(words.title)} rows={data.items} refreshing={refreshing} />;
   };
 
   return (
-    <div className="page kind-stock-page">
-      <h1 className="page-title">{text.title}</h1>
-      <div className="toolbar">
-        <div className="search-wrap" style={{ flex: 1 }}>
-          <svg className="search-icon" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true">
-            <path fillRule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clipRule="evenodd" />
-          </svg>
-          <input
-            className="form-input"
-            type="search"
-            aria-label={copy.kindStock.search}
-            placeholder={copy.kindStock.search}
-            value={stock.search}
-            onChange={(event) => stock.setSearch(event.target.value)}
-          />
-        </div>
+    <div className="page kind-stock-page doc-themed cl-page ks-page">
+      <header className="cl-head">
+        <div className="cl-head-title"><h1>{words.title}</h1></div>
         {printsSheet ? (
-          <button type="button" className="btn btn-secondary" onClick={sheet.print}>
-            {copy.kindStock.printSheet}
-          </button>
+          <div className="cl-head-actions">
+            <button type="button" className="btn btn-secondary" onClick={sheet.print}>{text.printSheet}</button>
+          </div>
         ) : null}
+      </header>
+      {sheet.blockedMessage ? <p className="error-message" role="alert">{sheet.blockedMessage}</p> : null}
+      <div className="ks-top">
+        {data ? <StoreHero data={data} refreshing={refreshing} /> : <HeroSkeleton />}
+        <SearchField value={stock.search} onChange={stock.setSearch} label={text.searchLabel} placeholder={text.search} clearLabel={text.searchClear}
+          shortcutHint={text.searchShortcut} inputRef={searchRef} />
       </div>
-      {sheet.blockedMessage ? (
-        <p className="error-message" role="alert">
-          {sheet.blockedMessage}
-        </p>
-      ) : null}
+      {stock.error && data ? <StateView kind="error" compact message={stock.error} onRetry={stock.retry} /> : null}
       {body()}
+      {data && data.pages > 1 ? <Pager page={data.page} pages={data.pages} onPage={stock.setPage} numbered /> : null}
     </div>
   );
 };

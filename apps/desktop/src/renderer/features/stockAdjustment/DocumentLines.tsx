@@ -4,11 +4,14 @@ import { ConfirmDialog } from "../../components/shared/ConfirmDialog";
 import { StateView } from "../../components/shared/StateView";
 import { copy } from "../../config/copy";
 import { formatDate } from "../../utils/dates";
-import { documentProblem, dozensText, resultOf, totalsOf, type DraftHeader, type DraftLine } from "./stockAdjustmentDraft";
+import { documentProblem, dozensText, groupLines, resultOf, totalsOf, type DraftHeader, type DraftLine } from "./stockAdjustmentDraft";
 import type { PostOutcome } from "./useStockAdjustment";
 import { ResultCell } from "./ResultCell";
+import { StepTitle } from "../manualProduction/StepTitle";
 
 // The document as it will be posted: every line with the figure it leaves, the totals, and Post, which asks first.
+// Grouped as the lines are looked for (owner, 26 Nov 2026): an article's name once over all its rows, then each size
+// once over its colours, articles A to Z and sizes in the store's order (groupLines).
 
 const text = copy.stockAdjustment;
 
@@ -49,17 +52,20 @@ export const DocumentLines: React.FC<DocumentLinesProps> = ({ header, lines, bus
 
   return (
     <section className="card sa-card" aria-labelledby="sa-lines-title">
-      <h3 id="sa-lines-title" className="card-title">{text.linesTitle}</h3>
+      <div className="sa-card-head">
+        <StepTitle id="sa-lines-title" index={3} done={false} title={text.linesTitle} />
+        {lines.length > 0 ? <span className="sa-pending" role="status">{text.unposted(lines.length)}</span> : null}
+      </div>
       {lines.length === 0 ? (
         <StateView kind="empty" compact title={text.noLinesTitle} hint={text.noLinesHint} />
       ) : (
         <div className="sa-table-wrap">
-          <table className="data-table sa-table">
+          <table className="data-table sa-table doc-table">
             <thead>
               <tr>
                 <th scope="col">{text.articleLabel}</th>
-                <th scope="col">{text.colorLabel}</th>
                 <th scope="col">{text.sizeColumn}</th>
+                <th scope="col">{text.colorLabel}</th>
                 <th scope="col">{text.movementColumn}</th>
                 <th scope="col" className="sa-num">{text.inStoreColumn}</th>
                 <th scope="col" className="sa-num">{text.cartonsColumn}</th>
@@ -67,12 +73,13 @@ export const DocumentLines: React.FC<DocumentLinesProps> = ({ header, lines, bus
                 <th scope="col"><span className="sr-only">{text.removeColumn}</span></th>
               </tr>
             </thead>
-            <tbody>
-              {lines.map((line) => (
+            {groupLines(lines).map((group) => (
+            <tbody key={group.article} className="sa-article-group">
+              {group.sizes.flatMap((sizeGroup, sizeIndex) => sizeGroup.lines.map((line, colourIndex) => (
                 <tr key={line.key}>
-                  <td>{line.article}</td>
+                  {sizeIndex === 0 && colourIndex === 0 ? <th scope="rowgroup" rowSpan={group.lineCount} className="sa-group-article">{group.article}</th> : null}
+                  {colourIndex === 0 ? <td rowSpan={sizeGroup.lines.length} className="sa-group-size">{sizeGroup.size}</td> : null}
                   <td>{line.color}</td>
-                  <td>{line.size}</td>
                   <td>{movementText(header.kind, line)}</td>
                   <td className="sa-num">{dozensText(line.inStore)}</td>
                   <td className="sa-num">{signed(line)}</td>
@@ -83,8 +90,9 @@ export const DocumentLines: React.FC<DocumentLinesProps> = ({ header, lines, bus
                     </button>
                   </td>
                 </tr>
-              ))}
+              )))}
             </tbody>
+            ))}
             <tfoot>
               <tr>
                 <th scope="row" colSpan={5}>{text.totalsRow}</th>

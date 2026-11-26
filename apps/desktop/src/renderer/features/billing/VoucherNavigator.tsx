@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { parseGatepassQr } from "@erp/domain";
 import { NavArrowIcon } from "../../components/shared/NavArrowIcon";
 import { copy } from "../../config/copy";
 
@@ -13,16 +14,20 @@ interface VoucherNavigatorProps {
   onPrev: () => void;
   onNext: () => void;
   onGo: (voucherNumber: string) => void;
+  /** A bill's gatepass QR scanned into the number box opens that gatepass (owner, 26 Nov 2026). */
+  onScanGatepass?: (gatepassId: string) => void;
 }
 
-export const VoucherNavigator: React.FC<VoucherNavigatorProps> = ({ canPrev, canNext, busy, onPrev, onNext, onGo }) => {
+export const VoucherNavigator: React.FC<VoucherNavigatorProps> = ({ canPrev, canNext, busy, onPrev, onNext, onGo, onScanGatepass }) => {
   const [text, setText] = useState("");
 
   const go = () => {
     const number = text.trim();
     if (!number) return;
-    onGo(number);
+    const scanned = onScanGatepass ? parseGatepassQr(number) : null;
     setText("");
+    if (scanned) { onScanGatepass?.(scanned.gatepassId); return; }
+    onGo(number);
   };
 
   return (

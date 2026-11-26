@@ -60,6 +60,8 @@ interface GatepassPageProps {
   canEdit?: boolean;
   /** Open this gatepass straight into an edit (from Gatepass List). */
   editGatepassId?: string;
+  /** Open this gatepass to read (its QR scanned on Sale Voucher, 26 Nov 2026). */
+  viewGatepassId?: string;
 }
 
 interface SubmitError {
@@ -69,7 +71,7 @@ interface SubmitError {
 
 const EMPTY_TRANSPORT: TransportFields = { biltyNumber: "", transportVia: "", remarks: "" };
 
-export const GatepassPage: React.FC<GatepassPageProps> = ({ token, onNavigate, onMakeBill, canEdit = false, editGatepassId }) => {
+export const GatepassPage: React.FC<GatepassPageProps> = ({ token, onNavigate, onMakeBill, canEdit = false, editGatepassId, viewGatepassId }) => {
   const api = useDesktopApi();
   const { push } = useNotifications();
   const { parties, partiesLoading, stock, grid, reloadStock, applyShortages } = useGatepassData(token);
@@ -164,6 +166,15 @@ export const GatepassPage: React.FC<GatepassPageProps> = ({ token, onNavigate, o
     edit.stop();
     if (saved) nav.show(saved);
   };
+
+  // Sent here by a gatepass QR scanned on Sale Voucher: that gatepass, to read.
+  const openedToView = useRef<string | null>(null);
+  useEffect(() => {
+    if (!viewGatepassId || openedToView.current === viewGatepassId) return;
+    openedToView.current = viewGatepassId;
+    void nav.openById(viewGatepassId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once per gatepass asked for
+  }, [viewGatepassId]);
 
   // Opened from Gatepass List to edit: once the store is read, the gatepass goes onto the draft.
   const openedForEdit = useRef<string | null>(null);
@@ -337,7 +348,7 @@ export const GatepassPage: React.FC<GatepassPageProps> = ({ token, onNavigate, o
             <>
               {/* Hick's law (owner, 24 Nov 2026): finding a gatepass is one group, acting on this one another. */}
               <div className="gp-topbar-group">
-                <GatepassNavigator current={viewing?.gatepassNumber ?? null} latest={nav.latest} busy={nav.busy} onGo={(n) => void nav.goTo(n)} onNew={nav.close} />
+                <GatepassNavigator current={viewing?.gatepassNumber ?? null} latest={nav.latest} busy={nav.busy} onGo={(n) => void nav.goTo(n)} onNew={nav.close} onScanGatepass={(id) => void nav.openById(id)} />
                 <button type="button" className="btn btn-secondary" onClick={startNew} data-testid="gatepass-new">
                   + {copy.gatepass.newGatepass}
                 </button>

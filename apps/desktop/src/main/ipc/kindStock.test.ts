@@ -119,6 +119,19 @@ describe("listUpperStockMatrix authorisation", () => {
     matrix({ category: "DANA", sort: "DROP" });
     expect(listUpperStockMatrix).toHaveBeenLastCalledWith({ category: undefined, sort: undefined, search: undefined, page: undefined });
   });
+
+  // Upper Stock loads more as it scrolls (26 Nov 2026): page 1 holding every article shown so far, never unbounded.
+  it("passes the articles shown so far as the page size, whole and capped", () => {
+    signIn([PERMISSION.STOCK_UPPER_VIEW]);
+    matrix({ page: 1, pageSize: 60 });
+    expect(listUpperStockMatrix).toHaveBeenLastCalledWith(expect.objectContaining({ page: 1, pageSize: 60 }));
+    matrix({ page: 1, pageSize: 1_000_000 });
+    expect(listUpperStockMatrix).toHaveBeenLastCalledWith(expect.objectContaining({ pageSize: 2000 }));
+    matrix({ page: 1, pageSize: -5 });
+    expect(listUpperStockMatrix).toHaveBeenLastCalledWith(expect.objectContaining({ pageSize: 1 }));
+    matrix({ page: 1, pageSize: "lots" });
+    expect(listUpperStockMatrix).toHaveBeenLastCalledWith(expect.objectContaining({ pageSize: undefined }));
+  });
 });
 
 describe("listKindStockSheet authorisation", () => {

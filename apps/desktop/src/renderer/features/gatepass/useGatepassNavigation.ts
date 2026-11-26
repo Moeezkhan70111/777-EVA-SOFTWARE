@@ -16,6 +16,8 @@ export interface GatepassNavigation {
   latest: number | null;
   busy: boolean;
   goTo: (gatepassNumber: number) => Promise<void>;
+  /** Open a gatepass by its id: the QR printed on a sale voucher (gatepassQr.ts). */
+  openById: (gatepassId: string) => Promise<void>;
   /** Show a document that was just created or re-read. */
   show: (document: Gatepass) => void;
   /** Back to the draft. */
@@ -65,6 +67,27 @@ export const useGatepassNavigation = (token: string): GatepassNavigation => {
     [api, busy, push, token]
   );
 
+  const openById = useCallback(
+    async (gatepassId: string) => {
+      if (busy) return;
+      setBusy(true);
+      try {
+        const document = await api.getGatepass(gatepassId, { token });
+        if (document) {
+          setViewing(document);
+          setLatest((prev) => Math.max(prev ?? 0, document.gatepassNumber));
+        } else {
+          push("info", copy.toast.notFound, copy.gatepass.scannedNotFound);
+        }
+      } catch {
+        push("error", copy.toast.loadFailed, copy.gatepass.documentLoadFailed);
+      } finally {
+        setBusy(false);
+      }
+    },
+    [api, busy, push, token]
+  );
+
   const show = useCallback((document: Gatepass) => {
     setViewing(document);
     setLatest((prev) => Math.max(prev ?? 0, document.gatepassNumber));
@@ -72,5 +95,5 @@ export const useGatepassNavigation = (token: string): GatepassNavigation => {
 
   const close = useCallback(() => setViewing(null), []);
 
-  return { viewing, latest, busy, goTo, show, close };
+  return { viewing, latest, busy, goTo, openById, show, close };
 };

@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { parseGatepassQr } from "@erp/domain";
 import { NavArrowIcon } from "./NavArrowIcon";
 
 // The document pager: one control for every numbered document — Gatepass, Move In voucher.
@@ -56,6 +57,8 @@ interface DocumentNavigatorProps {
   testIdPrefix: string;
   /** Icon arrows, and Load only once another number is typed (see COMPACT above). */
   compact?: boolean;
+  /** A sale voucher's gatepass QR scanned into the box opens that gatepass (owner, 26 Nov 2026; gatepassQr.ts). */
+  onScanGatepass?: (gatepassId: string) => void;
 }
 
 export const DocumentNavigator: React.FC<DocumentNavigatorProps> = (props) => {
@@ -75,6 +78,12 @@ export const DocumentNavigator: React.FC<DocumentNavigatorProps> = (props) => {
   const canNext = !busy && current !== null;
 
   const load = () => {
+    const scanned = props.onScanGatepass ? parseGatepassQr(text) : null;
+    if (scanned) {
+      setText(shownNumber === null ? "" : String(shownNumber));
+      props.onScanGatepass?.(scanned.gatepassId);
+      return;
+    }
     const number = Number(text.trim());
     if (!Number.isInteger(number) || number < 1) {
       setText(shownNumber === null ? "" : String(shownNumber));

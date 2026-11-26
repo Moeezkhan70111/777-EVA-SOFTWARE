@@ -97,9 +97,9 @@ const bodyHtml = (sheet: StockSheet, colours: ColorDictionary): string => {
   return `<div class="sections">${sections}</div>${grand}`;
 };
 
-/** The sheet as a print-ready page. `takenAt` is when the balances were read. */
-export const buildStockSheetHtml = (sheet: StockSheet, colours: ColorDictionary, logoDataUrl: string, takenAt: Date): string => `<!DOCTYPE html>
-<html lang="en"><head><meta charset="UTF-8" /><title>${e(copy.kindStock.sheetTitle)}</title><style>${STYLES}</style></head>
+/** The sheet as a print-ready page. `takenAt` is when the balances were read; `urduFontCss` the app's bundled Nastaliq (urduFontFaceCss). */
+export const buildStockSheetHtml = (sheet: StockSheet, colours: ColorDictionary, logoDataUrl: string, takenAt: Date, urduFontCss = ""): string => `<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8" /><title>${e(copy.kindStock.sheetTitle)}</title><style>${urduFontCss}${STYLES}</style></head>
 <body>
   <div class="print-actions"><button onclick="window.print()">${e(copy.reports.printOrSave)}</button></div>
   <div class="doc">

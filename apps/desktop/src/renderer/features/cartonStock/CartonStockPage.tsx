@@ -1,12 +1,12 @@
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useRef, useState } from "react";
 import { CARTON_STOCK_PAGE_SIZE, type CartonStockMatrix } from "@erp/domain";
+import { SearchField } from "../../components/shared/SearchField";
 import { StateView } from "../../components/shared/StateView";
 import { KpiCard } from "../../components/dashboard/KpiCard";
 import { copy } from "../../config/copy";
 import { useDesktopApi } from "../../hooks/useDesktopApi";
 import { DATA_KIND } from "../../../shared/dataChange";
 import { useStockList, type StockRead } from "../kindStock/useStockList";
-import { RAIL_ICONS } from "../navigation/NavIcons";
 import { ProductionStatusBox } from "../productionDay/ProductionStatusBox";
 import { useTodayMark } from "../productionDay/useProductionDay";
 import { CartonMatrixList } from "./CartonMatrixList";
@@ -22,6 +22,9 @@ import { useLoadMoreOnScroll } from "./useLoadMoreOnScroll";
 //
 // The list has no pages: it shows 20 articles, and 20 more each time its end scrolls near. Every
 // read asks for all the articles shown so far, so a re-read after a change keeps the same list.
+//
+// docs/56 (26 Nov 2026): the shared search ("/" to search, × to clear) like every other list; a re-read keeps the
+// cards on screen, dimmed (aria-busy); the side-by-side button sits in this toolbar, one row of controls.
 
 const text = copy.cartonStock;
 const CARTON_CHANGES = [DATA_KIND.CARTONS, DATA_KIND.PRODUCTS] as const;
@@ -30,28 +33,33 @@ const NOTHING_HELD = { articles: 0, cartons: 0 };
 
 interface MatricesProps {
   data: CartonStockMatrix;
+  refreshing: boolean;
   filtered: boolean;
   loadingMore: boolean;
   /** Marks the list's end: when it scrolls near, the next articles are asked for. */
   endMarker: React.RefObject<HTMLDivElement | null>;
 }
 
-const Matrices: React.FC<MatricesProps> = ({ data, filtered, loadingMore, endMarker }) => {
+const Matrices: React.FC<MatricesProps> = ({ data, refreshing, filtered, loadingMore, endMarker }) => {
   if (data.articleCount === 0) {
     return filtered ? <StateView kind="empty" title={text.noMatchTitle} hint={text.noMatchHint} /> : <StateView kind="empty" title={text.emptyTitle} hint={text.emptyHint} />;
   }
   return (
     <>
-      <CartonMatrixList articles={data.articles} />
+      <div className={refreshing ? "stock-results is-refreshing" : "stock-results"} aria-busy={refreshing || undefined}>
+        <CartonMatrixList articles={data.articles} />
+      </div>
       {loadingMore ? <CartonCardsSkeleton count={2} message={text.loadingMore} /> : null}
       <div ref={endMarker} className="cs-list-end" aria-hidden="true" />
     </>
   );
 };
 
-export const CartonStockPage: React.FC = () => {
+/** toolbarEnd: the side-by-side button (StockSplitView), placed at the end of the toolbar. */
+export const CartonStockPage: React.FC<{ toolbarEnd?: React.ReactNode }> = ({ toolbarEnd = null }) => {
   const api = useDesktopApi();
   const [series, setSeries] = useState("");
+  const searchRef = useRef<HTMLInputElement>(null);
   const read = useCallback<StockRead<CartonStockMatrix>>(
     // The hook's page counts the parts loaded so far: page 3 shows the first 60 articles.
     async ({ search, page }) => parseCartonMatrixReply(await api.getCartonStockMatrix({ search, series, shown: page * CARTON_STOCK_PAGE_SIZE })),
@@ -76,7 +84,8 @@ export const CartonStockPage: React.FC = () => {
   const body = () => {
     if (stock.error) return <StateView kind="error" title={text.failed} message={stock.error} onRetry={stock.retry} />;
     if (!stock.data) return null;
-    return <Matrices data={stock.data} filtered={stock.searching || series !== ""} loadingMore={loadingMore} endMarker={endMarker} />;
+    // Loading more articles is not a re-read of the ones on screen: only a re-read dims them.
+    return <Matrices data={stock.data} refreshing={stock.loading && !loadingMore} filtered={stock.searching || series !== ""} loadingMore={loadingMore} endMarker={endMarker} />;
   };
 
   return (
@@ -90,12 +99,11 @@ export const CartonStockPage: React.FC = () => {
           ) : null}
           <ProductionStatusBox variant="card" mark={today.value?.mark ?? null} loading={today.loading} error={today.error} />
         </div>
-        <div className="cs-toolbar">
-          <label className="us-search cs-search">
-            <span className="us-search-icon" aria-hidden="true">{RAIL_ICONS.search}</span>
-            <input type="search" aria-label={text.searchLabel} placeholder={text.searchPlaceholder} value={stock.search} onChange={(event) => stock.setSearch(event.target.value)} />
-          </label>
+        <div className="cs-toolbar stock-toolbar">
+          <SearchField value={stock.search} onChange={stock.setSearch} label={text.searchLabel} placeholder={text.searchPlaceholder}
+            clearLabel={copy.kindStock.searchClear} shortcutHint={copy.kindStock.searchShortcut} inputRef={searchRef} />
           <SeriesPicker value={series} options={stock.data?.seriesOptions ?? []} allSeries={stock.data?.allSeries ?? NOTHING_HELD} onChange={chooseSeries} />
+          {toolbarEnd}
         </div>
         {body()}
       </div>

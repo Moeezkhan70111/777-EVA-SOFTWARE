@@ -7,7 +7,7 @@ import { NotificationsProvider } from "../../state/NotificationsContext";
 import { StockAdjustmentPage } from "./StockAdjustmentPage";
 import { SessionProvider } from "../auth/SessionContext";
 import type { AuthUser } from "../../types/desktopApi";
-import { entryGrid, entryProblem, gridEntries, mergeLines, totalsOf, typedCartons, type DraftLine } from "./stockAdjustmentDraft";
+import { entryGrid, entryProblem, gridEntries, groupLines, mergeLines, totalsOf, typedCartons, type DraftLine } from "./stockAdjustmentDraft";
 
 // STOCK ADJUSTMENT as an administrator meets it (docs/46): pick the article, then a box IN DOZENS for every colour and
 // size at once (owner, 13 Nov 2026), each showing the figure now and what it would leave, the lines with totals, a Post
@@ -103,6 +103,21 @@ describe("Stock Adjustment", () => {
       { articleSizeId: "as-SK6-10/13", color: "RED", direction: "IN", cartons: 70 },
     ]);
     expect(await screen.findByText(text.posted("SA-000001", "47", "0"))).toBeInTheDocument();
+  });
+
+  // docs/56 (26 Nov 2026): three numbered steps that tick when done, remarks behind a button, open work said in words.
+  it("ticks the steps as they are done, keeps remarks behind a button, and says how many lines wait to be posted", async () => {
+    api.getCartonAdjustmentArticle.mockResolvedValue({ accepted: true, choices: twoColours() });
+    show();
+    expect(screen.queryByRole("textbox", { name: text.remarksLabel })).toBeNull();
+    await userEvent.click(await screen.findByRole("button", { name: `+ ${text.addRemarks}` }));
+    expect(screen.getByRole("textbox", { name: text.remarksLabel })).toHaveFocus();
+    const step = (title: string) => screen.getByRole("heading", { name: title }).querySelector(".qr-step-num")?.textContent;
+    expect(step(text.entryTitle)).toBe("2");
+    await pick(text.articleLabel, "SK6");
+    await userEvent.type(await screen.findByRole("textbox", { name: text.quantityFor("BLUE", "7/10") }), "2{Enter}");
+    expect(await screen.findByText(text.unposted(1))).toBeInTheDocument();
+    expect(step(text.entryTitle)).toBe("✓");
   });
 
   it("Up and Down move along a colour; Enter adds every typed box", async () => {
@@ -208,6 +223,15 @@ describe("Stock Adjustment", () => {
 describe("the document being written", () => {
   const line = (key: string, direction: "IN" | "OUT", cartons: number): DraftLine => ({ key, articleSizeId: key, article: "SK6", size: key, color: "RED", direction, cartons, inStore: 10 });
   const row = { articleSizeId: "a", size: "7/10", color: "RED", inStore: 10, hasOpening: false, colorMissing: false };
+
+  // Found as they are looked for (owner, 26 Nov 2026): article, then size, then colour.
+  it("groups the lines by article, then size in the store's order, then colour", () => {
+    const at = (article: string, size: string, color: string): DraftLine => ({ key: `${article}|${size}|${color}`, articleSizeId: `${article}-${size}`, article, size, color, direction: "IN", cartons: 2, inStore: 0 });
+    const groups = groupLines([at("SK12", "7/10", "RED"), at("SK6", "7/10", "RED"), at("SK6", "4/6", "BLUE"), at("SK6", "7/10", "BLACK")]);
+    expect(groups.map((group) => group.article)).toEqual(["SK6", "SK12"]);
+    expect(groups[0]?.sizes.map((size) => `${size.size}:${size.lines.map((l) => l.color).join("+")}`)).toEqual(["7/10:BLACK+RED", "4/6:BLUE"]);
+    expect(groups[0]?.lineCount).toBe(3);
+  });
 
   it("a re-added size replaces its line in place; totals add up by direction", () => {
     const merged = mergeLines([line("a", "IN", 2), line("b", "OUT", 1)], [line("a", "IN", 7), line("c", "IN", 3)]);
