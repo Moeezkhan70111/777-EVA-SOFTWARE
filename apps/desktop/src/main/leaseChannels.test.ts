@@ -93,7 +93,7 @@ const READS = new Set([
   // partyClaims: the requests and their history only read
   "listPartyClaimRequests", "getPartyClaimRequest",
   // salaries
-  "listEmployees",
+  "listEmployees", "getEmployee",
   // customerOrders
   "getCustomerOrder", "getCustomerOrderArticle", "listPendingOrderParties", "listPendingOrderLines",
   // manualProduction

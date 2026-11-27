@@ -11950,3 +11950,32 @@ tr.has-error .gp-qty-stepper input { color: var(--err); }
 .sal-required { color: var(--danger-strong); }
 .sal-problem { margin: var(--space-1) 0 0; font-size: 0.8rem; color: var(--danger-strong); }
 .sal-refusal { padding: var(--space-2) var(--space-3); border-radius: var(--radius-md); background: var(--err-bg); }
+
+/* The employee's card and its Increment (27 Nov 2026). */
+.sal-row { cursor: pointer; }
+.sal-row .sal-name { padding: 0; border: 0; background: none; text-align: left; font: inherit; font-weight: 700; color: var(--sp-navy); cursor: pointer; }
+.sal-row .sal-name:hover { text-decoration: underline; }
+.sal-card { display: grid; gap: var(--space-4); }
+.sal-card-details { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-3); margin: 0; }
+@media (min-width: 768px) { .sal-card-details { grid-template-columns: repeat(5, minmax(0, auto)); } }
+.sal-card-details div { display: grid; gap: 2px; }
+.sal-card-details dt { color: var(--sp-muted); font-size: 0.75rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; }
+.sal-card-details dd { margin: 0; color: var(--sp-navy); font-weight: 600; }
+.sal-card-details .sal-card-salary { grid-column: 1 / -1; }
+@media (min-width: 768px) { .sal-card-details .sal-card-salary { grid-column: auto; } }
+.sal-card-details .sal-card-salary dd { font-size: 1.5rem; font-weight: 800; color: var(--sp-navy-2); font-variant-numeric: tabular-nums; }
+.sal-increment-title { margin: 0 0 var(--space-2); font-size: 0.95rem; font-weight: 800; color: var(--sp-navy); }
+.sal-history-list { display: grid; gap: var(--space-2); margin: 0; padding: 0; list-style: none; }
+.sal-history-line { display: grid; grid-template-columns: auto 1fr auto; gap: var(--space-1) var(--space-3); align-items: baseline; padding: var(--space-2) var(--space-3); border: 1px solid var(--sp-line); border-radius: var(--radius-md); }
+.sal-history-date { color: var(--sp-muted); font-variant-numeric: tabular-nums; }
+.sal-history-step { font-weight: 700; color: var(--sp-navy); }
+.sal-history-salary { font-variant-numeric: tabular-nums; color: var(--sp-navy); }
+.sal-history-note { grid-column: 1 / -1; color: var(--sp-muted); font-size: 0.85rem; }
+.sal-increment { padding: var(--space-4); border: 1px solid var(--sp-line); border-radius: var(--dash-card-radius); background: var(--sp-ground); }
+.sal-kinds { display: flex; flex-wrap: wrap; gap: var(--space-2); margin: 0; padding: 0; border: 0; }
+.sal-kinds legend { margin-bottom: var(--space-1); }
+.sal-kind { display: inline-flex; align-items: center; gap: var(--space-2); min-height: 44px; padding: 0 var(--space-3); border: 1px solid var(--sp-line); border-radius: var(--radius-md); background: var(--white); font-weight: 600; cursor: pointer; }
+.sal-kind.is-on { border-color: var(--sp-navy-2); color: var(--sp-navy-2); }
+.sal-preview { display: grid; gap: 2px; margin: 0; min-height: 1.5em; color: var(--sp-navy); font-variant-numeric: tabular-nums; }
+.sal-preview-hint { color: var(--sp-muted); font-size: 0.8rem; }
+.sal-increment-actions { display: flex; justify-content: flex-end; gap: var(--space-2); }

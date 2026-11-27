@@ -104,3 +104,71 @@ describe("Salaries", () => {
     expect(await screen.findByText(/The employees could not be read/)).toBeInTheDocument();
   });
 });
+
+// Owner, 27 Nov 2026: "make the employee row clickable ... opens the card of employee. with its details. also put a
+// button in that card as increment. to increment the salary by percentage or a fixed value".
+const detail = (overrides: Record<string, unknown> = {}) => ({
+  ...employee(),
+  history: [{ id: "h1", kind: "START", amount: null, fromPaisa: null, toPaisa: 2_500_000, effectiveOn: "2026-11-01", note: null, createdBy: "owner" }],
+  ...overrides,
+});
+
+describe("An employee's card", () => {
+  beforeEach(() => {
+    api.listEmployees!.mockResolvedValue({ accepted: true, employees: [employee()] });
+    api.getEmployee = vi.fn().mockResolvedValue({ accepted: true, employee: detail() });
+    api.incrementEmployeeSalary = vi.fn();
+  });
+
+  it("opens from the row with the details and the salary history", async () => {
+    show();
+    await userEvent.click(await screen.findByRole("button", { name: "Open SYNTHETIC ALI's card" }));
+    const card = await screen.findByRole("dialog");
+    expect(api.getEmployee).toHaveBeenCalledWith("e1");
+    expect(within(card).getByText("Working")).toBeInTheDocument();
+    expect(within(card).getByText("0300-0000001")).toBeInTheDocument();
+    const history = within(card).getByRole("region", { name: "SYNTHETIC ALI's salary history" });
+    expect(within(history).getByText("Started at")).toBeInTheDocument();
+    expect(within(history).getByText("Rs 25,000")).toBeInTheDocument();
+  });
+
+  it("raises the salary by a percentage, showing the new figure before it is saved", async () => {
+    const raised = detail({
+      monthlySalaryPaisa: 2_750_000,
+      history: [...detail().history, { id: "h2", kind: "PERCENT", amount: 1000, fromPaisa: 2_500_000, toPaisa: 2_750_000, effectiveOn: "2026-12-01", note: "Yearly", createdBy: "owner" }],
+    });
+    api.incrementEmployeeSalary!.mockResolvedValue({ accepted: true, employee: raised });
+    show();
+    await userEvent.click(await screen.findByRole("button", { name: "Open SYNTHETIC ALI's card" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Increment SYNTHETIC ALI's salary" }));
+    fireEvent.change(screen.getByRole("textbox", { name: /^Percentage/ }), { target: { value: "10" } });
+    fireEvent.change(screen.getByLabelText(/^New salary from/), { target: { value: "2026-12-01" } });
+    fireEvent.change(screen.getByLabelText(/^Note/), { target: { value: "Yearly" } });
+    expect(screen.getByText("Rs 25,000 → Rs 27,500 (+Rs 2,500)")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "Save increment" }));
+    expect(api.incrementEmployeeSalary).toHaveBeenCalledWith({ employeeId: "e1", kind: "PERCENT", value: "10", effectiveOn: "2026-12-01", note: "Yearly", expectedSalaryPaisa: 2_500_000 });
+    const history = await screen.findByRole("region", { name: "SYNTHETIC ALI's salary history" });
+    expect(within(history).getByText("+10%")).toBeInTheDocument();
+    expect(within(screen.getByRole("list", { name: "notices" })).getByText("SYNTHETIC ALI's salary raised")).toBeInTheDocument();
+  });
+
+  it("raises it by a fixed amount, and a slip is said under its field", async () => {
+    show();
+    await userEvent.click(await screen.findByRole("button", { name: "Open SYNTHETIC ALI's card" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Increment SYNTHETIC ALI's salary" }));
+    await userEvent.click(screen.getByRole("radio", { name: "Fixed amount (Rs)" }));
+    await userEvent.click(screen.getByRole("button", { name: "Save increment" }));
+    expect(screen.getByText(/Type the increment in rupees/)).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText(/^Amount \(Rs\)/), { target: { value: "1500" } });
+    expect(screen.getByText("Rs 25,000 → Rs 26,500 (+Rs 1,500)")).toBeInTheDocument();
+    expect(api.incrementEmployeeSalary).not.toHaveBeenCalled();
+  });
+
+  it("offers Increment only where the accounts are written", async () => {
+    api.getWriteLeases!.mockResolvedValue(ACCOUNTS_ELSEWHERE);
+    show();
+    await userEvent.click(await screen.findByRole("button", { name: "Open SYNTHETIC ALI's card" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Increment SYNTHETIC ALI's salary" })).toBeDisabled());
+  });
+});

@@ -427,6 +427,8 @@ export const IPC = {
   // The Salaries page (27 Nov 2026).
   listEmployees: "erp:list-employees",
   createEmployee: "erp:create-employee",
+  getEmployee: "erp:get-employee",
+  incrementEmployeeSalary: "erp:increment-employee-salary",
   getPartyClaimRequest: "erp:get-party-claim-request",
   postPartyClaim: "erp:post-party-claim",
   rejectPartyClaimRequest: "erp:reject-party-claim-request",

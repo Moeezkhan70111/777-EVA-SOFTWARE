@@ -139,6 +139,7 @@ export const LEASED_CHANNELS: Readonly<Record<string, readonly LeaseDomain[]>> =
   [IPC.requestArticleColor]: ORDERS,
   // An employee and their salary: accounts work, written where cash vouchers are (27 Nov 2026).
   [IPC.createEmployee]: ACCOUNTS,
+  [IPC.incrementEmployeeSalary]: ACCOUNTS,
   [IPC.createGatepass]: CARTONS_AND_SALES,
   [IPC.cancelGatepass]: CARTONS_AND_SALES,
   // An edit puts back and takes cartons and changes the bill; a delete changes only the gatepass record.

@@ -6,6 +6,7 @@ import { copy } from "../../config/copy";
 import { useNotifications } from "../../state/NotificationsContext";
 import { useWriteLease } from "../sync/useWriteLease";
 import { AddEmployeeDialog } from "./AddEmployeeDialog";
+import { EmployeeCard } from "./EmployeeCard";
 import { EmployeeTable, EmployeeTableSkeleton } from "./EmployeeTable";
 import { salaryText } from "./employees";
 import { useEmployees } from "./useEmployees";
@@ -15,7 +16,7 @@ import { useEmployees } from "./useEmployees";
 //
 //   Salaries                                                [ + Add Employee ]
 //   ┌ Employees  12 ┐  ┌ Salaries a month  Rs 3,40,000 ┐
-//   Employee (work) | Phone | Joined | Monthly salary
+//   Employee (work) | Phone | Joined | Monthly salary           a row opens the employee's card, with Increment
 //
 // Employees are written where the accounts are (ACCOUNTS, PC1): anywhere else the page reads and says why it cannot
 // add (ReadOnlyNotice). The month's total is the domain's (monthlySalaryTotal), in paisa, working employees only.
@@ -27,6 +28,8 @@ export const SalariesPage: React.FC = () => {
   const lease = useWriteLease(LEASE_DOMAIN.ACCOUNTS);
   const { push } = useNotifications();
   const [adding, setAdding] = useState(false);
+  /** The employee whose card is open. */
+  const [openId, setOpenId] = useState<string | null>(null);
   const rows = employees.rows;
   const working = useMemo(() => (rows ?? []).filter((employee) => employee.status === EMPLOYEE_STATUS.ACTIVE).length, [rows]);
   const total = useMemo(() => monthlySalaryTotal(rows ?? []), [rows]);
@@ -36,7 +39,7 @@ export const SalariesPage: React.FC = () => {
     if (employees.error && rows === null) return <StateView kind="error" title={text.failed} onRetry={employees.reload} />;
     if (rows === null) return <EmployeeTableSkeleton />;
     if (rows.length === 0) return <StateView kind="empty" title={text.emptyTitle} hint={text.emptyHint} />;
-    return <EmployeeTable rows={rows} refreshing={refreshing} />;
+    return <EmployeeTable rows={rows} refreshing={refreshing} onOpen={setOpenId} />;
   };
 
   return (
@@ -58,6 +61,17 @@ export const SalariesPage: React.FC = () => {
       ) : null}
       {employees.error && rows !== null ? <StateView kind="error" compact message={text.failed} onRetry={employees.reload} /> : null}
       {body()}
+      {openId ? (
+        <EmployeeCard
+          employeeId={openId}
+          canWrite={lease.canWrite}
+          onClose={() => setOpenId(null)}
+          onRaised={(employee) => {
+            push("success", text.raisedTitle(employee.name), text.raisedBody(salaryText(employee.monthlySalaryPaisa)));
+            employees.reload();
+          }}
+        />
+      ) : null}
       {adding ? (
         <AddEmployeeDialog
           onClose={() => setAdding(false)}

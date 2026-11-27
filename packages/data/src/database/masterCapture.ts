@@ -127,6 +127,8 @@ export const MASTER_CAPTURE: readonly MasterTableCapture[] = [
   { table: "article_color_requests", record: SYNC_AGGREGATE.ARTICLE_COLOR_REQUEST, recordId: `${ROW}.id` },
   // An employee and their salary (Salaries page).
   { table: "employees", record: SYNC_AGGREGATE.EMPLOYEE, recordId: `${ROW}.id` },
+  // Its salary history (local 126): a new line is a new revision of the employee.
+  { table: "employee_salary_changes", record: SYNC_AGGREGATE.EMPLOYEE, recordId: `${ROW}.employee_id` },
 ];
 
 /**

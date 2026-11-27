@@ -346,7 +346,7 @@ export const MASTER_RECORDS: Readonly<Record<MasterRecordType, RecordTableSpec>>
   // A colour asked for in Enter Orders (articleColorRequests.ts): its article and colour as text, nothing looked up.
   [SYNC_AGGREGATE.ARTICLE_COLOR_REQUEST]: { table: "article_color_requests" },
   // An employee and their monthly salary (Salaries page, employees.ts).
-  [SYNC_AGGREGATE.EMPLOYEE]: { table: "employees" },
+  [SYNC_AGGREGATE.EMPLOYEE]: { table: "employees", children: [{ table: "employee_salary_changes", parentColumn: "employee_id" }] },
 };
 
 export const isMasterRecordType = (value: string): value is MasterRecordType =>

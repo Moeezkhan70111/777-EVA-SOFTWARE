@@ -5,6 +5,7 @@ import { copy } from "../../config/copy";
 import { useDesktopApi } from "../../hooks/useDesktopApi";
 import { leaseRefusalText } from "../../../shared/leaseRefusal";
 import { parseEmployeeReply, type Employee } from "./employees";
+import { SalaryField, type SalaryFieldProps } from "./SalaryField";
 
 // ADD EMPLOYEE (owner, 27 Nov 2026: "pop up appears to add Employee set its salary"):
 //
@@ -24,32 +25,8 @@ interface AddEmployeeDialogProps {
   onAdded: (employee: Employee) => void;
 }
 
-interface FieldProps {
-  field: EmployeeField;
-  label: string;
-  value: string;
-  problem: string | undefined;
-  onChange: (value: string) => void;
-  required?: boolean;
-  type?: "text" | "date" | "tel";
-  inputMode?: "decimal" | "tel";
-  placeholder?: string;
-  maxLength?: number;
-  autoFocus?: boolean;
-}
-
-const Field: React.FC<FieldProps> = ({ field, label, value, problem, onChange, required = false, type = "text", inputMode, placeholder, maxLength, autoFocus }) => {
-  const id = `sal-${field}`;
-  return (
-    <div className="form-group">
-      <label className="input-label" htmlFor={id}>{label}{required ? <span className="sal-required"> * <span className="sr-only">{text.required}</span></span> : null}</label>
-      <input id={id} className="form-input" type={type} inputMode={inputMode} value={value} placeholder={placeholder} maxLength={maxLength} autoFocus={autoFocus}
-        autoComplete="off" required={required} aria-invalid={problem ? true : undefined} aria-describedby={problem ? `${id}-problem` : undefined}
-        onChange={(event) => onChange(event.target.value)} />
-      {problem ? <p id={`${id}-problem`} className="sal-problem" role="alert">⚠ {problem}</p> : null}
-    </div>
-  );
-};
+/** One field of the form, with its id derived from the draft's own name. */
+const Field: React.FC<Omit<SalaryFieldProps, "id"> & { field: EmployeeField }> = ({ field, ...rest }) => <SalaryField id={`sal-${field}`} {...rest} />;
 
 export const AddEmployeeDialog: React.FC<AddEmployeeDialogProps> = ({ onClose, onAdded }) => {
   const api = useDesktopApi();

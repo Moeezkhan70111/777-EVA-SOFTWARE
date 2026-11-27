@@ -2732,6 +2732,10 @@ export interface DesktopApi {
   listEmployees(): Promise<unknown>;
   /** Adds an employee (ACCOUNTS lease). The draft as typed; the main process checks it. Checked by the page. */
   createEmployee(input: { name: string; work: string; phone: string; monthlySalary: string; joinedOn: string }): Promise<unknown>;
+  /** One employee with their salary history (the card opened from a row). Checked by the page. */
+  getEmployee(employeeId: string): Promise<unknown>;
+  /** Raises a salary by a percentage or a fixed amount, on the salary seen (ACCOUNTS lease). Checked by the page. */
+  incrementEmployeeSalary(input: { employeeId: string; kind: "PERCENT" | "FIXED"; value: string; effectiveOn: string; note: string; expectedSalaryPaisa: number }): Promise<unknown>;
   getPartyClaimRequest(requestId: string): Promise<unknown>;
   postPartyClaim(input: Record<string, unknown>): Promise<unknown>;
   rejectPartyClaimRequest(input: Record<string, unknown>): Promise<unknown>;

@@ -82,3 +82,76 @@ export function employeeInput(draft: EmployeeDraft): EmployeeInput | null {
 /** What the active employees cost in a month, in paisa. */
 export const monthlySalaryTotal = (employees: ReadonlyArray<{ monthlySalaryPaisa: number; status: string }>): number =>
   employees.filter((employee) => employee.status === EMPLOYEE_STATUS.ACTIVE).reduce((sum, employee) => sum + employee.monthlySalaryPaisa, 0);
+
+// ─── An increment (owner, 27 Nov 2026: "increment the salary by percentage or a fixed value") ───────────────────────
+//
+// The salary goes up by a percentage of what it is now (rounded to the nearest rupee, as salaries are paid) or by a
+// fixed amount of rupees. Every change is kept as a line of the employee's salary history, never written over.
+
+export const SALARY_CHANGE_KIND = {
+  /** The salary an employee was added with. */
+  START: "START",
+  PERCENT: "PERCENT",
+  FIXED: "FIXED",
+} as const;
+export type SalaryChangeKind = (typeof SALARY_CHANGE_KIND)[keyof typeof SALARY_CHANGE_KIND];
+export type IncrementKind = typeof SALARY_CHANGE_KIND.PERCENT | typeof SALARY_CHANGE_KIND.FIXED;
+
+/** A raise of more than this in one go is refused as a likely slip. */
+export const INCREMENT_MAX_PERCENT = 100;
+export const SALARY_NOTE_MAX = 120;
+
+export interface IncrementDraft {
+  readonly kind: IncrementKind;
+  /** "10" or "7.5" for a percentage, rupees like "2500" for a fixed amount. */
+  readonly value: string;
+  /** YYYY-MM-DD: the day the new salary counts from. */
+  readonly effectiveOn: string;
+  readonly note: string;
+}
+
+export type IncrementField = "value" | "effectiveOn" | "note";
+
+export interface Increment {
+  readonly increasePaisa: number;
+  readonly newSalaryPaisa: number;
+  /** What was typed, kept with the change: hundredths of a percent, or paisa. */
+  readonly amount: number;
+}
+
+const PERCENT = /^\d{1,3}(\.\d{1,2})?$/;
+
+/** The increment worked out, or null when the value is not one. */
+function workedOut(currentPaisa: number, draft: Pick<IncrementDraft, "kind" | "value">): Increment | null {
+  const typed = draft.value.trim().replace(/,/g, "");
+  if (draft.kind === SALARY_CHANGE_KIND.PERCENT) {
+    if (!PERCENT.test(typed)) return null;
+    const hundredths = Math.round(Number(typed) * 100);
+    // Rounded to the nearest rupee: 10% of Rs 25,333 is Rs 2,533.
+    const increasePaisa = Math.round((currentPaisa * hundredths) / 10_000 / 100) * 100;
+    return { increasePaisa, newSalaryPaisa: currentPaisa + increasePaisa, amount: hundredths };
+  }
+  const paisa = typedRupeesToPaisa(typed);
+  return paisa === null ? null : { increasePaisa: paisa, newSalaryPaisa: currentPaisa + paisa, amount: paisa };
+}
+
+/** Why each field of an increment cannot be saved, in words. Empty when it is ready. */
+export function incrementProblems(currentPaisa: number, draft: IncrementDraft): Partial<Record<IncrementField, string>> {
+  const problems: Partial<Record<IncrementField, string>> = {};
+  const percent = draft.kind === SALARY_CHANGE_KIND.PERCENT;
+  const result = workedOut(currentPaisa, draft);
+  if (!draft.value.trim()) problems.value = percent ? "Type the increment as a percentage, like 10." : "Type the increment in rupees, like 2500.";
+  else if (result === null) problems.value = percent ? "Type a percentage like 10 or 7.5." : "Type the rupees as a number, like 2500 or 2500.50.";
+  else if (result.amount <= 0) problems.value = "The increment must be more than 0.";
+  else if (percent && result.amount > INCREMENT_MAX_PERCENT * 100) problems.value = `An increment is at most ${INCREMENT_MAX_PERCENT}%. Check the figure.`;
+  else if (result.increasePaisa <= 0) problems.value = "That is less than one rupee. Type a bigger percentage.";
+  else if (result.newSalaryPaisa > EMPLOYEE_SALARY_MAX_PAISA) problems.value = "The new salary would be over Rs 10,00,000 a month. Check the figure.";
+  if (!isBusinessDate(draft.effectiveOn.trim())) problems.effectiveOn = "Pick the day the new salary counts from.";
+  if (draft.note.trim().length > SALARY_NOTE_MAX) problems.note = `A note is at most ${SALARY_NOTE_MAX} letters.`;
+  return problems;
+}
+
+/** The increment on this salary, or null while the draft has a problem. */
+export function incrementOf(currentPaisa: number, draft: IncrementDraft): Increment | null {
+  return Object.keys(incrementProblems(currentPaisa, draft)).length > 0 ? null : workedOut(currentPaisa, draft);
+}

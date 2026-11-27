@@ -6,7 +6,8 @@ import { salaryText, type Employee } from "./employees";
 
 // One row per employee, the monthly salary last and strongest (serial position). What they do sits under the name, so
 // the table has one column fewer. An employee who has left says so in words (R18), not by a faded row alone. The
-// Customer Balance table's look (doc-table, R1).
+// Customer Balance table's look (doc-table, R1). A row opens the employee's card (owner, 27 Nov 2026): the name is the
+// button (keyboard and screen reader), the whole row is the target for a mouse or a finger (Fitts).
 
 const text = copy.salaries;
 const SKELETON_ROWS = Array.from({ length: 6 }, (_, index) => index);
@@ -22,10 +23,12 @@ const Head: React.FC = () => (
   </thead>
 );
 
-const Row: React.FC<{ employee: Employee }> = ({ employee }) => (
-  <tr className={employee.status === EMPLOYEE_STATUS.LEFT ? "doc-row sal-left" : "doc-row"}>
+const Row: React.FC<{ employee: Employee; onOpen: (employeeId: string) => void }> = ({ employee, onOpen }) => (
+  <tr className={employee.status === EMPLOYEE_STATUS.LEFT ? "doc-row sal-row sal-left" : "doc-row sal-row"} onClick={() => onOpen(employee.id)}>
     <td>
-      <span className="sal-name">{employee.name}</span>
+      <button type="button" className="cb-name sal-name" aria-label={text.openRow(employee.name)} onClick={(event) => { event.stopPropagation(); onOpen(employee.id); }}>
+        {employee.name}
+      </button>
       {employee.work ? <span className="cb-city">{employee.work}</span> : null}
       {employee.status === EMPLOYEE_STATUS.LEFT ? <span className="badge badge-muted sal-status">{text.left}</span> : null}
     </td>
@@ -38,13 +41,14 @@ const Row: React.FC<{ employee: Employee }> = ({ employee }) => (
 interface EmployeeTableProps {
   rows: readonly Employee[];
   refreshing: boolean;
+  onOpen: (employeeId: string) => void;
 }
 
-export const EmployeeTable: React.FC<EmployeeTableProps> = ({ rows, refreshing }) => (
+export const EmployeeTable: React.FC<EmployeeTableProps> = ({ rows, refreshing, onOpen }) => (
   <div className={refreshing ? "doc-table-wrap card is-refreshing" : "doc-table-wrap card"} aria-busy={refreshing || undefined}>
     <table className="data-table doc-table" aria-label={text.tableLabel}>
       <Head />
-      <tbody>{rows.map((employee) => <Row key={employee.id} employee={employee} />)}</tbody>
+      <tbody>{rows.map((employee) => <Row key={employee.id} employee={employee} onOpen={onOpen} />)}</tbody>
     </table>
   </div>
 );

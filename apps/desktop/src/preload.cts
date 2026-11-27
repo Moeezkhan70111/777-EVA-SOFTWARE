@@ -474,6 +474,8 @@ contextBridge.exposeInMainWorld("desktop", {
     listPartyClaimRequests: (query: Record<string, unknown>) => ipcRenderer.invoke(IPC.listPartyClaimRequests, query),
     listEmployees: () => ipcRenderer.invoke(IPC.listEmployees),
     createEmployee: (input: Record<string, unknown>) => ipcRenderer.invoke(IPC.createEmployee, input),
+    getEmployee: (employeeId: string) => ipcRenderer.invoke(IPC.getEmployee, employeeId),
+    incrementEmployeeSalary: (input: Record<string, unknown>) => ipcRenderer.invoke(IPC.incrementEmployeeSalary, input),
     getPartyClaimRequest: (requestId: string) => ipcRenderer.invoke(IPC.getPartyClaimRequest, requestId),
     postPartyClaim: (input: Record<string, unknown>) => ipcRenderer.invoke(IPC.postPartyClaim, input),
     rejectPartyClaimRequest: (input: Record<string, unknown>) => ipcRenderer.invoke(IPC.rejectPartyClaimRequest, input),
