@@ -176,12 +176,15 @@ function readDatedRow(draft: Draft, cells: readonly LegacyCell[], sheetRow: numb
     draft.rows.push({ ...base, quantity: "", debit: "-", credit: "-", runningBalance: figures[figures.length - 1] ?? "" });
     return;
   }
-  if (figures.length !== 4) {
+  if (figures.length < 4) {
     draft.problems.push(`Row ${String(sheetRow)}: expected Qty, Debit, Credit and Balance at the end of the row, found ${String(figures.length)} figure(s).`);
     return;
   }
-  const [quantity, debit, credit, balance] = figures as [string, string, string, string];
-  draft.rows.push({ ...base, quantity: DASH.test(quantity) ? "" : quantity, debit, credit, runningBalance: balance });
+  // A row always ends in exactly Qty, Debit, Credit and Balance. A figure before those four sits where the description
+  // is printed, so it IS the description: a narration typed as a number ("50000", owner's ledgers, 28 Nov 2026).
+  const [quantity, debit, credit, balance] = figures.slice(-4) as [string, string, string, string];
+  const narration = [...words, ...figures.slice(0, -4)].join(" ");
+  draft.rows.push({ ...base, description: narration, quantity: DASH.test(quantity) ? "" : quantity, debit, credit, runningBalance: balance });
 }
 
 function readTotals(draft: Draft, cells: readonly LegacyCell[], sheetRow: number): void {

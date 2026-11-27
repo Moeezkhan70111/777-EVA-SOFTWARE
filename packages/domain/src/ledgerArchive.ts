@@ -289,7 +289,6 @@ function textProblems(input: LedgerArchiveRowInput): string[] {
   const problems: string[] = [];
   const max = LEDGER_ARCHIVE_LIMITS.SHORT_TEXT_MAX;
   if (!input.partyCode.trim() && !input.customerName.trim()) problems.push("it names no party (party code or name).");
-  if (!input.description.trim()) problems.push("its description is empty.");
   if (tooLong(input.description, LEDGER_ARCHIVE_LIMITS.DESCRIPTION_MAX)) problems.push(`its description is longer than ${String(LEDGER_ARCHIVE_LIMITS.DESCRIPTION_MAX)} characters.`);
   if (tooLong(input.customerName.trim(), LEDGER_ARCHIVE_LIMITS.NAME_MAX)) problems.push("its party name is too long.");
   for (const [label, value] of [["party code", input.partyCode], ["voucher number", input.voucherNumber], ["type", input.transactionType], ["bill number", input.billNumber]] as const) {
@@ -424,6 +423,9 @@ function orderWarnings(rows: readonly LedgerArchiveRow[]): LedgerArchiveProblem[
     const first = seen.get(identity);
     if (first !== undefined) warnings.push({ rowNumber: row.rowNumber, message: `Row ${String(row.rowNumber)} repeats row ${String(first)} exactly. Check it is not a duplicate.` });
     else seen.set(identity, row.rowNumber);
+    // The previous software lets a voucher be saved with no narration (owner's ledgers, 28 Nov 2026): kept as printed,
+    // blank, and pointed out rather than refused. Its figures and balance are checked like any other row.
+    if (!row.description.trim()) warnings.push({ rowNumber: row.rowNumber, message: `Row ${String(row.rowNumber)} has no description, as printed.` });
     if (index > 0 && row.entryDate < rows[index - 1].entryDate) {
       warnings.push({ rowNumber: row.rowNumber, message: `Row ${String(row.rowNumber)} is dated before the row above it.` });
     }

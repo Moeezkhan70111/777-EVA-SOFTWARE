@@ -129,3 +129,29 @@ test("the opening balance at a cutover is the last line before it, read the side
   assert.equal(archiveBalanceAtCutover("SUPPLIER", points, "2026-10-01"), null);
   assert.equal(archiveBalanceAtCutover("CUSTOMER", [{ ...points[0]!, balancePaisa: 500 }], "2026-12-01")?.sidePaisa, 500);
 });
+
+// The owner's real ledgers (28 Nov 2026): a voucher saved with no narration, and a narration typed as a number. Both
+// are real rows whose figures chain; they are read and kept as printed, never refused.
+test("a row with no narration is kept blank and pointed out, and a narration that is a number is read as the narration", () => {
+  const grid: LegacyCell[][] = [
+    ...HEAD,
+    OPENING,
+    line("2026-10-12", 5101, "PU", "Total Qty= 140", 140, 0, 123000, -123000),
+    line("2026-10-17", 5104, "CV", "", 0, 50000, 0, -73000),
+    // The narration "50000" sits in the description column as text: five figures at the end of the row.
+    ["2026-10-20", null, 5105, "CV", null, "50000", null, null, null, 0, 0, null, 2000, null, null, -75000],
+    [null, null, null, null, null, "Total :", null, null, 140, 50000, null, 125000, null, null, -75000],
+  ];
+  const [statement] = parseLegacyLedgerReport(grid).statements;
+  assert.ok(statement);
+  assert.deepEqual(statement.problems, []);
+  assert.deepEqual(statement.rows.slice(2).map((r) => [r.voucherNumber, r.description, r.quantity, r.debit, r.credit, r.runningBalance]), [
+    ["5104", "", "0", "50000", "0", "-73000"],
+    ["5105", "50000", "0", "0", "2000", "-75000"],
+  ]);
+  const file = readArchiveFile(statement.rows, "SUPPLIER", LEGACY_REPORT_BALANCE_RULE);
+  const draft = file.statements[0];
+  assert.ok(draft);
+  assert.deepEqual([...file.rowProblems, ...draft.problems], [], "nothing refused");
+  assert.ok(draft.warnings.some((w) => /has no description, as printed/.test(w.message)), "the blank narration is pointed out");
+});
