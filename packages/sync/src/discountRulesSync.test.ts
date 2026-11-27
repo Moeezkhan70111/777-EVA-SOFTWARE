@@ -19,6 +19,7 @@ import type { SyncAck, SyncChange, SyncPullTransport, SyncTransport } from "./tr
 const SCHEMA = path.resolve(import.meta.dirname, "../../data/src/local-schema.sql");
 const MIGRATION_119 = path.resolve(import.meta.dirname, "../../../migrations/sqlite/119_discount_rules_travel.up.sql");
 const MIGRATION_122 = path.resolve(import.meta.dirname, "../../../migrations/sqlite/122_discount_rules_again.up.sql");
+const MIGRATION_125 = path.resolve(import.meta.dirname, "../../../migrations/sqlite/125_evr_ladies_kids_discounts.up.sql");
 const PROJECT = "https://test.supabase.co";
 const clock = { ms: Date.now() + 86_400_000 };
 const nowIso = () => new Date(clock.ms).toISOString();
@@ -200,5 +201,43 @@ test("a computer that read the customers without their rules gets them when 122 
 
     assert.deepEqual(rulesOf(pc3), rulesOf(pc1), "PC3 holds PC1's rules");
     assert.equal(pc3.db.resolveDiscount({ partyId, productGroupId: groupId }).discountPerPair, 12);
+  });
+});
+
+// Owner, 27 Nov 2026: "evr ladies and evr kids have same less. do it automatically". 125 gives every customer's EVR
+// GENTS discount to EVR LADIES and EVR KIDS, once, on PC1, keeping any LADIES or KIDS rule a customer already has.
+test("125 copies each customer's EVR GENTS discount to EVR LADIES and EVR KIDS on PC1, and it reaches every computer", async () => {
+  await withOffice(async (cloud, pc1, pc2, pc3) => {
+    const { groupId: gents, partyId: plain } = setUp(pc1);
+    const ladies = pc1.db.createProductGroup({ groupName: "EVR LADIES" });
+    const kids = pc1.db.createProductGroup({ groupName: "EVR KIDS" });
+    const party = (name: string) => pc1.db.createParty({ partyName: name, partyType: "CUSTOMER", city: "Karachi", mobileNumber: "0300-2222222", status: "ACTIVE" });
+    const ownLadies = party("SYNTHETIC OWN LADIES");
+    const deletedKids = party("SYNTHETIC DELETED KIDS");
+    const noGents = party("SYNTHETIC NO GENTS");
+    pc1.db.createPartyProductGroupDiscount({ partyId: plain, productGroupId: gents, discountPerPair: 35 });
+    pc1.db.createPartyProductGroupDiscount({ partyId: ownLadies, productGroupId: gents, discountPerPair: 50 });
+    pc1.db.createPartyProductGroupDiscount({ partyId: ownLadies, productGroupId: ladies, discountPerPair: 40 });
+    pc1.db.createPartyProductGroupDiscount({ partyId: deletedKids, productGroupId: gents, discountPerPair: 20 });
+    pc1.db.deletePartyProductGroupDiscount(pc1.db.createPartyProductGroupDiscount({ partyId: deletedKids, productGroupId: kids, discountPerPair: 5 }));
+    await passAll(cloud, [pc1, pc2, pc3]);
+
+    const migration = fs.readFileSync(MIGRATION_125, "utf8");
+    pc3.db.db.exec(migration);
+    assert.equal(Number((pc3.db.db.prepare("SELECT COUNT(*) AS n FROM sync_dirty_records").get() as { n: number }).n), 0, "PC3 writes and sends nothing");
+    pc1.db.db.exec(migration);
+    pc1.db.db.exec(migration);
+    await passAll(cloud, [pc1, pc2, pc3]);
+
+    const ruleOf = (pc: Pc, partyId: string, groupId: string) =>
+      (pc.db.db.prepare("SELECT discount_per_pair_paisa AS p FROM party_product_group_discounts WHERE party_id = ? AND product_group_id = ? AND deleted_at IS NULL").all(partyId, groupId) as Array<{ p: number }>).map((row) => Number(row.p));
+    for (const pc of [pc1, pc2, pc3]) {
+      assert.deepEqual([ruleOf(pc, plain, ladies), ruleOf(pc, plain, kids)], [[3500], [3500]], `${pc.name}: GENTS copied`);
+      assert.deepEqual([ruleOf(pc, ownLadies, ladies), ruleOf(pc, ownLadies, kids)], [[4000], [5000]], `${pc.name}: their own LADIES kept`);
+      assert.deepEqual(ruleOf(pc, deletedKids, kids), [2000], `${pc.name}: the deleted KIDS rule back, with the GENTS figure`);
+      assert.deepEqual([ruleOf(pc, noGents, ladies), ruleOf(pc, noGents, kids)], [[], []], `${pc.name}: no GENTS rule, nothing given`);
+    }
+    assert.equal(pc3.db.resolveDiscount({ partyId: plain, productGroupId: kids }).discountPerPair, 35, "a KIDS bill on PC3 takes 35 off a pair");
+    assert.equal(Number((pc1.db.db.prepare("SELECT COUNT(*) AS n FROM party_product_group_discounts").get() as { n: number }).n), 9, "run twice: three customers with GENTS, LADIES and KIDS, one row each");
   });
 });
