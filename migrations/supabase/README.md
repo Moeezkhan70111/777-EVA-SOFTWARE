@@ -13,7 +13,7 @@
 
 Apply in this order, in the Supabase SQL editor, on an **empty** project, one file at a time:
 
-`schema.sql` → `002` → `003` → … → `019` → `020` → `021` → `022` → `023` → `024` → `025` → `026` → `027` → `028` → `029` → `030` → `031` → `032` → `033` → `034` → `035` → `036` → `037` → `038` → `039` → `040` → `041` → `042` (file order. The order to apply them to production is in docs/55)
+`schema.sql` → `002` → `003` → … → `019` → `020` → `021` → `022` → `023` → `024` → `025` → `026` → `027` → `028` → `029` → `030` → `031` → `032` → `033` → `034` → `035` → `036` → `037` → `038` → `039` → `040` → `041` → `042` → `043` (file order. The order to apply them to production is in docs/55)
 
 After each one, run `verify_applied_state.sql`. Its header lists exactly which checks a project
 one migration behind fails, so a half-applied project is diagnosed rather than guessed at. The
@@ -111,7 +111,9 @@ changes would have to discard data to succeed, and they are written to fail inst
 
 `042_orders_lease.up.sql` follows `041` (it needs `011`, `013` and `036`): customer orders (`CUSTOMER_ORDER`) move from SALES_DISPATCH to a lease of their own, ORDERS, so the boss enters orders on PC3 while PC1 keeps every gatepass and bill (owner, 24 Nov 2026; docs/52). A gatepass's allocation against orders stays SALES_DISPATCH. Rows only, as `035`: the lease is created held by nobody, its barrier at the last order revision in the log. **Apply only after every computer runs the release that knows ORDERS (0.6.4 onward) and PC1 has sent every order it holds; then grant ORDERS to PC3 in the same sitting.** Not yet applied to either project.
 
-**Reverse in the opposite order: `042` → `041` → `040` → `039` → `038` → `037` → `036` → `035` → `034` → `033` → `032` → `031` → `030` → `029` → `028` → `027` → `026` → `025` → `024` → `023` → `022` → `021` → `020` → `019` → `018` → … → `003` → `002`.** Each down file's header
+`043_article_color_request_records.up.sql` follows `042` (it needs `013` and `042`): a new colour asked for from Enter Orders on the orders computer (`ARTICLE_COLOR_REQUEST`, under ORDERS) reaches PC1, which adds it to Product Master by itself (owner, 27 Nov 2026; local 121). Rows only, as `036`. Until it is applied a request waits on PC3 as UNKNOWN_RECORD_TYPE and nothing else is held up. **Apply before or with the release that carries local 121.** Applied to production 27 Nov 2026 (not to TEST).
+
+**Reverse in the opposite order: `043` → `042` → `041` → `040` → `039` → `038` → `037` → `036` → `035` → `034` → `033` → `032` → `031` → `030` → `029` → `028` → `027` → `026` → `025` → `024` → `023` → `022` → `021` → `020` → `019` → `018` → … → `003` → `002`.** Each down file's header
 says what reversing it costs: `018`'s re-opens the PC2/PC3 failure, for example. Reversing `005`
 re-opens the cross-factory read, and reversing `006` re-opens unbound access, re-enables any
 device revoked before the rollback and discards the claim audit. Both headers say so. `004_rls_policies.down.sql` revokes a

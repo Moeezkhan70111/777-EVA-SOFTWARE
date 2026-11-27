@@ -1,3 +1,4 @@
+import type { ColourAccess } from "../../hooks/useCanAddColour";
 import React, { useMemo, useRef, useState } from "react";
 import { SearchableCombobox } from "../../components/shared/SearchableCombobox";
 import { StateView } from "../../components/shared/StateView";
@@ -40,10 +41,11 @@ interface OrderFormProps {
   onSave: () => void;
   onDiscard?: () => void;
   /** An administrator where Product Master is written: + New colour on each article. */
-  canAddColor: boolean;
+  /** Whether "+ New colour" adds, asks the Product Master computer, or cannot be used here (useCanAddColour.ts). */
+  colourAccess: ColourAccess;
 }
 
-export const OrderForm: React.FC<OrderFormProps> = ({ entry, choices, busy, editing, onSave, onDiscard, canAddColor }) => {
+export const OrderForm: React.FC<OrderFormProps> = ({ entry, choices, busy, editing, onSave, onDiscard, colourAccess }) => {
   const { draft } = entry;
   /** The article being read: shown at once as its band (optimistic), until its block replaces it. */
   const [article, setArticle] = useState("");
@@ -115,7 +117,9 @@ export const OrderForm: React.FC<OrderFormProps> = ({ entry, choices, busy, edit
             <ArticleBlockCard key={block.article} block={block} disabled={disabled} focusOnMount={block.article === justAdded}
               onType={(productId, value) => entry.type(block.article, productId, value)}
               onRemove={() => entry.removeArticle(block.article)}
-              canAddColor={canAddColor} onColourAdded={() => void entry.colourAdded(block.article)} />
+              colourAccess={colourAccess} asked={entry.asked[block.article] ?? []} onColourAsked={(colour) => entry.colourAsked(block.article, colour)}
+              onColourAdded={() => void entry.colourAdded(block.article)}
+              onColourRemoved={() => void entry.colourRemoved(block.article)} />
           ))}
         </section>
       </div>

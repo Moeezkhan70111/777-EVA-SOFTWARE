@@ -48,6 +48,7 @@ export type MasterRecordType =
   | typeof SYNC_AGGREGATE.PARTY_CLAIM_REJECTION
   | typeof SYNC_AGGREGATE.SALE_RETURN
   | typeof SYNC_AGGREGATE.CUSTOMER_ORDER
+  | typeof SYNC_AGGREGATE.ARTICLE_COLOR_REQUEST
   | typeof SYNC_AGGREGATE.GATEPASS_ORDER_ALLOCATION;
 
 /** A column naming another record that must be on this computer before this row can be written. */
@@ -127,6 +128,8 @@ export const MASTER_RECORD_TYPES: readonly MasterRecordType[] = [
   // After GATEPASS: an allocation names the gatepass's lines and the order's lines.
   SYNC_AGGREGATE.CUSTOMER_ORDER,
   SYNC_AGGREGATE.GATEPASS_ORDER_ALLOCATION,
+  // Names an article by its text only: it may arrive before or after the article's sizes, and waits for nothing.
+  SYNC_AGGREGATE.ARTICLE_COLOR_REQUEST,
 ];
 
 export const MASTER_RECORDS: Readonly<Record<MasterRecordType, RecordTableSpec>> = {
@@ -337,6 +340,8 @@ export const MASTER_RECORDS: Readonly<Record<MasterRecordType, RecordTableSpec>>
       },
     ],
   },
+  // A colour asked for in Enter Orders (articleColorRequests.ts): its article and colour as text, nothing looked up.
+  [SYNC_AGGREGATE.ARTICLE_COLOR_REQUEST]: { table: "article_color_requests" },
 };
 
 export const isMasterRecordType = (value: string): value is MasterRecordType =>

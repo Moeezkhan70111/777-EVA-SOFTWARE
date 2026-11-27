@@ -135,6 +135,8 @@ export const LEASED_CHANNELS: Readonly<Record<string, readonly LeaseDomain[]>> =
   // The "+" beside Colour on Stock Adjustment: a colour of a product is product master data (docs/43, docs/47).
   [IPC.addArticleColor]: MASTER,
   [IPC.removeArticleColor]: MASTER,
+  // Asked for from Enter Orders on the orders computer, added by the Product Master computer by itself (27 Nov 2026).
+  [IPC.requestArticleColor]: ORDERS,
   [IPC.createGatepass]: CARTONS_AND_SALES,
   [IPC.cancelGatepass]: CARTONS_AND_SALES,
   // An edit puts back and takes cartons and changes the bill; a delete changes only the gatepass record.

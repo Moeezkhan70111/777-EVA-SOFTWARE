@@ -116,6 +116,16 @@ export interface ArticleColorResult {
 
 const MAX_COLOR_LENGTH = 40;
 
+/** A colour name as Product Master stores it: trimmed, upper-case, single spaces. Refused, in words, when it is not one.
+ *  The one check for every way a colour is added: "+ New colour", and a colour asked for from Enter Orders. */
+export function cleanColourName(raw: unknown): string {
+  const color = String(raw ?? "").trim().toUpperCase().replace(/\s+/g, " ");
+  if (!color) throw new CartonAdjustmentRefused("Type the colour's name.");
+  if (color.length > MAX_COLOR_LENGTH) throw new CartonAdjustmentRefused(`A colour name is at most ${MAX_COLOR_LENGTH} letters.`);
+  if (["N/A", "NULL", "UNDEFINED"].includes(color)) throw new CartonAdjustmentRefused("Type a real colour name.");
+  return color;
+}
+
 export interface CartonAdjustmentPage {
   readonly documents: readonly CartonAdjustmentDocument[];
   readonly total: number;
@@ -295,11 +305,8 @@ export const cartonStockDocumentMethods = {
    */
   addColorToArticle(this: SqliteDatabase, input: { article: string; color: string }): ArticleColorResult {
     const article = text(input.article).trim();
-    const color = text(input.color).trim().toUpperCase().replace(/\s+/g, " ");
     if (!article) throw new CartonAdjustmentRefused("Choose the article first.");
-    if (!color) throw new CartonAdjustmentRefused("Type the colour's name.");
-    if (color.length > MAX_COLOR_LENGTH) throw new CartonAdjustmentRefused(`A colour name is at most ${MAX_COLOR_LENGTH} letters.`);
-    if (["N/A", "NULL", "UNDEFINED"].includes(color)) throw new CartonAdjustmentRefused("Type a real colour name.");
+    const color = cleanColourName(input.color);
     this.db.exec("BEGIN IMMEDIATE TRANSACTION");
     try {
       const sizes = this.db

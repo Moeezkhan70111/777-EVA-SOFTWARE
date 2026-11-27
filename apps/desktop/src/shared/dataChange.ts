@@ -126,6 +126,8 @@ const KIND_OF_TYPE: Readonly<Record<string, DataKind>> = {
   // A carton return credits the customer: a customer balance moved (docs/55).
   SALE_RETURN: DATA_KIND.BILLING,
   COLOR_TRANSLATION: DATA_KIND.COLORS,
+  // A colour asked for from Enter Orders: nothing on screen reads the request itself. Its colour arrives as ARTICLE_SIZE.
+  ARTICLE_COLOR_REQUEST: DATA_KIND.PRODUCTS,
 };
 
 /**

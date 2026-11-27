@@ -1,5 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { AddColorControl } from "../../components/shared/AddColorControl";
+import { RemoveColorControl } from "../../components/shared/RemoveColorControl";
+import { COLOUR_ACCESS, type ColourAccess } from "../../hooks/useCanAddColour";
 import { ColourName } from "../colorTranslation/ColourName";
 import { SizeColourGrid, type GridBoxProps, type GridSize } from "../../components/shared/SizeColourGrid";
 import { copy } from "../../config/copy";
@@ -16,6 +18,10 @@ import { revealBlockSoon } from "../../utils/revealBlock";
 // administrator adds it from the cell, anyone else is told who can (MissingSizeCell). "+ New colour" is always shown
 // (owner, 27 Nov 2026: "GIVE ADD COLOR OPTION IN ENTER ORDERS PAGE"): it works for an administrator on the computer that
 // writes Product Master, and anywhere else it says who can (useCanAddColour); the new colour opens as a column.
+// On the orders computer (the boss's, PC3) "+ New colour" ASKS PC1, which adds it by itself (owner, 27 Nov 2026: "AUTO
+// ACCEPT IT FROM PC1"): the colour is named as on its way until its column arrives with the next sync.
+// "− Remove colour" beside it, on the Product Master computer only (owner, 27 Nov 2026): the main process refuses while any size of the colour
+// holds carton stock or an open order still waits for it, and never deletes it (disabled, kept on record).
 
 const words = copy.orders;
 
@@ -24,14 +30,19 @@ interface ArticleBlockCardProps {
   disabled: boolean;
   onType: (productId: string, value: string) => void;
   onRemove: () => void;
-  /** Offered only to an administrator where MASTER_DATA is written (the main process refuses it anywhere else). */
-  canAddColor: boolean;
+  /** Adds where MASTER_DATA is written, asks where ORDERS is, neither elsewhere (the main process refuses it anyway). */
+  colourAccess: ColourAccess;
+  /** Colours asked of the Product Master computer that have not arrived yet. */
+  asked: readonly string[];
+  onColourAsked: (colour: string) => void;
   onColourAdded: (colour: string) => void;
+  onColourRemoved: () => void;
   /** Just added from the picker: its first box takes the focus, so the keyboard carries straight on (24 Nov 2026). */
   focusOnMount?: boolean;
 }
 
-export const ArticleBlockCard: React.FC<ArticleBlockCardProps> = ({ block, disabled, onType, onRemove, canAddColor, onColourAdded, focusOnMount = false }) => {
+export const ArticleBlockCard: React.FC<ArticleBlockCardProps> = ({ block, disabled, onType, onRemove, colourAccess, asked, onColourAsked, onColourAdded, onColourRemoved, focusOnMount = false }) => {
+  const canAddColor = colourAccess === COLOUR_ACCESS.ADD;
   const grid = useMemo(() => articleGrid(block.products), [block.products]);
   const problems = blockProblems(block);
   const totals = blockTotals(block);
@@ -101,7 +112,11 @@ export const ArticleBlockCard: React.FC<ArticleBlockCardProps> = ({ block, disab
         </button>
       </header>
       <div className="ord-block-tools">
-        <AddColorControl article={block.article} onAdded={onColourAdded} blockedReason={canAddColor ? undefined : words.newColourWhere} disabled={disabled} />
+        <AddColorControl article={block.article} onAdded={onColourAdded} disabled={disabled}
+          blockedReason={colourAccess === COLOUR_ACCESS.NONE ? words.newColourWhere : undefined}
+          onAsked={colourAccess === COLOUR_ACCESS.ASK ? onColourAsked : undefined} />
+        {canAddColor && !disabled ? <RemoveColorControl article={block.article} colours={block.colours} onRemoved={onColourRemoved} /> : null}
+        {asked.length > 0 ? <p className="ord-hint" role="status">{words.colourAsked(asked.join(", "))}</p> : null}
       </div>
       <SizeColourGrid
         renderColourName={(colour) => <ColourName colour={colour} />}

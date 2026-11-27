@@ -31,7 +31,7 @@ import type { DeviceSyncHealth, LastReport, SupabaseSyncTransport, SyncPassResul
 import { describeCloudSyncConfig, readCloudSyncConfig, type CloudSyncConfigResult } from "./cloudConfig";
 import { DeviceCredentialStore } from "./deviceCredentialStore";
 import { announceDataChanged } from "./dataChanged";
-import { dataKindsOf } from "../shared/dataChange";
+import { DATA_KIND, dataKindsOf } from "../shared/dataChange";
 
 export interface CloudSyncPassOutcome extends SyncPassResult {
   /** Carton identities and production events sent and acknowledged this pass. */
@@ -193,6 +193,27 @@ function buildMasterRecords(db: SqliteDatabase, logger: StructuredLogger, device
       module: "sync", severity: "ERROR", operation: "master-records", deviceId,
       message: `Changed master records could not be built: ${error instanceof Error ? error.message : String(error)}. They stay marked.`,
     });
+  }
+}
+
+/**
+ * COLOURS ASKED FOR FROM ENTER ORDERS (owner, 27 Nov 2026: "AUTO ACCEPT IT FROM PC1"): on the computer that writes
+ * Product Master, every request not yet dealt with is added, by itself (articleColorRequests.ts in @erp/data).
+ * Elsewhere it does nothing. Returns how many were dealt with. Never throws: a request left over goes at the next pass.
+ */
+function applyColourRequests(db: SqliteDatabase, logger: StructuredLogger, deviceId: string): number {
+  try {
+    const dealt = db.applyArticleColorRequests(new Date().toISOString());
+    if (dealt > 0) {
+      logger.log({ module: "sync", severity: "INFO", operation: "colour-requests", deviceId, message: `Added ${String(dealt)} colour(s) asked for from Enter Orders.` });
+    }
+    return dealt;
+  } catch (error) {
+    logger.log({
+      module: "sync", severity: "ERROR", operation: "colour-requests", deviceId,
+      message: `Colours asked for from Enter Orders could not be added: ${error instanceof Error ? error.message : String(error)}. Tried again at the next pass.`,
+    });
+    return 0;
   }
 }
 
@@ -504,7 +525,9 @@ export async function runCloudSyncPass(
 
     // MASTER DATA FIRST: every record changed under this computer's master-data lease becomes a
     // queued revision (masterRecords.ts), so this pass's drain carries it. A failure here is logged
-    // and the pass goes on: the marks stay, and the next pass builds them.
+    // and the pass goes on: the marks stay, and the next pass builds them. A colour asked for from Enter Orders and
+    // left over from an earlier pass is added first, so it goes with them.
+    applyColourRequests(db, logger, deviceId);
     buildMasterRecords(db, logger, deviceId);
     // Then the labels the backfill marked, then the stock movements, each behind its material.
     buildLabelRuns(db, logger, deviceId);
@@ -538,6 +561,13 @@ export async function runCloudSyncPass(
     const pull = new sync.SyncPull(db.db, transport, { project: identity.url, batchSize: sync.PULL_BUDGET.batchSize });
     // Page after page while each comes back full: a new computer reads the log in minutes.
     const pulled = await sync.pullBacklog(pull, sync.PULL_BUDGET);
+    // A colour asked for on the orders computer has just arrived: added here and sent back in this same pass, so the
+    // boss's column opens at that computer's next pull, not one pass later.
+    if (applyColourRequests(db, logger, deviceId) > 0) {
+      buildMasterRecords(db, logger, deviceId);
+      await sync.drainBacklog(drain, sync.DRAIN_BUDGET, () => buildMasterRecords(db, logger, deviceId));
+      announceDataChanged([DATA_KIND.PRODUCTS]);
+    }
     // Open screens showing what just arrived reload in place: a figure that is current in the
     // database but stale on the screen is no better than a slow sync. Anything read can also settle
     // or start a wait, so a read that applied nothing still tells the waiting lists.

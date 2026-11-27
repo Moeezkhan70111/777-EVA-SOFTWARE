@@ -1504,7 +1504,7 @@ test("009: every event type this computer can apply is a type the cloud log acce
   // records, 015 stock movements, 020 and 021 the account types, 026 carton stock movements, 028 the
   // production-to-cash records, 029 the colour list, 030 the Stock Adjustment documents, 032 the completed production days, 033 the Move In vouchers, 034 the ledger archive statements, 036 the customer orders and their allocations, 037 the opening balances.
   const seeds = new Set(seededTypes().keys());
-  for (const migration of [LEASED_RECORDS, STOCK_EVENTS, CLOUD_ACCOUNTS, PERMISSION_REQUESTS, CARTON_STOCK_EVENTS, PRODUCTION_TO_CASH, COLOR_TRANSLATIONS, ADJUSTMENT_DOCUMENTS, PRODUCTION_DAYS, STORE_HAND_VOUCHERS, LEDGER_ARCHIVE, CUSTOMER_ORDERS, OPENING_BALANCES, PURCHASE_VOUCHERS, PARTY_CLAIMS, SALE_RETURNS, ARCHIVE_PAGES]) {
+  for (const migration of [LEASED_RECORDS, STOCK_EVENTS, CLOUD_ACCOUNTS, PERMISSION_REQUESTS, CARTON_STOCK_EVENTS, PRODUCTION_TO_CASH, COLOR_TRANSLATIONS, ADJUSTMENT_DOCUMENTS, PRODUCTION_DAYS, STORE_HAND_VOUCHERS, LEDGER_ARCHIVE, CUSTOMER_ORDERS, OPENING_BALANCES, PURCHASE_VOUCHERS, PARTY_CLAIMS, SALE_RETURNS, ARCHIVE_PAGES, COLOUR_REQUESTS]) {
     const insert = migration.slice(migration.indexOf("insert into public.sync_aggregate_types"));
     for (const match of insert.slice(0, insert.indexOf(";")).matchAll(/\('([A-Z_]+)', (true|false), '/g)) {
       seeds.add(match[1] ?? "");
@@ -1767,12 +1767,13 @@ const PARTIES_LEASE = read("migrations/supabase/035_parties_lease.up.sql");
 const PARTIES_LEASE_DOWN = read("migrations/supabase/035_parties_lease.down.sql");
 const ORDERS_LEASE = read("migrations/supabase/042_orders_lease.up.sql");
 const CUSTOMER_ORDERS = read("migrations/supabase/036_customer_order_records.up.sql");
+const COLOUR_REQUESTS = read("migrations/supabase/043_article_color_request_records.up.sql");
 const LEASED_RECORDS_DOWN = read("migrations/supabase/013_leased_records.down.sql");
 
 /** The (type, lease domain) rows 013 seeds into leased_record_types. */
 const leasedRecordTypes = (): Map<string, string> => {
   const types = new Map<string, string>();
-  for (const migration of [LEASED_RECORDS, PRODUCTION_TO_CASH, COLOR_TRANSLATIONS, ADJUSTMENT_DOCUMENTS, PRODUCTION_DAYS, STORE_HAND_VOUCHERS, LEDGER_ARCHIVE, CUSTOMER_ORDERS, OPENING_BALANCES, PURCHASE_VOUCHERS, PARTY_CLAIMS, SALE_RETURNS, ARCHIVE_PAGES]) {
+  for (const migration of [LEASED_RECORDS, PRODUCTION_TO_CASH, COLOR_TRANSLATIONS, ADJUSTMENT_DOCUMENTS, PRODUCTION_DAYS, STORE_HAND_VOUCHERS, LEDGER_ARCHIVE, CUSTOMER_ORDERS, OPENING_BALANCES, PURCHASE_VOUCHERS, PARTY_CLAIMS, SALE_RETURNS, ARCHIVE_PAGES, COLOUR_REQUESTS]) {
     const insert = migration.slice(migration.indexOf("insert into public.leased_record_types"));
     for (const match of insert.slice(0, insert.indexOf(";")).matchAll(/\('([A-Z_]+)', '([A-Z_]+)'\)/g)) {
       types.set(match[1] ?? "", match[2] ?? "");
@@ -1793,8 +1794,8 @@ const leasedRecordTypes = (): Map<string, string> => {
 
 test("013: every record type is a log type, unscoped, under a lease this computer knows", () => {
   const types = leasedRecordTypes();
-  assert.equal(types.size, 32, "013's eight master-data record types of docs/37 W.1, 028's ten, 029's colour list, 030's Stock Adjustment documents, 032's completed production days, 033's Move In vouchers, 034's ledger archive statements, 036's customer orders and allocations, 037's opening balances, 038's purchase bills, 039's claim requests, claims and rejections, 040's sale returns, and 041's ledger archive pages");
-  const logTypes = [LEASED_RECORDS, PRODUCTION_TO_CASH, COLOR_TRANSLATIONS, ADJUSTMENT_DOCUMENTS, PRODUCTION_DAYS, STORE_HAND_VOUCHERS, LEDGER_ARCHIVE, CUSTOMER_ORDERS, OPENING_BALANCES, PURCHASE_VOUCHERS, PARTY_CLAIMS, SALE_RETURNS, ARCHIVE_PAGES].map((migration) => migration.slice(migration.indexOf("insert into public.sync_aggregate_types"))).join("\n");
+  assert.equal(types.size, 33, "013's eight master-data record types of docs/37 W.1, 028's ten, 029's colour list, 030's Stock Adjustment documents, 032's completed production days, 033's Move In vouchers, 034's ledger archive statements, 036's customer orders and allocations, 037's opening balances, 038's purchase bills, 039's claim requests, claims and rejections, 040's sale returns, 041's ledger archive pages, and 043's colour requests");
+  const logTypes = [LEASED_RECORDS, PRODUCTION_TO_CASH, COLOR_TRANSLATIONS, ADJUSTMENT_DOCUMENTS, PRODUCTION_DAYS, STORE_HAND_VOUCHERS, LEDGER_ARCHIVE, CUSTOMER_ORDERS, OPENING_BALANCES, PURCHASE_VOUCHERS, PARTY_CLAIMS, SALE_RETURNS, ARCHIVE_PAGES, COLOUR_REQUESTS].map((migration) => migration.slice(migration.indexOf("insert into public.sync_aggregate_types"))).join("\n");
   for (const [type, domain] of types) {
     assert.match(logTypes, new RegExp(String.raw`\('${type}', false, '`), `${type} is seeded into the log's types, unscoped`);
     assert.ok((Object.values(LEASE_DOMAIN) as string[]).includes(domain), `${type}'s domain ${domain} is a lease domain`);

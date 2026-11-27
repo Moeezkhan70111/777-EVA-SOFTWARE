@@ -318,6 +318,8 @@ const buildContext = (): IpcContext => {
       syncRunSummary: () => ({ lastAttempt: null, lastSuccess: null }),
       // This computer's number block, sent with the claim (cloud migration 018).
       getNumberBlock: () => 2,
+      // Colours asked for from Enter Orders: none here (articleColorRequests.ts).
+      applyArticleColorRequests: () => 0,
       // Master records are built before every drain (masterRecords.ts). Recorded, so the order shows.
       buildLeasedRecordRevisions: () => {
         built.push({ what: "master-records" });

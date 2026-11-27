@@ -89,3 +89,19 @@ test("a colour the article does not have is refused in words", () => {
     assert.throws(() => db.removeColorFromArticle({ article: "SK6", color: " " }), /Choose the colour/);
   });
 });
+
+// Owner, 27 Nov 2026: "MAKE SURE NOT TO DELETE AN ITEM IF IT HAS STOCK". Not only carton stock in the store.
+test("a colour holding stock anywhere, at another location or reserved, is refused and nothing changes", () => {
+  withFixture(({ db, raw, variant }) => {
+    const black7 = variant("BLACK", "7/10");
+    raw.prepare("INSERT INTO stock_projection_by_location (product_variant_id, location_type, location_id, quantity_on_hand, updated_at) VALUES (?, 'VEHICLE', 'van-1', 6, 'x')").run(black7);
+    assert.throws(() => db.removeColorFromArticle({ article: "SK6", color: "BLACK", actor: "owner" }), /SK6 BLACK still has stock in size 7\/10/);
+    assert.deepEqual(colours(db), ["BLACK", "RED"]);
+
+    raw.prepare("DELETE FROM stock_projection_by_location WHERE product_variant_id = ?").run(black7);
+    raw.prepare("INSERT OR REPLACE INTO stock_projection_by_variant (product_variant_id, quantity_on_hand, quantity_reserved, quantity_damaged, updated_at) VALUES (?, 0, 2, 0, 'x')").run(black7);
+    assert.throws(() => db.removeColorFromArticle({ article: "SK6", color: "BLACK", actor: "owner" }), /still has stock/);
+    const kept = raw.prepare("SELECT status FROM product_variants WHERE id = ?").get(black7) as { status: string };
+    assert.equal(kept.status, "ACTIVE");
+  });
+});

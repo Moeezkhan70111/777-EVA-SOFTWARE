@@ -9,6 +9,8 @@
 // Refused, with the reason in words, while removing it would hide something still real (itemRemoval.ts's rule for
 // materials, the same idea):
 //   * any size of the colour holds carton stock, above or below zero: take it to zero with a Stock Adjustment first
+//   * any size holds stock anywhere else either: at any location, reserved or damaged (owner, 27 Nov 2026: "MAKE SURE
+//     NOT TO DELETE AN ITEM IF IT HAS STOCK")
 //   * an open order still waits for it: it could never be dispatched
 //
 // These methods are merged onto SqliteDatabase (see sqliteDatabase.ts, "Feature modules").
@@ -31,12 +33,16 @@ export interface ArticleColorRemoval {
 const LIVE = "pv.deleted_at IS NULL AND COALESCE(pv.status, 'ACTIVE') <> 'DISABLED'";
 const SAME_ARTICLE_AND_COLOUR = "UPPER(TRIM(pv.article)) = UPPER(TRIM(?)) AND UPPER(TRIM(pv.color)) = ?";
 
-/** The colour's live products on the article, with the cartons each holds in store. */
-function liveProducts(database: SqliteDatabase, article: string, color: string): Array<{ id: string; article: string; size: string; inStore: number }> {
+/** Stock a product holds anywhere but the store: other locations, and reserved or damaged. */
+const OTHER_STOCK_SQL = `(COALESCE((SELECT SUM(ABS(spl.quantity_on_hand)) FROM stock_projection_by_location spl WHERE spl.product_variant_id = pv.id), 0)
+  + COALESCE((SELECT ABS(spv.quantity_on_hand) + ABS(spv.quantity_reserved) + ABS(spv.quantity_damaged) FROM stock_projection_by_variant spv WHERE spv.product_variant_id = pv.id), 0))`;
+
+/** The colour's live products on the article, with the cartons each holds in store, and whether it holds any elsewhere. */
+function liveProducts(database: SqliteDatabase, article: string, color: string): Array<{ id: string; article: string; size: string; inStore: number; otherStock: number }> {
   const rows = database.db
-    .prepare(`SELECT pv.id, pv.article, pv.size, ${IN_STORE_STOCK_SQL} AS in_store FROM product_variants pv WHERE ${SAME_ARTICLE_AND_COLOUR} AND ${LIVE}`)
+    .prepare(`SELECT pv.id, pv.article, pv.size, ${IN_STORE_STOCK_SQL} AS in_store, ${OTHER_STOCK_SQL} AS other_stock FROM product_variants pv WHERE ${SAME_ARTICLE_AND_COLOUR} AND ${LIVE}`)
     .all(article, color) as Row[];
-  return rows.map((row) => ({ id: String(row.id), article: String(row.article), size: String(row.size), inStore: Number(row.in_store ?? 0) }));
+  return rows.map((row) => ({ id: String(row.id), article: String(row.article), size: String(row.size), inStore: Number(row.in_store ?? 0), otherStock: Number(row.other_stock ?? 0) }));
 }
 
 /** Open order lines still owed something for these products. */
@@ -58,6 +64,10 @@ function removalProblem(database: SqliteDatabase, article: string, color: string
   if (holding.length > 0) {
     const sizes = holding.map((product) => `${product.size} (${cartonsToDozens(product.inStore)} dozen)`).join(", ");
     return `${article} ${color} still has carton stock: ${sizes}. Take it to zero with a Stock Adjustment first.`;
+  }
+  const elsewhere = products.filter((product) => product.otherStock !== 0);
+  if (elsewhere.length > 0) {
+    return `${article} ${color} still has stock in size ${elsewhere.map((product) => product.size).join(", ")}. Bring it to zero first. Nothing was changed.`;
   }
   const owed = linesStillOwed(database, products.map((product) => product.id));
   if (owed > 0) return `${article} ${color} is still waiting on ${owed} open order ${owed === 1 ? "line" : "lines"}. Dispatch or take them off the order first.`;

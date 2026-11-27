@@ -110,7 +110,7 @@ export const copy = {
     explain: (article: string, colour: string) =>
       `${colour} will no longer be offered for ${article}. Its past production, gatepasses, bills, labels and orders keep it. Add it back any time with + New colour.`,
     choose: "Choose a colour above.",
-    rule: "A colour can be removed only when none of its sizes holds carton stock and no open order is waiting for it.",
+    rule: "A colour can be removed only when none of its sizes holds any stock and no open order is waiting for it.",
     confirm: (colour: string) => `Remove ${colour}`,
     removing: "Removing…",
     cancel: "Cancel",
@@ -2991,7 +2991,8 @@ export const copy = {
     article: "Article",
     articlePlaceholder: "Choose an article",
     noMoreArticles: "Every article is on the order",
-    newColourWhere: "New colours are added on PC1, by an administrator.",
+    newColourWhere: "Only an administrator on PC1 or the boss's computer can add a colour.",
+    colourAsked: (colours: string) => `${colours}: sent to PC1. Its column opens here as soon as PC1 adds it.`,
     noColours: "This article has no active colours in Product Master.",
     loadingArticle: "Reading the article…",
     articleFailed: "The article could not be read. Try again.",

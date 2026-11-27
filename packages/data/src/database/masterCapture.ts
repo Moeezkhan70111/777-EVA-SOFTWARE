@@ -123,6 +123,8 @@ export const MASTER_CAPTURE: readonly MasterTableCapture[] = [
   { table: "customer_order_lines", record: SYNC_AGGREGATE.CUSTOMER_ORDER, recordId: `${ROW}.order_id` },
   { table: "gatepass_order_allocations", record: SYNC_AGGREGATE.GATEPASS_ORDER_ALLOCATION, recordId: `${ROW}.id` },
   { table: "gatepass_order_allocation_lines", record: SYNC_AGGREGATE.GATEPASS_ORDER_ALLOCATION, recordId: `${ROW}.allocation_id` },
+  // A colour asked for in Enter Orders, on the orders computer (articleColorRequests.ts).
+  { table: "article_color_requests", record: SYNC_AGGREGATE.ARTICLE_COLOR_REQUEST, recordId: `${ROW}.id` },
 ];
 
 /**

@@ -32,6 +32,9 @@ const NOT_MASTER: Readonly<Record<string, readonly string[]>> = {
     "store_move_out_sessions", "stock_projection_by_location",
     "stock_projection_by_variant", "report_daily_summary",
   ],
+  "The Product Master computer's own note of which colour requests it dealt with (local 121): never travels": [
+    "article_color_request_results",
+  ],
   "Installation identity, provisioned per computer and mirrored by the owner, not replicated as master data": [
     "factories", "workstations", "devices", "operators",
   ],

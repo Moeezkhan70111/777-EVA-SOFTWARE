@@ -127,6 +127,9 @@ export const SYNC_AGGREGATE = {
   /** What one gatepass was counted against on customer orders, with its lines (local 112, cloud 036, docs/52). Written
    * by the gatepass's own transaction and reversed by its cancel. It moves no stock, money or ledger. */
   GATEPASS_ORDER_ALLOCATION: "GATEPASS_ORDER_ALLOCATION",
+  /** A new colour asked for an article from Enter Orders on the orders computer (local 121, cloud 043). The computer that
+   * writes Product Master adds it on arrival, by itself (articleColorRequests.ts). It moves no stock, money or ledger. */
+  ARTICLE_COLOR_REQUEST: "ARTICLE_COLOR_REQUEST",
   /**
    * One raw-material stock movement, as stored, with the change it made to its material's balance
    * (balanceDelta). Append-only: captured when inserted (masterCapture.ts, EVENT_CAPTURE), applied
@@ -193,6 +196,9 @@ export const LEASED_AGGREGATE_DOMAIN: Readonly<Partial<Record<SyncAggregateType,
   // allocation against them stays with the gatepass, under SALES_DISPATCH (docs/52).
   [SYNC_AGGREGATE.CUSTOMER_ORDER]: LEASE_DOMAIN.ORDERS,
   [SYNC_AGGREGATE.GATEPASS_ORDER_ALLOCATION]: LEASE_DOMAIN.SALES_DISPATCH,
+  // Asked where orders are entered (owner, 27 Nov 2026: the boss's computer adds colours in Enter Orders), and added to
+  // Product Master by the computer that writes it.
+  [SYNC_AGGREGATE.ARTICLE_COLOR_REQUEST]: LEASE_DOMAIN.ORDERS,
   [SYNC_AGGREGATE.CASH_VOUCHER]: LEASE_DOMAIN.ACCOUNTS,
   // Imported on the computer that writes cash vouchers: the archive belongs to the accounts, not to master data.
   [SYNC_AGGREGATE.LEDGER_ARCHIVE_STATEMENT]: LEASE_DOMAIN.ACCOUNTS,

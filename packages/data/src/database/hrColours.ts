@@ -22,7 +22,8 @@ interface ColourAdder {
   addColorToArticle(input: { article: string; color: string }): { added: number };
 }
 
-const holdsProductMaster = (db: DatabaseSync): boolean =>
+/** Whether this computer writes Product Master (the MASTER_DATA lease), as the local lease cache says. */
+export const holdsProductMaster = (db: DatabaseSync): boolean =>
   db
     .prepare(
       `SELECT 1 AS here FROM sync_domain_leases

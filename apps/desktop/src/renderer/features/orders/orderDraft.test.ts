@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { CustomerOrder } from "../../types/desktopApi";
-import { articleGrid, blockLines, blockProblems, blockTotals, cellKey, draftFromOrder, draftReady, draftSteps, newBlock, withProducts } from "./orderDraft";
+import { articleGrid, blockLines, blockProblems, blockTotals, cellKey, draftFromOrder, draftReady, draftSteps, newBlock, withoutRemoved, withProducts } from "./orderDraft";
 
 const PRODUCTS = [
   { productVariantId: "red-6", size: "6", color: "RED" },
@@ -39,6 +39,13 @@ describe("the order draft", () => {
     const added = withProducts(block, [...PRODUCTS, { productVariantId: "white-6", size: "6", color: "WHITE" }]);
     expect(added.colours).toEqual(["BLACK", "BLUE", "RED", "WHITE"]);
     expect(added.typed).toEqual({ "red-6": "10" });
+  });
+
+  it("a colour removed from the article loses its column, and what was typed in it", () => {
+    const block = { ...newBlock("SK6", PRODUCTS), typed: { "red-6": "10", "black-7": "3" } };
+    const removed = withoutRemoved(block, PRODUCTS.filter((product) => product.color !== "BLACK"));
+    expect(removed.colours).toEqual(["BLUE", "RED"]);
+    expect(removed.typed).toEqual({ "red-6": "10" });
   });
 
   it("refuses a quantity that is not whole or half dozens above 0, and one below what was already dispatched", () => {

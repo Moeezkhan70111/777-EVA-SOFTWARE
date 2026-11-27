@@ -5,7 +5,7 @@ import { DocumentNavigator, type DocumentNavigatorLabels } from "../../component
 import { StateView } from "../../components/shared/StateView";
 import { copy } from "../../config/copy";
 import { LeasedStation } from "../store/LeasedStation";
-import { useCanAddColour } from "../../hooks/useCanAddColour";
+import { useOrderColourAccess } from "../../hooks/useCanAddColour";
 import { OrderDetails } from "./OrderDetails";
 import { OrderForm } from "./OrderForm";
 import { useOrderChoices } from "./useOrderChoices";
@@ -42,8 +42,8 @@ interface OrderEntryPageProps {
 const OrderEntry: React.FC<OrderEntryPageProps> = ({ token, canCancel }) => {
   const state = useOrderEntry(token);
   const choices = useOrderChoices();
-  // A new colour is Product Master: the one rule every quantity-by-colour page asks (useCanAddColour).
-  const canAddColour = useCanAddColour();
+  // A new colour is Product Master: added here on its computer, asked for on the orders computer (useCanAddColour.ts).
+  const colourAccess = useOrderColourAccess();
   const [cancelling, setCancelling] = useState(false);
   const [reason, setReason] = useState("");
   const { mode, order, neighbours, busy } = state;
@@ -56,7 +56,7 @@ const OrderEntry: React.FC<OrderEntryPageProps> = ({ token, canCancel }) => {
         justSaved={state.justSaved} onNewOrder={() => void state.startNew()} />;
     }
     return <OrderForm entry={state.entry} choices={choices} busy={busy} editing={mode === "edit"} onSave={() => void (mode === "edit" ? state.saveEdit() : state.save())} onDiscard={state.cancelEdit}
-      canAddColor={canAddColour} />;
+      colourAccess={colourAccess} />;
   })();
 
   return (

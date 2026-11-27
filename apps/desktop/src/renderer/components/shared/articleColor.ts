@@ -26,6 +26,21 @@ export const addArticleColor = async (api: DesktopApi, article: string, color: s
   }
 };
 
+export type ColorAskReply = { ok: true; color: string; asked: boolean } | { ok: false; reason: string };
+
+/** Asks the Product Master computer for `color` on `article` (main process requestArticleColor, from Enter Orders on the
+ *  orders computer). `asked` is false when the article already had it: nothing to wait for. */
+export const requestArticleColor = async (api: DesktopApi, article: string, color: string, failed: string): Promise<ColorAskReply> => {
+  try {
+    const reply = await api.requestArticleColor({ article, color });
+    const record = typeof reply === "object" && reply !== null ? (reply as Record<string, unknown>) : {};
+    if (record.accepted === true && typeof record.color === "string") return { ok: true, color: record.color, asked: record.status === "REQUESTED" };
+    return { ok: false, reason: typeof record.reason === "string" ? record.reason : failed };
+  } catch (error) {
+    return { ok: false, reason: leaseRefusalText(error) ?? failed };
+  }
+};
+
 export type ColorRemovalReply = { ok: true; color: string; removed: number } | { ok: false; reason: string };
 
 /** Takes `color` off every size of `article` (main process removeColorFromArticle). Refused, in words, while carton

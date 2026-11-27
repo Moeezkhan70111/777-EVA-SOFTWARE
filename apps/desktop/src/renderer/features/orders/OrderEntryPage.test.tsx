@@ -137,6 +137,69 @@ it("lets an administrator add a new colour to the article, and opens it as a col
     expect(screen.getByText("7 dozen")).toBeTruthy();
   });
 
+  // Owner, 27 Nov 2026: "GIVE REMOVE COLOR OPTION IN ENTER ORDERS ALSO. MAKE SURE NOT TO DELETE AN ITEM IF IT HAS STOCK".
+  it("lets an administrator remove a colour, its column goes; a refusal for stock is shown and nothing goes", async () => {
+    const api = createFakeBackend();
+    const redOnly = PRODUCTS.filter((product) => product.color === "RED");
+    const reason = "SK6 BLUE still has carton stock: 6 (2 dozen). Take it to zero with a Stock Adjustment first.";
+    const removeArticleColor = vi.fn()
+      .mockResolvedValueOnce({ accepted: false, reason })
+      .mockResolvedValueOnce({ accepted: true, color: "BLUE", removed: 1 });
+    Object.assign(api, {
+      removeArticleColor,
+      getCustomerOrderArticle: vi.fn().mockResolvedValueOnce({ accepted: true, products: PRODUCTS }).mockResolvedValue({ accepted: true, products: redOnly }),
+    });
+    render(<SessionProvider user={ADMIN} token="token-1"><NotificationsProvider><OrderEntryPage token="token-1" canCancel /></NotificationsProvider></SessionProvider>);
+    await pick("Party", /BEHRAAM SHOES/);
+    await pick("Article", /SK6/);
+    await screen.findByRole("textbox", { name: "SK6 BLUE size 6, dozens" });
+
+    await press(() => screen.findByRole("button", { name: "Remove a colour from SK6" }));
+    await userEvent.click(screen.getByRole("radio", { name: /BLUE/ }));
+    await press(() => screen.findByRole("button", { name: "Remove BLUE" }));
+    expect(await screen.findByText(/SK6 BLUE still has carton stock/)).toBeTruthy();
+    expect(screen.getByRole("textbox", { name: "SK6 BLUE size 6, dozens" })).toBeTruthy();
+
+    await press(() => screen.findByRole("button", { name: "Remove BLUE" }));
+    await waitFor(() => expect(screen.queryByRole("textbox", { name: "SK6 BLUE size 6, dozens" })).toBeNull());
+    expect(removeArticleColor).toHaveBeenLastCalledWith({ article: "SK6", color: "BLUE" });
+    expect(screen.getByRole("textbox", { name: "SK6 RED size 6, dozens" })).toBeTruthy();
+  });
+
+  // Owner, 27 Nov 2026: "MAKE BOSS PC CAN ALSO ADD NEW COLOR IN ENTER ORDERS", "AUTO ACCEPT IT FROM PC1". On the
+  // orders computer the colour is asked of PC1, shown as on its way, and its column opens when PC1's sizes arrive.
+  it("on the boss's computer asks PC1 for a new colour, and opens its column when it arrives", async () => {
+    const api = createFakeBackend();
+    const withGreen = [...PRODUCTS, { productVariantId: "green-6", size: "6", color: "GREEN" }];
+    const requestArticleColor = vi.fn(async (_input: { article: string; color: string }) => ({ accepted: true, status: "REQUESTED", color: "GREEN" }));
+    const addArticleColor = vi.fn();
+    Object.assign(api, {
+      requestArticleColor,
+      addArticleColor,
+      getWriteLeases: vi.fn(async () => [
+        { domain: "MASTER_DATA", canWrite: false, reason: "HELD_ELSEWHERE", holderLabel: "PC1" },
+        { domain: "ORDERS", canWrite: true, reason: null, holderLabel: null },
+      ]),
+      getCustomerOrderArticle: vi.fn().mockResolvedValueOnce({ accepted: true, products: PRODUCTS }).mockResolvedValue({ accepted: true, products: withGreen }),
+    });
+    render(<SessionProvider user={ADMIN} token="token-1"><NotificationsProvider><OrderEntryPage token="token-1" canCancel /></NotificationsProvider></SessionProvider>);
+    await pick("Party", /BEHRAAM SHOES/);
+    await pick("Article", /SK6/);
+    await waitFor(() => expect(screen.queryByRole("button", { name: "Remove a colour from SK6" })).toBeNull());
+    await press(() => screen.findByRole("button", { name: "Add a new colour to SK6" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "New colour name" }), { target: { value: "green" } });
+    await press(() => screen.findByRole("button", { name: "Add colour" }));
+
+    expect(requestArticleColor).toHaveBeenCalledWith({ article: "SK6", color: "green" });
+    expect(addArticleColor).not.toHaveBeenCalled();
+    expect(await screen.findByText("GREEN: sent to PC1. Its column opens here as soon as PC1 adds it.")).toBeTruthy();
+    expect(screen.queryByRole("textbox", { name: "SK6 GREEN size 6, dozens" })).toBeNull();
+
+    await act(async () => { api.announce(["PRODUCTS"]); });
+    expect(await screen.findByRole("textbox", { name: "SK6 GREEN size 6, dozens" })).toBeTruthy();
+    await waitFor(() => expect(screen.queryByText(/GREEN: sent to PC1/)).toBeNull());
+  });
+
   // Owner, 24 Nov 2026 (the page's UI/UX pass): the picker offers only articles not yet on the order, the article just
   // added hands the focus to its first box, and the optional note waits behind "+ Add a note".
   it("hides an added article from the picker, focuses its first box, and keeps the note behind a button until wanted", async () => {
@@ -220,6 +283,7 @@ it("lets an administrator add a new colour to the article, and opens it as a col
     await pick("Article", /SK6/);
     const add = await screen.findByRole("button", { name: "Add a new colour to SK6" });
     expect(add).toBeDisabled();
-    expect(add).toHaveAccessibleDescription("New colours are added on PC1, by an administrator.");
+    expect(add).toHaveAccessibleDescription("Only an administrator on PC1 or the boss's computer can add a colour.");
+    expect(screen.queryByRole("button", { name: "Remove a colour from SK6" })).toBeNull();
   });
 });

@@ -1,4 +1,4 @@
-import { cartonsToDozens, compareSizes, orderDozensProblem, orderDozensToCartons } from "@erp/domain";
+import { cartonsToDozens, compareSizes, normalizeQrColor, orderDozensProblem, orderDozensToCartons } from "@erp/domain";
 import { orderDozens } from "./orderUnits";
 import type { GridSize } from "../../components/shared/SizeColourGrid";
 import type { CustomerOrder, CustomerOrderArticleProduct, CustomerOrderLineInput } from "../../types/desktopApi";
@@ -66,6 +66,27 @@ export function withProducts(block: ArticleBlock, products: readonly CustomerOrd
   for (const product of products) known.set(product.productVariantId, product);
   const merged = [...known.values()];
   return { ...block, products: merged, colours: articleGrid(merged).colours };
+}
+
+/**
+ * The block after a colour was removed from the article in Product Master: the products as read again, so the removed
+ * colour's column goes, and anything typed in its boxes goes with it. (Removal is refused while an open order line
+ * still needs the colour, so an order being edited never loses a stored line here.)
+ */
+export function withoutRemoved(block: ArticleBlock, products: readonly CustomerOrderArticleProduct[]): ArticleBlock {
+  const live = new Set(products.map((product) => product.productVariantId));
+  const typed = Object.fromEntries(Object.entries(block.typed).filter(([productId]) => live.has(productId)));
+  return { ...block, products, colours: articleGrid(products).colours, typed };
+}
+
+/**
+ * Colours asked of the Product Master computer (Enter Orders on the orders computer, 27 Nov 2026) that the article does
+ * not have yet: the ones still to wait for. Compared as a carton QR reads a colour (normalizeQrColor), so BLACKMUSTARD
+ * arriving settles BLACK MUSTARD.
+ */
+export function stillAsked(asked: readonly string[], products: readonly CustomerOrderArticleProduct[]): string[] {
+  const held = new Set(products.map((product) => normalizeQrColor(product.color)));
+  return asked.filter((colour) => !held.has(normalizeQrColor(colour)));
 }
 
 const chosenProducts = (block: ArticleBlock) => block.products.filter((product) => block.colours.includes(product.color));
