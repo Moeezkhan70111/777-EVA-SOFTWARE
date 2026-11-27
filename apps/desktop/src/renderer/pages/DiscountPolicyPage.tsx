@@ -12,6 +12,8 @@ import type { MatchedDiscount } from "../features/discounts/discountsFromList";
 import { LEASE_DOMAIN } from "@erp/domain";
 import { ReadOnlyNotice } from "../components/shared/ReadOnlyNotice";
 import { useWriteLease } from "../features/sync/useWriteLease";
+import { discountMatrix } from "../features/discounts/discountMatrix";
+import { formatMoney, formatWholeMoney } from "../app/format";
 
 type DiscountTab      = "PRODUCT_GROUP" | "ARTICLE_SERIES" | "ARTICLE" | "PRICE_RANGE";
 type ReportTypeFilter = "ALL" | "PRODUCT_GROUP" | "ARTICLE_SERIES" | "ARTICLE" | "PRICE_RANGE";
@@ -123,20 +125,31 @@ const exportToExcel = (
   });
 };
 
+/** A discount per pair in a cell: whole rupees, or with paisa when it has some. */
+const discountCell = (rupees: number): string => (Number.isInteger(rupees) ? formatWholeMoney(rupees) : formatMoney(rupees));
+/** More columns than this and the page turns sideways, so the groups keep their width. */
+const LANDSCAPE_AFTER_COLUMNS = 5;
+
+// The PDF as a grid (owner, 28 Nov 2026): one row per party, one column per group (discountMatrix.ts), each cell the
+// discount per pair, "—" where the party has none.
 const printPdf = (
-  rows: Array<{ partyName: string; type: string; label: string; discountPerPair: number }>,
+  rows: Array<{ partyId: string; partyName: string; type: string; label: string; discountPerPair: number }>,
   typeFilter: ReportTypeFilter,
 ) => {
   const title = typeFilter === "ALL" ? "Discount Policy — All Types" : `Discount Policy — ${TYPE_LABELS[typeFilter] ?? typeFilter}`;
   const date  = formatDate(new Date());
   const e = escapeHtml;
+  const grid = discountMatrix(rows);
+  const landscape = grid.columns.length > LANDSCAPE_AFTER_COLUMNS;
 
-  const tableRows = rows.map((r) => `
+  const head = grid.columns.map((column) => `<th class="num">${e(column.label)}</th>`).join("");
+  const body = grid.rows.map((row) => `
     <tr>
-      <td>${e(r.partyName)}</td>
-      <td>${e(TYPE_LABELS[r.type] ?? r.type)}</td>
-      <td>${e(r.label || "—")}</td>
-      <td class="num">Rs. ${e(r.discountPerPair.toLocaleString("en-PK"))}</td>
+      <td class="party">${e(row.partyName)}</td>
+      ${grid.columns.map((column) => {
+        const value = row.cells[column.key];
+        return value === undefined ? `<td class="num none">—</td>` : `<td class="num">${e(discountCell(value))}</td>`;
+      }).join("")}
     </tr>`).join("");
 
   const html = `<!DOCTYPE html>
@@ -145,28 +158,31 @@ const printPdf = (
   <meta charset="utf-8"/>
   <title>${e(title)}</title>
   <style>
+    @page { size: A4 ${landscape ? "landscape" : "portrait"}; margin: 14mm; }
     body { font-family: 'Segoe UI', sans-serif; font-size: 12px; color: #111; margin: 32px; }
     h1   { font-size: 16px; font-weight: 800; margin: 0 0 4px; }
     .sub { color: #6b7280; font-size: 11px; margin-bottom: 20px; }
     table { width: 100%; border-collapse: collapse; }
+    thead { display: table-header-group; }
+    tr { break-inside: avoid; }
     th { background: #f3f4f6; padding: 8px 10px; text-align: left; font-size: 10px;
          text-transform: uppercase; letter-spacing: .06em; border-bottom: 2px solid #e5e7eb; }
     td { padding: 7px 10px; border-bottom: 1px solid #e5e7eb; }
     tr:last-child td { border-bottom: none; }
+    .party { font-weight: 600; }
     .num { text-align: right; font-variant-numeric: tabular-nums; font-weight: 700; }
-    @media print { body { margin: 16px; } }
+    .none { color: #9ca3af; font-weight: 400; }
+    @media print { body { margin: 0; } }
   </style>
 </head>
 <body>
   <h1>${e(title)}</h1>
-  <div class="sub">Generated ${e(date)} &nbsp;·&nbsp; ${rows.length} rule${rows.length === 1 ? "" : "s"}</div>
+  <div class="sub">Generated ${e(date)} &nbsp;·&nbsp; ${grid.rows.length} part${grid.rows.length === 1 ? "y" : "ies"} &nbsp;·&nbsp; Discount per pair (Rs.)</div>
   <table>
     <thead>
-      <tr>
-        <th>Party</th><th>Discount Type</th><th>Item / Range</th><th style="text-align:right">Discount / Pair</th>
-      </tr>
+      <tr><th>Party name</th>${head}</tr>
     </thead>
-    <tbody>${tableRows}</tbody>
+    <tbody>${body}</tbody>
   </table>
 </body>
 </html>`;
