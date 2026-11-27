@@ -11940,42 +11940,80 @@ tr.has-error .gp-qty-stepper input { color: var(--err); }
 .sal-figures dd { margin: 0; color: var(--sp-navy); font-size: 1.25rem; font-weight: 800; font-variant-numeric: tabular-nums; }
 .sal-figures .sal-figure-main dd { color: var(--sp-navy-2); font-size: 1.5rem; }
 @media (min-width: 768px) { .sal-figures { grid-template-columns: repeat(2, minmax(0, 320px)); } }
-.sal-name { display: block; font-weight: 700; color: var(--sp-navy); }
+.sal-row { cursor: pointer; }
+.sal-row .sal-name { min-height: 32px; padding: 0; border: 0; background: none; text-align: left; font: inherit; font-weight: 700; color: var(--sp-navy); cursor: pointer; }
+.sal-row:hover .sal-name { text-decoration: underline; }
+.sal-row .sal-name:focus-visible { outline: 3px solid var(--sp-blue); outline-offset: 2px; border-radius: 4px; }
 .sal-status { margin-top: 2px; }
 .sal-left .sal-name, .sal-left strong { color: var(--sp-muted); }
-.sal-form { display: grid; gap: var(--space-3); }
-.sal-form-row { display: grid; grid-template-columns: 1fr; gap: var(--space-3); }
-@media (min-width: 768px) { .sal-form-row { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-.sal-form .form-input { min-height: 44px; }
-.sal-required { color: var(--danger-strong); }
-.sal-problem { margin: var(--space-1) 0 0; font-size: 0.8rem; color: var(--danger-strong); }
-.sal-refusal { padding: var(--space-2) var(--space-3); border-radius: var(--radius-md); background: var(--err-bg); }
 
-/* The employee's card and its Increment (27 Nov 2026). */
-.sal-row { cursor: pointer; }
-.sal-row .sal-name { padding: 0; border: 0; background: none; text-align: left; font: inherit; font-weight: 700; color: var(--sp-navy); cursor: pointer; }
-.sal-row .sal-name:hover { text-decoration: underline; }
-.sal-card { display: grid; gap: var(--space-4); }
-.sal-card-details { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-3); margin: 0; }
-@media (min-width: 768px) { .sal-card-details { grid-template-columns: repeat(5, minmax(0, auto)); } }
-.sal-card-details div { display: grid; gap: 2px; }
+/* ─── THE THEMED POP-UP (Modal themed, 27 Nov 2026: "the ui ux of pop is not according to theme"). The dialog is
+   portalled out of the page, so the card pages' look is put on the dialog itself: a white card with the dashboard's
+   radius, the navy title, a 44px close, fields like the Enter Orders fields (48px, the line colour, the Store-blue focus
+   ring), small-caps labels with tracking, and the footer set apart by a hairline. Buttons come from .doc-themed. */
+.rm-modal.doc-themed { padding: 24px 26px; border: 1px solid var(--sp-line); border-radius: var(--dash-card-radius); background: var(--white); box-shadow: var(--shadow-xl); }
+.rm-modal.doc-themed .member-modal-header h2 { color: var(--sp-navy); font-size: 1.3rem; font-weight: 800; line-height: 1.2; letter-spacing: -0.01em; text-wrap: balance; }
+.rm-modal.doc-themed .rm-modal-sub { margin-top: 4px; color: var(--sp-muted); font-size: 0.85rem; text-wrap: pretty; }
+.rm-modal.doc-themed .member-modal-close { width: 44px; height: 44px; border-radius: var(--sp-radius-control); color: var(--sp-muted); font-size: 1.5rem; }
+.rm-modal.doc-themed .member-modal-close:hover { background: var(--sp-ground); color: var(--sp-navy); }
+.rm-modal.doc-themed .member-modal-close:focus-visible { outline: 3px solid var(--sp-blue); outline-offset: 2px; }
+.rm-modal.doc-themed .rm-modal-body { padding: 18px 0 4px; }
+.rm-modal.doc-themed .member-modal-actions { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--sp-line); }
+.rm-modal.doc-themed .input-label { display: block; margin-bottom: 6px; color: var(--sp-field-label); font-size: 0.78rem; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; }
+.rm-modal.doc-themed .form-input { width: 100%; height: 48px; padding: 0 14px; border: 1px solid var(--sp-line); border-radius: var(--sp-radius-control); background: var(--white); color: var(--sp-navy); font-size: 0.95rem; }
+.rm-modal.doc-themed .form-input::placeholder { color: var(--sp-muted); opacity: 0.7; }
+.rm-modal.doc-themed .form-input:focus { outline: none; border-color: var(--sp-mode-on-start); box-shadow: 0 0 0 3px var(--sp-blue-soft); }
+.rm-modal.doc-themed .form-input[aria-invalid="true"] { border-color: var(--danger-strong); }
+.rm-modal.doc-themed .form-group { margin: 0; }
+.rm-modal.doc-themed .sa-toggle { display: inline-flex; justify-self: start; width: fit-content; overflow: hidden; border: 1px solid var(--sp-line); border-radius: var(--sp-radius-control); background: var(--white); box-shadow: var(--sp-card-shadow); }
+.rm-modal.doc-themed .sa-toggle-btn { min-height: 46px; padding: 0 18px; color: var(--sp-muted); font-weight: 600; transition: color 140ms ease, background-color 140ms ease, box-shadow 160ms ease; }
+.rm-modal.doc-themed .sa-toggle-btn.is-on { color: var(--sp-blue); }
+.rm-modal.doc-themed .sa-toggle-btn:hover:not(.is-on) { background: color-mix(in oklch, var(--sp-ground) 70%, var(--white)); color: var(--sp-navy); }
+@media (prefers-reduced-motion: reduce) { .rm-modal.doc-themed .sa-toggle-btn { transition: none; } }
+@media (max-width: 560px) { .rm-modal.doc-themed { padding: 20px 18px calc(18px + env(safe-area-inset-bottom)); } }
+
+/* The Salaries forms (Add Employee, Increment): one grid, required fields first, the rest in their own region. */
+.sal-form { display: grid; gap: 16px; }
+.sal-form-row { display: grid; grid-template-columns: 1fr; gap: 16px; }
+@media (min-width: 768px) {
+  .sal-form-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .sal-form-row--three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+.sal-required { color: var(--danger-strong); }
+.sal-input-wrap { display: flex; align-items: stretch; overflow: hidden; border: 1px solid var(--sp-line); border-radius: var(--sp-radius-control); background: var(--white); }
+.sal-input-wrap:focus-within { border-color: var(--sp-mode-on-start); box-shadow: 0 0 0 3px var(--sp-blue-soft); }
+.sal-input-wrap:has(.form-input[aria-invalid="true"]) { border-color: var(--danger-strong); }
+.rm-modal.doc-themed .sal-input-wrap .form-input { border: 0; border-radius: 0; box-shadow: none; }
+.sal-unit { display: grid; place-items: center; min-width: 48px; padding: 0 12px; background: var(--sp-ground); color: var(--sp-field-label); font-weight: 700; }
+.rm-modal.doc-themed .sal-figure-input { text-align: right; font-size: 1.1rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+.sal-optional { display: grid; gap: 12px; margin: 0; padding: 16px 0 0; border: 0; border-top: 1px solid var(--sp-line); }
+.sal-optional legend { float: left; width: 100%; margin-bottom: 4px; color: var(--sp-navy); font-size: 0.9rem; font-weight: 800; }
+.sal-optional-hint { margin-left: 6px; color: var(--sp-muted); font-size: 0.78rem; font-weight: 600; }
+.sal-problem { margin: 6px 0 0; color: var(--danger-strong); font-size: 0.82rem; font-weight: 600; }
+.sal-refusal { padding: 10px 12px; border-radius: var(--sp-radius-control); background: var(--err-bg); }
+.sal-hint { margin: -6px 0 0; color: var(--sp-muted); font-size: 0.82rem; }
+
+/* The employee's card: the salary in the Store blue (the Customer Ledger's hero), the rest as labelled pairs. */
+.sal-card { display: grid; gap: 18px; }
+.sal-card-top { display: grid; grid-template-columns: 1fr; gap: 16px; align-items: center; }
+@media (min-width: 768px) { .sal-card-top { grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr); } }
+.sal-hero { padding: 18px 20px; }
+.sal-card-details { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px 18px; margin: 0; }
+.sal-card-details div { display: grid; gap: 4px; min-width: 0; }
 .sal-card-details dt { color: var(--sp-muted); font-size: 0.75rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; }
-.sal-card-details dd { margin: 0; color: var(--sp-navy); font-weight: 600; }
-.sal-card-details .sal-card-salary { grid-column: 1 / -1; }
-@media (min-width: 768px) { .sal-card-details .sal-card-salary { grid-column: auto; } }
-.sal-card-details .sal-card-salary dd { font-size: 1.5rem; font-weight: 800; color: var(--sp-navy-2); font-variant-numeric: tabular-nums; }
-.sal-increment-title { margin: 0 0 var(--space-2); font-size: 0.95rem; font-weight: 800; color: var(--sp-navy); }
-.sal-history-list { display: grid; gap: var(--space-2); margin: 0; padding: 0; list-style: none; }
-.sal-history-line { display: grid; grid-template-columns: auto 1fr auto; gap: var(--space-1) var(--space-3); align-items: baseline; padding: var(--space-2) var(--space-3); border: 1px solid var(--sp-line); border-radius: var(--radius-md); }
-.sal-history-date { color: var(--sp-muted); font-variant-numeric: tabular-nums; }
-.sal-history-step { font-weight: 700; color: var(--sp-navy); }
-.sal-history-salary { font-variant-numeric: tabular-nums; color: var(--sp-navy); }
-.sal-history-note { grid-column: 1 / -1; color: var(--sp-muted); font-size: 0.85rem; }
-.sal-increment { padding: var(--space-4); border: 1px solid var(--sp-line); border-radius: var(--dash-card-radius); background: var(--sp-ground); }
-.sal-kinds { display: flex; flex-wrap: wrap; gap: var(--space-2); margin: 0; padding: 0; border: 0; }
-.sal-kinds legend { margin-bottom: var(--space-1); }
-.sal-kind { display: inline-flex; align-items: center; gap: var(--space-2); min-height: 44px; padding: 0 var(--space-3); border: 1px solid var(--sp-line); border-radius: var(--radius-md); background: var(--white); font-weight: 600; cursor: pointer; }
-.sal-kind.is-on { border-color: var(--sp-navy-2); color: var(--sp-navy-2); }
-.sal-preview { display: grid; gap: 2px; margin: 0; min-height: 1.5em; color: var(--sp-navy); font-variant-numeric: tabular-nums; }
-.sal-preview-hint { color: var(--sp-muted); font-size: 0.8rem; }
-.sal-increment-actions { display: flex; justify-content: flex-end; gap: var(--space-2); }
+.sal-card-details dd { margin: 0; overflow-wrap: anywhere; color: var(--sp-navy); font-weight: 700; }
+.sal-section-title { margin: 0 0 10px; color: var(--sp-navy); font-size: 0.95rem; font-weight: 800; }
+.sal-history .doc-table-wrap { max-height: 280px; }
+.sal-history-date { color: var(--sp-muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.sal-history-step { display: block; font-weight: 700; color: var(--sp-navy); }
+
+/* Increment: the new salary as an equation, left to right, the answer in the Store blue; its size kept from the start. */
+.sal-equation { display: grid; grid-template-columns: 1fr; gap: 8px; padding: 14px 16px; border: 1px solid var(--sp-line); border-radius: var(--dash-card-radius); background: var(--sp-ground); }
+@media (min-width: 560px) { .sal-equation { grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) auto minmax(0, 1.2fr); align-items: center; } }
+.sal-equation div { display: grid; gap: 2px; min-width: 0; }
+.sal-equation span { color: var(--sp-muted); font-size: 0.75rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; }
+.sal-equation strong { color: var(--sp-navy); font-size: 1.1rem; font-weight: 800; font-variant-numeric: tabular-nums; }
+.sal-equation .sal-equation-sign { color: var(--sp-muted); font-size: 1.2rem; font-weight: 700; letter-spacing: 0; text-align: center; }
+.sal-equation .sal-equation-answer { padding: 8px 12px; border-radius: var(--sp-radius-control); background: linear-gradient(135deg, var(--sp-mode-on-start), var(--sp-mode-on-end)); box-shadow: var(--sp-mode-on-shadow); }
+.sal-equation .sal-equation-answer span, .sal-equation .sal-equation-answer strong { color: var(--white); }
+.sal-equation .sal-equation-answer strong { font-size: 1.25rem; }

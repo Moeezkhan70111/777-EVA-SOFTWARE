@@ -8,7 +8,9 @@ import { copy } from "../../config/copy";
 // dialog, so there is still exactly one of them (R1/R11).
 //
 // Portalled to <body>: an in-page modal paints underneath the navbar, because .page-content
-// creates its own stacking context.
+// creates its own stacking context. So a page's own look (.doc-themed) never reaches it: `themed` puts the dialog
+// itself in the card pages' look (title, ×, fields, toggles and buttons from the --sp-* tokens, docs/56), first for the
+// Salaries pop-ups (owner, 27 Nov 2026: "the ui ux of pop is not according to theme").
 
 interface ModalProps {
   title: string;
@@ -23,12 +25,18 @@ interface ModalProps {
   className?: string;
   /** A control at the top right, beside ×: a way out to a related page (the contractors dialog's "+ Add Party"). */
   headerAction?: React.ReactNode;
+  /** The dialog in the card pages' look (.doc-themed). */
+  themed?: boolean;
+  /** The footer's way out, when Cancel is not the word: "Close" on a card that only shows, "Back" from a step. */
+  dismissLabel?: string;
+  /** What that button does, when it is not closing the dialog (going back a step). × and Escape still close it. */
+  onDismiss?: () => void;
   children: React.ReactNode;
 }
 
-export const Modal: React.FC<ModalProps> = ({ title, subtitle, onClose, footer, wide = false, className, headerAction, children }) => {
+export const Modal: React.FC<ModalProps> = ({ title, subtitle, onClose, footer, wide = false, className, headerAction, themed = false, dismissLabel, onDismiss, children }) => {
   const titleId = useId();
-  const widthClass = (wide === "xl" ? " rm-modal--xl" : wide ? " rm-modal--wide" : "") + (className ? ` ${className}` : "");
+  const widthClass = (wide === "xl" ? " rm-modal--xl" : wide ? " rm-modal--wide" : "") + (themed ? " doc-themed" : "") + (className ? ` ${className}` : "");
 
   useEffect(() => {
     const handle = (event: KeyboardEvent) => {
@@ -72,8 +80,8 @@ export const Modal: React.FC<ModalProps> = ({ title, subtitle, onClose, footer, 
 
         <div className="member-modal-actions">
           <span />
-          <button type="button" className="btn btn-secondary" onClick={onClose}>
-            {copy.common.cancel}
+          <button type="button" className="btn btn-secondary" onClick={onDismiss ?? onClose}>
+            {dismissLabel ?? copy.common.cancel}
           </button>
           {footer}
         </div>

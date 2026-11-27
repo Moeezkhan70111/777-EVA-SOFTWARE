@@ -72,6 +72,15 @@ describe("Salaries", () => {
     expect(screen.getByText("Rs 55,000")).toBeInTheDocument();
   });
 
+  it("suggests the work already given to someone when adding the next", async () => {
+    api.listEmployees!.mockResolvedValue({ accepted: true, employees: [employee(), employee({ id: "e2", name: "SYNTHETIC KAMRAN", work: "PACKING" })] });
+    show();
+    await screen.findByText("SYNTHETIC KAMRAN");
+    await userEvent.click(screen.getByRole("button", { name: "Add an employee" }));
+    const options = Array.from(document.querySelectorAll("#sal-work-list option")).map((option) => option.getAttribute("value"));
+    expect(options).toEqual(["CUTTING", "PACKING"]);
+  });
+
   it("shows the main process's refusal in the pop-up and keeps what was typed", async () => {
     api.createEmployee!.mockResolvedValue({ accepted: false, reason: "SYNTHETIC ALI is already an employee. Add something to tell them apart, like SYNTHETIC ALI (CUTTING)." });
     show();
@@ -125,11 +134,13 @@ describe("An employee's card", () => {
     await userEvent.click(await screen.findByRole("button", { name: "Open SYNTHETIC ALI's card" }));
     const card = await screen.findByRole("dialog");
     expect(api.getEmployee).toHaveBeenCalledWith("e1");
-    expect(within(card).getByText("Working")).toBeInTheDocument();
+    expect(within(card).getByText(/Working/)).toBeInTheDocument();
+    expect(within(card).getByRole("region", { name: "Monthly salary" })).toHaveTextContent("Rs 25,000");
+    expect(card.querySelector(".member-modal-actions .btn-secondary")).toHaveTextContent("Close");
     expect(within(card).getByText("0300-0000001")).toBeInTheDocument();
     const history = within(card).getByRole("region", { name: "SYNTHETIC ALI's salary history" });
     expect(within(history).getByText("Started at")).toBeInTheDocument();
-    expect(within(history).getByText("Rs 25,000")).toBeInTheDocument();
+    expect(within(history).getByRole("table")).toHaveTextContent("Rs 25,000");
   });
 
   it("raises the salary by a percentage, showing the new figure before it is saved", async () => {
@@ -144,7 +155,11 @@ describe("An employee's card", () => {
     fireEvent.change(screen.getByRole("textbox", { name: /^Percentage/ }), { target: { value: "10" } });
     fireEvent.change(screen.getByLabelText(/^New salary from/), { target: { value: "2026-12-01" } });
     fireEvent.change(screen.getByLabelText(/^Note/), { target: { value: "Yearly" } });
-    expect(screen.getByText("Rs 25,000 → Rs 27,500 (+Rs 2,500)")).toBeInTheDocument();
+    const equation = screen.getByRole("status", { name: "The new salary" });
+    expect(equation).toHaveTextContent("NowRs 25,000");
+    expect(equation).toHaveTextContent("IncrementRs 2,500");
+    expect(equation).toHaveTextContent("New salaryRs 27,500");
+    expect(screen.getByRole("button", { name: "Back" })).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("button", { name: "Save increment" }));
     expect(api.incrementEmployeeSalary).toHaveBeenCalledWith({ employeeId: "e1", kind: "PERCENT", value: "10", effectiveOn: "2026-12-01", note: "Yearly", expectedSalaryPaisa: 2_500_000 });
@@ -157,12 +172,22 @@ describe("An employee's card", () => {
     show();
     await userEvent.click(await screen.findByRole("button", { name: "Open SYNTHETIC ALI's card" }));
     await userEvent.click(await screen.findByRole("button", { name: "Increment SYNTHETIC ALI's salary" }));
-    await userEvent.click(screen.getByRole("radio", { name: "Fixed amount (Rs)" }));
+    await userEvent.click(screen.getByRole("button", { name: "Fixed amount (Rs)" }));
+    expect(screen.getByRole("button", { name: "Fixed amount (Rs)" })).toHaveAttribute("aria-pressed", "true");
     await userEvent.click(screen.getByRole("button", { name: "Save increment" }));
     expect(screen.getByText(/Type the increment in rupees/)).toBeInTheDocument();
-    fireEvent.change(screen.getByLabelText(/^Amount \(Rs\)/), { target: { value: "1500" } });
-    expect(screen.getByText("Rs 25,000 → Rs 26,500 (+Rs 1,500)")).toBeInTheDocument();
+    fireEvent.change(screen.getByRole("textbox", { name: /^Amount/ }), { target: { value: "1500" } });
+    expect(screen.getByRole("status", { name: "The new salary" })).toHaveTextContent("New salaryRs 26,500");
     expect(api.incrementEmployeeSalary).not.toHaveBeenCalled();
+  });
+
+  it("Back leaves the increment and returns to the history, the card still open", async () => {
+    show();
+    await userEvent.click(await screen.findByRole("button", { name: "Open SYNTHETIC ALI's card" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Increment SYNTHETIC ALI's salary" }));
+    await userEvent.click(screen.getByRole("button", { name: "Back" }));
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "SYNTHETIC ALI's salary history" })).toBeInTheDocument();
   });
 
   it("offers Increment only where the accounts are written", async () => {
@@ -170,5 +195,6 @@ describe("An employee's card", () => {
     show();
     await userEvent.click(await screen.findByRole("button", { name: "Open SYNTHETIC ALI's card" }));
     await waitFor(() => expect(screen.getByRole("button", { name: "Increment SYNTHETIC ALI's salary" })).toBeDisabled());
+    expect(within(screen.getByRole("dialog")).getByText(/PC1 - ACCOUNTS/)).toBeInTheDocument();
   });
 });

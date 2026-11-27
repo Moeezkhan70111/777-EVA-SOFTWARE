@@ -7,31 +7,47 @@ import { leaseRefusalText } from "../../../shared/leaseRefusal";
 import { parseEmployeeDetailReply, salaryText, type EmployeeDetail } from "./employees";
 import { SalaryField } from "./SalaryField";
 
-// INCREMENT, inside the employee's card (owner, 27 Nov 2026: "increment the salary by percentage or a fixed value"):
+// INCREMENT, the employee card's second step (owner, 27 Nov 2026: "increment the salary by percentage or a fixed
+// value"), in the card pages' look (docs/56):
 //
-//   Increment by   (•) Percentage (%)   ( ) Fixed amount (Rs)
-//   Percentage [ 10 ]        New salary from [ 2026-12-01 ]
-//   Note [ Yearly increment ]
-//   Rs 25,000 → Rs 27,500 (+Rs 2,500)        A percentage is rounded to the nearest rupee.
-//                                                     [Cancel] [Save increment]
+//   INCREMENT BY  [ Percentage | Fixed amount ]          the shared two-way toggle (sa-toggle)
+//   PERCENTAGE *  [ 10        % ]     NEW SALARY FROM *  [ 2026-12-01 ]     today, as most raises start now
+//   NOTE          [ Yearly increment ]
+//   ┌ Now Rs 25,000  +  Increment Rs 2,500  =  New salary Rs 27,500 ┐     an equation, the answer in blue
+//   A percentage is rounded to the nearest rupee.
 //
-// The figure is worked out by the domain (incrementOf), shown before it is saved, and sent with the salary it was
-// worked out on, so the main process refuses it if that salary changed meanwhile.
+// The figure is worked out by the domain (incrementOf) as the person types, in a strip that keeps its size from the
+// start (no layout shift). Back and Save are the dialog's own footer buttons (EmployeeCard); this form is FORM_ID. It is
+// sent with the salary it was worked out on, so the main process refuses it if that salary changed meanwhile.
 
 const text = copy.salaries;
 const KINDS: readonly IncrementKind[] = [SALARY_CHANGE_KIND.PERCENT, SALARY_CHANGE_KIND.FIXED];
+export const INCREMENT_FORM_ID = "sal-increment-form";
 
 interface IncrementFormProps {
   employee: EmployeeDetail;
-  onCancel: () => void;
+  /** Told while the increment is being saved, so the footer's Save can say so. */
+  onBusy: (busy: boolean) => void;
   onRaised: (employee: EmployeeDetail) => void;
 }
 
-export const IncrementForm: React.FC<IncrementFormProps> = ({ employee, onCancel, onRaised }) => {
+const Equation: React.FC<{ now: number; plus: number | null; next: number | null }> = ({ now, plus, next }) => {
+  const money = (paisa: number | null) => (paisa === null ? text.equationEmpty : `Rs ${salaryText(paisa)}`);
+  return (
+    <div className="sal-equation" role="status" aria-label={text.equationLabel}>
+      <div><span>{text.equationNow}</span><strong>{money(now)}</strong></div>
+      <span className="sal-equation-sign" aria-hidden="true">+</span>
+      <div><span>{text.equationPlus}</span><strong>{money(plus)}</strong></div>
+      <span className="sal-equation-sign" aria-hidden="true">=</span>
+      <div className="sal-equation-answer"><span>{text.equationNew}</span><strong>{money(next)}</strong></div>
+    </div>
+  );
+};
+
+export const IncrementForm: React.FC<IncrementFormProps> = ({ employee, onBusy, onRaised }) => {
   const api = useDesktopApi();
   const [draft, setDraft] = useState<IncrementDraft>({ kind: SALARY_CHANGE_KIND.PERCENT, value: "", effectiveOn: toIsoDate(), note: "" });
   const [tried, setTried] = useState(false);
-  const [saving, setSaving] = useState(false);
   const [refusal, setRefusal] = useState<string | null>(null);
   const current = employee.monthlySalaryPaisa;
   const problems = tried ? incrementProblems(current, draft) : {};
@@ -43,7 +59,7 @@ export const IncrementForm: React.FC<IncrementFormProps> = ({ employee, onCancel
     setTried(true);
     setRefusal(null);
     if (increment === null) return;
-    setSaving(true);
+    onBusy(true);
     try {
       const reply = parseEmployeeDetailReply(await api.incrementEmployeeSalary({ employeeId: employee.id, ...draft, expectedSalaryPaisa: current }), text.notRaised);
       if (reply.ok) onRaised(reply.value);
@@ -51,37 +67,33 @@ export const IncrementForm: React.FC<IncrementFormProps> = ({ employee, onCancel
     } catch (error) {
       setRefusal(leaseRefusalText(error) ?? text.notRaised);
     } finally {
-      setSaving(false);
+      onBusy(false);
     }
   };
 
   return (
-    <form className="sal-form sal-increment card" aria-label={text.incrementTitle} noValidate onSubmit={(event) => { event.preventDefault(); void save(); }}>
-      <h3 className="sal-increment-title">{text.incrementTitle}</h3>
-      <fieldset className="sal-kinds">
-        <legend className="input-label">{text.incrementBy}</legend>
-        {KINDS.map((kind) => (
-          <label key={kind} className={draft.kind === kind ? "sal-kind is-on" : "sal-kind"}>
-            <input type="radio" name="sal-increment-kind" value={kind} checked={draft.kind === kind} onChange={() => setDraft((previous) => ({ ...previous, kind, value: "" }))} />
-            {text.incrementKinds[kind]}
-          </label>
-        ))}
-      </fieldset>
+    <form id={INCREMENT_FORM_ID} className="sal-form" aria-label={text.incrementTitle} noValidate onSubmit={(event) => { event.preventDefault(); void save(); }}>
+      <div className="form-group sal-field">
+        <span className="input-label" id="sal-increment-kind">{text.incrementBy}</span>
+        <div className="sa-toggle" role="group" aria-labelledby="sal-increment-kind">
+          {KINDS.map((kind) => (
+            <button key={kind} type="button" className={draft.kind === kind ? "sa-toggle-btn is-on" : "sa-toggle-btn"} aria-pressed={draft.kind === kind}
+              onClick={() => setDraft((previous) => ({ ...previous, kind, value: "" }))}>
+              {text.incrementKinds[kind]}
+            </button>
+          ))}
+        </div>
+      </div>
       <div className="sal-form-row">
         <SalaryField id="sal-increment-value" label={percent ? text.percentLabel : text.fixedLabel} value={draft.value} problem={problems.value} onChange={set("value")}
-          required inputMode="decimal" placeholder={percent ? text.percentPlaceholder : text.fixedPlaceholder} maxLength={12} autoFocus />
+          required inputMode="decimal" placeholder={percent ? text.percentPlaceholder : text.fixedPlaceholder} maxLength={12} autoFocus figure
+          prefix={percent ? undefined : "Rs"} suffix={percent ? "%" : undefined} />
         <SalaryField id="sal-increment-from" label={text.effectiveLabel} value={draft.effectiveOn} problem={problems.effectiveOn} onChange={set("effectiveOn")} required type="date" />
       </div>
       <SalaryField id="sal-increment-note" label={text.noteLabel} value={draft.note} problem={problems.note} onChange={set("note")} placeholder={text.notePlaceholder} maxLength={120} />
-      <p className="sal-preview" role="status">
-        {increment ? <strong>{text.preview(salaryText(current), salaryText(increment.newSalaryPaisa), salaryText(increment.increasePaisa))}</strong> : null}
-        {percent ? <span className="sal-preview-hint">{text.roundedNote}</span> : null}
-      </p>
+      <Equation now={current} plus={increment?.increasePaisa ?? null} next={increment?.newSalaryPaisa ?? null} />
+      <p className="sal-hint">{percent ? text.hintPercent : text.hintFixed}</p>
       {refusal ? <p className="sal-problem sal-refusal" role="alert">⚠ {refusal}</p> : null}
-      <div className="sal-increment-actions">
-        <button type="button" className="btn btn-ghost" onClick={onCancel} disabled={saving}>{text.cancelIncrement}</button>
-        <button type="submit" className="btn btn-primary" disabled={saving}>{saving ? text.savingIncrement : text.saveIncrement}</button>
-      </div>
     </form>
   );
 };

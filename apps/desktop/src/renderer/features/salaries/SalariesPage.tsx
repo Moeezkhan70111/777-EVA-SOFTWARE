@@ -33,6 +33,8 @@ export const SalariesPage: React.FC = () => {
   const rows = employees.rows;
   const working = useMemo(() => (rows ?? []).filter((employee) => employee.status === EMPLOYEE_STATUS.ACTIVE).length, [rows]);
   const total = useMemo(() => monthlySalaryTotal(rows ?? []), [rows]);
+  /** Work already given to someone, offered when adding the next (recognition over recall). */
+  const works = useMemo(() => [...new Set((rows ?? []).map((employee) => employee.work).filter((work): work is string => Boolean(work)))].sort(), [rows]);
   const refreshing = employees.loading && rows !== null;
 
   const body = () => {
@@ -64,7 +66,7 @@ export const SalariesPage: React.FC = () => {
       {openId ? (
         <EmployeeCard
           employeeId={openId}
-          canWrite={lease.canWrite}
+          lease={lease}
           onClose={() => setOpenId(null)}
           onRaised={(employee) => {
             push("success", text.raisedTitle(employee.name), text.raisedBody(salaryText(employee.monthlySalaryPaisa)));
@@ -74,6 +76,7 @@ export const SalariesPage: React.FC = () => {
       ) : null}
       {adding ? (
         <AddEmployeeDialog
+          works={works}
           onClose={() => setAdding(false)}
           onAdded={(employee) => {
             setAdding(false);
