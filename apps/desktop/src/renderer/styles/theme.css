@@ -11931,3 +11931,22 @@ tr.has-error .gp-qty-stepper input { color: var(--err); }
 .sa-page .sa-group-size { vertical-align: top; color: var(--sp-navy-2); font-weight: 700; border-right: 1px solid var(--sp-line); }
 .sa-page .sa-article-group + .sa-article-group > tr:first-child > * { border-top: 2px solid var(--sp-line); }
 
+
+/* ─── Salaries (27 Nov 2026): employees and their monthly salaries. The Customer Balance page's look (cl-page,
+   doc-table), every value from the theme's tokens (R3). Mobile first: the figures stack, then sit side by side. ─── */
+.sal-figures { display: grid; grid-template-columns: 1fr; gap: var(--space-3); margin: 0; }
+.sal-figures > div { display: grid; gap: 2px; padding: var(--space-3) var(--space-4); border: 1px solid var(--sp-line); border-radius: var(--dash-card-radius); box-shadow: var(--sp-card-shadow); }
+.sal-figures dt { color: var(--sp-muted); font-size: 0.75rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; }
+.sal-figures dd { margin: 0; color: var(--sp-navy); font-size: 1.25rem; font-weight: 800; font-variant-numeric: tabular-nums; }
+.sal-figures .sal-figure-main dd { color: var(--sp-navy-2); font-size: 1.5rem; }
+@media (min-width: 768px) { .sal-figures { grid-template-columns: repeat(2, minmax(0, 320px)); } }
+.sal-name { display: block; font-weight: 700; color: var(--sp-navy); }
+.sal-status { margin-top: 2px; }
+.sal-left .sal-name, .sal-left strong { color: var(--sp-muted); }
+.sal-form { display: grid; gap: var(--space-3); }
+.sal-form-row { display: grid; grid-template-columns: 1fr; gap: var(--space-3); }
+@media (min-width: 768px) { .sal-form-row { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.sal-form .form-input { min-height: 44px; }
+.sal-required { color: var(--danger-strong); }
+.sal-problem { margin: var(--space-1) 0 0; font-size: 0.8rem; color: var(--danger-strong); }
+.sal-refusal { padding: var(--space-2) var(--space-3); border-radius: var(--radius-md); background: var(--err-bg); }

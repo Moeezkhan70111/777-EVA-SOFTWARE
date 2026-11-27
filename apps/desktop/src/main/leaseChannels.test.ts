@@ -35,6 +35,8 @@ const GUARDED_MODULES = [
   "purchases",
   // Claims (docs/55): priced, posted, reversed and rejected under the accounts lease.
   "partyClaims",
+  // Salaries (27 Nov 2026): an employee is written under the accounts lease.
+  "salaries",
 ];
 
 /** Channels these modules register that only read. Checked by hand, one by one. */
@@ -90,6 +92,8 @@ const READS = new Set([
   "getNextPurchaseVoucherNumber", "getPurchaseVoucher", "listPurchaseVouchers", "getSupplierLedger", "listSupplierBalances",
   // partyClaims: the requests and their history only read
   "listPartyClaimRequests", "getPartyClaimRequest",
+  // salaries
+  "listEmployees",
   // customerOrders
   "getCustomerOrder", "getCustomerOrderArticle", "listPendingOrderParties", "listPendingOrderLines",
   // manualProduction

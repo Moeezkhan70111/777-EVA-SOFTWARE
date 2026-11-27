@@ -1,0 +1,73 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 654 364" font-family="Inter, 'Segoe UI', Arial, sans-serif">
+  <!-- Salaries card artwork (27 Nov 2026): what each employee is paid. An employee's ID card standing behind a pay
+       envelope, a rupee note sliding out of it, and a stack of coins beside. A person and an envelope, not a wallet,
+       so the card reads apart from Customer Balance at a glance. Sky cards' palette; it carries its own soft ground
+       (artworkHasScene). -->
+  <defs>
+    <linearGradient id="sal-card" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#e3eefc"/>
+    </linearGradient>
+    <linearGradient id="sal-envelope" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2f5aa8"/>
+      <stop offset="1" stop-color="#1d3769"/>
+    </linearGradient>
+    <linearGradient id="sal-flap" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#3b6fc4"/>
+      <stop offset="1" stop-color="#2f5aa8"/>
+    </linearGradient>
+    <linearGradient id="sal-note" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#d9f2e3"/>
+      <stop offset="1" stop-color="#a7dfbf"/>
+    </linearGradient>
+    <linearGradient id="sal-coin" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fde68a"/>
+      <stop offset="1" stop-color="#f59e0b"/>
+    </linearGradient>
+    <filter id="sal-shadow" x="-20%" y="-20%" width="140%" height="150%">
+      <feDropShadow dx="0" dy="10" stdDeviation="10" flood-color="#1d3769" flood-opacity="0.16"/>
+    </filter>
+  </defs>
+
+  <!-- Ground -->
+  <ellipse cx="327" cy="330" rx="262" ry="22" fill="#dce9f8"/>
+
+  <!-- The employee's ID card, standing behind -->
+  <g filter="url(#sal-shadow)" transform="rotate(-7 230 160)">
+    <rect x="120" y="58" width="196" height="232" rx="18" fill="url(#sal-card)"/>
+    <rect x="188" y="44" width="60" height="22" rx="8" fill="#9fbbe2"/>
+    <circle cx="218" cy="132" r="34" fill="#bcd0ec"/>
+    <circle cx="218" cy="122" r="15" fill="#2f5aa8"/>
+    <path d="M190 158 C 196 140, 240 140, 246 158 Z" fill="#2f5aa8"/>
+    <rect x="160" y="188" width="116" height="12" rx="6" fill="#7da4dc"/>
+    <rect x="176" y="212" width="84" height="10" rx="5" fill="#bcd0ec"/>
+    <rect x="176" y="234" width="84" height="10" rx="5" fill="#bcd0ec"/>
+  </g>
+
+  <!-- A rupee note sliding out of the envelope -->
+  <g filter="url(#sal-shadow)" transform="rotate(-4 380 150)">
+    <rect x="268" y="104" width="214" height="104" rx="10" fill="url(#sal-note)"/>
+    <circle cx="375" cy="156" r="26" fill="none" stroke="#5cbf85" stroke-width="4"/>
+    <text x="361" y="165" font-size="22" font-weight="900" fill="#1f9d55">Rs</text>
+  </g>
+
+  <!-- The pay envelope -->
+  <g filter="url(#sal-shadow)">
+    <rect x="236" y="168" width="268" height="142" rx="16" fill="url(#sal-envelope)"/>
+    <path d="M236 184 L 370 252 L 504 184" fill="none" stroke="url(#sal-flap)" stroke-width="10" stroke-linejoin="round"/>
+    <rect x="270" y="270" width="96" height="14" rx="7" fill="#3b6fc4"/>
+  </g>
+
+  <!-- A stack of coins beside it -->
+  <g filter="url(#sal-shadow)">
+    <ellipse cx="560" cy="304" rx="42" ry="12" fill="#e08a0b"/>
+    <rect x="518" y="288" width="84" height="16" fill="url(#sal-coin)"/>
+    <ellipse cx="560" cy="288" rx="42" ry="12" fill="#fbbf24"/>
+    <rect x="518" y="270" width="84" height="18" fill="url(#sal-coin)"/>
+    <ellipse cx="560" cy="270" rx="42" ry="12" fill="#fcd34d"/>
+    <text x="546" y="276" font-size="14" font-weight="900" fill="#b45309">Rs</text>
+  </g>
+
+  <circle cx="92" cy="104" r="5" fill="#9fbbe2"/>
+  <circle cx="572" cy="118" r="4" fill="#bcd0ec"/>
+</svg>

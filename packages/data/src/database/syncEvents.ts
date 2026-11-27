@@ -130,6 +130,8 @@ export const SYNC_AGGREGATE = {
   /** A new colour asked for an article from Enter Orders on the orders computer (local 121, cloud 043). The computer that
    * writes Product Master adds it on arrival, by itself (articleColorRequests.ts). It moves no stock, money or ledger. */
   ARTICLE_COLOR_REQUEST: "ARTICLE_COLOR_REQUEST",
+  /** One employee and their monthly salary (Salaries page, local 124, cloud 044). It moves no stock, cash or ledger. */
+  EMPLOYEE: "EMPLOYEE",
   /**
    * One raw-material stock movement, as stored, with the change it made to its material's balance
    * (balanceDelta). Append-only: captured when inserted (masterCapture.ts, EVENT_CAPTURE), applied
@@ -199,6 +201,8 @@ export const LEASED_AGGREGATE_DOMAIN: Readonly<Partial<Record<SyncAggregateType,
   // Asked where orders are entered (owner, 27 Nov 2026: the boss's computer adds colours in Enter Orders), and added to
   // Product Master by the computer that writes it.
   [SYNC_AGGREGATE.ARTICLE_COLOR_REQUEST]: LEASE_DOMAIN.ORDERS,
+  // Salaries are accounts work, written where cash vouchers are (owner, 27 Nov 2026).
+  [SYNC_AGGREGATE.EMPLOYEE]: LEASE_DOMAIN.ACCOUNTS,
   [SYNC_AGGREGATE.CASH_VOUCHER]: LEASE_DOMAIN.ACCOUNTS,
   // Imported on the computer that writes cash vouchers: the archive belongs to the accounts, not to master data.
   [SYNC_AGGREGATE.LEDGER_ARCHIVE_STATEMENT]: LEASE_DOMAIN.ACCOUNTS,

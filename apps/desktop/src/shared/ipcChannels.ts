@@ -424,6 +424,9 @@ export const IPC = {
   postBulkOpeningBalances: "erp:post-bulk-opening-balances",
   // Claims: the store asks when a program closes, Accounts prices and posts (docs/55).
   listPartyClaimRequests: "erp:list-party-claim-requests",
+  // The Salaries page (27 Nov 2026).
+  listEmployees: "erp:list-employees",
+  createEmployee: "erp:create-employee",
   getPartyClaimRequest: "erp:get-party-claim-request",
   postPartyClaim: "erp:post-party-claim",
   rejectPartyClaimRequest: "erp:reject-party-claim-request",

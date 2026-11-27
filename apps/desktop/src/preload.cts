@@ -472,6 +472,8 @@ contextBridge.exposeInMainWorld("desktop", {
     postBulkOpeningBalances: (input: Record<string, unknown>) => ipcRenderer.invoke(IPC.postBulkOpeningBalances, input),
     // Claims (docs/55)
     listPartyClaimRequests: (query: Record<string, unknown>) => ipcRenderer.invoke(IPC.listPartyClaimRequests, query),
+    listEmployees: () => ipcRenderer.invoke(IPC.listEmployees),
+    createEmployee: (input: Record<string, unknown>) => ipcRenderer.invoke(IPC.createEmployee, input),
     getPartyClaimRequest: (requestId: string) => ipcRenderer.invoke(IPC.getPartyClaimRequest, requestId),
     postPartyClaim: (input: Record<string, unknown>) => ipcRenderer.invoke(IPC.postPartyClaim, input),
     rejectPartyClaimRequest: (input: Record<string, unknown>) => ipcRenderer.invoke(IPC.rejectPartyClaimRequest, input),

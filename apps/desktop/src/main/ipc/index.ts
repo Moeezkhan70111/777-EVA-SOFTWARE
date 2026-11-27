@@ -37,6 +37,7 @@ import { registerHandVoucherHandlers } from "./handVouchers";
 import { registerLedgerArchiveHandlers } from "./ledgerArchive";
 import { registerPartyOpeningBalanceHandlers } from "./partyOpeningBalances";
 import { registerPartyClaimHandlers } from "./partyClaims";
+import { registerSalaryHandlers } from "./salaries";
 import { registerCustomerOrderHandlers } from "./customerOrders";
 import { registerDataChangeTraceHandler } from "./dataChangeTrace";
 
@@ -85,6 +86,7 @@ export function registerIpcHandlers(ctx: IpcContext): void {
   registerLedgerArchiveHandlers({ ...ctx, announce });
   registerPartyOpeningBalanceHandlers({ ...ctx, announce });
   registerPartyClaimHandlers({ ...ctx, announce });
+  registerSalaryHandlers({ ...ctx, announce });
   registerCustomerOrderHandlers(ctx);
   registerDataChangeTraceHandler(ctx);
 }

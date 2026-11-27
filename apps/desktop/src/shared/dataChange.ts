@@ -30,6 +30,8 @@ export const DATA_KIND = {
   COLORS: "COLORS",
   /** What this computer is waiting on: anything arriving can settle or start a wait. */
   SYNC: "SYNC",
+  /** Employees and their salaries (the Salaries page). */
+  SALARIES: "SALARIES",
 } as const;
 
 export type DataKind = (typeof DATA_KIND)[keyof typeof DATA_KIND];
@@ -128,6 +130,8 @@ const KIND_OF_TYPE: Readonly<Record<string, DataKind>> = {
   COLOR_TRANSLATION: DATA_KIND.COLORS,
   // A colour asked for from Enter Orders: nothing on screen reads the request itself. Its colour arrives as ARTICLE_SIZE.
   ARTICLE_COLOR_REQUEST: DATA_KIND.PRODUCTS,
+  // An employee added on the accounts computer: the Salaries page reloads.
+  EMPLOYEE: DATA_KIND.SALARIES,
 };
 
 /**

@@ -2728,6 +2728,10 @@ export interface DesktopApi {
   postBulkOpeningBalances(input: Record<string, unknown>): Promise<unknown>;
   // Claims (docs/55). Read by features/claims/claimReplies.ts (R25).
   listPartyClaimRequests(query: Record<string, unknown>): Promise<unknown>;
+  /** Every employee with their monthly salary (Salaries page). Checked by the page. */
+  listEmployees(): Promise<unknown>;
+  /** Adds an employee (ACCOUNTS lease). The draft as typed; the main process checks it. Checked by the page. */
+  createEmployee(input: { name: string; work: string; phone: string; monthlySalary: string; joinedOn: string }): Promise<unknown>;
   getPartyClaimRequest(requestId: string): Promise<unknown>;
   postPartyClaim(input: Record<string, unknown>): Promise<unknown>;
   rejectPartyClaimRequest(input: Record<string, unknown>): Promise<unknown>;

@@ -55,3 +55,5 @@ export const ENTER_ORDERS_ARTWORK_URL = "./assets/orders/enter-orders.svg";
  * A vector (SVG) drawn like Enter Orders and Pending Orders, carrying its own ground.
  */
 export const CUSTOMER_BALANCE_ARTWORK_URL = "./assets/billing/customer-balance.svg";
+/** The Salaries card (27 Nov 2026): a pay envelope and an employee's card. */
+export const SALARIES_ARTWORK_URL = "./assets/billing/salaries.svg";

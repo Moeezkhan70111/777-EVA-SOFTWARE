@@ -97,6 +97,9 @@ export const PERMISSION = {
   /** The Claims screen: the store's claim requests and what Accounts did with them (docs/55). Read-only. Pricing,
    *  posting, rejecting and reversing are for administrators only, on the accounts computer (owner, 21 Nov 2026). */
   PARTY_CLAIMS: "party-claims",
+  /** The Salaries page: employees and their monthly salaries (owner, 27 Nov 2026). Adding one is written where the
+   *  accounts are (the ACCOUNTS lease, PC1). */
+  SALARIES: "salaries",
   SETTINGS: "settings",
   HEALTH: "health",
   LOGS: "logs",

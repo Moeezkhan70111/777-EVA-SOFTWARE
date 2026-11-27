@@ -5,6 +5,7 @@ import {
   DAILY_PRODUCTION_ARTWORK_URL,
   DANA_STOCK_ARTWORK_URL,
   CUSTOMER_BALANCE_ARTWORK_URL,
+  SALARIES_ARTWORK_URL,
   ENTER_ORDERS_ARTWORK_URL,
   GATEPASS_LIST_ARTWORK_URL,
   PENDING_ORDERS_ARTWORK_URL,
@@ -67,7 +68,7 @@ export type NavIconId =
   | "stock" | "history" | "daily" | "party" | "product" | "qr" | "cash" | "ledger"
   | "balance" | "purchase" | "settings" | "health" | "logs" | "machine" | "upper" | "dana"
   | "ragzine" | "pvc" | "pasting"
-  | "order" | "pending";
+  | "order" | "pending" | "salary";
 
 export interface NavItem {
   route: AppRoute;
@@ -254,6 +255,11 @@ export const NAV_SECTIONS: readonly NavSection[] = [
       item("supplier-balance", t.supplierBalance, "balance"),
       item("contractor-ledger", t.contractorLedger, "ledger"),
       item("party-claims", t.partyClaims, "ledger"),
+      // A Dashboard card (owner, 27 Nov 2026): employees and their monthly salaries.
+      {
+        ...item("salaries", t.salaries, "salary"),
+        feature: { artwork: SALARIES_ARTWORK_URL, theme: "sky", artworkHasScene: true, badge: "salary", onDashboard: true },
+      },
     ],
   },
   {

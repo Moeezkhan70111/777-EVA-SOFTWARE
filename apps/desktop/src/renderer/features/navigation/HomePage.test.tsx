@@ -151,10 +151,10 @@ describe("HomePage — the Dashboard's own cards", () => {
     expect(screen.getByRole("status")).toHaveTextContent("Your pages are in the sidebar");
   });
 
-  it("shows an administrator Carton Stock first, then both stock cards, Daily Production, Enter Orders, Pending Orders and Customer Balance, and Carton Stock opens its page", () => {
+  it("shows an administrator Carton Stock first, then both stock cards, Daily Production, Enter Orders, Pending Orders, Customer Balance and Salaries, and Carton Stock opens its page", () => {
     const onNavigate = vi.fn();
     render(<HomePage user={user([], "ADMIN")} onNavigate={onNavigate} />);
-    expect(cardNames()).toEqual(["nav-tile-carton-stock", "nav-tile-upper-stock", "nav-tile-dana-stock", "nav-tile-daily-production", "nav-tile-orders-entry", "nav-tile-pending-orders", "nav-tile-customer-balance"]);
+    expect(cardNames()).toEqual(["nav-tile-carton-stock", "nav-tile-upper-stock", "nav-tile-dana-stock", "nav-tile-daily-production", "nav-tile-orders-entry", "nav-tile-pending-orders", "nav-tile-customer-balance", "nav-tile-salaries"]);
     const card = screen.getByRole("button", { name: "Carton Stock" });
     expect(card.querySelector("img")).toHaveAttribute("src", "./assets/stock/carton-stock.png");
     fireEvent.click(card);
@@ -173,6 +173,17 @@ describe("HomePage — the Dashboard's own cards", () => {
     view.unmount();
     render(<HomePage user={user(["customer-balance"])} onNavigate={onNavigate} hiddenRoutes={new Set(["customer-balance"])} />);
     expect(cardNames()).toEqual([]);
+  });
+
+  // Owner, 27 Nov 2026: "add a new card on dashboard named as Salaries".
+  it("shows the Salaries card, with its own picture, to someone given Salaries, and it opens the page", () => {
+    const onNavigate = vi.fn();
+    render(<HomePage user={user(["salaries"])} onNavigate={onNavigate} />);
+    expect(cardNames()).toEqual(["nav-tile-salaries"]);
+    const card = screen.getByRole("button", { name: "Salaries" });
+    expect(card.querySelector("img")).toHaveAttribute("src", "./assets/billing/salaries.svg");
+    fireEvent.click(card);
+    expect(onNavigate).toHaveBeenLastCalledWith("salaries");
   });
 
   // Owner, 24 Nov 2026: Enter Orders is a Dashboard card too, beside Pending Orders.

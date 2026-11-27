@@ -74,6 +74,7 @@ import { cartonStockAdjustMethods, type CartonStockAdjustMethods } from "./datab
 import { cartonStockDocumentMethods, type CartonStockDocumentMethods } from "./database/cartonStockDocuments.js";
 import { articleColorRemovalMethods, type ArticleColorRemovalMethods } from "./database/articleColorRemoval.js";
 import { articleColorRequestMethods, type ArticleColorRequestMethods } from "./database/articleColorRequests.js";
+import { employeeMethods, type EmployeeMethods } from "./database/employees.js";
 import { handVoucherMethods, type HandVoucherMethods } from "./database/handVouchers.js";
 import { ledgerArchiveMethods, type LedgerArchiveMethods } from "./database/ledgerArchive.js";
 import { partyOpeningBalanceMethods, type PartyOpeningBalanceMethods } from "./database/partyOpeningBalances.js";
@@ -1756,6 +1757,7 @@ export interface SqliteDatabase
     CartonStockDocumentMethods,
     ArticleColorRemovalMethods,
     ArticleColorRequestMethods,
+    EmployeeMethods,
     HandVoucherMethods,
     LedgerArchiveMethods,
     PartyOpeningBalanceMethods,
@@ -1822,6 +1824,7 @@ Object.assign(
   cartonStockDocumentMethods,
   articleColorRemovalMethods,
   articleColorRequestMethods,
+  employeeMethods,
   handVoucherMethods,
   ledgerArchiveMethods,
   partyOpeningBalanceMethods,

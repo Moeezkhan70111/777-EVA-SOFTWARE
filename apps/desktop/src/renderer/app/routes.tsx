@@ -76,6 +76,8 @@ export const APP_ROUTES = [
   "contractor-ledger",
   // Claims (docs/55): the store's requests, priced and posted by Accounts.
   "party-claims",
+  // Employees and their monthly salaries (27 Nov 2026).
+  "salaries",
   "cash-voucher-list",
   "cash-voucher-form",
   "profile",
