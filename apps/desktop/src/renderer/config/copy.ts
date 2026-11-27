@@ -92,6 +92,14 @@ export const copy = {
     dismiss: "Dismiss",
   },
 
+  // Notices (components/layout/NoticeIsland.tsx): the island at the top centre (owner, 27 Nov 2026).
+  notices: {
+    regionLabel: "Notifications",
+    kinds: { success: "Done", error: "Error", warning: "Warning", info: "Note" } as const,
+    close: (title: string) => `Close notice: ${title}`,
+    waiting: (count: number) => `+${count}`,
+  },
+
   // Common actions rendered on buttons and icon-button titles.
   actions: {
     add: "Add",
@@ -3795,6 +3803,14 @@ export const copy = {
     gridHint: "Type dozens in any boxes — every colour and size at once. Up and Down arrows move along a colour; Enter adds them all.",
     /** Under a box: the figure in store now, in dozens (the figure it would leave follows after an arrow). */
     cellNow: (dozens: string) => `Now ${dozens}`,
+    /** Two ways to enter (owner, 27 Nov 2026): type dozens, or press − and + on a Carton Stock card. */
+    entryModeLabel: "Enter by",
+    entryModes: { TYPE: "Typing dozens", STEP: "+ / − buttons" } as const,
+    stepHint: "Each + or − is one carton (½ dozen). The big figure is what the store will hold; the small one under it is the change.",
+    stepLabel: (article: string) => `${article}: cartons in store, with + and −`,
+    stepUp: (color: string, size: string) => `Add one carton to ${color}, size ${size}`,
+    stepDown: (color: string, size: string) => `Take one carton off ${color}, size ${size}`,
+    changedSummary: (cells: number, dozensIn: string, dozensOut: string) => `${String(cells)} ${cells === 1 ? "box" : "boxes"} changed · +${dozensIn} / −${dozensOut} dozen`,
     typedSummary: (cells: number, dozens: string) => `${String(cells)} ${cells === 1 ? "box" : "boxes"} typed · ${dozens} dozen`,
     newColorButton: "+ New colour",
     alreadyOpened: "Already has opening stock.",

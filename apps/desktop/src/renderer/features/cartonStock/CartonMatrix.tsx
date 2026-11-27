@@ -20,7 +20,7 @@ const dozenCell = (cartons: number): string => cellText(cartonsToDozens(cartons)
 /** The same figure in dozens where nothing is a dash: 0 reads "0" (the Total Carton Stock card). */
 export const dozenFigure = (cartons: number): string => (cartons === 0 ? "0" : dozenCell(cartons));
 
-const ColourHead: React.FC<{ colour: string }> = ({ colour }) => {
+export const ColourHead: React.FC<{ colour: string }> = ({ colour }) => {
   // Shown in Urdu from the shared colour list (ColourName). The column, its figures and the swatch go by the English.
   return (
     <th scope="col" className="cs-colour-head" title={colour}>

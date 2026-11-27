@@ -5,8 +5,12 @@ import { onLeaseRefusal } from "./leaseRefusals";
 
 /** How long a lease refusal stays up: long enough to read who writes the domain. */
 const LEASE_REFUSAL_TTL_MS = 8000;
-/** How long a notice stays unless it says otherwise: the island's own four seconds (NotificationCenter, 26 Nov 2026). */
-const NOTICE_TTL_MS = 4000;
+/**
+ * How long a notice may stay open unless it says otherwise. The island closes the one it shows after its own four
+ * seconds, held while pointed at (NoticeIsland, 27 Nov 2026); this only lets a notice waiting behind it lapse, and is
+ * longer so it never cuts the shown one short.
+ */
+const NOTICE_TTL_MS = 12000;
 
 export type NoticeKind = "success" | "error" | "warning" | "info";
 
@@ -27,7 +31,7 @@ export interface NoticeItem {
 interface NoticeApi {
   notices: NoticeItem[];
   /** `ttlMs = 0` keeps the notice until it is dismissed — for anything that asks a question. */
-  /** `action`: the one next step that fits what was just said ("Print bill", "Make Bill"), shown on the island (26 Nov 2026). */
+  /** `action`: the one next step that fits what was just said ("Print bill", "Make Bill"), shown on the notice card (26 Nov 2026). */
   push: (kind: NoticeKind, title: string, message?: string, ttlMs?: number, action?: NoticeAction) => void;
   /**
    * A notice carrying a button, kept until dismissed.

@@ -13,9 +13,6 @@
    Arabic-script subset only: Latin text keeps the app's own font. */
 @import "@fontsource/noto-nastaliq-urdu/arabic-400.css";
 @import "@fontsource/noto-nastaliq-urdu/arabic-700.css";
-/* Notices as a Dynamic Island (dynaura, NotificationCenter.tsx): its no-font sheet, so nothing is fetched from the
-   internet; it takes the app's own font below. */
-@import "dynaura/styles-no-font.css";
 
 /* ─── Tokens ─────────────────────────────────────────── */
 /* Visually hidden but announced — text alternative for colour-only cues (R18). */
@@ -2104,7 +2101,94 @@ select {
 .report-total-value { font-size: 1.65rem; font-weight: 800; color: var(--text); }
 
 /* ════════════════════════════════════════════════════════ NOTIFICATIONS ════════════════════════════════════════════════════════ */
-/* Notices are drawn by dynaura as a Dynamic Island (NotificationCenter.tsx); their styles come with it, at the top. */
+/* THE NOTICE ISLAND, OUR OWN (owner, 27 Nov 2026; NoticeIsland.tsx, docs/56). One deep-navy pill at the top centre.
+   It springs open from a small pill (transform and opacity only, a little overshoot, 320 ms) and closes back into it
+   (180 ms, ease-in). The kind is a mark and a word, never colour alone (R18); the ring round × runs down the four
+   seconds and stops while the island is held. Every colour is a token below or an existing one (R3). */
+:root {
+  --island-bg:     color-mix(in oklch, var(--sp-navy) 62%, black);
+  --island-line:   color-mix(in oklch, var(--white) 10%, transparent);
+  --island-fg:     var(--white);
+  --island-muted:  color-mix(in oklch, var(--white) 68%, transparent);
+  --island-faint:  color-mix(in oklch, var(--white) 16%, transparent);
+  --island-shadow: 0 18px 40px -16px rgb(8 16 36 / 0.55), 0 2px 6px rgb(8 16 36 / 0.18);
+  --island-ease:   cubic-bezier(0.32, 0.72, 0, 1);
+}
+.island-dock {
+  position: fixed; top: calc(env(safe-area-inset-top, 0px) + 12px); left: 50%; z-index: 1300;
+  transform: translateX(-50%); width: max-content; max-width: calc(100vw - 24px); pointer-events: none;
+}
+.island {
+  --island-tone: var(--sp-mode-on-end);
+  overflow: hidden; border: 1px solid var(--island-line); border-radius: 22px; pointer-events: auto;
+  background: var(--island-bg); color: var(--island-fg); box-shadow: var(--island-shadow);
+  font-family: var(--sp-font), var(--font-urdu); transform-origin: top center;
+  /* It grows out of its resting pill and shrinks back into it: width, height and corners together, on one curve,
+     so it never squashes. Between notices the same transition glides it from one size to the next. */
+  transition: width 520ms var(--island-ease), height 520ms var(--island-ease), border-radius 520ms var(--island-ease), opacity 180ms ease-out;
+  animation: island-appear 180ms ease-out backwards;
+  display: flex; align-items: center; justify-content: center;
+}
+.island.is-open { border-radius: 28px; }
+.island[data-kind="success"] { --island-tone: var(--ok); }
+.island[data-kind="error"] { --island-tone: var(--err); }
+.island[data-kind="warning"] { --island-tone: var(--warn); }
+/* Closing: the words fade, it shrinks back into the pill, then the pill fades (ISLAND_CLOSING_MS covers it all). */
+.island.is-closing {
+  opacity: 0; pointer-events: none;
+  transition: width 420ms var(--island-ease), height 420ms var(--island-ease), border-radius 420ms var(--island-ease), opacity 160ms ease-in 380ms;
+}
+.island-measure { flex: 0 0 auto; width: max-content; }
+.island-content {
+  display: flex; align-items: center; gap: 12px; box-sizing: border-box;
+  min-width: min(320px, calc(100vw - 24px)); max-width: min(580px, calc(100vw - 24px)); padding: 9px 9px 9px 11px;
+  opacity: 0; transition: opacity 140ms ease-in;
+  animation: island-content 280ms ease-out 120ms backwards;
+}
+.island.is-open .island-content { opacity: 1; transition: opacity 260ms ease-out 140ms; }
+.island-mark {
+  display: inline-flex; flex: 0 0 auto; align-items: center; justify-content: center; width: 34px; height: 34px; border-radius: 50%;
+  background: color-mix(in oklch, var(--island-tone) 26%, transparent); color: color-mix(in oklch, var(--island-tone) 55%, white);
+  font-size: 16px; font-weight: 800; line-height: 1;
+}
+.island-body { display: grid; gap: 1px; flex: 1 1 auto; min-width: 0; padding: 1px 4px 1px 0; }
+.island-title { margin: 0; font-size: 14.5px; font-weight: 600; line-height: 1.3; overflow-wrap: anywhere; }
+.island-kind {
+  display: block; color: color-mix(in oklch, var(--island-tone) 55%, white); font-size: 10.5px; font-weight: 800;
+  letter-spacing: 0.08em; line-height: 1.4; text-transform: uppercase;
+}
+.island-message { margin: 0; color: var(--island-muted); font-size: 13px; line-height: 1.4; overflow-wrap: anywhere; }
+.island-more {
+  flex: 0 0 auto; padding: 3px 8px; border-radius: 999px; background: var(--island-faint); color: var(--island-muted);
+  font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums;
+}
+.island-action {
+  flex: 0 0 auto; min-height: 36px; padding: 0 16px; border: 0; border-radius: 999px; cursor: pointer;
+  background: var(--white); color: var(--sp-navy); font: inherit; font-size: 13.5px; font-weight: 700; white-space: nowrap;
+  transition: transform 150ms ease-out, background-color 150ms ease-out;
+}
+.island-action:hover { background: color-mix(in oklch, var(--white) 88%, var(--island-tone)); }
+.island-action:active { transform: scale(0.96); }
+.island-close {
+  position: relative; display: inline-flex; flex: 0 0 auto; align-items: center; justify-content: center; width: 36px; height: 36px;
+  border: 0; border-radius: 50%; background: transparent; color: var(--island-muted); font-size: 20px; line-height: 1; cursor: pointer;
+}
+.island-close:hover { background: var(--island-faint); color: var(--island-fg); }
+.island-action:focus-visible, .island-close:focus-visible { outline: 2px solid var(--white); outline-offset: 2px; }
+.island-ring { position: absolute; inset: 0; width: 100%; height: 100%; transform: rotate(-90deg); }
+.island-ring circle {
+  fill: none; stroke: var(--island-tone); stroke-width: 2; stroke-linecap: round; stroke-dasharray: 100; stroke-dashoffset: 0; opacity: 0.85;
+  animation: island-time var(--island-ms, 4000ms) linear forwards;
+}
+.island-content.is-held .island-ring circle { animation-play-state: paused; }
+@keyframes island-appear { from { opacity: 0; } to { opacity: 1; } }
+@keyframes island-content { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: none; } }
+@keyframes island-time { to { stroke-dashoffset: 100; } }
+@media (max-width: 480px) { .island-content { flex-wrap: wrap; } .island-action { margin-left: 46px; } }
+@media (prefers-reduced-motion: reduce) {
+  .island, .island.is-closing, .island-content { animation: none; transition: none; }
+  .island-ring circle { animation: none; opacity: 0.4; }
+}
 
 /* ── Sync status indicator (rail) ──────────────────────────────────────────
    Flat fills and a plain 1px border throughout: gradients, drop-shadow and inset shadows each
@@ -9925,6 +10009,34 @@ tr.has-error .gp-qty-stepper input { color: var(--err); }
 .sa-cell.is-locked { background: var(--surface-2); vertical-align: middle; }
 .sa-cell-figures { display: block; margin-top: 2px; font-size: 0.75rem; color: var(--text-3); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .sa-cell-figures.is-below-zero { color: var(--warning-strong); font-weight: 700; }
+/* THE + / − VIEW (owner, 27 Nov 2026): Carton Stock's card, with − and + in every cell. Targets are 44 px (Fitts);
+   a changed cell is tinted and says its change in signed words, never colour alone. */
+.sa-step-card .cs-article-name {
+  display: flex; align-items: center; justify-content: center; margin: 0; padding: 16px; border-right: 1px solid var(--sp-line);
+  background: var(--sp-ground); color: var(--sp-navy); font-size: 30px; font-weight: 800; letter-spacing: -0.01em; text-align: center; word-break: break-word;
+}
+.sa-step-card.cs-articles--stacked .cs-article-name { justify-content: flex-start; padding: 10px 16px; border-right: 0; border-bottom: 1px solid var(--sp-line); font-size: 22px; }
+.sa-step-table td.sa-step-cell { height: 64px; padding: 6px 8px; }
+.sa-step-cell.is-changed { background: var(--sp-blue-soft); }
+.sa-step-cell.is-below-zero { background: var(--warning-soft); }
+.sa-step-cell.is-locked .sa-note { display: block; }
+.sa-stepper { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+.sa-step-btn {
+  display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; width: 44px; height: 44px;
+  border: 1px solid var(--sp-line); border-radius: var(--sp-radius-control); background: var(--white); color: var(--sp-navy);
+  font-size: 24px; font-weight: 700; line-height: 1; cursor: pointer; transition: background-color 150ms ease-out, transform 150ms ease-out;
+}
+.sa-step-btn:hover:not(:disabled) { background: var(--sp-blue); border-color: var(--sp-blue); color: var(--white); }
+.sa-step-btn:active:not(:disabled) { transform: scale(0.94); }
+.sa-step-btn:focus-visible { outline: 3px solid var(--sp-navy); outline-offset: 2px; }
+.sa-step-btn:disabled { color: var(--sp-faint); background: var(--sp-ground); cursor: default; }
+.sa-step-figure { display: flex; flex-direction: column; align-items: center; min-width: 3.5rem; line-height: 1.15; }
+.sa-step-held { font-size: 19px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.sa-step-cell.is-below-zero .sa-step-held { color: var(--warning-strong); }
+.sa-step-change { margin-top: 2px; padding: 0 6px; border-radius: 8px; font-size: 13px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.sa-step-change.is-up { background: var(--success-tint); color: var(--success-strong); }
+.sa-step-change.is-down { background: var(--warning-soft); color: var(--warning-strong); }
+@media (prefers-reduced-motion: reduce) { .sa-step-btn { transition: none; } .sa-step-btn:active:not(:disabled) { transform: none; } }
 .sa-add-color { min-height: 44px; padding: 0 var(--space-3); font-weight: 700; }
 .sa-new-color { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; flex: 1 1 100%; }
 .sa-new-color .form-input { flex: 1 1 10rem; min-height: 40px; }
@@ -11806,24 +11918,3 @@ tr.has-error .gp-qty-stepper input { color: var(--err); }
 .sa-page .sa-group-size { vertical-align: top; color: var(--sp-navy-2); font-weight: 700; border-right: 1px solid var(--sp-line); }
 .sa-page .sa-article-group + .sa-article-group > tr:first-child > * { border-top: 2px solid var(--sp-line); }
 
-/* THE NOTICE ISLAND, CLEAN LIKE THE IPHONE'S (owner, 27 Nov 2026; dynaura, NotificationCenter.tsx; docs/56): one near-black
-   surface, our navy deepened toward black; white words; no outline, no sheen, no coloured glow. The only colour is the
-   small status mark, in the app's own status colours, always beside its own symbol (never colour alone). The motion is
-   dynaura's own spring morph, given the time a spring needs to stay smooth; reduced motion is honoured by the package.
-   These are the island's tokens; NotificationCenter hands them to dynaura. */
-:root {
-  --island-bg:      color-mix(in oklch, var(--sp-navy) 55%, black);
-  --island-fg:      var(--white);
-  --island-muted:   color-mix(in oklch, var(--white) 70%, transparent);
-  --island-ring:    transparent;
-  --island-button:  color-mix(in oklch, var(--white) 14%, transparent);
-  --island-success: var(--ok);
-  --island-error:   var(--err);
-  --island-warning: var(--warn);
-  --island-info:    var(--sp-mode-on-end);
-  --island-loading: color-mix(in oklch, var(--white) 60%, transparent);
-  --island-shadow:  0 10px 28px -12px rgb(0 0 0 / 0.5);
-}
-.dynaura-root { --dynaura-font: var(--sp-font), var(--font-urdu); --dynaura-duration: 560ms; }
-.dynaura-root .dynaura-island { box-shadow: var(--island-shadow); }
-.dynaura-root .dynaura-title { font-weight: 600; letter-spacing: 0; }

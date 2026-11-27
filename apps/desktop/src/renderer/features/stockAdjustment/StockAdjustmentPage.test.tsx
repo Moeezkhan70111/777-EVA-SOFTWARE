@@ -269,3 +269,51 @@ describe("the document being written", () => {
     expect(entryProblem({ ...row, colorMissing: true }, "OPENING", "IN", "3")).toBe(text.colorNotOnSize);
   });
 });
+
+// THE + / − VIEW (owner, 27 Nov 2026): the article as Carton Stock shows it, − and + in every cell, one carton a
+// press; the sign of each cell's change makes an Increase or a Decrease line for the same document.
+describe("Stock Adjustment, + / − buttons", () => {
+  const press = async (name: string, times: number) => {
+    for (let index = 0; index < times; index += 1) await userEvent.click(screen.getByRole("button", { name }));
+  };
+
+  it("adjusts by pressing, shows what the store will hold, and posts an Increase and a Decrease line", async () => {
+    show();
+    await userEvent.click(await screen.findByRole("tab", { name: text.kinds.ADJUSTMENT }));
+    await pick(text.articleLabel, "SK6");
+    await userEvent.click(await screen.findByRole("button", { name: text.entryModes.STEP }));
+    // No Movement choice: the sign decides.
+    expect(screen.queryByRole("group", { name: text.directionLabel })).toBeNull();
+    const card = await screen.findByRole("region", { name: "SK6" });
+    expect(within(card).getAllByRole("rowheader").map((cell) => cell.textContent)).toEqual(["7/10", "10/13", "13/1", copy.cartonStock.total]);
+
+    await press(text.stepUp("RED", "10/13"), 3);
+    await press(text.stepDown("RED", "7/10"), 2);
+    const row = (size: string) => within(card).getByRole("rowheader", { name: size }).closest("tr") as HTMLElement;
+    expect(within(row("10/13")).getByText("+1.5")).toBeInTheDocument();
+    expect(within(row("7/10")).getByText("−1")).toBeInTheDocument();
+    expect(within(row("7/10")).getAllByText("4").length).toBeGreaterThan(0);
+    expect(screen.getByText(text.changedSummary(2, "1.5", "1"))).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: text.addToDocument }));
+    await userEvent.type(screen.getByRole("textbox", { name: text.reasonLabel }), "Physical count");
+    await postWithConfirm(text.post.ADJUSTMENT);
+    await waitFor(() => expect(api.postCartonStockAdjustment).toHaveBeenCalledTimes(1));
+    const sent = api.postCartonStockAdjustment.mock.calls[0]?.[0] as { kind: string; lines: unknown[] };
+    expect(sent.kind).toBe("ADJUSTMENT");
+    expect(sent.lines).toEqual([
+      { articleSizeId: "as-SK6-7/10", color: "RED", direction: "OUT", cartons: 2 },
+      { articleSizeId: "as-SK6-10/13", color: "RED", direction: "IN", cartons: 3 },
+    ]);
+  });
+
+  it("on Opening Stock only adds: − waits for a +, and a size with opening stock takes no presses", async () => {
+    show();
+    await pick(text.articleLabel, "SK6");
+    await userEvent.click(await screen.findByRole("button", { name: text.entryModes.STEP }));
+    expect(await screen.findByRole("button", { name: text.stepDown("RED", "10/13") })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: text.stepUp("RED", "7/10") })).toBeNull();
+    await press(text.stepUp("RED", "10/13"), 1);
+    expect(screen.getByRole("button", { name: text.stepDown("RED", "10/13") })).toBeEnabled();
+  });
+});

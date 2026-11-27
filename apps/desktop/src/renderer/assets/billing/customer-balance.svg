@@ -1,24 +1,23 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 654 364" font-family="Inter, 'Segoe UI', Arial, sans-serif">
-  <!-- Customer Balance card artwork: a customer's balance sheet (names down the side, the amount each owes beside it,
-       the total underlined), a balance scale weighing what is owed against what is received, a stack of coins, and a
-       blue rupee badge. Drawn in the sky cards' palette like Enter Orders and Pending Orders; it carries its own soft
-       ground, so the card draws no cloud (artworkHasScene). -->
+  <!-- Customer Balance card artwork (27 Nov 2026): what customers owe, as money. A navy wallet with rupee notes rising
+       out of it, and a stack of coins beside. A wallet, not a clipboard, so the card reads apart from the other three at
+       a glance (owner, 27 Nov 2026). Sky cards' palette; it carries its own soft ground (artworkHasScene). -->
   <defs>
-    <linearGradient id="cb-sheet" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#ffffff"/>
-      <stop offset="1" stop-color="#eef4fc"/>
+    <linearGradient id="cb-wallet" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2f5aa8"/>
+      <stop offset="1" stop-color="#1d3769"/>
     </linearGradient>
-    <linearGradient id="cb-blue" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#2f8cf0"/>
-      <stop offset="1" stop-color="#1565c0"/>
+    <linearGradient id="cb-note" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#d9f2e3"/>
+      <stop offset="1" stop-color="#a7dfbf"/>
+    </linearGradient>
+    <linearGradient id="cb-note-2" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#e3eefc"/>
+      <stop offset="1" stop-color="#b9d2f3"/>
     </linearGradient>
     <linearGradient id="cb-coin" x1="0" y1="0" x2="0" y2="1">
       <stop offset="0" stop-color="#fde68a"/>
       <stop offset="1" stop-color="#f59e0b"/>
-    </linearGradient>
-    <linearGradient id="cb-pan" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#dbe8f8"/>
-      <stop offset="1" stop-color="#a9c4e6"/>
     </linearGradient>
     <filter id="cb-shadow" x="-20%" y="-20%" width="140%" height="150%">
       <feDropShadow dx="0" dy="10" stdDeviation="10" flood-color="#1d3769" flood-opacity="0.16"/>
@@ -26,75 +25,43 @@
   </defs>
 
   <!-- Ground -->
-  <ellipse cx="330" cy="330" rx="250" ry="22" fill="#dce9f8"/>
+  <ellipse cx="327" cy="330" rx="262" ry="22" fill="#dce9f8"/>
 
-  <!-- The balance sheet on its clipboard -->
+  <!-- Two rupee notes rising out of the wallet -->
   <g filter="url(#cb-shadow)">
-    <rect x="150" y="46" width="230" height="276" rx="18" fill="#1d3769"/>
-    <rect x="162" y="60" width="206" height="252" rx="10" fill="url(#cb-sheet)"/>
+    <g transform="rotate(-10 250 130)">
+      <rect x="150" y="76" width="210" height="104" rx="10" fill="url(#cb-note-2)"/>
+      <circle cx="255" cy="128" r="26" fill="none" stroke="#7da4dc" stroke-width="4"/>
+      <text x="241" y="137" font-size="22" font-weight="900" fill="#2f5aa8">Rs</text>
+    </g>
+    <g transform="rotate(6 320 130)">
+      <rect x="228" y="84" width="210" height="104" rx="10" fill="url(#cb-note)"/>
+      <circle cx="333" cy="136" r="26" fill="none" stroke="#5cbf85" stroke-width="4"/>
+      <text x="319" y="145" font-size="22" font-weight="900" fill="#1f9d55">Rs</text>
+    </g>
   </g>
-  <rect x="222" y="34" width="86" height="30" rx="9" fill="#2f5aa8"/>
-  <rect x="242" y="26" width="46" height="16" rx="8" fill="#2f5aa8"/>
-  <circle cx="265" cy="34" r="4" fill="#dce9f8"/>
 
-  <!-- Heading -->
-  <rect x="182" y="84" width="104" height="10" rx="5" fill="#1d3769"/>
-  <rect x="182" y="102" width="64" height="7" rx="3.5" fill="#a9bfdc"/>
-
-  <!-- Customers and what each owes -->
-  <g>
-    <circle cx="190" cy="140" r="8" fill="#c7d6ea"/>
-    <rect x="206" y="135" width="72" height="9" rx="4.5" fill="#c7d6ea"/>
-    <rect x="300" y="134" width="50" height="11" rx="5.5" fill="#1d3769"/>
-
-    <circle cx="190" cy="176" r="8" fill="#c7d6ea"/>
-    <rect x="206" y="171" width="58" height="9" rx="4.5" fill="#c7d6ea"/>
-    <rect x="308" y="170" width="42" height="11" rx="5.5" fill="#1d3769"/>
-
-    <circle cx="190" cy="212" r="8" fill="#c7d6ea"/>
-    <rect x="206" y="207" width="80" height="9" rx="4.5" fill="#c7d6ea"/>
-    <rect x="296" y="206" width="54" height="11" rx="5.5" fill="#1d3769"/>
-  </g>
-  <!-- The total, underlined twice -->
-  <rect x="182" y="240" width="168" height="3" rx="1.5" fill="#a9bfdc"/>
-  <rect x="182" y="254" width="58" height="9" rx="4.5" fill="#2f5aa8"/>
-  <text x="350" y="267" text-anchor="end" font-size="22" font-weight="900" fill="#1565c0">Rs</text>
-  <rect x="290" y="276" width="60" height="3" rx="1.5" fill="#1565c0"/>
-  <rect x="290" y="283" width="60" height="3" rx="1.5" fill="#1565c0"/>
-
-  <!-- A balance scale: owed against received -->
+  <!-- The wallet, holding them -->
   <g filter="url(#cb-shadow)">
-    <rect x="468" y="150" width="8" height="132" rx="4" fill="#2f5aa8"/>
-    <rect x="440" y="278" width="64" height="12" rx="6" fill="#1d3769"/>
-    <path d="M404 170 L540 152" stroke="#2f5aa8" stroke-width="7" stroke-linecap="round"/>
-    <circle cx="472" cy="160" r="9" fill="#1d3769"/>
-    <path d="M404 170 L388 214 M404 170 L420 214" stroke="#7f9cc4" stroke-width="2.5"/>
-    <path d="M540 152 L524 196 M540 152 L556 196" stroke="#7f9cc4" stroke-width="2.5"/>
-    <path d="M380 214 H428 C428 228 380 228 380 214 Z" fill="url(#cb-pan)"/>
-    <path d="M516 196 H564 C564 210 516 210 516 196 Z" fill="url(#cb-pan)"/>
-    <ellipse cx="404" cy="210" rx="14" ry="5" fill="url(#cb-coin)"/>
-    <ellipse cx="404" cy="204" rx="14" ry="5" fill="url(#cb-coin)"/>
-    <ellipse cx="540" cy="192" rx="14" ry="5" fill="url(#cb-coin)"/>
+    <rect x="130" y="160" width="320" height="150" rx="22" fill="url(#cb-wallet)"/>
+    <path d="M130 196 H 450" stroke="#3b6fc4" stroke-width="3"/>
+    <rect x="372" y="214" width="96" height="58" rx="14" fill="#2f5aa8"/>
+    <circle cx="404" cy="243" r="11" fill="#eaf2fd"/>
+    <circle cx="404" cy="243" r="5" fill="#1d3769"/>
   </g>
 
-  <!-- A stack of coins -->
+  <!-- A stack of coins beside it -->
   <g filter="url(#cb-shadow)">
-    <ellipse cx="560" cy="300" rx="26" ry="9" fill="#e08a0b"/>
-    <rect x="534" y="282" width="52" height="18" fill="url(#cb-coin)"/>
-    <ellipse cx="560" cy="282" rx="26" ry="9" fill="#fcd34d"/>
-    <rect x="534" y="266" width="52" height="16" fill="url(#cb-coin)"/>
-    <ellipse cx="560" cy="266" rx="26" ry="9" fill="#fde68a"/>
+    <ellipse cx="530" cy="300" rx="46" ry="13" fill="#e08a0b"/>
+    <rect x="484" y="282" width="92" height="18" fill="url(#cb-coin)"/>
+    <ellipse cx="530" cy="282" rx="46" ry="13" fill="#fbbf24"/>
+    <rect x="484" y="262" width="92" height="20" fill="url(#cb-coin)"/>
+    <ellipse cx="530" cy="262" rx="46" ry="13" fill="#fbbf24"/>
+    <rect x="484" y="242" width="92" height="20" fill="url(#cb-coin)"/>
+    <ellipse cx="530" cy="242" rx="46" ry="13" fill="#fcd34d"/>
+    <text x="516" y="248" font-size="15" font-weight="900" fill="#b45309">Rs</text>
   </g>
 
-  <!-- The rupee badge -->
-  <g filter="url(#cb-shadow)">
-    <circle cx="540" cy="92" r="36" fill="url(#cb-blue)"/>
-    <text x="540" y="104" text-anchor="middle" font-size="32" font-weight="900" fill="#ffffff">₨</text>
-  </g>
-
-  <!-- Sparks -->
-  <path d="M110 120 L126 98" stroke="#5fa3fb" stroke-width="5" stroke-linecap="round"/>
-  <path d="M100 150 L128 140" stroke="#5fa3fb" stroke-width="5" stroke-linecap="round"/>
-  <circle cx="598" cy="176" r="6" fill="#fcd34d"/>
-  <circle cx="104" cy="250" r="5" fill="#9cc7ff"/>
+  <circle cx="96" cy="96" r="5" fill="#9fbbe2"/>
+  <circle cx="560" cy="120" r="4" fill="#bcd0ec"/>
 </svg>
