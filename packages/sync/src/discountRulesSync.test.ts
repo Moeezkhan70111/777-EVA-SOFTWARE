@@ -18,6 +18,7 @@ import type { SyncAck, SyncChange, SyncPullTransport, SyncTransport } from "./tr
 
 const SCHEMA = path.resolve(import.meta.dirname, "../../data/src/local-schema.sql");
 const MIGRATION_119 = path.resolve(import.meta.dirname, "../../../migrations/sqlite/119_discount_rules_travel.up.sql");
+const MIGRATION_122 = path.resolve(import.meta.dirname, "../../../migrations/sqlite/122_discount_rules_again.up.sql");
 const PROJECT = "https://test.supabase.co";
 const clock = { ms: Date.now() + 86_400_000 };
 const nowIso = () => new Date(clock.ms).toISOString();
@@ -175,5 +176,29 @@ test("rules saved before this build go up once from PC1 (local 119), and nowhere
 
     assert.deepEqual(rulesOf(pc3), rulesOf(pc1), "PC1's rule reached PC3");
     assert.deepEqual(rulesOf(pc2), rulesOf(pc1), "PC2 now holds PC1's rules for the customer, as every computer does");
+  });
+});
+
+// Owner, 27 Nov 2026: "PC3 SHOWS NOTHING IN DISCOUNT POLICY". PC3 read the customers 119 sent while still on an older
+// build, which kept each customer and dropped its rules, and it never reads a revision twice. 122 sends them again.
+test("a computer that read the customers without their rules gets them when 122 sends them again from PC1", async () => {
+  await withOffice(async (cloud, pc1, pc2, pc3) => {
+    const { groupId, partyId } = setUp(pc1);
+    pc1.db.createPartyProductGroupDiscount({ partyId, productGroupId: groupId, discountPerPair: 12 });
+    await passAll(cloud, [pc1, pc2, pc3]);
+    // As the older build left PC3: the customer at its latest revision, and none of its rules.
+    pc3.db.db.exec("DELETE FROM party_product_group_discounts");
+    pc3.db.db.exec("DELETE FROM sync_dirty_records");
+    await passAll(cloud, [pc1, pc2, pc3]);
+    assert.equal(rulesOf(pc3).length, 0, "nothing comes on its own: PC3 already holds the revision");
+
+    const migration = fs.readFileSync(MIGRATION_122, "utf8");
+    pc1.db.db.exec(migration);
+    pc3.db.db.exec(migration);
+    assert.equal(Number((pc3.db.db.prepare("SELECT COUNT(*) AS n FROM sync_dirty_records").get() as { n: number }).n), 0, "PC3 queues nothing");
+    await passAll(cloud, [pc1, pc2, pc3]);
+
+    assert.deepEqual(rulesOf(pc3), rulesOf(pc1), "PC3 holds PC1's rules");
+    assert.equal(pc3.db.resolveDiscount({ partyId, productGroupId: groupId }).discountPerPair, 12);
   });
 });
