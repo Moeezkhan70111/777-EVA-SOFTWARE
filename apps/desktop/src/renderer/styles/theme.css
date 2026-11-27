@@ -5819,22 +5819,6 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   box-shadow: var(--shadow-xl);
 }
 
-/* ── Discount Policy Report header ─────────────────────── */
-.dp-report-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  flex-wrap: wrap;
-  margin-bottom: 14px;
-}
-.dp-report-controls {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-.dp-report-controls .city-combobox { min-width: 160px; }
 
 /* ─── Gatepass ──────────────────────────────────────── */
 /* An office document page on the shared navy / white system, shaped like the paper book:
@@ -12017,3 +12001,53 @@ tr.has-error .gp-qty-stepper input { color: var(--err); }
 .sal-equation .sal-equation-answer { padding: 8px 12px; border-radius: var(--sp-radius-control); background: linear-gradient(135deg, var(--sp-mode-on-start), var(--sp-mode-on-end)); box-shadow: var(--sp-mode-on-shadow); }
 .sal-equation .sal-equation-answer span, .sal-equation .sal-equation-answer strong { color: var(--white); }
 .sal-equation .sal-equation-answer strong { font-size: 1.25rem; }
+
+/* ─── DISCOUNT POLICY (owner, 28 Nov 2026: "not following our rules, style and guides and laws"). The card pages' look
+   (cl-page, doc-table, the shared toggle), each value from the theme's tokens (R3). Two cards: Set discounts, and the
+   report. Fields like the themed pop-ups' (48px, the line colour, the Store-blue focus ring). Mobile first. ─── */
+.dp-page { display: grid; gap: 18px; }
+.dp-card { display: grid; gap: 16px; padding: 20px 22px; border: 1px solid var(--sp-line); border-radius: var(--dash-card-radius); background: var(--white); box-shadow: var(--sp-card-shadow); }
+.dp-card[aria-busy="true"] { opacity: 0.85; transition: opacity 160ms ease; }
+.dp-card-head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px 24px; }
+.dp-card-title { margin: 0; color: var(--sp-navy); font-size: 1.15rem; font-weight: 800; letter-spacing: -0.01em; text-wrap: balance; }
+.dp-muted { margin: 4px 0 0; color: var(--sp-muted); font-size: 0.85rem; text-wrap: pretty; }
+.dp-card-tools { display: flex; flex-wrap: wrap; gap: 8px; }
+.dp-pickers { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 14px 20px; }
+.dp-picker { display: grid; gap: 6px; min-width: min(100%, 280px); }
+.dp-picker .input-label, .dp-range-row .input-label, .dp-ranges-now > .input-label { color: var(--sp-field-label); font-size: 0.78rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; }
+.dp-page .sa-toggle { display: inline-flex; flex-wrap: wrap; width: fit-content; overflow: hidden; border: 1px solid var(--sp-line); border-radius: var(--sp-radius-control); background: var(--white); box-shadow: var(--sp-card-shadow); }
+.dp-page .sa-toggle-btn { min-height: 44px; padding: 0 16px; color: var(--sp-muted); font-weight: 600; transition: color 140ms ease, background-color 140ms ease; }
+.dp-page .sa-toggle-btn.is-on { color: var(--sp-blue); }
+.dp-page .sa-toggle-btn:hover:not(.is-on) { background: color-mix(in oklch, var(--sp-ground) 70%, var(--white)); color: var(--sp-navy); }
+.dp-page .form-input { min-height: 48px; border: 1px solid var(--sp-line); border-radius: var(--sp-radius-control); background: var(--white); color: var(--sp-navy); font-size: 0.95rem; }
+.dp-page .form-input:focus { outline: none; border-color: var(--sp-mode-on-start); box-shadow: 0 0 0 3px var(--sp-blue-soft); }
+.dp-page .form-input[aria-invalid="true"] { border-color: var(--danger-strong); }
+.dp-page .form-input:disabled { background: var(--sp-ground); color: var(--sp-muted); }
+.dp-page .search-wrap { max-width: 520px; }
+
+/* The customers and their discounts: names down, discounts across, tabular and right-aligned. */
+.dp-table-wrap { max-height: min(60vh, 640px); }
+.dp-table tbody th.dp-customer { color: var(--sp-navy); font-size: 1rem; font-weight: 700; letter-spacing: 0; text-align: left; text-transform: none; white-space: normal; }
+.dp-table tbody th, .dp-table tbody td { border-bottom: 1px solid var(--sp-line); }
+.dp-table tbody tr:last-child th, .dp-table tbody tr:last-child td { border-bottom: 0; }
+.dp-table thead th:first-child, .dp-table tbody th.dp-customer { position: sticky; left: 0; z-index: 1; background: var(--white); }
+.dp-table thead th:first-child { z-index: 2; background: var(--sp-ground); }
+.dp-cell { min-width: 140px; vertical-align: top; }
+.dp-input { width: 100%; max-width: 160px; text-align: right; font-weight: 700; font-variant-numeric: tabular-nums; }
+.dp-cell.is-changed .dp-input { border-color: var(--sp-mode-on-start); background: var(--sp-blue-soft); }
+.dp-was { display: block; margin-top: 4px; color: var(--sp-muted); font-size: 0.78rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+.dp-problem { display: block; margin-top: 4px; color: var(--danger-strong); font-size: 0.8rem; font-weight: 600; white-space: normal; }
+.dp-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 10px; padding-top: 14px; border-top: 1px solid var(--sp-line); }
+.dp-actions > :first-child { margin-right: auto; }
+.dp-actions .dp-problem { margin: 0; }
+
+/* Price ranges: the ones now, then the new ones, a row each; stacked on a phone. */
+.dp-ranges-now { display: grid; gap: 8px; }
+.dp-range-list { display: flex; flex-wrap: wrap; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.dp-range-list li { display: inline-flex; align-items: baseline; gap: 10px; padding: 8px 12px; border: 1px solid var(--sp-line); border-radius: var(--sp-radius-control); background: var(--sp-ground); color: var(--sp-navy); font-variant-numeric: tabular-nums; }
+.dp-range-rows { display: grid; gap: 12px; }
+.dp-range-row { display: grid; grid-template-columns: 1fr; gap: 10px; align-items: end; }
+@media (min-width: 768px) { .dp-range-row { grid-template-columns: repeat(3, minmax(0, 200px)) auto; } }
+.dp-range-row label { display: grid; gap: 6px; }
+.dp-remove { min-width: 44px; min-height: 48px; padding: 0; font-size: 1.3rem; }
+@media (prefers-reduced-motion: reduce) { .dp-page .sa-toggle-btn, .dp-card { transition: none; } }

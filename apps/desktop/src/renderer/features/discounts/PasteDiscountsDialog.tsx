@@ -30,7 +30,7 @@ export const PasteDiscountsDialog: React.FC<PasteDiscountsDialogProps> = ({ targ
   );
 
   return (
-    <Modal title={words.title(target)} subtitle={words.subtitle} onClose={onClose} footer={footer} wide>
+    <Modal themed title={words.title(target)} subtitle={words.subtitle} onClose={onClose} footer={footer} wide>
       <div className="form-group">
         <label htmlFor={`${id}-paste`}>{words.pasteLabel}</label>
         <textarea id={`${id}-paste`} className="form-input" rows={6} value={text} onChange={(event) => setText(event.target.value)} aria-describedby={`${id}-hint`} />
