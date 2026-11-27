@@ -17,14 +17,14 @@ import { OrderPlusIcon } from "./OrderIcons";
 //   Party [ BEHRAAM SHOES ▾ ]   [+ Add a note]
 //   ┌ Articles                                  [ + Add article ] ┐   ← a button; pressed, the list; picked, its block
 //   │ ┌ SK6 ─────────────────────────────────── 31 dzn  ✕ ┐     │   ← this part scrolls
-//   │ │ colours (✓)RED (✓)BLUE ( )BLACK                    │     │
+//   │ │ every colour across, sizes down   [+ New colour]    │     │
 //   │ │ size × colour boxes, each colour's total under it  │     │
 //   └──────────────────────────────────────────────────────────┘
 //   (✓)Party ─ (✓)Articles ─ (3)Dozens   Next: type the dozens     ORDER TOTAL 31 dozen  [ Save order ]
 //
 // The total bar sits under the scrolling part, never over it (owner, 24 Nov 2026: it hid what was behind it). The
 // picker offers only articles not yet on the order; the one picked becomes its band at once (PendingArticleBlock), and
-// its first colour takes the focus when its block arrives. The note waits behind "+ Add a note" until wanted.
+// its first box takes the focus when its block arrives. The note waits behind "+ Add a note" until wanted.
 //
 // "+ Add article" (owner, 24 Nov 2026: the picker blended into the page): a filled button that says what it does
 // (affordance). Pressed, it becomes the searchable list, already open; picked or dismissed, it is the button again.
@@ -113,10 +113,9 @@ export const OrderForm: React.FC<OrderFormProps> = ({ entry, choices, busy, edit
           {draft.blocks.length === 0 && !pending ? <StateView kind="empty" compact title={words.emptyTitle} hint={words.emptyHint} /> : null}
           {draft.blocks.map((block) => (
             <ArticleBlockCard key={block.article} block={block} disabled={disabled} focusOnMount={block.article === justAdded}
-              onToggleColour={(colour) => entry.toggleColour(block.article, colour)}
               onType={(productId, value) => entry.type(block.article, productId, value)}
               onRemove={() => entry.removeArticle(block.article)}
-              canAddColor={canAddColor} onColourAdded={(colour) => void entry.colourAdded(block.article, colour)} />
+              canAddColor={canAddColor} onColourAdded={() => void entry.colourAdded(block.article)} />
           ))}
         </section>
       </div>

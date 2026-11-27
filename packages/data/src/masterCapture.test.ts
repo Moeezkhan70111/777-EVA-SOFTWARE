@@ -45,10 +45,8 @@ const NOT_MASTER: Readonly<Record<string, readonly string[]>> = {
   "Carton stock: leased EVENTS that move the carton figure (docs/42), captured as events, never replaced whole": [
     "carton_stock_events",
   ],
-  "Delivery photos and pricing rules: not yet travelling (docs/43)": [
+  "Delivery photos: not yet travelling (docs/43). Discount rules travel with the customer since 27 Nov 2026.": [
     "gatepass_delivery_proofs",
-    "party_article_discounts", "party_article_series_discounts", "party_price_range_discounts",
-    "party_product_group_discounts",
   ],
   "Machine programs: Milestone 2": [
     "machine_programs", "machine_program_article_rates", "machine_program_b_conversions", "machine_program_carton_labels",

@@ -301,6 +301,7 @@ contextBridge.exposeInMainWorld("desktop", {
     getCartonAdjustmentArticle: (article: string) => ipcRenderer.invoke(IPC.getCartonAdjustmentArticle, article),
     listCartonStockAdjustments: (query: Record<string, unknown>) => ipcRenderer.invoke(IPC.listCartonStockAdjustments, query),
     addArticleColor: (input: Record<string, unknown>) => ipcRenderer.invoke(IPC.addArticleColor, input),
+    removeArticleColor: (input: Record<string, unknown>) => ipcRenderer.invoke(IPC.removeArticleColor, input),
     listManualProduction: (query: Record<string, unknown>) => ipcRenderer.invoke(IPC.listManualProduction, query),
     voidManualProduction: (input: Record<string, unknown>) => ipcRenderer.invoke(IPC.voidManualProduction, input),
     saveManualProduction: (input: Record<string, unknown>) => ipcRenderer.invoke(IPC.saveManualProduction, input),

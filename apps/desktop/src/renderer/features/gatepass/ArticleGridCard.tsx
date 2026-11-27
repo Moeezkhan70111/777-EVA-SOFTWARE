@@ -1,5 +1,6 @@
 import React from "react";
 import { AddColorControl } from "../../components/shared/AddColorControl";
+import { RemoveColorControl } from "../../components/shared/RemoveColorControl";
 import { MissingSizeCell } from "../../components/shared/MissingSizeCell";
 import { SizeColourGrid } from "../../components/shared/SizeColourGrid";
 import { copy } from "../../config/copy";
@@ -81,7 +82,12 @@ export const ArticleGridCard: React.FC<ArticleGridCardProps> = ({ group, grid, e
 
       {expanded && (
         <div className="gp-article-body" id={bodyId}>
-          {canAddColour ? <div className="gp-grid-tools"><AddColorControl article={group.article} onAdded={() => onColourAdded()} /></div> : null}
+          {canAddColour ? (
+            <div className="gp-grid-tools">
+              <AddColorControl article={group.article} onAdded={() => onColourAdded()} />
+              <RemoveColorControl article={group.article} colours={group.colours} onRemoved={() => onColourAdded()} />
+            </div>
+          ) : null}
           <SizeColourGrid
             label={words.gridLabel(name)}
             sizeHeader={words.sizeHeader}

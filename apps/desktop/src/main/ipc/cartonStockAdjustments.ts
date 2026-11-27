@@ -10,6 +10,8 @@
 //   listCartonStockAdjustments  the posted documents, newest first. Reads only.
 //   addArticleColor             the "+" beside Colour: a new colour on every active size of the article. Master data,
 //                               so a write under the MASTER_DATA lease (leaseChannels.ts). An administrator.
+//   removeArticleColor          its counterpart (27 Nov 2026): the colour off every size, DISABLED not deleted; refused
+//                               while any size holds carton stock or an open order waits for it. Same lease, same rule.
 //
 // Who posted it and where are read here, never from the screen. Nothing here touches the raw material store.
 
@@ -27,6 +29,7 @@ export const STOCK_ADJUSTMENT_MESSAGES = {
   NOT_POSTED: "The document could not be posted. Nothing was changed.",
   NOT_READ: "Stock adjustments could not be read.",
   NOT_COLORED: "The colour could not be added. Nothing was changed.",
+  NOT_UNCOLORED: "The colour could not be removed. Nothing was changed.",
 } as const;
 
 const asLines = (value: unknown): Array<{ articleSizeId: string; color: string; direction: string; cartons: number }> =>
@@ -85,6 +88,20 @@ export function registerCartonStockAdjustmentHandlers(ctx: Pick<IpcContext, "db"
     } catch (error) {
       log("WARNING", "add-color-refused", error instanceof Error ? error.message : String(error), who.user.id);
       return { accepted: false, reason: refusalReason(error, STOCK_ADJUSTMENT_MESSAGES.BUSY, STOCK_ADJUSTMENT_MESSAGES.NOT_COLORED) };
+    }
+  });
+
+  ipcMain.handle(IPC.removeArticleColor, (event, input?: unknown) => {
+    const who = administrator(event);
+    if (!who.ok) return { accepted: false, reason: who.reason };
+    const fields = asRecord(input);
+    try {
+      const result = db.removeColorFromArticle({ article: asString(fields.article), color: asString(fields.color), actor: who.user.username });
+      log("INFO", "remove-color", JSON.stringify({ article: asString(fields.article), ...result }), who.user.id);
+      return { accepted: true, ...result };
+    } catch (error) {
+      log("WARNING", "remove-color-refused", error instanceof Error ? error.message : String(error), who.user.id);
+      return { accepted: false, reason: refusalReason(error, STOCK_ADJUSTMENT_MESSAGES.BUSY, STOCK_ADJUSTMENT_MESSAGES.NOT_UNCOLORED) };
     }
   });
 

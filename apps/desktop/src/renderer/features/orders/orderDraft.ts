@@ -5,13 +5,14 @@ import type { CustomerOrder, CustomerOrderArticleProduct, CustomerOrderLineInput
 
 // THE ORDER BEING TYPED (docs/52), before it is saved: a party, a note, and one block per article.
 //
-//   SK6   colours [RED] [BLUE] [BLACK]        sizes down, chosen colours across, a box per live product
+//   SK6          RED   BLUE   BLACK       sizes down, EVERY colour across, a box per live product
 //          6      10    15     5
 //          7      20    10     8
 //
-// A block holds the article's live products (from Product Master), the colours chosen for it, and what was typed in
-// each box, by product. A colour taken off keeps nothing: its boxes leave the order. A box with nothing typed is no
-// line. Only a live product has a box, so an order can never ask for a combination that does not exist.
+// A block holds the article's live products (from Product Master), its colours, and what was typed in each box, by
+// product. Every colour is open at once (owner, 27 Nov 2026: "DONT MAKE IT SELECT THE COLOR FIRST. OPEN ALL THE COLORS
+// IN THE TABLE"): a box with nothing typed is no line. Only a live product has a box, so an order can never ask for a
+// combination that does not exist.
 //
 // Pure: the screen's hooks keep a draft in state and ask this what it means. Nothing here is trusted by the main
 // process, which checks every line again.
@@ -19,7 +20,7 @@ import type { CustomerOrder, CustomerOrderArticleProduct, CustomerOrderLineInput
 export interface ArticleBlock {
   readonly article: string;
   readonly products: readonly CustomerOrderArticleProduct[];
-  /** The colours chosen, in the article's own colour order. */
+  /** Every colour the article has on any size, in the article's own colour order: each one a column. */
   readonly colours: readonly string[];
   /** What was typed, by product id. */
   readonly typed: Readonly<Record<string, string>>;
@@ -52,42 +53,20 @@ export function articleGrid(products: readonly CustomerOrderArticleProduct[]): A
   return { sizes, colours, cells: new Map(products.map((product) => [cellKey(product.size, product.color), product.productVariantId])) };
 }
 
-/** A new block for an article, with no colour chosen yet. */
-/**
- * A just-added article. The default effect (owner, 24 Nov 2026): an article made in ONE colour has nothing to choose,
- * so that colour comes chosen; with more, none is, and the operator picks.
- */
-export const newBlock = (article: string, products: readonly CustomerOrderArticleProduct[]): ArticleBlock => {
-  const colours = [...new Set(products.map((product) => product.color))];
-  return { article, products, colours: colours.length === 1 ? colours : [], typed: {}, dispatched: {} };
-};
-
-/** The block with `colour` chosen or taken off. Taking a colour off drops what was typed in its boxes. */
-export function toggleColour(block: ArticleBlock, colour: string): ArticleBlock {
-  const order = articleGrid(block.products).colours;
-  if (!block.colours.includes(colour)) {
-    return { ...block, colours: order.filter((each) => each === colour || block.colours.includes(each)) };
-  }
-  const leaving = new Set(block.products.filter((product) => product.color === colour).map((product) => product.productVariantId));
-  const typed = Object.fromEntries(Object.entries(block.typed).filter(([productId]) => !leaving.has(productId)));
-  return { ...block, colours: block.colours.filter((each) => each !== colour), typed };
-}
+/** A just-added article, every colour open. */
+export const newBlock = (article: string, products: readonly CustomerOrderArticleProduct[]): ArticleBlock =>
+  ({ article, products, colours: articleGrid(products).colours, typed: {}, dispatched: {} });
 
 /**
  * The block after the article was read again (a new colour added in Product Master): products it already had are kept
- * (an order being edited may hold one since retired), the new ones join, and `colour` is chosen if it is not already.
+ * (an order being edited may hold one since retired), the new ones join, and the new colour opens as a column.
  */
-export function withProducts(block: ArticleBlock, products: readonly CustomerOrderArticleProduct[], colour: string): ArticleBlock {
+export function withProducts(block: ArticleBlock, products: readonly CustomerOrderArticleProduct[]): ArticleBlock {
   const known = new Map(block.products.map((product) => [product.productVariantId, product]));
   for (const product of products) known.set(product.productVariantId, product);
-  const refreshed = { ...block, products: [...known.values()] };
-  const stored = refreshed.products.find((product) => product.color.toUpperCase() === colour.toUpperCase())?.color;
-  return stored && !refreshed.colours.includes(stored) ? toggleColour(refreshed, stored) : refreshed;
+  const merged = [...known.values()];
+  return { ...block, products: merged, colours: articleGrid(merged).colours };
 }
-
-/** A colour that has dispatched cartons on the order being edited cannot be taken off. */
-export const colourLocked = (block: ArticleBlock, colour: string): boolean =>
-  block.products.some((product) => product.color === colour && (block.dispatched[product.productVariantId] ?? 0) > 0);
 
 const chosenProducts = (block: ArticleBlock) => block.products.filter((product) => block.colours.includes(product.color));
 
@@ -136,7 +115,7 @@ export const draftProblemCount = (draft: OrderDraft): number => draft.blocks.red
 /** Whether the draft can be sent: a party, at least one line, and no box with a problem. */
 export const draftReady = (draft: OrderDraft): boolean => draft.partyId !== "" && draftLines(draft).length > 0 && draftProblemCount(draft) === 0;
 
-/** A stored order back as a draft, for editing: one block per article, its colours chosen, its quantities typed. */
+/** A stored order back as a draft, for editing: one block per article, every colour open, its quantities typed. */
 export function draftFromOrder(order: CustomerOrder, productsOf: (article: string) => readonly CustomerOrderArticleProduct[]): OrderDraft {
   const articles = [...new Set(order.lines.map((line) => line.article))];
   const blocks = articles.map((article) => {
@@ -145,11 +124,10 @@ export function draftFromOrder(order: CustomerOrder, productsOf: (article: strin
     const known = new Map(productsOf(article).map((product) => [product.productVariantId, product]));
     for (const line of lines) if (!known.has(line.productVariantId)) known.set(line.productVariantId, { productVariantId: line.productVariantId, size: line.size, color: line.color });
     const products = [...known.values()];
-    const colours = articleGrid(products).colours.filter((colour) => lines.some((line) => line.color === colour));
     return {
       article,
       products,
-      colours,
+      colours: articleGrid(products).colours,
       // Stored cartons back as the dozens they were typed in.
       typed: Object.fromEntries(lines.map((line) => [line.productVariantId, String(cartonsToDozens(line.quantity))])),
       dispatched: Object.fromEntries(lines.map((line) => [line.productVariantId, line.dispatched])),
@@ -174,7 +152,7 @@ export interface OrderSteps {
  */
 export function draftSteps(draft: OrderDraft): OrderSteps {
   const party = draft.partyId !== "";
-  const articles = draft.blocks.some((block) => block.colours.length > 0);
+  const articles = draft.blocks.length > 0;
   const dozens = draftLines(draft).length > 0;
   const fix = draftProblemCount(draft) > 0;
   const next: OrderNextStep = !party ? "party" : !articles ? "articles" : fix ? "fix" : !dozens ? "dozens" : "ready";

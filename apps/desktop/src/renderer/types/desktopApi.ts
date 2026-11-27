@@ -2479,6 +2479,8 @@ export interface DesktopApi {
   listCartonStockAdjustments(query: { page: number; pageSize: number }): Promise<unknown>;
   /** Adds a colour to every active size of an article (master data, MASTER_DATA lease). Administrators only. Checked by the page. */
   addArticleColor(input: { article: string; color: string }): Promise<unknown>;
+  /** Takes a colour off every size of an article (main process removeColorFromArticle): refused while stock or an open order needs it. */
+  removeArticleColor(input: { article: string; color: string }): Promise<unknown>;
   getCartonStockReconciliation(query: { page: number; pageSize: number }): Promise<{ accepted: boolean; reason?: string; reconciliation?: CartonReconciliation | null }>;
   recordManualProduction(input: { requestId: string; machineId: string; articleSizeId: string; color: string; dozens: string }): Promise<ManualProductionResult>;
   /** One business day's Manual Production (YYYY-MM-DD), newest first, a page at a time. */

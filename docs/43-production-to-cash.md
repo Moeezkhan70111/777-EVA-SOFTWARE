@@ -27,7 +27,12 @@ All of them are 013 leased records: captured by triggers (`masterCapture.ts`), s
 repeat is DUPLICATE, other content under one revision is REVISION_CONFLICT. Nothing is merged.
 
 **Not travelling (stated so nobody assumes otherwise):** machine programs and their children, party claims, purchase
-vouchers, sale returns, customer discount rules, delivery photos, product pictures.
+vouchers, sale returns, delivery photos, product pictures.
+
+**Customer discount rules travel since 27 Nov 2026** (owner: "make discount policies sync to the cloud"): the four rule
+tables are children of the PARTY record, written only where PARTIES is held (PC1), and every other computer holds exactly
+PC1's rules for each customer. No cloud change: the PARTY record already travels. Local 119 queued the rules saved
+before then, once, on the PARTIES computer.
 
 ## 2. A Manual Production entry stands on its own (local migration 104)
 
@@ -105,6 +110,6 @@ Automated: `packages/sync/src/productionToCash.test.ts` (simulated cloud, real e
 - Old bills and cash vouchers on PC2/PC3 travel only through the backfill, which stops while raw material does not add
   up (Repair A).
 - No manual stock return path exists: returns are QR-only and on hold.
-- Discount rules, party claims and machine programs do not travel.
+- Party claims and machine programs do not travel. (Discount rules do, with the customer, since 27 Nov 2026.)
 - The "next number" previews on the gatepass and bill screens count other computers' numbers. The number actually given
   is always from this computer's own block.

@@ -6,6 +6,7 @@ import { copy } from "../../config/copy";
 import { dozensText, totalsOf, type DraftLine } from "./stockAdjustmentDraft";
 import { QuantityGrid } from "./QuantityGrid";
 import { AddColorControl } from "../../components/shared/AddColorControl";
+import { RemoveColorControl } from "../../components/shared/RemoveColorControl";
 import { ENTRY_MODE, useArticleGrid } from "./useArticleGrid";
 import { StepperMatrix } from "./StepperMatrix";
 import { StepTitle } from "../manualProduction/StepTitle";
@@ -74,7 +75,12 @@ export const ArticleEntry: React.FC<ArticleEntryProps> = ({ kind, articles, onAd
       {article ? (
         <div className="sa-grid-head">
           {showGrid ? <p className="sa-hint">{stepping ? text.stepHint : text.gridHint}</p> : null}
-          {entry.canAddColor ? <AddColorControl article={article} onAdded={() => void choices.reload()} /> : null}
+          {entry.canAddColor ? (
+            <div className="sa-colour-tools">
+              <AddColorControl article={article} onAdded={() => void choices.reload()} />
+              <RemoveColorControl article={article} colours={grid.colours} onRemoved={() => void choices.reload()} />
+            </div>
+          ) : null}
         </div>
       ) : null}
       {showGrid && stepping ? (

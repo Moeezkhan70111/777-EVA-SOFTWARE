@@ -134,6 +134,16 @@ export const MASTER_RECORDS: Readonly<Record<MasterRecordType, RecordTableSpec>>
   [SYNC_AGGREGATE.PARTY]: {
     table: "parties",
     references: [{ column: "party_group_id", table: "party_groups", record: SYNC_AGGREGATE.PARTY_GROUP }],
+    // A customer's discount rules travel with the customer (owner, 27 Nov 2026: "make discount policies sync to the
+    // cloud"), so a bill applies the same discount on every computer and the rules survive a lost PC. They are written
+    // only where PARTIES is held (leaseChannels.ts), and a receiver holds exactly the sender's rules. A receiver on an
+    // older build has no such children in its spec and writes the party alone: the party still lands.
+    children: [
+      { table: "party_product_group_discounts", parentColumn: "party_id", references: [{ column: "product_group_id", table: "product_groups", record: SYNC_AGGREGATE.PRODUCT_GROUP }] },
+      { table: "party_article_series_discounts", parentColumn: "party_id", references: [{ column: "article_series_id", table: "article_series", record: SYNC_AGGREGATE.ARTICLE_SERIES }] },
+      { table: "party_article_discounts", parentColumn: "party_id" },
+      { table: "party_price_range_discounts", parentColumn: "party_id" },
+    ],
   },
   [SYNC_AGGREGATE.INVENTORY_UNIT]: {
     table: "inventory_units",

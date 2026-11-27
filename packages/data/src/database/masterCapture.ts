@@ -49,6 +49,11 @@ const ROW = "{row}";
 export const MASTER_CAPTURE: readonly MasterTableCapture[] = [
   { table: "party_groups", record: SYNC_AGGREGATE.PARTY_GROUP, recordId: `${ROW}.id` },
   { table: "parties", record: SYNC_AGGREGATE.PARTY, recordId: `${ROW}.id` },
+  // A customer's discount rules are part of the customer (27 Nov 2026).
+  { table: "party_product_group_discounts", record: SYNC_AGGREGATE.PARTY, recordId: `${ROW}.party_id` },
+  { table: "party_article_series_discounts", record: SYNC_AGGREGATE.PARTY, recordId: `${ROW}.party_id` },
+  { table: "party_article_discounts", record: SYNC_AGGREGATE.PARTY, recordId: `${ROW}.party_id` },
+  { table: "party_price_range_discounts", record: SYNC_AGGREGATE.PARTY, recordId: `${ROW}.party_id` },
   { table: "inventory_units", record: SYNC_AGGREGATE.INVENTORY_UNIT, recordId: `${ROW}.id` },
   // A conversion is the unit it converts FROM.
   { table: "inventory_unit_conversions", record: SYNC_AGGREGATE.INVENTORY_UNIT, recordId: `${ROW}.from_unit_id` },

@@ -300,6 +300,7 @@ export const IPC = {
   getCartonAdjustmentArticle: "erp:get-carton-adjustment-article",
   listCartonStockAdjustments: "erp:list-carton-stock-adjustments",
   addArticleColor: "erp:add-article-color",
+  removeArticleColor: "erp:remove-article-color",
   listManualProduction: "erp:list-manual-production",
   voidManualProduction: "erp:void-manual-production",
   // The Manual Production page's Save, "Complete today's production", and a day's production read back (docs/48).

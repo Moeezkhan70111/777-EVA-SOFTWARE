@@ -90,6 +90,11 @@ export const LEASED_CHANNELS: Readonly<Record<string, readonly LeaseDomain[]>> =
   [IPC.createParty]: PARTIES,
   [IPC.addPartiesFromList]: PARTIES,
   [IPC.updateParty]: PARTIES,
+  // A customer's discount rules travel with the customer (27 Nov 2026): written where PARTIES is held, and nowhere else.
+  [IPC.createPartyProductGroupDiscount]: PARTIES,
+  [IPC.createPartyArticleSeriesDiscount]: PARTIES,
+  [IPC.createPartyArticleDiscount]: PARTIES,
+  [IPC.createPartyPriceRangeDiscount]: PARTIES,
   [IPC.deleteParty]: PARTIES,
   [IPC.createMachine]: MASTER,
   [IPC.setMachineStatus]: MASTER,
@@ -129,6 +134,7 @@ export const LEASED_CHANNELS: Readonly<Record<string, readonly LeaseDomain[]>> =
   [IPC.postCartonStockAdjustment]: CARTONS,
   // The "+" beside Colour on Stock Adjustment: a colour of a product is product master data (docs/43, docs/47).
   [IPC.addArticleColor]: MASTER,
+  [IPC.removeArticleColor]: MASTER,
   [IPC.createGatepass]: CARTONS_AND_SALES,
   [IPC.cancelGatepass]: CARTONS_AND_SALES,
   // An edit puts back and takes cartons and changes the bill; a delete changes only the gatepass record.
@@ -232,10 +238,6 @@ export const UNLEASED_WRITE_CHANNELS: Readonly<Record<string, string>> = {
   [IPC.deleteMachineProgram]:
     "Machine programs are leased in Milestone 2, with their creation and edits. Deleting one only marks the program CANCELLED: no stock moves.",
   [IPC.saveProductImage]: "A picture file in this computer's own folder. Pictures do not travel (docs/43), and nothing about the product changes.",
-  [IPC.createPartyProductGroupDiscount]: "A customer's discount rule: rules do not travel yet (docs/43), so a rule belongs to the computer it was made on.",
-  [IPC.createPartyArticleSeriesDiscount]: "A customer's discount rule: rules do not travel yet (docs/43).",
-  [IPC.createPartyArticleDiscount]: "A customer's discount rule: rules do not travel yet (docs/43).",
-  [IPC.createPartyPriceRangeDiscount]: "A customer's discount rule: rules do not travel yet (docs/43).",
   [IPC.createItemRemovalRequest]: "A request only: approvals are leased in Milestone 2. Approving it is leased.",
   [IPC.createCategoryRemovalRequest]: "A request only: approvals are leased in Milestone 2. Approving it is leased.",
   [IPC.createStockCorrectionRequest]: "A request only: approvals are leased in Milestone 2. Approving it is leased.",

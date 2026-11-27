@@ -100,6 +100,25 @@ export const copy = {
     waiting: (count: number) => `+${count}`,
   },
 
+  // Remove colour (components/shared/RemoveColorControl.tsx, owner 27 Nov 2026): beside "+ New colour".
+  removeColour: {
+    button: "− Remove colour",
+    buttonLabel: (article: string) => `Remove a colour from ${article}`,
+    title: (article: string) => `Remove a colour from ${article}`,
+    subtitle: "The colour comes off every size of the article.",
+    pick: "Colour to remove",
+    explain: (article: string, colour: string) =>
+      `${colour} will no longer be offered for ${article}. Its past production, gatepasses, bills, labels and orders keep it. Add it back any time with + New colour.`,
+    choose: "Choose a colour above.",
+    rule: "A colour can be removed only when none of its sizes holds carton stock and no open order is waiting for it.",
+    confirm: (colour: string) => `Remove ${colour}`,
+    removing: "Removing…",
+    cancel: "Cancel",
+    failed: "The colour could not be removed. Nothing was changed.",
+    removedTitle: (colour: string, article: string) => `${colour} removed from ${article}`,
+    removedMessage: (sizes: number) => `Taken off ${sizes} ${sizes === 1 ? "size" : "sizes"}.`,
+  },
+
   // Common actions rendered on buttons and icon-button titles.
   actions: {
     add: "Add",
@@ -2972,8 +2991,7 @@ export const copy = {
     article: "Article",
     articlePlaceholder: "Choose an article",
     noMoreArticles: "Every article is on the order",
-    colours: "Colours",
-    coloursHint: "Pick every colour this party wants, then type the dozens.",
+    newColourWhere: "New colours are added on PC1, by an administrator.",
     noColours: "This article has no active colours in Product Master.",
     loadingArticle: "Reading the article…",
     articleFailed: "The article could not be read. Try again.",
@@ -2984,8 +3002,6 @@ export const copy = {
     cellLabel: (article: string, colour: string, size: string) => `${article} ${colour} size ${size}, dozens`,
     notMade: (colour: string, size: string) => `${colour} is not made in size ${size}`,
     removeArticle: (article: string) => `Remove ${article}`,
-    removeColour: (article: string, colour: string) => `Remove ${colour} from ${article}`,
-    toggleColour: (colour: string) => `Colour ${colour}`,
     colourTotal: "Total",
     /** Order figures in dozens (24 Nov 2026), formatted by orderUnits.ts from the cartons they are stored in. */
     articleTotal: (dozens: string) => `${dozens} dzn`,

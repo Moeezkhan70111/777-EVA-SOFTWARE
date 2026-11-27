@@ -69,14 +69,14 @@ const pick = async (comboName: string, optionName: RegExp) => {
 const type = (name: string, value: string) => fireEvent.change(screen.getByRole("textbox", { name }), { target: { value } });
 
 describe("Enter Orders", () => {
-  it("takes several colours of one article at once, offers only made sizes, totals them, and saves exactly what was typed", async () => {
+  // Owner, 27 Nov 2026: "DONT MAKE IT SELECT THE COLOR FIRST. OPEN ALL THE COLORS IN THE TABLE".
+  it("opens every colour of the article at once, offers only made sizes, totals them, and saves exactly what was typed", async () => {
     const api = createFakeBackend();
     render(<NotificationsProvider><OrderEntryPage token="token-1" canCancel /></NotificationsProvider>);
 
     await pick("Party", /BEHRAAM SHOES/);
     await pick("Article", /SK6/);
-    await press(() => screen.findByRole("button", { name: "Colour RED" }));
-    await press(() => screen.findByRole("button", { name: "Colour BLUE" }));
+    expect(screen.queryByRole("button", { name: "Colour RED" })).toBeNull();
 
     const grid = await screen.findByLabelText("SK6 dozens by size and colour");
     expect(within(grid).getByLabelText("BLUE is not in Product Master in size 7. Ask an administrator to add it.")).toHaveTextContent("Not in Product Master");
@@ -111,13 +111,13 @@ describe("Enter Orders", () => {
     render(<NotificationsProvider><OrderEntryPage token="token-1" canCancel={false} /></NotificationsProvider>);
     await pick("Party", /BEHRAAM SHOES/);
     await pick("Article", /SK6/);
-    await press(() => screen.findByRole("button", { name: "Colour RED" }));
+    await screen.findByRole("textbox", { name: "SK6 RED size 6, dozens" });
     type("SK6 RED size 6, dozens", "2.25");
     expect(screen.getByRole("alert").textContent).toMatch(/Fix the highlighted quantities/);
     expect(screen.getByRole("button", { name: "Save order" })).toBeDisabled();
     expect(api.saveCustomerOrder).not.toHaveBeenCalled();
   });
-it("lets an administrator add a new colour to the article, and chooses it at once", async () => {
+it("lets an administrator add a new colour to the article, and opens it as a column at once", async () => {
     const api = createFakeBackend();
     const withGreen = [...PRODUCTS, { productVariantId: "green-6", size: "6", color: "GREEN" }];
     const addArticleColor = vi.fn(async (_input: { article: string; color: string }) => ({ accepted: true, color: "GREEN", added: 1, existing: 0 }));
@@ -131,16 +131,15 @@ it("lets an administrator add a new colour to the article, and chooses it at onc
     await press(() => screen.findByRole("button", { name: "Add a new colour to SK6" }));
     fireEvent.change(screen.getByRole("textbox", { name: "New colour name" }), { target: { value: "green" } });
     await press(() => screen.findByRole("button", { name: "Add colour" }));
-    const green = await screen.findByRole("button", { name: "Colour GREEN" });
-    expect(green).toHaveAttribute("aria-pressed", "true");
+    await screen.findByRole("textbox", { name: "SK6 GREEN size 6, dozens" });
     expect(addArticleColor).toHaveBeenCalledWith({ article: "SK6", color: "green" });
     type("SK6 GREEN size 6, dozens", "7");
     expect(screen.getByText("7 dozen")).toBeTruthy();
   });
 
   // Owner, 24 Nov 2026 (the page's UI/UX pass): the picker offers only articles not yet on the order, the article just
-  // added hands the focus to its first colour, and the optional note waits behind "+ Add a note".
-  it("hides an added article from the picker, focuses its first colour, and keeps the note behind a button until wanted", async () => {
+  // added hands the focus to its first box, and the optional note waits behind "+ Add a note".
+  it("hides an added article from the picker, focuses its first box, and keeps the note behind a button until wanted", async () => {
     const api = createFakeBackend();
     Object.assign(api, { listUniqueArticles: vi.fn(async () => ["SK6", "SK9"]) });
     render(<NotificationsProvider><OrderEntryPage token="token-1" canCancel /></NotificationsProvider>);
@@ -151,8 +150,8 @@ it("lets an administrator add a new colour to the article, and chooses it at onc
     expect(screen.getByRole("textbox", { name: "Note" })).toHaveFocus();
 
     await pick("Article", /SK6/);
-    // Colours are listed A to Z, so the first is BLUE.
-    const first = await screen.findByRole("button", { name: "Colour BLUE" });
+    // Colours are listed A to Z and sizes smallest first, so the first box is BLUE in size 6.
+    const first = await screen.findByRole("textbox", { name: "SK6 BLUE size 6, dozens" });
     await waitFor(() => expect(first).toHaveFocus());
 
     // Picked, the list went back to being the button.
@@ -188,7 +187,6 @@ it("lets an administrator add a new colour to the article, and chooses it at onc
     render(<SessionProvider user={ADMIN} token="token-1"><NotificationsProvider><OrderEntryPage token="token-1" canCancel /></NotificationsProvider></SessionProvider>);
     await pick("Party", /BEHRAAM SHOES/);
     await pick("Article", /SK6/);
-    await press(() => screen.findByRole("button", { name: "Colour BLUE" }));
     await press(() => screen.findByRole("button", { name: "Add BLUE in size 7 to Product Master" }));
     expect(addArticleColor).toHaveBeenCalledWith({ article: "SK6", color: "BLUE" });
     const box = await screen.findByRole("textbox", { name: "SK6 BLUE size 7, dozens" });
@@ -201,7 +199,7 @@ it("lets an administrator add a new colour to the article, and chooses it at onc
     render(<NotificationsProvider><OrderEntryPage token="token-1" canCancel /></NotificationsProvider>);
     await pick("Party", /BEHRAAM SHOES/);
     await pick("Article", /SK6/);
-    await press(() => screen.findByRole("button", { name: "Colour RED" }));
+    await screen.findByRole("textbox", { name: "SK6 RED size 6, dozens" });
     type("SK6 RED size 6, dozens", "5");
     await press(() => screen.findByRole("button", { name: "Save order" }));
     await screen.findByText("ORD-000001 · BEHRAAM SHOES");
@@ -213,12 +211,15 @@ it("lets an administrator add a new colour to the article, and chooses it at onc
     await waitFor(() => expect(pending()).toEqual(["5", "2", "3"]));
   });
 
-  it("offers no new colour to anyone but an administrator", async () => {
+  // Owner, 27 Nov 2026: "GIVE ADD COLOR OPTION IN ENTER ORDERS PAGE". Shown to everyone; usable by an administrator where
+  // Product Master is written, and anyone else is told who can.
+  it("shows New colour to anyone else turned off, saying who can add one", async () => {
     createFakeBackend();
     render(<NotificationsProvider><OrderEntryPage token="token-1" canCancel /></NotificationsProvider>);
     await pick("Party", /BEHRAAM SHOES/);
     await pick("Article", /SK6/);
-    await screen.findByRole("button", { name: "Colour RED" });
-    expect(screen.queryByRole("button", { name: "Add a new colour to SK6" })).toBeNull();
+    const add = await screen.findByRole("button", { name: "Add a new colour to SK6" });
+    expect(add).toBeDisabled();
+    expect(add).toHaveAccessibleDescription("New colours are added on PC1, by an administrator.");
   });
 });

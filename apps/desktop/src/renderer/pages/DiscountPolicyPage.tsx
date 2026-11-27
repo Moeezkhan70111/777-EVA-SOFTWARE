@@ -9,6 +9,9 @@ import { copy } from "../config/copy";
 import { downloadCsv } from "../utils/exportFile";
 import { PasteDiscountsDialog } from "../features/discounts/PasteDiscountsDialog";
 import type { MatchedDiscount } from "../features/discounts/discountsFromList";
+import { LEASE_DOMAIN } from "@erp/domain";
+import { ReadOnlyNotice } from "../components/shared/ReadOnlyNotice";
+import { useWriteLease } from "../features/sync/useWriteLease";
 
 type DiscountTab      = "PRODUCT_GROUP" | "ARTICLE_SERIES" | "ARTICLE" | "PRICE_RANGE";
 type ReportTypeFilter = "ALL" | "PRODUCT_GROUP" | "ARTICLE_SERIES" | "ARTICLE" | "PRICE_RANGE";
@@ -178,6 +181,8 @@ const printPdf = (
 export const DiscountPolicyPage: React.FC = () => {
   const api      = useDesktopApi();
   const { push } = useNotifications();
+  // A customer's rules travel with the customer (27 Nov 2026): written where PARTIES is held, read everywhere.
+  const lease    = useWriteLease(LEASE_DOMAIN.PARTIES);
 
   const [tab,           setTab]           = useState<DiscountTab>("PRODUCT_GROUP");
   // TASK 3: only CUSTOMER parties
@@ -380,7 +385,7 @@ export const DiscountPolicyPage: React.FC = () => {
   };
 
   const pasteButton = (forTab: Exclude<DiscountTab, "PRICE_RANGE">) => (
-    <button type="button" className="btn btn-secondary" onClick={() => setPasteFor(forTab)}>{copy.discountsFromList.open}</button>
+    <button type="button" className="btn btn-secondary" disabled={!lease.canWrite} onClick={() => setPasteFor(forTab)}>{copy.discountsFromList.open}</button>
   );
 
   // ── tab renderers ─────────────────────────────────────────────────────────
@@ -417,7 +422,7 @@ export const DiscountPolicyPage: React.FC = () => {
           </table>
           <div className="form-actions">
             {pasteButton("PRODUCT_GROUP")}
-            <button type="button" className="btn btn-primary" onClick={() => void saveProductGroup()}>{copy.common.save}</button>
+            <button type="button" className="btn btn-primary" disabled={!lease.canWrite} onClick={() => void saveProductGroup()}>{copy.common.save}</button>
           </div>
         </div>
       )}
@@ -457,7 +462,7 @@ export const DiscountPolicyPage: React.FC = () => {
           </table>
           <div className="form-actions">
             {pasteButton("ARTICLE_SERIES")}
-            <button type="button" className="btn btn-primary" onClick={() => void saveArticleSeries()}>{copy.common.save}</button>
+            <button type="button" className="btn btn-primary" disabled={!lease.canWrite} onClick={() => void saveArticleSeries()}>{copy.common.save}</button>
           </div>
         </div>
       )}
@@ -553,7 +558,7 @@ export const DiscountPolicyPage: React.FC = () => {
             )}
             <div className="form-actions">
               {articleSizeScope === "ALL_SIZES" ? pasteButton("ARTICLE") : null}
-              <button type="button" className="btn btn-primary" onClick={() => void saveArticle()}>{copy.common.save}</button>
+              <button type="button" className="btn btn-primary" disabled={!lease.canWrite} onClick={() => void saveArticle()}>{copy.common.save}</button>
             </div>
           </>
         )}
@@ -602,7 +607,7 @@ export const DiscountPolicyPage: React.FC = () => {
               onClick={() => setRangeRules((prev) => [...prev, { ...emptyPriceRangeRule(), partyId: selectedPartyId }])}>
               + Add Range
             </button>
-            <button type="button" className="btn btn-primary" onClick={() => void savePriceRange()}>{copy.common.save}</button>
+            <button type="button" className="btn btn-primary" disabled={!lease.canWrite} onClick={() => void savePriceRange()}>{copy.common.save}</button>
           </div>
         </div>
       )}
@@ -615,6 +620,7 @@ export const DiscountPolicyPage: React.FC = () => {
       <div className="page-header">
         <h1>Discount Policy</h1>
       </div>
+      <ReadOnlyNotice status={lease.status} />
 
       {pasteFor ? (
         <PasteDiscountsDialog target={pasteTarget()} parties={parties} onClose={() => setPasteFor(null)} onFill={fillPasted} />

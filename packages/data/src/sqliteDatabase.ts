@@ -3,6 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import { addHrArticleColoursOnce } from "./database/hrColours.js";
 import { dropCaptureTriggers, installCaptureTriggers } from "./database/masterCapture.js";
 import { buildLeasedRecordRevisions, markRecordToSendAgain, type BuildResult, type SendAgainOutcome } from "./database/masterRecords.js";
 import { buildStockEvents, type StockEventBuildResult } from "./database/stockEventSync.js";
@@ -71,6 +72,7 @@ import { gatepassCartonsMethods, type GatepassCartonsMethods } from "./database/
 import { gatepassEditMethods, type GatepassEditMethods } from "./database/gatepassEdit.js";
 import { cartonStockAdjustMethods, type CartonStockAdjustMethods } from "./database/cartonStockAdjust.js";
 import { cartonStockDocumentMethods, type CartonStockDocumentMethods } from "./database/cartonStockDocuments.js";
+import { articleColorRemovalMethods, type ArticleColorRemovalMethods } from "./database/articleColorRemoval.js";
 import { handVoucherMethods, type HandVoucherMethods } from "./database/handVouchers.js";
 import { ledgerArchiveMethods, type LedgerArchiveMethods } from "./database/ledgerArchive.js";
 import { partyOpeningBalanceMethods, type PartyOpeningBalanceMethods } from "./database/partyOpeningBalances.js";
@@ -572,6 +574,21 @@ export class SqliteDatabase
     // Balances read documents through these: after Carton Cloud is activated, test documents count in no balance
     // (database/stockProtection.ts). Before activation they hold everything.
     installLiveDocumentViews(this.db);
+    // Once, on the computer that writes Product Master, with capture on so the colours travel (database/hrColours.ts).
+    this.addHrArticleColoursAtStart();
+  }
+
+  /**
+   * Opening never fails for it: should a colour be refused, nothing is recorded as done, the reason is kept in
+   * app_settings for whoever looks, and the next start tries again. Colours already added stay, and are not added twice.
+   */
+  private addHrArticleColoursAtStart(): void {
+    try {
+      addHrArticleColoursOnce(this, new Date().toISOString());
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      this.db.prepare("INSERT OR REPLACE INTO app_settings (setting_key, setting_value, updated_at) VALUES ('data.hr_article_colours_error', ?, ?)").run(reason, new Date().toISOString());
+    }
   }
 
   /** Where the backups for this database live. One derivation, shared with seedDefaultSettings. */
@@ -1736,6 +1753,7 @@ export interface SqliteDatabase
     GatepassEditMethods,
     CartonStockAdjustMethods,
     CartonStockDocumentMethods,
+    ArticleColorRemovalMethods,
     HandVoucherMethods,
     LedgerArchiveMethods,
     PartyOpeningBalanceMethods,
@@ -1800,6 +1818,7 @@ Object.assign(
   gatepassEditMethods,
   cartonStockAdjustMethods,
   cartonStockDocumentMethods,
+  articleColorRemovalMethods,
   handVoucherMethods,
   ledgerArchiveMethods,
   partyOpeningBalanceMethods,

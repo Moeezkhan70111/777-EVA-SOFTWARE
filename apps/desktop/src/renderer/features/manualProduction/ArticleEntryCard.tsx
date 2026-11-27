@@ -1,5 +1,6 @@
 import React, { useEffect, useRef } from "react";
 import { AddColorControl } from "../../components/shared/AddColorControl";
+import { RemoveColorControl } from "../../components/shared/RemoveColorControl";
 import { MissingSizeCell } from "../../components/shared/MissingSizeCell";
 import { SearchableCombobox, type SearchableComboboxOption } from "../../components/shared/SearchableCombobox";
 import { SizeColourGrid, type GridBoxProps, type GridSize } from "../../components/shared/SizeColourGrid";
@@ -130,7 +131,12 @@ export const ArticleEntryCard: React.FC<ArticleEntryCardProps> = ({ machine, pro
           <SearchableCombobox ariaLabel={text.articleLabel} placeholder={text.articlePlaceholder} searchPlaceholder={text.articleSearch}
             emptyLabel={text.articleNone} value={article} options={articleOptions(products)} onChange={entry.chooseArticle} />
         </div>
-        {article && canAddColour ? <AddColorControl article={article} onAdded={() => onColourAdded()} /> : null}
+        {article && canAddColour ? (
+          <div className="sa-colour-tools">
+            <AddColorControl article={article} onAdded={() => onColourAdded()} />
+            <RemoveColorControl article={article} colours={grid.colours} onRemoved={() => onColourAdded()} />
+          </div>
+        ) : null}
       </div>
       {!machine ? <p className="mnp-hint mnp-hint--warn" role="note">⚠ {text.chooseMachineFirst}</p> : null}
       {article === "" ? <StateView kind="empty" compact title={text.chooseArticle} /> : null}

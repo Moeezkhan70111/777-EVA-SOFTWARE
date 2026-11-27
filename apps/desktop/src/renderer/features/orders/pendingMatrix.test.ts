@@ -34,9 +34,9 @@ describe("pending orders as a matrix", () => {
 });
 
 describe("a colour added to the article while ordering", () => {
-  it("joins the article's products and is chosen at once, keeping what was typed", () => {
+  it("joins the article's products and opens as a column at once, keeping what was typed", () => {
     const before = { ...newBlock("SK6", [{ productVariantId: "red-7", size: "7/10", color: "RED" }]), colours: ["RED"], typed: { "red-7": "4" } };
-    const after = withProducts(before, [{ productVariantId: "red-7", size: "7/10", color: "RED" }, { productVariantId: "green-7", size: "7/10", color: "GREEN" }], "green");
+    const after = withProducts(before, [{ productVariantId: "red-7", size: "7/10", color: "RED" }, { productVariantId: "green-7", size: "7/10", color: "GREEN" }]);
     expect(after.colours).toEqual(["GREEN", "RED"]);
     expect(after.products.map((product) => product.productVariantId)).toEqual(["red-7", "green-7"]);
     expect(after.typed).toEqual({ "red-7": "4" });

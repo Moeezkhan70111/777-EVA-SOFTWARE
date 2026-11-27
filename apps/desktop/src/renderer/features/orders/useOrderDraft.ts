@@ -3,11 +3,11 @@ import { copy } from "../../config/copy";
 import { useDesktopApi } from "../../hooks/useDesktopApi";
 import { useNotifications } from "../../state/NotificationsContext";
 import type { CustomerOrderArticleProduct } from "../../types/desktopApi";
-import { emptyOrderDraft, newBlock, toggleColour, withProducts, type ArticleBlock, type OrderDraft } from "./orderDraft";
+import { emptyOrderDraft, newBlock, withProducts, type ArticleBlock, type OrderDraft } from "./orderDraft";
 import { parseArticleReply } from "./orderReply";
 
 // The order being typed: party, note and its article blocks (orderDraft.ts). Adding an article reads its live colours
-// and sizes from Product Master once, so every colour can be chosen without opening the article picker again.
+// and sizes from Product Master once, and every colour opens as a column of boxes.
 
 const words = copy.orders;
 
@@ -50,11 +50,11 @@ export const useOrderDraft = (token: string) => {
     setDraft((current) => (current.blocks.some((block) => block.article === article) ? current : { ...current, blocks: [newBlock(article, products), ...current.blocks] }));
   };
 
-  /** A colour was just added to the article in Product Master: read its products again and choose that colour. */
-  const colourAdded = async (article: string, colour: string) => {
+  /** A colour was just added to the article in Product Master: read its products again, and its column opens. */
+  const colourAdded = async (article: string) => {
     const products = await productsOf(article);
     if (products === null) return;
-    updateBlock(article, (block) => withProducts(block, products, colour));
+    updateBlock(article, (block) => withProducts(block, products));
   };
 
   // Stable: the page's own callbacks list it in their dependencies, and a new function each render would loop them.
@@ -70,7 +70,6 @@ export const useOrderDraft = (token: string) => {
     addArticle,
     colourAdded,
     removeArticle: (article: string) => setDraft((current) => ({ ...current, blocks: current.blocks.filter((block) => block.article !== article) })),
-    toggleColour: (article: string, colour: string) => updateBlock(article, (block) => toggleColour(block, colour)),
     type: (article: string, productId: string, value: string) => updateBlock(article, (block) => ({ ...block, typed: { ...block.typed, [productId]: value } })),
     reset,
   };

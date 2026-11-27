@@ -28,6 +28,7 @@ import {
   isBusinessDate,
   isCartonAdjustmentDirection,
   isCartonAdjustmentKind,
+  normalizeQrColor,
   type CartonAdjustmentDirection,
   type CartonAdjustmentKind,
 } from "@erp/domain";
@@ -288,6 +289,9 @@ export const cartonStockDocumentMethods = {
    * Stock Adjustment page. Master data (each variant travels with its product, ARTICLE_SIZE), so the IPC is leased to
    * MASTER_DATA. Uses upsertProductVariant, the one place that decides whether a colour exists: a deleted colour is
    * brought back with its id, never duplicated. Stored upper-case, as Product Master stores colours.
+   *
+   * A colour already on a size under another spacing ("BLACKGREY" for "BLACK GREY") is that colour, as a carton QR
+   * reads it (normalizeQrColor): the size is skipped, never given a second one the QR could not tell apart (27 Nov 2026).
    */
   addColorToArticle(this: SqliteDatabase, input: { article: string; color: string }): ArticleColorResult {
     const article = text(input.article).trim();
@@ -306,12 +310,17 @@ export const cartonStockDocumentMethods = {
         .all(article) as Row[];
       if (sizes.length === 0) throw new CartonAdjustmentRefused(`${article} has no active sizes in Product Master.`);
       let added = 0;
+      let heldAs: string | null = null;
       const now = new Date().toISOString();
       for (const size of sizes) {
         const live = this.db
-          .prepare("SELECT 1 AS here FROM product_variants WHERE UPPER(TRIM(article)) = UPPER(TRIM(?)) AND UPPER(TRIM(color)) = ? AND UPPER(TRIM(size)) = UPPER(TRIM(?)) AND deleted_at IS NULL AND COALESCE(status, 'ACTIVE') <> 'DISABLED'")
-          .get(text(size.article), color, text(size.size));
-        if (live) continue;
+          .prepare(
+            `SELECT color FROM product_variants WHERE UPPER(TRIM(article)) = UPPER(TRIM(?)) AND UPPER(TRIM(size)) = UPPER(TRIM(?))
+               AND REPLACE(REPLACE(REPLACE(UPPER(TRIM(color)), ' ', ''), '-', ''), '_', '') = ?
+               AND deleted_at IS NULL AND COALESCE(status, 'ACTIVE') <> 'DISABLED' LIMIT 1`
+          )
+          .get(text(size.article), text(size.size), normalizeQrColor(color)) as { color: string } | undefined;
+        if (live) { heldAs ??= text(live.color); continue; }
         const paisa = (value: unknown): number | null => (value == null ? null : Number(value));
         const orNull = (value: unknown): string | null => (value == null ? null : text(value));
         this.upsertProductVariant({
@@ -323,7 +332,8 @@ export const cartonStockDocumentMethods = {
         added += 1;
       }
       this.db.exec("COMMIT");
-      return { color, added, existing: sizes.length - added };
+      // Nothing added and the article already holds it under another spacing: the colour as the article holds it.
+      return { color: added === 0 && heldAs !== null ? heldAs : color, added, existing: sizes.length - added };
     } catch (error) {
       try { this.db.exec("ROLLBACK"); } catch { /* ignore missing transaction state */ }
       throw error;
