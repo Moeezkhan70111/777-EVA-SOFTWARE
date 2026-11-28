@@ -8,14 +8,17 @@ import { articleWithGroup, type StockGrid } from "../../utils/gatepassGrid";
 import { ProductThumb } from "./ProductThumb";
 import { GatepassQtyCell } from "./GatepassQtyCell";
 import { sizesMissingColour } from "./colourGaps";
+import { useFillColourGaps } from "./useFillColourGaps";
 import { dozensText, type DraftArticleGroup } from "./gatepassDraft";
 
 // ONE ARTICLE ON THE GATEPASS BEING WRITTEN, every size at once (owner, 25 Nov 2026: "the format used in opening stock
 // and stock adjustment"). Open: sizes down, colours across, a box in every cell (SizeColourGrid, shared: Arrow Up and
 // Down move along a colour, Tab across), each colour's total under it. A colour the article is made in, but not in
-// this size, has no box: the cell says so, and an administrator where Product Master is written adds it from there
-// (MissingSizeCell); a new colour is added from "+ New colour" (AddColorControl). Who may do either is the one rule of
-// every quantity-by-colour page (useCanAddColour). Closed: one line saying what has been entered. One card is open at a time.
+// this size, has no box until it is in Product Master. Where colours may be added (useCanAddColour), opening the
+// article adds every such colour to the sizes it is missing from by itself, so every cell has its box (owner, 28 Nov
+// 2026: "dont do the + thing keep everything open", useFillColourGaps); anywhere else the cell says who can add it
+// (MissingSizeCell). A new colour is added from "+ New colour" (AddColorControl). Closed: one line saying what has
+// been entered. One card is open at a time.
 
 const words = copy.gatepass;
 
@@ -59,6 +62,8 @@ export const ArticleGridCard: React.FC<ArticleGridCardProps> = ({ group, grid, e
   const bodyId = `gp-article-body-${slug}`;
   const bySize = new Map(group.sizes.map((entry) => [entry.key, entry]));
   const className = ["gp-article", "gp-article--grid", expanded ? "is-expanded" : "", group.errorCount > 0 ? "has-error" : ""].filter(Boolean).join(" ");
+  const gapColours = group.colours.filter((colour) => group.sizes.some((entry) => !entry.colours.some((c) => c.colour === colour)));
+  const filling = useFillColourGaps({ article: group.article, gapColours, enabled: expanded && canAddColour, onFilled: onColourAdded });
 
   return (
     <section className={className} data-testid={`gatepass-article-${slug}`}>
@@ -98,8 +103,9 @@ export const ArticleGridCard: React.FC<ArticleGridCardProps> = ({ group, grid, e
               const entry = bySize.get(size.id);
               const cell = entry?.colours.find((c) => c.colour === colour);
               if (!entry || !cell) {
+                // No "+" on the Gatepass: where colours may be added, the gap is being filled by itself (useFillColourGaps).
                 return <MissingSizeCell article={group.article} colour={colour} size={size.size} missingSizes={sizesMissingColour(grid, group.article, colour)}
-                  canAdd={canAddColour} disabled={false} onAdded={onColourAdded} />;
+                  canAdd={false} pending={filling} disabled={false} onAdded={onColourAdded} />;
               }
               return <GatepassQtyCell entry={entry} colour={cell} box={box} onChange={onQuantityChange} />;
             }}

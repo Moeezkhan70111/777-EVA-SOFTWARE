@@ -6,7 +6,8 @@ import { copy } from "../config/copy";
 import { REQUEST_STORAGE_KEY } from "../hooks/useRequestId";
 import { NotificationsProvider } from "../state/NotificationsContext";
 import { NotificationCenter } from "../components/layout/NotificationCenter";
-import type { CreateGatepassResult, Gatepass, GatepassStockRow, Party } from "../types/desktopApi";
+import { SessionProvider } from "../features/auth/SessionContext";
+import type { AuthUser, CreateGatepassResult, Gatepass, GatepassStockRow, Party } from "../types/desktopApi";
 
 // The page is driven exactly as a clerk writes the Gatepass: pick the party, add an
 // article, type cartons against each colour, create, print. The fake backend answers like
@@ -932,5 +933,54 @@ describe("GatepassPage edit", () => {
     });
     expect(screen.getByTestId("gatepass-title")).toHaveTextContent("Gatepass GP-000001");
     expect(api.editGatepass).not.toHaveBeenCalled();
+  });
+});
+
+// Owner, 28 Nov 2026: "i am clicking on + in gatepass but it is not showing input box. dont do the + thing keep
+// everything open". SK6 is made in NAVY only in 4/6 and BLUE only in 7/10: opened by an administrator where Product
+// Master is written, the gaps are added by themselves and every cell has its box, with no "+" anywhere.
+describe("GatepassPage keeps every colour open in every size", () => {
+  const ADMIN: AuthUser = { id: "u-admin", username: "owner", role: "ADMIN", accessStatus: "APPROVED", permissions: [], lastLoginAt: null };
+
+  const showAsAdmin = (masterData: boolean) => {
+    const backend = createFakeBackend();
+    const api = backend.api as typeof backend.api & Record<string, unknown>;
+    api.getWriteLeases = vi.fn(async () => [{ domain: "MASTER_DATA", canWrite: masterData, reason: masterData ? null : "HELD_ELSEWHERE", holderLabel: masterData ? null : "PC 1" }]);
+    let stock = STOCK;
+    api.addArticleColor = vi.fn(async ({ article, color }: { article: string; color: string }) => {
+      const sizes = [...new Set(stock.filter((r) => r.article === article).map((r) => r.size))];
+      stock = [...stock, ...sizes.filter((size) => !stock.some((r) => r.article === article && r.color === color && r.size === size))
+        .map((size) => stockRow(`v-new-${color}-${size}`, article, color, size, 0))];
+      backend.setStock(stock);
+      return { accepted: true, color, added: 1, existing: 1 };
+    });
+    render(
+      <SessionProvider user={ADMIN} token="token-1">
+        <NotificationsProvider>
+          <GatepassPage token="token-1" username="owner" onNavigate={vi.fn()} />
+        </NotificationsProvider>
+      </SessionProvider>
+    );
+    return api;
+  };
+
+  it("adds the missing colours by itself when the article opens, and every cell gets a box", async () => {
+    const api = showAsAdmin(true);
+    await addArticle("SK6");
+    await waitFor(() => expect(api.addArticleColor).toHaveBeenCalledTimes(2));
+    expect(api.addArticleColor).toHaveBeenCalledWith({ article: "SK6", color: "BLUE" });
+    expect(api.addArticleColor).toHaveBeenCalledWith({ article: "SK6", color: "NAVY" });
+    await waitFor(() => expect(qty("SK6", "NAVY", "7/10")).toBeInTheDocument());
+    expect(qty("SK6", "BLUE", "4/6")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /to Product Master/ })).toBeNull();
+    expect(screen.queryByText(copy.missingSize.notInMaster)).toBeNull();
+  });
+
+  it("adds nothing and offers no + where Product Master is not written", async () => {
+    const api = showAsAdmin(false);
+    await addArticle("SK6");
+    expect(await screen.findAllByText(copy.missingSize.notInMaster)).toHaveLength(2);
+    expect(api.addArticleColor).not.toHaveBeenCalled();
+    expect(screen.queryByRole("button", { name: /to Product Master/ })).toBeNull();
   });
 });

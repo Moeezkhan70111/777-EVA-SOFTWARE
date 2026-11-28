@@ -28,13 +28,23 @@ interface MissingSizeCellProps {
   onAdded: (colour: string) => void;
   /** The page's own cell class, beside the shared one. */
   className?: string;
+  /** The page is adding this colour by itself (Gatepass, 28 Nov 2026): the cell says so instead of offering "+". */
+  pending?: boolean;
 }
 
-export const MissingSizeCell: React.FC<MissingSizeCellProps> = ({ article, colour, size, missingSizes, canAdd, disabled, onAdded, className }) => {
+export const MissingSizeCell: React.FC<MissingSizeCellProps> = ({ article, colour, size, missingSizes, canAdd, disabled, onAdded, className, pending = false }) => {
   const api = useDesktopApi();
   const { push } = useNotifications();
   const [busy, setBusy] = useState(false);
   const cellClass = ["size-missing-cell", className].filter(Boolean).join(" ");
+
+  if (pending) {
+    return (
+      <td className={cellClass} aria-busy="true">
+        <span className="size-missing">{words.opening}</span>
+      </td>
+    );
+  }
 
   if (!canAdd) {
     return (

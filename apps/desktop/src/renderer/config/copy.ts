@@ -2361,6 +2361,8 @@ export const copy = {
     addMissingLabel: (colour: string, size: string) => `Add ${colour} in size ${size} to Product Master`,
     addMissingTitle: (colour: string, sizes: string) => `Adds ${colour} to Product Master in every size it is missing: ${sizes}`,
     addMissingFailed: "The size could not be added. Nothing was changed.",
+    /** In the cell while the Gatepass adds the colour to this size by itself (owner, 28 Nov 2026). */
+    opening: "Opening…",
   },
   customerLedger: {
     title: "Customer Ledger",
