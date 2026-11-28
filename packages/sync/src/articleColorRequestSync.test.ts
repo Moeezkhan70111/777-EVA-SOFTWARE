@@ -188,3 +188,27 @@ test("a colour renamed on PC1 keeps its products, takes the name on every size, 
     assert.equal(ids(pc1, "BOWN").filter((id) => before.includes(id)).length, 0);
   });
 });
+
+// Owner, 28 Nov 2026: "colors in gatepass still says not in product master". SK6 BLACK 7/10 was made in October and
+// hangs off an older 7/10 record PC1 no longer has live: the colour existed, so nothing was added, and no page listed it.
+test("a colour's old product hanging off a size record no longer live is linked to the live size, not copied", async () => {
+  await withOffice(async (cloud, pc1, pc2, pc3) => {
+    for (const size of ["7/10", "4/6"]) {
+      pc1.db.createProduct({ article: "SK6", size, sellingPrice: 530, machineRate: 70, packingRate: 30, colors: size === "4/6" ? ["BLACK", "NAVY"] : ["NAVY"], status: "ACTIVE" });
+    }
+    pc1.db.db.exec("PRAGMA foreign_keys = OFF");
+    pc1.db.db.prepare(
+      `INSERT INTO product_variants (id, article, color, size, article_size_id, status, created_at, updated_at) VALUES ('old-sk6-black-710', 'SK6', 'BLACK', '7/10', 'old-size-record', 'ACTIVE', '2026-10-06', '2026-10-06')`
+    ).run();
+    pc1.db.db.exec("PRAGMA foreign_keys = ON");
+    await passAll(cloud, [pc1, pc2, pc3]);
+
+    const black = (pc: Pc) => pc.db.db.prepare(
+      `SELECT pv.id AS id FROM product_variants pv JOIN article_sizes s ON s.id = pv.article_size_id AND s.status = 'ACTIVE'
+        WHERE pv.article = 'SK6' AND pv.color = 'BLACK' AND pv.size = '7/10' AND pv.deleted_at IS NULL`
+    ).all() as Array<{ id: string }>;
+    for (const pc of [pc1, pc2, pc3]) assert.deepEqual(black(pc).map((row) => row.id), ["old-sk6-black-710"], `${pc.name}: the old product, on the live size`);
+    assert.equal(Number((pc1.db.db.prepare("SELECT COUNT(*) AS n FROM product_variants WHERE article = 'SK6' AND color = 'BLACK'").get() as { n: number }).n), 2, "no copy");
+    assert.equal(pc1.db.fillArticleColourGaps(), 0, "nothing left to fill");
+  });
+});

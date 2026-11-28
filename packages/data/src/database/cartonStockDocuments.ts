@@ -322,12 +322,24 @@ export const cartonStockDocumentMethods = {
       for (const size of sizes) {
         const live = this.db
           .prepare(
-            `SELECT color FROM product_variants WHERE UPPER(TRIM(article)) = UPPER(TRIM(?)) AND UPPER(TRIM(size)) = UPPER(TRIM(?))
-               AND REPLACE(REPLACE(REPLACE(UPPER(TRIM(color)), ' ', ''), '-', ''), '_', '') = ?
-               AND deleted_at IS NULL AND COALESCE(status, 'ACTIVE') <> 'DISABLED' LIMIT 1`
+            `SELECT pv.id, pv.color, (pv.article_size_id = ?) AS here,
+                    EXISTS (SELECT 1 FROM article_sizes s WHERE s.id = pv.article_size_id AND s.status = 'ACTIVE' AND s.deleted_at IS NULL) AS linked
+               FROM product_variants pv WHERE UPPER(TRIM(pv.article)) = UPPER(TRIM(?)) AND UPPER(TRIM(pv.size)) = UPPER(TRIM(?))
+               AND REPLACE(REPLACE(REPLACE(UPPER(TRIM(pv.color)), ' ', ''), '-', ''), '_', '') = ?
+               AND pv.deleted_at IS NULL AND COALESCE(pv.status, 'ACTIVE') <> 'DISABLED' ORDER BY here DESC, linked DESC LIMIT 1`
           )
-          .get(text(size.article), text(size.size), normalizeQrColor(color)) as { color: string } | undefined;
-        if (live) { heldAs ??= text(live.color); continue; }
+          .get(text(size.id), text(size.article), text(size.size), normalizeQrColor(color)) as { id: string; color: string; here: number; linked: number } | undefined;
+        if (live) {
+          heldAs ??= text(live.color);
+          // A product made before its size was in Product Master as it is now (October 2026) can hang off an older size
+          // record this computer no longer has live: the colour exists, but no page lists it (owner, 28 Nov 2026: "still
+          // says not in product master"). It is that size's product, with its stock and labels: linked here, never copied.
+          if (!live.here && !live.linked) {
+            this.db.prepare("UPDATE product_variants SET article_size_id = ?, updated_at = ? WHERE id = ?").run(text(size.id), now, live.id);
+            added += 1;
+          }
+          continue;
+        }
         const paisa = (value: unknown): number | null => (value == null ? null : Number(value));
         const orNull = (value: unknown): string | null => (value == null ? null : text(value));
         this.upsertProductVariant({

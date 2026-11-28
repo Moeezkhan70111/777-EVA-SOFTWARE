@@ -257,7 +257,11 @@ test("a colour stored in another case or with a stray space shows in the list, i
     const black = db.cartonAdjustmentArticle("SK6").filter((c) => c.color === "BLACK");
     assert.equal(black.length, 3, "BLACK is in the list once per size");
     assert.equal(black.find((c) => c.size === "7/10")?.colorMissing, false, "and 7/10 has it");
-    assert.equal(db.addColorToArticle({ article: "SK6", color: "Black" }).added, 0, "never added a second time");
+    // Since 28 Nov 2026 the product left with no size row is linked to its live size (one change), never copied.
+    assert.equal(db.addColorToArticle({ article: "SK6", color: "Black" }).added, 1, "linked, not copied");
+    assert.equal(db.db.prepare("SELECT COUNT(*) AS n FROM product_variants WHERE article = 'SK6' AND size = '7/10' AND UPPER(TRIM(color)) = 'BLACK'").get()?.n, 1, "never added a second time");
+    assert.equal(db.db.prepare("SELECT article_size_id AS id FROM product_variants WHERE article = 'SK6' AND size = '7/10' AND UPPER(TRIM(color)) = 'BLACK'").get()?.id, sku("SK6", "7/10"));
+    assert.equal(db.addColorToArticle({ article: "SK6", color: "Black" }).added, 0, "and only once");
     post(db, "OPENING", [line(sku("SK6", "7/10"), "BLACK", 8)]);
     assert.equal(figureOf(fixture, "SK6", "7/10", "BLACK"), 8);
   });
