@@ -2481,6 +2481,7 @@ export interface DesktopApi {
   addArticleColor(input: { article: string; color: string }): Promise<unknown>;
   /** Takes a colour off every size of an article (main process removeColorFromArticle): refused while stock or an open order needs it. */
   removeArticleColor(input: { article: string; color: string }): Promise<unknown>;
+  renameArticleColor(input: { article: string; from: string; to: string }): Promise<unknown>;
   /** Asks the Product Master computer for a new colour on an article, from Enter Orders (ORDERS lease). Administrators only. */
   requestArticleColor(input: { article: string; color: string }): Promise<unknown>;
   getCartonStockReconciliation(query: { page: number; pageSize: number }): Promise<{ accepted: boolean; reason?: string; reconciliation?: CartonReconciliation | null }>;

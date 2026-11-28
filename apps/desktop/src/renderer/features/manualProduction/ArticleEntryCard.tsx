@@ -1,6 +1,7 @@
 import React, { useEffect, useRef } from "react";
 import { AddColorControl } from "../../components/shared/AddColorControl";
 import { RemoveColorControl } from "../../components/shared/RemoveColorControl";
+import { RenameColorControl } from "../../components/shared/RenameColorControl";
 import { MissingSizeCell } from "../../components/shared/MissingSizeCell";
 import { SearchableCombobox, type SearchableComboboxOption } from "../../components/shared/SearchableCombobox";
 import { SizeColourGrid, type GridBoxProps, type GridSize } from "../../components/shared/SizeColourGrid";
@@ -134,6 +135,7 @@ export const ArticleEntryCard: React.FC<ArticleEntryCardProps> = ({ machine, pro
         {article && canAddColour ? (
           <div className="sa-colour-tools">
             <AddColorControl article={article} onAdded={() => onColourAdded()} />
+            <RenameColorControl article={article} colours={grid.colours} onRenamed={() => onColourAdded()} />
             <RemoveColorControl article={article} colours={grid.colours} onRemoved={() => onColourAdded()} />
           </div>
         ) : null}

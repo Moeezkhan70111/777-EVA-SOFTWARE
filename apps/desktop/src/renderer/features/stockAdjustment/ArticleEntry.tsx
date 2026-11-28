@@ -7,6 +7,7 @@ import { dozensText, totalsOf, type DraftLine } from "./stockAdjustmentDraft";
 import { QuantityGrid } from "./QuantityGrid";
 import { AddColorControl } from "../../components/shared/AddColorControl";
 import { RemoveColorControl } from "../../components/shared/RemoveColorControl";
+import { RenameColorControl } from "../../components/shared/RenameColorControl";
 import { ENTRY_MODE, useArticleGrid } from "./useArticleGrid";
 import { StepperMatrix } from "./StepperMatrix";
 import { StepTitle } from "../manualProduction/StepTitle";
@@ -78,6 +79,7 @@ export const ArticleEntry: React.FC<ArticleEntryProps> = ({ kind, articles, onAd
           {entry.canAddColor ? (
             <div className="sa-colour-tools">
               <AddColorControl article={article} onAdded={() => void choices.reload()} />
+              <RenameColorControl article={article} colours={grid.colours} onRenamed={() => void choices.reload()} />
               <RemoveColorControl article={article} colours={grid.colours} onRemoved={() => void choices.reload()} />
             </div>
           ) : null}

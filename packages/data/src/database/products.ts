@@ -740,8 +740,11 @@ export const productsMethods = {
     }
 
     // Derived, for the reason given at the other insert. The caller has already normalised
-    // these three, and they are the values written below.
-    const id = deriveProductVariantId(input.article, input.color, input.size);
+    // these three, and they are the values written below. A product renamed since (renameColorOnArticle) keeps the id
+    // its old name gave it, so a colour given that old name again gets an id of its own instead.
+    const derived = deriveProductVariantId(input.article, input.color, input.size);
+    const taken = this.db.prepare("SELECT 1 AS here FROM product_variants WHERE id = ? LIMIT 1").get(derived) !== undefined;
+    const id = taken ? crypto.randomUUID() : derived;
     this.db
       .prepare(
         `INSERT INTO product_variants (id, article, color, size, description, cost_price_paisa, selling_price_paisa, main_group_id, product_group_id, article_series_id, product_type_id, product_sub_group_id, article_size_id, status, created_at, updated_at, deleted_at, deleted_by, delete_reason) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL)`

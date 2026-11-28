@@ -12,6 +12,8 @@
 //                               so a write under the MASTER_DATA lease (leaseChannels.ts). An administrator.
 //   removeArticleColor          its counterpart (27 Nov 2026): the colour off every size, DISABLED not deleted; refused
 //                               while any size holds carton stock or an open order waits for it. Same lease, same rule.
+//   renameArticleColor          28 Nov 2026: a colour's new name on every size of the article, the products and their
+//                               records kept; refused when another colour of the article has the name. Same lease, same rule.
 //   requestArticleColor         Enter Orders on the orders computer (27 Nov 2026): a new colour ASKED FOR, under ORDERS.
 //                               The Product Master computer adds it by itself when it arrives. An administrator.
 //
@@ -32,6 +34,7 @@ export const STOCK_ADJUSTMENT_MESSAGES = {
   NOT_READ: "Stock adjustments could not be read.",
   NOT_COLORED: "The colour could not be added. Nothing was changed.",
   NOT_UNCOLORED: "The colour could not be removed. Nothing was changed.",
+  NOT_RENAMED: "The colour could not be renamed. Nothing was changed.",
   NOT_REQUESTED: "The colour could not be asked for. Nothing was changed.",
 } as const;
 
@@ -105,6 +108,20 @@ export function registerCartonStockAdjustmentHandlers(ctx: Pick<IpcContext, "db"
     } catch (error) {
       log("WARNING", "remove-color-refused", error instanceof Error ? error.message : String(error), who.user.id);
       return { accepted: false, reason: refusalReason(error, STOCK_ADJUSTMENT_MESSAGES.BUSY, STOCK_ADJUSTMENT_MESSAGES.NOT_UNCOLORED) };
+    }
+  });
+
+  ipcMain.handle(IPC.renameArticleColor, (event, input?: unknown) => {
+    const who = administrator(event);
+    if (!who.ok) return { accepted: false, reason: who.reason };
+    const fields = asRecord(input);
+    try {
+      const result = db.renameColorOnArticle({ article: asString(fields.article), from: asString(fields.from), to: asString(fields.to) });
+      log("INFO", "rename-color", JSON.stringify({ article: asString(fields.article), ...result }), who.user.id);
+      return { accepted: true, ...result };
+    } catch (error) {
+      log("WARNING", "rename-color-refused", error instanceof Error ? error.message : String(error), who.user.id);
+      return { accepted: false, reason: refusalReason(error, STOCK_ADJUSTMENT_MESSAGES.BUSY, STOCK_ADJUSTMENT_MESSAGES.NOT_RENAMED) };
     }
   });
 

@@ -45,6 +45,22 @@ export type ColorRemovalReply = { ok: true; color: string; removed: number } | {
 
 /** Takes `color` off every size of `article` (main process removeColorFromArticle). Refused, in words, while carton
  *  stock or an open order still needs it; `failed` is what the operator is told when no reason comes back. */
+export type ColorRenameReply = { ok: true; color: string; renamed: number } | { ok: false; reason: string };
+
+/** Gives `from` the name `to` on every size of `article` (main process renameColorOnArticle, 28 Nov 2026). */
+export const renameArticleColor = async (api: DesktopApi, article: string, from: string, to: string, failed: string): Promise<ColorRenameReply> => {
+  try {
+    const reply = await api.renameArticleColor({ article, from, to });
+    const record = typeof reply === "object" && reply !== null ? (reply as Record<string, unknown>) : {};
+    if (record.accepted === true && typeof record.color === "string" && typeof record.renamed === "number") {
+      return { ok: true, color: record.color, renamed: record.renamed };
+    }
+    return { ok: false, reason: typeof record.reason === "string" ? record.reason : failed };
+  } catch (error) {
+    return { ok: false, reason: leaseRefusalText(error) ?? failed };
+  }
+};
+
 export const removeArticleColor = async (api: DesktopApi, article: string, color: string, failed: string): Promise<ColorRemovalReply> => {
   try {
     const reply = await api.removeArticleColor({ article, color });

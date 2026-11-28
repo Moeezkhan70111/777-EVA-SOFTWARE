@@ -119,6 +119,26 @@ export const copy = {
     removedMessage: (sizes: number) => `Taken off ${sizes} ${sizes === 1 ? "size" : "sizes"}.`,
   },
 
+  // "Rename colour", beside "− Remove colour" (owner, 28 Nov 2026): one colour of an article, a new name on every size.
+  renameColour: {
+    button: "Rename colour",
+    buttonLabel: (article: string) => `Rename a colour of ${article}`,
+    title: (article: string) => `Rename a colour of ${article}`,
+    subtitle: "The new name is used on every size of the article, on every page and every computer.",
+    pick: "Colour to rename",
+    newName: "New name",
+    newNamePlaceholder: "e.g. BLACK GREY",
+    explain: (article: string, colour: string) =>
+      `${article} ${colour} keeps its stock, production, gatepasses, bills, orders and printed QR labels under the new name. Documents already made keep the name they were made with.`,
+    choose: "Choose a colour above.",
+    rule: "A colour cannot be given the name of another colour of the same article.",
+    confirm: "Rename",
+    renaming: "Renaming…",
+    failed: "The colour could not be renamed. Nothing was changed.",
+    renamedTitle: (from: string, colour: string, article: string) => `${article}: ${from} is now ${colour}`,
+    renamedMessage: (sizes: number) => `Renamed on ${sizes} ${sizes === 1 ? "size" : "sizes"}.`,
+  },
+
   // Common actions rendered on buttons and icon-button titles.
   actions: {
     add: "Add",

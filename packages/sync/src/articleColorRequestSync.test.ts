@@ -159,3 +159,32 @@ test("PC1 puts every colour of an article on all its sizes by itself, and every 
     assert.equal(pc1.db.fillArticleColourGaps(), 0, "nothing left to fill");
   });
 });
+
+// Owner, 28 Nov 2026: "give an option to edit a color name in all the places where it is needed".
+test("a colour renamed on PC1 keeps its products, takes the name on every size, and every computer gets it", async () => {
+  await withOffice(async (cloud, pc1, pc2, pc3) => {
+    for (const size of ["7/10", "4/6"]) {
+      pc1.db.createProduct({ article: "SK31", size, sellingPrice: 520, machineRate: 70, packingRate: 30, colors: ["BOWN", "BLACKGREY"], status: "ACTIVE" });
+    }
+    await passAll(cloud, [pc1, pc2, pc3]);
+    const ids = (pc: Pc, color: string) => (pc.db.db.prepare("SELECT id FROM product_variants WHERE article = 'SK31' AND color = ? ORDER BY size").all(color) as Array<{ id: string }>).map((row) => row.id);
+    const before = ids(pc1, "BOWN");
+
+    assert.deepEqual(pc1.db.renameColorOnArticle({ article: "sk31", from: "bown", to: " brown " }), { from: "BOWN", color: "BROWN", renamed: 2 });
+    // The same colour respelled is allowed; another colour of the article's name is not, nor no change at all.
+    assert.equal(pc1.db.renameColorOnArticle({ article: "SK31", from: "BLACKGREY", to: "BLACK GREY" }).renamed, 2);
+    assert.throws(() => pc1.db.renameColorOnArticle({ article: "SK31", from: "BROWN", to: "blackgrey" }), /already has BLACK GREY/);
+    assert.throws(() => pc1.db.renameColorOnArticle({ article: "SK31", from: "BROWN", to: "brown" }), /already has that name/);
+    assert.throws(() => pc1.db.renameColorOnArticle({ article: "SK31", from: "RED", to: "BLUE" }), /has no colour RED/);
+    await passAll(cloud, [pc1, pc2, pc3]);
+
+    for (const pc of [pc1, pc2, pc3]) {
+      assert.deepEqual(ids(pc, "BROWN"), before, `${pc.name}: the same products, renamed`);
+      assert.deepEqual(ids(pc, "BOWN"), [], pc.name);
+      assert.equal(ids(pc, "BLACK GREY").length, 2, pc.name);
+    }
+    // The old name given again later is a colour of its own, with new products.
+    assert.equal(pc1.db.addColorToArticle({ article: "SK31", color: "BOWN" }).added, 2);
+    assert.equal(ids(pc1, "BOWN").filter((id) => before.includes(id)).length, 0);
+  });
+});

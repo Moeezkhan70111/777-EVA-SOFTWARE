@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { AddColorControl } from "../../components/shared/AddColorControl";
 import { RemoveColorControl } from "../../components/shared/RemoveColorControl";
+import { RenameColorControl } from "../../components/shared/RenameColorControl";
 import { COLOUR_ACCESS, type ColourAccess } from "../../hooks/useCanAddColour";
 import { ColourName } from "../colorTranslation/ColourName";
 import { SizeColourGrid, type GridBoxProps, type GridSize } from "../../components/shared/SizeColourGrid";
@@ -115,6 +116,8 @@ export const ArticleBlockCard: React.FC<ArticleBlockCardProps> = ({ block, disab
         <AddColorControl article={block.article} onAdded={onColourAdded} disabled={disabled}
           blockedReason={colourAccess === COLOUR_ACCESS.NONE ? words.newColourWhere : undefined}
           onAsked={colourAccess === COLOUR_ACCESS.ASK ? onColourAsked : undefined} />
+        {/* Renamed products keep their ids, so the block reads them again as after an added colour, and what was typed stays. */}
+        {canAddColor && !disabled ? <RenameColorControl article={block.article} colours={block.colours} onRenamed={onColourAdded} /> : null}
         {canAddColor && !disabled ? <RemoveColorControl article={block.article} colours={block.colours} onRemoved={onColourRemoved} /> : null}
         {asked.length > 0 ? <p className="ord-hint" role="status">{words.colourAsked(asked.join(", "))}</p> : null}
       </div>

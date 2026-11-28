@@ -13,11 +13,18 @@
 //     NOT TO DELETE AN ITEM IF IT HAS STOCK")
 //   * an open order still waits for it: it could never be dispatched
 //
+// RENAMING A COLOUR OF AN ARTICLE (owner, 28 Nov 2026: "give an option to edit a color name in all the places where it
+// is needed"). The colour's products on every size of the article take the new name, in one transaction. They keep
+// their ids, so their stock, production, gatepasses, bills, orders and printed QR labels (qr_master names the product
+// by id) keep reading right; documents keep the name they were made under. Refused, in words, when the new name is
+// not one (cleanColourName) or is already another colour of the article as a carton QR reads it (normalizeQrColor):
+// two colours are never merged by a rename. "BLACKGREY" to "BLACK GREY" is the same colour respelled, and allowed.
+//
 // These methods are merged onto SqliteDatabase (see sqliteDatabase.ts, "Feature modules").
 
-import { cartonsToDozens } from "@erp/domain";
+import { cartonsToDozens, normalizeQrColor } from "@erp/domain";
 import type { SqliteDatabase } from "../sqliteDatabase.js";
-import { CartonAdjustmentRefused } from "./cartonStockDocuments.js";
+import { CartonAdjustmentRefused, cleanColourName } from "./cartonStockDocuments.js";
 import { ORDER_LINE_COUNTS_SQL, ORDER_LINE_DISPATCHED_SQL, ORDER_LINE_EFFECTIVE_SQL } from "./orderAllocation.js";
 import { IN_STORE_STOCK_SQL } from "./shared.js";
 
@@ -74,7 +81,52 @@ function removalProblem(database: SqliteDatabase, article: string, color: string
   return null;
 }
 
+/** What renaming a colour of an article did. */
+export interface ArticleColorRename {
+  readonly from: string;
+  readonly color: string;
+  /** Sizes renamed. */
+  readonly renamed: number;
+}
+
+/** Why the article cannot take the new name, or null: another colour of it, live or removed, already has it. */
+function renameProblem(database: SqliteDatabase, article: string, from: string, to: string, ids: readonly string[]): string | null {
+  const others = database.db
+    .prepare("SELECT id, color, deleted_at FROM product_variants pv WHERE UPPER(TRIM(pv.article)) = UPPER(TRIM(?))")
+    .all(article) as Row[];
+  const clash = others.find((row) => !ids.includes(String(row.id)) && normalizeQrColor(String(row.color)) === normalizeQrColor(to));
+  if (!clash) return null;
+  if (clash.deleted_at != null) return `${article} had a colour ${String(clash.color)} before, now removed. Add it back with + New colour instead.`;
+  return `${article} already has ${String(clash.color)}. Two colours cannot be joined by a rename. Nothing was changed.`;
+}
+
 export const articleColorRemovalMethods = {
+  /** Gives a colour of an article a new name on every size, if no other colour of the article has it. All sizes or none. */
+  renameColorOnArticle(this: SqliteDatabase, input: { article: string; from: string; to: string }): ArticleColorRename {
+    const article = String(input.article ?? "").trim();
+    const from = String(input.from ?? "").trim().toUpperCase().replace(/\s+/g, " ");
+    if (!article) throw new CartonAdjustmentRefused("Choose the article first.");
+    if (!from) throw new CartonAdjustmentRefused("Choose the colour to rename.");
+    const to = cleanColourName(input.to);
+    if (to === from) throw new CartonAdjustmentRefused(`${from} already has that name. Nothing was changed.`);
+    this.db.exec("BEGIN IMMEDIATE TRANSACTION");
+    try {
+      const products = liveProducts(this, article, from);
+      if (products.length === 0) throw new CartonAdjustmentRefused(`${article} has no colour ${from}. Nothing was changed.`);
+      const named = products[0]?.article ?? article;
+      const problem = renameProblem(this, named, from, to, products.map((product) => product.id));
+      if (problem) throw new CartonAdjustmentRefused(problem);
+      const now = new Date().toISOString();
+      const rename = this.db.prepare("UPDATE product_variants SET color = ?, updated_at = ? WHERE id = ?");
+      for (const product of products) rename.run(to, now, product.id);
+      this.db.exec("COMMIT");
+      return { from, color: to, renamed: products.length };
+    } catch (error) {
+      try { this.db.exec("ROLLBACK"); } catch { /* ignore missing transaction state */ }
+      throw error;
+    }
+  },
+
   /** Takes a colour off every size of an article, if nothing real still depends on it. All sizes or none. */
   removeColorFromArticle(this: SqliteDatabase, input: { article: string; color: string; actor?: string | null }): ArticleColorRemoval {
     const article = String(input.article ?? "").trim();

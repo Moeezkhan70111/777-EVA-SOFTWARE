@@ -301,6 +301,7 @@ export const IPC = {
   listCartonStockAdjustments: "erp:list-carton-stock-adjustments",
   addArticleColor: "erp:add-article-color",
   removeArticleColor: "erp:remove-article-color",
+  renameArticleColor: "erp:rename-article-color",
   requestArticleColor: "erp:request-article-color",
   listManualProduction: "erp:list-manual-production",
   voidManualProduction: "erp:void-manual-production",
