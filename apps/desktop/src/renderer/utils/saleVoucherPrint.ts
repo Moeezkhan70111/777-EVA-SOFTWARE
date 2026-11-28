@@ -18,21 +18,17 @@ import { loadLogoDataUrl, openPrintDocumentAsync, urduFontFaceCss } from "../pla
 //   GATEPASS   GP-000007     │ SUB PARTY ┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄ │   (English only when it has no Urdu name)
 //                            └───────────────────────────────────────┘
 //   Remarks  احمد علی                                       (only when there are any)
-//   ٹوٹل │ ریٹ درجن │ ریٹ جوڑا │ سائز │ آرٹیکل │ تفصیل │ تعداد      the old bill's table, right to left;
-//                                                                     each line's ٹوٹل before the less
-//   112,500 │                                          ٹوٹل │ 17.00   the amount before the less,
-//   −5,100  │                                           لیس │         the less,
-//   107,400 │                                      نیٹ ٹوٹل │         and the net owed, in the total bar
+//   ٹوٹل │ ریٹ درجن │ ریٹ جوڑا │ سائز │ آرٹیکل │ تفصیل │ تعداد      the old bill's table, right to left
+//   112,500 │                                              │ 17.00   the bill ends on its total row, before the less
 //   Prepared by            Checked by            Received by      at the foot of the page, wherever the lines end
 //
 // WHO it is for and HOW MUCH they owe are the two things the paper is for: the party first and boxed with its sub
 // party (serial position, common region), the total last, on the table's own total row (owner, 26 Nov 2026: no
 // separate payable box). Bill no., date and gatepass are reference, to its left in small caps (proximity).
 //
-// The less on paper (owner, 28 Nov 2026: "the printed bill should print the amount before the less"): each line's
-// ٹوٹل is its amount before the less, and a bill with a less ends on three rows, the amount before it, the less and the
-// net owed, the net in the total bar so it is still the figure that stands out. A bill with no less keeps its one
-// total row. A bill is per article and size, never colour; every figure
+// The less is confidential and never on paper (owner, 28 Nov 2026: "the less should not be mentioned on printed
+// bill"): each line's ٹوٹل and the bill's total are the amount before the less, and no less or net figure is printed.
+// The less stays on the screen and in the ledger. A bill is per article and size, never colour; every figure
 // comes from the stored lines through the one sale-line formula in @erp/domain, and the total is added in paisa
 // (addMoney), so the paper cannot disagree with the ledger. Standalone HTML in its own print window, so its colours
 // are literals here, as in every other print-out.
@@ -138,11 +134,6 @@ const PRINT_STYLES = `
      the whole bill's total under page 1's lines (seen on a 22-line bill, 26 Nov 2026). The head repeats. */
   /* The total bar in bold at title size, so the total stands apart from the lines at a glance (owner, 26 Nov 2026). No word in the bar: its place under تعداد and ٹوٹل says what it is. */
   .grid tbody.total td { height: 40px; border-top: 2px solid #14213d; background: #eef2f7; font-size: 22px; font-weight: 700; line-height: 24px; }
-  /* The amount before the less and the less, above the net (owner, 28 Nov 2026): line height, their word on the right. */
-  .grid tbody.sums td { height: 32px; border-top: 2px solid #14213d; font-size: 17px; font-weight: 700; line-height: 20px; vertical-align: middle; }
-  .grid tbody.sums tr + tr td { border-top-width: 1px; }
-  .grid td.sum-label { text-align: left; padding-left: 12px; font-family: "Noto Nastaliq Urdu", "Noto Naskh Arabic", Tahoma, sans-serif; font-size: 15px; font-weight: 700; }
-  .grid tbody.sums td:last-child { text-align: right; padding-right: 12px; }
 
 
   .sign { display: grid; grid-template-columns: repeat(3, 1fr); gap: 40px; }
@@ -181,8 +172,6 @@ const billOf = (voucher: SaleVoucher) => {
     lines,
     dozens: lines.reduce((sum, { item }) => sum + item.quantity, 0),
     gross: addMoney(...lines.map(({ figures }) => figures.amount)),
-    less: addMoney(...lines.map(({ figures }) => figures.totalDiscount)),
-    net: addMoney(...lines.map(({ figures }) => figures.total)),
   };
 };
 
@@ -254,12 +243,10 @@ type BillLine = ReturnType<typeof billOf>["lines"][number];
  * The lines, page by page: LINES_PER_PAGE to a page, and the last page keeps room for the total row, so it is never
  * left alone on a page of its own nor squeezed off the bottom.
  */
-export const pagesOf = <T>(lines: readonly T[], totalRows = 1): T[][] => {
+export const pagesOf = <T>(lines: readonly T[]): T[][] => {
   const pages: T[][] = [];
   let rest = [...lines];
-  // The total rows are a little taller than a line: room is kept for one line more than there are total rows' worth.
-  const room = totalRows === 1 ? 1 : totalRows + 1;
-  while (rest.length > LINES_PER_PAGE - room) {
+  while (rest.length > LINES_PER_PAGE - 1) {
     const take = Math.min(LINES_PER_PAGE, rest.length - 1);
     pages.push(rest.slice(0, take));
     rest = rest.slice(take);
@@ -268,25 +255,10 @@ export const pagesOf = <T>(lines: readonly T[], totalRows = 1): T[][] => {
   return pages;
 };
 
-/** How many rows the bill's total takes: the net alone, or the amount before the less, the less and the net. */
-const totalRowsOf = (bill: ReturnType<typeof billOf>): number => (bill.less > 0 ? 3 : 1);
-
-/** The bill's end: the total row, or, with a less, the amount before it, the less and the net (owner, 28 Nov 2026). */
-const totalHtml = (bill: ReturnType<typeof billOf>): string => {
-  const t = text.totals;
-  if (totalRowsOf(bill) === 1) {
-    return `<tbody class="total">
-        <tr><td>${ltr(dozensText(bill.dozens))}</td><td class="total-gap" colspan="5"></td><td>${ltr(rupeesText(bill.net))}</td></tr>
+/** The bill's end: one total row, the dozens and the amount before the less. The less is never printed. */
+const totalHtml = (bill: ReturnType<typeof billOf>): string => `<tbody class="total">
+        <tr><td>${ltr(dozensText(bill.dozens))}</td><td class="total-gap" colspan="5"></td><td>${ltr(rupeesText(bill.gross))}</td></tr>
       </tbody>`;
-  }
-  return `<tbody class="sums">
-        <tr><td>${ltr(dozensText(bill.dozens))}</td><td class="sum-label" colspan="5">${e(t.gross)}</td><td>${ltr(rupeesText(bill.gross))}</td></tr>
-        <tr><td></td><td class="sum-label" colspan="5">${e(t.less)}</td><td>${ltr(`−${rupeesText(bill.less)}`)}</td></tr>
-      </tbody>
-      <tbody class="total">
-        <tr><td></td><td class="sum-label" colspan="5">${e(t.net)}</td><td>${ltr(rupeesText(bill.net))}</td></tr>
-      </tbody>`;
-};
 
 /** One page's share of the table: the headings always, the total row only on the last page. */
 const tableHtml = (lines: readonly BillLine[], bill: ReturnType<typeof billOf> | null): string => {
@@ -319,7 +291,7 @@ export const renderSaleVoucherPrintHtml = (voucher: SaleVoucher, options: SaleVo
     </header>`;
   const printed = e(text.printed(formatDateTime(new Date().toISOString())));
   const qr = gatepassQrHtml(voucher);
-  const pages = pagesOf(bill.lines, totalRowsOf(bill));
+  const pages = pagesOf(bill.lines);
   // The logo in a page's free space, when the page has enough of it and there is a logo to show.
   const watermarkHtml = (lineCount: number, last: boolean): string =>
     options.logoDataUrl && LINES_PER_PAGE - lineCount - (last ? 1 : 0) >= WATERMARK_MIN_FREE_ROWS

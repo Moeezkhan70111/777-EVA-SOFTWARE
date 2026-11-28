@@ -3,7 +3,7 @@ import type { SaleVoucher } from "../types/desktopApi";
 import { LINES_PER_PAGE, pagesOf, renderSaleVoucherPrintHtml } from "./saleVoucherPrint";
 
 // What the party is handed. The figures come from the stored lines through @erp/domain. Each line's total is its
-// amount before the less, and the bill ends on the amount before the less, the less and the net owed (owner, 28 Nov 2026).
+// amount before the less, and so is the bill's total: the less is confidential and never printed (owner, 28 Nov 2026).
 
 const voucher: SaleVoucher = {
   id: "sv-1",
@@ -56,33 +56,21 @@ describe("Sale voucher print", () => {
     expect(html).toContain('<span class="party-name">MAMA CHAPPAL KARACHI</span>');
   });
 
-  // Who it is for first, what they owe last (26 Nov 2026), and the less shown between (28 Nov 2026).
-  it("ends on the amount before the less, the less, and the net the party owes in the total bar, with no payable box", () => {
+  // Owner, 28 Nov 2026: "the less should not be mentioned on printed bill. the less is very confidential".
+  it("ends on one total row before the less, and never prints the less or the net, with no payable box", () => {
     const html = renderSaleVoucherPrintHtml(voucher);
-    const sums = html.slice(html.indexOf('<tbody class="sums">'), html.indexOf("</table>", html.indexOf('<tbody class="sums">'))).replace(/\s+/g, "");
-    // 66,000 + 36,000 = 102,000 before the less; less 1,200; net 100,800.
-    expect(sums).toContain('<spanclass="ltr">15.00</span>');
-    expect(sums).toMatch(/ٹوٹل<\/td><td><spanclass="ltr">102,000<\/span>/);
-    expect(sums).toMatch(/لیس<\/td><td><spanclass="ltr">−1,200<\/span>/);
     const total = html.slice(html.indexOf('<tbody class="total">'), html.indexOf("</table>", html.indexOf('<tbody class="total">'))).replace(/\s+/g, "");
-    expect(total).toMatch(/نیٹٹوٹل<\/td><td><spanclass="ltr">100,800<\/span>/);
-    expect(html).not.toContain("payable-box");
-    expect(html.indexOf("Bill to")).toBeLessThan(html.indexOf('<table class="grid"'));
-  });
-
-  it("keeps one total row, with no less, when the bill has no less", () => {
-    const html = renderSaleVoucherPrintHtml({ ...voucher, lineItems: voucher.lineItems.map((item) => ({ ...item, discount: 0, discountPerPair: 0 })) });
+    // 66,000 + 36,000 = 102,000 before the Rs 1,200 less.
+    expect(total).toContain('<spanclass="ltr">15.00</span>');
+    expect(total).toContain('<spanclass="ltr">102,000</span>');
     expect(html).not.toContain('<tbody class="sums">');
     expect(html).not.toContain("لیس");
-    const total = html.slice(html.indexOf('<tbody class="total">'), html.indexOf("</table>", html.indexOf('<tbody class="total">'))).replace(/\s+/g, "");
-    expect(total).toContain('<spanclass="ltr">102,000</span>');
-  });
-
-  it("keeps room on the last page for the three rows when there is a less", () => {
-    const sizes = (count: number, rows: number) => pagesOf(Array.from({ length: count }, (_, index) => index), rows).map((page) => page.length);
-    expect(sizes(LINES_PER_PAGE - 1, 1)).toEqual([LINES_PER_PAGE - 1]);
-    expect(sizes(LINES_PER_PAGE - 1, 3)).toEqual([LINES_PER_PAGE - 2, 1]);
-    expect(sizes(LINES_PER_PAGE - 4, 3)).toEqual([LINES_PER_PAGE - 4]);
+    expect(html).not.toContain("نیٹ");
+    expect(html).not.toContain("1,200");
+    expect(html).not.toContain("100,800");
+    expect(html).not.toContain("64,800");
+    expect(html).not.toContain("payable-box");
+    expect(html.indexOf("Bill to")).toBeLessThan(html.indexOf('<table class="grid"'));
   });
 
   it("prints no remarks line when there are none, and keeps the sub party inside Bill to", () => {

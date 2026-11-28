@@ -220,8 +220,6 @@ export const copy = {
     remarks: "Remarks",
     // In Urdu, right to left, as on the old bill (owner, 26 Nov 2026).
     columns: { dozens: "تعداد", description: "تفصیل", article: "آرٹیکل", size: "سائز", pairRate: "ریٹ جوڑا", dozenRate: "ریٹ درجن", total: "ٹوٹل" },
-    /** Under the lines of a bill with a less (owner, 28 Nov 2026): the amount before it, the less, and the net owed. */
-    totals: { gross: "ٹوٹل", less: "لیس", net: "نیٹ ٹوٹل" },
     sign: { prepared: "Prepared by", checked: "Checked by", received: "Received by" },
     printed: (when: string) => `Printed ${when}`,
     pageOf: (page: number, pages: number) => `Page ${page} of ${pages}`,
