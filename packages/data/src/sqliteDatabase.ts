@@ -587,6 +587,8 @@ export class SqliteDatabase
   private addHrArticleColoursAtStart(): void {
     try {
       addHrArticleColoursOnce(this, new Date().toISOString());
+      // Every colour of an article on all its sizes (owner, 28 Nov 2026); also after each pull (cloudSyncPass.ts).
+      this.fillArticleColourGaps();
     } catch (error) {
       const reason = error instanceof Error ? error.message : String(error);
       this.db.prepare("INSERT OR REPLACE INTO app_settings (setting_key, setting_value, updated_at) VALUES ('data.hr_article_colours_error', ?, ?)").run(reason, new Date().toISOString());

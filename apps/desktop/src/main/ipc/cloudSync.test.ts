@@ -320,6 +320,7 @@ const buildContext = (): IpcContext => {
       getNumberBlock: () => 2,
       // Colours asked for from Enter Orders: none here (articleColorRequests.ts).
       applyArticleColorRequests: () => 0,
+      fillArticleColourGaps: () => 0,
       // Master records are built before every drain (masterRecords.ts). Recorded, so the order shows.
       buildLeasedRecordRevisions: () => {
         built.push({ what: "master-records" });

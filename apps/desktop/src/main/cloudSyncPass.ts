@@ -207,6 +207,11 @@ function applyColourRequests(db: SqliteDatabase, logger: StructuredLogger, devic
     if (dealt > 0) {
       logger.log({ module: "sync", severity: "INFO", operation: "colour-requests", deviceId, message: `Added ${String(dealt)} colour(s) asked for from Enter Orders.` });
     }
+    // A colour on one size of an article is on all its sizes (owner, 28 Nov 2026), whoever added it, wherever.
+    const filled = db.fillArticleColourGaps();
+    if (filled > 0) {
+      logger.log({ module: "sync", severity: "INFO", operation: "colour-gaps", deviceId, message: `Added ${String(filled)} size(s) a colour of their article was missing from.` });
+    }
     return dealt;
   } catch (error) {
     logger.log({

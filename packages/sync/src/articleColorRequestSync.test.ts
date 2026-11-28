@@ -76,7 +76,8 @@ async function pass(pc: Pc, cloud: Cloud): Promise<void> {
   const retryPolicy = { maxAttempts: 2, baseBackoffMs: 1, maxBackoffMs: 1, staleInFlightMs: 120_000 };
   await new OutboxDrain(pc.db.db, transport, { deviceId: pc.device, now: nowIso, retryPolicy }).runOnce();
   await new SyncPull(pc.db.db, transport, { now: () => clock.ms, project: PROJECT }).runOnce();
-  if (pc.db.applyArticleColorRequests(nowIso()) > 0) {
+  // As cloudSyncPass.ts: requests first, then every colour of an article onto all its sizes.
+  if (pc.db.applyArticleColorRequests(nowIso()) + pc.db.fillArticleColourGaps() > 0) {
     pc.db.buildLeasedRecordRevisions(nowIso());
     await new OutboxDrain(pc.db.db, transport, { deviceId: pc.device, now: nowIso, retryPolicy }).runOnce();
   }
@@ -141,5 +142,20 @@ test("nowhere but the Product Master computer adds a requested colour, and a ref
     const noted = pc1.db.db.prepare("SELECT refusal FROM article_color_request_results WHERE request_id = 'gone'").get() as { refusal: string };
     assert.match(noted.refusal, /OLD-1 has no active sizes/);
     assert.deepEqual(coloursOf(pc2), ["BROWN", "WHITE"]);
+  });
+});
+
+// Owner, 28 Nov 2026: "if a color is in one size, it is available in all of its sizes".
+test("PC1 puts every colour of an article on all its sizes by itself, and every computer gets them", async () => {
+  await withOffice(async (cloud, pc1, pc2, pc3) => {
+    pc1.db.createProduct({ article: "SK30", size: "7/10", sellingPrice: 550, machineRate: 70, packingRate: 30, colors: ["BROWN", "BLACK GREY"], status: "ACTIVE" });
+    pc1.db.createProduct({ article: "SK30", size: "4/6", sellingPrice: 470, machineRate: 70, packingRate: 30, colors: ["BLACKGREY"], status: "ACTIVE" });
+    assert.equal(pc2.db.fillArticleColourGaps(), 0, "PC2 does not write Product Master");
+    await passAll(cloud, [pc1, pc2, pc3]);
+
+    const sk30 = (pc: Pc) => (pc.db.db.prepare("SELECT size || ' ' || color AS v FROM product_variants WHERE article = 'SK30' AND deleted_at IS NULL ORDER BY size, color").all() as Array<{ v: string }>).map((row) => row.v);
+    // BROWN reaches 4/6; BLACKGREY and BLACK GREY are one colour as a QR reads it, so neither is added twice.
+    for (const pc of [pc1, pc2, pc3]) assert.deepEqual(sk30(pc), ["4/6 BLACKGREY", "4/6 BROWN", "7/10 BLACK GREY", "7/10 BROWN"], pc.name);
+    assert.equal(pc1.db.fillArticleColourGaps(), 0, "nothing left to fill");
   });
 });

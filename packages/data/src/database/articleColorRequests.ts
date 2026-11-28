@@ -7,6 +7,10 @@
 //                              yet dealt with goes through addColorToArticle, the same call as its own "+ New colour",
 //                              so the colour lands on every active size and travels back. Nobody accepts anything.
 //                              A refusal (no such article) is noted and not tried again.
+//   fillArticleColourGaps      on the Product Master computer, at start and after each pull (owner, 28 Nov 2026: "if a
+//                              color is in one size, it is available in all of its sizes"): every colour an article
+//                              has on any active size is added to the active sizes it is missing from, through the
+//                              same addColorToArticle, so every grid has a box in every cell on every computer.
 //
 // These methods are merged onto SqliteDatabase (see sqliteDatabase.ts, "Feature modules").
 
@@ -85,6 +89,33 @@ export const articleColorRequestMethods = {
     return { status: ARTICLE_COLOR_REQUEST_STATUS.REQUESTED, color };
   },
 
+  /**
+   * On the Product Master computer only: every colour of an article on every active size of it. Colours are compared
+   * as a carton QR reads them (normalizeQrColor), so "BLACKGREY" beside "BLACK GREY" is one colour, never a gap.
+   * Returns how many sizes gained a colour.
+   */
+  fillArticleColourGaps(this: SqliteDatabase): number {
+    if (!holdsProductMaster(this.db)) return 0;
+    const rows = this.db
+      .prepare(
+        `SELECT s.article AS article, s.size AS size, v.color AS color
+           FROM article_sizes s
+           LEFT JOIN product_variants v ON v.article_size_id = s.id AND v.deleted_at IS NULL AND COALESCE(v.status, 'ACTIVE') = 'ACTIVE'
+          WHERE s.status = 'ACTIVE' AND s.deleted_at IS NULL`
+      )
+      .all() as Array<{ article: string; size: string; color: string | null }>;
+    let added = 0;
+    for (const [article, colour] of colourGaps(rows)) {
+      try {
+        added += this.addColorToArticle({ article, color: colour }).added;
+      } catch (error) {
+        // Refused in words (a colour name Product Master will not take): left as it is; anything else is thrown.
+        if (!(error instanceof CartonAdjustmentRefused)) throw error;
+      }
+    }
+    return added;
+  },
+
   /** On the Product Master computer only: adds every colour asked for and not yet dealt with. Returns how many. */
   applyArticleColorRequests(this: SqliteDatabase, now: string): number {
     if (!holdsProductMaster(this.db)) return 0;
@@ -106,3 +137,27 @@ export const articleColorRequestMethods = {
 };
 
 export type ArticleColorRequestMethods = typeof articleColorRequestMethods;
+
+/** Each article's colours missing from at least one of its active sizes: [article, colour as first held]. */
+export const colourGaps = (rows: ReadonlyArray<{ article: string; size: string; color: string | null }>): Array<[string, string]> => {
+  const sizes = new Map<string, Set<string>>();
+  const colours = new Map<string, Map<string, { name: string; sizes: Set<string> }>>();
+  for (const row of rows) {
+    const sizeSet = sizes.get(row.article) ?? new Set<string>();
+    sizeSet.add(row.size);
+    sizes.set(row.article, sizeSet);
+    if (!row.color || !row.color.trim()) continue;
+    const byKey = colours.get(row.article) ?? new Map<string, { name: string; sizes: Set<string> }>();
+    const key = normalizeQrColor(row.color);
+    const entry = byKey.get(key) ?? { name: row.color, sizes: new Set<string>() };
+    entry.sizes.add(row.size);
+    byKey.set(key, entry);
+    colours.set(row.article, byKey);
+  }
+  const gaps: Array<[string, string]> = [];
+  for (const [article, byKey] of colours) {
+    const all = sizes.get(article)?.size ?? 0;
+    for (const entry of byKey.values()) if (entry.sizes.size < all) gaps.push([article, entry.name]);
+  }
+  return gaps;
+};
